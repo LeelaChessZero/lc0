@@ -54,6 +54,8 @@ void EngineController::SetNetworkPath(const std::string& path) {
   if (path == kAutoDiscover) {
     net_path = DiscoveryWeightsFile(
         uci_options_ ? uci_options_->GetProgramName() : ".");
+  } else {
+    net_path = path;
   }
   Weights weights = LoadWeightsFromFile(net_path);
   // TODO Make backend selection.
