@@ -103,11 +103,18 @@ void UciLoop(int argc, const char** argv) {
 
       /// setoption
       if (command == "setoption") {
-        std::string name;
-        std::string value;
-        std::istringstream iss(params);
-        iss >> name;
-        std::getline(iss, value);
+        if (params.substr(0, 5) != "name ") {
+          SendResponse("error Bad setoption command: " + line);
+          continue;
+        }
+        params = params.substr(5);
+        auto pos = params.find(" value ");
+        if (pos == std::string::npos) {
+          SendResponse("error Setoption value expected: " + line);
+          continue;
+        }
+        std::string name = params.substr(0, pos);
+        std::string value = params.substr(pos + 7);
         options.SetOption(name, value);
         if (options_sent) {
           options.SendOption(name);

@@ -148,7 +148,7 @@ class SpinOption : public UciOptions::Option {
 
  private:
   std::string GetOptionString() const override {
-    return "type string default " + std::to_string(value_) + " min " +
+    return "type spin default " + std::to_string(value_) + " min " +
            std::to_string(min_) + " max " + std::to_string(max_);
   }
   void SendValue() const override {
