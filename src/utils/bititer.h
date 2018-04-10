@@ -18,6 +18,9 @@
 
 #pragma once
 #include <cstdint>
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 
 namespace lczero {
 
@@ -30,7 +33,15 @@ class BitIterator {
   bool operator!=(const BitIterator& other) { return value_ != other.value_; }
 
   void operator++() { value_ &= (value_ - 1); }
-  T operator*() const { return __builtin_ctzll(value_); }
+  T operator*() const {
+#ifdef _MSC_VER
+    unsigned long result;
+    _BitScanForward64(&result, value_);
+    return result;
+#else
+    return __builtin_ctzll(value_);
+#endif
+  }
 
  private:
   std::uint64_t value_;
