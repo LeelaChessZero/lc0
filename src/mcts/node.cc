@@ -76,24 +76,24 @@ uint64_t NodePool::GetAllocatedNodeCount() const {
   return kAllocationSize * allocations_.size() - pool_.size();
 }
 
-// Mutex must be locked!
+// Mutex must be hold.
 void NodePool::ReleaseSubtree(Node* node) {
   for (Node* iter = node->child; iter; iter = iter->sibling) {
     ReleaseSubtree(iter);
-    pool_.push_back(node);
+    pool_.push_back(iter);
   }
 }
 
-// Mutex must be locked!
-void NodePool::SortNodes() { std::sort(pool_.begin(), pool_.end()); }
-
-// Mutex must be locked!
+// Mutex must be hold.
 void NodePool::AllocateNewBatch() {
   allocations_.emplace_back(std::make_unique<Node[]>(kAllocationSize));
   for (int i = 0; i < kAllocationSize; ++i) {
     pool_.push_back(allocations_.back().get() + i);
   }
 }
+
+// Mutex must be hold.
+void NodePool::SortNodes() { std::sort(pool_.begin(), pool_.end()); }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
