@@ -228,7 +228,8 @@ void Search::SendUciInfo() {
   uci_info_.seldepth = root_node_->max_depth;
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_nodes_;
-  uci_info_.nps = uci_info_.nodes * 1000 / uci_info_.time;
+  uci_info_.nps =
+      uci_info_.time ? (uci_info_.nodes * 1000 / uci_info_.time) : 0;
   uci_info_.score = -91 * log(2 / (best_move_node_->q + 1) - 1);
   uci_info_.pv.clear();
 
