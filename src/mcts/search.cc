@@ -127,7 +127,7 @@ void Search::Worker() {
       for (Node* node : nodes_to_process) {
         if (node->is_terminal) continue;
         // Populate Q value.
-        node->q = -computation->GetQVal(idx_in_computation);
+        node->v = -computation->GetQVal(idx_in_computation);
         // Populate P values.
         float total = 0.0;
         for (Node* n = node->child; n; n = n->sibling) {
@@ -152,7 +152,7 @@ void Search::Worker() {
       std::unique_lock<std::shared_mutex> lock{nodes_mutex_};
       total_nodes_ += new_nodes;
       for (Node* node : nodes_to_process) {
-        float v = node->q;
+        float v = node->v;
         // Maximum depth the node is explored.
         uint16_t depth = 0;
         // If the node is terminal, mark it as fully explored to an infinite
@@ -286,30 +286,30 @@ void Search::ExtendNode(Node* node) {
     node->is_terminal = true;
     if (board.IsUnderCheck()) {
       // Checkmate.
-      node->q = 1.0f;
+      node->v = 1.0f;
     } else {
       // Stalemate.
-      node->q = 0.0f;
+      node->v = 0.0f;
     }
     return;
   }
 
   if (!board.HasMatingMaterial()) {
     node->is_terminal = true;
-    node->q = 0.0f;
+    node->v = 0.0f;
     return;
   }
 
   if (node->no_capture_ply >= 100) {
     node->is_terminal = true;
-    node->q = 0.0f;
+    node->v = 0.0f;
     return;
   }
 
   node->repetitions = ComputeRepetitions(node);
   if (node->repetitions >= 2) {
     node->is_terminal = true;
-    node->q = 0.0f;
+    node->v = 0.0f;
     return;
   }
 
@@ -332,7 +332,6 @@ void Search::ExtendNode(Node* node) {
     new_node->no_capture_ply =
         move.reset_50_moves ? 0 : (node->no_capture_ply + 1);
     new_node->ply_count = node->ply_count + 1;
-    new_node->q = -node->q;
     prev_node = new_node;
   }
 }
@@ -364,7 +363,7 @@ Node* Search::PickNodeToExtend(Node* node) {
     float best = -100.0f;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
       const float u = factor * iter->p / (1 + iter->n + iter->n_in_flight);
-      const float v = u + iter->q;
+      const float v = u + (iter->n ? iter->q : -iter->parent->v);
       if (v > best) {
         best = v;
         node = iter;

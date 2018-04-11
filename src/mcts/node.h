@@ -47,6 +47,8 @@ struct Node {
   uint32_t n_in_flight;
   // How many completed visits this node had.
   uint32_t n;
+  // Q value fetched from neural network.
+  float v;
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. Terminal nodes (which lead to checkmate or draw) may be visited
   // several times, those are counted several times. q = w / n
