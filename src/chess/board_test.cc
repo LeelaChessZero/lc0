@@ -74,7 +74,6 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
     int count = Perft(new_board, max_depth, dump, depth + 1);
     if (dump && depth == 0) {
       Move m = move;
-      if (depth == 0) m.Mirror();
       std::cerr << m.as_string() << ' ' << count << '\n'
                 << new_board.DebugString();
     }
@@ -100,7 +99,7 @@ TEST(ChessBoard, MoveGenStartingPos) {
 TEST(ChessBoard, MoveGenKiwipete) {
   ChessBoard board;
   board.SetFromFen(
-      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -");
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 1 1");
 
   EXPECT_EQ(Perft(board, 1), 48);
   EXPECT_EQ(Perft(board, 2), 2039);
@@ -111,7 +110,7 @@ TEST(ChessBoard, MoveGenKiwipete) {
 
 TEST(ChessBoard, MoveGenPosition3) {
   ChessBoard board;
-  board.SetFromFen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -");
+  board.SetFromFen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 1 1");
 
   EXPECT_EQ(Perft(board, 1), 14);
   EXPECT_EQ(Perft(board, 2), 191);

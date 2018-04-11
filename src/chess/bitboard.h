@@ -198,6 +198,8 @@ class Move {
   BoardSquare from() const { return from_; }
   BoardSquare to() const { return to_; }
   Promotion promotion() const { return promotion_; }
+  bool IsCastling() const { return castling_; }
+  void SetCastling() { castling_ = true; }
 
   // 0 .. 16384, knight promotion and no promotion is the same.
   uint16_t as_packed_int() const;
@@ -219,7 +221,11 @@ class Move {
   }
 
   std::string as_string() const {
-    std::string res = from_.as_string() + to_.as_string();
+    BoardSquare to = to_;
+    if (castling_) {
+      to = BoardSquare(to.row(), (to.col() == 7) ? 6 : 2);
+    }
+    std::string res = from_.as_string() + to.as_string();
     switch (promotion_) {
       case Promotion::None:
         return res;
@@ -238,6 +244,7 @@ class Move {
   BoardSquare from_;
   BoardSquare to_;
   Promotion promotion_ = Promotion::None;
+  bool castling_ = false;
 };
 
 using MoveList = std::vector<Move>;

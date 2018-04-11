@@ -199,7 +199,8 @@ MoveList ChessBoard::GeneratePseudovalidMoves() const {
           }
         }
         if (can_castle) {
-          result.emplace_back(source, BoardSquare(0, 6));
+          result.emplace_back(source, BoardSquare(0, 7));
+          result.back().SetCastling();
         }
       }
       if (castlings_.we_can_000()) {
@@ -219,7 +220,8 @@ MoveList ChessBoard::GeneratePseudovalidMoves() const {
           }
         }
         if (can_castle) {
-          result.emplace_back(source, BoardSquare(0, 2));
+          result.emplace_back(source, BoardSquare(0, 0));
+          result.back().SetCastling();
         }
       }
       continue;
@@ -330,9 +332,9 @@ bool ChessBoard::ApplyMove(Move move) {
   const auto to_row = to.row();
   const auto to_col = to.col();
 
-  // Move in our pieces.
+  // Remove our piece from old location, but not put to destination
+  // (for the case of castling).
   our_pieces_.reset(from);
-  our_pieces_.set(to);
 
   // Remove captured piece
   bool reset_50_moves = their_pieces_.get(to);
@@ -364,23 +366,32 @@ bool ChessBoard::ApplyMove(Move move) {
   if (from == our_king_) {
     castlings_.reset_we_can_00();
     castlings_.reset_we_can_000();
-    our_king_ = to;
     // Castling
-    if (to_col - from_col == 2) {
+    if (to_col - from_col > 1) {
       // 0-0
       our_pieces_.reset(7);
       rooks_.reset(7);
       our_pieces_.set(5);
       rooks_.set(5);
-    } else if (from_col - to_col == 2) {
+      our_king_ = BoardSquare(0, 6); /* g8 */
+      our_pieces_.set(our_king_);
+    } else if (from_col - to_col > 1) {
       // 0-0-0
       our_pieces_.reset(0);
       rooks_.reset(0);
       our_pieces_.set(3);
       rooks_.set(3);
+      our_king_ = BoardSquare(0, 2); /* c8 */
+      our_pieces_.set(our_king_);
+    } else {
+      our_king_ = to;
+      our_pieces_.set(to);
     }
     return reset_50_moves;
   }
+
+  // Now destination square for our piece is known.
+  our_pieces_.set(to);
 
   // Promotion
   if (move.promotion() != Move::Promotion::None) {
