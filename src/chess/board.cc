@@ -24,6 +24,10 @@
 #include <sstream>
 #include "utils/exception.h"
 
+#ifdef _MSC_VER
+#include <nmmintrin.h>
+#endif
+
 namespace lczero {
 
 using std::string;
@@ -611,8 +615,13 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
+#ifdef _MSC_VER
+  int our = _mm_popcnt_u64(our_pieces_.as_int());
+  int their = _mm_popcnt_u64(their_pieces_.as_int());
+#else
   int our = __builtin_popcountll(our_pieces_.as_int());
   int their = __builtin_popcountll(their_pieces_.as_int());
+#endif
   if (our > 2 || their > 2) {
     return true;
   }

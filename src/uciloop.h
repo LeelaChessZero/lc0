@@ -19,7 +19,12 @@
 #pragma once
 
 #include <functional>
+#ifdef _MSC_VER
+#include "utils/optional.h"
+#else
 #include <optional>
+using std::optional;
+#endif
 #include <string>
 #include <vector>
 #include "chess/bitboard.h"
@@ -48,7 +53,7 @@ struct UciInfo {
   // Nodes per second.
   int nps = -1;
   // Win in centipawns.
-  std::optional<int> score;
+  optional<int> score;
   // Best line found. Moves are from perspective of white player.
   std::vector<Move> pv;
   // Freeform comment.
