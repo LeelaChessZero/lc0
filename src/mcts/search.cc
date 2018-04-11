@@ -363,7 +363,7 @@ Node* Search::PickNodeToExtend(Node* node) {
     float best = -100.0f;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
       const float u = factor * iter->p / (1 + iter->n + iter->n_in_flight);
-      const float v = u + (iter->n ? iter->q : -iter->parent->v);
+      const float v = u + (iter->n ? iter->q : -iter->parent->q);
       if (v > best) {
         best = v;
         node = iter;
