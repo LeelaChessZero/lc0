@@ -90,13 +90,14 @@ class NodePool {
   void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
   // Releases all children, but doesn't release the node isself.
   void ReleaseChildren(Node*);
-  // Release all children of the node and the node itself.
-  void ReleaseSubtree(Node*);
 
   // Returns total number of nodes allocated.
   uint64_t GetAllocatedNodeCount() const;
 
  private:
+  // Release all children of the node and the node itself.
+  void ReleaseSubtree(Node*);
+  void SortNodes();
   void AllocateNewBatch();
 
   mutable std::mutex mutex_;
