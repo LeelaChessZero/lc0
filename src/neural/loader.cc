@@ -112,11 +112,11 @@ std::string DiscoveryWeightsFile(const std::string& binary_name) {
   }
 
   std::vector<std::pair<file_time_type, std::string>> candidates;
-  for (const auto& file : recursive_directory_iterator(
-           path, directory_options::skip_permission_denied)) {
+  for (const auto& file : recursive_directory_iterator(path)) {
     if (!is_regular_file(file.path())) continue;
     if (file_size(file.path()) < kMinFileSize) continue;
-    candidates.emplace_back(last_write_time(file.path()), file.path());
+    candidates.emplace_back(last_write_time(file.path()),
+                            file.path().generic_u8string());
   }
 
   std::sort(candidates.rbegin(), candidates.rend());

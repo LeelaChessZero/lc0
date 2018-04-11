@@ -36,7 +36,7 @@ class BoardSquare {
   // From row(bottom to top), and col(left to right), 0-based.
   constexpr BoardSquare(int row, int col) : BoardSquare(row * 8 + col) {}
   // From Square name, e.g e4. Only lowercase.
-  constexpr BoardSquare(const std::string& str, bool black = false)
+  BoardSquare(const std::string& str, bool black = false)
       : BoardSquare(black ? '8' - str[1] : str[1] - '1', str[0] - 'a') {}
   constexpr std::uint8_t as_int() const { return square_; }
   void set(int row, int col) { square_ = row * 8 + col; }

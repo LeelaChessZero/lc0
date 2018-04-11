@@ -303,7 +303,7 @@ MoveList ChessBoard::GeneratePseudovalidMoves() const {
               // Ordinary capture.
               result.emplace_back(source, destination);
             }
-          } else if (dst_row == 5 and pawns_.get(7, dst_col)) {
+          } else if (dst_row == 5 && pawns_.get(7, dst_col)) {
             // En passant.
             result.emplace_back(source, destination);
           }
@@ -418,7 +418,7 @@ bool ChessBoard::ApplyMove(Move move) {
   pawns_.reset(from);
 
   // Set en passant flag.
-  if (to_row - from_row == 2 and pawns_.get(to)) {
+  if (to_row - from_row == 2 && pawns_.get(to)) {
     pawns_.set(0, to_col);
   }
   return reset_50_moves;

@@ -48,7 +48,7 @@ void SendInfo(const UciInfo& info) {
   if (info.seldepth >= 0) res += " seldepth " + std::to_string(info.seldepth);
   if (info.time >= 0) res += " time " + std::to_string(info.time);
   if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
-  if (info.score) res += " score cp " + std::to_string(info.score.value());
+  if (info.score) res += " score cp " + std::to_string(*info.score);
   if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
 
   if (!info.pv.empty()) {

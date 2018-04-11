@@ -332,6 +332,7 @@ void Search::ExtendNode(Node* node) {
     new_node->no_capture_ply =
         move.reset_50_moves ? 0 : (node->no_capture_ply + 1);
     new_node->ply_count = node->ply_count + 1;
+    new_node->q = -node->q;
     prev_node = new_node;
   }
 }
@@ -363,7 +364,7 @@ Node* Search::PickNodeToExtend(Node* node) {
     float best = -100.0f;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
       const float u = factor * iter->p / (1 + iter->n + iter->n_in_flight);
-      const float v = u + (iter->n ? iter->q : -iter->parent->q);
+      const float v = u + iter->q;
       if (v > best) {
         best = v;
         node = iter;
