@@ -29,6 +29,25 @@ const int kDefaultThreads = 2;
 const char* kThreadsOption = "Number of worker threads";
 
 const char* kAutoDiscover = "<autodiscover>";
+
+SearchLimits PopulateSearchLimits(int ply, bool is_black,
+                                  const GoParams& params) {
+  SearchLimits limits;
+  limits.nodes = params.nodes;
+  limits.time_ms = -1;
+  if (params.infinite) return limits;
+  int64_t time = (is_black ? params.btime : params.wtime);
+  int increment = std::max(0l, is_black ? params.binc : params.winc);
+
+  // During first few moves policy network is mostly fine, so don't search deep.
+  if (ply < 4 && (limits.nodes < 0 || limits.nodes > 400)) limits.nodes = 400;
+
+  int movestogo = params.movestogo < 0 ? 50 : params.movestogo;
+  limits.time_ms = (time + (increment * (movestogo - 1))) * 0.95 / movestogo;
+
+  return limits;
+}
+
 }  // namespace
 
 EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
@@ -134,11 +153,8 @@ void EngineController::Go(const GoParams& params) {
     SetPosition(ChessBoard::kStartingFen, {});
   }
 
-  SearchLimits limits;
-  limits.nodes = params.nodes;
-  limits.time_ms =
-      (current_head_->board.flipped() ? params.btime : params.wtime);
-  if (limits.time_ms >= 0) limits.time_ms /= 20;
+  auto limits = PopulateSearchLimits(current_head_->ply_count,
+                                     current_head_->board.flipped(), params);
 
   search_ = std::make_unique<Search>(current_head_, node_pool_.get(),
                                      network_.get(), best_move_callback_,
