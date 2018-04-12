@@ -51,7 +51,6 @@ void NodePool::ReleaseChildren(Node* node) {
     ReleaseSubtree(iter);
   }
   node->child = nullptr;
-  SortNodes();
 }
 
 void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
@@ -68,7 +67,6 @@ void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
   if (child) {
     child->sibling = nullptr;
   }
-  SortNodes();
 }
 
 uint64_t NodePool::GetAllocatedNodeCount() const {
@@ -91,9 +89,6 @@ void NodePool::AllocateNewBatch() {
     pool_.push_back(allocations_.back().get() + i);
   }
 }
-
-// Mutex must be hold.
-void NodePool::SortNodes() { std::sort(pool_.begin(), pool_.end()); }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;

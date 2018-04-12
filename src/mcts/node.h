@@ -97,7 +97,6 @@ class NodePool {
  private:
   // Release all children of the node and the node itself.
   void ReleaseSubtree(Node*);
-  void SortNodes();
   void AllocateNewBatch();
 
   mutable std::mutex mutex_;
