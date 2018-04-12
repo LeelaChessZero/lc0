@@ -326,7 +326,6 @@ void Search::ExtendNode(Node* node) {
     }
 
     new_node->move = move.move;
-    new_node->board_flipped = move.board;
     new_node->board = move.board;
     new_node->board.Mirror();
     new_node->no_capture_ply =
@@ -383,9 +382,9 @@ InputPlanes Search::EncodeNode(const Node* node) {
 
   for (int i = 0; i < kMoveHistory; ++i, flip = !flip) {
     if (!node) break;
-    ChessBoard board = flip ? node->board_flipped : node->board;
+    ChessBoard board = node->board;
 
-    if (kFlipHistory && i % 2 == 1) board.Mirror();
+    if ((flip) != (kFlipHistory && i % 2 == 1)) board.Mirror();
 
     const int base = i * 14;
     if (i == 0) {

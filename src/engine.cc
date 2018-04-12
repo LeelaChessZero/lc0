@@ -85,9 +85,8 @@ void EngineController::MakeMove(Move move) {
     new_head = node_pool_->GetNode();
     current_head_->child = new_head;
     new_head->parent = current_head_;
-    new_head->board_flipped = current_head_->board;
-    const bool capture = new_head->board_flipped.ApplyMove(move);
-    new_head->board = new_head->board_flipped;
+    new_head->board = current_head_->board;
+    const bool capture = new_head->board.ApplyMove(move);
     new_head->board.Mirror();
     new_head->ply_count = current_head_->ply_count + 1;
     new_head->no_capture_ply = capture ? 0 : current_head_->no_capture_ply + 1;
@@ -118,8 +117,6 @@ void EngineController::SetPosition(const std::string& fen,
   if (!gamebegin_node_) {
     gamebegin_node_ = node_pool_->GetNode();
     gamebegin_node_->board = starting_board;
-    gamebegin_node_->board_flipped = starting_board;
-    gamebegin_node_->board_flipped.Mirror();
     gamebegin_node_->no_capture_ply = no_capture_ply;
     gamebegin_node_->ply_count =
         full_moves * 2 - (starting_board.flipped() ? 1 : 2);

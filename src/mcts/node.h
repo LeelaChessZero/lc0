@@ -31,9 +31,6 @@ struct Node {
   Move move;
   // The board from the point of view of the player to move.
   ChessBoard board;
-  // The board from the point of view of the opponent. Used to fill historical
-  // planes.
-  ChessBoard board_flipped;
   // How many half-moves without capture or pawn move was there.
   std::uint8_t no_capture_ply;
   // How many repetitions this position had before. For new positions it's 0.
