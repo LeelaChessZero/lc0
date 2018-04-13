@@ -41,10 +41,10 @@ struct Node {
   // (aka virtual loss). How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
-  uint32_t n_in_flight;
+  uint32_t m;
   // How many completed visits this node had.
   uint32_t n;
-  // Q value fetched from neural network.
+  // V value fetched from neural network.
   float v;
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. Terminal nodes (which lead to checkmate or draw) may be visited
@@ -71,6 +71,7 @@ struct Node {
   // Pointer to a next sibling. nullptr if there are no further siblings.
   Node* sibling;
 
+  uint64_t BoardHash() const;
   std::string DebugString() const;
 };
 

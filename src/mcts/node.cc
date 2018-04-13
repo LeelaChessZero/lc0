@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cstring>
 #include <sstream>
+#include "utils/cache.h"
 
 namespace lczero {
 
@@ -90,12 +91,16 @@ void NodePool::AllocateNewBatch() {
   }
 }
 
+uint64_t Node::BoardHash() const {
+  return HashCat({board.Hash(), no_capture_ply, repetitions});
+}
+
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move.as_string() << "\n"
       << board.DebugString() << "Term:" << is_terminal << " Parent:" << parent
       << " child:" << child << " sibling:" << sibling << " P:" << p
-      << " Q:" << q << " W:" << w << " N:" << n << " N_:" << n_in_flight
+      << " Q:" << q << " W:" << w << " N:" << n << " M:" << m
       << " Rep:" << (int)repetitions;
   return oss.str();
 }

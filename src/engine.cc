@@ -34,9 +34,9 @@ SearchLimits PopulateSearchLimits(int ply, bool is_black,
                                   const GoParams& params) {
   SearchLimits limits;
   limits.nodes = params.nodes;
-  limits.time_ms = -1;
-  if (params.infinite) return limits;
+  limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
+  if (params.infinite || time < 0) return limits;
   int increment = std::max(0l, is_black ? params.binc : params.winc);
 
   // During first few moves policy network is mostly fine, so don't search deep.
@@ -64,6 +64,11 @@ void EngineController::GetUciOptions(UciOptions* options) {
   options->Add(std::make_unique<SpinOption>(kThreadsOption, kDefaultThreads, 1,
                                             128, std::function<void(int)>{},
                                             "threads", 't'));
+
+  options->Add(std::make_unique<SpinOption>(
+      "NNCache size", 100000, 0, 999999999,
+      std::bind(&EngineController::SetCacheSize, this, _1)));
+
   Search::PopulateUciParams(options);
 }
 
@@ -80,6 +85,8 @@ void EngineController::SetNetworkPath(const std::string& path) {
   // TODO Make backend selection.
   network_ = MakeTensorflowNetwork(weights);
 }
+
+void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 
 void EngineController::NewGame() {
   SharedLock lock(busy_mutex_);
@@ -156,9 +163,9 @@ void EngineController::Go(const GoParams& params) {
   auto limits = PopulateSearchLimits(current_head_->ply_count,
                                      current_head_->board.flipped(), params);
 
-  search_ = std::make_unique<Search>(current_head_, node_pool_.get(),
-                                     network_.get(), best_move_callback_,
-                                     info_callback_, limits, uci_options_);
+  search_ = std::make_unique<Search>(
+      current_head_, node_pool_.get(), network_.get(), best_move_callback_,
+      info_callback_, limits, uci_options_, &cache_);
 
   search_->StartThreads(uci_options_ ? uci_options_->GetIntValue(kThreadsOption)
                                      : kDefaultThreads);

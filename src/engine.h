@@ -23,6 +23,7 @@
 #include "neural/network.h"
 #include "uciloop.h"
 #include "ucioptions.h"
+#include "utils/cache.h"
 #include "utils/readprefmutex.h"
 
 namespace lczero {
@@ -67,6 +68,7 @@ class EngineController {
   // Must not block.
   void Stop();
   void SetNetworkPath(const std::string& path);
+  void SetCacheSize(int size);
 
  private:
   void MakeMove(Move move);
@@ -86,6 +88,7 @@ class EngineController {
   Node* current_head_ = nullptr;
   Node* gamebegin_node_ = nullptr;
   std::unique_ptr<Search> search_;
+  NNCache cache_;
 };
 
 }  // namespace lczero
