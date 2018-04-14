@@ -99,9 +99,6 @@ class Search {
   // External parameters.
   const int kMiniBatchSize;
   const float kCpuct;
-  const bool kPopulateMoves;
-  const bool kFlipHistory;
-  const bool kFlipMove;
 };
 
 }  // namespace lczero

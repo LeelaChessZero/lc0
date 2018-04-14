@@ -23,7 +23,7 @@
 
 namespace lczero {
 
-const int kInputPlanes = 120;
+const int kInputPlanes = 112;
 
 struct Weights {
   using Vec = std::vector<float>;

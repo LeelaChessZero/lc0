@@ -29,8 +29,8 @@ TEST(Network, FakeData) {
   auto network = MakeTensorflowNetwork(weights);
   auto compute = network->NewComputation();
   for (int j = 0; j < 4; ++j) {
-    InputPlanes planes(120);
-    for (int i = 0; i < 120; ++i) {
+    InputPlanes planes(kInputPlanes);
+    for (int i = 0; i < kInputPlanes; ++i) {
       planes[i].mask = 0x230709012008ull;
     }
     compute->AddInput(std::move(planes));

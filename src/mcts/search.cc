@@ -28,20 +28,11 @@ namespace lczero {
 
 namespace {
 
-const int kDefaultMiniBatchSize = 32;
+const int kDefaultMiniBatchSize = 128;
 const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
 
 const int kDefaultCpuct = 170;
 const char* kCpuctOption = "Cpuct MCTS option (x100)";
-
-const bool kDefaultPopulateMoves = false;
-const char* kPopulateMovesOption = "(oldbug) Populate movecount plane";
-
-const bool kDefaultFlipHistory = true;
-const char* kFlipHistoryOption = "(oldbug) Flip opponents history";
-
-const bool kDefaultFlipMove = true;
-const char* kFlipMoveOption = "(oldbug) Flip black's moves";
 }  // namespace
 
 void Search::PopulateUciParams(UciOptions* options) {
@@ -51,16 +42,6 @@ void Search::PopulateUciParams(UciOptions* options) {
 
   options->Add(std::make_unique<SpinOption>(kCpuctOption, kDefaultCpuct, 0,
                                             9999, std::function<void(int)>{}));
-
-  options->Add(std::make_unique<CheckOption>(kPopulateMovesOption,
-                                             kDefaultPopulateMoves,
-                                             std::function<void(bool)>{}));
-
-  options->Add(std::make_unique<CheckOption>(
-      kFlipHistoryOption, kDefaultFlipHistory, std::function<void(bool)>{}));
-
-  options->Add(std::make_unique<CheckOption>(kFlipMoveOption, kDefaultFlipMove,
-                                             std::function<void(bool)>{}));
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
@@ -80,14 +61,7 @@ Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
                          : kDefaultMiniBatchSize),
       kCpuct((uci_options ? uci_options->GetIntValue(kCpuctOption)
                           : kDefaultCpuct) /
-             100.0f),
-      kPopulateMoves(uci_options
-                         ? uci_options->GetBoolValue(kPopulateMovesOption)
-                         : kDefaultPopulateMoves),
-      kFlipHistory(uci_options ? uci_options->GetBoolValue(kFlipHistoryOption)
-                               : kDefaultFlipHistory),
-      kFlipMove(uci_options ? uci_options->GetBoolValue(kFlipMoveOption)
-                            : kDefaultFlipMove) {}
+             100.0f) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation) {
@@ -97,19 +71,15 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation) {
   auto planes = EncodeNode(node);
 
   std::vector<uint16_t> moves;
-  bool flip = (kFlipMove && node->board.flipped());
 
   if (node->child) {
     // Valid moves are known, using them.
     for (Node* iter = node->child; iter; iter = iter->sibling) {
-      Move m = iter->move;
-      if (flip) m.Mirror();
-      moves.emplace_back(m.as_nn_index());
+      moves.emplace_back(iter->move.as_nn_index());
     }
   } else {
     // Cache pseudovalid moves. A bit of a waste, but faster.
-    for (Move m : node->board.GeneratePseudovalidMoves()) {
-      if (flip) m.Mirror();
+    for (const Move& m : node->board.GeneratePseudovalidMoves()) {
       moves.emplace_back(m.as_nn_index());
     }
   }
@@ -163,9 +133,8 @@ void Search::Worker() {
         // Populate P values.
         float total = 0.0;
         for (Node* n = node->child; n; n = n->sibling) {
-          Move m = n->move;
-          if (kFlipMove && node->board.flipped()) m.Mirror();
-          float p = computation.GetPVal(idx_in_computation, m.as_nn_index());
+          float p =
+              computation.GetPVal(idx_in_computation, n->move.as_nn_index());
           total += p;
           n->p = p;
         }
@@ -405,7 +374,8 @@ Node* Search::PickNodeToExtend(Node* node) {
 
 InputPlanes Search::EncodeNode(const Node* node) {
   const int kMoveHistory = 8;
-  const int kAuxPlaneBase = 14 * kMoveHistory;
+  const int planesPerBoard = 13;
+  const int kAuxPlaneBase = planesPerBoard * kMoveHistory;
 
   InputPlanes result(kAuxPlaneBase + 8);
 
@@ -414,11 +384,9 @@ InputPlanes Search::EncodeNode(const Node* node) {
 
   for (int i = 0; i < kMoveHistory; ++i, flip = !flip) {
     if (!node) break;
-    ChessBoard board = node->board;
+    const ChessBoard& board = node->board;
 
-    if ((flip) != (kFlipHistory && i % 2 == 1)) board.Mirror();
-
-    const int base = i * 14;
+    const int base = i * planesPerBoard;
     if (i == 0) {
       if (board.castlings().we_can_000()) result[kAuxPlaneBase + 0].SetAll();
       if (board.castlings().we_can_00()) result[kAuxPlaneBase + 1].SetAll();
@@ -426,7 +394,6 @@ InputPlanes Search::EncodeNode(const Node* node) {
       if (board.castlings().they_can_00()) result[kAuxPlaneBase + 3].SetAll();
       if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
       result[kAuxPlaneBase + 5].Fill(node->no_capture_ply);
-      if (kPopulateMoves) result[kAuxPlaneBase + 6].Fill(node->ply_count % 256);
     }
 
     result[base + 0].mask = (board.ours() * board.pawns()).as_int();
@@ -445,7 +412,6 @@ InputPlanes Search::EncodeNode(const Node* node) {
 
     const int repetitions = node->repetitions;
     if (repetitions >= 1) result[base + 12].SetAll();
-    if (repetitions >= 2) result[base + 13].SetAll();
 
     node = node->parent;
   }

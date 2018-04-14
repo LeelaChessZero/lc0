@@ -97,10 +97,11 @@ Output MakeResidualBlock(const Scope& scope, Input input, int channels,
 
 std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
                                       const Weights& weights) {
-  const int filters = weights.input.weights.size() / 120 / 9;
+  const int filters = weights.input.weights.size() / kInputPlanes / 9;
 
   // Input convolution.
-  auto flow = MakeConvBlock(scope, input, 3, 120, filters, weights.input);
+  auto flow =
+      MakeConvBlock(scope, input, 3, kInputPlanes, filters, weights.input);
 
   // Residual tower
   for (const auto& block : weights.residual) {
@@ -110,8 +111,8 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
   // Policy head
   auto conv_pol = MakeConvBlock(scope, flow, 1, filters, 32, weights.policy);
   conv_pol = Reshape(scope, conv_pol, Const(scope, {-1, 32 * 8 * 8}));
-  auto ip_pol_w = MakeConst(scope, {32 * 8 * 8, 1924}, weights.ip_pol_w);
-  auto ip_pol_b = MakeConst(scope, {1924}, weights.ip_pol_b);
+  auto ip_pol_w = MakeConst(scope, {32 * 8 * 8, 1858}, weights.ip_pol_w);
+  auto ip_pol_b = MakeConst(scope, {1858}, weights.ip_pol_b);
   auto policy_fc = Add(scope, MatMul(scope, conv_pol, ip_pol_w), ip_pol_b);
   auto policy_head = Softmax(scope, policy_fc);
 
