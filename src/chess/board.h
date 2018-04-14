@@ -61,9 +61,9 @@ class ChessBoard {
   std::vector<MoveExecution> GenerateValidMoves() const;
 
   uint64_t Hash() const {
-    return HashCat({our_pieces_.as_int(), our_pieces_.as_int(),
-                    their_pieces_.as_int(), rooks_.as_int(), bishops_.as_int(),
-                    pawns_.as_int(), our_king_.as_int(), their_king_.as_int(),
+    return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
+                    rooks_.as_int(), bishops_.as_int(), pawns_.as_int(),
+                    our_king_.as_int(), their_king_.as_int(),
                     castlings_.as_int(), flipped_});
   }
 

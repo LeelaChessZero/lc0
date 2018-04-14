@@ -27,10 +27,10 @@ namespace lczero {
 
 namespace {
 
-const int kDefaultParallelPlayouts = 8;
+const int kDefaultParallelPlayouts = 32;
 const char* kParallelPlayoutsOption = "Number of parallel playouts";
 
-const int kDefaultMiniBatchSize = 64;
+const int kDefaultMiniBatchSize = 32;
 const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
 
 const int kDefaultCpuct = 170;
@@ -225,6 +225,7 @@ class NodesGatherer {
       // The node is for real evaluation.
       nodes_to_process_.emplace_back(node);
       --extend_budget_;
+      ++node->m;
       // If node is already known as terminal (win/lose/draw according to rules
       // of the game), it means that we already visited this node before.
       if (node->is_terminal) return 1;
