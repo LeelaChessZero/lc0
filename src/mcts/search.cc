@@ -21,16 +21,12 @@
 
 #include <cmath>
 #include "neural/network_tf.h"
-#include "utils/cache.h"
 
 namespace lczero {
 
 namespace {
 
-const int kDefaultParallelPlayouts = 8;
-const char* kParallelPlayoutsOption = "Number of parallel playouts";
-
-const int kDefaultMiniBatchSize = 64;
+const int kDefaultMiniBatchSize = 32;
 const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
 
 const int kDefaultCpuct = 170;
@@ -44,19 +40,11 @@ const char* kFlipHistoryOption = "(oldbug) Flip opponents history";
 
 const bool kDefaultFlipMove = true;
 const char* kFlipMoveOption = "(oldbug) Flip black's moves";
-
-const bool kDefaultDynamicParent = true;
-const char* kDynamicParentOption = "Use dynamic parent score for leaves";
-
 }  // namespace
 
 void Search::PopulateUciParams(UciOptions* options) {
   options->Add(std::make_unique<SpinOption>(kMiniBatchSizeOption,
                                             kDefaultMiniBatchSize, 1, 128,
-                                            std::function<void(int)>{}));
-
-  options->Add(std::make_unique<SpinOption>(kParallelPlayoutsOption,
-                                            kDefaultParallelPlayouts, 1, 128,
                                             std::function<void(int)>{}));
 
   options->Add(std::make_unique<SpinOption>(kCpuctOption, kDefaultCpuct, 0,
@@ -71,18 +59,14 @@ void Search::PopulateUciParams(UciOptions* options) {
 
   options->Add(std::make_unique<CheckOption>(kFlipMoveOption, kDefaultFlipMove,
                                              std::function<void(bool)>{}));
-  options->Add(std::make_unique<CheckOption>(kDynamicParentOption,
-                                             kDefaultDynamicParent,
-                                             std::function<void(bool)>{}));
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
                BestMoveInfo::Callback best_move_callback,
                UciInfo::Callback info_callback, const SearchLimits& limits,
-               UciOptions* uci_options, NNCache* cache)
+               UciOptions* uci_options)
     : root_node_(root_node),
       node_pool_(node_pool),
-      cache_(cache),
       network_(network),
       limits_(limits),
       start_time_(std::chrono::steady_clock::now()),
@@ -91,9 +75,6 @@ Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
       kMiniBatchSize(uci_options
                          ? uci_options->GetIntValue(kMiniBatchSizeOption)
                          : kDefaultMiniBatchSize),
-      kParallelPlayouts(uci_options
-                            ? uci_options->GetIntValue(kParallelPlayoutsOption)
-                            : kDefaultParallelPlayouts),
       kCpuct((uci_options ? uci_options->GetIntValue(kCpuctOption)
                           : kDefaultCpuct) /
              100.0f),
@@ -103,151 +84,7 @@ Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
       kFlipHistory(uci_options ? uci_options->GetBoolValue(kFlipHistoryOption)
                                : kDefaultFlipHistory),
       kFlipMove(uci_options ? uci_options->GetBoolValue(kFlipMoveOption)
-                            : kDefaultFlipMove),
-      kDynamicParent(uci_options ? uci_options->GetBoolValue(kFlipMoveOption)
-                                 : kDefaultDynamicParent) {}
-
-class NodesGatherer {
- public:
-  struct NodeProcessingItem {
-    // Node that is being processed.
-    Node* node;
-    // If found in cache or already processed, it has the process result.
-    LruCacheLock<uint64_t, CachedNNRequest> nn_request_result;
-    // Request is added to NN batch.
-    bool is_being_computed = false;
-    // Should propagate the result up to the parent.
-    // (false == only leave in cache)
-    bool should_process = false;
-  };
-
-  NodesGatherer(Search* search, Node* root, int extend_budget,
-                int nn_fetch_limit);
-
-  int Gather(Node* node, int budget) {
-    // No more nodes needed, leaving.
-    if (budget <= 0 || ShouldStop()) return 0;
-
-    // Someone is already processing this leaf (in different thread), leaving.
-    if (node->n == 0 && node->m > 0) {
-      StopExtending();
-      return 0;
-    }
-
-    if (!node->child) {
-      // Found leaf.
-      return MaybeAddLeaf(node);
-    }
-
-    // Node has children.
-    // Gathering Nodes and their scores.
-    typedef std::pair<float, Node*> ScoredNode;
-    std::vector<ScoredNode> scores;
-
-    // Populate all subnodes and their scores.
-    float factor = search_->kCpuct * std::sqrt(node->n + 1);
-    for (Node* iter = node->child; iter; iter = iter->sibling) {
-      const float u = factor * iter->p / (1 + iter->n + iter->m);
-      const float q = (iter->n ? iter->q
-                               : (search_->kDynamicParent ? -iter->parent->q
-                                                          : -iter->parent->v));
-      const float v = u + q;
-      scores.emplace_back(v, iter);
-    }
-
-    // Sort highest score first.
-    // TODO(mooskagh) Sort partially as an optimization.
-    std::sort(scores.rbegin(), scores.rend());
-
-    int total_visits = 0;
-    for (std::vector<ScoredNode>::iterator iter = scores.begin(),
-                                           end = scores.end();
-         iter != end; ++iter) {
-      Node* n = iter->second;
-      auto next = std::next(iter);
-      const float next_v = next == end ? -100.f : next->first;
-      const float q =
-          (n->n ? n->q
-                : (search_->kDynamicParent ? -n->parent->q : -n->parent->v));
-      int budget = std::max(extend_budget_,
-                            nn_fetch_limit_ - computation_->GetBatchSize());
-      if (q < next_v) {
-        budget = std::min(budget,
-                          int(n->p * factor / (next_v - q) - n->n - n->m) + 1);
-      }  // else even visiting it infinitely won't change anything.
-      int increment = Gather(n, budget);
-      node->m += increment;
-      total_visits += increment;
-      if (increment != budget) StopExtending();
-      if (ShouldStop()) break;
-    }
-    return total_visits;
-  }
-
- private:
-  int MaybeAddLeaf(Node* node) {
-    // Add new node to process.
-    nodes_to_process_.emplace_back();
-    auto& work_item = nodes_to_process_.back();
-    work_item.node = node;
-
-    if (extend_budget_) {
-      // The node is for real evaluation.
-      --extend_budget_;
-      work_item.should_process = true;
-      // If node is already known as terminal (win/lose/draw according to rules
-      // of the game), it means that we already visited this node before.
-      if (node->is_terminal) return 1;
-      ++fresh_nodes_;
-      search_->ExtendNode(node);
-      // Turned out to be terminal, no need to fetch data.
-      if (node->is_terminal) return 1;
-      work_item.nn_request_result =
-          NNCacheLock(search_->cache_, node->BoardHash());
-      if (!work_item.nn_request_result) {
-        // Not found in cache, need to request.
-        auto planes = search_->EncodeNode(node);
-        computation_->AddInput(std::move(planes));
-        work_item.is_being_computed = true;
-      }
-      return 1;
-    }
-    // Only need to fetch for caching.
-    work_item.nn_request_result =
-        NNCacheLock(search_->cache_, node->BoardHash());
-    if (work_item.nn_request_result) {
-      // Already in cache, actually we don't need it.
-      nodes_to_process_.pop_back();
-      return 0;
-    }
-    // Node that is only queried to be cached.
-    auto planes = search_->EncodeNode(node);
-    computation_->AddInput(std::move(planes));
-    work_item.is_being_computed = true;
-    return 0;
-  }
-
-  void StopExtending() { extend_budget_ = 0; }
-  bool ShouldStop() const {
-    // Cases when processing should stop:
-    // 1. When first node to extend doesn't require NN fetch
-    //    (i.e. cached or is terminal)
-    if (!nodes_to_process_.empty() && computation_->GetBatchSize() == 1)
-      return true;
-    // 2. When we stopped gathering of nodes to extend, and computation is full.
-    if (extend_budget_ == 0 && computation_->GetBatchSize() >= nn_fetch_limit_)
-      return true;
-    return false;
-  }
-
-  Search* search_;
-  int extend_budget_;
-  int nn_fetch_limit_;
-  NetworkComputation* computation_;
-  std::vector<NodeProcessingItem> nodes_to_process_;
-  // Number of leaves, visited for the first time.
-  int fresh_nodes_ = 0;
-};
+                            : kDefaultFlipMove) {}
 
 void Search::Worker() {
   std::vector<Node*> nodes_to_process;
@@ -329,7 +166,7 @@ void Search::Worker() {
           // Increment N.
           ++n->n;
           // Decrement virtual loss.
-          --n->m;
+          --n->n_in_flight;
           // Recompute Q.
           n->q = n->w / n->n;
           // Q will be flipped for opponent.
@@ -373,7 +210,7 @@ Node* GetBestChild(Node* parent) {
   Node* best_node = nullptr;
   int best = -1;
   for (Node* node = parent->child; node; node = node->sibling) {
-    int n = node->n + node->m;
+    int n = node->n + node->n_in_flight;
     if (n > best) {
       best = n;
       best_node = node;
@@ -503,16 +340,16 @@ Node* Search::PickNodeToExtend(Node* node) {
     {
       std::unique_lock<std::shared_mutex> lock{nodes_mutex_};
       // Check whether we are in the leave.
-      if (node->n == 0 && node->m > 0) {
+      if (node->n == 0 && node->n_in_flight > 0) {
         // The node is currently being processed by another thread.
         // Undo the increments of anschestor nodes, and return null.
         for (node = node->parent; node != root_node_->parent;
              node = node->parent) {
-          --node->m;
+          --node->n_in_flight;
         }
         return nullptr;
       }
-      ++node->m;
+      ++node->n_in_flight;
       // Found leave, and we are the the first to visit it.
       if (!node->child) {
         return node;
@@ -524,10 +361,8 @@ Node* Search::PickNodeToExtend(Node* node) {
     float factor = kCpuct * std::sqrt(node->n + 1);
     float best = -100.0f;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
-      const float u = factor * iter->p / (1 + iter->n + iter->m);
-      const float v = u + (iter->n ? iter->q
-                                   : (kDynamicParent ? -iter->parent->q
-                                                     : -iter->parent->v));
+      const float u = factor * iter->p / (1 + iter->n + iter->n_in_flight);
+      const float v = u + (iter->n ? iter->q : -iter->parent->q);
       if (v > best) {
         best = v;
         node = iter;

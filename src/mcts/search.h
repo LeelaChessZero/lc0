@@ -25,7 +25,6 @@
 #include "neural/network.h"
 #include "uciloop.h"
 #include "ucioptions.h"
-#include "utils/cache.h"
 
 namespace lczero {
 
@@ -34,21 +33,12 @@ struct SearchLimits {
   std::int64_t time_ms = -1;
 };
 
-struct CachedNNRequest {
-  typedef std::pair<Move, float> MoveProb;
-  float q;
-  std::vector<MoveProb> p;
-};
-
-typedef LruCache<uint64_t, CachedNNRequest> NNCache;
-typedef LruCacheLock<uint64_t, CachedNNRequest> NNCacheLock;
-
 class Search {
  public:
   Search(Node* root_node, NodePool* node_pool, const Network* network,
          BestMoveInfo::Callback best_move_callback,
          UciInfo::Callback info_callback, const SearchLimits& limits,
-         UciOptions* uci_options, NNCache* cache);
+         UciOptions* uci_options);
 
   ~Search();
 
@@ -90,7 +80,6 @@ class Search {
 
   Node* root_node_;
   NodePool* node_pool_;
-  NNCache* cache_;
 
   mutable std::shared_mutex nodes_mutex_;
   const Network* network_;
@@ -106,14 +95,10 @@ class Search {
 
   // External parameters.
   const int kMiniBatchSize;
-  const int kParallelPlayouts;
   const float kCpuct;
   const bool kPopulateMoves;
   const bool kFlipHistory;
   const bool kFlipMove;
-  const bool kDynamicParent;
-
-  friend class NodesGatherer;
 };
 
 }  // namespace lczero
