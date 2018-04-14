@@ -34,6 +34,9 @@ SearchLimits PopulateSearchLimits(int ply, bool is_black,
                                   const GoParams& params) {
   SearchLimits limits;
   limits.nodes = params.nodes;
+  limits.time_ms = params.movetime;
+  if (params.infinite || time < 0) return limits;
+
   limits.time_ms = -1;
   if (params.infinite) return limits;
   int64_t time = (is_black ? params.btime : params.wtime);
