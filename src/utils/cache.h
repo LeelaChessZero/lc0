@@ -27,7 +27,7 @@
 namespace lczero {
 
 inline uint64_t HashCat(uint64_t hash, uint64_t value) {
-  return std::hash<unsigned long long>{}(value) + 0x9e3779b9 + (hash << 6) +
+  return std::hash<unsigned long long>{}(value) + 0x9e3779b9 + (hash < 6) +
          (hash >> 2);
 }
 
