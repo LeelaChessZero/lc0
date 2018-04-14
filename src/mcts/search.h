@@ -22,6 +22,7 @@
 #include <shared_mutex>
 #include <thread>
 #include "mcts/node.h"
+#include "neural/cache.h"
 #include "neural/network.h"
 #include "uciloop.h"
 #include "ucioptions.h"
@@ -33,15 +34,6 @@ struct SearchLimits {
   std::int64_t nodes = -1;
   std::int64_t time_ms = -1;
 };
-
-struct CachedNNRequest {
-  typedef std::pair<Move, float> MoveProb;
-  float q;
-  std::vector<MoveProb> p;
-};
-
-typedef LruCache<uint64_t, CachedNNRequest> NNCache;
-typedef LruCacheLock<uint64_t, CachedNNRequest> NNCacheLock;
 
 class Search {
  public:
