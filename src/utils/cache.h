@@ -42,20 +42,18 @@ class LruCache {
  public:
   LruCache(int capacity = 128) : capacity_(capacity) {}
 
-  V* Insert(K key, std::unique_ptr<V> val, bool pinned = false) {
+  V* InsertPinned(K key, std::unique_ptr<V> val) {
     std::lock_guard<std::mutex> lock(mutex_);
     V* new_val = val.get();
     auto iter = lookup_.find(key);
     if (iter != lookup_.end()) {
-      auto list_iter = iter->second;
-      MakePending(list_iter);
-      list_iter->pins = pinned ? 1 : 0;
-      list_iter->value = std::move(val);
-      BringToFront(list_iter);
+      MakePending(iter);
+      iter->pins = 1;
+      iter->value = std::move(val);
+      BringToFront(iter);
     } else {
       MaybeCleanup(capacity_ - 1);
-      lru_.emplace_front(key, std::move(val), pinned ? 1 : 0);
-      lookup_[key] = lru_.begin();
+      lookup_[key] = lru_.emplace_front(key, val);
     }
     return new_val;
   }
@@ -99,13 +97,12 @@ class LruCache {
   }
 
   struct Item {
-    Item(K key, std::unique_ptr<V> value, int pins)
+    Item(K key, std::unique_ptr<V> value, int pins = 1)
         : key(key), value(std::move(value)), pins(pins) {}
     K key;
     std::unique_ptr<V> value;
     int pins;
   };
-
   void MakePending(typename std::list<Item>::iterator iter) {
     if (iter->pins > 0) {
       K key = iter->key;
@@ -154,7 +151,6 @@ class LruCacheLock {
     other.value_ = nullptr;
   }
   operator bool() const { return value_; }
-  V* operator->() const { return value_; }
 
  private:
   LruCache<K, V>* cache_ = nullptr;

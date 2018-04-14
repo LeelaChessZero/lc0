@@ -32,7 +32,6 @@ files = [
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/neural/loader.cc',
-  'src/neural/cache.cc',
   'src/neural/network_tf.cc',
   'src/mcts/search.cc',
   'src/mcts/node.cc',

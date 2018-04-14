@@ -109,30 +109,30 @@ Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
 
 class NodesGatherer {
  public:
-  NodesGatherer(Search* search, CachingComputation* computation,
-                int extend_budget, int nn_fetch_limit)
-      : search_(search),
-        extend_budget_(extend_budget),
-        nn_fetch_limit_(nn_fetch_limit),
-        computation_(computation) {}
+  struct NodeProcessingItem {
+    // Node that is being processed.
+    Node* node;
+    // If found in cache or already processed, it has the process result.
+    LruCacheLock<uint64_t, CachedNNRequest> nn_request_result;
+    // Request is added to NN batch.
+    bool is_being_computed = false;
+    // Should propagate the result up to the parent.
+    // (false == only leave in cache)
+    bool should_process = false;
+  };
 
-  void Gather(Node* node) {
-    // TODO(mooskagh) Tune that magic 3 constant.
-    GatherInternal(
-        node, std::max(extend_budget_,
-                       3 * (nn_fetch_limit_ - computation_->GetCacheMisses())));
-  }
+  NodesGatherer(Search* search, Node* root, int extend_budget,
+                int nn_fetch_limit);
 
-  const std::vector<Node*>& GetNodesToProcess() const {
-    return nodes_to_process_;
-  }
-
-  int GetFreshNodes() const { return fresh_nodes_; }
-
- private:
-  int GatherInternal(Node* node, int budget) {
+  int Gather(Node* node, int budget) {
     // No more nodes needed, leaving.
     if (budget <= 0 || ShouldStop()) return 0;
+
+    // Someone is already processing this leaf (in different thread), leaving.
+    if (node->n == 0 && node->m > 0) {
+      StopExtending();
+      return 0;
+    }
 
     if (!node->child) {
       // Found leaf.
@@ -170,12 +170,12 @@ class NodesGatherer {
           (n->n ? n->q
                 : (search_->kDynamicParent ? -n->parent->q : -n->parent->v));
       int budget = std::max(extend_budget_,
-                            nn_fetch_limit_ - computation_->GetCacheMisses());
+                            nn_fetch_limit_ - computation_->GetBatchSize());
       if (q < next_v) {
         budget = std::min(budget,
                           int(n->p * factor / (next_v - q) - n->n - n->m) + 1);
       }  // else even visiting it infinitely won't change anything.
-      int increment = GatherInternal(n, budget);
+      int increment = Gather(n, budget);
       node->m += increment;
       total_visits += increment;
       if (increment != budget) StopExtending();
@@ -184,47 +184,17 @@ class NodesGatherer {
     return total_visits;
   }
 
-  // Returns whether node was already in cache.
-  bool AddNodeToCompute(Node* node) {
-    auto hash = node->BoardHash();
-    // If already in cache, no need to do anything.
-    if (computation_->AddInputByHash(hash)) return true;
-    auto planes = search_->EncodeNode(node);
-
-    std::vector<uint16_t> pseudovalid_moves;
-    bool flip = (search_->kFlipMove && node->board.flipped());
-
-    if (node->child) {
-      // Valid moves are known, using them.
-      for (Node* iter = node->child; iter; iter = iter->sibling) {
-        Move m = iter->move;
-        if (flip) m.Mirror();
-        pseudovalid_moves.emplace_back(m.as_nn_index());
-      }
-    } else {
-      // Cache pseudovalid moves. A bit of a waste, but faster.
-      for (Move m : node->board.GeneratePseudovalidMoves()) {
-        if (flip) m.Mirror();
-        pseudovalid_moves.emplace_back(m.as_nn_index());
-      }
-    }
-
-    computation_->AddInput(hash, std::move(planes),
-                           std::move(pseudovalid_moves));
-    return false;
-  }
-
+ private:
   int MaybeAddLeaf(Node* node) {
-    // Someone is already processing this leaf (in different thread), leaving.
-    if (node->n == 0 && node->m > 0) {
-      StopExtending();
-      return 0;
-    }
+    // Add new node to process.
+    nodes_to_process_.emplace_back();
+    auto& work_item = nodes_to_process_.back();
+    work_item.node = node;
 
     if (extend_budget_) {
       // The node is for real evaluation.
-      nodes_to_process_.emplace_back(node);
       --extend_budget_;
+      work_item.should_process = true;
       // If node is already known as terminal (win/lose/draw according to rules
       // of the game), it means that we already visited this node before.
       if (node->is_terminal) return 1;
@@ -232,15 +202,28 @@ class NodesGatherer {
       search_->ExtendNode(node);
       // Turned out to be terminal, no need to fetch data.
       if (node->is_terminal) return 1;
-      AddNodeToCompute(node);
+      work_item.nn_request_result =
+          NNCacheLock(search_->cache_, node->BoardHash());
+      if (!work_item.nn_request_result) {
+        // Not found in cache, need to request.
+        auto planes = search_->EncodeNode(node);
+        computation_->AddInput(std::move(planes));
+        work_item.is_being_computed = true;
+      }
       return 1;
     }
-
     // Only need to fetch for caching.
-    if (AddNodeToCompute(node)) {
-      // Already in cache, no need to compute it.
-      computation_->PopLastInputHit();
+    work_item.nn_request_result =
+        NNCacheLock(search_->cache_, node->BoardHash());
+    if (work_item.nn_request_result) {
+      // Already in cache, actually we don't need it.
+      nodes_to_process_.pop_back();
+      return 0;
     }
+    // Node that is only queried to be cached.
+    auto planes = search_->EncodeNode(node);
+    computation_->AddInput(std::move(planes));
+    work_item.is_being_computed = true;
     return 0;
   }
 
@@ -249,11 +232,10 @@ class NodesGatherer {
     // Cases when processing should stop:
     // 1. When first node to extend doesn't require NN fetch
     //    (i.e. cached or is terminal)
-    if (!nodes_to_process_.empty() && computation_->GetCacheMisses() == 0)
+    if (!nodes_to_process_.empty() && computation_->GetBatchSize() == 1)
       return true;
     // 2. When we stopped gathering of nodes to extend, and computation is full.
-    if (extend_budget_ == 0 &&
-        computation_->GetCacheMisses() >= nn_fetch_limit_)
+    if (extend_budget_ == 0 && computation_->GetBatchSize() >= nn_fetch_limit_)
       return true;
     return false;
   }
@@ -261,36 +243,60 @@ class NodesGatherer {
   Search* search_;
   int extend_budget_;
   int nn_fetch_limit_;
-  CachingComputation* computation_;
-  std::vector<Node*> nodes_to_process_;
+  NetworkComputation* computation_;
+  std::vector<NodeProcessingItem> nodes_to_process_;
   // Number of leaves, visited for the first time.
   int fresh_nodes_ = 0;
 };
 
 void Search::Worker() {
+  std::vector<Node*> nodes_to_process;
+
   // do {} while  instead of  while{} because at least one iteration is
   // necessary to get candidates.
   do {
-    auto computation = CachingComputation(network_->NewComputation(), cache_);
-    NodesGatherer gatherer(this, &computation, kParallelPlayouts,
-                           kMiniBatchSize);
-    gatherer.Gather(root_node_);
+    int new_nodes = 0;
+    nodes_to_process.clear();
+    auto computation = network_->NewComputation();
+
+    // Gather nodes to process in the current batch.
+    for (int i = 0; i < kMiniBatchSize; ++i) {
+      Node* node = PickNodeToExtend(root_node_);
+      // If we hit the node that is already processed (by our batch or in
+      // another thread) stop gathering and process smaller batch.
+      if (!node) break;
+
+      nodes_to_process.push_back(node);
+      // If node is already known as terminal (win/lose/draw according to rules
+      // of the game), it means that we already visited this node before.
+      if (node->is_terminal) continue;
+      ++new_nodes;
+
+      ExtendNode(node);
+
+      // If node turned out to be a terminal one, no need to send to NN for
+      // evaluation.
+      if (!node->is_terminal) {
+        auto planes = EncodeNode(node);
+        computation->AddInput(std::move(planes));
+      }
+    }
 
     // Evaluate nodes through NN.
-    if (computation.GetBatchSize() != 0) {
-      computation.ComputeBlocking();
+    if (computation->GetBatchSize() != 0) {
+      computation->ComputeBlocking();
 
       int idx_in_computation = 0;
-      for (Node* node : gatherer.GetNodesToProcess()) {
+      for (Node* node : nodes_to_process) {
         if (node->is_terminal) continue;
         // Populate Q value.
-        node->v = -computation.GetQVal(idx_in_computation);
+        node->v = -computation->GetQVal(idx_in_computation);
         // Populate P values.
         float total = 0.0;
         for (Node* n = node->child; n; n = n->sibling) {
           Move m = n->move;
           if (kFlipMove && node->board.flipped()) m.Mirror();
-          float p = computation.GetPVal(idx_in_computation, m.as_nn_index());
+          float p = computation->GetPVal(idx_in_computation, m.as_nn_index());
           total += p;
           n->p = p;
         }
@@ -307,8 +313,8 @@ void Search::Worker() {
     {
       // Update nodes.
       std::unique_lock<std::shared_mutex> lock{nodes_mutex_};
-      total_nodes_ += gatherer.GetFreshNodes();
-      for (Node* node : gatherer.GetNodesToProcess()) {
+      total_nodes_ += new_nodes;
+      for (Node* node : nodes_to_process) {
         float v = node->v;
         // Maximum depth the node is explored.
         uint16_t depth = 0;

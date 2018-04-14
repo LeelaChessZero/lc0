@@ -106,7 +106,7 @@ std::string Node::DebugString() const {
 }
 
 int ComputeRepetitions(const Node* ref_node) {
-  // TODO(mooskagh) implement some sort of caching.
+  // TODO(crem) implement some sort of caching.
   if (ref_node->no_capture_ply < 2) return 0;
 
   const Node* node = ref_node;
