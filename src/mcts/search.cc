@@ -28,7 +28,7 @@ namespace lczero {
 
 namespace {
 
-const int kDefaultMiniBatchSize = 128;
+const int kDefaultMiniBatchSize = 32;
 const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
 
 const int kDefaultCpuct = 170;
