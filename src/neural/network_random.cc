@@ -18,17 +18,9 @@
 #include "neural/network_random.h"
 
 #include <functional>
+#include "utils/hashcat.h"
 
 namespace lczero {
-
-namespace {
-
-std::uint64_t CombineHash(std::uint64_t first, std::uint64_t second) {
-  uint64_t hashed = std::hash<unsigned long long>{}(second);
-  return first ^ (hashed + 0x9e3779b9 + (first << 6) + (first >> 2));
-}
-
-}  // namespace
 
 class RandomNetworkComputation : public NetworkComputation {
  public:
@@ -36,7 +28,7 @@ class RandomNetworkComputation : public NetworkComputation {
   void AddInput(InputPlanes&& input) override {
     std::uint64_t hash = 0;
     for (const auto& plane : input) {
-      hash = CombineHash(hash, plane.mask);
+      hash = HashCat(hash, plane.mask);
     }
     inputs_.push_back(hash);
   }
@@ -47,7 +39,7 @@ class RandomNetworkComputation : public NetworkComputation {
     return (int(inputs_[sample] % 200000) - 100000) / 100000.0;
   }
   float GetPVal(int sample, int move_id) const override {
-    return (CombineHash(inputs_[sample], move_id) % 10000) / 10000.0;
+    return (HashCat(inputs_[sample], move_id) % 10000) / 10000.0;
   }
 
  private:

@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cstring>
 #include <sstream>
+#include "utils/hashcat.h"
 
 namespace lczero {
 
@@ -88,6 +89,10 @@ void NodePool::AllocateNewBatch() {
   for (int i = 0; i < kAllocationSize; ++i) {
     pool_.push_back(allocations_.back().get() + i);
   }
+}
+
+uint64_t Node::BoardHash() const {
+  return HashCat({board.Hash(), no_capture_ply, repetitions});
 }
 
 std::string Node::DebugString() const {

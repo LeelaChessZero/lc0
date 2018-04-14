@@ -20,6 +20,7 @@
 
 #include <string>
 #include "chess/bitboard.h"
+#include "utils/hashcat.h"
 
 namespace lczero {
 
@@ -59,6 +60,13 @@ class ChessBoard {
   // Returns a list of valid moves and board positions after the move is made.
   std::vector<MoveExecution> GenerateValidMoves() const;
 
+  uint64_t Hash() const {
+    return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
+                    rooks_.as_int(), bishops_.as_int(), pawns_.as_int(),
+                    our_king_.as_int(), their_king_.as_int(),
+                    castlings_.as_int(), flipped_});
+  }
+
   class Castlings {
    public:
     void set_we_can_00() { data_ |= 1; }
@@ -87,6 +95,8 @@ class ChessBoard {
       if (they_can_000()) result += 'q';
       return result;
     }
+
+    uint8_t as_int() const { return data_; }
 
     bool operator==(const Castlings& other) const {
       return data_ == other.data_;

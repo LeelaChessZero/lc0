@@ -26,20 +26,20 @@
 
 namespace lczero {
 
-inline uint64_t HashCat(uint64_t hash, uint64_t value) {
-  return std::hash<unsigned long long>{}(value) + 0x9e3779b9 + (hash << 6) +
-         (hash >> 2);
-}
-
-inline uint64_t HashCat(std::initializer_list<uint64_t> args) {
-  uint64_t hash = 0;
-  for (auto x : args) hash = HashCat(hash, x);
-  return hash;
-}
-
 template <class K, class V>
 class LruCache {
  public:
+  static uint64_t HashCat(uint64_t hash, uint64_t value) {
+    return std::hash<unsigned long long>{}(value) + 0x9e3779b9 + (hash << 6) +
+           (hash >> 2);
+  }
+
+  static uint64_t HashCat(std::initializer_list<uint64_t> args) {
+    uint64_t hash = 0;
+    for (auto x : args) hash = HashCat(hash, x);
+    return hash;
+  }
+
   LruCache(int capacity = 128) : capacity_(capacity) {}
 
   V* Insert(K key, std::unique_ptr<V> val, bool pinned = false) {

@@ -22,6 +22,7 @@
 #include <shared_mutex>
 #include <thread>
 #include "mcts/node.h"
+#include "neural/cache.h"
 #include "neural/network.h"
 #include "uciloop.h"
 #include "ucioptions.h"
@@ -38,7 +39,7 @@ class Search {
   Search(Node* root_node, NodePool* node_pool, const Network* network,
          BestMoveInfo::Callback best_move_callback,
          UciInfo::Callback info_callback, const SearchLimits& limits,
-         UciOptions* uci_options);
+         UciOptions* uci_options, NNCache* cache);
 
   ~Search();
 
@@ -66,6 +67,7 @@ class Search {
   uint64_t GetTimeSinceStart() const;
   void MaybeTriggerStop();
   void MaybeOutputInfo();
+  bool AddNodeToCompute(Node* node, CachingComputation* computation);
 
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
@@ -80,6 +82,7 @@ class Search {
 
   Node* root_node_;
   NodePool* node_pool_;
+  NNCache* cache_;
 
   mutable std::shared_mutex nodes_mutex_;
   const Network* network_;

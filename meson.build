@@ -33,6 +33,8 @@ files = [
   'src/chess/board.cc',
   'src/neural/loader.cc',
   'src/neural/network_tf.cc',
+  'src/neural/network_random.cc',
+  'src/neural/cache.cc',
   'src/mcts/search.cc',
   'src/mcts/node.cc',
   'src/engine.cc',

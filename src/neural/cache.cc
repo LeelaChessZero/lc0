@@ -66,7 +66,6 @@ void CachingComputation::ComputeBlocking() {
     for (auto x : item.probabilities_to_cache) {
       req->p.emplace_back(x, parent_->GetPVal(item.idx_in_parent, x));
     }
-    std::sort(req->p.begin(), req->p.end());
     cache_->Insert(item.hash, std::move(req));
   }
 }
@@ -78,15 +77,21 @@ float CachingComputation::GetQVal(int sample) const {
 }
 
 float CachingComputation::GetPVal(int sample, int move_id) const {
-  const auto& item = batch_[sample];
+  auto& item = batch_[sample];
   if (item.idx_in_parent >= 0)
     return parent_->GetPVal(item.idx_in_parent, move_id);
   const auto& moves = item.lock->p;
-  auto iter = std::lower_bound(
-      moves.begin(), moves.end(), move_id,
-      [](CachedNNRequest::IdxAndProb a, int b) -> bool { return a.first < b; });
-  assert(iter != moves.end());
-  return iter->second;
+
+  int total_count = 0;
+  while (total_count < moves.size()) {
+    if (moves[item.last_idx].first == move_id)
+      return moves[item.last_idx].second;
+    if (++item.last_idx == moves.size()) item.last_idx = 0;
+    ++total_count;
+  }
+
+  assert(false);  // Move not found.
+  return 0;
 }
 
 }  // namespace lczero

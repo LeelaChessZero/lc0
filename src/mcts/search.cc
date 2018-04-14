@@ -18,6 +18,7 @@
 
 #include "mcts/search.h"
 #include "mcts/node.h"
+#include "neural/cache.h"
 
 #include <cmath>
 #include "neural/network_tf.h"
@@ -64,9 +65,10 @@ void Search::PopulateUciParams(UciOptions* options) {
 Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
                BestMoveInfo::Callback best_move_callback,
                UciInfo::Callback info_callback, const SearchLimits& limits,
-               UciOptions* uci_options)
+               UciOptions* uci_options, NNCache* cache)
     : root_node_(root_node),
       node_pool_(node_pool),
+      cache_(cache),
       network_(network),
       limits_(limits),
       start_time_(std::chrono::steady_clock::now()),
@@ -86,6 +88,35 @@ Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
       kFlipMove(uci_options ? uci_options->GetBoolValue(kFlipMoveOption)
                             : kDefaultFlipMove) {}
 
+// Returns whether node was already in cache.
+bool Search::AddNodeToCompute(Node* node, CachingComputation* computation) {
+  auto hash = node->BoardHash();
+  // If already in cache, no need to do anything.
+  if (computation->AddInputByHash(hash)) return true;
+  auto planes = EncodeNode(node);
+
+  std::vector<uint16_t> moves;
+  bool flip = (kFlipMove && node->board.flipped());
+
+  if (node->child) {
+    // Valid moves are known, using them.
+    for (Node* iter = node->child; iter; iter = iter->sibling) {
+      Move m = iter->move;
+      if (flip) m.Mirror();
+      moves.emplace_back(m.as_nn_index());
+    }
+  } else {
+    // Cache pseudovalid moves. A bit of a waste, but faster.
+    for (Move m : node->board.GeneratePseudovalidMoves()) {
+      if (flip) m.Mirror();
+      moves.emplace_back(m.as_nn_index());
+    }
+  }
+
+  computation->AddInput(hash, std::move(planes), std::move(moves));
+  return false;
+}
+
 void Search::Worker() {
   std::vector<Node*> nodes_to_process;
 
@@ -94,10 +125,11 @@ void Search::Worker() {
   do {
     int new_nodes = 0;
     nodes_to_process.clear();
-    auto computation = network_->NewComputation();
+    auto computation = CachingComputation(network_->NewComputation(), cache_);
 
     // Gather nodes to process in the current batch.
     for (int i = 0; i < kMiniBatchSize; ++i) {
+      if (i > 0 && computation.GetCacheMisses() == 0) break;
       Node* node = PickNodeToExtend(root_node_);
       // If we hit the node that is already processed (by our batch or in
       // another thread) stop gathering and process smaller batch.
@@ -114,26 +146,25 @@ void Search::Worker() {
       // If node turned out to be a terminal one, no need to send to NN for
       // evaluation.
       if (!node->is_terminal) {
-        auto planes = EncodeNode(node);
-        computation->AddInput(std::move(planes));
+        AddNodeToCompute(node, &computation);
       }
     }
 
     // Evaluate nodes through NN.
-    if (computation->GetBatchSize() != 0) {
-      computation->ComputeBlocking();
+    if (computation.GetBatchSize() != 0) {
+      computation.ComputeBlocking();
 
       int idx_in_computation = 0;
       for (Node* node : nodes_to_process) {
         if (node->is_terminal) continue;
         // Populate Q value.
-        node->v = -computation->GetQVal(idx_in_computation);
+        node->v = -computation.GetQVal(idx_in_computation);
         // Populate P values.
         float total = 0.0;
         for (Node* n = node->child; n; n = n->sibling) {
           Move m = n->move;
           if (kFlipMove && node->board.flipped()) m.Mirror();
-          float p = computation->GetPVal(idx_in_computation, m.as_nn_index());
+          float p = computation.GetPVal(idx_in_computation, m.as_nn_index());
           total += p;
           n->p = p;
         }
