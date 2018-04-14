@@ -17,10 +17,11 @@
 */
 
 #include "mcts/search.h"
-#include "mcts/node.h"
-#include "neural/cache.h"
 
 #include <cmath>
+
+#include "mcts/node.h"
+#include "neural/cache.h"
 #include "neural/network_tf.h"
 
 namespace lczero {

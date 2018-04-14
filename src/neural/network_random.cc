@@ -28,7 +28,7 @@ class RandomNetworkComputation : public NetworkComputation {
   void AddInput(InputPlanes&& input) override {
     std::uint64_t hash = 0;
     for (const auto& plane : input) {
-      hash = HashCat(hash, plane.mask);
+      hash = HashCat({hash, plane.mask});
     }
     inputs_.push_back(hash);
   }
@@ -39,7 +39,9 @@ class RandomNetworkComputation : public NetworkComputation {
     return (int(inputs_[sample] % 200000) - 100000) / 100000.0;
   }
   float GetPVal(int sample, int move_id) const override {
-    return (HashCat(inputs_[sample], move_id) % 10000) / 10000.0;
+    return (HashCat({inputs_[sample], static_cast<unsigned long>(move_id)}) %
+            10000) /
+           10000.0;
   }
 
  private:

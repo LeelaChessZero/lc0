@@ -16,17 +16,17 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <iostream>
+
 #pragma once
 namespace lczero {
 
-inline uint64_t HashCat(uint64_t hash, uint64_t value) {
-  return std::hash<unsigned long long>{}(value) + 0x9e3779b9 + (hash << 6) +
-         (hash >> 2);
-}
-
 inline uint64_t HashCat(std::initializer_list<uint64_t> args) {
   uint64_t hash = 0;
-  for (auto x : args) hash = HashCat(hash, x);
+  std::hash<uint64_t> hasher;
+  for (uint64_t x : args) {
+    hash ^= 0x366a803e14994b3eULL + hasher(x) + (hash << 6) + (hash >> 2);
+  }
   return hash;
 }
 }  // namespace lczero

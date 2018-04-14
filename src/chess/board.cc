@@ -681,7 +681,8 @@ string ChessBoard::DebugString() const {
     }
     if (i == 0) {
       result += " " + castlings_.as_string();
-      result += flipped_ ? " (from black's eyes)" : "(from white's eyes)";
+      result += flipped_ ? " (from black's eyes)" : " (from white's eyes)";
+      result += " Hash: " + std::to_string(Hash());
     }
     result += '\n';
   }

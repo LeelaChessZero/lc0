@@ -34,6 +34,7 @@ bool CachingComputation::AddInputByHash(uint64_t hash) {
   if (!lock) return false;
   batch_.emplace_back();
   batch_.back().lock = std::move(lock);
+  batch_.back().hash = hash;
   return true;
 }
 
@@ -89,7 +90,6 @@ float CachingComputation::GetPVal(int sample, int move_id) const {
     if (++item.last_idx == moves.size()) item.last_idx = 0;
     ++total_count;
   }
-
   assert(false);  // Move not found.
   return 0;
 }

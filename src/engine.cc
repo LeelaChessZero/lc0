@@ -83,8 +83,8 @@ void EngineController::SetNetworkPath(const std::string& path) {
   }
   Weights weights = LoadWeightsFromFile(net_path);
   // TODO Make backend selection.
-  // network_ = MakeTensorflowNetwork(weights);
-  network_ = MakeRandomNetwork();
+  network_ = MakeTensorflowNetwork(weights);
+  // network_ = MakeRandomNetwork();
 }
 
 void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
