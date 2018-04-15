@@ -57,8 +57,8 @@ class Search {
   // Aborts the search, and blocks until all worker thread finish.
   void AbortAndWait();
 
-  // Returns best move, from the point of view of white player.
-  Move GetBestMove() const;
+  // Returns best move, from the point of view of white player. And also ponder.
+  std::pair<Move, Move> GetBestMove() const;
 
  private:
   // Can run several copies of it in separate threads.

@@ -49,6 +49,7 @@ void SendInfo(const UciInfo& info) {
   if (info.time >= 0) res += " time " + std::to_string(info.time);
   if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
   if (info.score) res += " score cp " + std::to_string(*info.score);
+  if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
   if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
 
   if (!info.pv.empty()) {

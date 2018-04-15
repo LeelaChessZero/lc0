@@ -340,6 +340,7 @@ void Search::SendUciInfo() {
   uci_info_.seldepth = root_node_->max_depth;
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_nodes_;
+  uci_info_.hashfull = cache_->GetSize() * 1000LL / cache_->GetCapacity();
   uci_info_.nps =
       uci_info_.time ? (uci_info_.nodes * 1000 / uci_info_.time) : 0;
   uci_info_.score = -191 * log(2 / (best_move_node_->q * 0.99 + 1) - 1);
@@ -382,7 +383,8 @@ void Search::MaybeTriggerStop() {
   if (stop_ && !responded_bestmove_) {
     responded_bestmove_ = true;
     SendUciInfo();
-    best_move_callback_(GetBestMove());
+    auto best_move = GetBestMove();
+    best_move_callback_({best_move.first, best_move.second});
     best_move_node_ = nullptr;
   }
 }
@@ -531,12 +533,18 @@ InputPlanes Search::EncodeNode(const Node* node) {
   return result;
 }
 
-Move Search::GetBestMove() const {
+std::pair<Move, Move> Search::GetBestMove() const {
   std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
   Node* best_node = GetBestChild(root_node_);
   Move move = best_node->move;
   if (!best_node->board.flipped()) move.Mirror();
-  return move;
+
+  Move ponder_move;
+  if (best_node->child) {
+    ponder_move = GetBestChild(best_node)->move;
+    if (best_node->board.flipped()) ponder_move.Mirror();
+  }
+  return {move, ponder_move};
 }
 
 void Search::StartThreads(int how_many) {
