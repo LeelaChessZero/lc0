@@ -16,23 +16,22 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <cstdint>
-#include <initializer_list>
+#include "utils/hashcat.h"
+#include <gtest/gtest.h>
 
-#pragma once
 namespace lczero {
 
-inline uint64_t Hash(uint64_t val) {
-  return 0xfad0d7f2fbb059f1ULL * (val + 0xbaad41cdcb839961ULL) +
-         0x7acec0050bf82f43ULL * ((val >> 31) + 0xd571b3a92b1b2755ULL);
-}
-
-inline uint64_t HashCat(std::initializer_list<uint64_t> args) {
-  uint64_t hash = 0;
-  for (uint64_t x : args) {
-    hash ^= 0x299799adf0d95defULL + Hash(x) + (hash << 6) + (hash >> 2);
-  }
-  return hash;
+TEST(HashCat, TestCollision) {
+  uint64_t hash1 = HashCat({0x8000000010500000, 0x4000080000002000,
+                            0x8000000000002000, 0x4000000000000000});
+  uint64_t hash2 = HashCat({0x4000000010500000, 0x1000080000002000,
+                            0x4000000000002000, 0x1000000000000000});
+  EXPECT_NE(hash1, hash2);
 }
 
 }  // namespace lczero
+
+int main(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}

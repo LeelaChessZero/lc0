@@ -64,3 +64,8 @@ test('Network',
   executable('network_test', 'src/neural/network_test.cc',
   files, include_directories: includes, dependencies: test_deps
 ))
+
+test('HashCat',
+  executable('hashcat_test', 'src/utils/hashcat_test.cc',
+  files, include_directories: includes, dependencies: test_deps
+))

@@ -17,6 +17,7 @@
 */
 #include "neural/cache.h"
 #include <cassert>
+#include <iostream>
 
 namespace lczero {
 CachingComputation::CachingComputation(
