@@ -32,12 +32,10 @@ const int kDefaultMiniBatchSize = 16;
 const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
 
 const int kDefaultPrefetchBatchSize = 64;
-const char* kMiniPrefetchBatchOption =
-    "How many nodes to prefetch, when request to NN is made";
+const char* kMiniPrefetchBatchOption = "Max prefetch nodes, per NN call";
 
 const bool kDefaultAggresiveCaching = false;
-const char* kAggresiveCachingOption =
-    "Search nodes to cache even if most of good nodes are already there";
+const char* kAggresiveCachingOption = "Try hard to find what to cache";
 
 const int kDefaultCpuct = 170;
 const char* kCpuctOption = "Cpuct MCTS option (x100)";
@@ -49,7 +47,7 @@ void Search::PopulateUciParams(UciOptions* options) {
                                             std::function<void(int)>{}));
 
   options->Add(std::make_unique<SpinOption>(kMiniPrefetchBatchOption,
-                                            kDefaultPrefetchBatchSize, 1, 1024,
+                                            kDefaultPrefetchBatchSize, 0, 1024,
                                             std::function<void(int)>{}));
 
   options->Add(std::make_unique<CheckOption>(kAggresiveCachingOption,
