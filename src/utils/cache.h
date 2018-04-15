@@ -23,25 +23,21 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include "utils/hashcat.h"
 
 namespace lczero {
 
+// Generic LRU cache. Thread-safe.
 template <class K, class V>
 class LruCache {
  public:
-  static uint64_t HashCat(uint64_t hash, uint64_t value) {
-    return std::hash<unsigned long long>{}(value) + 0x9e3779b9 + (hash << 6) +
-           (hash >> 2);
-  }
-
-  static uint64_t HashCat(std::initializer_list<uint64_t> args) {
-    uint64_t hash = 0;
-    for (auto x : args) hash = HashCat(hash, x);
-    return hash;
-  }
-
   LruCache(int capacity = 128) : capacity_(capacity) {}
 
+  // Inserts the element under key @key with value @val.
+  // If the element is pinned, old value is still kept (until fully unpinned),
+  // but new lookups will return updated value.
+  // If @pinned, pins inserted element, Unpin has to be called to unpin.
+  // In any case, puts element to front of the queue (makes it last to evict).
   V* Insert(K key, std::unique_ptr<V> val, bool pinned = false) {
     std::lock_guard<std::mutex> lock(mutex_);
     V* new_val = val.get();
@@ -60,6 +56,9 @@ class LruCache {
     return new_val;
   }
 
+  // Looks up and pins the element by key. Returns nullptr if not found.
+  // If found, brings the element to the head of the queue (makes it last to
+  // evict).
   V* Lookup(K key) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto iter = lookup_.find(key);
@@ -68,6 +67,7 @@ class LruCache {
     return iter->second->value.get();
   }
 
+  // Unpins the element given key and value.
   void Unpin(K key, V* value) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto pending_iter = pending_pins_.find({key, value});
@@ -79,6 +79,8 @@ class LruCache {
     --iter->second->pins;
   }
 
+  // Sets the capacity of the cache. If new capacity is less than current size
+  // of the cache, oldest entries are evicted.
   void SetCapacity(int capacity) {
     std::lock_guard<std::mutex> lock(mutex_);
     capacity_ = capacity;
@@ -86,6 +88,7 @@ class LruCache {
   }
 
  private:
+  // Mutex should be locked when calling this function.
   void MaybeCleanup(int size) {
     if (size >= lookup_.size()) return;
     int to_delete = lookup_.size() - size;
@@ -127,7 +130,7 @@ class LruCache {
 
   struct PairHash {
     std::size_t operator()(const std::pair<K, V*>& p) const {
-      return HashCat(std::hash<V*>{}(p.second), std::hash<K>{}(p.first));
+      return HashCat({std::hash<V*>{}(p.second), std::hash<K>{}(p.first)});
     }
   };
   std::unordered_map<std::pair<K, V*>, Item, PairHash> pending_pins_;
@@ -137,15 +140,26 @@ class LruCache {
 template <class K, class V>
 class LruCacheLock {
  public:
+  // Looks up the value in @cache by @key and pins it if found.
+  LruCacheLock(LruCache<K, V>* cache, K key)
+      : cache_(cache), key_(key), value_(cache->Lookup(key_)) {}
+
+  // Unpins the cache entry (if holds).
+  ~LruCacheLock() {
+    if (value_) cache_->Unpin(key_, value_);
+  }
+
+  // Returns whether lock holds any value.
+  operator bool() const { return value_; }
+
+  // Gets the value.
+  V* operator->() const { return value_; }
+  V* operator*() const { return value_; }
+
   LruCacheLock() {}
   LruCacheLock(LruCacheLock&& other)
       : cache_(other.cache_), key_(other.key_), value_(other.value_) {
     other.value_ = nullptr;
-  }
-  LruCacheLock(LruCache<K, V>* cache, K key)
-      : cache_(cache), key_(key), value_(cache->Lookup(key_)) {}
-  ~LruCacheLock() {
-    if (value_) cache_->Unpin(key_, value_);
   }
   void operator=(LruCacheLock&& other) {
     cache_ = other.cache_;
@@ -153,8 +167,6 @@ class LruCacheLock {
     value_ = other.value_;
     other.value_ = nullptr;
   }
-  operator bool() const { return value_; }
-  V* operator->() const { return value_; }
 
  private:
   LruCache<K, V>* cache_ = nullptr;

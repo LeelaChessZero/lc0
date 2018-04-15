@@ -204,7 +204,7 @@ class Move {
   // 0 .. 16384, knight promotion and no promotion is the same.
   uint16_t as_packed_int() const;
 
-  // 0 .. 1923, to use in neural networks.
+  // 0 .. 1857, to use in neural networks.
   uint16_t as_nn_index() const;
 
   bool operator==(const Move& other) const {
