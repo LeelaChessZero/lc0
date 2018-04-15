@@ -41,9 +41,6 @@ SearchLimits PopulateSearchLimits(int ply, bool is_black,
   if (params.infinite || time < 0) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
-  // During first few moves policy network is mostly fine, so don't search deep.
-  if (ply < 4 && (limits.nodes < 0 || limits.nodes > 400)) limits.nodes = 400;
-
   int movestogo = params.movestogo < 0 ? 50 : params.movestogo;
   limits.time_ms = (time + (increment * (movestogo - 1))) * 0.95 / movestogo;
 
