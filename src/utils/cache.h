@@ -18,20 +18,30 @@
 
 #pragma once
 
-#include <functional>
-#include <list>
+#include <cassert>
+#include <cstring>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
-#include "utils/hashcat.h"
+#include <string>
 
 namespace lczero {
 
 // Generic LRU cache. Thread-safe.
 template <class K, class V>
 class LruCache {
+  static const double constexpr kLoadFactor = 1.33;
+
  public:
-  LruCache(int capacity = 128) : capacity_(capacity) {}
+  LruCache(int capacity = 128)
+      : capacity_(capacity), hash_(capacity * kLoadFactor) {
+    std::memset(&hash_[0], 0, sizeof(hash_[0]) * hash_.size());
+  }
+
+  ~LruCache() {
+    ShrinkToCapacity(0);
+    assert(size_ == 0);
+    assert(allocated_ == 0);
+  }
 
   // Inserts the element under key @key with value @val.
   // If the element is pinned, old value is still kept (until fully unpinned),
@@ -40,20 +50,35 @@ class LruCache {
   // In any case, puts element to front of the queue (makes it last to evict).
   V* Insert(K key, std::unique_ptr<V> val, bool pinned = false) {
     std::lock_guard<std::mutex> lock(mutex_);
-    V* new_val = val.get();
-    auto iter = lookup_.find(key);
-    if (iter != lookup_.end()) {
-      auto list_iter = iter->second;
-      MakePending(list_iter);
-      list_iter->pins = pinned ? 1 : 0;
-      list_iter->value = std::move(val);
-      BringToFront(list_iter);
-    } else {
-      MaybeCleanup(capacity_ - 1);
-      lru_.emplace_front(key, std::move(val), pinned ? 1 : 0);
-      lookup_[key] = lru_.begin();
+
+    auto hash = hasher_(key) % hash_.size();
+    auto& hash_head = hash_[hash];
+    for (Item* iter = hash_head; iter; iter = iter->next_in_hash) {
+      if (key == iter->key) {
+        EvictItem(iter);
+        break;
+      }
     }
-    return new_val;
+
+    ShrinkToCapacity(capacity_ - 1);
+    ++size_;
+    ++allocated_;
+    Item* new_item = new Item(key, std::move(val), pinned ? 1 : 0);
+    new_item->next_in_hash = hash_head;
+    hash_head = new_item;
+    InsertIntoLru(new_item);
+    return new_item->value.get();
+  }
+
+  // Checks whether a key exists. Doesn't lock. Of course the next moment the
+  // key may be evicted.
+  bool ContainsKey(K key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto hash = hasher_(key) % hash_.size();
+    for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
+      if (key == iter->key) return true;
+    }
+    return false;
   }
 
   // Looks up and pins the element by key. Returns nullptr if not found.
@@ -61,94 +86,185 @@ class LruCache {
   // evict).
   V* Lookup(K key) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto iter = lookup_.find(key);
-    if (iter == lookup_.end()) return nullptr;
-    ++iter->second->pins;
-    return iter->second->value.get();
-  }
 
-  // Checks whether a key exists. Doesn't lock. Of course the next moment the
-  // key may be evicted.
-  bool ContainsKey(K key) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto iter = lookup_.find(key);
-    return iter != lookup_.end();
+    auto hash = hasher_(key) % hash_.size();
+    for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
+      if (key == iter->key) {
+        // BringToFront(iter);
+        ++iter->pins;
+        return iter->value.get();
+      }
+    }
+    return nullptr;
   }
 
   // Unpins the element given key and value.
   void Unpin(K key, V* value) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto pending_iter = pending_pins_.find({key, value});
-    if (pending_iter != pending_pins_.end()) {
-      if (--pending_iter->second.pins == 0) pending_pins_.erase(pending_iter);
-      return;
+
+    // Checking evicted list first.
+    Item** cur = &evicted_head_;
+    for (Item* el = evicted_head_; el; el = el->next_in_hash) {
+      if (key == el->key && value == el->value.get()) {
+        if (--el->pins == 0) {
+          *cur = el->next_in_hash;
+          --allocated_;
+          delete el;
+        }
+        return;
+      }
+      cur = &el->next_in_hash;
     }
-    auto iter = lookup_.find(key);
-    --iter->second->pins;
+
+    // Now lookup in actve list.
+    auto hash = hasher_(key) % hash_.size();
+    for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
+      if (key == iter->key && value == iter->value.get()) {
+        assert(iter->pins > 0);
+        --iter->pins;
+        return;
+      }
+    }
+    assert(false);
   }
 
   // Sets the capacity of the cache. If new capacity is less than current size
-  // of the cache, oldest entries are evicted.
+  // of the cache, oldest entries are evicted. In any case the hashtable is
+  // rehashed.
   void SetCapacity(int capacity) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    if (capacity_ == capacity) return;
+    ShrinkToCapacity(capacity);
     capacity_ = capacity;
-    MaybeCleanup(capacity);
+
+    std::vector<Item*> new_hash(capacity * kLoadFactor);
+    std::memset(&new_hash[0], 0, sizeof(new_hash[0]) * new_hash.size());
+
+    if (size_ != 0) {
+      for (Item* head : hash_) {
+        for (Item* iter = head; head; head = head->next_in_hash) {
+          auto& new_hash_head = new_hash[hasher_(iter->key) % new_hash.size()];
+          iter->next_in_hash = new_hash_head;
+          new_hash_head = iter;
+        }
+      }
+    }
+    hash_.swap(new_hash);
   }
 
-  size_t GetSize() const { return lru_.size() + pending_pins_.size(); }
+  size_t GetSize() const { return size_ + allocated_; }
   size_t GetCapacity() const { return capacity_; }
 
  private:
-  // Mutex should be locked when calling this function.
-  void MaybeCleanup(int size) {
-    if (size >= lookup_.size()) return;
-    int to_delete = lookup_.size() - size;
-    auto iter = std::prev(lru_.end());
-    for (int i = 0; i < to_delete; ++i) {
-      lookup_.erase(iter->key);
-      MakePending(iter);
-      iter = lru_.erase(iter);
-      --iter;
-    }
-  }
-
   struct Item {
     Item(K key, std::unique_ptr<V> value, int pins)
         : key(key), value(std::move(value)), pins(pins) {}
     K key;
     std::unique_ptr<V> value;
-    int pins;
+    int pins = 0;
+    Item* next_in_hash = nullptr;
+    Item* prev_in_queue = nullptr;
+    Item* next_in_queue = nullptr;
+
+    /* std::string DebugString() const {
+      std::ostringstream oss;
+      oss << "this:" << this;
+      oss << " key:" << key;
+      oss << " val:" << value.get();
+      oss << " pins:" << pins;
+      oss << " evicted:" << evicted;
+      oss << " next_in_hash:" << next_in_hash;
+      oss << " prev_in_queue:" << prev_in_queue;
+      oss << " next_in_queue:" << next_in_queue;
+      return oss.str();
+    } */
   };
 
-  void MakePending(typename std::list<Item>::iterator iter) {
-    if (iter->pins > 0) {
-      K key = iter->key;
-      V* val = iter->value.get();
-      int pins = iter->pins;
-      pending_pins_.emplace(std::make_pair(key, val),
-                            Item{key, std::move(iter->value), pins});
+  // All private functions require mutex to be locked.
+  void EvictItem(Item* iter) {
+    --size_;
+
+    // Remove from LRU list.
+    if (lru_head_ == iter) {
+      lru_head_ = iter->next_in_queue;
+    } else {
+      iter->prev_in_queue->next_in_queue = iter->next_in_queue;
+    }
+    if (lru_tail_ == iter) {
+      lru_tail_ = iter->prev_in_queue;
+    } else {
+      iter->next_in_queue->prev_in_queue = iter->prev_in_queue;
+    }
+
+    // Destroy or move into evicted list dependending on whether it's pinned.
+    Item** cur = &hash_[hasher_(iter->key) % hash_.size()];
+    for (Item* el = *cur; el; el = el->next_in_hash) {
+      if (el == iter) {
+        *cur = el->next_in_hash;
+        if (el->pins == 0) {
+          --allocated_;
+          delete el;
+        } else {
+          el->next_in_hash = evicted_head_;
+          evicted_head_ = el;
+        }
+        return;
+      }
+      cur = &el->next_in_hash;
+    }
+
+    assert(false);
+  }
+
+  void ShrinkToCapacity(int capacity) {
+    while (lru_tail_ && size_ > capacity) {
+      EvictItem(lru_tail_);
     }
   }
 
-  void BringToFront(typename std::list<Item>::iterator iter) {
-    if (iter != lru_.begin())
-      lru_.splice(lru_.begin(), lru_, iter, std::next(iter));
+  void BringToFront(Item* iter) {
+    if (lru_head_ == iter) {
+      return;
+    } else {
+      iter->prev_in_queue->next_in_queue = iter->next_in_queue;
+    }
+    if (lru_tail_ == iter) {
+      lru_tail_ = iter->prev_in_queue;
+    } else {
+      iter->next_in_queue->prev_in_queue = iter->prev_in_queue;
+    }
+
+    InsertIntoLru(iter);
   }
+
+  void InsertIntoLru(Item* iter) {
+    iter->next_in_queue = lru_head_;
+    iter->prev_in_queue = nullptr;
+
+    if (lru_head_) {
+      lru_head_->prev_in_queue = iter;
+    }
+    lru_head_ = iter;
+    if (lru_tail_ == nullptr) {
+      lru_tail_ = iter;
+    }
+  }
+
   // Fresh in front, stale on back.
   int capacity_;
-  std::list<Item> lru_;
-  using ListIter = typename std::list<Item>::iterator;
-  std::unordered_map<K, ListIter> lookup_;
+  int size_ = 0;
+  int allocated_ = 0;
+  Item* lru_head_ = nullptr;      // Newest elements.
+  Item* lru_tail_ = nullptr;      // Oldest elements.
+  Item* evicted_head_ = nullptr;  // Evicted but pinned elements.
+  std::vector<Item*> hash_;
+  std::hash<K> hasher_;
 
-  struct PairHash {
-    std::size_t operator()(const std::pair<K, V*>& p) const {
-      return HashCat({std::hash<V*>{}(p.second), std::hash<K>{}(p.first)});
-    }
-  };
-  std::unordered_map<std::pair<K, V*>, Item, PairHash> pending_pins_;
   std::mutex mutex_;
 };
 
+// Convenience class for pinning cache items.
 template <class K, class V>
 class LruCacheLock {
  public:

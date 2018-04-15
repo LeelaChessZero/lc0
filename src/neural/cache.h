@@ -18,7 +18,7 @@
 #pragma once
 
 #include "neural/network.h"
-#include "utils/cache-new.h"
+#include "utils/cache.h"
 
 namespace lczero {
 
