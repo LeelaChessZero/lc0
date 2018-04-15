@@ -18,6 +18,7 @@
 
 #include "mcts/search.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "mcts/node.h"
