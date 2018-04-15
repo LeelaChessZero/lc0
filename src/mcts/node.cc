@@ -92,7 +92,8 @@ void NodePool::AllocateNewBatch() {
 }
 
 uint64_t Node::BoardHash() const {
-  return HashCat({board.Hash(), no_capture_ply, repetitions});
+  return board.Hash();
+  // return HashCat({board.Hash(), no_capture_ply, repetitions});
 }
 
 std::string Node::DebugString() const {
