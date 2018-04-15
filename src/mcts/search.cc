@@ -28,7 +28,7 @@ namespace lczero {
 
 namespace {
 
-const int kDefaultMiniBatchSize = 1;
+const int kDefaultMiniBatchSize = 16;
 const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
 
 const int kDefaultPrefetchBatchSize = 64;
@@ -86,10 +86,15 @@ Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
              100.0f) {}
 
 // Returns whether node was already in cache.
-bool Search::AddNodeToCompute(Node* node, CachingComputation* computation) {
+bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
+                              bool add_if_cached) {
   auto hash = node->BoardHash();
   // If already in cache, no need to do anything.
-  if (computation->AddInputByHash(hash)) return true;
+  if (add_if_cached) {
+    if (computation->AddInputByHash(hash)) return true;
+  } else {
+    if (cache_->ContainsKey(hash)) return true;
+  }
   auto planes = EncodeNode(node);
 
   std::vector<uint16_t> moves;
@@ -130,11 +135,7 @@ int Search::PrefetchIntoCache(Node* node, int budget,
 
   // We are in a leaf, which is not yet being processed.
   if (node->n + node->n_in_flight == 0) {
-    if (AddNodeToCompute(node, computation)) {
-      // Already in cache.
-      computation->PopLastInputHit();
-      return 0;
-      //
+    if (AddNodeToCompute(node, computation, false)) {
       return kAggresiveCaching ? 0 : 1;
     }
     return 1;
@@ -224,7 +225,7 @@ void Search::Worker() {
     }
 
     // If there are requests to NN, but the batch is not full, try to prefetch
-    // more.
+    // nodes which are likely useful in future.
     if (computation.GetCacheMisses() > 0 &&
         computation.GetCacheMisses() < kMiniPrefetchBatch) {
       std::shared_lock<std::shared_mutex> lock{nodes_mutex_};

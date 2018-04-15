@@ -79,6 +79,7 @@ class EngineController {
   BestMoveInfo::Callback best_move_callback_;
   UciInfo::Callback info_callback_;
 
+  NNCache cache_;
   std::unique_ptr<Network> network_;
   // Locked means that there is some work to wait before responding readyok.
   rp_shared_mutex busy_mutex_;
@@ -88,7 +89,6 @@ class EngineController {
   Node* current_head_ = nullptr;
   Node* gamebegin_node_ = nullptr;
   std::unique_ptr<Search> search_;
-  NNCache cache_;
 };
 
 }  // namespace lczero

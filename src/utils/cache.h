@@ -67,6 +67,14 @@ class LruCache {
     return iter->second->value.get();
   }
 
+  // Checks whether a key exists. Doesn't lock. Of course the next moment the
+  // key may be evicted.
+  bool ContainsKey(K key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto iter = lookup_.find(key);
+    return iter != lookup_.end();
+  }
+
   // Unpins the element given key and value.
   void Unpin(K key, V* value) {
     std::lock_guard<std::mutex> lock(mutex_);
