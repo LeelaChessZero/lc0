@@ -126,7 +126,8 @@ class LruCache {
   // Fresh in front, stale on back.
   int capacity_;
   std::list<Item> lru_;
-  std::unordered_map<K, typename decltype(lru_)::iterator> lookup_;
+  using ListIter = typename std::list<Item>::iterator;
+  std::unordered_map<K, ListIter> lookup_;
 
   struct PairHash {
     std::size_t operator()(const std::pair<K, V*>& p) const {

@@ -16,6 +16,7 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <functional>
 
 #include "engine.h"
