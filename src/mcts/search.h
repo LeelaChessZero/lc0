@@ -68,6 +68,8 @@ class Search {
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   bool AddNodeToCompute(Node* node, CachingComputation* computation);
+  int PrefetchIntoCache(Node* node, int budget,
+                        CachingComputation* computation);
 
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
@@ -98,6 +100,8 @@ class Search {
 
   // External parameters.
   const int kMiniBatchSize;
+  const int kMiniPrefetchBatch;
+  const bool kAggresiveCaching;
   const float kCpuct;
 };
 

@@ -19,6 +19,7 @@
 #include "mcts/search.h"
 
 #include <cmath>
+#include <queue>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
@@ -31,14 +32,30 @@ namespace {
 const int kDefaultMiniBatchSize = 32;
 const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
 
+const int kDefaultPrefetchBatchSize = 0;
+const char* kMiniPrefetchBatchOption =
+    "How many nodes to prefetch, when request to NN is made";
+
+const bool kDefaultAggresiveCaching = false;
+const char* kAggresiveCachingOption =
+    "Search nodes to cache even if most of good nodes are already there";
+
 const int kDefaultCpuct = 170;
 const char* kCpuctOption = "Cpuct MCTS option (x100)";
 }  // namespace
 
 void Search::PopulateUciParams(UciOptions* options) {
   options->Add(std::make_unique<SpinOption>(kMiniBatchSizeOption,
-                                            kDefaultMiniBatchSize, 1, 128,
+                                            kDefaultMiniBatchSize, 1, 1024,
                                             std::function<void(int)>{}));
+
+  options->Add(std::make_unique<SpinOption>(kMiniPrefetchBatchOption,
+                                            kDefaultPrefetchBatchSize, 1, 1024,
+                                            std::function<void(int)>{}));
+
+  options->Add(std::make_unique<CheckOption>(kAggresiveCachingOption,
+                                             kDefaultAggresiveCaching,
+                                             std::function<void(bool)>{}));
 
   options->Add(std::make_unique<SpinOption>(kCpuctOption, kDefaultCpuct, 0,
                                             9999, std::function<void(int)>{}));
@@ -59,6 +76,12 @@ Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
       kMiniBatchSize(uci_options
                          ? uci_options->GetIntValue(kMiniBatchSizeOption)
                          : kDefaultMiniBatchSize),
+      kMiniPrefetchBatch(
+          uci_options ? uci_options->GetIntValue(kMiniPrefetchBatchOption)
+                      : kDefaultPrefetchBatchSize),
+      kAggresiveCaching(uci_options
+                            ? uci_options->GetBoolValue(kAggresiveCachingOption)
+                            : kDefaultAggresiveCaching),
       kCpuct((uci_options ? uci_options->GetIntValue(kCpuctOption)
                           : kDefaultCpuct) /
              100.0f) {}
@@ -86,6 +109,70 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation) {
 
   computation->AddInput(hash, std::move(planes), std::move(moves));
   return false;
+}
+
+namespace {
+inline float ScoreNodeU(Node* node) {
+  return node->p / (1 + node->n + node->n_in_flight);
+}
+
+inline float ScoreNodeQ(Node* node) {
+  return (node->n ? node->q : -node->parent->q);
+}
+}  // namespace
+
+// Prefetches up to @budget nodes into cache. Returns number of nodes
+// prefetched.
+int Search::PrefetchIntoCache(Node* node, int budget,
+                              CachingComputation* computation) {
+  if (budget <= 0) return 0;
+
+  // We are in a leaf, which is not yet being processed.
+  if (node->n + node->n_in_flight == 0) {
+    if (AddNodeToCompute(node, computation)) {
+      // Already in cache.
+      computation->PopLastInputHit();
+      return 0;
+      //
+      return kAggresiveCaching ? 0 : 1;
+    }
+    return 1;
+  }
+
+  // If it's a node in progress of expansion or is terminal, not prefetching.
+  if (!node->child) return 0;
+
+  // Populate all subnodes and their scores.
+  typedef std::pair<float, Node*> ScoredNode;
+  std::priority_queue<ScoredNode> scores;
+  float factor = kCpuct * std::sqrt(node->n + 1);
+  for (Node* iter = node->child; iter; iter = iter->sibling) {
+    scores.emplace(factor * ScoreNodeU(iter) + ScoreNodeQ(iter), iter);
+  }
+
+  int total_budget_spent = 0;
+  int budget_to_spend = budget;  // Initializing for the case there's only
+                                 // on child.
+  while (budget > 0 && !scores.empty()) {
+    Node* n = scores.top().second;
+    scores.pop();
+    // Last node gets the same budget as prev-to-last node.
+    if (!scores.empty()) {
+      const float next_score = scores.top().first;
+      const float q = ScoreNodeQ(n);
+      if (next_score > q) {
+        budget_to_spend = std::min(
+            budget,
+            int(n->p * factor / (next_score - q) - n->n - n->n_in_flight) + 1);
+      } else {
+        budget_to_spend = budget;
+      }
+    }
+    const int budget_spent = PrefetchIntoCache(n, budget_to_spend, computation);
+    budget -= budget_spent;
+    total_budget_spent += budget_spent;
+  }
+  return total_budget_spent;
 }
 
 void Search::Worker() {
@@ -120,6 +207,16 @@ void Search::Worker() {
       if (!node->is_terminal) {
         AddNodeToCompute(node, &computation);
       }
+    }
+
+    // If there are requests to NN, but the batch is not full, try to prefetch
+    // more.
+    if (computation.GetCacheMisses() > 0 &&
+        computation.GetCacheMisses() < kMiniPrefetchBatch) {
+      std::shared_lock<std::shared_mutex> lock{nodes_mutex_};
+      PrefetchIntoCache(root_node_,
+                        kMiniPrefetchBatch - computation.GetCacheMisses(),
+                        &computation);
     }
 
     // Evaluate nodes through NN.
@@ -364,10 +461,9 @@ Node* Search::PickNodeToExtend(Node* node) {
     float factor = kCpuct * std::sqrt(node->n + 1);
     float best = -100.0f;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
-      const float u = factor * iter->p / (1 + iter->n + iter->n_in_flight);
-      const float v = u + (iter->n ? iter->q : -iter->parent->q);
-      if (v > best) {
-        best = v;
+      const float score = factor * ScoreNodeU(iter) + ScoreNodeQ(iter);
+      if (score > best) {
+        best = score;
         node = iter;
       }
     }
