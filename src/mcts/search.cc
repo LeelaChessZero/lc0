@@ -100,6 +100,7 @@ void Search::Worker() {
 
     // Gather nodes to process in the current batch.
     for (int i = 0; i < kMiniBatchSize; ++i) {
+      // If there's something to do without touching slow neural net, do it.
       if (i > 0 && computation.GetCacheMisses() == 0) break;
       Node* node = PickNodeToExtend(root_node_);
       // If we hit the node that is already processed (by our batch or in
