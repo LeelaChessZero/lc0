@@ -19,7 +19,6 @@
 #include "mcts/search.h"
 
 #include <cmath>
-#include <queue>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
@@ -29,10 +28,10 @@ namespace lczero {
 
 namespace {
 
-const int kDefaultMiniBatchSize = 32;
+const int kDefaultMiniBatchSize = 1;
 const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
 
-const int kDefaultPrefetchBatchSize = 0;
+const int kDefaultPrefetchBatchSize = 64;
 const char* kMiniPrefetchBatchOption =
     "How many nodes to prefetch, when request to NN is made";
 
@@ -102,7 +101,9 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation) {
     }
   } else {
     // Cache pseudovalid moves. A bit of a waste, but faster.
-    for (const Move& m : node->board.GeneratePseudovalidMoves()) {
+    const auto& pseudovalid_moves = node->board.GeneratePseudovalidMoves();
+    moves.reserve(pseudovalid_moves.size());
+    for (const Move& m : pseudovalid_moves) {
       moves.emplace_back(m.as_nn_index());
     }
   }
@@ -144,21 +145,34 @@ int Search::PrefetchIntoCache(Node* node, int budget,
 
   // Populate all subnodes and their scores.
   typedef std::pair<float, Node*> ScoredNode;
-  std::priority_queue<ScoredNode> scores;
+  std::vector<ScoredNode> scores;
   float factor = kCpuct * std::sqrt(node->n + 1);
   for (Node* iter = node->child; iter; iter = iter->sibling) {
-    scores.emplace(factor * ScoreNodeU(iter) + ScoreNodeQ(iter), iter);
+    scores.emplace_back(factor * ScoreNodeU(iter) + ScoreNodeQ(iter), iter);
   }
 
+  int first_unsorted_index = 0;
   int total_budget_spent = 0;
   int budget_to_spend = budget;  // Initializing for the case there's only
                                  // on child.
-  while (budget > 0 && !scores.empty()) {
-    Node* n = scores.top().second;
-    scores.pop();
+  for (int i = 0; i < scores.size(); ++i) {
+    if (budget <= 0) break;
+
+    // Sort next chunk of a vector. 3 of a time. Most of the times it's fine.
+    if (first_unsorted_index != scores.size() &&
+        i + 2 >= first_unsorted_index) {
+      const int new_unsorted_index = std::min(
+          static_cast<int>(scores.size()),
+          budget < 2 ? first_unsorted_index + 2 : first_unsorted_index + 3);
+      std::partial_sort(scores.begin() + first_unsorted_index,
+                        scores.begin() + new_unsorted_index, scores.end());
+      first_unsorted_index = new_unsorted_index;
+    }
+
+    Node* n = scores[i].second;
     // Last node gets the same budget as prev-to-last node.
-    if (!scores.empty()) {
-      const float next_score = scores.top().first;
+    if (i != scores.size() - 1) {
+      const float next_score = scores[i + 1].first;
       const float q = ScoreNodeQ(n);
       if (next_score > q) {
         budget_to_spend = std::min(
