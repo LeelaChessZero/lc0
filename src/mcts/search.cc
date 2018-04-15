@@ -272,6 +272,7 @@ void Search::MaybeTriggerStop() {
     responded_bestmove_ = true;
     SendUciInfo();
     best_move_callback_(GetBestMove());
+    best_move_node_ = nullptr;
   }
 }
 
@@ -384,7 +385,8 @@ InputPlanes Search::EncodeNode(const Node* node) {
 
   for (int i = 0; i < kMoveHistory; ++i, flip = !flip) {
     if (!node) break;
-    const ChessBoard& board = node->board;
+    ChessBoard board = node->board;
+    if (flip) board.Mirror();
 
     const int base = i * planesPerBoard;
     if (i == 0) {
