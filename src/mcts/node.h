@@ -71,11 +71,13 @@ struct Node {
   // Pointer to a next sibling. nullptr if there are no further siblings.
   Node* sibling;
 
+  float ComputeQ() const { return n ? q : -parent->q; }
+  // Returns U / (Puct * N[parent])
+  float ComputeU() const { return p / (1 + n + n_in_flight); }
+  int ComputeRepetitions();
   uint64_t BoardHash() const;
   std::string DebugString() const;
 };
-
-int ComputeRepetitions(const Node*);
 
 class NodePool {
  public:

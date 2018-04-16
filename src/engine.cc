@@ -115,7 +115,7 @@ void EngineController::MakeMove(Move move) {
     new_head->board.Mirror();
     new_head->ply_count = current_head_->ply_count + 1;
     new_head->no_capture_ply = capture ? 0 : current_head_->no_capture_ply + 1;
-    new_head->repetitions = ComputeRepetitions(new_head);
+    new_head->repetitions = new_head->ComputeRepetitions();
     new_head->move = move;
   }
   current_head_ = new_head;

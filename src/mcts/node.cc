@@ -106,18 +106,18 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
-int ComputeRepetitions(const Node* ref_node) {
+int Node::ComputeRepetitions() {
   // TODO(crem) implement some sort of caching.
-  if (ref_node->no_capture_ply < 2) return 0;
+  if (no_capture_ply < 2) return 0;
 
-  const Node* node = ref_node;
+  const Node* node = this;
   while (true) {
     node = node->parent;
     if (!node) break;
     node = node->parent;
     if (!node) break;
 
-    if (node->board == ref_node->board) {
+    if (node->board == board) {
       return 1 + node->repetitions;
     }
     if (node->no_capture_ply < 2) return 0;

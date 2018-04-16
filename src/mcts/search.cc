@@ -116,16 +116,6 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
   return false;
 }
 
-namespace {
-inline float ScoreNodeU(Node* node) {
-  return node->p / (1 + node->n + node->n_in_flight);
-}
-
-inline float ScoreNodeQ(Node* node) {
-  return (node->n ? node->q : -node->parent->q);
-}
-}  // namespace
-
 // Prefetches up to @budget nodes into cache. Returns number of nodes
 // prefetched.
 int Search::PrefetchIntoCache(Node* node, int budget,
@@ -148,7 +138,7 @@ int Search::PrefetchIntoCache(Node* node, int budget,
   std::vector<ScoredNode> scores;
   float factor = kCpuct * std::sqrt(node->n + 1);
   for (Node* iter = node->child; iter; iter = iter->sibling) {
-    scores.emplace_back(factor * ScoreNodeU(iter) + ScoreNodeQ(iter), iter);
+    scores.emplace_back(factor * iter->ComputeU() + iter->ComputeQ(), iter);
   }
 
   int first_unsorted_index = 0;
@@ -173,7 +163,7 @@ int Search::PrefetchIntoCache(Node* node, int budget,
     // Last node gets the same budget as prev-to-last node.
     if (i != scores.size() - 1) {
       const float next_score = scores[i + 1].first;
-      const float q = ScoreNodeQ(n);
+      const float q = n->ComputeQ();
       if (next_score > q) {
         budget_to_spend = std::min(
             budget,
@@ -422,7 +412,7 @@ void Search::ExtendNode(Node* node) {
     return;
   }
 
-  node->repetitions = ComputeRepetitions(node);
+  node->repetitions = node->ComputeRepetitions();
   if (node->repetitions >= 2) {
     node->is_terminal = true;
     node->v = 0.0f;
@@ -477,7 +467,7 @@ Node* Search::PickNodeToExtend(Node* node) {
     float factor = kCpuct * std::sqrt(node->n + 1);
     float best = -100.0f;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
-      const float score = factor * ScoreNodeU(iter) + ScoreNodeQ(iter);
+      const float score = factor * iter->ComputeU() + iter->ComputeQ();
       if (score > best) {
         best = score;
         node = iter;
