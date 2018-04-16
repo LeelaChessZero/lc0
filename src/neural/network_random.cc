@@ -50,7 +50,7 @@ class RandomNetworkComputation : public NetworkComputation {
 
 class RandomNetwork : public Network {
  public:
-  std::unique_ptr<NetworkComputation> NewComputation() const override {
+  std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>();
   }
 };

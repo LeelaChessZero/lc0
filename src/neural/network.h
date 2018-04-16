@@ -91,7 +91,7 @@ class NetworkComputation {
 
 class Network {
  public:
-  virtual std::unique_ptr<NetworkComputation> NewComputation() const = 0;
+  virtual std::unique_ptr<NetworkComputation> NewComputation() = 0;
   virtual ~Network(){};
 };
 

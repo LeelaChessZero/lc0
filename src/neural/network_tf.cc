@@ -136,7 +136,7 @@ class TFNetwork : public Network {
  public:
   TFNetwork(const Weights& weights);
 
-  std::unique_ptr<NetworkComputation> NewComputation() const override;
+  std::unique_ptr<NetworkComputation> NewComputation() override;
 
   tensorflow::Status Compute(tensorflow::Tensor& input,
                              std::vector<tensorflow::Tensor>* outputs) const;
@@ -216,7 +216,7 @@ tensorflow::Status TFNetwork::Compute(tensorflow::Tensor& input,
                       outputs);
 }
 
-std::unique_ptr<NetworkComputation> TFNetwork::NewComputation() const {
+std::unique_ptr<NetworkComputation> TFNetwork::NewComputation() {
   return std::make_unique<TFNetworkComputation>(this);
 }
 

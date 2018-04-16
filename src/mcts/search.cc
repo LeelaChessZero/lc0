@@ -60,7 +60,7 @@ void Search::PopulateUciParams(UciOptions* options) {
                                             "cpuct"));
 }
 
-Search::Search(Node* root_node, NodePool* node_pool, const Network* network,
+Search::Search(Node* root_node, NodePool* node_pool, Network* network,
                BestMoveInfo::Callback best_move_callback,
                UciInfo::Callback info_callback, const SearchLimits& limits,
                const UciOptions& uci_options, NNCache* cache)

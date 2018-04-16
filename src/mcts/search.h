@@ -36,7 +36,7 @@ struct SearchLimits {
 
 class Search {
  public:
-  Search(Node* root_node, NodePool* node_pool, const Network* network,
+  Search(Node* root_node, NodePool* node_pool, Network* network,
          BestMoveInfo::Callback best_move_callback,
          UciInfo::Callback info_callback, const SearchLimits& limits,
          const UciOptions& uci_options, NNCache* cache);
@@ -91,7 +91,7 @@ class Search {
   NNCache* cache_;
 
   mutable std::shared_mutex nodes_mutex_;
-  const Network* network_;
+  Network* const network_;
   const SearchLimits limits_;
   const std::chrono::steady_clock::time_point start_time_;
   Node* best_move_node_ = nullptr;
