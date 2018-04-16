@@ -71,9 +71,6 @@ class EngineController {
   void SetCacheSize(int size);
 
  private:
-  void MakeMove(Move move);
-  void CreateNodeRoot();
-
   UciOptions* uci_options_ = nullptr;
 
   BestMoveInfo::Callback best_move_callback_;
@@ -81,14 +78,14 @@ class EngineController {
 
   NNCache cache_;
   std::unique_ptr<Network> network_;
+
   // Locked means that there is some work to wait before responding readyok.
   rp_shared_mutex busy_mutex_;
   using SharedLock = std::shared_lock<rp_shared_mutex>;
 
   std::unique_ptr<NodePool> node_pool_;
-  Node* current_head_ = nullptr;
-  Node* gamebegin_node_ = nullptr;
   std::unique_ptr<Search> search_;
+  std::unique_ptr<NodeTree> tree_;
 };
 
 }  // namespace lczero

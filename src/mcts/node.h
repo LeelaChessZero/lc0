@@ -79,6 +79,29 @@ struct Node {
   std::string DebugString() const;
 };
 
+class NodePool;
+class NodeTree {
+ public:
+  NodeTree(NodePool* node_pool) : node_pool_(node_pool) {}
+  ~NodeTree() { DeallocateTree(); }
+  // Adds a move to current_head_;
+  void MakeMove(Move move);
+  // Sets the position in a tree, trying to reuse the tree.
+  void ResetToPosition(const ChessBoard& starting_pos,
+                       const std::vector<Move>& moves, int no_capture_ply,
+                       int full_moves);
+  int GetPlyCount() const { return current_head_->ply_count; }
+  bool IsBlackToMove() const { return current_head_->board.flipped(); }
+  Node* GetCurrentHead() const { return current_head_; }
+  NodePool* GetNodePool() const { return node_pool_; }
+
+ private:
+  void DeallocateTree();
+  Node* current_head_ = nullptr;
+  Node* gamebegin_node_ = nullptr;
+  NodePool* node_pool_ = nullptr;
+};
+
 class NodePool {
  public:
   // Allocates a new node and initializes it with all zeros.
@@ -90,13 +113,15 @@ class NodePool {
   void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
   // Releases all children, but doesn't release the node isself.
   void ReleaseChildren(Node*);
+  // Releases all children and the node itself;
+  void ReleaseSubtree(Node*);
 
   // Returns total number of nodes allocated.
   uint64_t GetAllocatedNodeCount() const;
 
  private:
   // Release all children of the node and the node itself.
-  void ReleaseSubtree(Node*);
+  void ReleaseSubtreeInternal(Node*);
   void AllocateNewBatch();
 
   mutable std::mutex mutex_;

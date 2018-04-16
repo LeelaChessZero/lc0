@@ -49,7 +49,7 @@ void NodePool::ReleaseNode(Node* node) {
 void NodePool::ReleaseChildren(Node* node) {
   std::lock_guard<std::mutex> lock(mutex_);
   for (Node* iter = node->child; iter; iter = iter->sibling) {
-    ReleaseSubtree(iter);
+    ReleaseSubtreeInternal(iter);
   }
   node->child = nullptr;
 }
@@ -61,7 +61,7 @@ void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
     if (iter == subtree) {
       child = iter;
     } else {
-      ReleaseSubtree(iter);
+      ReleaseSubtreeInternal(iter);
     }
   }
   root->child = child;
@@ -75,10 +75,15 @@ uint64_t NodePool::GetAllocatedNodeCount() const {
   return kAllocationSize * allocations_.size() - pool_.size();
 }
 
-// Mutex must be hold.
 void NodePool::ReleaseSubtree(Node* node) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ReleaseSubtreeInternal(node);
+}
+
+// Mutex must be hold.
+void NodePool::ReleaseSubtreeInternal(Node* node) {
   for (Node* iter = node->child; iter; iter = iter->sibling) {
-    ReleaseSubtree(iter);
+    ReleaseSubtreeInternal(iter);
     pool_.push_back(iter);
   }
 }
@@ -123,6 +128,63 @@ int Node::ComputeRepetitions() {
     if (node->no_capture_ply < 2) return 0;
   }
   return 0;
+}
+
+void NodeTree::MakeMove(Move move) {
+  if (current_head_->board.flipped()) move.Mirror();
+
+  Node* new_head = nullptr;
+  for (Node* n = current_head_->child; n; n = n->sibling) {
+    if (n->move == move) {
+      new_head = n;
+      break;
+    }
+  }
+  node_pool_->ReleaseAllChildrenExceptOne(current_head_, new_head);
+  if (!new_head) {
+    new_head = node_pool_->GetNode();
+    current_head_->child = new_head;
+    new_head->parent = current_head_;
+    new_head->board = current_head_->board;
+    const bool capture = new_head->board.ApplyMove(move);
+    new_head->board.Mirror();
+    new_head->ply_count = current_head_->ply_count + 1;
+    new_head->no_capture_ply = capture ? 0 : current_head_->no_capture_ply + 1;
+    new_head->repetitions = new_head->ComputeRepetitions();
+    new_head->move = move;
+  }
+  current_head_ = new_head;
+}
+
+void NodeTree::ResetToPosition(const ChessBoard& starting_pos,
+                               const std::vector<Move>& moves,
+                               int no_capture_ply, int full_moves) {
+  if (gamebegin_node_ && gamebegin_node_->board != starting_pos) {
+    // Completely different position.
+    DeallocateTree();
+    current_head_ = nullptr;
+    gamebegin_node_ = nullptr;
+  }
+
+  if (!gamebegin_node_) {
+    gamebegin_node_ = node_pool_->GetNode();
+    gamebegin_node_->board = starting_pos;
+    gamebegin_node_->no_capture_ply = no_capture_ply;
+    gamebegin_node_->ply_count =
+        full_moves * 2 - (starting_pos.flipped() ? 1 : 2);
+  }
+
+  current_head_ = gamebegin_node_;
+  for (const auto& move : moves) {
+    MakeMove(move);
+  }
+  node_pool_->ReleaseChildren(current_head_);
+}
+
+void NodeTree::DeallocateTree() {
+  node_pool_->ReleaseSubtree(gamebegin_node_);
+  gamebegin_node_ = nullptr;
+  current_head_ = nullptr;
 }
 
 }  // namespace lczero
