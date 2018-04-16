@@ -65,7 +65,7 @@ void EngineController::GetUciOptions(UciOptions* options) {
                                             "threads", 't'));
   options->Add(std::make_unique<SpinOption>(
       "NNCache size", 200000, 0, 999999999,
-      std::bind(&EngineController::SetCacheSize, this, _1)));
+      std::bind(&EngineController::SetCacheSize, this, _1), "nncache"));
 
   Search::PopulateUciParams(options);
 }
