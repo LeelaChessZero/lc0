@@ -24,6 +24,23 @@
 
 namespace lczero {
 
+UciOptions::Option::Option(const std::string& name,
+                           const std::string& long_flag, char short_flag)
+    : name_(name), long_flag_(long_flag), short_flag_(short_flag) {}
+
+int UciOptions::Option::GetIntValue() const {
+  throw Exception("Unsupported command line value type.");
+}
+
+std::string UciOptions::Option::GetStringValue() const {
+  throw Exception("Unsupported command line value type.");
+}
+
+// If has boolean value, return, otherwise throw exception.
+bool UciOptions::Option::GetBoolValue() const {
+  throw Exception("Unsupported command line value type.");
+}
+
 std::vector<std::string> UciOptions::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
@@ -55,6 +72,20 @@ void UciOptions::SendOption(const std::string& name) {
 
 void UciOptions::Add(std::unique_ptr<Option> option) {
   options_.emplace_back(std::move(option));
+}
+
+const UciOptions::Option* UciOptions::GetOption(const std::string& name) const {
+  auto x = FindOptionByName(name);
+  if (!x) throw Exception("Unknown option: " + name);
+  return x;
+}
+
+int UciOptions::GetIntValue(const std::string& name) {
+  return GetOption(name)->GetIntValue();
+}
+
+bool UciOptions::GetBoolValue(const std::string& name) {
+  return GetOption(name)->GetBoolValue();
 }
 
 UciOptions::Option* UciOptions::FindOptionByName(
@@ -154,8 +185,23 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
   }
   return oss.str();
 }
-
 }  // namespace
+
+void UciOptions::ShowHelp() const {
+  std::cerr << "Usage: " << argv_[0] << " [ flags... ]" << std::endl;
+  std::cerr << "\nAllowed command line flags:\n";
+  std::cerr << FormatFlag('h', "help", "Show help and exit");
+  for (const auto& option : options_) std::cerr << option->GetHelp();
+}
+
+/////////////////////////////////////////////////////////////////
+// StringOption
+/////////////////////////////////////////////////////////////////
+
+StringOption::StringOption(const std::string& name, const std::string& def,
+                           std::function<void(const std::string&)> setter,
+                           const std::string& long_flag, char short_flag)
+    : Option(name, long_flag, short_flag), value_(def), setter_(setter) {}
 
 bool StringOption::ProcessLongFlag(const std::string& flag,
                                    const std::string& value) {
@@ -178,6 +224,42 @@ bool StringOption::ProcessShortFlagWithValue(char flag,
 std::string StringOption::GetHelp() const {
   return FormatFlag(GetShortFlag(), GetLongFlag() + "=STRING", GetName(),
                     value_);
+}
+
+std::string StringOption::GetOptionString() const {
+  return "type string default " + value_;
+}
+
+void StringOption::SendValue() const {
+  if (setter_) setter_(value_);
+}
+
+/////////////////////////////////////////////////////////////////
+// SpinOption
+/////////////////////////////////////////////////////////////////
+
+SpinOption::SpinOption(const std::string& name, int def, int min, int max,
+                       std::function<void(int)> setter,
+                       const std::string& long_flag, char short_flag)
+    : Option(name, long_flag, short_flag),
+      value_(def),
+      min_(min),
+      max_(max),
+      setter_(setter) {}
+
+void SpinOption::SetValue(const std::string& value) {
+  value_ = std::stoi(value);
+}
+
+int SpinOption::GetIntValue() const { return value_; }
+
+std::string SpinOption::GetOptionString() const {
+  return "type spin default " + std::to_string(value_) + " min " +
+         std::to_string(min_) + " max " + std::to_string(max_);
+}
+
+void SpinOption::SendValue() const {
+  if (setter_) setter_(value_);
 }
 
 bool SpinOption::ProcessLongFlag(const std::string& flag,
@@ -208,6 +290,27 @@ std::string SpinOption::GetHelp() const {
                         "  max: " + std::to_string(max_));
 }
 
+/////////////////////////////////////////////////////////////////
+// SpinOption
+/////////////////////////////////////////////////////////////////
+
+CheckOption::CheckOption(const std::string& name, bool def,
+                         std::function<void(bool)> setter,
+                         const std::string& long_flag, char short_flag)
+    : Option(name, long_flag, short_flag), value_(def), setter_(setter) {}
+
+void CheckOption::SetValue(const std::string& value) {
+  value_ = (value == "true");
+}
+
+std::string CheckOption::GetOptionString() const {
+  return "type check default " + std::string(value_ ? "true" : "false");
+}
+
+void CheckOption::SendValue() const {
+  if (setter_) setter_(value_);
+}
+
 bool CheckOption::ProcessLongFlag(const std::string& flag,
                                   const std::string& value) {
   if (flag == GetLongFlag()) {
@@ -236,13 +339,6 @@ std::string CheckOption::GetHelp() const {
   }
   return FormatFlag(GetShortFlag(), long_flag, GetName(),
                     value_ ? "true" : "false");
-}
-
-void UciOptions::ShowHelp() const {
-  std::cerr << "Usage: " << argv_[0] << " [ flags... ]" << std::endl;
-  std::cerr << "\nAllowed command line flags:\n";
-  std::cerr << FormatFlag('h', "help", "Show help and exit");
-  for (const auto& option : options_) std::cerr << option->GetHelp();
 }
 
 }  // namespace lczero
