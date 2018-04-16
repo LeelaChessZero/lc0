@@ -46,27 +46,24 @@ class SelfPlayGame {
  public:
   enum GameResult { UNDECIDED, WHITE_WON, BLACK_WON, DRAW };
 
-  using GameOverCallback = std::function<void()>;
-
   // Player options may point to the same network/cache/etc.
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
   SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree,
-               GameOverCallback callback, NodePool* node_pool_);
+               NodePool* node_pool_);
 
+  // Starts the game and blocks until the game is finished.
+  void Play();
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
-  // Starts the game and blocks until the game is finished.
-  void PlayBlocking();
 
   GameResult GetGameResult() const { return game_result_; }
 
  private:
   // options_[0] is for white player, [1] for black.
   PlayerOptions options_[2];
-  GameOverCallback callback_;
   NodePool* node_pool_;
   std::shared_ptr<NodeTree> tree_[2];
   std::unique_ptr<Search> search_;

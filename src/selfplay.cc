@@ -21,9 +21,8 @@
 namespace lczero {
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree, GameOverCallback callback,
-                           NodePool* node_pool)
-    : options_{player1, player2}, callback_(callback), node_pool_(node_pool) {
+                           bool shared_tree, NodePool* node_pool)
+    : options_{player1, player2}, node_pool_(node_pool) {
   tree_[0] = std::make_shared<NodeTree>(node_pool_);
   tree_[0]->ResetToPosition(ChessBoard::kStartingFen, {});
 
@@ -59,7 +58,7 @@ SelfPlayGame::GameResult ComputeGameResult(Node* node) {
 
 }  // namespace
 
-void SelfPlayGame::PlayBlocking() {
+void SelfPlayGame::Play() {
   bool blacks_move = false;
 
   while (!abort_) {
