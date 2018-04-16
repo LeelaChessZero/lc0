@@ -95,7 +95,7 @@ class LruCache {
     MaybeCleanup(capacity);
   }
 
-  size_t GetSize() const { return lru_.size() + pending_pins_.size(); }
+  size_t GetSize() const { return lru_.size(); }
   size_t GetCapacity() const { return capacity_; }
 
  private:

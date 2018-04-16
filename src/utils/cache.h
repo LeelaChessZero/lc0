@@ -153,7 +153,7 @@ class LruCache {
     hash_.swap(new_hash);
   }
 
-  size_t GetSize() const { return size_ + allocated_; }
+  size_t GetSize() const { return size_; }
   size_t GetCapacity() const { return capacity_; }
 
  private:
