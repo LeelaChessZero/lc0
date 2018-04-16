@@ -120,10 +120,9 @@ void EngineController::Go(const GoParams& params) {
 
   search_ = std::make_unique<Search>(
       tree_->GetCurrentHead(), tree_->GetNodePool(), network_.get(),
-      best_move_callback_, info_callback_, limits, uci_options_, &cache_);
+      best_move_callback_, info_callback_, limits, *uci_options_, &cache_);
 
-  search_->StartThreads(uci_options_ ? uci_options_->GetIntValue(kThreadsOption)
-                                     : kDefaultThreads);
+  search_->StartThreads(uci_options_->GetIntValue(kThreadsOption));
 }
 
 void EngineController::Stop() {

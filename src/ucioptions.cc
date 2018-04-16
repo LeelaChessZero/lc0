@@ -80,11 +80,11 @@ const UciOptions::Option* UciOptions::GetOption(const std::string& name) const {
   return x;
 }
 
-int UciOptions::GetIntValue(const std::string& name) {
+int UciOptions::GetIntValue(const std::string& name) const {
   return GetOption(name)->GetIntValue();
 }
 
-bool UciOptions::GetBoolValue(const std::string& name) {
+bool UciOptions::GetBoolValue(const std::string& name) const {
   return GetOption(name)->GetBoolValue();
 }
 
@@ -173,7 +173,7 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
   } else {
     oss << "   ";
   }
-  oss << std::setw(20) << std::left;
+  oss << std::setw(30) << std::left;
   if (!short_flag && long_flag.empty()) {
     oss << "(uci parameter)";
   } else {
@@ -181,7 +181,7 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
   }
   oss << ' ' << help << ".\n";
   if (!def.empty()) {
-    oss << std::string(28, ' ') << "(default: " << def << ")\n";
+    oss << std::string(38, ' ') << "(default: " << def << ")\n";
   }
   return oss.str();
 }

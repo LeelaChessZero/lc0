@@ -67,9 +67,9 @@ class UciOptions {
   // Gets option by name.
   const Option* GetOption(const std::string& name) const;
   // Get option's int value or throws if value is not int.
-  int GetIntValue(const std::string& name);
+  int GetIntValue(const std::string& name) const;
   // Get option's bool value or throws if value is not int.
-  bool GetBoolValue(const std::string& name);
+  bool GetBoolValue(const std::string& name) const;
   // Processes all flags. Returns false if should exit.
   bool ProcessAllFlags();
 

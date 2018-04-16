@@ -39,7 +39,7 @@ class Search {
   Search(Node* root_node, NodePool* node_pool, const Network* network,
          BestMoveInfo::Callback best_move_callback,
          UciInfo::Callback info_callback, const SearchLimits& limits,
-         UciOptions* uci_options, NNCache* cache);
+         const UciOptions& uci_options, NNCache* cache);
 
   ~Search();
 
