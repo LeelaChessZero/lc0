@@ -40,6 +40,7 @@ files = [
   'src/engine.cc',
   'src/uciloop.cc',
   'src/ucioptions.cc',
+  'src/selfplay.cc',
   'src/utils/transpose.cc',
 ]
 

@@ -97,17 +97,13 @@ void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
   search_.reset();
-  ChessBoard starting_board;
-  int no_capture_ply;
-  int full_moves;
-  starting_board.SetFromFen(fen, &no_capture_ply, &full_moves);
 
   if (!node_pool_) node_pool_ = std::make_unique<NodePool>();
   if (!tree_) tree_ = std::make_unique<NodeTree>(node_pool_.get());
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  tree_->ResetToPosition(starting_board, moves, no_capture_ply, full_moves);
+  tree_->ResetToPosition(fen, moves);
 }
 
 void EngineController::Go(const GoParams& params) {

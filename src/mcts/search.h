@@ -49,13 +49,16 @@ class Search {
   // Starts worker threads and returns immediately.
   void StartThreads(int how_many);
 
+  // Runs search single-threaded, blocking.
+  void RunSingleThreaded();
+
   // Stops search. At the end bestmove will be returned. The function is not
   // blocking, so it returns before search is actually done.
   void Stop();
   // Stops search, but does not return bestmove. The function is not blocking.
   void Abort();
-  // Aborts the search, and blocks until all worker thread finish.
-  void AbortAndWait();
+  // Blocks until all worker thread finish.
+  void Wait();
 
   // Returns best move, from the point of view of white player. And also ponder.
   std::pair<Move, Move> GetBestMove() const;

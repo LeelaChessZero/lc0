@@ -87,9 +87,8 @@ class NodeTree {
   // Adds a move to current_head_;
   void MakeMove(Move move);
   // Sets the position in a tree, trying to reuse the tree.
-  void ResetToPosition(const ChessBoard& starting_pos,
-                       const std::vector<Move>& moves, int no_capture_ply,
-                       int full_moves);
+  void ResetToPosition(const std::string& starting_fen,
+                       const std::vector<Move>& moves);
   int GetPlyCount() const { return current_head_->ply_count; }
   bool IsBlackToMove() const { return current_head_->board.flipped(); }
   Node* GetCurrentHead() const { return current_head_; }

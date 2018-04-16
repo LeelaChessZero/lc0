@@ -156,10 +156,13 @@ void NodeTree::MakeMove(Move move) {
   current_head_ = new_head;
 }
 
-void NodeTree::ResetToPosition(const ChessBoard& starting_pos,
-                               const std::vector<Move>& moves,
-                               int no_capture_ply, int full_moves) {
-  if (gamebegin_node_ && gamebegin_node_->board != starting_pos) {
+void NodeTree::ResetToPosition(const std::string& starting_fen,
+                               const std::vector<Move>& moves) {
+  ChessBoard starting_board;
+  int no_capture_ply;
+  int full_moves;
+  starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
+  if (gamebegin_node_ && gamebegin_node_->board != starting_board) {
     // Completely different position.
     DeallocateTree();
     current_head_ = nullptr;
@@ -168,10 +171,10 @@ void NodeTree::ResetToPosition(const ChessBoard& starting_pos,
 
   if (!gamebegin_node_) {
     gamebegin_node_ = node_pool_->GetNode();
-    gamebegin_node_->board = starting_pos;
+    gamebegin_node_->board = starting_board;
     gamebegin_node_->no_capture_ply = no_capture_ply;
     gamebegin_node_->ply_count =
-        full_moves * 2 - (starting_pos.flipped() ? 1 : 2);
+        full_moves * 2 - (starting_board.flipped() ? 1 : 2);
   }
 
   current_head_ = gamebegin_node_;

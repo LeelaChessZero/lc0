@@ -109,69 +109,6 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
   return false;
 }
 
-// Prefetches up to @budget nodes into cache. Returns number of nodes
-// prefetched.
-int Search::PrefetchIntoCache(Node* node, int budget,
-                              CachingComputation* computation) {
-  if (budget <= 0) return 0;
-
-  // We are in a leaf, which is not yet being processed.
-  if (node->n + node->n_in_flight == 0) {
-    if (AddNodeToCompute(node, computation, false)) {
-      return kAggresiveCaching ? 0 : 1;
-    }
-    return 1;
-  }
-
-  // If it's a node in progress of expansion or is terminal, not prefetching.
-  if (!node->child) return 0;
-
-  // Populate all subnodes and their scores.
-  typedef std::pair<float, Node*> ScoredNode;
-  std::vector<ScoredNode> scores;
-  float factor = kCpuct * std::sqrt(node->n + 1);
-  for (Node* iter = node->child; iter; iter = iter->sibling) {
-    scores.emplace_back(factor * iter->ComputeU() + iter->ComputeQ(), iter);
-  }
-
-  int first_unsorted_index = 0;
-  int total_budget_spent = 0;
-  int budget_to_spend = budget;  // Initializing for the case there's only
-                                 // on child.
-  for (int i = 0; i < scores.size(); ++i) {
-    if (budget <= 0) break;
-
-    // Sort next chunk of a vector. 3 of a time. Most of the times it's fine.
-    if (first_unsorted_index != scores.size() &&
-        i + 2 >= first_unsorted_index) {
-      const int new_unsorted_index = std::min(
-          static_cast<int>(scores.size()),
-          budget < 2 ? first_unsorted_index + 2 : first_unsorted_index + 3);
-      std::partial_sort(scores.begin() + first_unsorted_index,
-                        scores.begin() + new_unsorted_index, scores.end());
-      first_unsorted_index = new_unsorted_index;
-    }
-
-    Node* n = scores[i].second;
-    // Last node gets the same budget as prev-to-last node.
-    if (i != scores.size() - 1) {
-      const float next_score = scores[i + 1].first;
-      const float q = n->ComputeQ();
-      if (next_score > q) {
-        budget_to_spend = std::min(
-            budget,
-            int(n->p * factor / (next_score - q) - n->n - n->n_in_flight) + 1);
-      } else {
-        budget_to_spend = budget;
-      }
-    }
-    const int budget_spent = PrefetchIntoCache(n, budget_to_spend, computation);
-    budget -= budget_spent;
-    total_budget_spent += budget_spent;
-  }
-  return total_budget_spent;
-}
-
 void Search::Worker() {
   std::vector<Node*> nodes_to_process;
 
@@ -298,6 +235,69 @@ void Search::Worker() {
     MaybeOutputInfo();
     MaybeTriggerStop();
   } while (!stop_);
+}
+
+// Prefetches up to @budget nodes into cache. Returns number of nodes
+// prefetched.
+int Search::PrefetchIntoCache(Node* node, int budget,
+                              CachingComputation* computation) {
+  if (budget <= 0) return 0;
+
+  // We are in a leaf, which is not yet being processed.
+  if (node->n + node->n_in_flight == 0) {
+    if (AddNodeToCompute(node, computation, false)) {
+      return kAggresiveCaching ? 0 : 1;
+    }
+    return 1;
+  }
+
+  // If it's a node in progress of expansion or is terminal, not prefetching.
+  if (!node->child) return 0;
+
+  // Populate all subnodes and their scores.
+  typedef std::pair<float, Node*> ScoredNode;
+  std::vector<ScoredNode> scores;
+  float factor = kCpuct * std::sqrt(node->n + 1);
+  for (Node* iter = node->child; iter; iter = iter->sibling) {
+    scores.emplace_back(factor * iter->ComputeU() + iter->ComputeQ(), iter);
+  }
+
+  int first_unsorted_index = 0;
+  int total_budget_spent = 0;
+  int budget_to_spend = budget;  // Initializing for the case there's only
+                                 // on child.
+  for (int i = 0; i < scores.size(); ++i) {
+    if (budget <= 0) break;
+
+    // Sort next chunk of a vector. 3 of a time. Most of the times it's fine.
+    if (first_unsorted_index != scores.size() &&
+        i + 2 >= first_unsorted_index) {
+      const int new_unsorted_index = std::min(
+          static_cast<int>(scores.size()),
+          budget < 2 ? first_unsorted_index + 2 : first_unsorted_index + 3);
+      std::partial_sort(scores.begin() + first_unsorted_index,
+                        scores.begin() + new_unsorted_index, scores.end());
+      first_unsorted_index = new_unsorted_index;
+    }
+
+    Node* n = scores[i].second;
+    // Last node gets the same budget as prev-to-last node.
+    if (i != scores.size() - 1) {
+      const float next_score = scores[i + 1].first;
+      const float q = n->ComputeQ();
+      if (next_score > q) {
+        budget_to_spend = std::min(
+            budget,
+            int(n->p * factor / (next_score - q) - n->n - n->n_in_flight) + 1);
+      } else {
+        budget_to_spend = budget;
+      }
+    }
+    const int budget_spent = PrefetchIntoCache(n, budget_to_spend, computation);
+    budget -= budget_spent;
+    total_budget_spent += budget_spent;
+  }
+  return total_budget_spent;
 }
 
 namespace {
@@ -519,6 +519,7 @@ InputPlanes Search::EncodeNode(const Node* node) {
 
 std::pair<Move, Move> Search::GetBestMove() const {
   std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
+  if (!root_node_->child) return {};
   Node* best_node = GetBestChild(root_node_);
   Move move = best_node->move;
   if (!best_node->board.flipped()) move.Mirror();
@@ -534,9 +535,11 @@ std::pair<Move, Move> Search::GetBestMove() const {
 void Search::StartThreads(int how_many) {
   std::lock_guard<std::mutex> lock(counters_mutex_);
   while (threads_.size() < how_many) {
-    threads_.emplace_back([&]() { this->Worker(); });
+    threads_.emplace_back([&]() { Worker(); });
   }
 }
+
+void Search::RunSingleThreaded() { Worker(); }
 
 void Search::Stop() {
   std::lock_guard<std::mutex> lock(counters_mutex_);
@@ -549,18 +552,16 @@ void Search::Abort() {
   stop_ = true;
 }
 
-void Search::AbortAndWait() {
-  {
-    std::lock_guard<std::mutex> lock(counters_mutex_);
-    responded_bestmove_ = true;
-    stop_ = true;
-  }
+void Search::Wait() {
   while (!threads_.empty()) {
     threads_.back().join();
     threads_.pop_back();
   }
 }
 
-Search::~Search() { AbortAndWait(); }
+Search::~Search() {
+  Abort();
+  Wait();
+}
 
 }  // namespace lczero
