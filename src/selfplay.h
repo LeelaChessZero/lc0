@@ -36,7 +36,7 @@ struct PlayerOptions {
   // NNcache to use.
   NNCache* cache;
   // User options dictionary.
-  UciOptions* uci_options;
+  const OptionsDict* uci_options;
   // Limits to use for every move.
   SearchLimits search_limits;
 };

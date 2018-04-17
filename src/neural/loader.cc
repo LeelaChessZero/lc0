@@ -22,6 +22,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include "utils/commandline.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -99,11 +100,11 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   return result;
 }
 
-std::string DiscoveryWeightsFile(const std::string& binary_name) {
+std::string DiscoveryWeightsFile() {
   const int kMinFileSize = 30000000;
 
   using namespace std::experimental::filesystem;
-  std::string path = binary_name;
+  std::string path = CommandLine::BinaryName();
   auto pos = path.find_last_of("\\/");
   if (pos != std::string::npos) {
     path.resize(pos);

@@ -1,3 +1,21 @@
+/*
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2018 The LCZero Authors
+
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #pragma once
 
 #include <functional>
@@ -5,26 +23,21 @@
 #include <string>
 #include <vector>
 #include "utils/exception.h"
+#include "utils/optionsdict.h"
 
 namespace lczero {
 
 class UciOptions {
  public:
-  UciOptions(int argc, const char** argv) : argc_(argc), argv_(argv) {}
+  UciOptions();
 
-  class Option {
+  class OptionParser {
    public:
-    Option(const std::string& name, const std::string& long_flag,
-           char short_flag);
-    virtual ~Option(){};
+    OptionParser(const std::string& name, const std::string& long_flag,
+                 char short_flag);
+    virtual ~OptionParser(){};
     // Set value from string.
-    virtual void SetValue(const std::string& value) = 0;
-    // If has integer value, return, otherwise throw exception.
-    virtual int GetIntValue() const;
-    // If has string value, return, otherwise throw exception.
-    virtual std::string GetStringValue() const;
-    // If has boolean value, return, otherwise throw exception.
-    virtual bool GetBoolValue() const;
+    virtual void SetValue(const std::string& value, OptionsDict* dict) = 0;
 
    protected:
     virtual const std::string& GetName() const { return name_; }
@@ -32,18 +45,20 @@ class UciOptions {
     char GetShortFlag() const { return short_flag_; }
 
    private:
-    virtual std::string GetOptionString() const = 0;
-    virtual void SendValue() const = 0;
+    virtual std::string GetOptionString(const OptionsDict& dict) const = 0;
+    virtual void SendValue(const OptionsDict& dict) const = 0;
     virtual bool ProcessLongFlag(const std::string& flag,
-                                 const std::string& value) {
+                                 const std::string& value, OptionsDict* dict) {
       return false;
     }
-    virtual bool ProcessShortFlag(char flag) { return false; }
-    virtual bool ProcessShortFlagWithValue(char flag,
-                                           const std::string& value) {
+    virtual bool ProcessShortFlag(char flag, OptionsDict* dict) {
       return false;
     }
-    virtual std::string GetHelp() const = 0;
+    virtual bool ProcessShortFlagWithValue(char flag, const std::string& value,
+                                           OptionsDict* dict) {
+      return false;
+    }
+    virtual std::string GetHelp(const OptionsDict& dict) const = 0;
 
     std::string name_;
     std::string long_flag_;
@@ -53,7 +68,15 @@ class UciOptions {
 
   // Add an option to the list of available options (from command line flags
   // or UCI params)
-  void Add(std::unique_ptr<Option> option);
+  // Usage:
+  // options->Add<StringOption>(name, func, long_flag, short_flag) = def_val;
+  template <typename Option, typename... Args>
+  typename Option::ValueType& Add(Args&&... args) {
+    options_.emplace_back(
+        std::make_unique<Option>(std::forward<Args>(args)...));
+    return defaults_.GetRef<typename Option::ValueType>(
+        options_.back()->GetName());
+  }
 
   // Returns list of options in UCI format.
   std::vector<std::string> ListOptionsUci() const;
@@ -64,85 +87,94 @@ class UciOptions {
   void SendOption(const std::string& name);
   // Call option setter all options.
   void SendAllOptions();
-  // Gets option by name.
-  const Option* GetOption(const std::string& name) const;
-  // Get option's int value or throws if value is not int.
-  int GetIntValue(const std::string& name) const;
-  // Get option's bool value or throws if value is not int.
-  bool GetBoolValue(const std::string& name) const;
   // Processes all flags. Returns false if should exit.
   bool ProcessAllFlags();
 
-  std::string GetProgramName() const { return argv_[0]; }
+  // Get the options dict for given context.
+  const OptionsDict& GetOptionsDict(const std::string& context = {});
+
+  OptionsDict* GetMutableOptions(const std::string& context = {});
 
  private:
   void ShowHelp() const;
 
-  Option* FindOptionByName(const std::string& name) const;
-  std::vector<std::unique_ptr<Option>> options_;
-  int argc_;
-  const char** argv_;
+  OptionParser* FindOptionByName(const std::string& name) const;
+  std::vector<std::unique_ptr<OptionParser>> options_;
+
+  OptionsDict defaults_;
+  std::unordered_map<std::string, OptionsDict> contexts_;
 };
 
-class StringOption : public UciOptions::Option {
+class StringOption : public UciOptions::OptionParser {
  public:
-  StringOption(const std::string& name, const std::string& def,
-               std::function<void(const std::string&)> setter,
-               const std::string& long_flag = {}, char short_flag = '\0');
-  void SetValue(const std::string& value) override { value_ = value; }
-  std::string GetStringValue() const override { return value_; }
+  using ValueType = std::string;
+  StringOption(const std::string& name, const std::string& long_flag = {},
+               char short_flag = '\0',
+               std::function<void(const std::string&)> setter = {});
+
+  void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
-  std::string GetOptionString() const override;
-  void SendValue() const override;
-  bool ProcessLongFlag(const std::string& flag,
-                       const std::string& value) override;
-  std::string GetHelp() const override;
-  bool ProcessShortFlagWithValue(char flag, const std::string& value) override;
+  std::string GetOptionString(const OptionsDict& dict) const override;
+  void SendValue(const OptionsDict& dict) const override;
+  bool ProcessLongFlag(const std::string& flag, const std::string& value,
+                       OptionsDict* dict) override;
+  std::string GetHelp(const OptionsDict& dict) const override;
+  bool ProcessShortFlagWithValue(char flag, const std::string& value,
+                                 OptionsDict* dict) override;
 
-  std::string value_;
+  ValueType GetVal(const OptionsDict&) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
+
   std::function<void(const std::string&)> setter_;
 };
 
-class SpinOption : public UciOptions::Option {
+class SpinOption : public UciOptions::OptionParser {
  public:
-  SpinOption(const std::string& name, int def, int min, int max,
-             std::function<void(int)> setter, const std::string& long_flag = {},
-             char short_flag = '\0');
-  void SetValue(const std::string& value) override;
-  int GetIntValue() const override;
+  using ValueType = int;
+  SpinOption(const std::string& name, int min, int max,
+             const std::string& long_flag = {}, char short_flag = '\0',
+             std::function<void(int)> setter = {});
+
+  void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
-  std::string GetOptionString() const override;
-  void SendValue() const override;
-  bool ProcessLongFlag(const std::string& flag,
-                       const std::string& value) override;
-  std::string GetHelp() const override;
-  bool ProcessShortFlagWithValue(char flag, const std::string& value) override;
+  std::string GetOptionString(const OptionsDict& dict) const override;
+  void SendValue(const OptionsDict& dict) const override;
+  bool ProcessLongFlag(const std::string& flag, const std::string& value,
+                       OptionsDict* dict) override;
+  std::string GetHelp(const OptionsDict& dict) const override;
+  bool ProcessShortFlagWithValue(char flag, const std::string& value,
+                                 OptionsDict* dict) override;
 
-  int value_;
+  ValueType GetVal(const OptionsDict&) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
+
   int min_;
   int max_;
   std::function<void(int)> setter_;
 };
 
-class CheckOption : public UciOptions::Option {
+class CheckOption : public UciOptions::OptionParser {
  public:
-  CheckOption(const std::string& name, bool def,
-              std::function<void(bool)> setter,
-              const std::string& long_flag = {}, char short_flag = '\0');
-  void SetValue(const std::string& value) override;
-  bool GetBoolValue() const override { return value_; }
+  using ValueType = bool;
+  CheckOption(const std::string& name, const std::string& long_flag = {},
+              char short_flag = '\0', std::function<void(bool)> setter = {});
+
+  void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
-  std::string GetOptionString() const override;
-  void SendValue() const override;
-  bool ProcessLongFlag(const std::string& flag,
-                       const std::string& value) override;
-  std::string GetHelp() const override;
-  bool ProcessShortFlag(char flag) override;
+  std::string GetOptionString(const OptionsDict& dict) const override;
+  void SendValue(const OptionsDict& dict) const override;
+  bool ProcessLongFlag(const std::string& flag, const std::string& value,
+                       OptionsDict* dict) override;
+  std::string GetHelp(const OptionsDict& dict) const override;
+  bool ProcessShortFlagWithValue(char flag, const std::string& value,
+                                 OptionsDict* dict) override;
 
-  bool value_;
+  ValueType GetVal(const OptionsDict&) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
+
   std::function<void(bool)> setter_;
 };
 

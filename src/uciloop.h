@@ -32,7 +32,7 @@ using std::optional;
 namespace lczero {
 
 // Implements Uci loop.
-void UciLoop(int argc, const char** argv);
+void UciLoop();
 
 struct BestMoveInfo {
   BestMoveInfo(Move bestmove, Move ponder = Move{})

@@ -21,31 +21,22 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include "utils/commandline.h"
 
 namespace lczero {
 
-UciOptions::Option::Option(const std::string& name,
-                           const std::string& long_flag, char short_flag)
+UciOptions::OptionParser::OptionParser(const std::string& name,
+                                       const std::string& long_flag,
+                                       char short_flag)
     : name_(name), long_flag_(long_flag), short_flag_(short_flag) {}
 
-int UciOptions::Option::GetIntValue() const {
-  throw Exception("Unsupported command line value type.");
-}
-
-std::string UciOptions::Option::GetStringValue() const {
-  throw Exception("Unsupported command line value type.");
-}
-
-// If has boolean value, return, otherwise throw exception.
-bool UciOptions::Option::GetBoolValue() const {
-  throw Exception("Unsupported command line value type.");
-}
+UciOptions::UciOptions() { contexts_.emplace("", &defaults_); }
 
 std::vector<std::string> UciOptions::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
     result.emplace_back("option name " + iter->GetName() + " " +
-                        iter->GetOptionString());
+                        iter->GetOptionString(defaults_));
   }
   return result;
 }
@@ -53,42 +44,24 @@ std::vector<std::string> UciOptions::ListOptionsUci() const {
 void UciOptions::SetOption(const std::string& name, const std::string& value) {
   auto option = FindOptionByName(name);
   if (option) {
-    option->SetValue(value);
-  }
-}
-
-void UciOptions::SendAllOptions() {
-  for (const auto& x : options_) {
-    x->SendValue();
+    option->SetValue(value, GetMutableOptions());
   }
 }
 
 void UciOptions::SendOption(const std::string& name) {
   auto option = FindOptionByName(name);
   if (option) {
-    option->SendValue();
+    option->SendValue(GetOptionsDict());
   }
 }
 
-void UciOptions::Add(std::unique_ptr<Option> option) {
-  options_.emplace_back(std::move(option));
+void UciOptions::SendAllOptions() {
+  for (const auto& x : options_) {
+    x->SendValue(GetOptionsDict());
+  }
 }
 
-const UciOptions::Option* UciOptions::GetOption(const std::string& name) const {
-  auto x = FindOptionByName(name);
-  if (!x) throw Exception("Unknown option: " + name);
-  return x;
-}
-
-int UciOptions::GetIntValue(const std::string& name) const {
-  return GetOption(name)->GetIntValue();
-}
-
-bool UciOptions::GetBoolValue(const std::string& name) const {
-  return GetOption(name)->GetBoolValue();
-}
-
-UciOptions::Option* UciOptions::FindOptionByName(
+UciOptions::OptionParser* UciOptions::FindOptionByName(
     const std::string& name) const {
   for (const auto& val : options_) {
     if (val->GetName() == name) return val.get();
@@ -96,10 +69,21 @@ UciOptions::Option* UciOptions::FindOptionByName(
   return nullptr;
 }
 
+OptionsDict* UciOptions::GetMutableOptions(const std::string& context) {
+  auto iter = contexts_.find(context);
+  if (iter == contexts_.end()) throw Exception("Unknown context: " + context);
+  return &iter->second;
+}
+
+const OptionsDict& UciOptions::GetOptionsDict(const std::string& context) {
+  return *GetMutableOptions(context);
+}
+
 bool UciOptions::ProcessAllFlags() {
-  for (const char **argv = argv_ + 1, **end = argv_ + argc_; argv != end;
-       ++argv) {
-    std::string param = *argv;
+  for (auto iter = CommandLine::Arguments().begin(),
+            end = CommandLine::Arguments().end();
+       iter != end; ++iter) {
+    std::string param = *iter;
     if (param == "-h" || param == "--help") {
       ShowHelp();
       return false;
@@ -115,14 +99,15 @@ bool UciOptions::ProcessAllFlags() {
       }
       bool processed = false;
       for (auto& option : options_) {
-        if (option->ProcessLongFlag(param, value)) {
+        if (option->ProcessLongFlag(param, value, GetMutableOptions())) {
           processed = true;
           break;
         }
       }
       if (!processed) {
-        std::cerr << "Unknown command line flag: " << *argv << ".\n";
-        std::cerr << "For help run:\n  " << argv_[0] << " --help" << std::endl;
+        std::cerr << "Unknown command line flag: " << *iter << ".\n";
+        std::cerr << "For help run:\n  " << CommandLine::BinaryName()
+                  << " --help" << std::endl;
         return false;
       }
       continue;
@@ -130,29 +115,32 @@ bool UciOptions::ProcessAllFlags() {
     if (param.size() == 2 && param[0] == '-') {
       std::string value;
       bool processed = false;
-      if (argv + 1 != end) {
-        value = *(argv + 1);
+      if (iter + 1 != end) {
+        value = *(iter + 1);
       }
       for (auto& option : options_) {
-        if (option->ProcessShortFlag(param[1])) {
+        if (option->ProcessShortFlag(param[1], GetMutableOptions())) {
           processed = true;
           break;
-        } else if (option->ProcessShortFlagWithValue(param[1], value)) {
-          if (!value.empty()) ++argv;
+        } else if (option->ProcessShortFlagWithValue(param[1], value,
+                                                     GetMutableOptions())) {
+          if (!value.empty()) ++iter;
           processed = true;
           break;
         }
       }
       if (!processed) {
-        std::cerr << "Unknown command line flag: " << *argv << ".\n";
-        std::cerr << "For help run:\n  " << argv_[0] << " --help" << std::endl;
+        std::cerr << "Unknown command line flag: " << *iter << ".\n";
+        std::cerr << "For help run:\n  " << CommandLine::BinaryName()
+                  << " --help" << std::endl;
         return false;
       }
       continue;
     }
 
-    std::cerr << "Unknown command line argument: " << *argv << ".\n";
-    std::cerr << "For help run:\n  " << argv_[0] << " --help" << std::endl;
+    std::cerr << "Unknown command line argument: " << *iter << ".\n";
+    std::cerr << "For help run:\n  " << CommandLine::BinaryName() << " --help"
+              << std::endl;
     return false;
   }
   return true;
@@ -188,157 +176,186 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }  // namespace
 
 void UciOptions::ShowHelp() const {
-  std::cerr << "Usage: " << argv_[0] << " [ flags... ]" << std::endl;
+  std::cerr << "Usage: " << CommandLine::BinaryName() << " [ flags... ]"
+            << std::endl;
   std::cerr << "\nAllowed command line flags:\n";
   std::cerr << FormatFlag('h', "help", "Show help and exit");
-  for (const auto& option : options_) std::cerr << option->GetHelp();
+  for (const auto& option : options_) std::cerr << option->GetHelp(defaults_);
 }
 
 /////////////////////////////////////////////////////////////////
 // StringOption
 /////////////////////////////////////////////////////////////////
 
-StringOption::StringOption(const std::string& name, const std::string& def,
-                           std::function<void(const std::string&)> setter,
-                           const std::string& long_flag, char short_flag)
-    : Option(name, long_flag, short_flag), value_(def), setter_(setter) {}
+StringOption::StringOption(const std::string& name,
+                           const std::string& long_flag, char short_flag,
+                           std::function<void(const std::string&)> setter)
+    : OptionParser(name, long_flag, short_flag), setter_(setter) {}
+
+void StringOption::SetValue(const std::string& value, OptionsDict* dict) {
+  SetVal(dict, value);
+}
 
 bool StringOption::ProcessLongFlag(const std::string& flag,
-                                   const std::string& value) {
+                                   const std::string& value,
+                                   OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    value_ = value;
+    SetVal(dict, value);
     return true;
   }
   return false;
 }
 
 bool StringOption::ProcessShortFlagWithValue(char flag,
-                                             const std::string& value) {
+                                             const std::string& value,
+                                             OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    value_ = value;
+    SetVal(dict, value);
     return true;
   }
   return false;
 }
 
-std::string StringOption::GetHelp() const {
+std::string StringOption::GetHelp(const OptionsDict& dict) const {
   return FormatFlag(GetShortFlag(), GetLongFlag() + "=STRING", GetName(),
-                    value_);
+                    GetVal(dict));
 }
 
-std::string StringOption::GetOptionString() const {
-  return "type string default " + value_;
+std::string StringOption::GetOptionString(const OptionsDict& dict) const {
+  return "type string default " + GetVal(dict);
 }
 
-void StringOption::SendValue() const {
-  if (setter_) setter_(value_);
+void StringOption::SendValue(const OptionsDict& dict) const {
+  if (setter_) setter_(GetVal(dict));
+}
+
+std::string StringOption::GetVal(const OptionsDict& dict) const {
+  return dict.Get<ValueType>(GetName());
+}
+
+void StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  dict->Set<ValueType>(GetName(), val);
 }
 
 /////////////////////////////////////////////////////////////////
 // SpinOption
 /////////////////////////////////////////////////////////////////
 
-SpinOption::SpinOption(const std::string& name, int def, int min, int max,
-                       std::function<void(int)> setter,
-                       const std::string& long_flag, char short_flag)
-    : Option(name, long_flag, short_flag),
-      value_(def),
+SpinOption::SpinOption(const std::string& name, int min, int max,
+                       const std::string& long_flag, char short_flag,
+                       std::function<void(int)> setter)
+    : OptionParser(name, long_flag, short_flag),
       min_(min),
       max_(max),
       setter_(setter) {}
 
-void SpinOption::SetValue(const std::string& value) {
-  value_ = std::stoi(value);
-}
-
-int SpinOption::GetIntValue() const { return value_; }
-
-std::string SpinOption::GetOptionString() const {
-  return "type spin default " + std::to_string(value_) + " min " +
-         std::to_string(min_) + " max " + std::to_string(max_);
-}
-
-void SpinOption::SendValue() const {
-  if (setter_) setter_(value_);
+void SpinOption::SetValue(const std::string& value, OptionsDict* dict) {
+  SetVal(dict, std::stoi(value));
 }
 
 bool SpinOption::ProcessLongFlag(const std::string& flag,
-                                 const std::string& value) {
+                                 const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    value_ = std::stoi(value);
+    SetVal(dict, std::stoi(value));
     return true;
   }
   return false;
 }
 
-bool SpinOption::ProcessShortFlagWithValue(char flag,
-                                           const std::string& value) {
+bool SpinOption::ProcessShortFlagWithValue(char flag, const std::string& value,
+                                           OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    value_ = std::stoi(value);
+    SetVal(dict, std::stoi(value));
     return true;
   }
   return false;
 }
 
-std::string SpinOption::GetHelp() const {
+std::string SpinOption::GetHelp(const OptionsDict& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     long_flag += "=" + std::to_string(min_) + ".." + std::to_string(max_);
   }
   return FormatFlag(GetShortFlag(), long_flag, GetName(),
-                    std::to_string(value_) + "  min: " + std::to_string(min_) +
+                    std::to_string(GetVal(dict)) +
+                        "  min: " + std::to_string(min_) +
                         "  max: " + std::to_string(max_));
 }
 
-/////////////////////////////////////////////////////////////////
-// SpinOption
-/////////////////////////////////////////////////////////////////
-
-CheckOption::CheckOption(const std::string& name, bool def,
-                         std::function<void(bool)> setter,
-                         const std::string& long_flag, char short_flag)
-    : Option(name, long_flag, short_flag), value_(def), setter_(setter) {}
-
-void CheckOption::SetValue(const std::string& value) {
-  value_ = (value == "true");
+std::string SpinOption::GetOptionString(const OptionsDict& dict) const {
+  return "type spin default " + std::to_string(GetVal(dict)) + " min " +
+         std::to_string(min_) + " max " + std::to_string(max_);
 }
 
-std::string CheckOption::GetOptionString() const {
-  return "type check default " + std::string(value_ ? "true" : "false");
+void SpinOption::SendValue(const OptionsDict& dict) const {
+  if (setter_) setter_(GetVal(dict));
 }
 
-void CheckOption::SendValue() const {
-  if (setter_) setter_(value_);
+SpinOption::ValueType SpinOption::GetVal(const OptionsDict& dict) const {
+  return dict.Get<ValueType>(GetName());
+}
+
+void SpinOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  dict->Set<ValueType>(GetName(), val);
+}
+
+/////////////////////////////////////////////////////////////////
+// CheckOption
+/////////////////////////////////////////////////////////////////
+
+CheckOption::CheckOption(const std::string& name, const std::string& long_flag,
+                         char short_flag, std::function<void(bool)> setter)
+    : OptionParser(name, long_flag, short_flag), setter_(setter) {}
+
+void CheckOption::SetValue(const std::string& value, OptionsDict* dict) {
+  SetVal(dict, value == "true");
 }
 
 bool CheckOption::ProcessLongFlag(const std::string& flag,
-                                  const std::string& value) {
+                                  const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    value_ = (value.empty() || value == "on" || value == "true");
+    SetVal(dict, value.empty() || (value != "off" && value != "false"));
     return true;
   }
   if (flag == "no-" + GetLongFlag()) {
-    value_ = false;
+    SetVal(dict, false);
     return true;
   }
   return false;
 }
 
-bool CheckOption::ProcessShortFlag(char flag) {
+bool CheckOption::ProcessShortFlagWithValue(char flag, const std::string& value,
+                                            OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    value_ = !value_;
+    SetVal(dict, !GetVal(*dict));
     return true;
   }
   return false;
 }
 
-std::string CheckOption::GetHelp() const {
+std::string CheckOption::GetHelp(const OptionsDict& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     long_flag = "[no-]" + long_flag;
   }
   return FormatFlag(GetShortFlag(), long_flag, GetName(),
-                    value_ ? "true" : "false");
+                    GetVal(dict) ? "true" : "false");
+}
+
+std::string CheckOption::GetOptionString(const OptionsDict& dict) const {
+  return "type check default " + std::string(GetVal(dict) ? "true" : "false");
+}
+
+void CheckOption::SendValue(const OptionsDict& dict) const {
+  if (setter_) setter_(GetVal(dict));
+}
+
+CheckOption::ValueType CheckOption::GetVal(const OptionsDict& dict) const {
+  return dict.Get<ValueType>(GetName());
+}
+
+void CheckOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  dict->Set<ValueType>(GetName(), val);
 }
 
 }  // namespace lczero

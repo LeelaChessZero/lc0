@@ -26,6 +26,7 @@
 #include "neural/network.h"
 #include "uciloop.h"
 #include "ucioptions.h"
+#include "utils/optionsdict.h"
 
 namespace lczero {
 
@@ -39,7 +40,7 @@ class Search {
   Search(Node* root_node, NodePool* node_pool, Network* network,
          BestMoveInfo::Callback best_move_callback,
          UciInfo::Callback info_callback, const SearchLimits& limits,
-         const UciOptions& uci_options, NNCache* cache);
+         const OptionsDict& options, NNCache* cache);
 
   ~Search();
 

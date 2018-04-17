@@ -50,22 +50,25 @@ SearchLimits PopulateSearchLimits(int ply, bool is_black,
 }  // namespace
 
 EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
-                                   UciInfo::Callback info_callback)
-    : best_move_callback_(best_move_callback), info_callback_(info_callback) {}
+                                   UciInfo::Callback info_callback,
+                                   const OptionsDict& options)
+    : options_(options),
+      best_move_callback_(best_move_callback),
+      info_callback_(info_callback) {}
 
 void EngineController::GetUciOptions(UciOptions* options) {
-  uci_options_ = options;
   using namespace std::placeholders;
-  options->Add(std::make_unique<StringOption>(
-      "Network weights file path", kAutoDiscover,
-      std::bind(&EngineController::SetNetworkPath, this, _1), "weights", 'w'));
 
-  options->Add(std::make_unique<SpinOption>(kThreadsOption, kDefaultThreads, 1,
-                                            128, std::function<void(int)>{},
-                                            "threads", 't'));
-  options->Add(std::make_unique<SpinOption>(
-      "NNCache size", 200000, 0, 999999999,
-      std::bind(&EngineController::SetCacheSize, this, _1), "nncache"));
+  options->Add<StringOption>(
+      "Network weights file path", "weights", 'w',
+      std::bind(&EngineController::SetNetworkPath, this, _1)) = kAutoDiscover;
+
+  options->Add<SpinOption>(kThreadsOption, 1, 128, "threads", 't') =
+      kDefaultThreads;
+
+  options->Add<SpinOption>(
+      "NNCache size", 0, 999999999, "nncache", '\0',
+      std::bind(&EngineController::SetCacheSize, this, _1)) = 200000;
 
   Search::PopulateUciParams(options);
 }
@@ -74,8 +77,7 @@ void EngineController::SetNetworkPath(const std::string& path) {
   SharedLock lock(busy_mutex_);
   std::string net_path;
   if (path == kAutoDiscover) {
-    net_path = DiscoveryWeightsFile(
-        uci_options_ ? uci_options_->GetProgramName() : ".");
+    net_path = DiscoveryWeightsFile();
   } else {
     net_path = path;
   }
@@ -116,9 +118,9 @@ void EngineController::Go(const GoParams& params) {
 
   search_ = std::make_unique<Search>(
       tree_->GetCurrentHead(), tree_->GetNodePool(), network_.get(),
-      best_move_callback_, info_callback_, limits, *uci_options_, &cache_);
+      best_move_callback_, info_callback_, limits, options_, &cache_);
 
-  search_->StartThreads(uci_options_->GetIntValue(kThreadsOption));
+  search_->StartThreads(options_.Get<int>(kThreadsOption));
 }
 
 void EngineController::Stop() {

@@ -21,22 +21,19 @@
 #include <string>
 #include <vector>
 
-#include "neural/network.h"
-
 namespace lczero {
 
-using FloatVector = std::vector<float>;
-using FloatVectors = std::vector<FloatVector>;
+class CommandLine {
+ public:
+  CommandLine() = delete;
 
-// Read space separated file of floats and return it as a vector of vectors.
-FloatVectors LoadFloatsFromFile(const std::string& filename);
+  static const std::string& BinaryName() { return binary_; }
+  static const std::vector<std::string>& Arguments() { return arguments_; }
+  static void Init(int argc, const char** argv);
 
-// Read v1 weights file and fill the weights structure.
-Weights LoadWeightsFromFile(const std::string& filename);
-
-// Tries to find a file which looks like a weights file, and located in
-// directory of binary_name or one of subdirectories. If there are several such
-// files, returns one which has the latest modification date.
-std::string DiscoveryWeightsFile();
+ private:
+  static std::string binary_;
+  static std::vector<std::string> arguments_;
+};
 
 }  // namespace lczero

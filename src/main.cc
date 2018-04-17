@@ -17,5 +17,9 @@
 */
 
 #include "uciloop.h"
+#include "utils/commandline.h"
 
-int main(int argc, const char** argv) { lczero::UciLoop(argc, argv); }
+int main(int argc, const char** argv) {
+  lczero::CommandLine::Init(argc, argv);
+  lczero::UciLoop();
+}

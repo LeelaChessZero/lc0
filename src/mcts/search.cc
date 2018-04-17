@@ -43,27 +43,22 @@ const char* kCpuctOption = "Cpuct MCTS option (x100)";
 }  // namespace
 
 void Search::PopulateUciParams(UciOptions* options) {
-  options->Add(std::make_unique<SpinOption>(
-      kMiniBatchSizeOption, kDefaultMiniBatchSize, 1, 1024,
-      std::function<void(int)>{}, "minibatch-size"));
+  options->Add<SpinOption>(kMiniBatchSizeOption, 1, 1024, "minibatch-size") =
+      kDefaultMiniBatchSize;
 
-  options->Add(std::make_unique<SpinOption>(
-      kMiniPrefetchBatchOption, kDefaultPrefetchBatchSize, 0, 1024,
-      std::function<void(int)>{}, "max-prefetch"));
+  options->Add<SpinOption>(kMiniPrefetchBatchOption, 0, 1024, "max-prefetch") =
+      kDefaultPrefetchBatchSize;
 
-  options->Add(std::make_unique<CheckOption>(
-      kAggresiveCachingOption, kDefaultAggresiveCaching,
-      std::function<void(bool)>{}, "aggressive-caching"));
+  options->Add<CheckOption>(kAggresiveCachingOption, "aggressive-caching") =
+      kDefaultAggresiveCaching;
 
-  options->Add(std::make_unique<SpinOption>(kCpuctOption, kDefaultCpuct, 0,
-                                            9999, std::function<void(int)>{},
-                                            "cpuct"));
+  options->Add<SpinOption>(kCpuctOption, 0, 9999, "cpuct") = kDefaultCpuct;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,
                BestMoveInfo::Callback best_move_callback,
                UciInfo::Callback info_callback, const SearchLimits& limits,
-               const UciOptions& uci_options, NNCache* cache)
+               const OptionsDict& options, NNCache* cache)
     : root_node_(root_node),
       node_pool_(node_pool),
       cache_(cache),
@@ -72,10 +67,10 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       start_time_(std::chrono::steady_clock::now()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      kMiniBatchSize(uci_options.GetIntValue(kMiniBatchSizeOption)),
-      kMiniPrefetchBatch(uci_options.GetIntValue(kMiniPrefetchBatchOption)),
-      kAggresiveCaching(uci_options.GetBoolValue(kAggresiveCachingOption)),
-      kCpuct(uci_options.GetIntValue(kCpuctOption) / 100.0f) {}
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeOption)),
+      kMiniPrefetchBatch(options.Get<int>(kMiniPrefetchBatchOption)),
+      kAggresiveCaching(options.Get<bool>(kAggresiveCachingOption)),
+      kCpuct(options.Get<int>(kCpuctOption) / 100.0f) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,

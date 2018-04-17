@@ -43,7 +43,7 @@ struct GoParams {
 class EngineController {
  public:
   EngineController(BestMoveInfo::Callback best_move_callback,
-                   UciInfo::Callback info_callback);
+                   UciInfo::Callback info_callback, const OptionsDict& options);
 
   ~EngineController() {
     // Make sure search is destructed first, and it still may be running in
@@ -71,7 +71,7 @@ class EngineController {
   void SetCacheSize(int size);
 
  private:
-  UciOptions* uci_options_ = nullptr;
+  const OptionsDict& options_;
 
   BestMoveInfo::Callback best_move_callback_;
   UciInfo::Callback info_callback_;

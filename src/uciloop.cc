@@ -61,10 +61,10 @@ void SendInfo(const UciInfo& info) {
 }
 }  // namespace
 
-void UciLoop(int argc, const char** argv) {
-  UciOptions options(argc, argv);
+void UciLoop() {
+  UciOptions options;
   std::cout.setf(std::ios::unitbuf);
-  EngineController engine(SendBestMove, SendInfo);
+  EngineController engine(SendBestMove, SendInfo, options.GetOptionsDict());
   engine.GetUciOptions(&options);
   if (!options.ProcessAllFlags()) return;
 

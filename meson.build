@@ -39,6 +39,7 @@ files = [
   'src/neural/network_random.cc',
   'src/neural/network_tf.cc',
   'src/utils/transpose.cc',
+  'src/utils/commandline.cc',
   'src/engine.cc',
   'src/uciloop.cc',
   'src/ucioptions.cc',

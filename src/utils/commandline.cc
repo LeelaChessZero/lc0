@@ -16,27 +16,16 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#pragma once
-
-#include <string>
-#include <vector>
-
-#include "neural/network.h"
+#include "utils/commandline.h"
 
 namespace lczero {
 
-using FloatVector = std::vector<float>;
-using FloatVectors = std::vector<FloatVector>;
+std::string CommandLine::binary_;
+std::vector<std::string> CommandLine::arguments_;
 
-// Read space separated file of floats and return it as a vector of vectors.
-FloatVectors LoadFloatsFromFile(const std::string& filename);
-
-// Read v1 weights file and fill the weights structure.
-Weights LoadWeightsFromFile(const std::string& filename);
-
-// Tries to find a file which looks like a weights file, and located in
-// directory of binary_name or one of subdirectories. If there are several such
-// files, returns one which has the latest modification date.
-std::string DiscoveryWeightsFile();
-
+void CommandLine::Init(int argc, const char** argv) {
+  binary_ = argv[0];
+  arguments_.clear();
+  for (int i = 1; i < argc; ++i) arguments_.push_back(argv[i]);
+}
 }  // namespace lczero
