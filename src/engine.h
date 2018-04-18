@@ -22,8 +22,8 @@
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "optionsparser.h"
 #include "uciloop.h"
-#include "ucioptions.h"
 #include "utils/readprefmutex.h"
 
 namespace lczero {
@@ -51,7 +51,7 @@ class EngineController {
     search_.reset();
   }
 
-  void GetUciOptions(UciOptions* options);
+  void PopulateOptions(OptionsParser* options);
 
   // Blocks.
   void EnsureReady() { std::unique_lock<rp_shared_mutex> lock(busy_mutex_); }

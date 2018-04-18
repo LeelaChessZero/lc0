@@ -16,7 +16,7 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "ucioptions.h"
+#include "optionsparser.h"
 
 #include <iomanip>
 #include <iostream>
@@ -25,14 +25,13 @@
 
 namespace lczero {
 
-UciOptions::OptionParser::OptionParser(const std::string& name,
-                                       const std::string& long_flag,
-                                       char short_flag)
+OptionsParser::Option::Option(const std::string& name,
+                              const std::string& long_flag, char short_flag)
     : name_(name), long_flag_(long_flag), short_flag_(short_flag) {}
 
-UciOptions::UciOptions() { contexts_.emplace("", &defaults_); }
+OptionsParser::OptionsParser() { contexts_.emplace("", &defaults_); }
 
-std::vector<std::string> UciOptions::ListOptionsUci() const {
+std::vector<std::string> OptionsParser::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
     result.emplace_back("option name " + iter->GetName() + " " +
@@ -41,27 +40,28 @@ std::vector<std::string> UciOptions::ListOptionsUci() const {
   return result;
 }
 
-void UciOptions::SetOption(const std::string& name, const std::string& value) {
+void OptionsParser::SetOption(const std::string& name,
+                              const std::string& value) {
   auto option = FindOptionByName(name);
   if (option) {
     option->SetValue(value, GetMutableOptions());
   }
 }
 
-void UciOptions::SendOption(const std::string& name) {
+void OptionsParser::SendOption(const std::string& name) {
   auto option = FindOptionByName(name);
   if (option) {
     option->SendValue(GetOptionsDict());
   }
 }
 
-void UciOptions::SendAllOptions() {
+void OptionsParser::SendAllOptions() {
   for (const auto& x : options_) {
     x->SendValue(GetOptionsDict());
   }
 }
 
-UciOptions::OptionParser* UciOptions::FindOptionByName(
+OptionsParser::Option* OptionsParser::FindOptionByName(
     const std::string& name) const {
   for (const auto& val : options_) {
     if (val->GetName() == name) return val.get();
@@ -69,17 +69,17 @@ UciOptions::OptionParser* UciOptions::FindOptionByName(
   return nullptr;
 }
 
-OptionsDict* UciOptions::GetMutableOptions(const std::string& context) {
+OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) {
   auto iter = contexts_.find(context);
   if (iter == contexts_.end()) throw Exception("Unknown context: " + context);
   return &iter->second;
 }
 
-const OptionsDict& UciOptions::GetOptionsDict(const std::string& context) {
+const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
   return *GetMutableOptions(context);
 }
 
-bool UciOptions::ProcessAllFlags() {
+bool OptionsParser::ProcessAllFlags() {
   for (auto iter = CommandLine::Arguments().begin(),
             end = CommandLine::Arguments().end();
        iter != end; ++iter) {
@@ -175,7 +175,7 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }
 }  // namespace
 
-void UciOptions::ShowHelp() const {
+void OptionsParser::ShowHelp() const {
   std::cerr << "Usage: " << CommandLine::BinaryName() << " [ flags... ]"
             << std::endl;
   std::cerr << "\nAllowed command line flags:\n";
@@ -190,7 +190,7 @@ void UciOptions::ShowHelp() const {
 StringOption::StringOption(const std::string& name,
                            const std::string& long_flag, char short_flag,
                            std::function<void(const std::string&)> setter)
-    : OptionParser(name, long_flag, short_flag), setter_(setter) {}
+    : Option(name, long_flag, short_flag), setter_(setter) {}
 
 void StringOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, value);
@@ -244,7 +244,7 @@ void StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 SpinOption::SpinOption(const std::string& name, int min, int max,
                        const std::string& long_flag, char short_flag,
                        std::function<void(int)> setter)
-    : OptionParser(name, long_flag, short_flag),
+    : Option(name, long_flag, short_flag),
       min_(min),
       max_(max),
       setter_(setter) {}
@@ -305,7 +305,7 @@ void SpinOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 
 CheckOption::CheckOption(const std::string& name, const std::string& long_flag,
                          char short_flag, std::function<void(bool)> setter)
-    : OptionParser(name, long_flag, short_flag), setter_(setter) {}
+    : Option(name, long_flag, short_flag), setter_(setter) {}
 
 void CheckOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, value == "true");

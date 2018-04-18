@@ -41,9 +41,9 @@ files = [
   'src/utils/transpose.cc',
   'src/utils/commandline.cc',
   'src/engine.cc',
-  'src/uciloop.cc',
-  'src/ucioptions.cc',
+  'src/optionsparser.cc',
   'src/selfplay.cc',
+  'src/uciloop.cc',
 ]
 
 includes = []

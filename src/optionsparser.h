@@ -27,15 +27,15 @@
 
 namespace lczero {
 
-class UciOptions {
+class OptionsParser {
  public:
-  UciOptions();
+  OptionsParser();
 
-  class OptionParser {
+  class Option {
    public:
-    OptionParser(const std::string& name, const std::string& long_flag,
-                 char short_flag);
-    virtual ~OptionParser(){};
+    Option(const std::string& name, const std::string& long_flag,
+           char short_flag);
+    virtual ~Option(){};
     // Set value from string.
     virtual void SetValue(const std::string& value, OptionsDict* dict) = 0;
 
@@ -63,7 +63,7 @@ class UciOptions {
     std::string name_;
     std::string long_flag_;
     char short_flag_;
-    friend class UciOptions;
+    friend class OptionsParser;
   };
 
   // Add an option to the list of available options (from command line flags
@@ -98,14 +98,14 @@ class UciOptions {
  private:
   void ShowHelp() const;
 
-  OptionParser* FindOptionByName(const std::string& name) const;
-  std::vector<std::unique_ptr<OptionParser>> options_;
+  Option* FindOptionByName(const std::string& name) const;
+  std::vector<std::unique_ptr<Option>> options_;
 
   OptionsDict defaults_;
   std::unordered_map<std::string, OptionsDict> contexts_;
 };
 
-class StringOption : public UciOptions::OptionParser {
+class StringOption : public OptionsParser::Option {
  public:
   using ValueType = std::string;
   StringOption(const std::string& name, const std::string& long_flag = {},
@@ -129,7 +129,7 @@ class StringOption : public UciOptions::OptionParser {
   std::function<void(const std::string&)> setter_;
 };
 
-class SpinOption : public UciOptions::OptionParser {
+class SpinOption : public OptionsParser::Option {
  public:
   using ValueType = int;
   SpinOption(const std::string& name, int min, int max,
@@ -155,7 +155,7 @@ class SpinOption : public UciOptions::OptionParser {
   std::function<void(int)> setter_;
 };
 
-class CheckOption : public UciOptions::OptionParser {
+class CheckOption : public OptionsParser::Option {
  public:
   using ValueType = bool;
   CheckOption(const std::string& name, const std::string& long_flag = {},

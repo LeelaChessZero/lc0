@@ -24,7 +24,7 @@
 #include <sstream>
 #include "chess/board.h"
 #include "engine.h"
-#include "ucioptions.h"
+#include "optionsparser.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -62,10 +62,10 @@ void SendInfo(const UciInfo& info) {
 }  // namespace
 
 void UciLoop() {
-  UciOptions options;
+  OptionsParser options;
   std::cout.setf(std::ios::unitbuf);
   EngineController engine(SendBestMove, SendInfo, options.GetOptionsDict());
-  engine.GetUciOptions(&options);
+  engine.PopulateOptions(&options);
   if (!options.ProcessAllFlags()) return;
 
   std::string line;

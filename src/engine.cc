@@ -56,7 +56,7 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
       best_move_callback_(best_move_callback),
       info_callback_(info_callback) {}
 
-void EngineController::GetUciOptions(UciOptions* options) {
+void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
   options->Add<StringOption>(

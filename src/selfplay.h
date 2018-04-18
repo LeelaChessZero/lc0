@@ -21,8 +21,8 @@
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "optionsparser.h"
 #include "uciloop.h"
-#include "ucioptions.h"
 
 namespace lczero {
 

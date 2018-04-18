@@ -24,8 +24,8 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "optionsparser.h"
 #include "uciloop.h"
-#include "ucioptions.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
@@ -45,7 +45,7 @@ class Search {
   ~Search();
 
   // Populates UciOptions with search parameters.
-  static void PopulateUciParams(UciOptions* options);
+  static void PopulateUciParams(OptionsParser* options);
 
   // Starts worker threads and returns immediately.
   void StartThreads(int how_many);

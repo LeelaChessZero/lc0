@@ -42,7 +42,7 @@ const int kDefaultCpuct = 170;
 const char* kCpuctOption = "Cpuct MCTS option (x100)";
 }  // namespace
 
-void Search::PopulateUciParams(UciOptions* options) {
+void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<SpinOption>(kMiniBatchSizeOption, 1, 1024, "minibatch-size") =
       kDefaultMiniBatchSize;
 
