@@ -311,6 +311,8 @@ MoveList ChessBoard::GeneratePseudovalidMoves() const {
             }
           } else if (dst_row == 5 && pawns_.get(7, dst_col)) {
             // En passant.
+            // "Pawn" on opponent's file 8 means that en passant is possible.
+            // Those fake pawns are reset in ApplyMove.
             result.emplace_back(source, destination);
           }
         }
