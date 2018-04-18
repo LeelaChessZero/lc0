@@ -18,51 +18,57 @@
 
 #pragma once
 
-#include <functional>
-#ifdef _MSC_VER
-#include "utils/optional.h"
-#else
-#include <optional>
-using std::optional;
-#endif
 #include <string>
+#include <unordered_map>
 #include <vector>
-#include "chess/bitboard.h"
+#include "mcts/callbacks.h"
+#include "utils/exception.h"
 
 namespace lczero {
 
-// Implements Uci loop.
-void UciLoop();
-
-struct BestMoveInfo {
-  BestMoveInfo(Move bestmove, Move ponder = Move{})
-      : bestmove(bestmove), ponder(ponder) {}
-  Move bestmove;
-  Move ponder;
-  using Callback = std::function<void(const BestMoveInfo&)>;
+struct GoParams {
+  std::int64_t wtime = -1;
+  std::int64_t btime = -1;
+  std::int64_t winc = -1;
+  std::int64_t binc = -1;
+  int movestogo = -1;
+  int depth = -1;
+  int nodes = -1;
+  std::int64_t movetime = -1;
+  bool infinite = false;
 };
 
-struct UciInfo {
-  // Full depth.
-  int depth = -1;
-  // Maximum depth.
-  int seldepth = -1;
-  // Time since start of thinking.
-  int64_t time = -1;
-  // Nodes visited.
-  int64_t nodes = -1;
-  // Nodes per second.
-  int nps = -1;
-  // Hash fullness * 1000
-  int hashfull = -1;
-  // Win in centipawns.
-  optional<int> score;
-  // Best line found. Moves are from perspective of white player.
-  std::vector<Move> pv;
-  // Freeform comment.
-  std::string comment;
+class UciLoop {
+ public:
+  virtual ~UciLoop() {}
+  virtual void RunLoop();
 
-  using Callback = std::function<void(const UciInfo&)>;
+  // Sends response to host.
+  virtual void SendResponse(const std::string& response);
+  void SendBestMove(const BestMoveInfo& move);
+  void SendInfo(const ThinkingInfo& info);
+
+  // Command handlers.
+  virtual void CmdUci() { throw Exception("Not supported"); }
+  virtual void CmdIsReady() { throw Exception("Not supported"); }
+  virtual void CmdSetOption(const std::string& name, const std::string& value,
+                            const std::string& context) {
+    throw Exception("Not supported");
+  }
+  virtual void CmdUciNewGame() { throw Exception("Not supported"); }
+  virtual void CmdPosition(const std::string& position,
+                           const std::vector<std::string>& moves) {
+    throw Exception("Not supported");
+  }
+  virtual void CmdGo(const GoParams& params) {
+    throw Exception("Not supported");
+  }
+  virtual void CmdStop() { throw Exception("Not supported"); }
+
+ private:
+  bool DispatchCommand(
+      const std::string& command,
+      const std::unordered_map<std::string, std::string>& params);
 };
 
 }  // namespace lczero

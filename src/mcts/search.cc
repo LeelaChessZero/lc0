@@ -57,7 +57,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,
                BestMoveInfo::Callback best_move_callback,
-               UciInfo::Callback info_callback, const SearchLimits& limits,
+               ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache)
     : root_node_(root_node),
       node_pool_(node_pool),

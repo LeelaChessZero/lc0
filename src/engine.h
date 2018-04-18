@@ -28,22 +28,11 @@
 
 namespace lczero {
 
-struct GoParams {
-  std::int64_t wtime = -1;
-  std::int64_t btime = -1;
-  std::int64_t winc = -1;
-  std::int64_t binc = -1;
-  int movestogo = -1;
-  int depth = -1;
-  int nodes = -1;
-  std::int64_t movetime = -1;
-  bool infinite = false;
-};
-
 class EngineController {
  public:
   EngineController(BestMoveInfo::Callback best_move_callback,
-                   UciInfo::Callback info_callback, const OptionsDict& options);
+                   ThinkingInfo::Callback info_callback,
+                   const OptionsDict& options);
 
   ~EngineController() {
     // Make sure search is destructed first, and it still may be running in
@@ -74,7 +63,7 @@ class EngineController {
   const OptionsDict& options_;
 
   BestMoveInfo::Callback best_move_callback_;
-  UciInfo::Callback info_callback_;
+  ThinkingInfo::Callback info_callback_;
 
   NNCache cache_;
   std::unique_ptr<Network> network_;
@@ -86,6 +75,30 @@ class EngineController {
   std::unique_ptr<NodePool> node_pool_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
+};
+
+class EngineLoop : public UciLoop {
+ public:
+  EngineLoop();
+
+  void RunLoop() override;
+  void CmdUci() override;
+  void CmdIsReady() override;
+  void CmdSetOption(const std::string& name, const std::string& value,
+                    const std::string& context) override;
+  void CmdUciNewGame() override;
+  void CmdPosition(const std::string& position,
+                   const std::vector<std::string>& moves) override;
+  void CmdGo(const GoParams& params) override;
+  void CmdStop() override;
+
+ private:
+  void EnsureOptionsSent();
+
+  OptionsParser options_;
+  bool options_sent_ = false;
+  EngineController engine_;
+  std::mutex output_mutex_;
 };
 
 }  // namespace lczero

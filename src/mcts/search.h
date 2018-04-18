@@ -21,6 +21,7 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
+#include "mcts/callbacks.h"
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/network.h"
@@ -39,7 +40,7 @@ class Search {
  public:
   Search(Node* root_node, NodePool* node_pool, Network* network,
          BestMoveInfo::Callback best_move_callback,
-         UciInfo::Callback info_callback, const SearchLimits& limits,
+         ThinkingInfo::Callback info_callback, const SearchLimits& limits,
          const OptionsDict& options, NNCache* cache);
 
   ~Search();
@@ -97,11 +98,11 @@ class Search {
   const std::chrono::steady_clock::time_point start_time_;
   Node* best_move_node_ = nullptr;
   Node* last_outputted_best_move_node_ = nullptr;
-  UciInfo uci_info_;
+  ThinkingInfo uci_info_;
   uint64_t total_nodes_ = 0;
 
   BestMoveInfo::Callback best_move_callback_;
-  UciInfo::Callback info_callback_;
+  ThinkingInfo::Callback info_callback_;
 
   // External parameters.
   const int kMiniBatchSize;

@@ -32,7 +32,7 @@ struct PlayerOptions {
   // Callback when player moves.
   BestMoveInfo::Callback best_move_callback;
   // Callback when player outputs info.
-  UciInfo::Callback info_callback;
+  ThinkingInfo::Callback info_callback;
   // NNcache to use.
   NNCache* cache;
   // User options dictionary.

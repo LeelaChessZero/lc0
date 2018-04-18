@@ -50,7 +50,7 @@ SearchLimits PopulateSearchLimits(int ply, bool is_black,
 }  // namespace
 
 EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
-                                   UciInfo::Callback info_callback,
+                                   ThinkingInfo::Callback info_callback,
                                    const OptionsDict& options)
     : options_(options),
       best_move_callback_(best_move_callback),
@@ -126,5 +126,66 @@ void EngineController::Go(const GoParams& params) {
 void EngineController::Stop() {
   if (search_) search_->Stop();
 }
+
+EngineLoop::EngineLoop()
+    : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
+              std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
+              options_.GetOptionsDict()) {
+  engine_.PopulateOptions(&options_);
+}
+
+void EngineLoop::RunLoop() {
+  if (!options_.ProcessAllFlags()) return;
+  UciLoop::RunLoop();
+}
+
+void EngineLoop::CmdUci() {
+  SendResponse("id name The Lc0 chess engine.");
+  SendResponse("id author The LCZero Authors.");
+  for (const auto& option : options_.ListOptionsUci()) {
+    SendResponse(option);
+  }
+  SendResponse("uciok");
+}
+
+void EngineLoop::CmdIsReady() {
+  engine_.EnsureReady();
+  SendResponse("readyok");
+}
+
+void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
+                              const std::string& context) {
+  options_.SetOption(name, value);
+  if (options_sent_) {
+    options_.SendOption(name);
+  }
+}
+
+void EngineLoop::EnsureOptionsSent() {
+  if (!options_sent_) {
+    options_.SendAllOptions();
+    options_sent_ = true;
+  }
+}
+
+void EngineLoop::CmdUciNewGame() {
+  EnsureOptionsSent();
+  engine_.NewGame();
+}
+
+void EngineLoop::CmdPosition(const std::string& position,
+                             const std::vector<std::string>& moves) {
+  EnsureOptionsSent();
+  std::string fen = position;
+  if (fen.empty()) fen = ChessBoard::kStartingFen;
+  engine_.SetPosition(fen, moves);
+}
+
+void EngineLoop::CmdGo(const GoParams& params) {
+  EnsureOptionsSent();
+  engine_.Go(params);
+}
+
+void EngineLoop::CmdStop() { engine_.Stop(); }
 
 }  // namespace lczero

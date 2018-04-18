@@ -16,10 +16,11 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "uciloop.h"
+#include "engine.h"
 #include "utils/commandline.h"
 
 int main(int argc, const char** argv) {
   lczero::CommandLine::Init(argc, argv);
-  lczero::UciLoop();
+  lczero::EngineLoop loop;
+  loop.RunLoop();
 }
