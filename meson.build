@@ -40,9 +40,12 @@ files = [
   'src/neural/network_tf.cc',
   'src/utils/transpose.cc',
   'src/utils/commandline.cc',
+  'src/utils/optionsdict.cc',
   'src/engine.cc',
   'src/optionsparser.cc',
-  'src/selfplay.cc',
+  'src/selfplay/game.cc',
+  'src/selfplay/tournament.cc',
+  'src/selfplay/loop.cc',
   'src/uciloop.cc',
 ]
 

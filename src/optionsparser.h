@@ -19,6 +19,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -92,8 +93,10 @@ class OptionsParser {
 
   // Get the options dict for given context.
   const OptionsDict& GetOptionsDict(const std::string& context = {});
-
+  // Gets the dictionary for given context which caller can modify.
   OptionsDict* GetMutableOptions(const std::string& context = {});
+  // Adds a subdictionary for a given context.
+  void AddContext(const std::string&);
 
  private:
   void ShowHelp() const;
@@ -102,7 +105,7 @@ class OptionsParser {
   std::vector<std::unique_ptr<Option>> options_;
 
   OptionsDict defaults_;
-  std::unordered_map<std::string, OptionsDict> contexts_;
+  OptionsDict& values_;
 };
 
 class StringOption : public OptionsParser::Option {

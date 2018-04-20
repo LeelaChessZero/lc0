@@ -98,7 +98,6 @@ class EngineLoop : public UciLoop {
   OptionsParser options_;
   bool options_sent_ = false;
   EngineController engine_;
-  std::mutex output_mutex_;
 };
 
 }  // namespace lczero

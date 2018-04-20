@@ -16,7 +16,7 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "selfplay.h"
+#include "selfplay/game.h"
 
 namespace lczero {
 

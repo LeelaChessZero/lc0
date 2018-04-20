@@ -22,10 +22,24 @@ namespace lczero {
 
 std::string CommandLine::binary_;
 std::vector<std::string> CommandLine::arguments_;
+std::vector<std::pair<std::string, std::string>> CommandLine::modes_;
 
 void CommandLine::Init(int argc, const char** argv) {
   binary_ = argv[0];
   arguments_.clear();
   for (int i = 1; i < argc; ++i) arguments_.push_back(argv[i]);
 }
+
+bool CommandLine::ConsumeCommand(const std::string& command) {
+  if (arguments_.empty()) return false;
+  if (arguments_[0] != command) return false;
+  arguments_.erase(arguments_.begin());
+  return true;
+}
+
+void CommandLine::RegisterMode(const std::string& mode,
+                               const std::string& description) {
+  modes_.emplace_back(mode, description);
+}
+
 }  // namespace lczero

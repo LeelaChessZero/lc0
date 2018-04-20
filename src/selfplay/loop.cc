@@ -16,25 +16,26 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "engine.h"
 #include "selfplay/loop.h"
-#include "utils/commandline.h"
+#include "selfplay/tournament.h"
 
-int main(int argc, const char** argv) {
-  using namespace lczero;
-  CommandLine::Init(argc, argv);
-  CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
-  CommandLine::RegisterMode("selfplay", "Play games with itself");
+namespace lczero {
 
-  if (CommandLine::ConsumeCommand("selfplay")) {
-    // Selfplay mode.
-    SelfPlayLoop loop;
-    loop.RunLoop();
+namespace {
+const char* kInteractive = "Run in interactive mode with uci-like interface";
+}  // namespace
+
+SelfPlayLoop::SelfPlayLoop() {}
+
+void SelfPlayLoop::RunLoop() {
+  options_.Add<CheckOption>(kInteractive, "interactive") = false;
+  SelfPlayTournament::PopulateOptions(&options_);
+
+  if (!options_.ProcessAllFlags()) return;
+  if (options_.GetOptionsDict().Get<bool>(kInteractive)) {
+    UciLoop::RunLoop();
   } else {
-    // Consuming optional "uci" mode.
-    CommandLine::ConsumeCommand("uci");
-    // Ordinary UCI engine.
-    EngineLoop loop;
-    loop.RunLoop();
   }
 }
+
+}  // namespace lczero

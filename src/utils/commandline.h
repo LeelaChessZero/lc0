@@ -27,13 +27,30 @@ class CommandLine {
  public:
   CommandLine() = delete;
 
-  static const std::string& BinaryName() { return binary_; }
-  static const std::vector<std::string>& Arguments() { return arguments_; }
+  // This function must be called before any other.
   static void Init(int argc, const char** argv);
+
+  // Name of the executable filename that was run.
+  static const std::string& BinaryName() { return binary_; }
+
+  // If the first command line parameter is @command, remove it and return
+  // true. Otherwise return false.
+  static bool ConsumeCommand(const std::string& command);
+
+  // Command line arguments.
+  static const std::vector<std::string>& Arguments() { return arguments_; }
+
+  static void RegisterMode(const std::string& mode,
+                           const std::string& description);
+
+  static const std::vector<std::pair<std::string, std::string>>& GetModes() {
+    return modes_;
+  }
 
  private:
   static std::string binary_;
   static std::vector<std::string> arguments_;
+  static std::vector<std::pair<std::string, std::string>> modes_;
 };
 
 }  // namespace lczero

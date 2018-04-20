@@ -29,7 +29,7 @@ OptionsParser::Option::Option(const std::string& name,
                               const std::string& long_flag, char short_flag)
     : name_(name), long_flag_(long_flag), short_flag_(short_flag) {}
 
-OptionsParser::OptionsParser() { contexts_.emplace("", &defaults_); }
+OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
 
 std::vector<std::string> OptionsParser::ListOptionsUci() const {
   std::vector<std::string> result;
@@ -70,13 +70,13 @@ OptionsParser::Option* OptionsParser::FindOptionByName(
 }
 
 OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) {
-  auto iter = contexts_.find(context);
-  if (iter == contexts_.end()) throw Exception("Unknown context: " + context);
-  return &iter->second;
+  if (context == "") return &values_;
+  return values_.GetMutableSubdict(context);
 }
 
 const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
-  return *GetMutableOptions(context);
+  if (context == "") return values_;
+  return values_.GetSubdict(context);
 }
 
 bool OptionsParser::ProcessAllFlags() {
@@ -146,6 +146,10 @@ bool OptionsParser::ProcessAllFlags() {
   return true;
 }
 
+void OptionsParser::AddContext(const std::string& context) {
+  values_.AddSubdict(context);
+}
+
 namespace {
 std ::string FormatFlag(char short_flag, const std::string& long_flag,
                         const std::string& help, const std::string& def = {}) {
@@ -176,9 +180,19 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }  // namespace
 
 void OptionsParser::ShowHelp() const {
-  std::cerr << "Usage: " << CommandLine::BinaryName() << " [ flags... ]"
-            << std::endl;
-  std::cerr << "\nAllowed command line flags:\n";
+  std::cerr << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]";
+  for (const auto& context : values_.ListSubdicts()) {
+    std::cerr << " [" << context << ": flags...]";
+  }
+
+  std::cerr << std::endl;
+  std::cerr << "\nAvailable modes. A help for a mode: "
+            << CommandLine::BinaryName() << " <mode> --help\n";
+  for (const auto& mode : CommandLine::GetModes()) {
+    std::cerr << "  " << std::setw(10) << std::left << mode.first << " "
+              << mode.second << std::endl;
+  }
+  std::cerr << "\nAllowed command line flags for current mode:\n";
   std::cerr << FormatFlag('h', "help", "Show help and exit");
   for (const auto& option : options_) std::cerr << option->GetHelp(defaults_);
 }

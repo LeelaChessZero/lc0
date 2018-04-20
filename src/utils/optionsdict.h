@@ -18,8 +18,10 @@
 
 #pragma once
 
+#include <map>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include "utils/exception.h"
 
 namespace lczero {
@@ -58,10 +60,23 @@ class OptionsDict : TypeDict<bool>, TypeDict<int>, TypeDict<std::string> {
   // Returns true when the value is not set anywhere maybe except the root
   // dictionary;
   template <typename T>
-  bool IsDefault(std::string& key) const;
+  bool IsDefault(const std::string& key) const;
+
+  // Returns subdictionary. Throws exception if doesn't exist.
+  const OptionsDict& GetSubdict(const std::string& name) const;
+
+  // Returns subdictionary. Throws exception if doesn't exist.
+  OptionsDict* GetMutableSubdict(const std::string& name);
+
+  // Creates subdictionary. Throws exception if already exists.
+  OptionsDict* AddSubdict(const std::string& name);
+
+  // Returns list of subdictionaries.
+  std::vector<std::string> ListSubdicts() const;
 
  private:
   OptionsDict* parent_ = nullptr;
+  std::map<std::string, OptionsDict> subdicts_;
 };
 
 template <typename T>
@@ -103,7 +118,7 @@ T& OptionsDict::GetRef(const std::string& key) {
 }
 
 template <typename T>
-bool OptionsDict::IsDefault(std::string& key) const {
+bool OptionsDict::IsDefault(const std::string& key) const {
   if (!parent_) return true;
   const auto& dict = TypeDict<T>::dict_;
   if (dict.find(key) != dict.end()) return false;
