@@ -30,6 +30,9 @@ class SelfPlayLoop : public UciLoop {
   void RunLoop() override;
 
  private:
+  void SendGameInfo(const GameInfo& move);
+  void SendTournament(const TournamentInfo& info);
+
   void EnsureOptionsSent();
   OptionsParser options_;
 };

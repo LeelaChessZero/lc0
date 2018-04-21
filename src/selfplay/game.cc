@@ -36,34 +36,33 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 
 namespace {
 
-SelfPlayGame::GameResult ComputeGameResult(Node* node) {
+GameInfo::GameResult ComputeGameResult(Node* node) {
   const auto& board = node->board;
   auto valid_moves = board.GenerateValidMoves();
   if (valid_moves.empty()) {
     if (board.IsUnderCheck()) {
       // Checkmate.
-      return board.flipped() ? SelfPlayGame::WHITE_WON
-                             : SelfPlayGame::BLACK_WON;
+      return board.flipped() ? GameInfo::WHITE_WON : GameInfo::BLACK_WON;
     }
     // Stalemate.
-    return SelfPlayGame::DRAW;
+    return GameInfo::DRAW;
   }
 
-  if (!board.HasMatingMaterial()) return SelfPlayGame::DRAW;
-  if (node->no_capture_ply >= 100) return SelfPlayGame::DRAW;
-  if (node->ComputeRepetitions() >= 2) return SelfPlayGame::DRAW;
+  if (!board.HasMatingMaterial()) return GameInfo::DRAW;
+  if (node->no_capture_ply >= 100) return GameInfo::DRAW;
+  if (node->ComputeRepetitions() >= 2) return GameInfo::DRAW;
 
-  return SelfPlayGame::UNDECIDED;
+  return GameInfo::UNDECIDED;
 }
 
 }  // namespace
 
-void SelfPlayGame::Play() {
+void SelfPlayGame::Play(int white_threads, int black_threads) {
   bool blacks_move = false;
 
   while (!abort_) {
     game_result_ = ComputeGameResult(tree_[0]->GetCurrentHead());
-    if (game_result_ != UNDECIDED) break;
+    if (game_result_ != GameInfo::UNDECIDED) break;
 
     const int idx = blacks_move ? 1 : 0;
     {
@@ -76,12 +75,13 @@ void SelfPlayGame::Play() {
           options_[idx].cache);
     }
 
-    search_->RunSingleThreaded();
+    search_->RunBlocking(blacks_move ? black_threads : white_threads);
     if (abort_) break;
 
     Move move = search_->GetBestMove().first;
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
+    blacks_move = !blacks_move;
   }
 }
 

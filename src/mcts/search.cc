@@ -368,7 +368,7 @@ void Search::MaybeTriggerStop() {
   if (stop_ && !responded_bestmove_) {
     responded_bestmove_ = true;
     SendUciInfo();
-    auto best_move = GetBestMove();
+    auto best_move = GetBestMoveInternal();
     best_move_callback_({best_move.first, best_move.second});
     best_move_node_ = nullptr;
   }
@@ -520,6 +520,11 @@ InputPlanes Search::EncodeNode(const Node* node) {
 
 std::pair<Move, Move> Search::GetBestMove() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
+  return GetBestMoveInternal();
+}
+
+std::pair<Move, Move> Search::GetBestMoveInternal() const
+    REQUIRES_SHARED(nodes_mutex_) {
   if (!root_node_->child) return {};
   Node* best_node = GetBestChild(root_node_);
   Move move = best_node->move;
@@ -541,6 +546,15 @@ void Search::StartThreads(int how_many) {
 }
 
 void Search::RunSingleThreaded() { Worker(); }
+
+void Search::RunBlocking(int threads) {
+  if (threads == 1) {
+    Worker();
+  } else {
+    StartThreads(threads);
+    Wait();
+  }
+}
 
 void Search::Stop() {
   Mutex::Lock lock(counters_mutex_);

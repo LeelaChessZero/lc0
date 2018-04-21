@@ -85,7 +85,7 @@ T OptionsDict::Get(const std::string& key) const {
   auto iter = dict.find(key);
   if (iter != dict.end()) return iter->second;
   if (parent_) return parent_->Get<T>(key);
-  throw Exception("Key " + key + " was not set in options.");
+  throw Exception("Key [" + key + "] was not set in options.");
 }
 
 template <typename T>

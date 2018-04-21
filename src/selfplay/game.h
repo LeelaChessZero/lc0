@@ -44,8 +44,6 @@ struct PlayerOptions {
 // Plays a single game vs itself.
 class SelfPlayGame {
  public:
-  enum GameResult { UNDECIDED, WHITE_WON, BLACK_WON, DRAW };
-
   // Player options may point to the same network/cache/etc.
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
@@ -54,21 +52,25 @@ class SelfPlayGame {
                NodePool* node_pool_);
 
   // Starts the game and blocks until the game is finished.
-  void Play();
+  void Play(int white_threads, int black_threads);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
 
-  GameResult GetGameResult() const { return game_result_; }
+  GameInfo::GameResult GetGameResult() const { return game_result_; }
 
  private:
   // options_[0] is for white player, [1] for black.
   PlayerOptions options_[2];
   NodePool* node_pool_;
+  // Node tree for player1 and player2. If the tree is shared between players,
+  // tree_[0] == tree_[1].
   std::shared_ptr<NodeTree> tree_[2];
+  // Search that is currently in progress. Stored in members so that Abort()
+  // can stop it.
   std::unique_ptr<Search> search_;
   bool abort_ = false;
-  GameResult game_result_ = UNDECIDED;
+  GameInfo::GameResult game_result_ = GameInfo::UNDECIDED;
   std::mutex mutex_;
 };
 

@@ -52,6 +52,9 @@ class Search {
   // Starts worker threads and returns immediately.
   void StartThreads(int how_many);
 
+  // Starts search with k threads and wait until it finishes.
+  void RunBlocking(int threads);
+
   // Runs search single-threaded, blocking.
   void RunSingleThreaded();
 
@@ -70,6 +73,7 @@ class Search {
   // Can run several copies of it in separate threads.
   void Worker();
 
+  std::pair<Move, Move> GetBestMoveInternal() const;
   uint64_t GetTimeSinceStart() const;
   void MaybeTriggerStop();
   void MaybeOutputInfo();

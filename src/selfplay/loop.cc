@@ -35,7 +35,45 @@ void SelfPlayLoop::RunLoop() {
   if (options_.GetOptionsDict().Get<bool>(kInteractive)) {
     UciLoop::RunLoop();
   } else {
+    SelfPlayTournament tournament(
+        options_.GetOptionsDict(),
+        std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
+        std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
+        std::bind(&SelfPlayLoop::SendGameInfo, this, std::placeholders::_1),
+        std::bind(&SelfPlayLoop::SendTournament, this, std::placeholders::_1));
+    tournament.RunBlocking();
   }
+}
+
+void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
+  std::string res = "gameready";
+  if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
+  if (info.is_black)
+    res += " player1 " + std::string(*info.is_black ? "black" : "white");
+  if (info.game_result != GameInfo::UNDECIDED) {
+    res += std::string(" result ") +
+           ((info.game_result == GameInfo::DRAW)
+                ? "draw"
+                : (info.game_result == GameInfo::WHITE_WON) ? "whitewon"
+                                                            : "blackwon");
+  }
+  if (!info.moves.empty()) {
+    res += " moves";
+    for (const auto& move : info.moves) res += " " + move.as_string();
+  }
+  SendResponse(res);
+}
+
+void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
+  std::string res = "tournamentstatus";
+  if (info.finished) res += " final";
+  res += " win " + std::to_string(info.results[0][0]) + " " +
+         std::to_string(info.results[0][1]);
+  res += " lose " + std::to_string(info.results[2][0]) + " " +
+         std::to_string(info.results[2][1]);
+  res += " draw " + std::to_string(info.results[1][0]) + " " +
+         std::to_string(info.results[1][1]);
+  SendResponse(res);
 }
 
 }  // namespace lczero

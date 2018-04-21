@@ -31,14 +31,24 @@ using std::optional;
 
 namespace lczero {
 
+// Is sent when search decides on the best move.
 struct BestMoveInfo {
   BestMoveInfo(Move bestmove, Move ponder = Move{})
       : bestmove(bestmove), ponder(ponder) {}
   Move bestmove;
   Move ponder;
+  // Those are extensions and not really UCI protocol.
+  // 1 if it's "player1", 2 if it's "player2"
+  int player = -1;
+  // Index of the game in the tournament (0-based).
+  int game_id = -1;
+  // The color of the player, if known.
+  optional<bool> is_black;
+
   using Callback = std::function<void(const BestMoveInfo&)>;
 };
 
+// Is sent during the search.
 struct ThinkingInfo {
   // Full depth.
   int depth = -1;
@@ -59,7 +69,41 @@ struct ThinkingInfo {
   // Freeform comment.
   std::string comment;
 
+  // Those are extensions and not really UCI protocol.
+  // 1 if it's "player1", 2 if it's "player2"
+  int player = -1;
+  // Index of the game in the tournament (0-based).
+  int game_id = -1;
+  // The color of the player, if known.
+  optional<bool> is_black;
+
   using Callback = std::function<void(const ThinkingInfo&)>;
+};
+
+// Is sent when a single game is finished.
+struct GameInfo {
+  enum GameResult { UNDECIDED, WHITE_WON, DRAW, BLACK_WON };
+  // Game result.
+  GameResult game_result = UNDECIDED;
+  // Game moves.
+  std::vector<Move> moves;
+  // Index of the game in the tournament (0-based).
+  int game_id = -1;
+  // The color of the player1, if known.
+  optional<bool> is_black;
+
+  using Callback = std::function<void(const GameInfo&)>;
+};
+
+// Is sent in the end of tournament and also during the tournament.
+struct TournamentInfo {
+  // Did tournament finish, so those results are final.
+  bool finished = false;
+
+  // Player1's [win/draw/lose] as [white/black].
+  // e.g. results[2][1] is how many times player 1 lost as black.
+  int results[3][2] = {{-1, -1}, {-1, -1}, {-1, -1}};
+  using Callback = std::function<void(const TournamentInfo&)>;
 };
 
 }  // namespace lczero

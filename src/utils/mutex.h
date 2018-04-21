@@ -54,6 +54,7 @@ class CAPABILITY("mutex") RpSharedMutex {
 // std::mutex wrapper for clang thread safety annotation.
 class CAPABILITY("mutex") Mutex {
  public:
+  // std::unique_lock<std::mutex> wrapper.
   class SCOPED_CAPABILITY Lock {
    public:
     Lock(Mutex& m) ACQUIRE(m) : lock_(m.get_raw()) {}
@@ -71,8 +72,10 @@ class CAPABILITY("mutex") Mutex {
   std::mutex mutex_;
 };
 
+// std::shared_mutex wrapper for clang thread safety annotation.
 class CAPABILITY("mutex") SharedMutex {
  public:
+  // std::unique_lock<std::shared_mutex> wrapper.
   class SCOPED_CAPABILITY Lock {
    public:
     Lock(SharedMutex& m) ACQUIRE(m) : lock_(m.get_raw()) {}
@@ -82,6 +85,7 @@ class CAPABILITY("mutex") SharedMutex {
     std::unique_lock<std::shared_mutex> lock_;
   };
 
+  // std::shared_lock<std::shared_mutex> wrapper.
   class SCOPED_CAPABILITY SharedLock {
    public:
     SharedLock(SharedMutex& m) ACQUIRE_SHARED(m) : lock_(m.get_raw()) {}

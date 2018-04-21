@@ -166,12 +166,19 @@ void UciLoop::SendResponse(const std::string& response) {
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
   std::string res = "bestmove " + move.bestmove.as_string();
   if (move.ponder) res += " ponder " + move.ponder.as_string();
+  if (move.player != -1) res += " player " + std::to_string(move.player);
+  if (move.game_id != -1) res += " gameid " + std::to_string(move.game_id);
+  if (move.is_black)
+    res += " side " + std::string(*move.is_black ? "black" : "white");
   SendResponse(res);
 }
 
 void UciLoop::SendInfo(const ThinkingInfo& info) {
   std::string res = "info";
-
+  if (info.player != -1) res += " player " + std::to_string(info.player);
+  if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
+  if (info.is_black)
+    res += " side " + std::string(*info.is_black ? "black" : "white");
   if (info.depth >= 0) res += " depth " + std::to_string(info.depth);
   if (info.seldepth >= 0) res += " seldepth " + std::to_string(info.seldepth);
   if (info.time >= 0) res += " time " + std::to_string(info.time);

@@ -40,7 +40,8 @@ OptionsDict* OptionsDict::AddSubdict(const std::string& name) {
   auto iter = subdicts_.find(name);
   if (iter != subdicts_.end())
     throw Exception("Subdictionary already exists: " + name);
-  return &subdicts_.emplace(name, *this).first->second;
+  auto x = &subdicts_.emplace(name, this).first->second;
+  return x;
 }
 
 // Returns list of subdictionaries.
