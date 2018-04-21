@@ -44,6 +44,7 @@ class MuxingComputation : public NetworkComputation {
   }
 
   void PopulateToParent(std::shared_ptr<NetworkComputation> parent) {
+    // Populate our batch into batch of batches.
     parent_ = parent;
     idx_in_parent_ = parent->GetBatchSize();
     for (auto& x : planes_) parent_->AddInput(std::move(x));
@@ -82,7 +83,7 @@ class MuxingNetwork : public Network {
   ~MuxingNetwork() {
     Abort();
     Wait();
-    // Unstuck waining computations.
+    // Unstuck waiting computations.
     while (!queue_.empty()) {
       queue_.front()->NotifyReady();
       queue_.pop();
@@ -90,27 +91,39 @@ class MuxingNetwork : public Network {
   }
 
   void Worker() {
+    // While Abort() is not called (and it can only be called from destructor).
     while (!abort_) {
       std::vector<MuxingComputation*> children;
+      // Create new computation in "upstream" network, to gather batch into
+      // there.
       std::shared_ptr<NetworkComputation> parent(network_->NewComputation());
       {
         std::unique_lock<std::mutex> lock(mutex_);
+        // Wait until there's come work to compute.
         cv_.wait(lock, [&] { return abort_ || !queue_.empty(); });
         if (abort_) break;
 
+        // While there is a work in queue, add it.
         while (!queue_.empty()) {
+          // If we are reaching batch size limit, stop adding.
+          // However, if a single input batch is larger than output batch limit,
+          // we still have to add it.
           if (parent->GetBatchSize() != 0 &&
               parent->GetBatchSize() + queue_.front()->GetBatchSize() >
                   max_batch_) {
             break;
           }
+          // Remember which of "input" computations we serve.
           children.push_back(queue_.front());
           queue_.pop();
+          // Make "input" computation populate data into output batch.
           children.back()->PopulateToParent(parent);
         }
       }
 
+      // Compute.
       parent->ComputeBlocking();
+      // Notify children that data is ready!
       for (auto child : children) child->NotifyReady();
     }
   }

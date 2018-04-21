@@ -216,6 +216,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 }
 
 void SelfPlayTournament::Worker() {
+  // Play games while game limit is not reached (or while not aborted).
   while (true) {
     int game_id;
     {

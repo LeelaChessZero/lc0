@@ -37,6 +37,8 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 namespace {
 
 GameInfo::GameResult ComputeGameResult(Node* node) {
+  // Checks whether the passed node is an endgame, and if yes, which exactly
+  // (win/lose/draw).
   const auto& board = node->board;
   auto valid_moves = board.GenerateValidMoves();
   if (valid_moves.empty()) {
@@ -60,10 +62,14 @@ GameInfo::GameResult ComputeGameResult(Node* node) {
 void SelfPlayGame::Play(int white_threads, int black_threads) {
   bool blacks_move = false;
 
+  // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
     game_result_ = ComputeGameResult(tree_[0]->GetCurrentHead());
+
+    // If endgame, stop.
     if (game_result_ != GameInfo::UNDECIDED) break;
 
+    // Initialize search.
     const int idx = blacks_move ? 1 : 0;
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -75,9 +81,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
           options_[idx].cache);
     }
 
+    // Do search.
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
     if (abort_) break;
 
+    // Add best move to the tree.
     Move move = search_->GetBestMove().first;
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
