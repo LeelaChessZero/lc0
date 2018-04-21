@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include "chess/board.h"
+#include "utils/mutex.h"
 
 namespace lczero {
 
@@ -123,9 +124,9 @@ class NodePool {
   void ReleaseSubtreeInternal(Node*);
   void AllocateNewBatch();
 
-  mutable std::mutex mutex_;
-  std::vector<Node*> pool_;
-  std::vector<std::unique_ptr<Node[]>> allocations_;
+  mutable Mutex mutex_;
+  std::vector<Node*> pool_ GUARDED_BY(mutex_);
+  std::vector<std::unique_ptr<Node[]>> allocations_ GUARDED_BY(mutex_);
 };
 
 }  // namespace lczero

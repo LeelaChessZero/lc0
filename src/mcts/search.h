@@ -27,6 +27,7 @@
 #include "neural/network.h"
 #include "optionsparser.h"
 #include "uciloop.h"
+#include "utils/mutex.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
@@ -83,23 +84,26 @@ class Search {
   InputPlanes EncodeNode(const Node* node);
   void ExtendNode(Node* node);
 
-  std::mutex counters_mutex_;
-  bool stop_ = false;
-  bool responded_bestmove_ = false;
-  std::vector<std::thread> threads_;
+  Mutex counters_mutex_;
+  bool stop_ GUARDED_BY(counters_mutex_) = false;
+  bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
+
+  Mutex threads_mutex_;
+  std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
   Node* root_node_;
   NodePool* node_pool_;
   NNCache* cache_;
 
-  mutable std::shared_mutex nodes_mutex_;
   Network* const network_;
   const SearchLimits limits_;
   const std::chrono::steady_clock::time_point start_time_;
-  Node* best_move_node_ = nullptr;
-  Node* last_outputted_best_move_node_ = nullptr;
-  ThinkingInfo uci_info_;
-  uint64_t total_nodes_ = 0;
+
+  mutable SharedMutex nodes_mutex_;
+  Node* best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
+  Node* last_outputted_best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
+  ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
+  uint64_t total_nodes_ GUARDED_BY(nodes_mutex_) = 0;
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;

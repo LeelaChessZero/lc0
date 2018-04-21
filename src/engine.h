@@ -18,13 +18,12 @@
 
 #pragma once
 
-#include <shared_mutex>
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "optionsparser.h"
 #include "uciloop.h"
-#include "utils/readprefmutex.h"
+#include "utils/mutex.h"
 
 namespace lczero {
 
@@ -43,7 +42,7 @@ class EngineController {
   void PopulateOptions(OptionsParser* options);
 
   // Blocks.
-  void EnsureReady() { std::unique_lock<rp_shared_mutex> lock(busy_mutex_); }
+  void EnsureReady() { std::unique_lock<RpSharedMutex> lock(busy_mutex_); }
 
   // Must not block.
   void NewGame();
@@ -69,8 +68,8 @@ class EngineController {
   std::unique_ptr<Network> network_;
 
   // Locked means that there is some work to wait before responding readyok.
-  rp_shared_mutex busy_mutex_;
-  using SharedLock = std::shared_lock<rp_shared_mutex>;
+  RpSharedMutex busy_mutex_;
+  using SharedLock = std::shared_lock<RpSharedMutex>;
 
   std::unique_ptr<NodePool> node_pool_;
   std::unique_ptr<Search> search_;

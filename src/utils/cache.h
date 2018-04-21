@@ -21,8 +21,8 @@
 #include <cassert>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <string>
+#include "utils/mutex.h"
 
 namespace lczero {
 
@@ -49,7 +49,7 @@ class LruCache {
   // If @pinned, pins inserted element, Unpin has to be called to unpin.
   // In any case, puts element to front of the queue (makes it last to evict).
   V* Insert(K key, std::unique_ptr<V> val, bool pinned = false) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    Mutex::Lock lock(mutex_);
 
     auto hash = hasher_(key) % hash_.size();
     auto& hash_head = hash_[hash];
@@ -73,7 +73,7 @@ class LruCache {
   // Checks whether a key exists. Doesn't lock. Of course the next moment the
   // key may be evicted.
   bool ContainsKey(K key) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    Mutex::Lock lock(mutex_);
     auto hash = hasher_(key) % hash_.size();
     for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
       if (key == iter->key) return true;
@@ -85,7 +85,7 @@ class LruCache {
   // If found, brings the element to the head of the queue (makes it last to
   // evict).
   V* Lookup(K key) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    Mutex::Lock lock(mutex_);
 
     auto hash = hasher_(key) % hash_.size();
     for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
@@ -100,7 +100,7 @@ class LruCache {
 
   // Unpins the element given key and value.
   void Unpin(K key, V* value) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    Mutex::Lock lock(mutex_);
 
     // Checking evicted list first.
     Item** cur = &evicted_head_;
@@ -132,7 +132,7 @@ class LruCache {
   // of the cache, oldest entries are evicted. In any case the hashtable is
   // rehashed.
   void SetCapacity(int capacity) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    Mutex::Lock lock(mutex_);
 
     if (capacity_ == capacity) return;
     ShrinkToCapacity(capacity);
@@ -153,8 +153,14 @@ class LruCache {
     hash_.swap(new_hash);
   }
 
-  size_t GetSize() const { return size_; }
-  size_t GetCapacity() const { return capacity_; }
+  size_t GetSize() const {
+    Mutex::Lock lock(mutex_);
+    return size_;
+  }
+  size_t GetCapacity() const {
+    Mutex::Lock lock(mutex_);
+    return capacity_;
+  }
 
  private:
   struct Item {
@@ -166,23 +172,9 @@ class LruCache {
     Item* next_in_hash = nullptr;
     Item* prev_in_queue = nullptr;
     Item* next_in_queue = nullptr;
-
-    /* std::string DebugString() const {
-      std::ostringstream oss;
-      oss << "this:" << this;
-      oss << " key:" << key;
-      oss << " val:" << value.get();
-      oss << " pins:" << pins;
-      oss << " evicted:" << evicted;
-      oss << " next_in_hash:" << next_in_hash;
-      oss << " prev_in_queue:" << prev_in_queue;
-      oss << " next_in_queue:" << next_in_queue;
-      return oss.str();
-    } */
   };
 
-  // All private functions require mutex to be locked.
-  void EvictItem(Item* iter) {
+  void EvictItem(Item* iter) REQUIRES(mutex_) {
     --size_;
 
     // Remove from LRU list.
@@ -217,13 +209,13 @@ class LruCache {
     assert(false);
   }
 
-  void ShrinkToCapacity(int capacity) {
+  void ShrinkToCapacity(int capacity) REQUIRES(mutex_) {
     while (lru_tail_ && size_ > capacity) {
       EvictItem(lru_tail_);
     }
   }
 
-  void BringToFront(Item* iter) {
+  void BringToFront(Item* iter) REQUIRES(mutex_) {
     if (lru_head_ == iter) {
       return;
     } else {
@@ -238,7 +230,7 @@ class LruCache {
     InsertIntoLru(iter);
   }
 
-  void InsertIntoLru(Item* iter) {
+  void InsertIntoLru(Item* iter) REQUIRES(mutex_) {
     iter->next_in_queue = lru_head_;
     iter->prev_in_queue = nullptr;
 
@@ -252,16 +244,17 @@ class LruCache {
   }
 
   // Fresh in front, stale on back.
-  int capacity_;
-  int size_ = 0;
-  int allocated_ = 0;
-  Item* lru_head_ = nullptr;      // Newest elements.
-  Item* lru_tail_ = nullptr;      // Oldest elements.
-  Item* evicted_head_ = nullptr;  // Evicted but pinned elements.
-  std::vector<Item*> hash_;
-  std::hash<K> hasher_;
+  int capacity_ GUARDED_BY(mutex_);
+  int size_ GUARDED_BY(mutex_) = 0;
+  int allocated_ GUARDED_BY(mutex_) = 0;
+  Item* lru_head_ GUARDED_BY(mutex_) = nullptr;  // Newest elements.
+  Item* lru_tail_ GUARDED_BY(mutex_) = nullptr;  // Oldest elements.
+  Item* evicted_head_ GUARDED_BY(mutex_) =
+      nullptr;  // Evicted but pinned elements.
+  std::vector<Item*> hash_ GUARDED_BY(mutex_);
+  std::hash<K> hasher_ GUARDED_BY(mutex_);
 
-  std::mutex mutex_;
+  mutable Mutex mutex_;
 };
 
 // Convenience class for pinning cache items.

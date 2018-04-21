@@ -107,9 +107,9 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
 void Search::Worker() {
   std::vector<Node*> nodes_to_process;
 
-  // do {} while  instead of  while{} because at least one iteration is
-  // necessary to get candidates.
-  do {
+  // Exit check is at the end of the loop as at least one iteration is
+  // necessary.
+  while (true) {
     int new_nodes = 0;
     nodes_to_process.clear();
     auto computation = CachingComputation(network_->NewComputation(), cache_);
@@ -142,7 +142,7 @@ void Search::Worker() {
     // nodes which are likely useful in future.
     if (computation.GetCacheMisses() > 0 &&
         computation.GetCacheMisses() < kMiniPrefetchBatch) {
-      std::shared_lock<std::shared_mutex> lock{nodes_mutex_};
+      SharedMutex::SharedLock lock(nodes_mutex_);
       PrefetchIntoCache(root_node_,
                         kMiniPrefetchBatch - computation.GetCacheMisses(),
                         &computation);
@@ -177,7 +177,7 @@ void Search::Worker() {
 
     {
       // Update nodes.
-      std::unique_lock<std::shared_mutex> lock{nodes_mutex_};
+      SharedMutex::Lock lock(nodes_mutex_);
       total_nodes_ += new_nodes;
       for (Node* node : nodes_to_process) {
         float v = node->v;
@@ -229,7 +229,13 @@ void Search::Worker() {
     }
     MaybeOutputInfo();
     MaybeTriggerStop();
-  } while (!stop_);
+
+    // If required to stop, stop.
+    {
+      Mutex::Lock lock(counters_mutex_);
+      if (stop_) break;
+    }
+  }
 }
 
 // Prefetches up to @budget nodes into cache. Returns number of nodes
@@ -311,8 +317,7 @@ Node* GetBestChild(Node* parent) {
 }
 }  // namespace
 
-// A nodes_mutex_ must be locked when this function is called.
-void Search::SendUciInfo() {
+void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_node_) return;
   last_outputted_best_move_node_ = best_move_node_;
   uci_info_.depth = root_node_->full_depth;
@@ -337,7 +342,7 @@ void Search::SendUciInfo() {
 // Decides whether anything important changed in stats and new info should be
 // shown to a user.
 void Search::MaybeOutputInfo() {
-  std::unique_lock<std::shared_mutex> lock{nodes_mutex_};
+  SharedMutex::Lock lock(nodes_mutex_);
   if (best_move_node_ && (best_move_node_ != last_outputted_best_move_node_ ||
                           uci_info_.depth != root_node_->full_depth ||
                           uci_info_.seldepth != root_node_->max_depth)) {
@@ -352,7 +357,8 @@ uint64_t Search::GetTimeSinceStart() const {
 }
 
 void Search::MaybeTriggerStop() {
-  std::lock_guard<std::mutex> lock(counters_mutex_);
+  Mutex::Lock lock(counters_mutex_);
+  SharedMutex::Lock nodes_lock(nodes_mutex_);
   if (limits_.nodes >= 0 && total_nodes_ >= limits_.nodes) {
     stop_ = true;
   }
@@ -432,7 +438,7 @@ void Search::ExtendNode(Node* node) {
 Node* Search::PickNodeToExtend(Node* node) {
   while (true) {
     {
-      std::unique_lock<std::shared_mutex> lock{nodes_mutex_};
+      SharedMutex::Lock lock(nodes_mutex_);
       // Check whether we are in the leave.
       if (node->n == 0 && node->n_in_flight > 0) {
         // The node is currently being processed by another thread.
@@ -451,7 +457,7 @@ Node* Search::PickNodeToExtend(Node* node) {
     }
 
     // Now we are not in leave, we need to go deeper.
-    std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
+    SharedMutex::SharedLock lock(nodes_mutex_);
     float factor = kCpuct * std::sqrt(node->n + 1);
     float best = -100.0f;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
@@ -513,7 +519,7 @@ InputPlanes Search::EncodeNode(const Node* node) {
 }
 
 std::pair<Move, Move> Search::GetBestMove() const {
-  std::shared_lock<std::shared_mutex> lock(nodes_mutex_);
+  SharedMutex::SharedLock lock(nodes_mutex_);
   if (!root_node_->child) return {};
   Node* best_node = GetBestChild(root_node_);
   Move move = best_node->move;
@@ -528,7 +534,7 @@ std::pair<Move, Move> Search::GetBestMove() const {
 }
 
 void Search::StartThreads(int how_many) {
-  std::lock_guard<std::mutex> lock(counters_mutex_);
+  Mutex::Lock lock(threads_mutex_);
   while (threads_.size() < how_many) {
     threads_.emplace_back([&]() { Worker(); });
   }
@@ -537,17 +543,18 @@ void Search::StartThreads(int how_many) {
 void Search::RunSingleThreaded() { Worker(); }
 
 void Search::Stop() {
-  std::lock_guard<std::mutex> lock(counters_mutex_);
+  Mutex::Lock lock(counters_mutex_);
   stop_ = true;
 }
 
 void Search::Abort() {
-  std::lock_guard<std::mutex> lock(counters_mutex_);
+  Mutex::Lock lock(counters_mutex_);
   responded_bestmove_ = true;
   stop_ = true;
 }
 
 void Search::Wait() {
+  Mutex::Lock lock(threads_mutex_);
   while (!threads_.empty()) {
     threads_.back().join();
     threads_.pop_back();

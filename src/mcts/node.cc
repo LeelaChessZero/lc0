@@ -30,7 +30,7 @@ const int kAllocationSize = 1024 * 64;
 }
 
 Node* NodePool::GetNode() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  Mutex::Lock lock(mutex_);
   if (pool_.empty()) {
     AllocateNewBatch();
   }
@@ -42,12 +42,12 @@ Node* NodePool::GetNode() {
 }
 
 void NodePool::ReleaseNode(Node* node) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  Mutex::Lock lock(mutex_);
   pool_.push_back(node);
 }
 
 void NodePool::ReleaseChildren(Node* node) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  Mutex::Lock lock(mutex_);
   for (Node* iter = node->child; iter; iter = iter->sibling) {
     ReleaseSubtreeInternal(iter);
   }
@@ -55,7 +55,7 @@ void NodePool::ReleaseChildren(Node* node) {
 }
 
 void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  Mutex::Lock lock(mutex_);
   Node* child = nullptr;
   for (Node* iter = root->child; iter; iter = iter->sibling) {
     if (iter == subtree) {
@@ -71,25 +71,23 @@ void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
 }
 
 uint64_t NodePool::GetAllocatedNodeCount() const {
-  std::lock_guard<std::mutex> lock(mutex_);
+  Mutex::Lock lock(mutex_);
   return kAllocationSize * allocations_.size() - pool_.size();
 }
 
 void NodePool::ReleaseSubtree(Node* node) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  Mutex::Lock lock(mutex_);
   ReleaseSubtreeInternal(node);
 }
 
-// Mutex must be hold.
-void NodePool::ReleaseSubtreeInternal(Node* node) {
+void NodePool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
   for (Node* iter = node->child; iter; iter = iter->sibling) {
     ReleaseSubtreeInternal(iter);
     pool_.push_back(iter);
   }
 }
 
-// Mutex must be hold.
-void NodePool::AllocateNewBatch() {
+void NodePool::AllocateNewBatch() REQUIRES(mutex_) {
   allocations_.emplace_back(std::make_unique<Node[]>(kAllocationSize));
   for (int i = 0; i < kAllocationSize; ++i) {
     pool_.push_back(allocations_.back().get() + i);
