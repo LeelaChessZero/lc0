@@ -80,6 +80,7 @@ const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
 }
 
 bool OptionsParser::ProcessAllFlags() {
+  std::string context;
   for (auto iter = CommandLine::Arguments().begin(),
             end = CommandLine::Arguments().end();
        iter != end; ++iter) {
@@ -99,7 +100,7 @@ bool OptionsParser::ProcessAllFlags() {
       }
       bool processed = false;
       for (auto& option : options_) {
-        if (option->ProcessLongFlag(param, value, GetMutableOptions())) {
+        if (option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
           processed = true;
           break;
         }
@@ -119,11 +120,11 @@ bool OptionsParser::ProcessAllFlags() {
         value = *(iter + 1);
       }
       for (auto& option : options_) {
-        if (option->ProcessShortFlag(param[1], GetMutableOptions())) {
+        if (option->ProcessShortFlag(param[1], GetMutableOptions(context))) {
           processed = true;
           break;
-        } else if (option->ProcessShortFlagWithValue(param[1], value,
-                                                     GetMutableOptions())) {
+        } else if (option->ProcessShortFlagWithValue(
+                       param[1], value, GetMutableOptions(context))) {
           if (!value.empty()) ++iter;
           processed = true;
           break;
@@ -135,6 +136,11 @@ bool OptionsParser::ProcessAllFlags() {
                   << " --help" << std::endl;
         return false;
       }
+      continue;
+    }
+
+    if (!param.empty() && param[param.size() - 1] == ':') {
+      context = param.substr(0, param.size() - 1);
       continue;
     }
 

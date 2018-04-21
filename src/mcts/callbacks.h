@@ -102,7 +102,7 @@ struct TournamentInfo {
 
   // Player1's [win/draw/lose] as [white/black].
   // e.g. results[2][1] is how many times player 1 lost as black.
-  int results[3][2] = {{-1, -1}, {-1, -1}, {-1, -1}};
+  int results[3][2] = {{0, 0}, {0, 0}, {0, 0}};
   using Callback = std::function<void(const TournamentInfo&)>;
 };
 
