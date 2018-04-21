@@ -122,12 +122,12 @@ void Search::Worker() {
       // If we hit the node that is already processed (by our batch or in
       // another thread) stop gathering and process smaller batch.
       if (!node) break;
+      ++new_nodes;
 
       nodes_to_process.push_back(node);
       // If node is already known as terminal (win/lose/draw according to rules
       // of the game), it means that we already visited this node before.
       if (node->is_terminal) continue;
-      ++new_nodes;
 
       ExtendNode(node);
 
