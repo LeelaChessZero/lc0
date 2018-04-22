@@ -17,13 +17,13 @@
 */
 
 #include "selfplay/tournament.h"
-#include <random>
 #include "mcts/search.h"
 #include "neural/loader.h"
 #include "neural/network_mux.h"
 #include "neural/network_tf.h"
 #include "optionsparser.h"
 #include "selfplay/game.h"
+#include "utils/random.h"
 
 namespace lczero {
 
@@ -86,10 +86,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kMaxGpuBatch(options.Get<int>(kMaxGpuBatchStr)) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 1);
-    next_game_black_ = dis(gen);
+    next_game_black_ = Random::Get().GetBool();
   }
 
   // Initializing networks.

@@ -89,9 +89,12 @@ class Search {
   InputPlanes EncodeNode(const Node* node);
   void ExtendNode(Node* node);
 
-  Mutex counters_mutex_;
+  mutable Mutex counters_mutex_;
   bool stop_ GUARDED_BY(counters_mutex_) = false;
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
+  // Stored so that in the case of non-zero temperature GetBestMove() returns
+  // consistent results.
+  std::pair<Move, Move> best_move_ GUARDED_BY(counters_mutex_);
 
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
@@ -119,6 +122,8 @@ class Search {
   const int kMiniPrefetchBatch;
   const bool kAggresiveCaching;
   const float kCpuct;
+  const float kTemperature;
+  const float kTempDecay;
 };
 
 }  // namespace lczero

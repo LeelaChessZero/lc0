@@ -24,35 +24,27 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/network_tf.h"
+#include "utils/random.h"
 
 namespace lczero {
 
 namespace {
+const char* kMiniBatchSizeStr = "Minibatch size for NN inference";
+const char* kMiniPrefetchBatchStr = "Max prefetch nodes, per NN call";
+const char* kAggresiveCachingStr = "Try hard to find what to cache";
+const char* kCpuctStr = "Cpuct MCTS option (x100)";
+const char* kTemperatureStr = "Initial temperature (x100)";
+const char* kTempDecayStr = "Per move temperature decay (x100)";
 
-const int kDefaultMiniBatchSize = 16;
-const char* kMiniBatchSizeOption = "Minibatch size for NN inference";
-
-const int kDefaultPrefetchBatchSize = 64;
-const char* kMiniPrefetchBatchOption = "Max prefetch nodes, per NN call";
-
-const bool kDefaultAggresiveCaching = false;
-const char* kAggresiveCachingOption = "Try hard to find what to cache";
-
-const int kDefaultCpuct = 170;
-const char* kCpuctOption = "Cpuct MCTS option (x100)";
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {
-  options->Add<SpinOption>(kMiniBatchSizeOption, 1, 1024, "minibatch-size") =
-      kDefaultMiniBatchSize;
-
-  options->Add<SpinOption>(kMiniPrefetchBatchOption, 0, 1024, "max-prefetch") =
-      kDefaultPrefetchBatchSize;
-
-  options->Add<CheckOption>(kAggresiveCachingOption, "aggressive-caching") =
-      kDefaultAggresiveCaching;
-
-  options->Add<SpinOption>(kCpuctOption, 0, 9999, "cpuct") = kDefaultCpuct;
+  options->Add<SpinOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 16;
+  options->Add<SpinOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 64;
+  options->Add<CheckOption>(kAggresiveCachingStr, "aggressive-caching") = false;
+  options->Add<SpinOption>(kCpuctStr, 0, 9999, "cpuct") = 170;
+  options->Add<SpinOption>(kTemperatureStr, 0, 9999, "temperature", 'm') = 0;
+  options->Add<SpinOption>(kTempDecayStr, 0, 100, "tempdecay") = 0;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,
@@ -68,10 +60,12 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       initial_visits_(root_node->n),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeOption)),
-      kMiniPrefetchBatch(options.Get<int>(kMiniPrefetchBatchOption)),
-      kAggresiveCaching(options.Get<bool>(kAggresiveCachingOption)),
-      kCpuct(options.Get<int>(kCpuctOption) / 100.0f) {}
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
+      kMiniPrefetchBatch(options.Get<int>(kMiniPrefetchBatchStr)),
+      kAggresiveCaching(options.Get<bool>(kAggresiveCachingStr)),
+      kCpuct(options.Get<int>(kCpuctStr) / 100.0f),
+      kTemperature(options.Get<int>(kTemperatureStr) / 100.0f),
+      kTempDecay(options.Get<int>(kTempDecayStr) / 100.0f) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -316,6 +310,27 @@ Node* GetBestChild(Node* parent) {
   }
   return best_node;
 }
+
+Node* GetBestChildWithTemperature(Node* parent, float temperature) {
+  std::vector<double> cumulative_sums;
+  double sum = 0.0;
+
+  for (Node* node = parent->child; node; node = node->sibling) {
+    int n = node->n + node->n_in_flight;
+    sum += std::pow(n, 1 / temperature);
+    cumulative_sums.push_back(sum);
+  }
+
+  double toss = Random::Get().GetDouble(cumulative_sums.back());
+  int idx =
+      std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
+      cumulative_sums.begin();
+
+  for (Node* node = parent->child; node; node = node->sibling) {
+    if (idx-- == 0) return node;
+  }
+  assert(false);
+}
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
@@ -371,10 +386,10 @@ void Search::MaybeTriggerStop() {
     stop_ = true;
   }
   if (stop_ && !responded_bestmove_) {
-    responded_bestmove_ = true;
     SendUciInfo();
-    auto best_move = GetBestMoveInternal();
-    best_move_callback_({best_move.first, best_move.second});
+    best_move_ = GetBestMoveInternal();
+    best_move_callback_({best_move_.first, best_move_.second});
+    responded_bestmove_ = true;
     best_move_node_ = nullptr;
   }
 }
@@ -525,13 +540,24 @@ InputPlanes Search::EncodeNode(const Node* node) {
 
 std::pair<Move, Move> Search::GetBestMove() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
+  Mutex::Lock counters_lock(counters_mutex_);
   return GetBestMoveInternal();
 }
 
 std::pair<Move, Move> Search::GetBestMoveInternal() const
-    REQUIRES_SHARED(nodes_mutex_) {
+    REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) {
+  if (responded_bestmove_) return best_move_;
   if (!root_node_->child) return {};
-  Node* best_node = GetBestChild(root_node_);
+
+  float temperature = kTemperature;
+  if (temperature && kTempDecay)
+    temperature *= std::pow(1 - kTempDecay, root_node_->ply_count / 2);
+  if (temperature < 0.01) temperature = 0.0;
+
+  Node* best_node = temperature
+                        ? GetBestChildWithTemperature(root_node_, temperature)
+                        : GetBestChild(root_node_);
+
   Move move = best_node->move;
   if (!best_node->board.flipped()) move.Mirror();
 

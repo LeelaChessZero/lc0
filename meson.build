@@ -41,6 +41,7 @@ files = [
   'src/utils/transpose.cc',
   'src/utils/commandline.cc',
   'src/utils/optionsdict.cc',
+  'src/utils/random.cc',
   'src/engine.cc',
   'src/optionsparser.cc',
   'src/selfplay/game.cc',
