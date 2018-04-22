@@ -240,6 +240,11 @@ void SelfPlayTournament::RunBlocking() {
   if (kParallelism == 1) {
     // No need for multiple threads if there is one worker.
     Worker();
+    Mutex::Lock lock(mutex_);
+    if (!abort_) {
+      tournament_info_.finished = true;
+      tournament_callback_(tournament_info_);
+    }
   } else {
     StartAsync();
     Wait();
@@ -247,10 +252,19 @@ void SelfPlayTournament::RunBlocking() {
 }
 
 void SelfPlayTournament::Wait() {
-  Mutex::Lock lock(threads_mutex_);
-  while (!threads_.empty()) {
-    threads_.back().join();
-    threads_.pop_back();
+  {
+    Mutex::Lock lock(threads_mutex_);
+    while (!threads_.empty()) {
+      threads_.back().join();
+      threads_.pop_back();
+    }
+  }
+  {
+    Mutex::Lock lock(mutex_);
+    if (!abort_) {
+      tournament_info_.finished = true;
+      tournament_callback_(tournament_info_);
+    }
   }
 }
 
