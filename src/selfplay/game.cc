@@ -93,6 +93,16 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
   }
 }
 
+std::vector<Move> SelfPlayGame::GetMoves() const {
+  std::vector<Move> moves;
+  for (Node* node = tree_[0]->GetCurrentHead();
+       node != tree_[0]->GetGameBeginNode(); node = node->parent) {
+    moves.push_back(node->move);
+  }
+  std::reverse(moves.begin(), moves.end());
+  return moves;
+}
+
 void SelfPlayGame::Abort() {
   std::lock_guard<std::mutex> lock(mutex_);
   abort_ = true;

@@ -93,6 +93,7 @@ class NodeTree {
   int GetPlyCount() const { return current_head_->ply_count; }
   bool IsBlackToMove() const { return current_head_->board.flipped(); }
   Node* GetCurrentHead() const { return current_head_; }
+  Node* GetGameBeginNode() const { return gamebegin_node_; }
   NodePool* GetNodePool() const { return node_pool_; }
 
  private:

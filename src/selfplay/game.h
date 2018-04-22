@@ -58,6 +58,7 @@ class SelfPlayGame {
   void Abort();
 
   GameInfo::GameResult GetGameResult() const { return game_result_; }
+  std::vector<Move> GetMoves() const;
 
  private:
   // options_[0] is for white player, [1] for black.

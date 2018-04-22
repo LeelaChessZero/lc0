@@ -195,6 +195,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.game_result = game.GetGameResult();
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
+    game_info.moves = game.GetMoves();
     game_callback_(game_info);
 
     // Update tournament stats.
