@@ -19,6 +19,7 @@
 #pragma once
 
 #include <random>
+#include "utils/mutex.h"
 
 namespace lczero {
 
@@ -26,11 +27,14 @@ class Random {
  public:
   static Random& Get();
   double GetDouble(double max_val);
+  double GetGamma(double alpha, double beta);
   bool GetBool();
 
  private:
   Random();
-  std::mt19937 gen_;
+
+  Mutex mutex_;
+  std::mt19937 gen_ GUARDED_BY(mutex_);
 };
 
 }  // namespace lczero

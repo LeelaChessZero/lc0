@@ -35,6 +35,7 @@ const char* kAggresiveCachingStr = "Try hard to find what to cache";
 const char* kCpuctStr = "Cpuct MCTS option (x100)";
 const char* kTemperatureStr = "Initial temperature (x100)";
 const char* kTempDecayStr = "Per move temperature decay (x100)";
+const char* kNoiseStr = "Add Dirichlet noise at root node";
 
 }  // namespace
 
@@ -45,6 +46,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<SpinOption>(kCpuctStr, 0, 9999, "cpuct") = 170;
   options->Add<SpinOption>(kTemperatureStr, 0, 9999, "temperature", 'm') = 0;
   options->Add<SpinOption>(kTempDecayStr, 0, 100, "tempdecay") = 0;
+  options->Add<CheckOption>(kNoiseStr, "noise", 'n') = false;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,
@@ -65,7 +67,8 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       kAggresiveCaching(options.Get<bool>(kAggresiveCachingStr)),
       kCpuct(options.Get<int>(kCpuctStr) / 100.0f),
       kTemperature(options.Get<int>(kTemperatureStr) / 100.0f),
-      kTempDecay(options.Get<int>(kTempDecayStr) / 100.0f) {}
+      kTempDecay(options.Get<int>(kTempDecayStr) / 100.0f),
+      kNoise(options.Get<bool>(kNoiseStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -98,6 +101,27 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
   computation->AddInput(hash, std::move(planes), std::move(moves));
   return false;
 }
+
+namespace {
+void ApplyDirichletNoise(Node* node, float eps, double alpha) {
+  float total = 0;
+  std::vector<float> noise;
+
+  // TODO(mooskagh) remove this loop when we store number of children.
+  for (Node* iter = node->child; iter; iter = iter->sibling) {
+    float eta = Random::Get().GetGamma(alpha, 1.0);
+    noise.emplace_back(eta);
+    total += eta;
+  }
+
+  if (total < std::numeric_limits<float>::min()) return;
+
+  int noise_idx = 0;
+  for (Node* iter = node->child; iter; iter = iter->sibling) {
+    iter->p = iter->p * (1 - eps) + noise[noise_idx++] / total * eps;
+  }
+}
+}  // namespace
 
 void Search::Worker() {
   std::vector<Node*> nodes_to_process;
@@ -165,6 +189,10 @@ void Search::Worker() {
           for (Node* n = node->child; n; n = n->sibling) {
             n->p /= total;
           }
+        }
+        // Add Dirichlet noise if enabled and at root.
+        if (kNoise && node == root_node_) {
+          ApplyDirichletNoise(node, 0.03, 0.25);
         }
         ++idx_in_computation;
       }

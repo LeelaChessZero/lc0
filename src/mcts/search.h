@@ -124,6 +124,7 @@ class Search {
   const float kCpuct;
   const float kTemperature;
   const float kTempDecay;
+  const bool kNoise;
 };
 
 }  // namespace lczero

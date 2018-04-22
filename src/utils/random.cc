@@ -29,12 +29,20 @@ Random& Random::Get() {
 }
 
 bool Random::GetBool() {
+  Mutex::Lock lock(mutex_);
   std::uniform_int_distribution<> dist(0, 1);
   return dist(gen_) != 0;
 }
 
 double Random::GetDouble(double maxval) {
+  Mutex::Lock lock(mutex_);
   std::uniform_real_distribution<> dist(0.0, maxval);
+  return dist(gen_);
+}
+
+double Random::GetGamma(double alpha, double beta) {
+  Mutex::Lock lock(mutex_);
+  std::gamma_distribution<double> dist(alpha, beta);
   return dist(gen_);
 }
 
