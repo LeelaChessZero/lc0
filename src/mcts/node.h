@@ -21,11 +21,26 @@
 #include <memory>
 #include <mutex>
 #include "chess/board.h"
+#include "mcts/callbacks.h"
+#include "neural/network.h"
+#include "neural/writer.h"
 #include "utils/mutex.h"
 
 namespace lczero {
 
+// TODO(mooskagh) That's too large to be a POD struct. Make it a class with
+// proper encapsulation.
 struct Node {
+  float ComputeQ() const { return n ? q : -parent->q; }
+  // Returns U / (Puct * N[parent])
+  float ComputeU() const { return p / (1 + n + n_in_flight); }
+  // Encodes the node for neural network request.
+  InputPlanes EncodeForNN() const;
+  V3TrainingData GetV3TrainingData(GameInfo::GameResult result) const;
+  int ComputeRepetitions();
+  uint64_t BoardHash() const;
+  std::string DebugString() const;
+
   // Move corresponding to this node. From the point of view of a player,
   // i.e. black's e7e5 is stored as e2e4.
   // Root node contains move a1a1.
@@ -71,13 +86,6 @@ struct Node {
   Node* child;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   Node* sibling;
-
-  float ComputeQ() const { return n ? q : -parent->q; }
-  // Returns U / (Puct * N[parent])
-  float ComputeU() const { return p / (1 + n + n_in_flight); }
-  int ComputeRepetitions();
-  uint64_t BoardHash() const;
-  std::string DebugString() const;
 };
 
 class NodePool;

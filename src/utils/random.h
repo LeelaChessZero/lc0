@@ -19,6 +19,7 @@
 #pragma once
 
 #include <random>
+#include <string>
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -28,6 +29,9 @@ class Random {
   static Random& Get();
   double GetDouble(double max_val);
   double GetGamma(double alpha, double beta);
+  // Both sides are included.
+  int GetInt(int min, int max);
+  std::string GetString(int length);
   bool GetBool();
 
  private:

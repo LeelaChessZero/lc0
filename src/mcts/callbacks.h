@@ -85,6 +85,8 @@ struct GameInfo {
   enum GameResult { UNDECIDED, WHITE_WON, DRAW, BLACK_WON };
   // Game result.
   GameResult game_result = UNDECIDED;
+  // Name of the file with training data.
+  std::string training_filename;
   // Game moves.
   std::vector<Move> moves;
   // Index of the game in the tournament (0-based).

@@ -39,6 +39,7 @@ const char* kNetFileStr = "Network weights file path";
 const char* kPlayoutsStr = "Number of playouts per move to search";
 const char* kVisitsStr = "Number of visits per move to search";
 const char* kTimeMsStr = "Time per move, in milliseconds";
+const char* kTrainingStr = "Write training data";
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
 
@@ -60,6 +61,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<SpinOption>(kPlayoutsStr, -1, 999999999, "playouts", 'p') = -1;
   options->Add<SpinOption>(kVisitsStr, -1, 999999999, "visits", 'v') = -1;
   options->Add<SpinOption>(kTimeMsStr, -1, 999999999, "movetime") = -1;
+  options->Add<CheckOption>(kTrainingStr, "training") = false;
 
   Search::PopulateUciParams(options);
 }
@@ -83,7 +85,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kShareTree(options.Get<bool>(kShareTreesStr)),
       kParallelism(options.Get<int>(kParallelGamesStr)),
       kGpuThreads(options.Get<int>(kGpuThreadsStr)),
-      kMaxGpuBatch(options.Get<int>(kMaxGpuBatchStr)) {
+      kMaxGpuBatch(options.Get<int>(kMaxGpuBatchStr)),
+      kTraining(options.Get<bool>(kTrainingStr)) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     next_game_black_ = Random::Get().GetBool();
@@ -197,6 +200,12 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
     game_info.moves = game.GetMoves();
+    if (kTraining) {
+      TrainingDataWriter writer(game_number);
+      game.WriteTrainingData(&writer);
+      writer.Finalize();
+      game_info.training_filename = writer.GetFileName();
+    }
     game_callback_(game_info);
 
     // Update tournament stats.

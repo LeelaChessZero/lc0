@@ -92,6 +92,7 @@ class SelfPlayTournament {
   const int kParallelism;
   const int kGpuThreads;
   const int kMaxGpuBatch;
+  const bool kTraining;
 };
 
 }  // namespace lczero

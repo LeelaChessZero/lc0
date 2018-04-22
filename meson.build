@@ -35,6 +35,7 @@ files = [
   'src/mcts/search.cc',
   'src/neural/cache.cc',
   'src/neural/loader.cc',
+  'src/neural/writer.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
   'src/neural/network_tf.cc',

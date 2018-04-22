@@ -33,6 +33,9 @@ class CommandLine {
   // Name of the executable filename that was run.
   static const std::string& BinaryName() { return binary_; }
 
+  // Directory where the binary is run. Without trailing slash.
+  static std::string BinaryDirectory();
+
   // If the first command line parameter is @command, remove it and return
   // true. Otherwise return false.
   static bool ConsumeCommand(const std::string& command);

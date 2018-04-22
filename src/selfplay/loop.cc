@@ -47,6 +47,8 @@ void SelfPlayLoop::RunLoop() {
 
 void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   std::string res = "gameready";
+  if (!info.training_filename.empty())
+    res += " trainingfile " + info.training_filename;
   if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
   if (info.is_black)
     res += " player1 " + std::string(*info.is_black ? "black" : "white");

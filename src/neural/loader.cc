@@ -104,13 +104,7 @@ std::string DiscoveryWeightsFile() {
   const int kMinFileSize = 30000000;
 
   using namespace std::experimental::filesystem;
-  std::string path = CommandLine::BinaryName();
-  auto pos = path.find_last_of("\\/");
-  if (pos != std::string::npos) {
-    path.resize(pos);
-  } else {
-    path = ".";
-  }
+  std::string path = CommandLine::BinaryDirectory();
 
   std::vector<std::pair<file_time_type, std::string>> candidates;
   for (const auto& file : recursive_directory_iterator(path)) {

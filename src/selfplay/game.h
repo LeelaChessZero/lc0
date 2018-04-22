@@ -57,6 +57,9 @@ class SelfPlayGame {
   // not.
   void Abort();
 
+  // Writes training data to a file.
+  void WriteTrainingData(TrainingDataWriter* writer) const;
+
   GameInfo::GameResult GetGameResult() const { return game_result_; }
   std::vector<Move> GetMoves() const;
 
@@ -73,6 +76,9 @@ class SelfPlayGame {
   bool abort_ = false;
   GameInfo::GameResult game_result_ = GameInfo::UNDECIDED;
   std::mutex mutex_;
+
+  // Training data to send.
+  std::vector<V3TrainingData> training_data_;
 };
 
 }  // namespace lczero

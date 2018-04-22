@@ -17,6 +17,7 @@
 */
 
 #include "selfplay/game.h"
+#include "neural/writer.h"
 
 namespace lczero {
 
@@ -85,6 +86,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
     if (abort_) break;
 
+    // Append training data.
+    training_data_.push_back(
+        tree_[0]->GetCurrentHead()->GetV3TrainingData(GameInfo::UNDECIDED));
+
     // Add best move to the tree.
     Move move = search_->GetBestMove().first;
     tree_[0]->MakeMove(move);
@@ -107,6 +112,21 @@ void SelfPlayGame::Abort() {
   std::lock_guard<std::mutex> lock(mutex_);
   abort_ = true;
   if (search_) search_->Abort();
+}
+
+void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
+  bool black_to_move = tree_[0]->GetGameBeginNode()->board.flipped();
+  for (auto chunk : training_data_) {
+    if (game_result_ == GameInfo::WHITE_WON) {
+      chunk.result = black_to_move ? -1 : 1;
+    } else if (game_result_ == GameInfo::BLACK_WON) {
+      chunk.result = black_to_move ? 1 : -1;
+    } else {
+      chunk.result = 0;
+    }
+    writer->WriteChunk(chunk);
+    black_to_move = !black_to_move;
+  }
 }
 
 }  // namespace lczero

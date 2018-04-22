@@ -86,7 +86,6 @@ class Search {
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
   Node* PickNodeToExtend(Node* node);
-  InputPlanes EncodeNode(const Node* node);
   void ExtendNode(Node* node);
 
   mutable Mutex counters_mutex_;

@@ -80,7 +80,7 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
   } else {
     if (cache_->ContainsKey(hash)) return true;
   }
-  auto planes = EncodeNode(node);
+  auto planes = node->EncodeForNN();
 
   std::vector<uint16_t> moves;
 
@@ -516,54 +516,6 @@ Node* Search::PickNodeToExtend(Node* node) {
       }
     }
   }
-}
-
-InputPlanes Search::EncodeNode(const Node* node) {
-  const int kMoveHistory = 8;
-  const int planesPerBoard = 13;
-  const int kAuxPlaneBase = planesPerBoard * kMoveHistory;
-
-  InputPlanes result(kAuxPlaneBase + 8);
-
-  const bool we_are_black = node->board.flipped();
-  bool flip = false;
-
-  for (int i = 0; i < kMoveHistory; ++i, flip = !flip) {
-    if (!node) break;
-    ChessBoard board = node->board;
-    if (flip) board.Mirror();
-
-    const int base = i * planesPerBoard;
-    if (i == 0) {
-      if (board.castlings().we_can_000()) result[kAuxPlaneBase + 0].SetAll();
-      if (board.castlings().we_can_00()) result[kAuxPlaneBase + 1].SetAll();
-      if (board.castlings().they_can_000()) result[kAuxPlaneBase + 2].SetAll();
-      if (board.castlings().they_can_00()) result[kAuxPlaneBase + 3].SetAll();
-      if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
-      result[kAuxPlaneBase + 5].Fill(node->no_capture_ply);
-    }
-
-    result[base + 0].mask = (board.ours() * board.pawns()).as_int();
-    result[base + 1].mask = (board.our_knights()).as_int();
-    result[base + 2].mask = (board.ours() * board.bishops()).as_int();
-    result[base + 3].mask = (board.ours() * board.rooks()).as_int();
-    result[base + 4].mask = (board.ours() * board.queens()).as_int();
-    result[base + 5].mask = (board.our_king()).as_int();
-
-    result[base + 6].mask = (board.theirs() * board.pawns()).as_int();
-    result[base + 7].mask = (board.their_knights()).as_int();
-    result[base + 8].mask = (board.theirs() * board.bishops()).as_int();
-    result[base + 9].mask = (board.theirs() * board.rooks()).as_int();
-    result[base + 10].mask = (board.theirs() * board.queens()).as_int();
-    result[base + 11].mask = (board.their_king()).as_int();
-
-    const int repetitions = node->repetitions;
-    if (repetitions >= 1) result[base + 12].SetAll();
-
-    node = node->parent;
-  }
-
-  return result;
 }
 
 std::pair<Move, Move> Search::GetBestMove() const {
