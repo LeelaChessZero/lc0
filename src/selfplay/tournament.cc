@@ -36,7 +36,8 @@ const char* kMaxGpuBatchStr = "Maximum GPU batch size";
 const char* kThreadsStr = "Number of CPU threads for every game";
 const char* kNnCacheSizeStr = "NNCache size";
 const char* kNetFileStr = "Network weights file path";
-const char* kNodesStr = "Number of nodes per move to search";
+const char* kPlayoutsStr = "Number of playouts per move to search";
+const char* kVisitsStr = "Number of visits per move to search";
 const char* kTimeMsStr = "Time per move, in milliseconds";
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
@@ -56,7 +57,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<SpinOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
   options->Add<StringOption>(kNetFileStr, "weights", 'w') = kAutoDiscover;
   options->Add<SpinOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
-  options->Add<SpinOption>(kNodesStr, -1, 999999999, "nodes") = -1;
+  options->Add<SpinOption>(kPlayoutsStr, -1, 999999999, "playouts", 'p') = -1;
+  options->Add<SpinOption>(kVisitsStr, -1, 999999999, "visits", 'v') = -1;
   options->Add<SpinOption>(kTimeMsStr, -1, 999999999, "movetime") = -1;
 
   Search::PopulateUciParams(options);
@@ -128,8 +130,10 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
 
   // SearchLimits.
   for (int idx : {0, 1}) {
-    search_limits_[idx].nodes =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kNodesStr);
+    search_limits_[idx].playouts =
+        options.GetSubdict(kPlayerNames[idx]).Get<int>(kPlayoutsStr);
+    search_limits_[idx].visits =
+        options.GetSubdict(kPlayerNames[idx]).Get<int>(kVisitsStr);
     search_limits_[idx].time_ms =
         options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsStr);
   }

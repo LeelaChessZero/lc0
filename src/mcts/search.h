@@ -33,7 +33,8 @@
 namespace lczero {
 
 struct SearchLimits {
-  std::int64_t nodes = -1;
+  std::int64_t visits = -1;
+  std::int64_t playouts = -1;
   std::int64_t time_ms = -1;
 };
 
@@ -102,12 +103,13 @@ class Search {
   Network* const network_;
   const SearchLimits limits_;
   const std::chrono::steady_clock::time_point start_time_;
+  const uint64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
   Node* best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
   Node* last_outputted_best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
-  uint64_t total_nodes_ GUARDED_BY(nodes_mutex_) = 0;
+  uint64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;

@@ -65,6 +65,7 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       network_(network),
       limits_(limits),
       start_time_(std::chrono::steady_clock::now()),
+      initial_visits_(root_node->n),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeOption)),
@@ -178,7 +179,7 @@ void Search::Worker() {
     {
       // Update nodes.
       SharedMutex::Lock lock(nodes_mutex_);
-      total_nodes_ += new_nodes;
+      total_playouts_ += new_nodes;
       for (Node* node : nodes_to_process) {
         float v = node->v;
         // Maximum depth the node is explored.
@@ -323,10 +324,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   uci_info_.depth = root_node_->full_depth;
   uci_info_.seldepth = root_node_->max_depth;
   uci_info_.time = GetTimeSinceStart();
-  uci_info_.nodes = total_nodes_;
+  uci_info_.nodes = total_playouts_ + initial_visits_;
   uci_info_.hashfull = cache_->GetSize() * 1000LL / cache_->GetCapacity();
   uci_info_.nps =
-      uci_info_.time ? (uci_info_.nodes * 1000 / uci_info_.time) : 0;
+      uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
   uci_info_.score = -191 * log(2 / (best_move_node_->q * 0.99 + 1) - 1);
   uci_info_.pv.clear();
 
@@ -359,7 +360,11 @@ uint64_t Search::GetTimeSinceStart() const {
 void Search::MaybeTriggerStop() {
   Mutex::Lock lock(counters_mutex_);
   SharedMutex::Lock nodes_lock(nodes_mutex_);
-  if (limits_.nodes >= 0 && total_nodes_ >= limits_.nodes) {
+  if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
+    stop_ = true;
+  }
+  if (limits_.visits >= 0 &&
+      total_playouts_ + initial_visits_ >= limits_.visits) {
     stop_ = true;
   }
   if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {

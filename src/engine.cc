@@ -35,7 +35,7 @@ const char* kAutoDiscover = "<autodiscover>";
 SearchLimits PopulateSearchLimits(int ply, bool is_black,
                                   const GoParams& params) {
   SearchLimits limits;
-  limits.nodes = params.nodes;
+  limits.playouts = params.nodes;
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   if (params.infinite || time < 0) return limits;
