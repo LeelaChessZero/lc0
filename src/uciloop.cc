@@ -52,7 +52,7 @@ ParseCommand(const std::string& line) {
 
   std::istringstream iss(line);
   std::string token;
-  iss >> std::noskipws >> token >> std::ws;
+  iss >> /* std::noskipws >> */ token >> std::ws;
 
   auto command = kKnownCommands.find(token);
   if (command == kKnownCommands.end()) {
@@ -64,8 +64,8 @@ ParseCommand(const std::string& line) {
     auto iter = command->second.find(token);
     if (iter == command->second.end()) {
       if (!value) throw Exception("Unexpected token: " + token);
-      *value += token + whitespace;
-      iss >> whitespace;
+      *value += whitespace + token;
+      whitespace = " ";
     } else {
       value = &params[token];
       iss >> std::ws;
@@ -134,9 +134,9 @@ bool UciLoop::DispatchCommand(
       }
       go_params.infinite = true;
     }
-#define OPTION(x)                                     \
-  if (ContainsKey(params, #x)) {                      \
-    go_params.x == std::stoi(GetOrEmpty(params, #x)); \
+#define OPTION(x)                                    \
+  if (ContainsKey(params, #x)) {                     \
+    go_params.x = std::stoi(GetOrEmpty(params, #x)); \
   }
     OPTION(wtime);
     OPTION(btime);
