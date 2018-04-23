@@ -20,6 +20,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
@@ -375,9 +378,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   uci_info_.pv.clear();
 
   for (Node* iter = best_move_node_; iter; iter = GetBestChild(iter)) {
-    Move m = iter->move;
-    if (!iter->board.flipped()) m.Mirror();
-    uci_info_.pv.push_back(m);
+    uci_info_.pv.push_back(iter->GetMoveAsWhite());
   }
   uci_info_.comment.clear();
   info_callback_(uci_info_);
@@ -400,6 +401,30 @@ uint64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
+void Search::SendMovesStats() const {
+  std::vector<const Node*> nodes;
+  for (Node* iter = root_node_->child; iter; iter = iter->sibling) {
+    nodes.emplace_back(iter);
+  }
+  std::sort(nodes.begin(), nodes.end(),
+            [](const Node* a, const Node* b) { return a->n < b->n; });
+
+  ThinkingInfo info;
+  for (const Node* node : nodes) {
+    std::ostringstream oss;
+    oss << std::left << std::setw(5) << node->GetMoveAsWhite().as_string();
+    oss << " -> ";
+    oss << std::right << std::setw(7) << node->n << " (+" << std::setw(2)
+        << node->n_in_flight << ") ";
+    oss << "(V: " << std::setw(5) << std::setprecision(2) << node->v * 100
+        << "%) ";
+    oss << "(N: " << std::setw(5) << std::setprecision(2) << node->p * 100
+        << "%) ";
+    info.comment = oss.str();
+    info_callback_(info);
+  }
+}
+
 void Search::MaybeTriggerStop() {
   Mutex::Lock lock(counters_mutex_);
   SharedMutex::Lock nodes_lock(nodes_mutex_);
@@ -415,6 +440,7 @@ void Search::MaybeTriggerStop() {
   }
   if (stop_ && !responded_bestmove_) {
     SendUciInfo();
+    SendMovesStats();
     best_move_ = GetBestMoveInternal();
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
@@ -538,15 +564,11 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
                         ? GetBestChildWithTemperature(root_node_, temperature)
                         : GetBestChild(root_node_);
 
-  Move move = best_node->move;
-  if (!best_node->board.flipped()) move.Mirror();
-
   Move ponder_move;
   if (best_node->child) {
-    ponder_move = GetBestChild(best_node)->move;
-    if (best_node->board.flipped()) ponder_move.Mirror();
+    ponder_move = GetBestChild(best_node)->GetMoveAsWhite();
   }
-  return {move, ponder_move};
+  return {best_node->GetMoveAsWhite(), ponder_move};
 }
 
 void Search::StartThreads(int how_many) {

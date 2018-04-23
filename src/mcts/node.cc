@@ -129,6 +129,12 @@ int Node::ComputeRepetitions() {
   return 0;
 }
 
+Move Node::GetMoveAsWhite() const {
+  Move m = move;
+  if (!board.flipped()) m.Mirror();
+  return m;
+}
+
 namespace {
 const int kMoveHistory = 8;
 const int kPlanesPerBoard = 13;
@@ -187,9 +193,7 @@ V3TrainingData Node::GetV3TrainingData(GameInfo::GameResult game_result) const {
   float total_n = n - 1;  // First visit was expansion of it inself.
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
   for (Node* iter = child; iter; iter = iter->sibling) {
-    Move m = iter->move;
-    if (board.flipped()) m.Mirror();
-    result.probabilities[m.as_nn_index()] = iter->n / total_n;
+    result.probabilities[iter->move.as_nn_index()] = iter->n / total_n;
   }
 
   // Populate planes.
@@ -269,11 +273,21 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
         full_moves * 2 - (starting_board.flipped() ? 1 : 2);
   }
 
+  Node* old_head = current_head_;
   current_head_ = gamebegin_node_;
+  bool seen_old_head = (gamebegin_node_ == old_head);
   for (const auto& move : moves) {
     MakeMove(move);
+    if (old_head == current_head_) seen_old_head = true;
   }
-  node_pool_->ReleaseChildren(current_head_);
+
+  // If we didn't see old head, it means that new position is shorter.
+  // As we killed the search tree already, trim it to redo the search.
+  if (!seen_old_head) {
+    current_head_->n = 0;
+    current_head_->n_in_flight = 0;
+    node_pool_->ReleaseChildren(current_head_);
+  }
 }
 
 void NodeTree::DeallocateTree() {

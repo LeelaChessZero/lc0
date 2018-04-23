@@ -94,6 +94,7 @@ void UciLoop::RunLoop() {
   std::cout.setf(std::ios::unitbuf);
   std::string line;
   while (std::getline(std::cin, line)) {
+    if (debug_log_) debug_log_ << '>' << line << std::endl << std::flush;
     try {
       auto command = ParseCommand(line);
       if (!DispatchCommand(command.first, command.second)) break;
@@ -158,9 +159,18 @@ bool UciLoop::DispatchCommand(
   return true;
 }
 
+void UciLoop::SetLogFilename(const std::string& filename) {
+  if (filename.empty()) {
+    debug_log_.close();
+  } else {
+    debug_log_.open(filename.c_str());
+  }
+}
+
 void UciLoop::SendResponse(const std::string& response) {
   static std::mutex output_mutex;
   std::lock_guard<std::mutex> lock(output_mutex);
+  if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
   std::cout << response << std::endl;
 }
 

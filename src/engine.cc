@@ -29,13 +29,14 @@ namespace lczero {
 namespace {
 const int kDefaultThreads = 2;
 const char* kThreadsOption = "Number of worker threads";
+const char* kDebugLogStr = "Do debug logging into file.";
 
 const char* kAutoDiscover = "<autodiscover>";
 
 SearchLimits PopulateSearchLimits(int ply, bool is_black,
                                   const GoParams& params) {
   SearchLimits limits;
-  limits.playouts = params.nodes;
+  limits.visits = params.nodes;
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   if (params.infinite || time < 0) return limits;
@@ -62,14 +63,11 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(
       "Network weights file path", "weights", 'w',
       std::bind(&EngineController::SetNetworkPath, this, _1)) = kAutoDiscover;
-
   options->Add<SpinOption>(kThreadsOption, 1, 128, "threads", 't') =
       kDefaultThreads;
-
   options->Add<SpinOption>(
       "NNCache size", 0, 999999999, "nncache", '\0',
       std::bind(&EngineController::SetCacheSize, this, _1)) = 200000;
-
   Search::PopulateUciParams(options);
 }
 
@@ -92,7 +90,6 @@ void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 void EngineController::NewGame() {
   SharedLock lock(busy_mutex_);
   search_.reset();
-  node_pool_.reset();
 }
 
 void EngineController::SetPosition(const std::string& fen,
@@ -132,6 +129,9 @@ EngineLoop::EngineLoop()
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
+  options_.Add<StringOption>(
+      kDebugLogStr, "debuglog", 'l',
+      [this](const std::string& filename) { SetLogFilename(filename); }) = "";
 }
 
 void EngineLoop::RunLoop() {

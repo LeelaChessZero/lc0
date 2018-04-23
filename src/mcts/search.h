@@ -78,6 +78,7 @@ class Search {
   uint64_t GetTimeSinceStart() const;
   void MaybeTriggerStop();
   void MaybeOutputInfo();
+  void SendMovesStats() const;
   bool AddNodeToCompute(Node* node, CachingComputation* computation,
                         bool add_if_cached = true);
   int PrefetchIntoCache(Node* node, int budget,
