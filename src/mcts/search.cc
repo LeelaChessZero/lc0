@@ -39,6 +39,7 @@ const char* kCpuctStr = "Cpuct MCTS option (x100)";
 const char* kTemperatureStr = "Initial temperature (x100)";
 const char* kTempDecayStr = "Per move temperature decay (x100)";
 const char* kNoiseStr = "Add Dirichlet noise at root node";
+const char* kVerboseStatsStr = "Display verbose move stats";
 
 }  // namespace
 
@@ -50,6 +51,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<SpinOption>(kTemperatureStr, 0, 9999, "temperature", 'm') = 0;
   options->Add<SpinOption>(kTempDecayStr, 0, 100, "tempdecay") = 0;
   options->Add<CheckOption>(kNoiseStr, "noise", 'n') = false;
+  options->Add<CheckOption>(kVerboseStatsStr, "verbose-move-stats") = false;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,
@@ -71,7 +73,8 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       kCpuct(options.Get<int>(kCpuctStr) / 100.0f),
       kTemperature(options.Get<int>(kTemperatureStr) / 100.0f),
       kTempDecay(options.Get<int>(kTempDecayStr) / 100.0f),
-      kNoise(options.Get<bool>(kNoiseStr)) {}
+      kNoise(options.Get<bool>(kNoiseStr)),
+      kVerboseStats(options.Get<bool>(kVerboseStatsStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -440,7 +443,7 @@ void Search::MaybeTriggerStop() {
   }
   if (stop_ && !responded_bestmove_) {
     SendUciInfo();
-    SendMovesStats();
+    if (kVerboseStats) SendMovesStats();
     best_move_ = GetBestMoveInternal();
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
