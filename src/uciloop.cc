@@ -126,7 +126,7 @@ bool UciLoop::DispatchCommand(
       std::string move;
       while (iss >> move) moves.push_back(move);
     }
-    CmdPosition(GetOrEmpty(params, "startpos"), moves);
+    CmdPosition(GetOrEmpty(params, "fen"), moves);
   } else if (command == "go") {
     GoParams go_params;
     if (ContainsKey(params, "infinite")) {
