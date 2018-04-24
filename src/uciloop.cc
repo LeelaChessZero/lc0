@@ -163,7 +163,7 @@ void UciLoop::SetLogFilename(const std::string& filename) {
   if (filename.empty()) {
     debug_log_.close();
   } else {
-    debug_log_.open(filename.c_str());
+    debug_log_.open(filename.c_str(), std::ios::app);
   }
 }
 
