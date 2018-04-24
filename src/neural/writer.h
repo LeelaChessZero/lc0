@@ -17,6 +17,7 @@
 */
 
 #include <fstream>
+#include "utils/cppattributes.h"
 
 #pragma once
 
@@ -36,7 +37,7 @@ struct V3TrainingData {
   uint8_t move_count;
   uint8_t rule50_count;
   int8_t result;
-} PACKED;
+} PACKED_STRUCT;
 static_assert(sizeof(V3TrainingData) == 8276, "Wrong struct size");
 
 #pragma pack(pop)

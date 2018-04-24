@@ -46,6 +46,6 @@
 #define ASSERT_CAPABILITY(x) ATTRIBUTE__(assert_capability(x))
 #define ASSERT_SHARED_CAPABILITY(x) ATTRIBUTE__(assert_shared_capability(x))
 #define RETURN_CAPABILITY(x) ATTRIBUTE__(lock_returned(x))
-#define PACKED ATTRIBUTE__(packed)
+#define PACKED_STRUCT ATTRIBUTE__(packed)
 
 #define NO_THREAD_SAFETY_ANALYSIS ATTRIBUTE__(no_thread_safety_analysis)
