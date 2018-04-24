@@ -419,10 +419,14 @@ void Search::SendMovesStats() const {
     oss << " -> ";
     oss << std::right << std::setw(7) << node->n << " (+" << std::setw(2)
         << node->n_in_flight << ") ";
-    oss << "(V: " << std::setw(5) << std::setprecision(2) << node->v * 100
+    oss << "(Q: " << std::setw(5) << std::setprecision(2) << node->v * 100
         << "%) ";
-    oss << "(N: " << std::setw(5) << std::setprecision(2) << node->p * 100
+    oss << "(P: " << std::setw(5) << std::setprecision(2) << node->p * 100
         << "%) ";
+    oss << "(Q: " << std::setw(5) << std::setprecision(2) << node->ComputeQ()
+        << ") ";
+    oss << "(U: " << std::setw(5) << std::setprecision(2)
+        << node->ComputeU() * kCpuct * std::sqrt(node->parent->n + 1) << ") ";
     info.comment = oss.str();
     info_callback_(info);
   }
