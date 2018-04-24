@@ -24,7 +24,7 @@ namespace lczero {
 Random::Random() : gen_(std::random_device()()) {}
 
 Random& Random::Get() {
-  static Random rand = Random();
+  static Random rand;
   return rand;
 }
 

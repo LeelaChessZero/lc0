@@ -21,7 +21,7 @@
 #include <atomic>
 #include <mutex>
 #include <shared_mutex>
-#include "utils/threadannotations.h"
+#include "utils/cppattributes.h"
 
 namespace lczero {
 
