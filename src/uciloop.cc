@@ -126,7 +126,7 @@ bool UciLoop::DispatchCommand(
       std::string move;
       while (iss >> move) moves.push_back(move);
     }
-    CmdPosition(GetOrEmpty(params, "startpos"), moves);
+    CmdPosition(GetOrEmpty(params, "fen"), moves);
   } else if (command == "go") {
     GoParams go_params;
     if (ContainsKey(params, "infinite")) {
@@ -163,7 +163,7 @@ void UciLoop::SetLogFilename(const std::string& filename) {
   if (filename.empty()) {
     debug_log_.close();
   } else {
-    debug_log_.open(filename.c_str());
+    debug_log_.open(filename.c_str(), std::ios::app);
   }
 }
 

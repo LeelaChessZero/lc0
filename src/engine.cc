@@ -90,6 +90,7 @@ void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 void EngineController::NewGame() {
   SharedLock lock(busy_mutex_);
   search_.reset();
+  tree_.reset();
 }
 
 void EngineController::SetPosition(const std::string& fen,

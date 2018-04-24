@@ -19,6 +19,7 @@
 #include "mcts/node.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -98,6 +99,18 @@ void NodePool::AllocateNewBatch() REQUIRES(mutex_) {
 uint64_t Node::BoardHash() const {
   return board.Hash();
   // return HashCat({board.Hash(), no_capture_ply, repetitions});
+}
+
+void Node::ResetStats() {
+  n_in_flight = 0;
+  n = 0;
+  v = 0.0;
+  q = 0.0;
+  w = 0.0;
+  p = 0.0;
+  max_depth = 0;
+  full_depth = 0;
+  is_terminal = 0;
 }
 
 std::string Node::DebugString() const {
@@ -284,9 +297,9 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // If we didn't see old head, it means that new position is shorter.
   // As we killed the search tree already, trim it to redo the search.
   if (!seen_old_head) {
-    current_head_->n = 0;
-    current_head_->n_in_flight = 0;
+    assert(!current_head_->sibling);
     node_pool_->ReleaseChildren(current_head_);
+    current_head_->ResetStats();
   }
 }
 
