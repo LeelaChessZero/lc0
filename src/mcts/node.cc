@@ -97,8 +97,8 @@ void NodePool::AllocateNewBatch() REQUIRES(mutex_) {
 }
 
 uint64_t Node::BoardHash() const {
-  return board.Hash();
-  // return HashCat({board.Hash(), no_capture_ply, repetitions});
+  // return board.Hash();
+  return HashCat({board.Hash(), no_capture_ply, repetitions});
 }
 
 void Node::ResetStats() {

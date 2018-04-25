@@ -287,7 +287,7 @@ int Search::PrefetchIntoCache(Node* node, int budget,
   // Populate all subnodes and their scores.
   typedef std::pair<float, Node*> ScoredNode;
   std::vector<ScoredNode> scores;
-  float factor = kCpuct * std::sqrt(node->n + 1);
+  float factor = kCpuct * std::sqrt(std::max(node->n, 1u));
   for (Node* iter = node->child; iter; iter = iter->sibling) {
     scores.emplace_back(factor * iter->ComputeU() + iter->ComputeQ(), iter);
   }
@@ -416,18 +416,25 @@ void Search::SendMovesStats() const {
   ThinkingInfo info;
   for (const Node* node : nodes) {
     std::ostringstream oss;
+    oss << std::fixed;
     oss << std::left << std::setw(5) << node->GetMoveAsWhite().as_string();
     oss << " -> ";
     oss << std::right << std::setw(7) << node->n << " (+" << std::setw(2)
         << node->n_in_flight << ") ";
-    oss << "(Q: " << std::setw(5) << std::setprecision(2) << node->v * 100
+    oss << "(V: " << std::setw(6) << std::setprecision(2) << node->v * 100
         << "%) ";
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->p * 100
         << "%) ";
-    oss << "(Q: " << std::setw(5) << std::setprecision(2) << node->ComputeQ()
+    oss << "(Q: " << std::setw(8) << std::setprecision(5) << node->ComputeQ()
         << ") ";
-    oss << "(U: " << std::setw(5) << std::setprecision(2)
-        << node->ComputeU() * kCpuct * std::sqrt(node->parent->n + 1) << ") ";
+    oss << "(U: " << std::setw(6) << std::setprecision(5)
+        << node->ComputeU() * kCpuct * std::sqrt(std::max(node->parent->n, 1u))
+        << ") ";
+
+    oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
+        << node->ComputeQ() + node->ComputeU() * kCpuct *
+                                  std::sqrt(std::max(node->parent->n, 1u))
+        << ") ";
     info.comment = oss.str();
     info_callback_(info);
   }
@@ -540,7 +547,7 @@ Node* Search::PickNodeToExtend(Node* node) {
 
     // Now we are not in leave, we need to go deeper.
     SharedMutex::SharedLock lock(nodes_mutex_);
-    float factor = kCpuct * std::sqrt(node->n + 1);
+    float factor = kCpuct * std::sqrt(std::max(node->n, 1u));
     float best = -100.0f;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
       const float score = factor * iter->ComputeU() + iter->ComputeQ();
