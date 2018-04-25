@@ -33,7 +33,7 @@ class LruCache {
 
  public:
   LruCache(int capacity = 128)
-      : capacity_(capacity), hash_(capacity * kLoadFactor) {
+      : capacity_(capacity), hash_(capacity * kLoadFactor + 1) {
     std::memset(&hash_[0], 0, sizeof(hash_[0]) * hash_.size());
   }
 
@@ -138,7 +138,7 @@ class LruCache {
     ShrinkToCapacity(capacity);
     capacity_ = capacity;
 
-    std::vector<Item*> new_hash(capacity * kLoadFactor);
+    std::vector<Item*> new_hash(capacity * kLoadFactor + 1);
     std::memset(&new_hash[0], 0, sizeof(new_hash[0]) * new_hash.size());
 
     if (size_ != 0) {
@@ -153,11 +153,11 @@ class LruCache {
     hash_.swap(new_hash);
   }
 
-  size_t GetSize() const {
+  int GetSize() const {
     Mutex::Lock lock(mutex_);
     return size_;
   }
-  size_t GetCapacity() const {
+  int GetCapacity() const {
     Mutex::Lock lock(mutex_);
     return capacity_;
   }
@@ -210,6 +210,7 @@ class LruCache {
   }
 
   void ShrinkToCapacity(int capacity) REQUIRES(mutex_) {
+    if (capacity < 0) capacity = 0;
     while (lru_tail_ && size_ > capacity) {
       EvictItem(lru_tail_);
     }

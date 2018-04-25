@@ -95,8 +95,8 @@ class LruCache {
     MaybeCleanup(capacity);
   }
 
-  size_t GetSize() const { return lru_.size(); }
-  size_t GetCapacity() const { return capacity_; }
+  int GetSize() const { return lru_.size(); }
+  int GetCapacity() const { return capacity_; }
 
  private:
   // Mutex should be locked when calling this function.
