@@ -198,7 +198,7 @@ void Search::Worker() {
         }
         // Add Dirichlet noise if enabled and at root.
         if (kNoise && node == root_node_) {
-          ApplyDirichletNoise(node, 0.03, 0.25);
+          ApplyDirichletNoise(node, 0.25, 0.3);
         }
         ++idx_in_computation;
       }
