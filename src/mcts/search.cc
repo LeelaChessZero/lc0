@@ -441,7 +441,6 @@ void Search::SendMovesStats() const {
 void Search::MaybeTriggerStop() {
   Mutex::Lock lock(counters_mutex_);
   SharedMutex::Lock nodes_lock(nodes_mutex_);
-  if (stop_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
   // Stop if reached playouts limit.
