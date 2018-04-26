@@ -196,6 +196,16 @@ InputPlanes Node::EncodeForNN() const {
   return result;
 }
 
+namespace {
+// Reverse bits in every byte of a number
+uint64_t ReverseBitsInBytes(uint64_t v) {
+  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
+  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
+  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
+  return v;
+}
+}  // namespace
+
 V3TrainingData Node::GetV3TrainingData(GameInfo::GameResult game_result) const {
   V3TrainingData result;
 
@@ -213,7 +223,7 @@ V3TrainingData Node::GetV3TrainingData(GameInfo::GameResult game_result) const {
   InputPlanes planes = EncodeForNN();
   int plane_idx = 0;
   for (auto& plane : result.planes) {
-    plane = planes[plane_idx++].mask;
+    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
 
   // Populate castlings.
