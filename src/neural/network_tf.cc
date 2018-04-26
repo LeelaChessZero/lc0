@@ -208,6 +208,12 @@ TFNetwork::TFNetwork(const Weights& weights)
 
   policy_head_ = std::make_unique<Output>(output.first);
   value_head_ = std::make_unique<Output>(output.second);
+
+  // First request to tensorflow is slow (0.6s), so doing an empty request for
+  // preheating.
+  auto fake_request = NewComputation();
+  fake_request->AddInput(InputPlanes{kInputPlanes});
+  fake_request->ComputeBlocking();
 }
 
 tensorflow::Status TFNetwork::Compute(tensorflow::Tensor& input,
