@@ -212,7 +212,7 @@ TFNetwork::TFNetwork(const Weights& weights)
   // First request to tensorflow is slow (0.6s), so doing an empty request for
   // preheating.
   auto fake_request = NewComputation();
-  fake_request->AddInput(InputPlanes{kInputPlanes});
+  fake_request->AddInput(InputPlanes(kInputPlanes));
   fake_request->ComputeBlocking();
 }
 
