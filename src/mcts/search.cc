@@ -40,12 +40,11 @@ const char* kTemperatureStr = "Initial temperature (x100)";
 const char* kTempDecayStr = "Per move temperature decay (x100)";
 const char* kNoiseStr = "Add Dirichlet noise at root node";
 const char* kVerboseStatsStr = "Display verbose move stats";
-
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {
-  options->Add<SpinOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 16;
-  options->Add<SpinOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 64;
+  options->Add<SpinOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
+  options->Add<SpinOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<CheckOption>(kAggresiveCachingStr, "aggressive-caching") = false;
   options->Add<SpinOption>(kCpuctStr, 0, 9999, "cpuct") = 170;
   options->Add<SpinOption>(kTemperatureStr, 0, 9999, "temperature", 'm') = 0;
@@ -287,7 +286,9 @@ int Search::PrefetchIntoCache(Node* node, int budget,
   std::vector<ScoredNode> scores;
   float factor = kCpuct * std::sqrt(std::max(node->n, 1u));
   for (Node* iter = node->child; iter; iter = iter->sibling) {
-    scores.emplace_back(factor * iter->ComputeU() + iter->ComputeQ(), iter);
+    if (iter->p == 0.0f) continue;
+    // Flipping sign of a score to be able to easily sort.
+    scores.emplace_back(-factor * iter->ComputeU() - iter->ComputeQ(), iter);
   }
 
   int first_unsorted_index = 0;
@@ -311,7 +312,8 @@ int Search::PrefetchIntoCache(Node* node, int budget,
     Node* n = scores[i].second;
     // Last node gets the same budget as prev-to-last node.
     if (i != scores.size() - 1) {
-      const float next_score = scores[i + 1].first;
+      // Sign of the score was flipped for sorting, flipping back.
+      const float next_score = -scores[i + 1].first;
       const float q = n->ComputeQ();
       if (next_score > q) {
         budget_to_spend = std::min(
