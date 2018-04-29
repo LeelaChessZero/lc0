@@ -17,6 +17,7 @@
 */
 #include "network_cudnn.h"
 #include "utils/bititer.h"
+#include "utils/exception.h"
 #include <functional>
 #include <cassert>
 #include <mutex>
@@ -24,14 +25,15 @@
 #include <cublas_v2.h>
 #include <cudnn.h>
 
+namespace lczero {
 
 void cudnnError(cudnnStatus_t status, const char* file, const int& line)
 {
     if (status != CUDNN_STATUS_SUCCESS)
     {
-        printf("CUDNN error: %s (%s:%d)\n", cudnnGetErrorString(status), file, line);
-        getchar();
-        exit(1);
+        char message[128];
+        sprintf(message, "CUDNN error: %s (%s:%d) ", cudnnGetErrorString(status), file, line);
+        throw(new Exception(message));
     }
 }
 
@@ -39,10 +41,10 @@ void cudnnError(cudnnStatus_t status, const char* file, const int& line)
 
 
 // 256 MB fixed scratch memory size (hardcoded for now)
-#define CUDA_SCRATCH_SIZE (256*1024*1024)
+static constexpr int kCudaScratchSize = 256 * 1024 * 1024;
 
 // hard-coded for now, no point in going above this anyway (can possibly save memory by reducing this)
-static constexpr int MAX_BATCH_SIZE = 1024;
+static constexpr int kMaxBatchSize = 1024;
 
 // the Layer objects only hold memory for weights, biases, etc
 // memory for input and output tensors is provided by caller of forwardEval
@@ -68,7 +70,7 @@ public:
 
     // input2 is optional (skip connection)
     size_t getOutputSize() { return bpe * N * C * H * W; }
-    virtual void eval(void *output, void *input, void *input2, void *scratch) = 0;
+    virtual void eval(void *output, void *input, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas) = 0;
 };
 
 class ConvLayer : public BaseLayer
@@ -83,8 +85,8 @@ private:
     bool useRelu;
     bool useBias;
 
-    cudnnFilterDescriptor_t			filterDesc;
-    cudnnConvolutionDescriptor_t	convDesc;
+    cudnnFilterDescriptor_t         filterDesc;
+    cudnnConvolutionDescriptor_t    convDesc;
     cudnnConvolutionFwdAlgo_t       convAlgo;
 
     cudnnTensorDescriptor_t         biasDesc;
@@ -97,7 +99,7 @@ public:
     ConvLayer(BaseLayer *ip, int C, int H, int W, int size, int Cin, bool relu = false, bool bias = false);
     ~ConvLayer();
     void loadWeights(void *pfilter, void *pBias = NULL);
-    void eval(void *output, void *input, void *input2, void *scratch) override;
+    void eval(void *output, void *input, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 };
 
 class SoftMaxLayer : public BaseLayer
@@ -107,7 +109,7 @@ private:
 
 public:
     SoftMaxLayer(BaseLayer *ip);
-    void eval(void *output, void *input, void *input2, void *scratch) override;
+    void eval(void *output, void *input, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 };
 
 class BNLayer : public BaseLayer
@@ -122,7 +124,7 @@ public:
     ~BNLayer();
 
     void loadWeights(void *cpuMeans, void *cpuVar);
-    void eval(void *output, void *input, void *input2, void *scratch) override;
+    void eval(void *output, void *input, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 
 };
 
@@ -140,7 +142,7 @@ public:
     ~FCLayer();
 
     void loadWeights(void *cpuWeight, void *cpuBias);
-    void eval(void *output, void *input, void *input2, void *scratch) override;
+    void eval(void *output, void *input, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 };
 
 
@@ -168,15 +170,14 @@ public:
 
 
 /////////////////////////////////////////////////////////////////////////////
-//                      Global/Static variables                            //
+//                      Static variable Definations                        //
 /////////////////////////////////////////////////////////////////////////////
 
 int BaseLayer::N = 1;
+
+// TODO: fp16 support
 bool BaseLayer::fp16 = false;
 size_t BaseLayer::bpe = sizeof(float);
-
-cudnnHandle_t g_cudnn;
-cublasHandle_t g_cublas;
 
 
 int divUp(int a, int b)
@@ -282,7 +283,7 @@ SoftMaxLayer::SoftMaxLayer(BaseLayer *ip) :
     cudnnCreateTensorDescriptor(&outTensorDesc);
 }
 
-void SoftMaxLayer::eval(void *output, void *input, void *input2, void *scratch)
+void SoftMaxLayer::eval(void *output, void *input, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas)
 {
     float alpha = 1.0f, beta = 0.0f;
 
@@ -292,7 +293,7 @@ void SoftMaxLayer::eval(void *output, void *input, void *input2, void *scratch)
         fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT,
         N, C, H, W);
 
-    cudnnSoftmaxForward(g_cudnn, CUDNN_SOFTMAX_ACCURATE, CUDNN_SOFTMAX_MODE_INSTANCE,
+    cudnnSoftmaxForward(cudnn, CUDNN_SOFTMAX_ACCURATE, CUDNN_SOFTMAX_MODE_INSTANCE,
         &alpha, outTensorDesc, input, &beta, outTensorDesc, output);
 }
 
@@ -341,18 +342,6 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin, bo
         crossCorr ? CUDNN_CROSS_CORRELATION : CUDNN_CONVOLUTION,
         fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT);
 
-    /*
-    cudnnGetConvolutionForwardAlgorithm(g_cudnn,
-    inTensorDesc,
-    filterDesc,
-    convDesc,
-    outTensorDesc,
-    CUDNN_CONVOLUTION_FWD_PREFER_FASTEST,
-    0,
-    &convAlgo);
-
-    */
-
     // TODO: dynamic selection of algorithm!
     if (C > 32)
     {
@@ -389,7 +378,7 @@ void ConvLayer::loadWeights(void *pfilter, void *pBias)
     }
 }
 
-void ConvLayer::eval(void *output, void *input, void *input2, void *scratch)
+void ConvLayer::eval(void *output, void *input, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas)
 {
     reportCUDNNErrors(cudnnSetTensor4dDescriptor(outTensorDesc,
         fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
@@ -407,22 +396,22 @@ void ConvLayer::eval(void *output, void *input, void *input2, void *scratch)
 
     if (!(useRelu || useBias))
     {
-        reportCUDNNErrors(cudnnConvolutionForward(g_cudnn, &alpha, inTensorDesc,
+        reportCUDNNErrors(cudnnConvolutionForward(cudnn, &alpha, inTensorDesc,
             input, filterDesc, weights, convDesc,
-            convAlgo, scratch, CUDA_SCRATCH_SIZE, &beta,
+            convAlgo, scratch, kCudaScratchSize, &beta,
             outTensorDesc, output));
     }
     else if (input2)
     {
         // fused bias + sum + relu!
-        reportCUDNNErrors(cudnnConvolutionBiasActivationForward(g_cudnn, &alpha, inTensorDesc, input, filterDesc, weights, convDesc,
-            convAlgo, scratch, CUDA_SCRATCH_SIZE, &alpha, outTensorDesc, input2, biasDesc, biases,
+        reportCUDNNErrors(cudnnConvolutionBiasActivationForward(cudnn, &alpha, inTensorDesc, input, filterDesc, weights, convDesc,
+            convAlgo, scratch, kCudaScratchSize, &alpha, outTensorDesc, input2, biasDesc, biases,
             activation, outTensorDesc, output));
     }
     else
     {
-        reportCUDNNErrors(cudnnConvolutionBiasActivationForward(g_cudnn, &alpha, inTensorDesc, input, filterDesc, weights, convDesc,
-            convAlgo, scratch, CUDA_SCRATCH_SIZE, &beta, outTensorDesc, output, biasDesc, biases,
+        reportCUDNNErrors(cudnnConvolutionBiasActivationForward(cudnn, &alpha, inTensorDesc, input, filterDesc, weights, convDesc,
+            convAlgo, scratch, kCudaScratchSize, &beta, outTensorDesc, output, biasDesc, biases,
             activation, outTensorDesc, output));
     }
 }
@@ -450,7 +439,7 @@ void BNLayer::loadWeights(void *cpuMeans, void *cpuVar)
     cudaMemcpyAsync(variances, cpuVar, weightSize, cudaMemcpyHostToDevice);
 }
 
-void BNLayer::eval(void *output, void *input, void *input2, void *scratch)
+void BNLayer::eval(void *output, void *input, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas)
 {
     batchNormForward((float *)output, (float *)input, (float *)input2, N, C, H, W, (float *)means, (float *)variances, useRelu);
 }
@@ -491,7 +480,7 @@ void FCLayer::loadWeights(void *cpuWeight, void *cpuBias)
     }
 }
 
-void FCLayer::eval(void *outputTensor, void *inputTensor, void *input2, void *scratch)
+void FCLayer::eval(void *outputTensor, void *inputTensor, void *input2, void *scratch, cudnnHandle_t cudnn, cublasHandle_t cublas)
 {
     float alpha = 1.0f, beta = 0.0f;
     int numOutputs = C * H * W;
@@ -504,7 +493,7 @@ void FCLayer::eval(void *outputTensor, void *inputTensor, void *input2, void *sc
     }
     else
     {
-        cublasSgemm(g_cublas, CUBLAS_OP_T, CUBLAS_OP_N,
+        cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N,
             numOutputs, N, numInputs,
             &alpha,
             (float*)weights, numInputs,
@@ -527,65 +516,67 @@ FCLayer::~FCLayer()
 }
 
 
-namespace lczero {
-
 class CudnnNetwork;
 
 class CudnnNetworkComputation : public NetworkComputation {
  public:
-  CudnnNetworkComputation(const CudnnNetwork* network) : m_network(network) {}
+  CudnnNetworkComputation(const CudnnNetwork* network) : network_(network) {}
 
   void AddInput(InputPlanes&& input) override 
   {
-      raw_input.emplace_back(input);
+      raw_input_.emplace_back(input);
   }
 
   void ComputeBlocking() override;
 
-  int GetBatchSize() const override { return raw_input.size(); }
+  int GetBatchSize() const override { return raw_input_.size(); }
 
   float GetQVal(int sample) const override 
   {
-      return out_val[sample];
+      return out_val_[sample];
   }
   float GetPVal(int sample, int move_id) const override 
   {
-      return out_pol[sample][move_id];
+      return out_pol_[sample][move_id];
   }
 
  private:
      // input
-     std::vector<InputPlanes> raw_input;
+     std::vector<InputPlanes> raw_input_;
 
-     static constexpr int V2_NUM_OUTPUT_POLICY = 1858;
+     static constexpr int kNumOutputPolicy = 1858;
 
      // output (TODO: try using cudaHostAlloc to avoid the copy?)
-     float out_pol[MAX_BATCH_SIZE][V2_NUM_OUTPUT_POLICY];
-     float out_val[MAX_BATCH_SIZE];
-     float input_planes[MAX_BATCH_SIZE][kInputPlanes*8*8];
+     float out_pol_[kMaxBatchSize][kNumOutputPolicy];
+     float out_val_[kMaxBatchSize];
+     float input_planes_[kMaxBatchSize][kInputPlanes*8*8];
 
-     const CudnnNetwork* m_network;
+     const CudnnNetwork* network_;
 };
-
-// currently only one NN eval can happen a time (we can fix this if needed by allocating more memory)
-static std::mutex g_lock;
 
 class CudnnNetwork : public Network 
 {
 private:
-    int numBlocks;
-    std::vector<BaseLayer *> network;
+    cudnnHandle_t cudnn_;
+    cublasHandle_t cublas_;
+
+    // currently only one NN eval can happen a time (we can fix this if needed by allocating more memory)
+    std::mutex *lock_;
+
+    int numBlocks_;
+    std::vector<BaseLayer *> network_;
     BaseLayer *getLastLayer()
     {
-        return network[network.size() - 1];
+        return network_[network_.size() - 1];
     }
 
-    BaseLayer *resiLast;
-    BaseLayer *policyOut;
-    BaseLayer *valueOut;
+    BaseLayer *resi_last_;
+    BaseLayer *policy_out_;
+    BaseLayer *value_out_;
 
-    void *tensorMem[3];
-    void *scratchMem;
+    void *tensor_mem_[3];
+    void *scratch_mem_;
+
 
 
     void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false)
@@ -638,19 +629,21 @@ public:
     CudnnNetwork(Weights& weights)
     {
         // 0. initialize stuff
+        lock_ = new std::mutex();
+
         // TODO: error checking!
-        cudnnCreate(&g_cudnn);
-        cublasCreate(&g_cublas);
+        cudnnCreate(&cudnn_);
+        cublasCreate(&cublas_);
 
         const int numInputPlanes = kInputPlanes;
         const int numFilters = weights.input.biases.size();
         assert(numFilters == 128);  // need to make sure nothing breaks after changing the no. of filters!
 
-        numBlocks = weights.residual.size();
+        numBlocks_ = weights.residual.size();
 
         // 0. process weights
         processConvBlock(weights.input, true);
-        for (auto i = size_t{ 0 }; i < numBlocks; i++)
+        for (auto i = size_t{ 0 }; i < numBlocks_; i++)
         {
             processConvBlock(weights.residual[i].conv1, true);
             processConvBlock(weights.residual[i].conv2, true);
@@ -665,7 +658,7 @@ public:
         {
             ConvLayer *inputConv = new ConvLayer(NULL, numFilters, 8, 8, 3, numInputPlanes, true, true);
             inputConv->loadWeights(&weights.input.weights[0], &weights.input.biases[0]);
-            network.push_back(inputConv);
+            network_.push_back(inputConv);
         }
 
         // residual block
@@ -673,131 +666,132 @@ public:
         {
             ConvLayer *conv1 = new ConvLayer(getLastLayer(), numFilters, 8, 8, 3, numFilters, true, true);
             conv1->loadWeights(&weights.residual[block].conv1.weights[0], &weights.residual[block].conv1.biases[0]);
-            network.push_back(conv1);
+            network_.push_back(conv1);
 
             ConvLayer *conv2 = new ConvLayer(getLastLayer(), numFilters, 8, 8, 3, numFilters, true, true);
             conv2->loadWeights(&weights.residual[block].conv2.weights[0], &weights.residual[block].conv2.biases[0]);
-            network.push_back(conv2);
+            network_.push_back(conv2);
         }
 
-        resiLast = getLastLayer();
+        resi_last_ = getLastLayer();
 
         // policy head
         {
-            ConvLayer *convPol = new ConvLayer(resiLast, weights.policy.bn_means.size(), 8, 8, 1, numFilters);
+            ConvLayer *convPol = new ConvLayer(resi_last_, weights.policy.bn_means.size(), 8, 8, 1, numFilters);
             convPol->loadWeights(&weights.policy.weights[0]);
-            network.push_back(convPol);
+            network_.push_back(convPol);
 
             BNLayer *BNPol = new BNLayer(getLastLayer(), true);
             BNPol->loadWeights(&weights.policy.bn_means[0], &weights.policy.bn_stddivs[0]);
-            network.push_back(BNPol);
+            network_.push_back(BNPol);
 
             FCLayer *FCPol = new FCLayer(getLastLayer(), weights.ip_pol_b.size(), 1, 1, false, true);
             FCPol->loadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0]);
-            network.push_back(FCPol);
+            network_.push_back(FCPol);
 
             SoftMaxLayer *softmaxPol = new SoftMaxLayer(getLastLayer());
-            network.push_back(softmaxPol);
+            network_.push_back(softmaxPol);
         }
-        policyOut = getLastLayer();
+        policy_out_ = getLastLayer();
 
         // Value head
         {
-            ConvLayer *convVal = new ConvLayer(resiLast, weights.value.bn_means.size(), 8, 8, 1, numFilters);
+            ConvLayer *convVal = new ConvLayer(resi_last_, weights.value.bn_means.size(), 8, 8, 1, numFilters);
             convVal->loadWeights(&weights.value.weights[0]);
-            network.push_back(convVal);
+            network_.push_back(convVal);
 
             BNLayer *BNVal = new BNLayer(getLastLayer(), true);
             BNVal->loadWeights(&weights.value.bn_means[0], &weights.value.bn_stddivs[0]);
-            network.push_back(BNVal);
+            network_.push_back(BNVal);
 
             FCLayer *FCVal1 = new FCLayer(getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, true);
             FCVal1->loadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0]);
-            network.push_back(FCVal1);
+            network_.push_back(FCVal1);
 
             FCLayer *FCVal2 = new FCLayer(getLastLayer(), 1, 1, 1, false, true, true);
             FCVal2->loadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0]);
-            network.push_back(FCVal2);
+            network_.push_back(FCVal2);
         }
-        valueOut = getLastLayer();
+        value_out_ = getLastLayer();
 
         // 2. allocate GPU memory for running the network
         //    - three buffers of max size are enough (one to hold input, second to hold output and third to hold skip connection's input)
-        resiLast->setBatchSize(MAX_BATCH_SIZE);
-        size_t maxSize = resiLast->getOutputSize();
+        resi_last_->setBatchSize(kMaxBatchSize);
+        size_t maxSize = resi_last_->getOutputSize();
         for (int i = 0; i < 3; i++)
         {
-            cudaMalloc(&tensorMem[i], maxSize);
-            cudaMemset(tensorMem[i], 0, maxSize);
+            cudaMalloc(&tensor_mem_[i], maxSize);
+            cudaMemset(tensor_mem_[i], 0, maxSize);
         }
 
         //printf("Allocated %d bytes of GPU memory to run the network\n", 3 * maxSize);
 
         // 3. allocate scratch space (used internally by cudnn to run convolutions)
-        cudaMalloc(&scratchMem, CUDA_SCRATCH_SIZE);
+        cudaMalloc(&scratch_mem_, kCudaScratchSize);
 
     }
 
     void forwardEval(float *input, float *op_pol, float *op_val, int batchSize) const
     {
-        // printf(" ..%d.. ", batchSize);
+        //printf(" ..%d.. ", batchSize);
 
-        g_lock.lock();
+        std::lock_guard<std::mutex> lock(*lock_);
 
         BaseLayer::setBatchSize(batchSize);
 
         // copy data from CPU memory to GPU memory
-        cudaMemcpyAsync(tensorMem[0], &input[0], 
-                        BaseLayer::getN() * kInputPlanes * network[0]->getH() * network[0]->getW() * sizeof(float), 
+        cudaMemcpyAsync(tensor_mem_[0], &input[0],
+                        BaseLayer::getN() * kInputPlanes * network_[0]->getH() * network_[0]->getW() * sizeof(float),
                         cudaMemcpyHostToDevice);
 
         int l = 0;
         // input
-        network[l++]->eval(tensorMem[2], tensorMem[0], NULL, scratchMem);  // input conv
+        network_[l++]->eval(tensor_mem_[2], tensor_mem_[0], NULL, scratch_mem_, cudnn_, cublas_);  // input conv
 
         // residual block
-        for (int block = 0; block < numBlocks; block++)
+        for (int block = 0; block < numBlocks_; block++)
         {
-            network[l++]->eval(tensorMem[0], tensorMem[2], NULL, scratchMem);           // conv1
-            network[l++]->eval(tensorMem[2], tensorMem[0], tensorMem[2], scratchMem);   // conv2
+            network_[l++]->eval(tensor_mem_[0], tensor_mem_[2], NULL, scratch_mem_, cudnn_, cublas_);           // conv1
+            network_[l++]->eval(tensor_mem_[2], tensor_mem_[0], tensor_mem_[2], scratch_mem_, cudnn_, cublas_);   // conv2
         }
 
         // policy head
-        network[l++]->eval(tensorMem[0], tensorMem[2], NULL, scratchMem);    // pol conv
-        network[l++]->eval(tensorMem[1], tensorMem[0], NULL, scratchMem);    // pol BN
-        network[l++]->eval(tensorMem[0], tensorMem[1], NULL, scratchMem);    // pol FC       
-        network[l++]->eval(tensorMem[1], tensorMem[0], NULL, scratchMem);    // pol softmax  // POLICY
+        network_[l++]->eval(tensor_mem_[0], tensor_mem_[2], NULL, scratch_mem_, cudnn_, cublas_);    // pol conv
+        network_[l++]->eval(tensor_mem_[1], tensor_mem_[0], NULL, scratch_mem_, cudnn_, cublas_);    // pol BN
+        network_[l++]->eval(tensor_mem_[0], tensor_mem_[1], NULL, scratch_mem_, cudnn_, cublas_);    // pol FC       
+        network_[l++]->eval(tensor_mem_[1], tensor_mem_[0], NULL, scratch_mem_, cudnn_, cublas_);    // pol softmax  // POLICY
 
         // value head
-        network[l++]->eval(tensorMem[0], tensorMem[2], NULL, scratchMem);    // value conv
-        network[l++]->eval(tensorMem[2], tensorMem[0], NULL, scratchMem);    // value BN
-        network[l++]->eval(tensorMem[0], tensorMem[2], NULL, scratchMem);    // value FC1
-        network[l++]->eval(tensorMem[2], tensorMem[0], NULL, scratchMem);    // value FC2    // VALUE
+        network_[l++]->eval(tensor_mem_[0], tensor_mem_[2], NULL, scratch_mem_, cudnn_, cublas_);    // value conv
+        network_[l++]->eval(tensor_mem_[2], tensor_mem_[0], NULL, scratch_mem_, cudnn_, cublas_);    // value BN
+        network_[l++]->eval(tensor_mem_[0], tensor_mem_[2], NULL, scratch_mem_, cudnn_, cublas_);    // value FC1
+        network_[l++]->eval(tensor_mem_[2], tensor_mem_[0], NULL, scratch_mem_, cudnn_, cublas_);    // value FC2    // VALUE
 
         // copy results back to CPU memory
-        cudaMemcpyAsync(&op_pol[0], tensorMem[1], policyOut->getOutputSize(), cudaMemcpyDeviceToHost);
-        cudaError_t status = cudaMemcpy(&op_val[0], tensorMem[2], valueOut->getOutputSize(), cudaMemcpyDeviceToHost);
+        cudaMemcpyAsync(&op_pol[0], tensor_mem_[1], policy_out_->getOutputSize(), cudaMemcpyDeviceToHost);
+        cudaError_t status = cudaMemcpy(&op_val[0], tensor_mem_[2], value_out_->getOutputSize(), cudaMemcpyDeviceToHost);
 
         if (status != cudaSuccess)
         {
-            printf("\nSome error running cuda based eval!\n");
-            exit(1);
+            throw(new Exception("Some error running cuda based eval!"));
         }
-
-        g_lock.unlock();
 
     }
 
     ~CudnnNetwork()
     {
+        delete lock_;
+        cudnnDestroy(cudnn_);
+        cublasDestroy(cublas_);
+
         for (int i = 0; i < 3; i++)
         {
-            if(tensorMem[i])
-                cudaFree(tensorMem[i]);
+            if(tensor_mem_[i])
+                cudaFree(tensor_mem_[i]);
         }
 
-        if (scratchMem)
-            cudaFree(scratchMem);
+        if (scratch_mem_)
+            cudaFree(scratch_mem_);
     }
 
     std::unique_ptr<NetworkComputation> NewComputation() override 
@@ -812,11 +806,12 @@ std::unique_ptr<Network> MakeCudnnNetwork(Weights& weights) {
 
 void CudnnNetworkComputation::ComputeBlocking()
 {
-    // 1. convert raw_input to "expanded planes" - format the first convolutional layer expects
-    float *data = &(input_planes[0][0]);
+    // Convert raw_input to "expanded planes" - format the first convolutional layer expects
+    // TODO: can probably do this on the GPU if this becomes a bottleneck
+    float *data = &(input_planes_[0][0]);
     memset(data, 0, GetBatchSize()  * kInputPlanes * 8 * 8);
     auto iter = data;
-    for (const auto& sample : raw_input)
+    for (const auto& sample : raw_input_)
     {
         //CHECK_EQ(sample.size(), kInputPlanes);
         for (const auto& plane : sample)
@@ -829,7 +824,7 @@ void CudnnNetworkComputation::ComputeBlocking()
         }
     }
 
-    m_network->forwardEval(data, &(out_pol[0][0]), &(out_val[0]), GetBatchSize());
+    network_->forwardEval(data, &(out_pol_[0][0]), &(out_val_[0]), GetBatchSize());
     return;
 }
 
