@@ -22,7 +22,7 @@
 
 namespace lczero {
 
-// Creates a network which just returns random values (for plain nps testing).
+// Creates a network using cudnn backend
 std::unique_ptr<Network> MakeCudnnNetwork(Weights& weights);
 
 }  // namespace lczero
