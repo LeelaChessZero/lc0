@@ -28,7 +28,7 @@ const char* kInteractive = "Run in interactive mode with uci-like interface";
 SelfPlayLoop::SelfPlayLoop() {}
 
 void SelfPlayLoop::RunLoop() {
-  options_.Add<CheckOption>(kInteractive, "interactive") = false;
+  options_.Add<BoolOption>(kInteractive, "interactive") = false;
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;

@@ -49,19 +49,19 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player1");
   options->AddContext("player2");
 
-  options->Add<CheckOption>(kShareTreesStr, "share-trees") = false;
-  options->Add<SpinOption>(kTotalGamesStr, -1, 999999, "games") = -1;
-  options->Add<SpinOption>(kParallelGamesStr, 1, 256, "parallelism") = 1;
-  options->Add<SpinOption>(kGpuThreadsStr, 1, 16, "gpu-threads") = 1;
-  options->Add<SpinOption>(kMaxGpuBatchStr, 1, 1024, "gpu-batch") = 128;
-  options->Add<SpinOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
-  options->Add<SpinOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
+  options->Add<BoolOption>(kShareTreesStr, "share-trees") = false;
+  options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
+  options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 1;
+  options->Add<IntOption>(kGpuThreadsStr, 1, 16, "gpu-threads") = 1;
+  options->Add<IntOption>(kMaxGpuBatchStr, 1, 1024, "gpu-batch") = 128;
+  options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
+  options->Add<IntOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
   options->Add<StringOption>(kNetFileStr, "weights", 'w') = kAutoDiscover;
-  options->Add<SpinOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
-  options->Add<SpinOption>(kPlayoutsStr, -1, 999999999, "playouts", 'p') = -1;
-  options->Add<SpinOption>(kVisitsStr, -1, 999999999, "visits", 'v') = -1;
-  options->Add<SpinOption>(kTimeMsStr, -1, 999999999, "movetime") = -1;
-  options->Add<CheckOption>(kTrainingStr, "training") = false;
+  options->Add<IntOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
+  options->Add<IntOption>(kPlayoutsStr, -1, 999999999, "playouts", 'p') = -1;
+  options->Add<IntOption>(kVisitsStr, -1, 999999999, "visits", 'v') = -1;
+  options->Add<IntOption>(kTimeMsStr, -1, 999999999, "movetime") = -1;
+  options->Add<BoolOption>(kTrainingStr, "training") = false;
 
   Search::PopulateUciParams(options);
 }

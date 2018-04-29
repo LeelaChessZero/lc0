@@ -43,14 +43,14 @@ const char* kVerboseStatsStr = "Display verbose move stats";
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {
-  options->Add<SpinOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
-  options->Add<SpinOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
-  options->Add<CheckOption>(kAggresiveCachingStr, "aggressive-caching") = false;
-  options->Add<SpinOption>(kCpuctStr, 0, 9999, "cpuct") = 170;
-  options->Add<SpinOption>(kTemperatureStr, 0, 9999, "temperature", 'm') = 0;
-  options->Add<SpinOption>(kTempDecayStr, 0, 100, "tempdecay") = 0;
-  options->Add<CheckOption>(kNoiseStr, "noise", 'n') = false;
-  options->Add<CheckOption>(kVerboseStatsStr, "verbose-move-stats") = false;
+  options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
+  options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
+  options->Add<BoolOption>(kAggresiveCachingStr, "aggressive-caching") = false;
+  options->Add<IntOption>(kCpuctStr, 0, 9999, "cpuct") = 170;
+  options->Add<IntOption>(kTemperatureStr, 0, 9999, "temperature", 'm') = 0;
+  options->Add<IntOption>(kTempDecayStr, 0, 100, "tempdecay") = 0;
+  options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
+  options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,

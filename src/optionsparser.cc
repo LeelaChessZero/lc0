@@ -258,23 +258,23 @@ void StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 }
 
 /////////////////////////////////////////////////////////////////
-// SpinOption
+// IntOption
 /////////////////////////////////////////////////////////////////
 
-SpinOption::SpinOption(const std::string& name, int min, int max,
-                       const std::string& long_flag, char short_flag,
-                       std::function<void(int)> setter)
+IntOption::IntOption(const std::string& name, int min, int max,
+                     const std::string& long_flag, char short_flag,
+                     std::function<void(int)> setter)
     : Option(name, long_flag, short_flag),
       min_(min),
       max_(max),
       setter_(setter) {}
 
-void SpinOption::SetValue(const std::string& value, OptionsDict* dict) {
+void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, std::stoi(value));
 }
 
-bool SpinOption::ProcessLongFlag(const std::string& flag,
-                                 const std::string& value, OptionsDict* dict) {
+bool IntOption::ProcessLongFlag(const std::string& flag,
+                                const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
     SetVal(dict, std::stoi(value));
     return true;
@@ -282,8 +282,8 @@ bool SpinOption::ProcessLongFlag(const std::string& flag,
   return false;
 }
 
-bool SpinOption::ProcessShortFlagWithValue(char flag, const std::string& value,
-                                           OptionsDict* dict) {
+bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
+                                          OptionsDict* dict) {
   if (flag == GetShortFlag()) {
     SetVal(dict, std::stoi(value));
     return true;
@@ -291,7 +291,7 @@ bool SpinOption::ProcessShortFlagWithValue(char flag, const std::string& value,
   return false;
 }
 
-std::string SpinOption::GetHelp(const OptionsDict& dict) const {
+std::string IntOption::GetHelp(const OptionsDict& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     long_flag += "=" + std::to_string(min_) + ".." + std::to_string(max_);
@@ -302,37 +302,37 @@ std::string SpinOption::GetHelp(const OptionsDict& dict) const {
                         "  max: " + std::to_string(max_));
 }
 
-std::string SpinOption::GetOptionString(const OptionsDict& dict) const {
+std::string IntOption::GetOptionString(const OptionsDict& dict) const {
   return "type spin default " + std::to_string(GetVal(dict)) + " min " +
          std::to_string(min_) + " max " + std::to_string(max_);
 }
 
-void SpinOption::SendValue(const OptionsDict& dict) const {
+void IntOption::SendValue(const OptionsDict& dict) const {
   if (setter_) setter_(GetVal(dict));
 }
 
-SpinOption::ValueType SpinOption::GetVal(const OptionsDict& dict) const {
+IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
 
-void SpinOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetName(), val);
 }
 
 /////////////////////////////////////////////////////////////////
-// CheckOption
+// BoolOption
 /////////////////////////////////////////////////////////////////
 
-CheckOption::CheckOption(const std::string& name, const std::string& long_flag,
-                         char short_flag, std::function<void(bool)> setter)
+BoolOption::BoolOption(const std::string& name, const std::string& long_flag,
+                       char short_flag, std::function<void(bool)> setter)
     : Option(name, long_flag, short_flag), setter_(setter) {}
 
-void CheckOption::SetValue(const std::string& value, OptionsDict* dict) {
+void BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, value == "true");
 }
 
-bool CheckOption::ProcessLongFlag(const std::string& flag,
-                                  const std::string& value, OptionsDict* dict) {
+bool BoolOption::ProcessLongFlag(const std::string& flag,
+                                 const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
     SetVal(dict, value.empty() || (value != "off" && value != "false"));
     return true;
@@ -344,8 +344,8 @@ bool CheckOption::ProcessLongFlag(const std::string& flag,
   return false;
 }
 
-bool CheckOption::ProcessShortFlagWithValue(char flag, const std::string& value,
-                                            OptionsDict* dict) {
+bool BoolOption::ProcessShortFlagWithValue(char flag, const std::string& value,
+                                           OptionsDict* dict) {
   if (flag == GetShortFlag()) {
     SetVal(dict, !GetVal(*dict));
     return true;
@@ -353,7 +353,7 @@ bool CheckOption::ProcessShortFlagWithValue(char flag, const std::string& value,
   return false;
 }
 
-std::string CheckOption::GetHelp(const OptionsDict& dict) const {
+std::string BoolOption::GetHelp(const OptionsDict& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     long_flag = "[no-]" + long_flag;
@@ -362,19 +362,19 @@ std::string CheckOption::GetHelp(const OptionsDict& dict) const {
                     GetVal(dict) ? "true" : "false");
 }
 
-std::string CheckOption::GetOptionString(const OptionsDict& dict) const {
+std::string BoolOption::GetOptionString(const OptionsDict& dict) const {
   return "type check default " + std::string(GetVal(dict) ? "true" : "false");
 }
 
-void CheckOption::SendValue(const OptionsDict& dict) const {
+void BoolOption::SendValue(const OptionsDict& dict) const {
   if (setter_) setter_(GetVal(dict));
 }
 
-CheckOption::ValueType CheckOption::GetVal(const OptionsDict& dict) const {
+BoolOption::ValueType BoolOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
 
-void CheckOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+void BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetName(), val);
 }
 

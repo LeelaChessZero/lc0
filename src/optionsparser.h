@@ -132,12 +132,12 @@ class StringOption : public OptionsParser::Option {
   std::function<void(const std::string&)> setter_;
 };
 
-class SpinOption : public OptionsParser::Option {
+class IntOption : public OptionsParser::Option {
  public:
   using ValueType = int;
-  SpinOption(const std::string& name, int min, int max,
-             const std::string& long_flag = {}, char short_flag = '\0',
-             std::function<void(int)> setter = {});
+  IntOption(const std::string& name, int min, int max,
+            const std::string& long_flag = {}, char short_flag = '\0',
+            std::function<void(int)> setter = {});
 
   void SetValue(const std::string& value, OptionsDict* dict) override;
 
@@ -158,11 +158,11 @@ class SpinOption : public OptionsParser::Option {
   std::function<void(int)> setter_;
 };
 
-class CheckOption : public OptionsParser::Option {
+class BoolOption : public OptionsParser::Option {
  public:
   using ValueType = bool;
-  CheckOption(const std::string& name, const std::string& long_flag = {},
-              char short_flag = '\0', std::function<void(bool)> setter = {});
+  BoolOption(const std::string& name, const std::string& long_flag = {},
+             char short_flag = '\0', std::function<void(bool)> setter = {});
 
   void SetValue(const std::string& value, OptionsDict* dict) override;
 

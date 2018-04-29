@@ -63,9 +63,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(
       "Network weights file path", "weights", 'w',
       std::bind(&EngineController::SetNetworkPath, this, _1)) = kAutoDiscover;
-  options->Add<SpinOption>(kThreadsOption, 1, 128, "threads", 't') =
+  options->Add<IntOption>(kThreadsOption, 1, 128, "threads", 't') =
       kDefaultThreads;
-  options->Add<SpinOption>(
+  options->Add<IntOption>(
       "NNCache size", 0, 999999999, "nncache", '\0',
       std::bind(&EngineController::SetCacheSize, this, _1)) = 200000;
   Search::PopulateUciParams(options);
