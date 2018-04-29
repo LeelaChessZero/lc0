@@ -43,9 +43,6 @@ void cudnnError(cudnnStatus_t status, const char* file, const int& line)
 // 256 MB fixed scratch memory size (hardcoded for now)
 static constexpr int kCudaScratchSize = 256 * 1024 * 1024;
 
-// hard-coded for now, no point in going above this anyway (can possibly save memory by reducing this)
-static constexpr int kMaxBatchSize = 1024;
-
 // the Layer objects only hold memory for weights, biases, etc
 // memory for input and output tensors is provided by caller of forwardEval
 
@@ -520,7 +517,17 @@ class CudnnNetwork;
 
 class CudnnNetworkComputation : public NetworkComputation {
  public:
-  CudnnNetworkComputation(const CudnnNetwork* network) : network_(network) {}
+  CudnnNetworkComputation(const CudnnNetwork* network);
+  ~CudnnNetworkComputation() 
+  {
+      //cudaFreeHost(input_planes_);
+      //cudaFreeHost(out_pol_);
+      //cudaFreeHost(out_val_);
+      delete[] input_planes_;
+      delete[] out_pol_;
+      delete[] out_val_;
+
+  }
 
   void AddInput(InputPlanes&& input) override 
   {
@@ -537,19 +544,21 @@ class CudnnNetworkComputation : public NetworkComputation {
   }
   float GetPVal(int sample, int move_id) const override 
   {
-      return out_pol_[sample][move_id];
+      return out_pol_[sample*max_batch_size_ + move_id];
   }
 
  private:
-     // input
-     std::vector<InputPlanes> raw_input_;
-
      static constexpr int kNumOutputPolicy = 1858;
 
+     // input
+     std::vector<InputPlanes> raw_input_;
+     float *input_planes_;
+
+     int max_batch_size_;
+
      // output (TODO: try using cudaHostAlloc to avoid the copy?)
-     float out_pol_[kMaxBatchSize][kNumOutputPolicy];
-     float out_val_[kMaxBatchSize];
-     float input_planes_[kMaxBatchSize][kInputPlanes*8*8];
+     float *out_pol_;
+     float *out_val_;
 
      const CudnnNetwork* network_;
 };
@@ -577,7 +586,7 @@ private:
     void *tensor_mem_[3];
     void *scratch_mem_;
 
-
+    int max_batch_size_;
 
     void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false)
     {
@@ -626,8 +635,19 @@ private:
         }
     }
 public:
+
+    int getMaxBatchSize() const
+    {
+        return max_batch_size_;
+    }
+
     CudnnNetwork(Weights& weights)
     {
+        // hard-coded for now
+        // TODO: find a way for the caller to correctly pass this value
+        static constexpr int kMaxBatchSize = 1024;
+        max_batch_size_ = kMaxBatchSize;
+
         // 0. initialize stuff
         lock_ = new std::mutex();
 
@@ -804,12 +824,27 @@ std::unique_ptr<Network> MakeCudnnNetwork(Weights& weights) {
   return std::make_unique<CudnnNetwork>(weights);
 }
 
+CudnnNetworkComputation::CudnnNetworkComputation(const CudnnNetwork * network)
+    : network_(network)
+{
+    max_batch_size_ = network->getMaxBatchSize();
+
+    //cudaHostAlloc(&input_planes_, sizeof(float) * max_batch_size_  * kInputPlanes * 8 * 8, 0);
+
+    //cudaHostAlloc(&out_pol_, sizeof(float) * max_batch_size_  * kNumOutputPolicy, 0);
+    //cudaHostAlloc(&out_val_, sizeof(float) * max_batch_size_, 0);
+
+    input_planes_ = new float[max_batch_size_  * kInputPlanes * 8 * 8];
+    out_pol_ = new float[max_batch_size_  * kNumOutputPolicy];
+    out_val_ = new float[max_batch_size_];
+}
+
 void CudnnNetworkComputation::ComputeBlocking()
 {
     // Convert raw_input to "expanded planes" - format the first convolutional layer expects
     // TODO: can probably do this on the GPU if this becomes a bottleneck
-    float *data = &(input_planes_[0][0]);
-    memset(data, 0, sizeof(float) * GetBatchSize()  * kInputPlanes * 8 * 8);
+    float *data = input_planes_;
+    memset(data, 0, /*sizeof(float) **/ GetBatchSize()  * kInputPlanes * 8 * 8);
     auto iter = data;
     for (const auto& sample : raw_input_)
     {
@@ -824,7 +859,7 @@ void CudnnNetworkComputation::ComputeBlocking()
         }
     }
 
-    network_->forwardEval(data, &(out_pol_[0][0]), &(out_val_[0]), GetBatchSize());
+    network_->forwardEval(data, out_pol_, out_val_, GetBatchSize());
     return;
 }
 
