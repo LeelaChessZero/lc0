@@ -19,3 +19,5 @@ Alternatively, you can use pre-built binary:
 3. Take latest binary from [here](https://crem.xyz/lc0/)
 
 That's it.
+
+For the cudnn (non-TF) version, building is much simpler. Install latest CUDA toolkit and compatible cuDNN, and build using the visual studio project.
