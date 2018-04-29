@@ -35,9 +35,9 @@ namespace {
 const char* kMiniBatchSizeStr = "Minibatch size for NN inference";
 const char* kMiniPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* kAggresiveCachingStr = "Try hard to find what to cache";
-const char* kCpuctStr = "Cpuct MCTS option (x100)";
-const char* kTemperatureStr = "Initial temperature (x100)";
-const char* kTempDecayStr = "Per move temperature decay (x100)";
+const char* kCpuctStr = "Cpuct MCTS option";
+const char* kTemperatureStr = "Initial temperature";
+const char* kTempDecayStr = "Per move temperature decay";
 const char* kNoiseStr = "Add Dirichlet noise at root node";
 const char* kVerboseStatsStr = "Display verbose move stats";
 }  // namespace
@@ -46,9 +46,9 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
   options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<BoolOption>(kAggresiveCachingStr, "aggressive-caching") = false;
-  options->Add<IntOption>(kCpuctStr, 0, 9999, "cpuct") = 170;
-  options->Add<IntOption>(kTemperatureStr, 0, 9999, "temperature", 'm') = 0;
-  options->Add<IntOption>(kTempDecayStr, 0, 100, "tempdecay") = 0;
+  options->Add<FloatOption>(kCpuctStr, 0, 100, "cpuct") = 1.7;
+  options->Add<FloatOption>(kTemperatureStr, 0, 100, "temperature", 'm') = 0.0;
+  options->Add<FloatOption>(kTempDecayStr, 0, 1.00, "tempdecay") = 0.0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
 }

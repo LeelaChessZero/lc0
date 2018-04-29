@@ -158,6 +158,32 @@ class IntOption : public OptionsParser::Option {
   std::function<void(int)> setter_;
 };
 
+class FloatOption : public OptionsParser::Option {
+ public:
+  using ValueType = float;
+  FloatOption(const std::string& name, float min, float max,
+              const std::string& long_flag = {}, char short_flag = '\0',
+              std::function<void(float)> setter = {});
+
+  void SetValue(const std::string& value, OptionsDict* dict) override;
+
+ private:
+  std::string GetOptionString(const OptionsDict& dict) const override;
+  void SendValue(const OptionsDict& dict) const override;
+  bool ProcessLongFlag(const std::string& flag, const std::string& value,
+                       OptionsDict* dict) override;
+  std::string GetHelp(const OptionsDict& dict) const override;
+  bool ProcessShortFlagWithValue(char flag, const std::string& value,
+                                 OptionsDict* dict) override;
+
+  ValueType GetVal(const OptionsDict&) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
+
+  float min_;
+  float max_;
+  std::function<void(int)> setter_;
+};
+
 class BoolOption : public OptionsParser::Option {
  public:
   using ValueType = bool;

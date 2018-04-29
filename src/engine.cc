@@ -29,7 +29,7 @@ namespace lczero {
 namespace {
 const int kDefaultThreads = 2;
 const char* kThreadsOption = "Number of worker threads";
-const char* kDebugLogStr = "Do debug logging into file.";
+const char* kDebugLogStr = "Do debug logging into file";
 
 const char* kAutoDiscover = "<autodiscover>";
 
