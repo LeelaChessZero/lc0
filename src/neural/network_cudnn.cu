@@ -76,20 +76,27 @@ class ConvLayer : public BaseLayer
 private:
     int Cinput;
     int filterSize;
+
+    void *biases;
     void *weights;
+
+    bool useRelu;
+    bool useBias;
 
     cudnnFilterDescriptor_t			filterDesc;
     cudnnConvolutionDescriptor_t	convDesc;
     cudnnConvolutionFwdAlgo_t       convAlgo;
 
+    cudnnTensorDescriptor_t         biasDesc;
     cudnnTensorDescriptor_t         inTensorDesc;
     cudnnTensorDescriptor_t         outTensorDesc;
+    cudnnActivationDescriptor_t     activation;
 
 
 public:
-    ConvLayer(BaseLayer *ip, int C, int H, int W, int size, int Cin);
+    ConvLayer(BaseLayer *ip, int C, int H, int W, int size, int Cin, bool relu = false, bool bias = false);
     ~ConvLayer();
-    void loadWeights(void *pfilter);
+    void loadWeights(void *pfilter, void *pBias = NULL);
     void eval(void *output, void *input, void *input2, void *scratch) override;
 };
 
@@ -289,20 +296,27 @@ void SoftMaxLayer::eval(void *output, void *input, void *input2, void *scratch)
         &alpha, outTensorDesc, input, &beta, outTensorDesc, output);
 }
 
-ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin) :
+ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin, bool relu, bool bias) :
     BaseLayer(C, H, W, ip),
     filterSize(filter),
-    Cinput(Cin)
+    Cinput(Cin),
+    useRelu(relu),
+    useBias(bias)
 {
-    // allocate memory for weights (filter tensor)
+    // allocate memory for weights (filter tensor) and biases
     size_t weightSize = bpe * Cin * C * filterSize * filterSize;
     cudaMalloc(&weights, weightSize);
+
+    size_t biasSize = bpe * C;
+    cudaMalloc(&biases, biasSize);
 
     // create cudnn objects for various tensors, algorithms, etc
     cudnnCreateFilterDescriptor(&filterDesc);
     cudnnCreateConvolutionDescriptor(&convDesc);
     cudnnCreateTensorDescriptor(&outTensorDesc);
     cudnnCreateTensorDescriptor(&inTensorDesc);
+    cudnnCreateTensorDescriptor(&biasDesc);
+    cudnnCreateActivationDescriptor(&activation);
 
     cudnnSetFilter4dDescriptor(filterDesc,
         fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT,
@@ -312,8 +326,13 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin) :
         filterSize,
         filterSize);
 
+    reportCUDNNErrors(cudnnSetTensor4dDescriptor(biasDesc,
+        fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
+        fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT,
+        1, C, 1, 1));
+
     int padding = filterSize / 2;
-    const bool crossCorr = 1;           // TODO: find out if it's right?
+    const bool crossCorr = 1;
 
     cudnnSetConvolution2dDescriptor(convDesc,
         padding, padding,
@@ -344,12 +363,30 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin) :
         convAlgo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
     }
 
+    if (useRelu)
+    {
+        cudnnSetActivationDescriptor(activation, CUDNN_ACTIVATION_RELU, CUDNN_NOT_PROPAGATE_NAN, 0.0);
+    }
+    else
+    {
+        cudnnSetActivationDescriptor(activation, CUDNN_ACTIVATION_IDENTITY, CUDNN_NOT_PROPAGATE_NAN, 0.0);
+    }
 }
 
-void ConvLayer::loadWeights(void *pfilter)
+void ConvLayer::loadWeights(void *pfilter, void *pBias)
 {
     size_t weightSize = bpe * Cinput * C * filterSize * filterSize;
     cudaMemcpyAsync(weights, pfilter, weightSize, cudaMemcpyHostToDevice);
+
+    size_t biasSize = bpe * C;
+    if (pBias)
+    {
+        cudaMemcpyAsync(biases, pBias, biasSize, cudaMemcpyHostToDevice);
+    }
+    else
+    {
+        cudaMemset(biases, biasSize, 0);
+    }
 }
 
 void ConvLayer::eval(void *output, void *input, void *input2, void *scratch)
@@ -367,15 +404,33 @@ void ConvLayer::eval(void *output, void *input, void *input2, void *scratch)
 
     float alpha = 1.0f, beta = 0.0f;
 
-    reportCUDNNErrors(cudnnConvolutionForward(g_cudnn, &alpha, inTensorDesc,
-        input, filterDesc, weights, convDesc,
-        convAlgo, scratch, CUDA_SCRATCH_SIZE, &beta,
-        outTensorDesc, output));
+
+    if (!(useRelu || useBias))
+    {
+        reportCUDNNErrors(cudnnConvolutionForward(g_cudnn, &alpha, inTensorDesc,
+            input, filterDesc, weights, convDesc,
+            convAlgo, scratch, CUDA_SCRATCH_SIZE, &beta,
+            outTensorDesc, output));
+    }
+    else if (input2)
+    {
+        // fused bias + sum + relu!
+        reportCUDNNErrors(cudnnConvolutionBiasActivationForward(g_cudnn, &alpha, inTensorDesc, input, filterDesc, weights, convDesc,
+            convAlgo, scratch, CUDA_SCRATCH_SIZE, &alpha, outTensorDesc, input2, biasDesc, biases,
+            activation, outTensorDesc, output));
+    }
+    else
+    {
+        reportCUDNNErrors(cudnnConvolutionBiasActivationForward(g_cudnn, &alpha, inTensorDesc, input, filterDesc, weights, convDesc,
+            convAlgo, scratch, CUDA_SCRATCH_SIZE, &beta, outTensorDesc, output, biasDesc, biases,
+            activation, outTensorDesc, output));
+    }
 }
 
 ConvLayer::~ConvLayer()
 {
     cudaFree(weights);
+    cudaFree(biases);
 }
 
 BNLayer::BNLayer(BaseLayer *ip, bool relu) :
@@ -532,19 +587,51 @@ private:
     void *tensorMem[3];
     void *scratchMem;
 
-    void fixStdDevs(std::vector<float> &arr, const float epsilon = 1e-5f)
+
+    void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false)
     {
-        for (auto&& w : arr) {
+        const float epsilon = 1e-5f;
+
+        // compute reciprocal of std-dev from the variances (so that it can be just multiplied)
+        std::vector<float> &stddev = block.bn_stddivs;
+        for (auto&& w : stddev) {
             w = 1.0f / std::sqrt(w + epsilon);
         }
-    }
 
-    void fixBiases(Weights::ConvBlock &block)
-    {
+        // Biases are not calculated and are typically zero but some networks might
+        // still have non-zero biases.
+        // Move biases to batchnorm means to make the output match without having
+        // to separately add the biases.
         for (auto j = size_t{ 0 }; j < block.bn_means.size(); j++) 
         {
             block.bn_means[j] -= block.biases[j];
             block.biases[j] = 0.0f;
+        }
+
+        // get rid of the BN layer by adjusting weights and biases of the convolution
+        // idea proposed by Henrik Forstén and first implemented in leela go zero
+        if (foldBNLayer)
+        {
+            const int outputs = block.biases.size();
+            const int channels = block.weights.size() / (outputs * 3 * 3);
+
+            for (auto o = 0; o < outputs; o++)
+            {
+                for (auto c = 0; c < channels; c++)
+                {
+                    for (auto i = 0; i < 9; i++)
+                    {
+                        block.weights[o*channels * 9 + c * 9 + i] *= block.bn_stddivs[o];
+                    }
+                }
+
+                block.bn_means[o] *= block.bn_stddivs[o];
+                block.bn_stddivs[o] = 1.0f;
+               
+                // Move means to convolution biases
+                block.biases[o] = -block.bn_means[o];
+                block.bn_means[o] = 0.0f;
+            }
         }
     }
 public:
@@ -562,62 +649,35 @@ public:
         numBlocks = weights.residual.size();
 
         // 0. process weights
-        
-        // Biases are not calculated and are typically zero but some networks might
-        // still have non-zero biases.
-        // Move biases to batchnorm means to make the output match without having
-        // to separately add the biases.
-
-        // Also compute reciprocal of std-dev from the variances (so that it can be just multiplied)
-
-        fixBiases(weights.input);
-        fixStdDevs(weights.input.bn_stddivs);
+        processConvBlock(weights.input, true);
         for (auto i = size_t{ 0 }; i < numBlocks; i++)
         {
-            fixBiases(weights.residual[i].conv1);
-            fixBiases(weights.residual[i].conv2);
+            processConvBlock(weights.residual[i].conv1, true);
+            processConvBlock(weights.residual[i].conv2, true);
 
-            fixStdDevs(weights.residual[i].conv1.bn_stddivs);
-            fixStdDevs(weights.residual[i].conv2.bn_stddivs);
         }
-
-        fixBiases(weights.policy);
-        fixBiases(weights.value);
-        fixStdDevs(weights.policy.bn_stddivs);
-        fixStdDevs(weights.value.bn_stddivs);
-
+        processConvBlock(weights.policy);
+        processConvBlock(weights.value);
 
 
         // 1. build the network, and copy the weights to GPU memory
         // input 
         {
-            ConvLayer *inputConv = new ConvLayer(NULL, numFilters, 8, 8, 3, numInputPlanes);
-            inputConv->loadWeights(&weights.input.weights[0]);
+            ConvLayer *inputConv = new ConvLayer(NULL, numFilters, 8, 8, 3, numInputPlanes, true, true);
+            inputConv->loadWeights(&weights.input.weights[0], &weights.input.biases[0]);
             network.push_back(inputConv);
-
-            BNLayer *inputBN = new BNLayer(getLastLayer(), true);
-            inputBN->loadWeights(&weights.input.bn_means[0], &weights.input.bn_stddivs[0]);
-            network.push_back(inputBN);
         }
 
         // residual block
         for (int block = 0; block < weights.residual.size(); block++)
         {
-            ConvLayer *conv1 = new ConvLayer(getLastLayer(), numFilters, 8, 8, 3, numFilters);
-            conv1->loadWeights(&weights.residual[block].conv1.weights[0]);
+            ConvLayer *conv1 = new ConvLayer(getLastLayer(), numFilters, 8, 8, 3, numFilters, true, true);
+            conv1->loadWeights(&weights.residual[block].conv1.weights[0], &weights.residual[block].conv1.biases[0]);
             network.push_back(conv1);
 
-            BNLayer *BN1 = new BNLayer(getLastLayer(), true);
-            BN1->loadWeights(&weights.residual[block].conv1.bn_means[0], &weights.residual[block].conv1.bn_stddivs[0]);
-            network.push_back(BN1);
-
-            ConvLayer *conv2 = new ConvLayer(getLastLayer(), numFilters, 8, 8, 3, numFilters);
-            conv2->loadWeights(&weights.residual[block].conv2.weights[0]);
+            ConvLayer *conv2 = new ConvLayer(getLastLayer(), numFilters, 8, 8, 3, numFilters, true, true);
+            conv2->loadWeights(&weights.residual[block].conv2.weights[0], &weights.residual[block].conv2.biases[0]);
             network.push_back(conv2);
-
-            BNLayer *BN2 = new BNLayer(getLastLayer(), true);
-            BN2->loadWeights(&weights.residual[block].conv2.bn_means[0], &weights.residual[block].conv2.bn_stddivs[0]);
-            network.push_back(BN2);
         }
 
         resiLast = getLastLayer();
@@ -693,17 +753,13 @@ public:
 
         int l = 0;
         // input
-        network[l++]->eval(tensorMem[1], tensorMem[0], NULL, scratchMem);  // input conv
-        network[l++]->eval(tensorMem[2], tensorMem[1], NULL, scratchMem);  // input BN
+        network[l++]->eval(tensorMem[2], tensorMem[0], NULL, scratchMem);  // input conv
 
         // residual block
         for (int block = 0; block < numBlocks; block++)
         {
-            network[l++]->eval(tensorMem[0], tensorMem[2], NULL, scratchMem);  // conv1
-            network[l++]->eval(tensorMem[1], tensorMem[0], NULL, scratchMem);  // bn1
-
-            network[l++]->eval(tensorMem[0], tensorMem[1], NULL, scratchMem);          // conv2
-            network[l++]->eval(tensorMem[2], tensorMem[0], tensorMem[2], scratchMem);  // bn2 (with skip connection)
+            network[l++]->eval(tensorMem[0], tensorMem[2], NULL, scratchMem);           // conv1
+            network[l++]->eval(tensorMem[2], tensorMem[0], tensorMem[2], scratchMem);   // conv2
         }
 
         // policy head
@@ -730,6 +786,18 @@ public:
 
         g_lock.unlock();
 
+    }
+
+    ~CudnnNetwork()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if(tensorMem[i])
+                cudaFree(tensorMem[i]);
+        }
+
+        if (scratchMem)
+            cudaFree(scratchMem);
     }
 
     std::unique_ptr<NetworkComputation> NewComputation() override 
