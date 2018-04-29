@@ -16,10 +16,12 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "neural/network_mux.h"
+#include "neural/factory.h"
+
 #include <condition_variable>
 #include <queue>
 #include <thread>
+#include "utils/exception.h"
 
 namespace lczero {
 namespace {
@@ -63,10 +65,30 @@ class MuxingComputation : public NetworkComputation {
 
 class MuxingNetwork : public Network {
  public:
-  MuxingNetwork(std::unique_ptr<Network> network, int threads, int max_batch)
-      : network_(std::move(network)), max_batch_(max_batch) {
-    while (threads_.size() < threads) {
-      threads_.emplace_back([&]() { Worker(); });
+  MuxingNetwork(const Weights& weights, const OptionsDict& options) {
+    // int threads, int max_batch)
+    //: network_(std::move(network)), max_batch_(max_batch) {
+
+    const auto parents = options.ListSubdicts();
+    if (parents.empty()) {
+      throw Exception("Empty list of backends passed to a Muxing backend");
+    }
+
+    for (const auto& name : parents) {
+      const auto& opts = options.GetSubdict(name);
+      const int nn_threads = opts.GetOrDefault<int>("nn_threads", 1);
+      const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
+      const std::string backend =
+          opts.GetOrDefault<std::string>("backend", name);
+
+      networks_.emplace_back(
+          NetworkFactory::Get()->Create(backend, weights, opts));
+      Network* net = networks_.back().get();
+
+      for (int i = 0; i < nn_threads; ++i) {
+        threads_.emplace_back(
+            [this, net, max_batch]() { Worker(net, max_batch); });
+      }
     }
   }
 
@@ -90,13 +112,13 @@ class MuxingNetwork : public Network {
     }
   }
 
-  void Worker() {
+  void Worker(Network* network, const int max_batch) {
     // While Abort() is not called (and it can only be called from destructor).
     while (!abort_) {
       std::vector<MuxingComputation*> children;
       // Create new computation in "upstream" network, to gather batch into
       // there.
-      std::shared_ptr<NetworkComputation> parent(network_->NewComputation());
+      std::shared_ptr<NetworkComputation> parent(network->NewComputation());
       {
         std::unique_lock<std::mutex> lock(mutex_);
         // Wait until there's come work to compute.
@@ -110,7 +132,7 @@ class MuxingNetwork : public Network {
           // we still have to add it.
           if (parent->GetBatchSize() != 0 &&
               parent->GetBatchSize() + queue_.front()->GetBatchSize() >
-                  max_batch_) {
+                  max_batch) {
             break;
           }
           // Remember which of "input" computations we serve.
@@ -142,10 +164,9 @@ class MuxingNetwork : public Network {
   }
 
  private:
-  std::unique_ptr<Network> network_;
+  std::vector<std::unique_ptr<Network>> networks_;
   std::queue<MuxingComputation*> queue_;
   bool abort_ = false;
-  int max_batch_;
 
   std::mutex mutex_;
   std::condition_variable cv_;
@@ -162,9 +183,10 @@ void MuxingComputation::ComputeBlocking() {
 
 }  // namespace
 
-std::unique_ptr<Network> MakeMuxingNetwork(std::unique_ptr<Network> parent,
-                                           int threads, int max_batch) {
-  return std::make_unique<MuxingNetwork>(std::move(parent), threads, max_batch);
-}
+REGISTER_FACTORY("multiplexing",
+                 [](const Weights& weights, const OptionsDict& options) {
+                   return std::make_unique<MuxingNetwork>(weights, options);
+                 },
+                 -1);
 
 }  // namespace lczero

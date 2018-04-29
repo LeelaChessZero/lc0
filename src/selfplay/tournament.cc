@@ -20,7 +20,6 @@
 #include "mcts/search.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
-#include "neural/network_mux.h"
 #include "optionsparser.h"
 #include "selfplay/game.h"
 #include "utils/random.h"
@@ -134,13 +133,6 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
 
     auto network =
         NetworkFactory::Get()->Create(backend, weights, network_options);
-    if (kParallelism == 1) {
-      // If one game will be run in parallel, no need to mux computations.
-      networks_[idx] = std::move(network);
-    } else {
-      networks_[idx] =
-          MakeMuxingNetwork(std::move(network), kGpuThreads, kMaxGpuBatch);
-    }
   }
 
   // Initializing cache.
