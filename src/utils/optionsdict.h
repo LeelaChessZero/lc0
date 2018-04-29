@@ -32,8 +32,15 @@ class TypeDict {
   std::unordered_map<std::string, T> dict_;
 };
 
-class OptionsDict : TypeDict<bool>, TypeDict<int>, TypeDict<std::string> {
+class OptionsDict : TypeDict<bool>,
+                    TypeDict<int>,
+                    TypeDict<std::string>,
+                    TypeDict<float> {
  public:
+  // Creates options dict from string. Example of a string:
+  // option1=1, option_two = "string val", subdict(option3=3.14)
+  static OptionsDict FromString(const std::string& str);
+
   OptionsDict(OptionsDict* parent = nullptr) : parent_(parent) {}
 
   // e.g. dict.Get<int>("threads")

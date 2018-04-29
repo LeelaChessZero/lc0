@@ -17,6 +17,10 @@
 */
 
 #include "utils/optionsdict.h"
+#include <cctype>
+#include <sstream>
+#include <string>
+#include "utils/exception.h"
 
 namespace lczero {
 
@@ -51,6 +55,216 @@ std::vector<std::string> OptionsDict::ListSubdicts() const {
     result.emplace_back(subdict.first);
   }
   return result;
+}
+
+namespace {
+
+class Lexer {
+ public:
+  enum TokenType {
+    L_INTEGER,
+    L_FLOAT,
+    L_STRING,
+    L_IDENTIFIER,
+    L_LEFT_PARENTHESIS,
+    L_RIGHT_PARENTHESIS,
+    L_COMMA,
+    L_EQUAL,
+    L_EOF
+  };
+
+  Lexer(const std::string& str) : str_(str) { Next(); }
+
+  void Next() {
+    // Skip whitespace:
+    while (idx_ < str_.size() && std::isspace(str_[idx_])) ++idx_;
+    last_offset_ = idx_;
+
+    // If end of line, report end of line.
+    if (idx_ == str_.size()) {
+      type_ = L_EOF;
+      return;
+    }
+
+    // Single characters.
+    static const std::pair<char, TokenType> kCharacters[] = {
+        {',', L_COMMA},
+        {'(', L_LEFT_PARENTHESIS},
+        {')', L_RIGHT_PARENTHESIS},
+        {'=', L_EQUAL}};
+    for (const auto& ch : kCharacters) {
+      if (str_[idx_] == ch.first) {
+        ++idx_;
+        type_ = ch.second;
+        return;
+      }
+    }
+
+    // Numbers (integer of float).
+    static const std::string kNumberChars = "0123456789-.";
+    if (kNumberChars.find(str_[idx_]) != std::string::npos) {
+      ReadNumber();
+      return;
+    }
+
+    // Strings (single or double quoted)
+    if (str_[idx_] == '\'' || str_[idx_] == '\"') {
+      ReadString();
+      return;
+    }
+
+    // Identifier
+    if (std::isalnum(str_[idx_])) {
+      ReadIdentifier();
+      return;
+    }
+
+    RaiseError();
+  }
+
+  void RaiseError() {
+    throw Exception("Unable to parse config at offset " +
+                    std::to_string(last_offset_) + ": " + str_);
+  }
+
+  TokenType GetToken() const { return type_; }
+  const std::string& GetStringVal() const { return string_val_; }
+  int GetIntVal() const { return int_val_; }
+  float GetFloatVal() const { return float_val_; }
+
+ private:
+  void ReadString() {
+    last_offset_ = idx_;
+    const char quote = str_[idx_++];
+
+    for (; idx_ < str_.size(); ++idx_) {
+      if (str_[idx_] == quote) {
+        type_ = L_STRING;
+        string_val_ = str_.substr(last_offset_ + 1, last_offset_ + idx_ - 1);
+        ++idx_;
+        return;
+      }
+    }
+
+    last_offset_ = idx_;
+    RaiseError();
+  }
+
+  void ReadIdentifier() {
+    string_val_ = "";
+    type_ = L_IDENTIFIER;
+    for (; idx_ < str_.size(); ++idx_) {
+      if (!std::isalnum(str_[idx_])) break;
+      string_val_ += str_[idx_];
+    }
+  }
+
+  void ReadNumber() {
+    last_offset_ = idx_;
+    bool is_float = false;
+    static const std::string kFloatChars = ".eE";
+    static const std::string kAllowedChars = "+-1234567890.eExX";
+    for (; idx_ < str_.size(); ++idx_) {
+      if (kAllowedChars.find(idx_) == std::string::npos) break;
+      if (kFloatChars.find(idx_) != std::string::npos) is_float = true;
+    }
+
+    try {
+      if (is_float) {
+        type_ = L_FLOAT;
+        float_val_ = stof(str_.substr(last_offset_, idx_ - last_offset_));
+
+      } else {
+        type_ = L_INTEGER;
+        int_val_ = stoi(str_.substr(last_offset_, idx_ - last_offset_));
+      }
+
+    } catch (...) {
+      RaiseError();
+    }
+  }
+
+  float float_val_;
+  int int_val_;
+  std::string string_val_;
+  TokenType type_;
+  const std::string str_;
+  int idx_ = 0;
+  int last_offset_ = 0;
+};
+
+class Parser {
+ public:
+  Parser(const std::string& str) : lexer_(str) {}
+
+  void ParseMain(OptionsDict* dict) {
+    ParseList(dict);
+    EnsureToken(Lexer::L_EOF);
+  }
+
+ private:
+  void ParseList(OptionsDict* dict) {
+    while (true) {
+      if (lexer_.GetToken() != Lexer::L_IDENTIFIER) return;
+      std::string identifier = lexer_.GetStringVal();
+      lexer_.Next();
+      if (lexer_.GetToken() == Lexer::L_EQUAL) {
+        lexer_.Next();
+        ReadVal(dict, identifier);
+      } else {
+        ReadSubDict(dict, identifier);
+      }
+      if (lexer_.GetToken() != Lexer::L_COMMA) return;
+      lexer_.Next();
+    }
+  }
+
+  void EnsureToken(Lexer::TokenType type) {
+    if (lexer_.GetToken() != type) lexer_.RaiseError();
+  }
+
+  void ReadVal(OptionsDict* dict, const std::string& id) {
+    if (lexer_.GetToken() == Lexer::L_FLOAT) {
+      dict->Set<float>(id, lexer_.GetFloatVal());
+    } else if (lexer_.GetToken() == Lexer::L_INTEGER) {
+      dict->Set<int>(id, lexer_.GetIntVal());
+    } else if (lexer_.GetToken() == Lexer::L_STRING) {
+      dict->Set<std::string>(id, lexer_.GetStringVal());
+    } else if (lexer_.GetToken() == Lexer::L_IDENTIFIER) {
+      if (lexer_.GetStringVal() == "true") {
+        dict->Set<bool>(id, true);
+      } else if (lexer_.GetStringVal() == "false") {
+        dict->Set<bool>(id, false);
+      } else {
+        dict->Set<std::string>(id, lexer_.GetStringVal());
+      }
+    } else {
+      lexer_.RaiseError();
+    }
+    lexer_.Next();
+  }
+
+  void ReadSubDict(OptionsDict* dict, const std::string& identifier) {
+    OptionsDict* new_dict = dict->AddSubdict(identifier);
+    if (lexer_.GetToken() == Lexer::L_LEFT_PARENTHESIS) {
+      lexer_.Next();
+      ParseList(new_dict);
+      EnsureToken(Lexer::L_RIGHT_PARENTHESIS);
+      lexer_.Next();
+    }
+  }
+
+ private:
+  Lexer lexer_;
+};
+
+}  // namespace
+
+OptionsDict OptionsDict::FromString(const std::string& str) {
+  OptionsDict dict;
+  Parser parser(str);
+  parser.ParseMain(&dict);
+  return dict;
 }
 
 }  // namespace lczero
