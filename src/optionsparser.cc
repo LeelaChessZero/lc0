@@ -439,4 +439,68 @@ void BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetName(), val);
 }
 
+/////////////////////////////////////////////////////////////////
+// ChoiceOption
+/////////////////////////////////////////////////////////////////
+
+ChoiceOption::ChoiceOption(const std::string& name,
+                           const std::vector<std::string>& choices,
+                           const std::string& long_flag, char short_flag,
+                           std::function<void(const std::string&)> setter)
+    : Option(name, long_flag, short_flag), setter_(setter) {}
+
+void ChoiceOption::SetValue(const std::string& value, OptionsDict* dict) {
+  SetVal(dict, value);
+}
+
+bool ChoiceOption::ProcessLongFlag(const std::string& flag,
+                                   const std::string& value,
+                                   OptionsDict* dict) {
+  if (flag == GetLongFlag()) {
+    SetVal(dict, value);
+    return true;
+  }
+  return false;
+}
+
+bool ChoiceOption::ProcessShortFlagWithValue(char flag,
+                                             const std::string& value,
+                                             OptionsDict* dict) {
+  if (flag == GetShortFlag()) {
+    SetVal(dict, value);
+    return true;
+  }
+  return false;
+}
+
+std::string ChoiceOption::GetHelp(const OptionsDict& dict) const {
+  std::string values;
+  for (const auto& choice : choices_) {
+    if (!values.empty()) values += ',';
+    values += choice;
+  }
+  return FormatFlag(GetShortFlag(), GetLongFlag() + "=CHOICE", GetName(),
+                    GetVal(dict) + "  values: " + values);
+}
+
+std::string ChoiceOption::GetOptionString(const OptionsDict& dict) const {
+  std::string res = "type combo default " + GetVal(dict);
+  for (const auto& choice : choices_) {
+    res += " var " + choice;
+  }
+  return res;
+}
+
+void ChoiceOption::SendValue(const OptionsDict& dict) const {
+  if (setter_) setter_(GetVal(dict));
+}
+
+std::string ChoiceOption::GetVal(const OptionsDict& dict) const {
+  return dict.Get<ValueType>(GetName());
+}
+
+void ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  dict->Set<ValueType>(GetName(), val);
+}
+
 }  // namespace lczero
