@@ -107,7 +107,7 @@ class BNLayer : public BaseLayer
 {
 private:
     void *means;
-    void *variences;
+    void *variances;
     bool useRelu;
 
 public:
@@ -385,25 +385,25 @@ BNLayer::BNLayer(BaseLayer *ip, bool relu) :
     size_t weightSize = bpe * C;
 
     cudaMalloc(&means, weightSize);
-    cudaMalloc(&variences, weightSize);
+    cudaMalloc(&variances, weightSize);
 }
 
 void BNLayer::loadWeights(void *cpuMeans, void *cpuVar)
 {
     size_t weightSize = bpe * C;
     cudaMemcpyAsync(means, cpuMeans, weightSize, cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(variences, cpuVar, weightSize, cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(variances, cpuVar, weightSize, cudaMemcpyHostToDevice);
 }
 
 void BNLayer::eval(void *output, void *input, void *input2, void *scratch)
 {
-    batchNormForward((float *)output, (float *)input, (float *)input2, N, C, H, W, (float *)means, (float *)variences, useRelu);
+    batchNormForward((float *)output, (float *)input, (float *)input2, N, C, H, W, (float *)means, (float *)variances, useRelu);
 }
 
 BNLayer::~BNLayer()
 {
     cudaFree(means);
-    cudaFree(variences);
+    cudaFree(variances);
 }
 
 FCLayer::FCLayer(BaseLayer *ip, int C, int H, int W, bool relu, bool bias, bool tanh) :
@@ -568,7 +568,7 @@ public:
         // Move biases to batchnorm means to make the output match without having
         // to separately add the biases.
 
-        // Also compute reciprocal of std-dev from the variences (so that it can be just multiplied)
+        // Also compute reciprocal of std-dev from the variances (so that it can be just multiplied)
 
         fixBiases(weights.input);
         fixStdDevs(weights.input.bn_stddivs);
