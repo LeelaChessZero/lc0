@@ -26,10 +26,8 @@
 #include "utils/mutex.h"
 
 // CUDNN eval
-// default to ON on windows builds
-#ifdef _WIN32
+// comment/disable this to enable tensor flow path
 #define CUDNN_EVAL 1
-#endif
 
 namespace lczero {
 
