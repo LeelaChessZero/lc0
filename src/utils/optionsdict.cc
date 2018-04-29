@@ -119,12 +119,13 @@ class Lexer {
       return;
     }
 
-    RaiseError();
+    RaiseError("Unable to parse token");
   }
 
-  void RaiseError() {
+  void RaiseError(const std::string& message) {
     throw Exception("Unable to parse config at offset " +
-                    std::to_string(last_offset_) + ": " + str_);
+                    std::to_string(last_offset_) + ": " + str_ + " (" +
+                    message + ")");
   }
 
   TokenType GetToken() const { return type_; }
@@ -147,14 +148,14 @@ class Lexer {
     }
 
     last_offset_ = idx_;
-    RaiseError();
+    RaiseError("String is not closed at end of line");
   }
 
   void ReadIdentifier() {
     string_val_ = "";
     type_ = L_IDENTIFIER;
     for (; idx_ < str_.size(); ++idx_) {
-      if (!std::isalnum(str_[idx_])) break;
+      if (!std::isalnum(str_[idx_]) && str_[idx_] != '_') break;
       string_val_ += str_[idx_];
     }
   }
@@ -165,8 +166,8 @@ class Lexer {
     static const std::string kFloatChars = ".eE";
     static const std::string kAllowedChars = "+-1234567890.eExX";
     for (; idx_ < str_.size(); ++idx_) {
-      if (kAllowedChars.find(idx_) == std::string::npos) break;
-      if (kFloatChars.find(idx_) != std::string::npos) is_float = true;
+      if (kAllowedChars.find(str_[idx_]) == std::string::npos) break;
+      if (kFloatChars.find(str_[idx_]) != std::string::npos) is_float = true;
     }
 
     try {
@@ -180,7 +181,7 @@ class Lexer {
       }
 
     } catch (...) {
-      RaiseError();
+      RaiseError("Unable to parse number");
     }
   }
 
@@ -220,7 +221,8 @@ class Parser {
   }
 
   void EnsureToken(Lexer::TokenType type) {
-    if (lexer_.GetToken() != type) lexer_.RaiseError();
+    if (lexer_.GetToken() != type)
+      lexer_.RaiseError("Expected token #" + std::to_string(type));
   }
 
   void ReadVal(OptionsDict* dict, const std::string& id) {
@@ -239,7 +241,7 @@ class Parser {
         dict->Set<std::string>(id, lexer_.GetStringVal());
       }
     } else {
-      lexer_.RaiseError();
+      lexer_.RaiseError("Expected value");
     }
     lexer_.Next();
   }
