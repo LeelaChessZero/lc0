@@ -98,12 +98,12 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(ProjectDir)\..\src;$(VC_IncludePath);$(WindowsSDK_IncludePath);E:\Ankan\MachineLearning\CUDA_NN\7.1</IncludePath>
-    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(NETFXKitsDir)Lib\um\x64;E:\Ankan\MachineLearning\CUDA_NN\7.1</LibraryPath>
+    <IncludePath>$(ProjectDir)\..\src;$(VC_IncludePath);$(WindowsSDK_IncludePath);..\CUDA_NN\7.1</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(NETFXKitsDir)Lib\um\x64;..\CUDA_NN\7.1</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(ProjectDir)\..\src;$(VC_IncludePath);$(WindowsSDK_IncludePath);E:\Ankan\MachineLearning\CUDA_NN\7.1</IncludePath>
-    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(NETFXKitsDir)Lib\um\x64;E:\Ankan\MachineLearning\CUDA_NN\7.1</LibraryPath>
+    <IncludePath>$(ProjectDir)\..\src;$(VC_IncludePath);$(WindowsSDK_IncludePath);..\CUDA_NN\7.1</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(NETFXKitsDir)Lib\um\x64;..\CUDA_NN\7.1</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
