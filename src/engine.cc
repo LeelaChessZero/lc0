@@ -23,7 +23,12 @@
 #include "mcts/search.h"
 #include "neural/loader.h"
 #include "neural/network_random.h"
+
+#if CUDNN_EVAL == 1
+#include "neural/network_cudnn.h"
+#else
 #include "neural/network_tf.h"
+#endif
 
 namespace lczero {
 namespace {
@@ -80,9 +85,15 @@ void EngineController::SetNetworkPath(const std::string& path) {
     net_path = path;
   }
   Weights weights = LoadWeightsFromFile(net_path);
+
   // TODO Make backend selection.
+#if CUDNN_EVAL == 1
+  network_ = MakeCudnnNetwork(weights);
+#else
   network_ = MakeTensorflowNetwork(weights);
   // network_ = MakeRandomNetwork();
+#endif
+
 }
 
 void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
