@@ -561,7 +561,7 @@ public:
 
         numBlocks = weights.residual.size();
 
-        // 1. process weights
+        // 0. process weights
         
         // Biases are not calculated and are typically zero but some networks might
         // still have non-zero biases.
@@ -588,9 +588,7 @@ public:
 
 
 
-
         // 1. build the network, and copy the weights to GPU memory
-        int weightIndex = 0;
         // input 
         {
             ConvLayer *inputConv = new ConvLayer(NULL, numFilters, 8, 8, 3, numInputPlanes);
