@@ -25,6 +25,12 @@
 #include "uciloop.h"
 #include "utils/mutex.h"
 
+// CUDNN eval
+// default to ON on windows builds
+#ifdef _WIN32
+#define CUDNN_EVAL 1
+#endif
+
 namespace lczero {
 
 class EngineController {

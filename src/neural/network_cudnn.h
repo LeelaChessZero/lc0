@@ -16,30 +16,13 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "engine.h"
-#include "selfplay/loop.h"
-#include "utils/commandline.h"
+#pragma once
 
-int main(int argc, const char** argv) {
-  using namespace lczero;
-  CommandLine::Init(argc, argv);
-  CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
+#include "network.h"
 
-#if CUDNN_EVAL != 1
-  // self-play not supported with cudnn version (I ran into compile issues)
-  CommandLine::RegisterMode("selfplay", "Play games with itself");
+namespace lczero {
 
-  if (CommandLine::ConsumeCommand("selfplay")) {
-    // Selfplay mode.
-    SelfPlayLoop loop;
-    loop.RunLoop();
-  } else 
-#endif  
-  {
-    // Consuming optional "uci" mode.
-    CommandLine::ConsumeCommand("uci");
-    // Ordinary UCI engine.
-    EngineLoop loop;
-    loop.RunLoop();
-  }
-}
+// Creates a network which just returns random values (for plain nps testing).
+std::unique_ptr<Network> MakeCudnnNetwork(Weights& weights);
+
+}  // namespace lczero
