@@ -447,7 +447,7 @@ ChoiceOption::ChoiceOption(const std::string& name,
                            const std::vector<std::string>& choices,
                            const std::string& long_flag, char short_flag,
                            std::function<void(const std::string&)> setter)
-    : Option(name, long_flag, short_flag), setter_(setter) {}
+    : Option(name, long_flag, short_flag), setter_(setter), choices_(choices) {}
 
 void ChoiceOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, value);

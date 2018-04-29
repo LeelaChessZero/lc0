@@ -39,9 +39,10 @@ class OptionsDict : TypeDict<bool>,
  public:
   // Creates options dict from string. Example of a string:
   // option1=1, option_two = "string val", subdict(option3=3.14)
-  static OptionsDict FromString(const std::string& str);
+  static OptionsDict FromString(const std::string& str,
+                                const OptionsDict* parent = nullptr);
 
-  OptionsDict(OptionsDict* parent = nullptr) : parent_(parent) {}
+  OptionsDict(const OptionsDict* parent = nullptr) : parent_(parent) {}
 
   // e.g. dict.Get<int>("threads")
   // Returns value of given type. Throws exception if not found.
@@ -82,7 +83,7 @@ class OptionsDict : TypeDict<bool>,
   std::vector<std::string> ListSubdicts() const;
 
  private:
-  OptionsDict* parent_ = nullptr;
+  const OptionsDict* parent_ = nullptr;
   std::map<std::string, OptionsDict> subdicts_;
 };
 

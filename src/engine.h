@@ -55,10 +55,11 @@ class EngineController {
   void Go(const GoParams& params);
   // Must not block.
   void Stop();
-  void SetNetworkPath(const std::string& path);
   void SetCacheSize(int size);
 
  private:
+  void UpdateNetwork();
+
   const OptionsDict& options_;
 
   BestMoveInfo::Callback best_move_callback_;
@@ -74,6 +75,12 @@ class EngineController {
   std::unique_ptr<NodePool> node_pool_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
+
+  // Store current network settings to track when they change so that they
+  // are reloaded.
+  std::string network_path_;
+  std::string backend_;
+  std::string backend_options_;
 };
 
 class EngineLoop : public UciLoop {

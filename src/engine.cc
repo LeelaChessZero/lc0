@@ -21,15 +21,18 @@
 
 #include "engine.h"
 #include "mcts/search.h"
+#include "neural/factory.h"
 #include "neural/loader.h"
-#include "neural/network_random.h"
-#include "neural/network_tf.h"
 
 namespace lczero {
 namespace {
 const int kDefaultThreads = 2;
 const char* kThreadsOption = "Number of worker threads";
 const char* kDebugLogStr = "Do debug logging into file";
+
+const char* kWeightsStr = "Network weights file path";
+const char* kNnBackendStr = "NN backend to use";
+const char* kNnBackendOptionsStr = "NN backend parameters";
 
 const char* kAutoDiscover = "<autodiscover>";
 
@@ -60,29 +63,44 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
-  options->Add<StringOption>(
-      "Network weights file path", "weights", 'w',
-      std::bind(&EngineController::SetNetworkPath, this, _1)) = kAutoDiscover;
+  options->Add<StringOption>(kWeightsStr, "weights", 'w') = kAutoDiscover;
   options->Add<IntOption>(kThreadsOption, 1, 128, "threads", 't') =
       kDefaultThreads;
   options->Add<IntOption>(
       "NNCache size", 0, 999999999, "nncache", '\0',
       std::bind(&EngineController::SetCacheSize, this, _1)) = 200000;
+
+  const auto backends = NetworkFactory::Get()->GetBackendsList();
+  options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") = backends[0];
+  options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
+
   Search::PopulateUciParams(options);
 }
 
-void EngineController::SetNetworkPath(const std::string& path) {
+void EngineController::UpdateNetwork() {
   SharedLock lock(busy_mutex_);
-  std::string net_path;
-  if (path == kAutoDiscover) {
+  std::string network_path = options_.Get<std::string>(kWeightsStr);
+  std::string backend = options_.Get<std::string>(kNnBackendStr);
+  std::string backend_options = options_.Get<std::string>(kNnBackendOptionsStr);
+
+  if (network_path == network_path_ && backend == backend_ &&
+      backend_options == backend_options_)
+    return;
+
+  network_path_ = network_path;
+  backend_ = backend;
+  backend_options_ = backend_options;
+
+  std::string net_path = network_path;
+  if (net_path == kAutoDiscover) {
     net_path = DiscoveryWeightsFile();
-  } else {
-    net_path = path;
   }
   Weights weights = LoadWeightsFromFile(net_path);
-  // TODO Make backend selection.
-  network_ = MakeTensorflowNetwork(weights);
-  // network_ = MakeRandomNetwork();
+
+  OptionsDict network_options =
+      OptionsDict::FromString(backend_options, &options_);
+
+  network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
 }
 
 void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
@@ -91,6 +109,7 @@ void EngineController::NewGame() {
   SharedLock lock(busy_mutex_);
   search_.reset();
   tree_.reset();
+  UpdateNetwork();
 }
 
 void EngineController::SetPosition(const std::string& fen,
@@ -104,6 +123,7 @@ void EngineController::SetPosition(const std::string& fen,
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   tree_->ResetToPosition(fen, moves);
+  UpdateNetwork();
 }
 
 void EngineController::Go(const GoParams& params) {

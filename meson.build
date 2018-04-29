@@ -34,6 +34,7 @@ files = [
   'src/mcts/node.cc',
   'src/mcts/search.cc',
   'src/neural/cache.cc',
+  'src/neural/factory.cc',
   'src/neural/loader.cc',
   'src/neural/writer.cc',
   'src/neural/network_mux.cc',
@@ -65,11 +66,6 @@ test_deps += dependency('gtest')
 
 test('ChessBoard',
   executable('chessboard_test', 'src/chess/board_test.cc',
-  files, include_directories: includes, dependencies: test_deps
-))
-
-test('Network',
-  executable('network_test', 'src/neural/network_test.cc',
   files, include_directories: includes, dependencies: test_deps
 ))
 

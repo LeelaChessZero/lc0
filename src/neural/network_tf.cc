@@ -15,9 +15,10 @@
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include "neural/network_tf.h"
 
+#include "neural/factory.h"
 #include "utils/bititer.h"
+#include "utils/optionsdict.h"
 #include "utils/transpose.h"
 
 #include <tensorflow/cc/client/client_session.h>
@@ -231,5 +232,11 @@ std::unique_ptr<NetworkComputation> TFNetwork::NewComputation() {
 std::unique_ptr<Network> MakeTensorflowNetwork(const Weights& weights) {
   return std::make_unique<TFNetwork>(weights);
 }
+
+REGISTER_FACTORY("tensorflow",
+                 [](const Weights& weights, const OptionsDict& options) {
+                   return std::make_unique<TFNetwork>(weights);
+                 },
+                 100);
 
 }  // namespace lczero

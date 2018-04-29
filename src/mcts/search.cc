@@ -26,7 +26,6 @@
 
 #include "mcts/node.h"
 #include "neural/cache.h"
-#include "neural/network_tf.h"
 #include "utils/random.h"
 
 namespace lczero {
@@ -69,9 +68,9 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
       kMiniPrefetchBatch(options.Get<int>(kMiniPrefetchBatchStr)),
       kAggresiveCaching(options.Get<bool>(kAggresiveCachingStr)),
-      kCpuct(options.Get<int>(kCpuctStr) / 100.0f),
-      kTemperature(options.Get<int>(kTemperatureStr) / 100.0f),
-      kTempDecay(options.Get<int>(kTempDecayStr) / 100.0f),
+      kCpuct(options.Get<float>(kCpuctStr)),
+      kTemperature(options.Get<float>(kTemperatureStr)),
+      kTempDecay(options.Get<float>(kTempDecayStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)) {}
 

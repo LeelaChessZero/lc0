@@ -15,9 +15,9 @@
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include "neural/network_random.h"
 
 #include <functional>
+#include "neural/factory.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -55,8 +55,10 @@ class RandomNetwork : public Network {
   }
 };
 
-std::unique_ptr<Network> MakeRandomNetwork() {
-  return std::make_unique<RandomNetwork>();
-}
+REGISTER_FACTORY("random",
+                 [](const Weights& weights, const OptionsDict& options) {
+                   return std::make_unique<RandomNetwork>();
+                 },
+                 -1000);
 
 }  // namespace lczero

@@ -260,8 +260,9 @@ class Parser {
 
 }  // namespace
 
-OptionsDict OptionsDict::FromString(const std::string& str) {
-  OptionsDict dict;
+OptionsDict OptionsDict::FromString(const std::string& str,
+                                    const OptionsDict* parent) {
+  OptionsDict dict(parent);
   Parser parser(str);
   parser.ParseMain(&dict);
   return dict;

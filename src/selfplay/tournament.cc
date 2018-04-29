@@ -18,9 +18,9 @@
 
 #include "selfplay/tournament.h"
 #include "mcts/search.h"
+#include "neural/factory.h"
 #include "neural/loader.h"
 #include "neural/network_mux.h"
-#include "neural/network_tf.h"
 #include "optionsparser.h"
 #include "selfplay/game.h"
 #include "utils/random.h"
@@ -40,6 +40,9 @@ const char* kPlayoutsStr = "Number of playouts per move to search";
 const char* kVisitsStr = "Number of visits per move to search";
 const char* kTimeMsStr = "Time per move, in milliseconds";
 const char* kTrainingStr = "Write training data";
+const char* kNnBackendStr = "NN backend to use";
+const char* kNnBackendOptionsStr = "NN backend parameters";
+
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
 
@@ -62,6 +65,9 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kVisitsStr, -1, 999999999, "visits", 'v') = -1;
   options->Add<IntOption>(kTimeMsStr, -1, 999999999, "movetime") = -1;
   options->Add<BoolOption>(kTrainingStr, "training") = false;
+  const auto backends = NetworkFactory::Get()->GetBackendsList();
+  options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") = backends[0];
+  options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
 
   Search::PopulateUciParams(options);
 }
@@ -96,19 +102,38 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
   static const char* kPlayerNames[2] = {"player1", "player2"};
   for (int idx : {0, 1}) {
     // If two players have the same network, no need to load two.
-    if (idx == 1 &&
-        options.GetSubdict("player1").Get<std::string>(kNetFileStr) ==
-            options.GetSubdict("player2").Get<std::string>(kNetFileStr)) {
-      networks_[1] = networks_[0];
-      break;
+    if (idx == 1) {
+      bool network_identical = true;
+      for (const auto& option_str :
+           {kNetFileStr, kNnBackendStr, kNnBackendOptionsStr}) {
+        if (options.GetSubdict("player1").Get<std::string>(option_str) !=
+            options.GetSubdict("player2").Get<std::string>(option_str)) {
+          network_identical = false;
+          break;
+        }
+      }
+      if (network_identical) {
+        networks_[1] = networks_[0];
+        break;
+      }
     }
+
     std::string path =
         options.GetSubdict(kPlayerNames[idx]).Get<std::string>(kNetFileStr);
     if (path == kAutoDiscover) {
       path = DiscoveryWeightsFile();
     }
     Weights weights = LoadWeightsFromFile(path);
-    auto network = MakeTensorflowNetwork(weights);
+    std::string backend =
+        options.GetSubdict(kPlayerNames[idx]).Get<std::string>(kNnBackendStr);
+    std::string backend_options = options.GetSubdict(kPlayerNames[idx])
+                                      .Get<std::string>(kNnBackendOptionsStr);
+
+    OptionsDict network_options = OptionsDict::FromString(
+        backend_options, &options.GetSubdict(kPlayerNames[idx]));
+
+    auto network =
+        NetworkFactory::Get()->Create(backend, weights, network_options);
     if (kParallelism == 1) {
       // If one game will be run in parallel, no need to mux computations.
       networks_[idx] = std::move(network);
