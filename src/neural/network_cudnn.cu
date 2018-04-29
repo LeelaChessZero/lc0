@@ -33,7 +33,7 @@ void cudnnError(cudnnStatus_t status, const char* file, const int& line)
     {
         char message[128];
         sprintf(message, "CUDNN error: %s (%s:%d) ", cudnnGetErrorString(status), file, line);
-        throw(new Exception(message));
+        throw(Exception(message));
     }
 }
 
@@ -717,7 +717,7 @@ public:
             cudaMemset(tensor_mem_[i], 0, maxSize);
         }
 
-        //printf("Allocated %d bytes of GPU memory to run the network\n", 3 * maxSize);
+        // printf("Allocated %d bytes of GPU memory to run the network\n", 3 * maxSize);
 
         // 3. allocate scratch space (used internally by cudnn to run convolutions)
         cudaMalloc(&scratch_mem_, kCudaScratchSize);
@@ -764,7 +764,7 @@ public:
 
         if (status != cudaSuccess)
         {
-            throw(new Exception("Some error running cuda based eval!"));
+            throw(Exception("Some error running cuda based eval!"));
         }
 
     }
