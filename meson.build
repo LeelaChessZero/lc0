@@ -26,7 +26,20 @@ tensorflow_cc = declare_dependency(
 deps = []
 deps += tensorflow_cc
 deps += cc.find_library('stdc++fs')
+deps += cc.find_library('libcublas', dirs: '/opt/cuda/lib64/')
+deps += cc.find_library('libcudnn', dirs: '/opt/cuda/lib64/')
+deps += cc.find_library('libcudart', dirs: '/opt/cuda/lib64/')
 # deps += dependency('libprofiler')
+
+nvcc = find_program('nvcc')
+cuda_files = [
+  'src/neural/network_cudnn.cu',
+]
+
+cuda_gen = generator(nvcc,
+    output: '@BASENAME@.o',
+    arguments: ['-c', '@INPUT@', '-o', '@OUTPUT@', '-I', '../src'],
+)
 
 files = [
   'src/chess/bitboard.cc',
@@ -50,6 +63,7 @@ files = [
   'src/selfplay/tournament.cc',
   'src/selfplay/loop.cc',
   'src/uciloop.cc',
+  cuda_gen.process(cuda_files)
 ]
 
 includes = []

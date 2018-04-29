@@ -25,6 +25,10 @@
 #include "uciloop.h"
 #include "utils/mutex.h"
 
+// CUDNN eval
+// comment/disable this to enable tensor flow path
+#define CUDNN_EVAL 1
+
 namespace lczero {
 
 class EngineController {
