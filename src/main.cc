@@ -16,11 +16,15 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <iostream>
 #include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
 
 int main(int argc, const char** argv) {
+  std::cerr << "       _" << std::endl;
+  std::cerr << "|   _ | |" << std::endl;
+  std::cerr << "|_ |_ |_| built " << __DATE__ << std::endl;
   using namespace lczero;
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
