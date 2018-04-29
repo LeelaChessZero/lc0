@@ -39,7 +39,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"ucinewgame"}, {}},
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
-         {"infinite", "wtime", "btime", "binc", "movestogo", "depth", "nodes",
+         {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth", "nodes",
           "movetime"}},
         {{"stop"}, {}},
         {{"quit"}, {}},
