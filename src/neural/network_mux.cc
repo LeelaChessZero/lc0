@@ -76,7 +76,7 @@ class MuxingNetwork : public Network {
 
     for (const auto& name : parents) {
       const auto& opts = options.GetSubdict(name);
-      const int nn_threads = opts.GetOrDefault<int>("nn_threads", 1);
+      const int nn_threads = opts.GetOrDefault<int>("threads", 1);
       const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
       const std::string backend =
           opts.GetOrDefault<std::string>("backend", name);
