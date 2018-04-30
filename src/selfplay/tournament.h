@@ -90,8 +90,6 @@ class SelfPlayTournament {
   const int kTotalGames;
   const bool kShareTree;
   const int kParallelism;
-  const int kGpuThreads;
-  const int kMaxGpuBatch;
   const bool kTraining;
 };
 

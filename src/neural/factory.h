@@ -73,7 +73,18 @@ class NetworkFactory {
   friend class Register;
 };
 
-// Look above at NetworkFactory::Register for parameters.
-#define REGISTER_FACTORY(...) \
-  static NetworkFactory::Register regH38fhs##__COUNTER__(__VA_ARGS__)
+// Registers a Network.
+// Constructor of a network class must have parameters:
+// (const Weights& w, const OptionsDict& o)
+// @name -- name under which the backend will be known in configs.
+// @cls -- class name of a backend.
+// @priority -- numeric priority of a backend. Higher is higher, highest number
+// is the default backend.
+#define REGISTER_NETWORK(name, cls, priority)             \
+  static NetworkFactory::Register regH38fhs##__COUNTER__( \
+      name,                                               \
+      [](const Weights& w, const OptionsDict& o) {        \
+        return std::make_unique<cls>(w, o);               \
+      },                                                  \
+      priority)
 }  // namespace lczero

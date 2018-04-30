@@ -4,9 +4,12 @@ Building is not very streightforward, but here's roughly the process:
 
 ## Linux
 
-1. Install tensorflow_cc by following steps described [here](https://github.com/FloopCZ/tensorflow_cc).
-2. Install ninja and meson
-3. Go to lc0/ and run ./build.sh
+1. (if you want version with tensorflow) Install tensorflow_cc by following steps described [here](https://github.com/FloopCZ/tensorflow_cc).
+2. (if you want cuDNN version) Install CUDA and cuDNN.
+3. Install ninja and meson
+4. Go to lc0/
+5. If you decided not to install tensorflow or CUDA, comment out building network_tf.cc and/or network_cudnn.cu from meson.build.
+6. Run ./build.sh
 
 ## Windows
 

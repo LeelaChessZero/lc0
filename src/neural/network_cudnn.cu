@@ -486,7 +486,7 @@ class CudnnNetworkComputation : public NetworkComputation {
 
 class CudnnNetwork : public Network {
  public:
-  CudnnNetwork(Weights weights) {
+  CudnnNetwork(Weights weights, const OptionsDict &options) {
     // TODO: error checking!
     cudnnCreate(&cudnn_);
     cublasCreate(&cublas_);
@@ -754,9 +754,6 @@ void CudnnNetworkComputation::ComputeBlocking() {
 
 }  // namespace
 
-REGISTER_FACTORY("cudnn",
-                 [](const Weights &weights, const OptionsDict &options) {
-                   return std::make_unique<CudnnNetwork>(weights);
-                 },
-                 110);
+REGISTER_NETWORK("cudnn", CudnnNetwork, 110);
+
 }  // namespace lczero
