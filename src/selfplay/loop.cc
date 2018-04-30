@@ -93,6 +93,12 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   SendResponse(res);
 }
 
+void SelfPlayLoop::CmdSetOption(const std::string& name,
+                                const std::string& value,
+                                const std::string& context) {
+  options_.SetOption(name, value, context);
+}
+
 void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   std::string res = "tournamentstatus";
   if (info.finished) res += " final";
