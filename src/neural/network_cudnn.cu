@@ -89,8 +89,8 @@ class ConvLayer : public BaseLayer {
   float *biases = nullptr;
   float *weights = nullptr;
 
-  cudnnFilterDescriptor_t filterDesc;
-  cudnnConvolutionDescriptor_t convDesc;
+  cudnnFilterDescriptor_t filter_desc_;
+  cudnnConvolutionDescriptor_t conv_desc_;
   cudnnConvolutionFwdAlgo_t convAlgo;
 
   cudnnTensorDescriptor_t bias_desc_;
@@ -121,9 +121,9 @@ class BNLayer : public BaseLayer {
             cublasHandle_t cublas) override;
 
  private:
-  float *means_;
-  float *variances_;
   const bool use_relu_;
+  float *means_ = nullptr;
+  float *variances_ = nullptr;
 };
 
 class FCLayer : public BaseLayer {
@@ -140,9 +140,9 @@ class FCLayer : public BaseLayer {
  private:
   const bool use_bias_;
   const bool use_relu_;
-  const bool useTanh;
-  float *weights_;
-  float *biases_;
+  const bool use_tanh_;
+  float *weights_ = nullptr;
+  float *biases_ = nullptr;
 };
 
 // Each residual block has (4 kernels per block)
@@ -294,15 +294,15 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
   cudaMalloc(&biases, biasSize);
 
   // create cudnn objects for various tensors, algorithms, etc
-  cudnnCreateFilterDescriptor(&filterDesc);
-  cudnnCreateConvolutionDescriptor(&convDesc);
+  cudnnCreateFilterDescriptor(&filter_desc_);
+  cudnnCreateConvolutionDescriptor(&conv_desc_);
   cudnnCreateTensorDescriptor(&out_tensor_desc_);
   cudnnCreateTensorDescriptor(&in_tensor_desc_);
   cudnnCreateTensorDescriptor(&bias_desc_);
   cudnnCreateActivationDescriptor(&activation_);
 
   cudnnSetFilter4dDescriptor(
-      filterDesc, fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT,
+      filter_desc_, fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT,
       fp16 ? CUDNN_TENSOR_NHWC
            : CUDNN_TENSOR_NCHW,  // TODO: support fp16 evaluation
       C, Cin, filter_size_, filter_size_);
@@ -315,7 +315,7 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
   const bool crossCorr = 1;
 
   cudnnSetConvolution2dDescriptor(
-      convDesc, padding, padding, 1, 1, 1, 1,
+      conv_desc_, padding, padding, 1, 1, 1, 1,
       crossCorr ? CUDNN_CROSS_CORRELATION : CUDNN_CONVOLUTION,
       fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT);
 
@@ -362,19 +362,22 @@ void ConvLayer::eval(int N, float *output, const float *input,
 
   if (!(use_relu_ || use_bias_)) {
     reportCUDNNErrors(cudnnConvolutionForward(
-        cudnn, &alpha, in_tensor_desc_, input, filterDesc, weights, convDesc,
-        convAlgo, scratch, kCudaScratchSize, &beta, out_tensor_desc_, output));
+        cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+        conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
+        out_tensor_desc_, output));
   } else if (input2) {
     // fused bias + sum + relu!
     reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
-        cudnn, &alpha, in_tensor_desc_, input, filterDesc, weights, convDesc,
-        convAlgo, scratch, kCudaScratchSize, &alpha, out_tensor_desc_, input2,
-        bias_desc_, biases, activation_, out_tensor_desc_, output));
+        cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+        conv_desc_, convAlgo, scratch, kCudaScratchSize, &alpha,
+        out_tensor_desc_, input2, bias_desc_, biases, activation_,
+        out_tensor_desc_, output));
   } else {
     reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
-        cudnn, &alpha, in_tensor_desc_, input, filterDesc, weights, convDesc,
-        convAlgo, scratch, kCudaScratchSize, &beta, out_tensor_desc_, output,
-        bias_desc_, biases, activation_, out_tensor_desc_, output));
+        cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+        conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
+        out_tensor_desc_, output, bias_desc_, biases, activation_,
+        out_tensor_desc_, output));
   }
 }
 
@@ -411,7 +414,10 @@ BNLayer::~BNLayer() {
 
 FCLayer::FCLayer(BaseLayer *ip, int C, int H, int W, bool relu, bool bias,
                  bool tanh)
-    : BaseLayer(C, H, W, ip), use_relu_(relu), use_bias_(bias), useTanh(tanh) {
+    : BaseLayer(C, H, W, ip),
+      use_relu_(relu),
+      use_bias_(bias),
+      use_tanh_(tanh) {
   size_t weightSize = bpe * C * H * W * ip->getC() * ip->getH() * ip->getW();
   size_t biasSize = bpe * C * H * W;
   cudaMalloc(&weights_, weightSize);
@@ -447,9 +453,9 @@ void FCLayer::eval(int N, float *outputTensor, const float *inputTensor,
                 &alpha, weights_, numInputs, inputTensor, numInputs, &beta,
                 outputTensor, numOutputs);
 
-    if (use_bias_ || use_relu_ || useTanh) {
+    if (use_bias_ || use_relu_ || use_tanh_) {
       addVectors(outputTensor, biases_, outputTensor, numOutputs * N,
-                 numOutputs, numOutputs * N, use_relu_, useTanh);
+                 numOutputs, numOutputs * N, use_relu_, use_tanh_);
     }
   }
 }
