@@ -145,23 +145,6 @@ class FCLayer : public BaseLayer {
   float *biases_ = nullptr;
 };
 
-// Each residual block has (4 kernels per block)
-// A convolution of 128 filters of kernel size 3 × 3 with stride 1
-
-// Batch normalisation
-// A rectifier non - linearity
-
-// A convolution of 128 filters of kernel size 3 × 3 with stride 1
-
-// Batch normalisation
-// A skip connection that adds the input to the block
-// A rectifier non - linearity
-
-// need implementations of
-//  1. convolution layer (no bias/activation_ needed)
-//  2. Fully connected layer (with optional bias, and optional relu),
-//  3. batch normilization with optional sum (skip connection) and RELU
-
 // Need memory for 3 data buffers
 //  1. input for the layer
 //  2. output of the layer
@@ -507,8 +490,6 @@ class CudnnNetwork : public Network {
 
     const int numInputPlanes = kInputPlanes;
     const int numFilters = weights.input.biases.size();
-    assert(numFilters == 128);  // need to make sure nothing breaks after
-                                // changing the no. of filters!
 
     numBlocks_ = weights.residual.size();
 
