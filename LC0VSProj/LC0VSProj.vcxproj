@@ -18,12 +18,15 @@
     <ClCompile Include="..\src\mcts\node.cc" />
     <ClCompile Include="..\src\mcts\search.cc" />
     <ClCompile Include="..\src\neural\cache.cc" />
+    <ClCompile Include="..\src\neural\factory.cc" />
     <ClCompile Include="..\src\neural\loader.cc" />
     <ClCompile Include="..\src\neural\network_mux.cc" />
     <ClCompile Include="..\src\neural\network_random.cc" />
     <ClCompile Include="..\src\neural\writer.cc" />
     <ClCompile Include="..\src\optionsparser.cc" />
     <ClCompile Include="..\src\selfplay\game.cc" />
+    <ClCompile Include="..\src\selfplay\loop.cc" />
+    <ClCompile Include="..\src\selfplay\tournament.cc" />
     <ClCompile Include="..\src\uciloop.cc" />
     <ClCompile Include="..\src\utils\commandline.cc" />
     <ClCompile Include="..\src\utils\optionsdict.cc" />
@@ -38,6 +41,7 @@
     <ClInclude Include="..\src\mcts\node.h" />
     <ClInclude Include="..\src\mcts\search.h" />
     <ClInclude Include="..\src\neural\cache.h" />
+    <ClInclude Include="..\src\neural\factory.h" />
     <ClInclude Include="..\src\neural\loader.h" />
     <ClInclude Include="..\src\neural\network.h" />
     <ClInclude Include="..\src\neural\network_cudnn.h" />
@@ -104,6 +108,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>$(ProjectDir)\..\src;$(VC_IncludePath);$(WindowsSDK_IncludePath);..\CUDA_NN\7.1</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(NETFXKitsDir)Lib\um\x64;..\CUDA_NN\7.1</LibraryPath>
+    <TargetName>lc0-cudnn</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
