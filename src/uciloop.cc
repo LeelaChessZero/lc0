@@ -39,8 +39,9 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"ucinewgame"}, {}},
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
-         {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth", "nodes",
-          "movetime"}},
+         {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth",
+          "nodes", "movetime"}},
+        {{"start"}, {}},
         {{"stop"}, {}},
         {{"quit"}, {}},
 };
@@ -151,6 +152,8 @@ bool UciLoop::DispatchCommand(
     CmdGo(go_params);
   } else if (command == "stop") {
     CmdStop();
+  } else if (command == "start") {
+    CmdStart();
   } else if (command == "quit") {
     return false;
   } else {

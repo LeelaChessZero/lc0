@@ -27,6 +27,11 @@ const char* kInteractive = "Run in interactive mode with uci-like interface";
 
 SelfPlayLoop::SelfPlayLoop() {}
 
+SelfPlayLoop::~SelfPlayLoop() {
+  if (tournament_) tournament_->Abort();
+  if (thread_) thread_->join();
+}
+
 void SelfPlayLoop::RunLoop() {
   options_.Add<BoolOption>(kInteractive, "interactive") = false;
   SelfPlayTournament::PopulateOptions(&options_);
@@ -43,6 +48,28 @@ void SelfPlayLoop::RunLoop() {
         std::bind(&SelfPlayLoop::SendTournament, this, std::placeholders::_1));
     tournament.RunBlocking();
   }
+}
+
+void SelfPlayLoop::CmdUci() {
+  SendResponse("id name The Lc0 chess engine.");
+  SendResponse("id author The LCZero Authors.");
+  for (const auto& option : options_.ListOptionsUci()) {
+    SendResponse(option);
+  }
+  SendResponse("uciok");
+}
+
+void SelfPlayLoop::CmdStart() {
+  if (tournament_) return;
+  options_.SendAllOptions();
+  tournament_ = std::make_unique<SelfPlayTournament>(
+      options_.GetOptionsDict(),
+      std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
+      std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
+      std::bind(&SelfPlayLoop::SendGameInfo, this, std::placeholders::_1),
+      std::bind(&SelfPlayLoop::SendTournament, this, std::placeholders::_1));
+  thread_ =
+      std::make_unique<std::thread>([this]() { tournament_->RunBlocking(); });
 }
 
 void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
@@ -64,6 +91,12 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
     for (const auto& move : info.moves) res += " " + move.as_string();
   }
   SendResponse(res);
+}
+
+void SelfPlayLoop::CmdSetOption(const std::string& name,
+                                const std::string& value,
+                                const std::string& context) {
+  options_.SetOption(name, value, context);
 }
 
 void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
