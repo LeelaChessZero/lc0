@@ -26,9 +26,9 @@ tensorflow_cc = declare_dependency(
 deps = []
 deps += tensorflow_cc
 deps += cc.find_library('stdc++fs')
-deps += cc.find_library('libcublas', dirs: '/opt/cuda/lib64/')
-deps += cc.find_library('libcudnn', dirs: '/opt/cuda/lib64/')
-deps += cc.find_library('libcudart', dirs: '/opt/cuda/lib64/')
+deps += cc.find_library('libcublas', dirs: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'])
+deps += cc.find_library('libcudnn', dirs: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'])
+deps += cc.find_library('libcudart', dirs: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'])
 # deps += dependency('libprofiler')
 
 nvcc = find_program('nvcc')
@@ -38,7 +38,7 @@ cuda_files = [
 
 cuda_gen = generator(nvcc,
     output: '@BASENAME@.o',
-    arguments: ['-c', '@INPUT@', '-o', '@OUTPUT@', '-I', '../src'],
+    arguments: ['--std=c++14', '-c', '@INPUT@', '-o', '@OUTPUT@', '-I', '../src'],
 )
 
 files = [
