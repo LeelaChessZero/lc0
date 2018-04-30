@@ -183,10 +183,6 @@ void MuxingComputation::ComputeBlocking() {
 
 }  // namespace
 
-REGISTER_FACTORY("multiplexing",
-                 [](const Weights& weights, const OptionsDict& options) {
-                   return std::make_unique<MuxingNetwork>(weights, options);
-                 },
-                 -1);
+REGISTER_NETWORK("multiplexing", MuxingNetwork, -1);
 
 }  // namespace lczero

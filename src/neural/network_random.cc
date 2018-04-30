@@ -50,15 +50,12 @@ class RandomNetworkComputation : public NetworkComputation {
 
 class RandomNetwork : public Network {
  public:
+  RandomNetwork(const Weights& weights, const OptionsDict& options) {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>();
   }
 };
 
-REGISTER_FACTORY("random",
-                 [](const Weights& weights, const OptionsDict& options) {
-                   return std::make_unique<RandomNetwork>();
-                 },
-                 -1000);
+REGISTER_NETWORK("random", RandomNetwork, -1000);
 
 }  // namespace lczero

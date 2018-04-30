@@ -135,7 +135,7 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
 class TFNetworkComputation;
 class TFNetwork : public Network {
  public:
-  TFNetwork(const Weights& weights);
+  TFNetwork(const Weights& weights, const OptionsDict& options);
 
   std::unique_ptr<NetworkComputation> NewComputation() override;
 
@@ -199,7 +199,7 @@ class TFNetworkComputation : public NetworkComputation {
   tensorflow::Status status_;
 };
 
-TFNetwork::TFNetwork(const Weights& weights)
+TFNetwork::TFNetwork(const Weights& weights, const OptionsDict& options)
     : scope_(Scope::NewRootScope()), session_(scope_) {
   input_ = std::make_unique<Placeholder>(
       scope_, DataType::DT_FLOAT, Placeholder::Shape({-1, kInputPlanes, 8, 8}));
@@ -229,14 +229,6 @@ std::unique_ptr<NetworkComputation> TFNetwork::NewComputation() {
 
 }  // namespace
 
-std::unique_ptr<Network> MakeTensorflowNetwork(const Weights& weights) {
-  return std::make_unique<TFNetwork>(weights);
-}
-
-REGISTER_FACTORY("tensorflow",
-                 [](const Weights& weights, const OptionsDict& options) {
-                   return std::make_unique<TFNetwork>(weights);
-                 },
-                 100);
+REGISTER_NETWORK("tensorflow", TFNetwork, 100);
 
 }  // namespace lczero
