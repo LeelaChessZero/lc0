@@ -131,7 +131,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     OptionsDict network_options = OptionsDict::FromString(
         backend_options, &options.GetSubdict(kPlayerNames[idx]));
 
-    auto network =
+    networks_[idx] =
         NetworkFactory::Get()->Create(backend, weights, network_options);
   }
 

@@ -29,17 +29,13 @@ int main(int argc, const char** argv) {
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
 
-#if CUDNN_EVAL != 1
-  // self-play not supported with cudnn version (I ran into compile issues)
   CommandLine::RegisterMode("selfplay", "Play games with itself");
 
   if (CommandLine::ConsumeCommand("selfplay")) {
     // Selfplay mode.
     SelfPlayLoop loop;
     loop.RunLoop();
-  } else 
-#endif  
-  {
+  } else {
     // Consuming optional "uci" mode.
     CommandLine::ConsumeCommand("uci");
     // Ordinary UCI engine.
