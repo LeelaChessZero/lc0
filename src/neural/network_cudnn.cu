@@ -290,7 +290,7 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
   cudnnSetFilter4dDescriptor(
       filter_desc_, fp16_ ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT,
       fp16_ ? CUDNN_TENSOR_NHWC
-            : CUDNN_TENSOR_NCHW,  // TODO: support fp16 Evaluation
+            : CUDNN_TENSOR_NCHW,  // TODO: support fp16 evaluation
       GetC(), Cin, filter_size_, filter_size_);
 
   reportCUDNNErrors(cudnnSetTensor4dDescriptor(
