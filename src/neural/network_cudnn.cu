@@ -37,7 +37,44 @@ void cudnnError(cudnnStatus_t status, const char *file, const int &line) {
   }
 }
 
+const char* cublasGetErrorString(cublasStatus_t status) {
+  switch (status) {
+    case CUBLAS_STATUS_SUCCESS: return "CUBLAS_STATUS_SUCCESS";
+    case CUBLAS_STATUS_NOT_INITIALIZED: return "CUBLAS_STATUS_NOT_INITIALIZED";
+    case CUBLAS_STATUS_ALLOC_FAILED: return "CUBLAS_STATUS_ALLOC_FAILED";
+    case CUBLAS_STATUS_INVALID_VALUE: return "CUBLAS_STATUS_INVALID_VALUE";
+    case CUBLAS_STATUS_ARCH_MISMATCH: return "CUBLAS_STATUS_ARCH_MISMATCH";
+    case CUBLAS_STATUS_MAPPING_ERROR: return "CUBLAS_STATUS_MAPPING_ERROR";
+    case CUBLAS_STATUS_EXECUTION_FAILED: return "CUBLAS_STATUS_EXECUTION_FAILED";
+    case CUBLAS_STATUS_INTERNAL_ERROR: return "CUBLAS_STATUS_INTERNAL_ERROR";
+    case CUBLAS_STATUS_NOT_SUPPORTED: return "CUBLAS_STATUS_NOT_SUPPORTED";
+    case CUBLAS_STATUS_LICENSE_ERROR: return "CUBLAS_STATUS_LICENSE_ERROR";
+  }
+  return "unknown cublas error";
+}
+
+void cublasError(cublasStatus_t status, const char *file, const int &line) {
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    char message[128];
+    sprintf(message, "CUDNN error: %s (%s:%d) ", cublasGetErrorString(status),
+        file, line);
+    throw Exception(message);
+  }
+}
+
+void cudaError(cudaError_t status, const char *file, const int &line) {
+  if (status != cudaSuccess) {
+    char message[128];
+    sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
+        file, line);
+    throw Exception(message);
+  }
+}
+
+
 #define reportCUDNNErrors(status) cudnnError(status, __FILE__, __LINE__)
+#define reportCUBLASErrors(status) cublasError(status, __FILE__, __LINE__)
+#define reportCUDAErrors(status) cudaError(status, __FILE__, __LINE__)
 
 // 256 MB fixed scratch memory size (hardcoded for now)
 static constexpr int kCudaScratchSize = 256 * 1024 * 1024;
@@ -204,6 +241,7 @@ void addVectors(T *c, T *a, T *b, int size, int asize, int bsize, bool relu,
 
   addVectors_kernel<<<blocks, blockSize>>>(c, a, b, size, asize, bsize, relu,
                                            useTanh);
+  reportCUDAErrors(cudaGetLastError());
 }
 
 __global__ void batchNormForward_kernel(float *output, const float *input,
@@ -240,6 +278,8 @@ void batchNormForward(float *output, const float *input, const float *skipInput,
 
   batchNormForward_kernel<<<blocks, blockSize>>>(
       output, input, skipInput, N, C, H, W, means, varMultipliers, relu);
+
+  reportCUDAErrors(cudaGetLastError());
 }
 
 BaseLayer::BaseLayer(int c, int h, int w, BaseLayer *ip)
@@ -274,10 +314,10 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
       use_bias_(bias) {
   // allocate memory for weights (filter tensor) and biases
   size_t weightSize = bpe_ * Cin * C * filter_size_ * filter_size_;
-  cudaMalloc(&weights, weightSize);
+  reportCUDAErrors(cudaMalloc(&weights, weightSize));
 
   size_t biasSize = bpe_ * C;
-  cudaMalloc(&biases, biasSize);
+  reportCUDAErrors(cudaMalloc(&biases, biasSize));
 
   // create cudnn objects for various tensors, algorithms, etc
   cudnnCreateFilterDescriptor(&filter_desc_);
@@ -323,13 +363,15 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
 
 void ConvLayer::LoadWeights(float *pfilter, float *pBias) {
   size_t weightSize = bpe_ * c_input_ * C * filter_size_ * filter_size_;
-  cudaMemcpyAsync(weights, pfilter, weightSize, cudaMemcpyHostToDevice);
+  reportCUDAErrors(cudaMemcpyAsync(weights, pfilter, weightSize, 
+                                   cudaMemcpyHostToDevice));
 
   size_t biasSize = bpe_ * C;
   if (pBias) {
-    cudaMemcpyAsync(biases, pBias, biasSize, cudaMemcpyHostToDevice);
+    reportCUDAErrors(cudaMemcpyAsync(biases, pBias, biasSize, 
+                                     cudaMemcpyHostToDevice));
   } else {
-    cudaMemset(biases, biasSize, 0);
+    reportCUDAErrors(cudaMemset(biases, biasSize, 0));
   }
 }
 
@@ -368,22 +410,24 @@ void ConvLayer::Eval(int N, float *output, const float *input,
 }
 
 ConvLayer::~ConvLayer() {
-  cudaFree(weights);
-  cudaFree(biases);
+  reportCUDAErrors(cudaFree(weights));
+  reportCUDAErrors(cudaFree(biases));
 }
 
 BNLayer::BNLayer(BaseLayer *ip, bool relu)
     : BaseLayer(ip->GetC(), ip->GetH(), ip->GetW(), ip), use_relu_(relu) {
   size_t weightSize = bpe_ * C;
 
-  cudaMalloc(&means_, weightSize);
-  cudaMalloc(&variances_, weightSize);
+  reportCUDAErrors(cudaMalloc(&means_, weightSize));
+  reportCUDAErrors(cudaMalloc(&variances_, weightSize));
 }
 
 void BNLayer::LoadWeights(float *cpuMeans, float *cpuVar) {
   size_t weightSize = bpe_ * C;
-  cudaMemcpyAsync(means_, cpuMeans, weightSize, cudaMemcpyHostToDevice);
-  cudaMemcpyAsync(variances_, cpuVar, weightSize, cudaMemcpyHostToDevice);
+  reportCUDAErrors(cudaMemcpyAsync(means_, cpuMeans, weightSize, 
+                                   cudaMemcpyHostToDevice));
+  reportCUDAErrors(cudaMemcpyAsync(variances_, cpuVar, weightSize, 
+                                   cudaMemcpyHostToDevice));
 }
 
 void BNLayer::Eval(int N, float *output, const float *input,
@@ -394,8 +438,8 @@ void BNLayer::Eval(int N, float *output, const float *input,
 }
 
 BNLayer::~BNLayer() {
-  cudaFree(means_);
-  cudaFree(variances_);
+  reportCUDAErrors(cudaFree(means_));
+  reportCUDAErrors(cudaFree(variances_));
 }
 
 FCLayer::FCLayer(BaseLayer *ip, int C, int H, int W, bool relu, bool bias,
@@ -406,9 +450,9 @@ FCLayer::FCLayer(BaseLayer *ip, int C, int H, int W, bool relu, bool bias,
       use_tanh_(tanh) {
   size_t weightSize = bpe_ * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
   size_t biasSize = bpe_ * C * H * W;
-  cudaMalloc(&weights_, weightSize);
+  reportCUDAErrors(cudaMalloc(&weights_, weightSize));
   if (use_bias_) {
-    cudaMalloc(&biases_, biasSize);
+    reportCUDAErrors(cudaMalloc(&biases_, biasSize));
   } else {
     biases_ = nullptr;
   }
@@ -417,10 +461,13 @@ FCLayer::FCLayer(BaseLayer *ip, int C, int H, int W, bool relu, bool bias,
 void FCLayer::LoadWeights(float *cpuWeight, float *cpuBias) {
   size_t weightSize =
       bpe_ * C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
-  cudaMemcpyAsync(weights_, cpuWeight, weightSize, cudaMemcpyHostToDevice);
+
+  reportCUDAErrors(cudaMemcpyAsync(weights_, cpuWeight, weightSize, 
+                                   cudaMemcpyHostToDevice));
   if (use_bias_) {
     size_t biasSize = bpe_ * C * H * W;
-    cudaMemcpyAsync(biases_, cpuBias, biasSize, cudaMemcpyHostToDevice);
+    reportCUDAErrors(cudaMemcpyAsync(biases_, cpuBias, biasSize, 
+                                     cudaMemcpyHostToDevice));
   }
 }
 
@@ -435,9 +482,9 @@ void FCLayer::Eval(int N, float *outputTensor, const float *inputTensor,
     // TODO: implement this!
     assert(0);
   } else {
-    cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numOutputs, N, numInputs,
-                &alpha, weights_, numInputs, inputTensor, numInputs, &beta,
-                outputTensor, numOutputs);
+    reportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numOutputs, 
+                                   N, numInputs, &alpha, weights_, numInputs, inputTensor, 
+                                   numInputs, &beta, outputTensor, numOutputs));
 
     if (use_bias_ || use_relu_ || use_tanh_) {
       addVectors(outputTensor, biases_, outputTensor, numOutputs * N,
@@ -447,8 +494,8 @@ void FCLayer::Eval(int N, float *outputTensor, const float *inputTensor,
 }
 
 FCLayer::~FCLayer() {
-  cudaFree(weights_);
-  cudaFree(biases_);
+  reportCUDAErrors(cudaFree(weights_));
+  reportCUDAErrors(cudaFree(biases_));
 }
 
 class CudnnNetwork;
@@ -583,15 +630,15 @@ class CudnnNetwork : public Network {
     //    hold output and third to hold skip connection's input)
     size_t maxSize = resi_last_->GetOutputSize(kMaxBatchSize);
     for (auto &mem : tensor_mem_) {
-      cudaMalloc(&mem, maxSize);
-      cudaMemset(mem, 0, maxSize);
+      reportCUDAErrors(cudaMalloc(&mem, maxSize));
+      reportCUDAErrors(cudaMemset(mem, 0, maxSize));
     }
 
     // printf("Allocated %d bytes of GPU memory to run the network\n", 3 *
     // maxSize);
 
     // 3. allocate scratch space (used internally by cudnn to run convolutions)
-    cudaMalloc(&scratch_mem_, kCudaScratchSize);
+    reportCUDAErrors(cudaMalloc(&scratch_mem_, kCudaScratchSize));
   }
 
   void forwardEval(const float *input, float *op_pol, float *op_val,
@@ -601,10 +648,10 @@ class CudnnNetwork : public Network {
     std::lock_guard<std::mutex> lock(lock_);
 
     // copy data from CPU memory to GPU memory
-    cudaMemcpyAsync(tensor_mem_[0], &input[0],
-                    batchSize * kInputPlanes * network_[0]->GetH() *
-                        network_[0]->GetW() * sizeof(float),
-                    cudaMemcpyHostToDevice);
+    reportCUDAErrors(cudaMemcpyAsync(tensor_mem_[0], &input[0],
+                     batchSize * kInputPlanes * network_[0]->GetH() *
+                     network_[0]->GetW() * sizeof(float),
+                     cudaMemcpyHostToDevice));
 
     int l = 0;
     // input
@@ -643,23 +690,20 @@ class CudnnNetwork : public Network {
                         cublas_);  // value FC2    // VALUE
 
     // copy results back to CPU memory
-    cudaMemcpyAsync(&op_pol[0], tensor_mem_[1],
-                    policy_out_->GetOutputSize(batchSize),
-                    cudaMemcpyDeviceToHost);
-    cudaError_t status = cudaMemcpy(&op_val[0], tensor_mem_[2],
-                                    value_out_->GetOutputSize(batchSize),
-                                    cudaMemcpyDeviceToHost);
+    reportCUDAErrors(cudaMemcpyAsync(&op_pol[0], tensor_mem_[1],
+                                     policy_out_->GetOutputSize(batchSize),
+                                     cudaMemcpyDeviceToHost));
 
-    if (status != cudaSuccess) {
-      throw Exception("Some error running cuda based Eval!");
-    }
+    reportCUDAErrors(cudaMemcpy(&op_val[0], tensor_mem_[2],
+                                value_out_->GetOutputSize(batchSize),
+                                cudaMemcpyDeviceToHost));
   }
 
   ~CudnnNetwork() {
     for (auto mem : tensor_mem_) {
-      if (mem) cudaFree(mem);
+      if (mem) reportCUDAErrors(cudaFree(mem));
     }
-    if (scratch_mem_) cudaFree(scratch_mem_);
+    if (scratch_mem_) reportCUDAErrors(cudaFree(scratch_mem_));
     cudnnDestroy(cudnn_);
     cublasDestroy(cublas_);
   }
