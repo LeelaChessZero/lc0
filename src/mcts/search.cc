@@ -417,6 +417,7 @@ void Search::SendMovesStats() const {
     std::ostringstream oss;
     oss << std::fixed;
     oss << std::left << std::setw(5) << node->GetMoveAsWhite().as_string();
+    oss << " (" << std::setw(4) << node->move.as_nn_index() << ")";
     oss << " -> ";
     oss << std::right << std::setw(7) << node->n << " (+" << std::setw(2)
         << node->n_in_flight << ") ";
