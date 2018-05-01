@@ -42,9 +42,8 @@ const char* kVerboseStatsStr = "Display verbose move stats";
 const char* kSmartPruningStr = "Enable smart pruning";
 const char* kVirtualLossBugStr = "Emulate virtual loss bug";
 
-// Let smart pruning calculation think that so many extra milliseconds were
-// used for thinking of the current move, so that it's not overly optimistic.
-const int kSmartPruningToleranceMs = 100;
+const int kSmartPruningToleranceNodes = 100;
+const int kSmartPruningToleranceMs = 500;
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {
@@ -490,8 +489,15 @@ void Search::UpdateRemainingMoves() {
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
   if (limits_.time_ms >= 0) {
-    remaining_playouts_ =
-        total_playouts_ / (GetTimeSinceStart() + kSmartPruningToleranceMs) + 1;
+    auto time_since_start = GetTimeSinceStart();
+    if (time_since_start > kSmartPruningToleranceMs) {
+      auto nps = (1000 * total_playouts_ + kSmartPruningToleranceNodes) /
+                     (time_since_start - kSmartPruningToleranceMs) +
+                 1;
+      auto remaining_time = limits_.time_ms - time_since_start;
+      remaining_playouts_ = remaining_time * nps / 1000;
+    }
+    auto remaining_time = limits_.time_ms - time_since_start;
   }
   // Check how many visits are left.
   if (limits_.visits >= 0) {
