@@ -119,8 +119,8 @@ class Search {
   Node* last_outputted_best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
   uint64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
-  uint64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
-      std::numeric_limits<uint64_t>::max();
+  int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
+      std::numeric_limits<int>::max();
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;

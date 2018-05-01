@@ -487,7 +487,7 @@ void Search::MaybeTriggerStop() {
 void Search::UpdateRemainingMoves() {
   if (!kSmartPruning) return;
   SharedMutex::Lock lock(nodes_mutex_);
-  remaining_playouts_ = std::numeric_limits<uint64_t>::max();
+  remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
   if (limits_.time_ms >= 0) {
     remaining_playouts_ =
@@ -574,7 +574,7 @@ void Search::ExtendNode(Node* node) {
 
 Node* Search::PickNodeToExtend(Node* node) {
   // Fetch the current best root node visits for possible smart pruning.
-  uint32_t best_node_n = 0;
+  int best_node_n = 0;
   {
     SharedMutex::Lock lock(nodes_mutex_);
     if (best_move_node_)
@@ -612,8 +612,10 @@ Node* Search::PickNodeToExtend(Node* node) {
       if (is_root_node) {
         // If there's no chance to catch up the currently best node with
         // remaining playouts, not consider it.
-        if (remaining_playouts_ < best_node_n - iter->n - iter->n_in_flight)
+        if (remaining_playouts_ < best_node_n - static_cast<int>(iter->n) -
+                                      static_cast<int>(iter->n_in_flight)) {
           continue;
+        }
         ++possible_moves;
       }
       float Q = iter->ComputeQ();
