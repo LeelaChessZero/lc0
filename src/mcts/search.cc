@@ -497,7 +497,6 @@ void Search::UpdateRemainingMoves() {
       auto remaining_time = limits_.time_ms - time_since_start;
       remaining_playouts_ = remaining_time * nps / 1000;
     }
-    auto remaining_time = limits_.time_ms - time_since_start;
   }
   // Check how many visits are left.
   if (limits_.visits >= 0) {
