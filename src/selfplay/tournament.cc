@@ -30,8 +30,6 @@ namespace {
 const char* kShareTreesStr = "Share game trees for two players";
 const char* kTotalGamesStr = "Number of games to play";
 const char* kParallelGamesStr = "Number of games to play in parallel";
-const char* kGpuThreadsStr = "Number of GPU threads";
-const char* kMaxGpuBatchStr = "Maximum GPU batch size";
 const char* kThreadsStr = "Number of CPU threads for every game";
 const char* kNnCacheSizeStr = "NNCache size";
 const char* kNetFileStr = "Network weights file path";
@@ -54,8 +52,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kShareTreesStr, "share-trees") = false;
   options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
   options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 1;
-  options->Add<IntOption>(kGpuThreadsStr, 1, 16, "gpu-threads") = 1;
-  options->Add<IntOption>(kMaxGpuBatchStr, 1, 1024, "gpu-batch") = 128;
   options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
   options->Add<IntOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
   options->Add<StringOption>(kNetFileStr, "weights", 'w') = kAutoDiscover;
@@ -89,8 +85,6 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kTotalGames(options.Get<int>(kTotalGamesStr)),
       kShareTree(options.Get<bool>(kShareTreesStr)),
       kParallelism(options.Get<int>(kParallelGamesStr)),
-      kGpuThreads(options.Get<int>(kGpuThreadsStr)),
-      kMaxGpuBatch(options.Get<int>(kMaxGpuBatchStr)),
       kTraining(options.Get<bool>(kTrainingStr)) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {

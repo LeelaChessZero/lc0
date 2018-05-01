@@ -65,6 +65,7 @@ class UciLoop {
     throw Exception("Not supported");
   }
   virtual void CmdStop() { throw Exception("Not supported"); }
+  virtual void CmdStart() { throw Exception("Not supported"); }
 
   void SetLogFilename(const std::string& filename);
 

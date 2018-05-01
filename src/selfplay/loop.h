@@ -18,7 +18,9 @@
 
 #pragma once
 
+#include <thread>
 #include "optionsparser.h"
+#include "selfplay/tournament.h"
 #include "uciloop.h"
 
 namespace lczero {
@@ -26,8 +28,13 @@ namespace lczero {
 class SelfPlayLoop : public UciLoop {
  public:
   SelfPlayLoop();
+  ~SelfPlayLoop();
 
   void RunLoop() override;
+  void CmdStart() override;
+  void CmdUci() override;
+  void CmdSetOption(const std::string& name, const std::string& value,
+                    const std::string& context) override;
 
  private:
   void SendGameInfo(const GameInfo& move);
@@ -35,6 +42,9 @@ class SelfPlayLoop : public UciLoop {
 
   void EnsureOptionsSent();
   OptionsParser options_;
+
+  std::unique_ptr<SelfPlayTournament> tournament_;
+  std::unique_ptr<std::thread> thread_;
 };
 
 }  // namespace lczero
