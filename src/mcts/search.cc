@@ -39,6 +39,11 @@ const char* kTemperatureStr = "Initial temperature";
 const char* kTempDecayStr = "Per move temperature decay";
 const char* kNoiseStr = "Add Dirichlet noise at root node";
 const char* kVerboseStatsStr = "Display verbose move stats";
+const char* kSmartPruningStr = "Enable smart pruning";
+
+// Let smart pruning calculation think that so many extra milliseconds were
+// used for thinking of the current move, so that it's not overly optimistic.
+const int kSmartPruningToleranceMs = 100;
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {
@@ -50,6 +55,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kTempDecayStr, 0, 1.00, "tempdecay") = 0.0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
+  options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,
@@ -72,7 +78,8 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       kTemperature(options.Get<float>(kTemperatureStr)),
       kTempDecay(options.Get<float>(kTempDecayStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
-      kVerboseStats(options.Get<bool>(kVerboseStatsStr)) {}
+      kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
+      kSmartPruning(options.Get<bool>(kSmartPruningStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -252,6 +259,7 @@ void Search::Worker() {
       }
       total_playouts_ += nodes_to_process.size();
     }
+    UpdateRemainingMoves();  // Update remaining moves using smart pruning.
     MaybeOutputInfo();
     MaybeTriggerStop();
 
@@ -445,6 +453,10 @@ void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
+  // If smart pruning tells to stop (best move found), stop.
+  if (found_best_move_) {
+    stop_ = true;
+  }
   // Stop if reached playouts limit.
   if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
     stop_ = true;
@@ -466,6 +478,33 @@ void Search::MaybeTriggerStop() {
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
     best_move_node_ = nullptr;
+  }
+}
+
+void Search::UpdateRemainingMoves() {
+  if (!kSmartPruning) return;
+  SharedMutex::Lock lock(nodes_mutex_);
+  remaining_playouts_ = std::numeric_limits<uint64_t>::max();
+  // Check for how many playouts there is time remaining.
+  if (limits_.time_ms >= 0) {
+    remaining_playouts_ =
+        total_playouts_ / (GetTimeSinceStart() + kSmartPruningToleranceMs) + 1;
+  }
+  // Check how many visits are left.
+  if (limits_.visits >= 0) {
+    // Adding kMiniBatchSize, as it's possible to exceed visits limit by that
+    // number.
+    auto remaining_visits =
+        limits_.visits - total_playouts_ - initial_visits_ + kMiniBatchSize;
+    if (remaining_visits < remaining_playouts_)
+      remaining_playouts_ = remaining_visits;
+  }
+  if (limits_.playouts >= 0) {
+    // Adding kMiniBatchSize, as it's possible to exceed visits limit by that
+    // number.
+    auto remaining_playouts = limits_.visits - total_playouts_ + kMiniBatchSize;
+    if (remaining_playouts < remaining_playouts_)
+      remaining_playouts_ = remaining_playouts;
   }
 }
 
@@ -531,6 +570,16 @@ void Search::ExtendNode(Node* node) {
 }
 
 Node* Search::PickNodeToExtend(Node* node) {
+  // Fetch the current best root node visits for possible smart pruning.
+  uint32_t best_node_n = 0;
+  {
+    SharedMutex::Lock lock(nodes_mutex_);
+    if (best_move_node_)
+      best_node_n = best_move_node_->n + best_move_node_->n_in_flight;
+  }
+
+  // True on first iteration, false as we dive deeper.
+  bool is_root_node = true;
   while (true) {
     {
       SharedMutex::Lock lock(nodes_mutex_);
@@ -555,13 +604,28 @@ Node* Search::PickNodeToExtend(Node* node) {
     SharedMutex::SharedLock lock(nodes_mutex_);
     float factor = kCpuct * std::sqrt(std::max(node->n, 1u));
     float best = -100.0f;
+    int possible_moves = 0;
     for (Node* iter = node->child; iter; iter = iter->sibling) {
+      if (is_root_node) {
+        // If there's no chance to catch up the currently best node with
+        // remaining playouts, not consider it.
+        if (remaining_playouts_ < best_node_n - iter->n - iter->n_in_flight)
+          continue;
+        ++possible_moves;
+      }
       const float score = factor * iter->ComputeU() + iter->ComputeQ();
       if (score > best) {
         best = score;
         node = iter;
       }
     }
+    if (is_root_node && possible_moves <= 1) {
+      // If there is only one move theoretically possible within remaining time,
+      // output it.
+      Mutex::Lock counters_lock(counters_mutex_);
+      found_best_move_ = true;
+    }
+    is_root_node = false;
   }
 }
 

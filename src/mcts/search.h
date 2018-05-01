@@ -76,6 +76,7 @@ class Search {
 
   std::pair<Move, Move> GetBestMoveInternal() const;
   uint64_t GetTimeSinceStart() const;
+  void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   void SendMovesStats() const;
@@ -90,8 +91,13 @@ class Search {
   void ExtendNode(Node* node);
 
   mutable Mutex counters_mutex_;
+  // Tells all threads to stop.
   bool stop_ GUARDED_BY(counters_mutex_) = false;
+  // There is already one thread that responded bestmove, other threads
+  // should not do that.
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
+  // Becomes true when smart pruning decides
+  bool found_best_move_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
   std::pair<Move, Move> best_move_ GUARDED_BY(counters_mutex_);
@@ -113,6 +119,8 @@ class Search {
   Node* last_outputted_best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
   uint64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
+  uint64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
+      std::numeric_limits<uint64_t>::max();
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
@@ -126,6 +134,7 @@ class Search {
   const float kTempDecay;
   const bool kNoise;
   const bool kVerboseStats;
+  const bool kSmartPruning;
 };
 
 }  // namespace lczero
