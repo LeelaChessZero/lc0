@@ -40,6 +40,7 @@ const char* kTempDecayStr = "Per move temperature decay";
 const char* kNoiseStr = "Add Dirichlet noise at root node";
 const char* kVerboseStatsStr = "Display verbose move stats";
 const char* kSmartPruningStr = "Enable smart pruning";
+const char* kVirtualLossBugStr = "Emulate virtual loss bug";
 
 // Let smart pruning calculation think that so many extra milliseconds were
 // used for thinking of the current move, so that it's not overly optimistic.
@@ -56,6 +57,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
+  options->Add<BoolOption>(kVirtualLossBugStr, "virtual-loss-bug") = false;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,
@@ -79,7 +81,8 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       kTempDecay(options.Get<float>(kTempDecayStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
-      kSmartPruning(options.Get<bool>(kSmartPruningStr)) {}
+      kSmartPruning(options.Get<bool>(kSmartPruningStr)),
+      kVirtualLossBug(options.Get<bool>(kVirtualLossBugStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -613,7 +616,11 @@ Node* Search::PickNodeToExtend(Node* node) {
           continue;
         ++possible_moves;
       }
-      const float score = factor * iter->ComputeU() + iter->ComputeQ();
+      float Q = iter->ComputeQ();
+      if (kVirtualLossBug && iter->n == 0) {
+        Q = (Q * iter->parent->n - 3) / (iter->parent->n + 3);
+      }
+      const float score = factor * iter->ComputeU() + Q;
       if (score > best) {
         best = score;
         node = iter;
