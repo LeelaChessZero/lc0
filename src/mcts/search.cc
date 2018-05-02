@@ -33,14 +33,13 @@ namespace lczero {
 namespace {
 const char* kMiniBatchSizeStr = "Minibatch size for NN inference";
 const char* kMiniPrefetchBatchStr = "Max prefetch nodes, per NN call";
-const char* kAggresiveCachingStr = "Try hard to find what to cache";
 const char* kCpuctStr = "Cpuct MCTS option";
 const char* kTemperatureStr = "Initial temperature";
 const char* kTempDecayStr = "Per move temperature decay";
 const char* kNoiseStr = "Add Dirichlet noise at root node";
 const char* kVerboseStatsStr = "Display verbose move stats";
 const char* kSmartPruningStr = "Enable smart pruning";
-const char* kVirtualLossBugStr = "Emulate virtual loss bug";
+const char* kVirtualLossBugStr = "Virtual loss bug";
 
 const int kSmartPruningToleranceNodes = 100;
 const int kSmartPruningToleranceMs = 500;
@@ -49,14 +48,14 @@ const int kSmartPruningToleranceMs = 500;
 void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
   options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
-  options->Add<BoolOption>(kAggresiveCachingStr, "aggressive-caching") = false;
   options->Add<FloatOption>(kCpuctStr, 0, 100, "cpuct") = 1.7;
   options->Add<FloatOption>(kTemperatureStr, 0, 100, "temperature", 'm') = 0.0;
   options->Add<FloatOption>(kTempDecayStr, 0, 1.00, "tempdecay") = 0.0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
-  options->Add<BoolOption>(kVirtualLossBugStr, "virtual-loss-bug") = false;
+  options->Add<FloatOption>(kVirtualLossBugStr, -100, 100, "virtual-loss-bug") =
+      3.0f;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,
@@ -74,14 +73,13 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       info_callback_(info_callback),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
       kMiniPrefetchBatch(options.Get<int>(kMiniPrefetchBatchStr)),
-      kAggresiveCaching(options.Get<bool>(kAggresiveCachingStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
       kTemperature(options.Get<float>(kTemperatureStr)),
       kTempDecay(options.Get<float>(kTempDecayStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
       kSmartPruning(options.Get<bool>(kSmartPruningStr)),
-      kVirtualLossBug(options.Get<bool>(kVirtualLossBugStr)) {}
+      kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -282,7 +280,11 @@ int Search::PrefetchIntoCache(Node* node, int budget,
   // We are in a leaf, which is not yet being processed.
   if (node->n + node->n_in_flight == 0) {
     if (AddNodeToCompute(node, computation, false)) {
-      return kAggresiveCaching ? 0 : 1;
+      // Make it return 0 to make it not use the slot, so that the function
+      // tries hard to find something to cache even among unpopular moves.
+      // In practice that slows things down a lot though, as it's not always
+      // easy to find what to cache.
+      return 1;
     }
     return 1;
   }
@@ -491,11 +493,14 @@ void Search::UpdateRemainingMoves() {
   if (limits_.time_ms >= 0) {
     auto time_since_start = GetTimeSinceStart();
     if (time_since_start > kSmartPruningToleranceMs) {
-      auto nps = (1000 * total_playouts_ + kSmartPruningToleranceNodes) /
+      auto nps = (1000LL * total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
-      auto remaining_time = limits_.time_ms - time_since_start;
-      remaining_playouts_ = remaining_time * nps / 1000;
+      int64_t remaining_time = limits_.time_ms - time_since_start;
+      int64_t remaining_playouts = remaining_time * nps / 1000;
+      // Don't assign directly to remaining_playouts_ as overflow is possible.
+      if (remaining_playouts < remaining_playouts_)
+        remaining_playouts_ = remaining_playouts;
     }
   }
   // Check how many visits are left.
@@ -514,6 +519,8 @@ void Search::UpdateRemainingMoves() {
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
   }
+  // Even if we exceeded limits, don't go crazy by not allowing any playouts.
+  if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
 }
 
 void Search::ExtendNode(Node* node) {
@@ -617,7 +624,11 @@ Node* Search::PickNodeToExtend(Node* node) {
       if (is_root_node) {
         // If there's no chance to catch up the currently best node with
         // remaining playouts, not consider it.
-        if (remaining_playouts_ < best_node_n - static_cast<int>(iter->n) -
+        // best_move_node_ can change since best_node_n computation.
+        // To ensure we have at least one node to expand, always include
+        // current best node.
+        if (iter != best_move_node_ &&
+            remaining_playouts_ < best_node_n - static_cast<int>(iter->n) -
                                       static_cast<int>(iter->n_in_flight)) {
           continue;
         }
@@ -625,7 +636,8 @@ Node* Search::PickNodeToExtend(Node* node) {
       }
       float Q = iter->ComputeQ();
       if (kVirtualLossBug && iter->n == 0) {
-        Q = (Q * iter->parent->n - 3) / (iter->parent->n + 3);
+        Q = (Q * iter->parent->n - kVirtualLossBug) /
+            (iter->parent->n + std::fabs(kVirtualLossBug));
       }
       const float score = factor * iter->ComputeU() + Q;
       if (score > best) {

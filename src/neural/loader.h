@@ -31,7 +31,7 @@ using FloatVectors = std::vector<FloatVector>;
 // Read space separated file of floats and return it as a vector of vectors.
 FloatVectors LoadFloatsFromFile(const std::string& filename);
 
-// Read v1 weights file and fill the weights structure.
+// Read v2 weights file and fill the weights structure.
 Weights LoadWeightsFromFile(const std::string& filename);
 
 // Tries to find a file which looks like a weights file, and located in

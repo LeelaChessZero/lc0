@@ -128,14 +128,13 @@ class Search {
   // External parameters.
   const int kMiniBatchSize;
   const int kMiniPrefetchBatch;
-  const bool kAggresiveCaching;
   const float kCpuct;
   const float kTemperature;
   const float kTempDecay;
   const bool kNoise;
   const bool kVerboseStats;
   const bool kSmartPruning;
-  const bool kVirtualLossBug;
+  const float kVirtualLossBug;
 };
 
 }  // namespace lczero
