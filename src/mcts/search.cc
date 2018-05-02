@@ -46,8 +46,6 @@ const int kSmartPruningToleranceNodes = 100;
 const int kSmartPruningToleranceMs = 500;
 }  // namespace
 
-const char* kGpuIdStr = "GPU to use (0 based index)";
-
 void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
   options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
@@ -59,7 +57,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
   options->Add<BoolOption>(kVirtualLossBugStr, "virtual-loss-bug") = false;
-  options->Add<IntOption>(kGpuIdStr, 0, 15, "gpu") = 0;
 }
 
 Search::Search(Node* root_node, NodePool* node_pool, Network* network,

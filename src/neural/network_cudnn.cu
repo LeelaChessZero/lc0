@@ -537,13 +537,13 @@ class CudnnNetwork : public Network {
  public:
   CudnnNetwork(Weights weights, const OptionsDict &options) {
 
-    gpuId_ = options.GetOrDefault<int>(kGpuIdStr, 0);
+    gpuId_ = options.GetOrDefault<int>("gpu", 0);
 
     int totalGPUs;
     reportCUDAErrors(cudaGetDeviceCount(&totalGPUs));
 
     if (gpuId_ >= totalGPUs)
-        throw Exception("Invalid GPU Id");
+        throw Exception("Invalid GPU Id: " + std::to_string(gpuId_));
 
     // select GPU to run on (for *the current* thread)
     reportCUDAErrors(cudaSetDevice(gpuId_));
