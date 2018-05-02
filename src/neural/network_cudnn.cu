@@ -26,8 +26,6 @@
 #include <cudnn.h>
 
 namespace lczero {
-extern const char* kGpuIdStr;
-
 namespace {
 
 void cudnnError(cudnnStatus_t status, const char *file, const int &line) {
