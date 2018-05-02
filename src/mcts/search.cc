@@ -491,11 +491,14 @@ void Search::UpdateRemainingMoves() {
   if (limits_.time_ms >= 0) {
     auto time_since_start = GetTimeSinceStart();
     if (time_since_start > kSmartPruningToleranceMs) {
-      auto nps = (1000 * total_playouts_ + kSmartPruningToleranceNodes) /
+      auto nps = (1000LL * total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
-      auto remaining_time = limits_.time_ms - time_since_start;
-      remaining_playouts_ = remaining_time * nps / 1000;
+      int64_t remaining_time = limits_.time_ms - time_since_start;
+      int64_t remaining_playouts = remaining_time * nps / 1000;
+      // Don't assign directly to remaining_playouts_ as overflow is possible.
+      if (remaining_playouts < remaining_playouts_)
+        remaining_playouts_ = remaining_playouts;
     }
   }
   // Check how many visits are left.
@@ -514,6 +517,8 @@ void Search::UpdateRemainingMoves() {
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
   }
+  // Even if we exceeded limits, don't go crazy by not allowing any playouts.
+  if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
 }
 
 void Search::ExtendNode(Node* node) {
@@ -617,7 +622,11 @@ Node* Search::PickNodeToExtend(Node* node) {
       if (is_root_node) {
         // If there's no chance to catch up the currently best node with
         // remaining playouts, not consider it.
-        if (remaining_playouts_ < best_node_n - static_cast<int>(iter->n) -
+        // best_move_node_ can change since best_node_n computation.
+        // To ensure we have at least one node to expand, always include
+        // current best node.
+        if (iter != best_move_node_ &&
+            remaining_playouts_ < best_node_n - static_cast<int>(iter->n) -
                                       static_cast<int>(iter->n_in_flight)) {
           continue;
         }
