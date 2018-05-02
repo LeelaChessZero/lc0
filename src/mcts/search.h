@@ -128,7 +128,6 @@ class Search {
   // External parameters.
   const int kMiniBatchSize;
   const int kMiniPrefetchBatch;
-  const bool kAggresiveCaching;
   const float kCpuct;
   const float kTemperature;
   const float kTempDecay;
