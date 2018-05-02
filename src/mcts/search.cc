@@ -33,7 +33,6 @@ namespace lczero {
 namespace {
 const char* kMiniBatchSizeStr = "Minibatch size for NN inference";
 const char* kMiniPrefetchBatchStr = "Max prefetch nodes, per NN call";
-const char* kAggresiveCachingStr = "Try hard to find what to cache";
 const char* kCpuctStr = "Cpuct MCTS option";
 const char* kTemperatureStr = "Initial temperature";
 const char* kTempDecayStr = "Per move temperature decay";
@@ -49,7 +48,6 @@ const int kSmartPruningToleranceMs = 500;
 void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
   options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
-  options->Add<BoolOption>(kAggresiveCachingStr, "aggressive-caching") = false;
   options->Add<FloatOption>(kCpuctStr, 0, 100, "cpuct") = 1.7;
   options->Add<FloatOption>(kTemperatureStr, 0, 100, "temperature", 'm') = 0.0;
   options->Add<FloatOption>(kTempDecayStr, 0, 1.00, "tempdecay") = 0.0;
@@ -75,7 +73,6 @@ Search::Search(Node* root_node, NodePool* node_pool, Network* network,
       info_callback_(info_callback),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
       kMiniPrefetchBatch(options.Get<int>(kMiniPrefetchBatchStr)),
-      kAggresiveCaching(options.Get<bool>(kAggresiveCachingStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
       kTemperature(options.Get<float>(kTemperatureStr)),
       kTempDecay(options.Get<float>(kTempDecayStr)),
@@ -283,7 +280,11 @@ int Search::PrefetchIntoCache(Node* node, int budget,
   // We are in a leaf, which is not yet being processed.
   if (node->n + node->n_in_flight == 0) {
     if (AddNodeToCompute(node, computation, false)) {
-      return kAggresiveCaching ? 0 : 1;
+      // Make it return 0 to make it not use the slot, so that the function
+      // tries hard to find something to cache even among unpopular moves.
+      // In practice that slows things down a lot though, as it's not always
+      // easy to find what to cache.
+      return 1;
     }
     return 1;
   }
