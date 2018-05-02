@@ -135,7 +135,7 @@ class Search {
   const bool kNoise;
   const bool kVerboseStats;
   const bool kSmartPruning;
-  const bool kVirtualLossBug;
+  const float kVirtualLossBug;
 };
 
 }  // namespace lczero
