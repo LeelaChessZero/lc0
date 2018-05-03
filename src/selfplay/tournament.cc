@@ -39,6 +39,7 @@ const char* kTimeMsStr = "Time per move, in milliseconds";
 const char* kTrainingStr = "Write training data";
 const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
+const char* kVerboseThinkingStr = "Show verbose thinking messages";
 
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
@@ -63,6 +64,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") = backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
+  options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
 
   Search::PopulateUciParams(options);
 }
@@ -91,8 +93,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     next_game_black_ = Random::Get().GetBool();
   }
 
-  // Initializing networks.
   static const char* kPlayerNames[2] = {"player1", "player2"};
+  // Initializing networks.
   for (int idx : {0, 1}) {
     // If two players have the same network, no need to load two.
     if (idx == 1) {
@@ -161,7 +163,10 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
   PlayerOptions options[2];
 
+  ThinkingInfo last_thinking_info = {-1};
   for (int pl_idx : {0, 1}) {
+    const bool verbose_thinking =
+        player_options_[pl_idx].Get<bool>(kVerboseThinkingStr);
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
     opt.network = networks_[pl_idx].get();
@@ -169,8 +174,15 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     opt.uci_options = &player_options_[pl_idx];
     opt.search_limits = search_limits_[pl_idx];
 
-    opt.best_move_callback = [this, game_number, pl_idx,
-                              player1_black](const BestMoveInfo& info) {
+    // "bestmove" callback.
+    opt.best_move_callback = [this, game_number, pl_idx, player1_black,
+                              verbose_thinking,
+                              &last_thinking_info](const BestMoveInfo& info) {
+      // In non-verbose mode, output the last "info" message.
+      if (!verbose_thinking && last_thinking_info.depth >= 0) {
+        info_callback_(last_thinking_info);
+        last_thinking_info.depth = -1;
+      }
       BestMoveInfo rich_info = info;
       rich_info.player = pl_idx + 1;
       rich_info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
@@ -178,13 +190,19 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       best_move_callback_(rich_info);
     };
 
-    opt.info_callback = [this, game_number, pl_idx,
-                         player1_black](const ThinkingInfo& info) {
+    opt.info_callback = [this, game_number, pl_idx, player1_black,
+                         verbose_thinking,
+                         &last_thinking_info](const ThinkingInfo& info) {
       ThinkingInfo rich_info = info;
       rich_info.player = pl_idx + 1;
       rich_info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
       rich_info.game_id = game_number;
-      info_callback_(rich_info);
+      if (verbose_thinking) {
+        info_callback_(rich_info);
+      } else {
+        // In non-verbose mode, remeber the last "info" message.
+        last_thinking_info = rich_info;
+      }
     };
   }
 
