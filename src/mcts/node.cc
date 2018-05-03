@@ -32,13 +32,13 @@ const int kAllocationSize = 1024 * 64;
 }
 
 Node* NodePool::GetNode() {
-  Mutex::Lock lock(mutex_);
-  if (pool_.empty()) {
-    AllocateNewBatch();
+  Node* result;
+  {
+    Mutex::Lock lock(mutex_);
+    if (pool_.empty()) AllocateNewBatch();
+    result = pool_.back();
+    pool_.pop_back();
   }
-
-  Node* result = pool_.back();
-  pool_.pop_back();
   std::memset(result, 0, sizeof(Node));
   return result;
 }
