@@ -534,9 +534,20 @@ class CudnnNetworkComputation : public NetworkComputation {
 class CudnnNetwork : public Network {
  public:
   CudnnNetwork(Weights weights, const OptionsDict &options) {
-    // TODO: error checking!
-    cudnnCreate(&cudnn_);
-    cublasCreate(&cublas_);
+
+    gpuId_ = options.GetOrDefault<int>("gpu", 0);
+
+    int totalGPUs;
+    reportCUDAErrors(cudaGetDeviceCount(&totalGPUs));
+
+    if (gpuId_ >= totalGPUs)
+        throw Exception("Invalid GPU Id: " + std::to_string(gpuId_));
+
+    // select GPU to run on (for *the current* thread)
+    reportCUDAErrors(cudaSetDevice(gpuId_));
+
+    reportCUDNNErrors(cudnnCreate(&cudnn_));
+    reportCUBLASErrors(cublasCreate(&cublas_));
 
     const int numInputPlanes = kInputPlanes;
     const int numFilters = weights.input.biases.size();
@@ -709,12 +720,15 @@ class CudnnNetwork : public Network {
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
+    // set correct gpu id for this computation (as it might have been called from a different thread)
+    reportCUDAErrors(cudaSetDevice(gpuId_));
     return std::make_unique<CudnnNetworkComputation>(this);
   }
 
  private:
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
+  int gpuId_;
 
   // currently only one NN Eval can happen a time (we can fix this if needed by
   // allocating more memory)
