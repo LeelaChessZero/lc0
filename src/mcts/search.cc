@@ -565,7 +565,7 @@ void Search::ExtendNode(Node* node) {
   // Add valid moves as children to this node.
   Node* prev_node = node;
   for (const auto& move : valid_moves) {
-    Node* new_node = node_pool_->GetNode();
+    Node* new_node = node_pool_->AllocateNode();
 
     new_node->parent = node;
     if (prev_node == node) {

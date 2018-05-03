@@ -31,6 +31,7 @@ namespace lczero {
 // TODO(mooskagh) That's too large to be a POD struct. Make it a class with
 // proper encapsulation.
 struct Node {
+  Node() = default;
   float ComputeQ() const { return n ? q : -parent->q; }
   // Returns U / (Puct * N[parent])
   float ComputeU() const { return p / (1 + n + n_in_flight); }
@@ -117,6 +118,45 @@ class NodeTree {
 class NodePool {
  public:
   // Allocates a new node and initializes it with all zeros.
+  Node* AllocateNode();
+  // Return node to the pool.
+  void ReleaseNode(Node*);
+
+  // TODO(mooskagh) All releasesubtree funcitons really belong to NodeTree,
+  //                move them there.
+  // Releases all children of the node, except specified. Also updates pointers
+  // accordingly.
+  void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
+  // Releases all children, but doesn't release the node isself.
+  void ReleaseChildren(Node*);
+  // Releases all children and the node itself;
+  void ReleaseSubtree(Node*);
+
+ private:
+  void AllocateNewBatch();
+
+  union FreeNode {
+    FreeNode* next;
+    Node node;
+
+    FreeNode() {}
+  };
+
+  mutable Mutex mutex_;
+  // Linked list of free nodes.
+  FreeNode* free_list_ GUARDED_BY(mutex_) = nullptr;
+
+  // Mutex for slow but rare operations.
+  mutable Mutex allocations_mutex_ ACQUIRED_AFTER(mutex_);
+  FreeNode* reserve_list_ GUARDED_BY(allocations_mutex_) = nullptr;
+  std::vector<std::unique_ptr<FreeNode[]>> allocations_
+      GUARDED_BY(allocations_mutex_);
+};
+
+/*
+class NodePool {
+ public:
+  // Allocates a new node and initializes it with all zeros.
   Node* GetNode();
   // Return node to the pool.
   void ReleaseNode(Node*);
@@ -139,6 +179,6 @@ class NodePool {
   mutable Mutex mutex_;
   std::vector<Node*> pool_ GUARDED_BY(mutex_);
   std::vector<std::unique_ptr<Node[]>> allocations_ GUARDED_BY(mutex_);
-};
+}; */
 
 }  // namespace lczero

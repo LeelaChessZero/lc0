@@ -27,75 +27,6 @@
 
 namespace lczero {
 
-namespace {
-const int kAllocationSize = 1024 * 64;
-}
-
-Node* NodePool::GetNode() {
-  Node* result;
-  {
-    Mutex::Lock lock(mutex_);
-    if (pool_.empty()) AllocateNewBatch();
-    result = pool_.back();
-    pool_.pop_back();
-  }
-  std::memset(result, 0, sizeof(Node));
-  return result;
-}
-
-void NodePool::ReleaseNode(Node* node) {
-  Mutex::Lock lock(mutex_);
-  pool_.push_back(node);
-}
-
-void NodePool::ReleaseChildren(Node* node) {
-  Mutex::Lock lock(mutex_);
-  for (Node* iter = node->child; iter; iter = iter->sibling) {
-    ReleaseSubtreeInternal(iter);
-  }
-  node->child = nullptr;
-}
-
-void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
-  Mutex::Lock lock(mutex_);
-  Node* child = nullptr;
-  for (Node* iter = root->child; iter; iter = iter->sibling) {
-    if (iter == subtree) {
-      child = iter;
-    } else {
-      ReleaseSubtreeInternal(iter);
-    }
-  }
-  root->child = child;
-  if (child) {
-    child->sibling = nullptr;
-  }
-}
-
-uint64_t NodePool::GetAllocatedNodeCount() const {
-  Mutex::Lock lock(mutex_);
-  return kAllocationSize * allocations_.size() - pool_.size();
-}
-
-void NodePool::ReleaseSubtree(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseSubtreeInternal(node);
-}
-
-void NodePool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
-  for (Node* iter = node->child; iter; iter = iter->sibling) {
-    ReleaseSubtreeInternal(iter);
-    pool_.push_back(iter);
-  }
-}
-
-void NodePool::AllocateNewBatch() REQUIRES(mutex_) {
-  allocations_.emplace_back(std::make_unique<Node[]>(kAllocationSize));
-  for (int i = 0; i < kAllocationSize; ++i) {
-    pool_.push_back(allocations_.back().get() + i);
-  }
-}
-
 uint64_t Node::BoardHash() const {
   // return board.Hash();
   return HashCat({board.Hash(), no_capture_ply, repetitions});
@@ -261,7 +192,7 @@ void NodeTree::MakeMove(Move move) {
   }
   node_pool_->ReleaseAllChildrenExceptOne(current_head_, new_head);
   if (!new_head) {
-    new_head = node_pool_->GetNode();
+    new_head = node_pool_->AllocateNode();
     current_head_->child = new_head;
     new_head->parent = current_head_;
     new_head->board = current_head_->board;
@@ -289,7 +220,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = node_pool_->GetNode();
+    gamebegin_node_ = node_pool_->AllocateNode();
     gamebegin_node_->board = starting_board;
     gamebegin_node_->no_capture_ply = no_capture_ply;
     gamebegin_node_->ply_count =
@@ -317,6 +248,90 @@ void NodeTree::DeallocateTree() {
   node_pool_->ReleaseSubtree(gamebegin_node_);
   gamebegin_node_ = nullptr;
   current_head_ = nullptr;
+}
+
+namespace {
+const int kAllocationSize = 1024 * 64;
+}
+
+Node* NodePool::AllocateNode() {
+  while (true) {
+    Node* result = nullptr;
+    {
+      Mutex::Lock lock(mutex_);
+      // Try to pick from a head of the freelist.
+      if (free_list_) {
+        result = &free_list_->node;
+        free_list_ = free_list_->next;
+      } else {
+        // Free list empty. Trying to make reserve list free list.
+        Mutex::Lock lock(allocations_mutex_);
+        if (reserve_list_) {
+          free_list_ = reserve_list_;
+          reserve_list_ = nullptr;
+        }
+      }
+    }
+
+    // Have node! Return.
+    if (result) {
+      std::memset(result, 0, sizeof(Node));
+      return result;
+    }
+
+    {
+      Mutex::Lock lock(allocations_mutex_);
+      // Reserve is empty now, so unless another thread did that, we have to
+      // rebuild a new reserve.
+      if (!reserve_list_) AllocateNewBatch();
+    }
+    // Repeat again, now as we have reserve list and (possibly) free list.
+  }
+}
+
+void NodePool::ReleaseNode(Node* node) {
+  Mutex::Lock lock(mutex_);
+  auto* free_node = reinterpret_cast<FreeNode*>(node);
+  free_node->next = free_list_;
+  free_list_ = free_node;
+}
+
+void NodePool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
+  allocations_.emplace_back(std::make_unique<FreeNode[]>(kAllocationSize));
+
+  FreeNode* new_nodes = allocations_.back().get();
+  for (int i = 0; i < kAllocationSize; ++i) {
+    FreeNode* n = new_nodes + i;
+    n->next = reserve_list_;
+    reserve_list_ = n;
+  }
+}
+
+void NodePool::ReleaseChildren(Node* node) {
+  for (Node* iter = node->child; iter; iter = iter->sibling) {
+    ReleaseSubtree(iter);
+  }
+  node->child = nullptr;
+}
+
+void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
+  Node* child = nullptr;
+  for (Node* iter = root->child; iter; iter = iter->sibling) {
+    if (iter == subtree) {
+      child = iter;
+    } else {
+      ReleaseSubtree(iter);
+    }
+  }
+  root->child = child;
+  if (child) {
+    child->sibling = nullptr;
+  }
+}
+
+void NodePool::ReleaseSubtree(Node* node) {
+  ReleaseChildren(node);
+  ReleaseNode(node);
 }
 
 }  // namespace lczero
