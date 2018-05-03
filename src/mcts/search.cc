@@ -453,8 +453,8 @@ void Search::SendMovesStats() const {
 }
 
 void Search::MaybeTriggerStop() {
-  Mutex::Lock lock(counters_mutex_);
   SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
   // If smart pruning tells to stop (best move found), stop.
