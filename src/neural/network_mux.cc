@@ -52,7 +52,10 @@ class MuxingComputation : public NetworkComputation {
     for (auto& x : planes_) parent_->AddInput(std::move(x));
   }
 
-  void NotifyReady() { dataready_cv_.notify_one(); }
+  void NotifyReady() {
+    dataready_ = true;
+    dataready_cv_.notify_one();
+  }
 
  private:
   std::vector<InputPlanes> planes_;
@@ -61,6 +64,7 @@ class MuxingComputation : public NetworkComputation {
   int idx_in_parent_ = 0;
 
   std::condition_variable dataready_cv_;
+  bool dataready_ = false;
 };
 
 class MuxingNetwork : public Network {
@@ -178,7 +182,7 @@ void MuxingComputation::ComputeBlocking() {
   std::mutex mx;
   std::unique_lock<std::mutex> lock(mx);
   network_->Enqueue(this);
-  dataready_cv_.wait(lock);
+  dataready_cv_.wait(lock, [this]() { return dataready_; });
 }
 
 }  // namespace
