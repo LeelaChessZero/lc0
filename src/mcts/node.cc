@@ -47,10 +47,10 @@ void Node::ResetStats() {
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move.as_string() << "\n"
-      << board.DebugString() << "Term:" << is_terminal << " Parent:" << parent
-      << " child:" << child << " sibling:" << sibling << " P:" << p
-      << " Q:" << q << " W:" << w << " N:" << n << " N_:" << n_in_flight
-      << " Rep:" << (int)repetitions;
+      << board.DebugString() << "Term:" << is_terminal << " This:" << this
+      << " Parent:" << parent << " child:" << child << " sibling:" << sibling
+      << " P:" << p << " Q:" << q << " W:" << w << " N:" << n
+      << " N_:" << n_in_flight << " Rep:" << (int)repetitions;
   return oss.str();
 }
 
@@ -308,7 +308,12 @@ void NodePool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
 }
 
 void NodePool::ReleaseChildren(Node* node) {
-  for (Node* iter = node->child; iter; iter = iter->sibling) {
+  Node* next = node->child;
+  while (next) {
+    Node* iter = next;
+    // Getting next after releasing node, as otherwise it can be reallocated
+    // and overwritten.
+    next = next->sibling;
     ReleaseSubtree(iter);
   }
   node->child = nullptr;
@@ -316,7 +321,12 @@ void NodePool::ReleaseChildren(Node* node) {
 
 void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
   Node* child = nullptr;
-  for (Node* iter = root->child; iter; iter = iter->sibling) {
+  Node* next = root->child;
+  while (next) {
+    Node* iter = next;
+    // Getting next after releasing node, as otherwise it can be reallocated
+    // and overwritten.
+    next = next->sibling;
     if (iter == subtree) {
       child = iter;
     } else {
