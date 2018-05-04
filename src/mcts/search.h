@@ -90,7 +90,7 @@ class Search {
   Node* PickNodeToExtend(Node* node);
   void ExtendNode(Node* node);
 
-  mutable Mutex counters_mutex_;
+  mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   bool stop_ GUARDED_BY(counters_mutex_) = false;
   // There is already one thread that responded bestmove, other threads

@@ -453,8 +453,8 @@ void Search::SendMovesStats() const {
 }
 
 void Search::MaybeTriggerStop() {
-  Mutex::Lock lock(counters_mutex_);
   SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
   // If smart pruning tells to stop (best move found), stop.
@@ -565,7 +565,7 @@ void Search::ExtendNode(Node* node) {
   // Add valid moves as children to this node.
   Node* prev_node = node;
   for (const auto& move : valid_moves) {
-    Node* new_node = node_pool_->GetNode();
+    Node* new_node = node_pool_->AllocateNode();
 
     new_node->parent = node;
     if (prev_node == node) {

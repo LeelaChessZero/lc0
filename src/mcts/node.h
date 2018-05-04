@@ -117,9 +117,12 @@ class NodeTree {
 class NodePool {
  public:
   // Allocates a new node and initializes it with all zeros.
-  Node* GetNode();
+  Node* AllocateNode();
   // Return node to the pool.
   void ReleaseNode(Node*);
+
+  // TODO(mooskagh) All releasesubtree funcitons really belong to NodeTree,
+  //                move them there.
   // Releases all children of the node, except specified. Also updates pointers
   // accordingly.
   void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
@@ -128,17 +131,25 @@ class NodePool {
   // Releases all children and the node itself;
   void ReleaseSubtree(Node*);
 
-  // Returns total number of nodes allocated.
-  uint64_t GetAllocatedNodeCount() const;
-
  private:
-  // Release all children of the node and the node itself.
-  void ReleaseSubtreeInternal(Node*);
   void AllocateNewBatch();
 
+  union FreeNode {
+    FreeNode* next;
+    Node node;
+
+    FreeNode() {}
+  };
+
   mutable Mutex mutex_;
-  std::vector<Node*> pool_ GUARDED_BY(mutex_);
-  std::vector<std::unique_ptr<Node[]>> allocations_ GUARDED_BY(mutex_);
+  // Linked list of free nodes.
+  FreeNode* free_list_ GUARDED_BY(mutex_) = nullptr;
+
+  // Mutex for slow but rare operations.
+  mutable Mutex allocations_mutex_ ACQUIRED_AFTER(mutex_);
+  FreeNode* reserve_list_ GUARDED_BY(allocations_mutex_) = nullptr;
+  std::vector<std::unique_ptr<FreeNode[]>> allocations_
+      GUARDED_BY(allocations_mutex_);
 };
 
 }  // namespace lczero
