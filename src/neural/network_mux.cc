@@ -53,7 +53,10 @@ class MuxingComputation : public NetworkComputation {
   }
 
   void NotifyReady() {
-    dataready_ = true;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      dataready_ = true;
+    }
     dataready_cv_.notify_one();
   }
 
@@ -63,6 +66,7 @@ class MuxingComputation : public NetworkComputation {
   std::shared_ptr<NetworkComputation> parent_;
   int idx_in_parent_ = 0;
 
+  std::mutex mutex_;
   std::condition_variable dataready_cv_;
   bool dataready_ = false;
 };
@@ -155,8 +159,10 @@ class MuxingNetwork : public Network {
   }
 
   void Abort() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    abort_ = true;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      abort_ = true;
+    }
     cv_.notify_all();
   }
 
@@ -179,9 +185,8 @@ class MuxingNetwork : public Network {
 };
 
 void MuxingComputation::ComputeBlocking() {
-  std::mutex mx;
-  std::unique_lock<std::mutex> lock(mx);
   network_->Enqueue(this);
+  std::unique_lock<std::mutex> lock(mutex_);
   dataready_cv_.wait(lock, [this]() { return dataready_; });
 }
 
