@@ -42,7 +42,7 @@ const char* kSmartPruningStr = "Enable smart pruning";
 const char* kVirtualLossBugStr = "Virtual loss bug";
 
 const int kSmartPruningToleranceNodes = 100;
-const int kSmartPruningToleranceMs = 500;
+const int kSmartPruningToleranceMs = 200;
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {

@@ -58,7 +58,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") = backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 2.0;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 1.5;
 
   Search::PopulateUciParams(options);
 }
@@ -73,16 +73,27 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
   int movestogo = params.movestogo < 0 ? 50 : params.movestogo;
+  // Fix non-standard uci command.
+  if (movestogo == 0) movestogo = 1;
 
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverStr);
   // Total time till control including increments.
   auto total_moves_time = (time + (increment * (movestogo - 1)));
 
-  // Budget X*slowmover for current move, X*1.0 for the rest.
-  int64_t this_move_time =
-      slowmover ? total_moves_time / (movestogo - 1 + slowmover) * slowmover
-                : 20;
+  const int kSmartPruningToleranceMs = 200;
+
+  // Compute the move time without slowmover.
+  int64_t this_move_time = total_moves_time / movestogo;
+
+  // Only extend thinking time with slowmover if smart pruning can potentially
+  // reduce it.
+  if (slowmover < 1.0 || this_move_time > kSmartPruningToleranceMs) {
+    // Budget X*slowmover for current move, X*1.0 for the rest.
+    this_move_time =
+        slowmover ? total_moves_time / (movestogo - 1 + slowmover) * slowmover
+                  : 20;
+  }
 
   // Make sure we don't exceed current time limit with what we calculated.
   limits.time_ms = std::min(this_move_time, static_cast<int64_t>(time * 0.95));
