@@ -162,7 +162,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
   PlayerOptions options[2];
 
-  ThinkingInfo last_thinking_info = {-1};
+  ThinkingInfo last_thinking_info;
+  last_thinking_info.depth = -1;
   for (int pl_idx : {0, 1}) {
     const bool verbose_thinking =
         player_options_[pl_idx].Get<bool>(kVerboseThinkingStr);

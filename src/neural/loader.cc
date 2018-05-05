@@ -18,6 +18,7 @@
 
 #include "neural/loader.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <experimental/filesystem>
 #include <fstream>
