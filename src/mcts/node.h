@@ -133,6 +133,9 @@ class NodePool {
 
  private:
   void AllocateNewBatch();
+  void ReleaseNodeInternal(Node*);
+  void ReleaseChildrenInternal(Node*);
+  void ReleaseSubtreeInternal(Node*);
 
   union FreeNode {
     FreeNode* next;

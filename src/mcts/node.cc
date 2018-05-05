@@ -291,6 +291,10 @@ Node* NodePool::AllocateNode() {
 
 void NodePool::ReleaseNode(Node* node) {
   Mutex::Lock lock(mutex_);
+  ReleaseNodeInternal(node);
+}
+
+void NodePool::ReleaseNodeInternal(Node* node) REQUIRES(mutex_) {
   auto* free_node = reinterpret_cast<FreeNode*>(node);
   free_node->next = free_list_;
   free_list_ = free_node;
@@ -308,13 +312,18 @@ void NodePool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
 }
 
 void NodePool::ReleaseChildren(Node* node) {
+  Mutex::Lock lock(mutex_);
+  ReleaseChildrenInternal(node);
+}
+
+void NodePool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
   Node* next = node->child;
   while (next) {
     Node* iter = next;
     // Getting next after releasing node, as otherwise it can be reallocated
     // and overwritten.
     next = next->sibling;
-    ReleaseSubtree(iter);
+    ReleaseSubtreeInternal(iter);
   }
   node->child = nullptr;
 }
@@ -340,8 +349,13 @@ void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
 }
 
 void NodePool::ReleaseSubtree(Node* node) {
-  ReleaseChildren(node);
-  ReleaseNode(node);
+  Mutex::Lock lock(mutex_);
+  ReleaseSubtreeInternal(node);
+}
+
+void NodePool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
+  ReleaseChildrenInternal(node);
+  ReleaseNodeInternal(node);
 }
 
 }  // namespace lczero
