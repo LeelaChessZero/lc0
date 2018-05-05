@@ -18,6 +18,7 @@
 
 #include "neural/loader.h"
 #include <algorithm>
+#include <cstdio>
 #include <experimental/filesystem>
 #include <fstream>
 #include <iostream>
@@ -28,27 +29,49 @@
 namespace lczero {
 
 FloatVectors LoadFloatsFromFile(const std::string& filename) {
-  FloatVectors res;
+  const int kStartingSize = 8 * 1024 * 1024;  // 8M
+  std::vector<char> buffer(kStartingSize);
+  int bytes_read = 0;
 
-  std::ifstream file(filename.c_str());
-  std::string line;
-  while (std::getline(file, line)) {
-    FloatVector vec;
-
-    std::istringstream iss(line);
-    float val;
-    while (iss >> val) {
-      vec.push_back(val);
-    }
-    if (!iss.eof()) throw Exception("Cannot read weights from " + filename);
-
-    if (!vec.empty()) {
-      res.emplace_back(std::move(vec));
+  // Read whole file into a buffer.
+  FILE* file = std::fopen(filename.c_str(), "rb");
+  if (!file) throw Exception("Cannot read weights from " + filename);
+  while (true) {
+    auto sz = fread(&buffer[bytes_read], 1, buffer.size() - bytes_read, file);
+    if (sz == buffer.size() - bytes_read) {
+      bytes_read = buffer.size();
+      buffer.resize(buffer.size() * 2);
+    } else {
+      bytes_read += sz;
+      buffer.resize(bytes_read);
+      // Add newline in the end for the case it was not there.
+      buffer.push_back('\n');
+      break;
     }
   }
-  if (!file.eof()) throw Exception("Cannot read weights from " + filename);
+  std::fclose(file);
 
-  return res;
+  // Parse buffer.
+  FloatVectors result;
+  FloatVector line;
+  int start = 0;
+  for (int i = 0; i < buffer.size(); ++i) {
+    char& c = buffer[i];
+    const bool is_newline = (c == '\n' || c == '\r');
+    if (!std::isspace(c)) continue;
+    if (start < i) {
+      // If previous character was not space too.
+      c = '\0';
+      line.push_back(std::atof(&buffer[start]));
+    }
+    if (is_newline && !line.empty()) {
+      result.emplace_back();
+      result.back().swap(line);
+    }
+    start = i + 1;
+  }
+
+  return result;
 }
 
 namespace {
