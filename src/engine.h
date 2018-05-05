@@ -61,6 +61,9 @@ class EngineController {
   void Stop();
   void SetCacheSize(int size);
 
+  SearchLimits PopulateSearchLimits(int ply, bool is_black,
+                                    const GoParams& params);
+
  private:
   void UpdateNetwork();
 
