@@ -49,7 +49,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
   options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<FloatOption>(kCpuctStr, 0, 100, "cpuct") = 1.7;
-  options->Add<FloatOption>(kTemperatureStr, 0, 100, "temperature", 'm') = 0.0;
+  options->Add<FloatOption>(kTemperatureStr, 0, 100, "temperature") = 0.0;
   options->Add<FloatOption>(kTempDecayStr, 0, 1.00, "tempdecay") = 0.0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
