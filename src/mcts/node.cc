@@ -27,6 +27,169 @@
 
 namespace lczero {
 
+/////////////////////////////////////////////////////////////////////////
+// NodePool
+/////////////////////////////////////////////////////////////////////////
+
+namespace {
+const int kAllocationSize = 1024 * 64;
+
+class NodePool {
+ public:
+  // Allocates a new node and initializes it with all zeros.
+  Node* AllocateNode();
+  // Return node to the pool.
+  void ReleaseNode(Node*);
+
+  // Releases all children of the node, except specified. Also updates pointers
+  // accordingly.
+  void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
+  // Releases all children, but doesn't release the node isself.
+  void ReleaseChildren(Node*);
+  // Releases all children and the node itself;
+  void ReleaseSubtree(Node*);
+
+ private:
+  void AllocateNewBatch();
+  void ReleaseNodeInternal(Node*);
+  void ReleaseChildrenInternal(Node*);
+  void ReleaseSubtreeInternal(Node*);
+
+  union FreeNode {
+    FreeNode* next;
+    Node node;
+
+    FreeNode() {}
+  };
+
+  mutable Mutex mutex_;
+  // Linked list of free nodes.
+  FreeNode* free_list_ GUARDED_BY(mutex_) = nullptr;
+
+  // Mutex for slow but rare operations.
+  mutable Mutex allocations_mutex_ ACQUIRED_AFTER(mutex_);
+  FreeNode* reserve_list_ GUARDED_BY(allocations_mutex_) = nullptr;
+  std::vector<std::unique_ptr<FreeNode[]>> allocations_
+      GUARDED_BY(allocations_mutex_);
+};
+
+Node* NodePool::AllocateNode() {
+  while (true) {
+    Node* result = nullptr;
+    {
+      Mutex::Lock lock(mutex_);
+      // Try to pick from a head of the freelist.
+      if (free_list_) {
+        result = &free_list_->node;
+        free_list_ = free_list_->next;
+      } else {
+        // Free list empty. Trying to make reserve list free list.
+        Mutex::Lock lock(allocations_mutex_);
+        if (reserve_list_) {
+          free_list_ = reserve_list_;
+          reserve_list_ = nullptr;
+        }
+      }
+    }
+
+    // Have node! Return.
+    if (result) {
+      std::memset(result, 0, sizeof(Node));
+      return result;
+    }
+
+    {
+      Mutex::Lock lock(allocations_mutex_);
+      // Reserve is empty now, so unless another thread did that, we have to
+      // rebuild a new reserve.
+      if (!reserve_list_) AllocateNewBatch();
+    }
+    // Repeat again, now as we have reserve list and (possibly) free list.
+  }
+}
+
+void NodePool::ReleaseNode(Node* node) {
+  Mutex::Lock lock(mutex_);
+  ReleaseNodeInternal(node);
+}
+
+void NodePool::ReleaseNodeInternal(Node* node) REQUIRES(mutex_) {
+  auto* free_node = reinterpret_cast<FreeNode*>(node);
+  free_node->next = free_list_;
+  free_list_ = free_node;
+}
+
+void NodePool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
+  allocations_.emplace_back(std::make_unique<FreeNode[]>(kAllocationSize));
+
+  FreeNode* new_nodes = allocations_.back().get();
+  for (int i = 0; i < kAllocationSize; ++i) {
+    FreeNode* n = new_nodes + i;
+    n->next = reserve_list_;
+    reserve_list_ = n;
+  }
+}
+
+void NodePool::ReleaseChildren(Node* node) {
+  Mutex::Lock lock(mutex_);
+  ReleaseChildrenInternal(node);
+}
+
+void NodePool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
+  Node* next = node->child;
+  while (next) {
+    Node* iter = next;
+    // Getting next after releasing node, as otherwise it can be reallocated
+    // and overwritten.
+    next = next->sibling;
+    ReleaseSubtreeInternal(iter);
+  }
+  node->child = nullptr;
+}
+
+void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
+  Node* child = nullptr;
+  Node* next = root->child;
+  while (next) {
+    Node* iter = next;
+    // Getting next after releasing node, as otherwise it can be reallocated
+    // and overwritten.
+    next = next->sibling;
+    if (iter == subtree) {
+      child = iter;
+    } else {
+      ReleaseSubtree(iter);
+    }
+  }
+  root->child = child;
+  if (child) {
+    child->sibling = nullptr;
+  }
+}
+
+void NodePool::ReleaseSubtree(Node* node) {
+  Mutex::Lock lock(mutex_);
+  ReleaseSubtreeInternal(node);
+}
+
+void NodePool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
+  ReleaseChildrenInternal(node);
+  ReleaseNodeInternal(node);
+}
+
+NodePool gNodePool;
+}  // namespace
+
+/////////////////////////////////////////////////////////////////////////
+
+Node* Node::CreateChild() {
+  Node* new_node = gNodePool.AllocateNode();
+  new_node->parent = this;
+  new_node->sibling = child;
+  child = new_node;
+  return new_node;
+}
+
 uint64_t Node::BoardHash() const {
   // return board.Hash();
   return HashCat({board.Hash(), no_capture_ply, repetitions});
@@ -190,9 +353,9 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
-  node_pool_->ReleaseAllChildrenExceptOne(current_head_, new_head);
+  gNodePool.ReleaseAllChildrenExceptOne(current_head_, new_head);
   if (!new_head) {
-    new_head = node_pool_->AllocateNode();
+    new_head = gNodePool.AllocateNode();
     current_head_->child = new_head;
     new_head->parent = current_head_;
     new_head->board = current_head_->board;
@@ -220,7 +383,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = node_pool_->AllocateNode();
+    gamebegin_node_ = gNodePool.AllocateNode();
     gamebegin_node_->board = starting_board;
     gamebegin_node_->no_capture_ply = no_capture_ply;
     gamebegin_node_->ply_count =
@@ -239,123 +402,15 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // As we killed the search tree already, trim it to redo the search.
   if (!seen_old_head) {
     assert(!current_head_->sibling);
-    node_pool_->ReleaseChildren(current_head_);
+    gNodePool.ReleaseChildren(current_head_);
     current_head_->ResetStats();
   }
 }
 
 void NodeTree::DeallocateTree() {
-  node_pool_->ReleaseSubtree(gamebegin_node_);
+  gNodePool.ReleaseSubtree(gamebegin_node_);
   gamebegin_node_ = nullptr;
   current_head_ = nullptr;
-}
-
-namespace {
-const int kAllocationSize = 1024 * 64;
-}
-
-Node* NodePool::AllocateNode() {
-  while (true) {
-    Node* result = nullptr;
-    {
-      Mutex::Lock lock(mutex_);
-      // Try to pick from a head of the freelist.
-      if (free_list_) {
-        result = &free_list_->node;
-        free_list_ = free_list_->next;
-      } else {
-        // Free list empty. Trying to make reserve list free list.
-        Mutex::Lock lock(allocations_mutex_);
-        if (reserve_list_) {
-          free_list_ = reserve_list_;
-          reserve_list_ = nullptr;
-        }
-      }
-    }
-
-    // Have node! Return.
-    if (result) {
-      std::memset(result, 0, sizeof(Node));
-      return result;
-    }
-
-    {
-      Mutex::Lock lock(allocations_mutex_);
-      // Reserve is empty now, so unless another thread did that, we have to
-      // rebuild a new reserve.
-      if (!reserve_list_) AllocateNewBatch();
-    }
-    // Repeat again, now as we have reserve list and (possibly) free list.
-  }
-}
-
-void NodePool::ReleaseNode(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseNodeInternal(node);
-}
-
-void NodePool::ReleaseNodeInternal(Node* node) REQUIRES(mutex_) {
-  auto* free_node = reinterpret_cast<FreeNode*>(node);
-  free_node->next = free_list_;
-  free_list_ = free_node;
-}
-
-void NodePool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
-  allocations_.emplace_back(std::make_unique<FreeNode[]>(kAllocationSize));
-
-  FreeNode* new_nodes = allocations_.back().get();
-  for (int i = 0; i < kAllocationSize; ++i) {
-    FreeNode* n = new_nodes + i;
-    n->next = reserve_list_;
-    reserve_list_ = n;
-  }
-}
-
-void NodePool::ReleaseChildren(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseChildrenInternal(node);
-}
-
-void NodePool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
-  Node* next = node->child;
-  while (next) {
-    Node* iter = next;
-    // Getting next after releasing node, as otherwise it can be reallocated
-    // and overwritten.
-    next = next->sibling;
-    ReleaseSubtreeInternal(iter);
-  }
-  node->child = nullptr;
-}
-
-void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
-  Node* child = nullptr;
-  Node* next = root->child;
-  while (next) {
-    Node* iter = next;
-    // Getting next after releasing node, as otherwise it can be reallocated
-    // and overwritten.
-    next = next->sibling;
-    if (iter == subtree) {
-      child = iter;
-    } else {
-      ReleaseSubtree(iter);
-    }
-  }
-  root->child = child;
-  if (child) {
-    child->sibling = nullptr;
-  }
-}
-
-void NodePool::ReleaseSubtree(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseSubtreeInternal(node);
-}
-
-void NodePool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
-  ReleaseChildrenInternal(node);
-  ReleaseNodeInternal(node);
 }
 
 }  // namespace lczero

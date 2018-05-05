@@ -129,8 +129,7 @@ void EngineController::SetPosition(const std::string& fen,
   SharedLock lock(busy_mutex_);
   search_.reset();
 
-  if (!node_pool_) node_pool_ = std::make_unique<NodePool>();
-  if (!tree_) tree_ = std::make_unique<NodeTree>(node_pool_.get());
+  if (!tree_) tree_ = std::make_unique<NodeTree>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
@@ -146,9 +145,9 @@ void EngineController::Go(const GoParams& params) {
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
                                      tree_->IsBlackToMove(), params);
 
-  search_ = std::make_unique<Search>(
-      tree_->GetCurrentHead(), tree_->GetNodePool(), network_.get(),
-      best_move_callback_, info_callback_, limits, options_, &cache_);
+  search_ = std::make_unique<Search>(tree_->GetCurrentHead(), network_.get(),
+                                     best_move_callback_, info_callback_,
+                                     limits, options_, &cache_);
 
   search_->StartThreads(options_.Get<int>(kThreadsOption));
 }

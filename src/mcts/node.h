@@ -31,6 +31,8 @@ namespace lczero {
 // TODO(mooskagh) That's too large to be a POD struct. Make it a class with
 // proper encapsulation.
 struct Node {
+  // Allocates a new node and adds it to front of the children list.
+  Node* CreateChild();
   float ComputeQ() const { return n ? q : -parent->q; }
   // Returns U / (Puct * N[parent])
   float ComputeU() const { return p / (1 + n + n_in_flight); }
@@ -91,10 +93,8 @@ struct Node {
   Node* sibling;
 };
 
-class NodePool;
 class NodeTree {
  public:
-  NodeTree(NodePool* node_pool) : node_pool_(node_pool) {}
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_;
   void MakeMove(Move move);
@@ -105,54 +105,10 @@ class NodeTree {
   bool IsBlackToMove() const { return current_head_->board.flipped(); }
   Node* GetCurrentHead() const { return current_head_; }
   Node* GetGameBeginNode() const { return gamebegin_node_; }
-  NodePool* GetNodePool() const { return node_pool_; }
 
  private:
   void DeallocateTree();
   Node* current_head_ = nullptr;
   Node* gamebegin_node_ = nullptr;
-  NodePool* node_pool_ = nullptr;
 };
-
-class NodePool {
- public:
-  // Allocates a new node and initializes it with all zeros.
-  Node* AllocateNode();
-  // Return node to the pool.
-  void ReleaseNode(Node*);
-
-  // TODO(mooskagh) All releasesubtree funcitons really belong to NodeTree,
-  //                move them there.
-  // Releases all children of the node, except specified. Also updates pointers
-  // accordingly.
-  void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
-  // Releases all children, but doesn't release the node isself.
-  void ReleaseChildren(Node*);
-  // Releases all children and the node itself;
-  void ReleaseSubtree(Node*);
-
- private:
-  void AllocateNewBatch();
-  void ReleaseNodeInternal(Node*);
-  void ReleaseChildrenInternal(Node*);
-  void ReleaseSubtreeInternal(Node*);
-
-  union FreeNode {
-    FreeNode* next;
-    Node node;
-
-    FreeNode() {}
-  };
-
-  mutable Mutex mutex_;
-  // Linked list of free nodes.
-  FreeNode* free_list_ GUARDED_BY(mutex_) = nullptr;
-
-  // Mutex for slow but rare operations.
-  mutable Mutex allocations_mutex_ ACQUIRED_AFTER(mutex_);
-  FreeNode* reserve_list_ GUARDED_BY(allocations_mutex_) = nullptr;
-  std::vector<std::unique_ptr<FreeNode[]>> allocations_
-      GUARDED_BY(allocations_mutex_);
-};
-
 }  // namespace lczero

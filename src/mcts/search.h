@@ -40,7 +40,7 @@ struct SearchLimits {
 
 class Search {
  public:
-  Search(Node* root_node, NodePool* node_pool, Network* network,
+  Search(Node* root_node, Network* network,
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const SearchLimits& limits,
          const OptionsDict& options, NNCache* cache);
@@ -106,7 +106,6 @@ class Search {
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
   Node* root_node_;
-  NodePool* node_pool_;
   NNCache* cache_;
 
   Network* const network_;

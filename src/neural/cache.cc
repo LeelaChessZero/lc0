@@ -91,8 +91,8 @@ float CachingComputation::GetPVal(int sample, int move_id) const {
   while (total_count < moves.size()) {
     // Optimization: usually moves are stored in the same order as queried.
     const auto& move = moves[item.last_idx++];
-    if (move.first == move_id) return move.second;
     if (item.last_idx == moves.size()) item.last_idx = 0;
+    if (move.first == move_id) return move.second;
     ++total_count;
   }
   assert(false);  // Move not found.

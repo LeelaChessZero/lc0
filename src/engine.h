@@ -79,7 +79,6 @@ class EngineController {
   RpSharedMutex busy_mutex_;
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
-  std::unique_ptr<NodePool> node_pool_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
 

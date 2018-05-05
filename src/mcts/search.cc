@@ -58,12 +58,11 @@ void Search::PopulateUciParams(OptionsParser* options) {
       3.0f;
 }
 
-Search::Search(Node* root_node, NodePool* node_pool, Network* network,
+Search::Search(Node* root_node, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache)
     : root_node_(root_node),
-      node_pool_(node_pool),
       cache_(cache),
       network_(network),
       limits_(limits),
@@ -104,8 +103,11 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
     // Cache pseudovalid moves. A bit of a waste, but faster.
     const auto& pseudovalid_moves = node->board.GeneratePseudovalidMoves();
     moves.reserve(pseudovalid_moves.size());
-    for (const Move& m : pseudovalid_moves) {
-      moves.emplace_back(m.as_nn_index());
+    // As an optimization, store moves in reverse order in cache, because
+    // that's the order nodes are listed in nodelist.
+    for (auto iter = pseudovalid_moves.rbegin(), end = pseudovalid_moves.rend();
+         iter != end; ++iter) {
+      moves.emplace_back(iter->as_nn_index());
     }
   }
 
@@ -565,15 +567,7 @@ void Search::ExtendNode(Node* node) {
   // Add valid moves as children to this node.
   Node* prev_node = node;
   for (const auto& move : valid_moves) {
-    Node* new_node = node_pool_->AllocateNode();
-
-    new_node->parent = node;
-    if (prev_node == node) {
-      node->child = new_node;
-    } else {
-      prev_node->sibling = new_node;
-    }
-
+    Node* new_node = node->CreateChild();
     new_node->move = move.move;
     new_node->board = move.board;
     new_node->board.Mirror();

@@ -24,15 +24,15 @@
 namespace lczero {
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree, NodePool* node_pool)
-    : options_{player1, player2}, node_pool_(node_pool) {
-  tree_[0] = std::make_shared<NodeTree>(node_pool_);
+                           bool shared_tree)
+    : options_{player1, player2} {
+  tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartingFen, {});
 
   if (shared_tree) {
     tree_[1] = tree_[0];
   } else {
-    tree_[1] = std::make_shared<NodeTree>(node_pool_);
+    tree_[1] = std::make_shared<NodeTree>();
     tree_[1]->ResetToPosition(ChessBoard::kStartingFen, {});
   }
 }
@@ -78,7 +78,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       search_ = std::make_unique<Search>(
-          tree_[idx]->GetCurrentHead(), node_pool_, options_[idx].network,
+          tree_[idx]->GetCurrentHead(), options_[idx].network,
           options_[idx].best_move_callback, options_[idx].info_callback,
           options_[idx].search_limits, *options_[idx].uci_options,
           options_[idx].cache);
