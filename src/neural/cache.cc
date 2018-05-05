@@ -63,10 +63,13 @@ void CachingComputation::ComputeBlocking() {
   // Fill cache with data from NN.
   for (const auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
-    auto req = std::make_unique<CachedNNRequest>();
+    auto req =
+        std::make_unique<CachedNNRequest>(item.probabilities_to_cache.size());
     req->q = parent_->GetQVal(item.idx_in_parent);
+    int idx = 0;
     for (auto x : item.probabilities_to_cache) {
-      req->p.emplace_back(x, parent_->GetPVal(item.idx_in_parent, x));
+      req->p[idx++] =
+          std::make_pair(x, parent_->GetPVal(item.idx_in_parent, x));
     }
     cache_->Insert(item.hash, std::move(req));
   }

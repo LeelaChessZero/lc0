@@ -19,13 +19,16 @@
 
 #include "neural/network.h"
 #include "utils/cache.h"
+#include "utils/smallarray.h"
 
 namespace lczero {
 
 struct CachedNNRequest {
+  CachedNNRequest(size_t size) : p(size) {}
   typedef std::pair<uint16_t, float> IdxAndProb;
   float q;
-  std::vector<IdxAndProb> p;
+  // TODO(mooskagh) Don't really need index if using perfect hash.
+  SmallArray<IdxAndProb> p;
 };
 
 typedef LruCache<uint64_t, CachedNNRequest> NNCache;
