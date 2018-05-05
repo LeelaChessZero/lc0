@@ -19,15 +19,10 @@
 #pragma once
 
 #include <functional>
-#include "chess/bitboard.h"
-#ifdef _MSC_VER
-#include "utils/optional.h"
-#else
-#include <optional>
-using std::optional;
-#endif
 #include <string>
 #include <vector>
+#include "chess/bitboard.h"
+#include "utils/optional.h"
 
 namespace lczero {
 

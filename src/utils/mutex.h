@@ -29,6 +29,8 @@ namespace lczero {
 // mutex.
 class CAPABILITY("mutex") RpSharedMutex {
  public:
+  RpSharedMutex() : waiting_readers_(0) {}
+
   void lock() ACQUIRE() {
     while (true) {
       mutex_.lock();
@@ -47,8 +49,8 @@ class CAPABILITY("mutex") RpSharedMutex {
   }
 
  private:
-  std::shared_mutex mutex_;
-  std::atomic<int> waiting_readers_ = 0;
+  std::shared_timed_mutex mutex_;
+  std::atomic<int> waiting_readers_;
 };
 
 // std::mutex wrapper for clang thread safety annotation.
@@ -82,7 +84,7 @@ class CAPABILITY("mutex") SharedMutex {
     ~Lock() RELEASE() {}
 
    private:
-    std::unique_lock<std::shared_mutex> lock_;
+    std::unique_lock<std::shared_timed_mutex> lock_;
   };
 
   // std::shared_lock<std::shared_mutex> wrapper.
@@ -92,7 +94,7 @@ class CAPABILITY("mutex") SharedMutex {
     ~SharedLock() RELEASE() {}
 
    private:
-    std::shared_lock<std::shared_mutex> lock_;
+    std::shared_lock<std::shared_timed_mutex> lock_;
   };
 
   void lock() ACQUIRE() { mutex_.lock(); }
@@ -100,10 +102,10 @@ class CAPABILITY("mutex") SharedMutex {
   void lock_shared() ACQUIRE_SHARED() { mutex_.lock_shared(); }
   void unlock_shared() RELEASE_SHARED() { mutex_.unlock_shared(); }
 
-  std::shared_mutex& get_raw() { return mutex_; }
+  std::shared_timed_mutex& get_raw() { return mutex_; }
 
  private:
-  std::shared_mutex mutex_;
+  std::shared_timed_mutex mutex_;
 };
 
 }  // namespace lczero

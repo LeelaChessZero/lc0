@@ -1,7 +1,6 @@
-project('lc0', 'cpp')
-  #        default_options : ['cpp_std=c++17'])
+project('lc0', 'cpp', default_options : ['cpp_std=c++14'])
 
-add_global_arguments('-std=c++17', '-Wthread-safety', language : 'cpp')
+add_global_arguments('-Wthread-safety', language : 'cpp')
 cc = meson.get_compiler('cpp')
 
 # Installed from https://github.com/FloopCZ/tensorflow_cc

@@ -17,6 +17,8 @@
 */
 
 #include "selfplay/game.h"
+#include <algorithm>
+
 #include "neural/writer.h"
 
 namespace lczero {
