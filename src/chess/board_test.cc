@@ -51,11 +51,11 @@ TEST(BoardSquare, BoardSquare) {
   }
 }
 
-TEST(ChessBoard, PseudovalidMovesStartingPos) {
+TEST(ChessBoard, PseudolegalMovesStartingPos) {
   ChessBoard board;
   board.SetFromFen(ChessBoard::kStartingFen);
   board.Mirror();
-  auto moves = board.GeneratePseudovalidMoves();
+  auto moves = board.GeneratePseudolegalMoves();
 
   EXPECT_EQ(moves.size(), 20);
 }
@@ -65,7 +65,7 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
           int depth = 0) {
   if (depth == max_depth) return 1;
   int total_count = 0;
-  auto moves = board.GeneratePseudovalidMoves();
+  auto moves = board.GeneratePseudolegalMoves();
   for (const auto& move : moves) {
     auto new_board = board;
     new_board.ApplyMove(move);

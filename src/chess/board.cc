@@ -171,7 +171,7 @@ static const Move::Promotion kPromotions[] = {
 
 }  // namespace
 
-MoveList ChessBoard::GeneratePseudovalidMoves() const {
+MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
   for (auto source : our_pieces_) {
     // King
@@ -501,8 +501,8 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   return false;
 }
 
-std::vector<MoveExecution> ChessBoard::GenerateValidMoves() const {
-  MoveList move_list = GeneratePseudovalidMoves();
+std::vector<MoveExecution> ChessBoard::GenerateLegalMoves() const {
+  MoveList move_list = GeneratePseudolegalMoves();
   std::vector<MoveExecution> result;
 
   for (const auto& move : move_list) {

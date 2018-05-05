@@ -47,7 +47,7 @@ class ChessBoard {
 
   // Generates list of possible moves for "ours" (white), but may leave king
   // under check.
-  MoveList GeneratePseudovalidMoves() const;
+  MoveList GeneratePseudolegalMoves() const;
   // Applies the move. (Only for "ours" (white)). Returns true if 50 moves
   // counter should be removed.
   bool ApplyMove(Move move);
@@ -57,8 +57,8 @@ class ChessBoard {
   bool IsUnderCheck() const { return IsUnderAttack(our_king_); }
   // Checks whether at least one of the sides has mating material.
   bool HasMatingMaterial() const;
-  // Returns a list of valid moves and board positions after the move is made.
-  std::vector<MoveExecution> GenerateValidMoves() const;
+  // Returns a list of legal moves and board positions after the move is made.
+  std::vector<MoveExecution> GenerateLegalMoves() const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),

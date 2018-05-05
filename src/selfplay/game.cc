@@ -43,8 +43,8 @@ GameInfo::GameResult ComputeGameResult(Node* node) {
   // Checks whether the passed node is an endgame, and if yes, which exactly
   // (win/lose/draw).
   const auto& board = node->board;
-  auto valid_moves = board.GenerateValidMoves();
-  if (valid_moves.empty()) {
+  auto legal_moves = board.GenerateLegalMoves();
+  if (legal_moves.empty()) {
     if (board.IsUnderCheck()) {
       // Checkmate.
       return board.flipped() ? GameInfo::WHITE_WON : GameInfo::BLACK_WON;

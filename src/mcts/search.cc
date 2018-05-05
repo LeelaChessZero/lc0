@@ -95,17 +95,17 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
   std::vector<uint16_t> moves;
 
   if (node->child) {
-    // Valid moves are known, using them.
+    // Legal moves are known, using them.
     for (Node* iter = node->child; iter; iter = iter->sibling) {
       moves.emplace_back(iter->move.as_nn_index());
     }
   } else {
-    // Cache pseudovalid moves. A bit of a waste, but faster.
-    const auto& pseudovalid_moves = node->board.GeneratePseudovalidMoves();
-    moves.reserve(pseudovalid_moves.size());
+    // Cache pseudolegal moves. A bit of a waste, but faster.
+    const auto& pseudolegal_moves = node->board.GeneratePseudolegalMoves();
+    moves.reserve(pseudolegal_moves.size());
     // As an optimization, store moves in reverse order in cache, because
     // that's the order nodes are listed in nodelist.
-    for (auto iter = pseudovalid_moves.rbegin(), end = pseudovalid_moves.rend();
+    for (auto iter = pseudolegal_moves.rbegin(), end = pseudolegal_moves.rend();
          iter != end; ++iter) {
       moves.emplace_back(iter->as_nn_index());
     }
@@ -531,10 +531,10 @@ void Search::ExtendNode(Node* node) {
   // Not taking mutex because other threads will see that N=0 and N-in-flight=1
   // and will not touch this node.
   auto& board = node->board;
-  auto valid_moves = board.GenerateValidMoves();
+  auto legal_moves = board.GenerateLegalMoves();
 
   // Check whether it's a draw/lose by rules.
-  if (valid_moves.empty()) {
+  if (legal_moves.empty()) {
     // Checkmate or stalemate.
     node->is_terminal = true;
     if (board.IsUnderCheck()) {
@@ -566,9 +566,9 @@ void Search::ExtendNode(Node* node) {
     return;
   }
 
-  // Add valid moves as children to this node.
+  // Add legal moves as children to this node.
   Node* prev_node = node;
-  for (const auto& move : valid_moves) {
+  for (const auto& move : legal_moves) {
     Node* new_node = node->CreateChild();
     new_node->move = move.move;
     new_node->board = move.board;
