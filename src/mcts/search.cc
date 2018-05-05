@@ -405,9 +405,11 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 // shown to a user.
 void Search::MaybeOutputInfo() {
   SharedMutex::Lock lock(nodes_mutex_);
-  if (best_move_node_ && (best_move_node_ != last_outputted_best_move_node_ ||
-                          uci_info_.depth != root_node_->full_depth ||
-                          uci_info_.seldepth != root_node_->max_depth)) {
+  Mutex::Lock counters_lock(counters_mutex_);
+  if (!responded_bestmove_ && best_move_node_ &&
+      (best_move_node_ != last_outputted_best_move_node_ ||
+       uci_info_.depth != root_node_->full_depth ||
+       uci_info_.seldepth != root_node_->max_depth)) {
     SendUciInfo();
   }
 }
