@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 #include "chess/bitboard.h"
+#include "chess/position.h"
 #include "utils/optional.h"
 
 namespace lczero {
@@ -77,9 +78,8 @@ struct ThinkingInfo {
 
 // Is sent when a single game is finished.
 struct GameInfo {
-  enum GameResult { UNDECIDED, WHITE_WON, DRAW, BLACK_WON };
   // Game result.
-  GameResult game_result = UNDECIDED;
+  GameResult game_result = GameResult::UNDECIDED;
   // Name of the file with training data.
   std::string training_filename;
   // Game moves.

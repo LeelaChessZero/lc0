@@ -222,7 +222,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]]);
 
   // If game was aborted, it's still undecided.
-  if (game.GetGameResult() != GameInfo::UNDECIDED) {
+  if (game.GetGameResult() != GameResult::UNDECIDED) {
     // Game callback.
     GameInfo game_info;
     game_info.game_result = game.GetGameResult();
@@ -240,9 +240,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     // Update tournament stats.
     {
       Mutex::Lock lock(mutex_);
-      int result = game.GetGameResult() == GameInfo::DRAW
+      int result = game.GetGameResult() == GameResult::DRAW
                        ? 1
-                       : game.GetGameResult() == GameInfo::WHITE_WON ? 0 : 2;
+                       : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
       if (player1_black) result = 2 - result;
       ++tournament_info_.results[result][player1_black ? 1 : 0];
       tournament_callback_(tournament_info_);

@@ -79,12 +79,12 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
   if (info.is_black)
     res += " player1 " + std::string(*info.is_black ? "black" : "white");
-  if (info.game_result != GameInfo::UNDECIDED) {
+  if (info.game_result != GameResult::UNDECIDED) {
     res += std::string(" result ") +
-           ((info.game_result == GameInfo::DRAW)
+           ((info.game_result == GameResult::DRAW)
                 ? "draw"
-                : (info.game_result == GameInfo::WHITE_WON) ? "whitewon"
-                                                            : "blackwon");
+                : (info.game_result == GameResult::WHITE_WON) ? "whitewon"
+                                                              : "blackwon");
   }
   if (!info.moves.empty()) {
     res += " moves";
