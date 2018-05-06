@@ -566,7 +566,7 @@ void Search::ExtendNode(Node* node, const PositionHistory& history) {
   }
 
   // Add legal moves as children to this node.
-  for (const auto& move : legal_moves) node->CreateChild(move.move);
+  for (const auto& move : legal_moves) node->CreateChild(move);
 }
 
 Node* Search::PickNodeToExtend(Node* node, PositionHistory* history) {

@@ -501,7 +501,87 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   return false;
 }
 
-std::vector<MoveExecution> ChessBoard::GenerateLegalMoves() const {
+bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
+  const auto& from = move.from();
+  const auto& to = move.to();
+
+  // If we are already under check, also apply move and check if valid.
+  // TODO(mooskagh) Optimize this case
+  if (was_under_check) {
+    ChessBoard board(*this);
+    board.ApplyMove(move);
+    return !board.IsUnderCheck();
+  }
+
+  // En passant. Complex but rare. Just apply
+  // and check that we are not under check.
+  if (from.row() == 4 && pawns_.get(from) && from.col() != to.col() &&
+      pawns_.get(7, to.col())) {
+    ChessBoard board(*this);
+    board.ApplyMove(move);
+    return !board.IsUnderCheck();
+  }
+
+  // If it's kings move, check that destination
+  // is not under attack.
+  if (from == our_king_) {
+    // Castlings were checked earlier.
+    if (std::abs(static_cast<int>(from.col()) - static_cast<int>(to.col())) > 1)
+      return true;
+    return !IsUnderAttack(to);
+  }
+
+  // Not check that piece was pinned. And it was, check that after the move
+  // it is still on like of attack.
+  int dx = from.col() - our_king_.col();
+  int dy = from.row() - our_king_.row();
+
+  // If it's not on the same file/rank/diagonal as our king, cannot be pinned.
+  if (dx != 0 && dy != 0 && std::abs(dx) != std::abs(dy)) return true;
+  dx = (dx > 0) - (dx < 0);  // Sign.
+  dy = (dy > 0) - (dy < 0);
+  auto col = our_king_.col();
+  auto row = our_king_.row();
+  while (true) {
+    col += dx;
+    row += dy;
+    // Attacking line left board, good.
+    if (!BoardSquare::IsValid(row, col)) return true;
+    const BoardSquare square(row, col);
+    // The source square of the move is now free.
+    if (square == from) continue;
+    // The destination square if the move is our piece. King is not under
+    // attack.
+    if (square == to) return true;
+    // Our piece on the line. Not under attack.
+    if (our_pieces_.get(square)) return true;
+    if (their_pieces_.get(square)) {
+      if (dx == 0 || dy == 0) {
+        // Have to be afraid of rook-like piece.
+        return !rooks_.get(square);
+      } else {
+        // Have to be afraid of bishop-like piece.
+        return !bishops_.get(square);
+      }
+      return true;
+    }
+  }
+}
+
+MoveList ChessBoard::GenerateLegalMoves() const {
+  const bool was_under_check = IsUnderCheck();
+  MoveList move_list = GeneratePseudolegalMoves();
+  MoveList result;
+  result.reserve(move_list.size());
+
+  for (Move m : move_list) {
+    if (IsLegalMove(m, was_under_check)) result.emplace_back(m);
+  }
+
+  return result;
+}
+
+std::vector<MoveExecution> ChessBoard::GenerateLegalMovesAndPositions() const {
   MoveList move_list = GeneratePseudolegalMoves();
   std::vector<MoveExecution> result;
 

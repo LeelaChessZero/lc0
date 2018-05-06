@@ -56,9 +56,14 @@ class ChessBoard {
   // Checks if "our" (white) king is under check.
   bool IsUnderCheck() const { return IsUnderAttack(our_king_); }
   // Checks whether at least one of the sides has mating material.
+
   bool HasMatingMaterial() const;
+  // Generates legal moves.
+  MoveList GenerateLegalMoves() const;
+  // Check whether pseudolegal move is legal.
+  bool IsLegalMove(Move move, bool was_under_check) const;
   // Returns a list of legal moves and board positions after the move is made.
-  std::vector<MoveExecution> GenerateLegalMoves() const;
+  std::vector<MoveExecution> GenerateLegalMovesAndPositions() const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),

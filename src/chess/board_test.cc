@@ -66,11 +66,20 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
   if (depth == max_depth) return 1;
   int total_count = 0;
   auto moves = board.GeneratePseudolegalMoves();
+
+  auto legal_moves = board.GenerateLegalMoves();
+  auto iter = legal_moves.begin();
+
   for (const auto& move : moves) {
     auto new_board = board;
     new_board.ApplyMove(move);
     if (new_board.IsUnderCheck()) continue;
     new_board.Mirror();
+
+    EXPECT_EQ(iter->as_packed_int(), move.as_packed_int())
+        << board.DebugString() << iter->as_string() << move.as_string();
+    ++iter;
+
     int count = Perft(new_board, max_depth, dump, depth + 1);
     if (dump && depth == 0) {
       Move m = move;
@@ -79,11 +88,13 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
     }
     total_count += count;
   }
+
+  EXPECT_EQ(iter, legal_moves.end());
   return total_count;
 }
 }  // namespace
 
-TEST(ChessBoard, MoveGenStartingPos) {
+/* TEST(ChessBoard, MoveGenStartingPos) {
   ChessBoard board;
   board.SetFromFen(ChessBoard::kStartingFen);
 
@@ -94,7 +105,7 @@ TEST(ChessBoard, MoveGenStartingPos) {
   EXPECT_EQ(Perft(board, 4), 197281);
   EXPECT_EQ(Perft(board, 5), 4865609);
   EXPECT_EQ(Perft(board, 6), 119060324);
-}
+} */
 
 TEST(ChessBoard, MoveGenKiwipete) {
   ChessBoard board;
