@@ -37,40 +37,15 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
   }
 }
 
-namespace {
-
-GameInfo::GameResult ComputeGameResult(Node* node) {
-  // Checks whether the passed node is an endgame, and if yes, which exactly
-  // (win/lose/draw).
-  const auto& board = node->board;
-  auto legal_moves = board.GenerateLegalMoves();
-  if (legal_moves.empty()) {
-    if (board.IsUnderCheck()) {
-      // Checkmate.
-      return board.flipped() ? GameInfo::WHITE_WON : GameInfo::BLACK_WON;
-    }
-    // Stalemate.
-    return GameInfo::DRAW;
-  }
-
-  if (!board.HasMatingMaterial()) return GameInfo::DRAW;
-  if (node->no_capture_ply >= 100) return GameInfo::DRAW;
-  if (node->ComputeRepetitions() >= 2) return GameInfo::DRAW;
-
-  return GameInfo::UNDECIDED;
-}
-
-}  // namespace
-
 void SelfPlayGame::Play(int white_threads, int black_threads) {
   bool blacks_move = false;
 
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
-    game_result_ = ComputeGameResult(tree_[0]->GetCurrentHead());
+    game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
 
     // If endgame, stop.
-    if (game_result_ != GameInfo::UNDECIDED) break;
+    if (game_result_ != GameResult::UNDECIDED) break;
 
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
@@ -78,10 +53,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       search_ = std::make_unique<Search>(
-          tree_[idx]->GetCurrentHead(), options_[idx].network,
-          options_[idx].best_move_callback, options_[idx].info_callback,
-          options_[idx].search_limits, *options_[idx].uci_options,
-          options_[idx].cache);
+          *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
+          options_[idx].info_callback, options_[idx].search_limits,
+          *options_[idx].uci_options, options_[idx].cache);
     }
 
     // Do search.
@@ -89,8 +63,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
     if (abort_) break;
 
     // Append training data.
-    training_data_.push_back(
-        tree_[0]->GetCurrentHead()->GetV3TrainingData(GameInfo::UNDECIDED));
+    training_data_.push_back(tree_[0]->GetCurrentHead()->GetV3TrainingData(
+        GameResult::UNDECIDED, tree_[0]->GetPositionHistory()));
 
     // Add best move to the tree.
     Move move = search_->GetBestMove().first;
@@ -117,11 +91,12 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
-  bool black_to_move = tree_[0]->GetGameBeginNode()->board.flipped();
+  bool black_to_move =
+      tree_[0]->GetPositionHistory().Starting().IsBlackToMove();
   for (auto chunk : training_data_) {
-    if (game_result_ == GameInfo::WHITE_WON) {
+    if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;
-    } else if (game_result_ == GameInfo::BLACK_WON) {
+    } else if (game_result_ == GameResult::BLACK_WON) {
       chunk.result = black_to_move ? 1 : -1;
     } else {
       chunk.result = 0;

@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include "chess/position.h"
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/network.h"
@@ -59,7 +60,7 @@ class SelfPlayGame {
   // Writes training data to a file.
   void WriteTrainingData(TrainingDataWriter* writer) const;
 
-  GameInfo::GameResult GetGameResult() const { return game_result_; }
+  GameResult GetGameResult() const { return game_result_; }
   std::vector<Move> GetMoves() const;
 
  private:
@@ -68,11 +69,12 @@ class SelfPlayGame {
   // Node tree for player1 and player2. If the tree is shared between players,
   // tree_[0] == tree_[1].
   std::shared_ptr<NodeTree> tree_[2];
+
   // Search that is currently in progress. Stored in members so that Abort()
   // can stop it.
   std::unique_ptr<Search> search_;
   bool abort_ = false;
-  GameInfo::GameResult game_result_ = GameInfo::UNDECIDED;
+  GameResult game_result_ = GameResult::UNDECIDED;
   std::mutex mutex_;
 
   // Training data to send.

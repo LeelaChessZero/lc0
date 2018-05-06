@@ -23,6 +23,8 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include "neural/encoder.h"
+#include "neural/network.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -182,17 +184,13 @@ NodePool gNodePool;
 
 /////////////////////////////////////////////////////////////////////////
 
-Node* Node::CreateChild() {
+Node* Node::CreateChild(Move m) {
   Node* new_node = gNodePool.AllocateNode();
   new_node->parent = this;
   new_node->sibling = child;
+  new_node->move = m;
   child = new_node;
   return new_node;
-}
-
-uint64_t Node::BoardHash() const {
-  // return board.Hash();
-  return HashCat({board.Hash(), no_capture_ply, repetitions});
 }
 
 void Node::ResetStats() {
@@ -204,90 +202,23 @@ void Node::ResetStats() {
   p = 0.0;
   max_depth = 0;
   full_depth = 0;
-  is_terminal = 0;
+  is_terminal = false;
 }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << "Move: " << move.as_string() << "\n"
-      << board.DebugString() << "Term:" << is_terminal << " This:" << this
-      << " Parent:" << parent << " child:" << child << " sibling:" << sibling
-      << " P:" << p << " Q:" << q << " W:" << w << " N:" << n
-      << " N_:" << n_in_flight << " Rep:" << (int)repetitions;
+  oss << "Move: " << move.as_string() << " Term:" << is_terminal
+      << " This:" << this << " Parent:" << parent << " child:" << child
+      << " sibling:" << sibling << " P:" << p << " Q:" << q << " W:" << w
+      << " N:" << n << " N_:" << n_in_flight;
   return oss.str();
 }
 
-int Node::ComputeRepetitions() {
-  // TODO(crem) implement some sort of caching.
-  if (no_capture_ply < 2) return 0;
-
-  const Node* node = this;
-  while (true) {
-    node = node->parent;
-    if (!node) break;
-    node = node->parent;
-    if (!node) break;
-
-    if (node->board == board) {
-      return 1 + node->repetitions;
-    }
-    if (node->no_capture_ply < 2) return 0;
-  }
-  return 0;
-}
-
-Move Node::GetMoveAsWhite() const {
+Move Node::GetMove(bool flip) const {
+  if (!flip) return move;
   Move m = move;
-  if (!board.flipped()) m.Mirror();
+  m.Mirror();
   return m;
-}
-
-namespace {
-const int kMoveHistory = 8;
-const int kPlanesPerBoard = 13;
-const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
-}  // namespace
-
-InputPlanes Node::EncodeForNN() const {
-  InputPlanes result(kAuxPlaneBase + 8);
-
-  const bool we_are_black = board.flipped();
-  if (board.castlings().we_can_000()) result[kAuxPlaneBase + 0].SetAll();
-  if (board.castlings().we_can_00()) result[kAuxPlaneBase + 1].SetAll();
-  if (board.castlings().they_can_000()) result[kAuxPlaneBase + 2].SetAll();
-  if (board.castlings().they_can_00()) result[kAuxPlaneBase + 3].SetAll();
-  if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
-  result[kAuxPlaneBase + 5].Fill(no_capture_ply);
-
-  const Node* node = this;
-  bool flip = false;
-  for (int i = 0; i < kMoveHistory; ++i, flip = !flip) {
-    if (!node) break;
-    ChessBoard board = node->board;
-    if (flip) board.Mirror();
-
-    const int base = i * kPlanesPerBoard;
-    result[base + 0].mask = (board.ours() * board.pawns()).as_int();
-    result[base + 1].mask = (board.our_knights()).as_int();
-    result[base + 2].mask = (board.ours() * board.bishops()).as_int();
-    result[base + 3].mask = (board.ours() * board.rooks()).as_int();
-    result[base + 4].mask = (board.ours() * board.queens()).as_int();
-    result[base + 5].mask = (board.our_king()).as_int();
-
-    result[base + 6].mask = (board.theirs() * board.pawns()).as_int();
-    result[base + 7].mask = (board.their_knights()).as_int();
-    result[base + 8].mask = (board.theirs() * board.bishops()).as_int();
-    result[base + 9].mask = (board.theirs() * board.rooks()).as_int();
-    result[base + 10].mask = (board.theirs() * board.queens()).as_int();
-    result[base + 11].mask = (board.their_king()).as_int();
-
-    const int repetitions = node->repetitions;
-    if (repetitions >= 1) result[base + 12].SetAll();
-
-    node = node->parent;
-  }
-
-  return result;
 }
 
 namespace {
@@ -300,7 +231,8 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V3TrainingData Node::GetV3TrainingData(GameInfo::GameResult game_result) const {
+V3TrainingData Node::GetV3TrainingData(GameResult game_result,
+                                       const PositionHistory& history) const {
   V3TrainingData result;
 
   // Set version.
@@ -314,28 +246,29 @@ V3TrainingData Node::GetV3TrainingData(GameInfo::GameResult game_result) const {
   }
 
   // Populate planes.
-  InputPlanes planes = EncodeForNN();
+  InputPlanes planes = EncodePositionForNN(history);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
 
+  const auto& position = history.Last();
   // Populate castlings.
-  result.castling_us_ooo = board.castlings().we_can_000() ? 1 : 0;
-  result.castling_us_oo = board.castlings().we_can_00() ? 1 : 0;
-  result.castling_them_ooo = board.castlings().they_can_000() ? 1 : 0;
-  result.castling_them_oo = board.castlings().they_can_00() ? 1 : 0;
+  result.castling_us_ooo = position.CanCastle(Position::WE_CAN_OOO) ? 1 : 0;
+  result.castling_us_oo = position.CanCastle(Position::WE_CAN_OO) ? 1 : 0;
+  result.castling_them_ooo = position.CanCastle(Position::THEY_CAN_OOO) ? 1 : 0;
+  result.castling_them_oo = position.CanCastle(Position::THEY_CAN_OO) ? 1 : 0;
 
   // Other params.
-  result.side_to_move = board.flipped() ? 1 : 0;
+  result.side_to_move = position.IsBlackToMove() ? 1 : 0;
   result.move_count = 0;
-  result.rule50_count = no_capture_ply;
+  result.rule50_count = position.GetNoCapturePly();
 
   // Game result.
-  if (game_result == GameInfo::WHITE_WON) {
-    result.result = board.flipped() ? -1 : 1;
-  } else if (game_result == GameInfo::BLACK_WON) {
-    result.result = board.flipped() ? 1 : -1;
+  if (game_result == GameResult::WHITE_WON) {
+    result.result = position.IsBlackToMove() ? -1 : 1;
+  } else if (game_result == GameResult::BLACK_WON) {
+    result.result = position.IsBlackToMove() ? 1 : -1;
   } else {
     result.result = 0;
   }
@@ -344,7 +277,7 @@ V3TrainingData Node::GetV3TrainingData(GameInfo::GameResult game_result) const {
 }
 
 void NodeTree::MakeMove(Move move) {
-  if (current_head_->board.flipped()) move.Mirror();
+  if (HeadPosition().IsBlackToMove()) move.Mirror();
 
   Node* new_head = nullptr;
   for (Node* n = current_head_->child; n; n = n->sibling) {
@@ -354,19 +287,8 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   gNodePool.ReleaseAllChildrenExceptOne(current_head_, new_head);
-  if (!new_head) {
-    new_head = gNodePool.AllocateNode();
-    current_head_->child = new_head;
-    new_head->parent = current_head_;
-    new_head->board = current_head_->board;
-    const bool capture = new_head->board.ApplyMove(move);
-    new_head->board.Mirror();
-    new_head->ply_count = current_head_->ply_count + 1;
-    new_head->no_capture_ply = capture ? 0 : current_head_->no_capture_ply + 1;
-    new_head->repetitions = new_head->ComputeRepetitions();
-    new_head->move = move;
-  }
-  current_head_ = new_head;
+  current_head_ = new_head ? new_head : current_head_->CreateChild(move);
+  history_.Append(move);
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -375,7 +297,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   int no_capture_ply;
   int full_moves;
   starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  if (gamebegin_node_ && gamebegin_node_->board != starting_board) {
+  if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
     // Completely different position.
     DeallocateTree();
     current_head_ = nullptr;
@@ -384,11 +306,10 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
 
   if (!gamebegin_node_) {
     gamebegin_node_ = gNodePool.AllocateNode();
-    gamebegin_node_->board = starting_board;
-    gamebegin_node_->no_capture_ply = no_capture_ply;
-    gamebegin_node_->ply_count =
-        full_moves * 2 - (starting_board.flipped() ? 1 : 2);
   }
+
+  history_.Reset(starting_board, no_capture_ply,
+                 full_moves * 2 - (starting_board.flipped() ? 1 : 2));
 
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_;

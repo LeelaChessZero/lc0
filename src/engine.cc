@@ -156,9 +156,9 @@ void EngineController::Go(const GoParams& params) {
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
                                      tree_->IsBlackToMove(), params);
 
-  search_ = std::make_unique<Search>(tree_->GetCurrentHead(), network_.get(),
-                                     best_move_callback_, info_callback_,
-                                     limits, options_, &cache_);
+  search_ =
+      std::make_unique<Search>(*tree_, network_.get(), best_move_callback_,
+                               info_callback_, limits, options_, &cache_);
 
   search_->StartThreads(options_.Get<int>(kThreadsOption));
 }
