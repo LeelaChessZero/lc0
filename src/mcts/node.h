@@ -42,68 +42,75 @@ class Node_Iterator {
   Node* node_;
 };
 
-// TODO(mooskagh) This interface is ugly as a result of quick
-// incaptulatiotation. Will fix.
 class Node {
  public:
-  // Allocates a new node and adds it to front of the children list.
-  Node* CreateChild(Move m);
-  V3TrainingData GetV3TrainingData(GameResult result,
-                                   const PositionHistory& history) const;
-  // Returns move from the point of new of player BEFORE the position.
-  Move GetMove() const { return move_; }
-  // Returns move, with optional flip.
-  Move GetMove(bool flip) const;
-  std::string DebugString() const;
+  // Resets all values (but not links to parents/children/siblings) to zero.
   void ResetStats();
 
+  // Allocates a new node and adds it to front of the children list.
+  // Not thread-friendly.
+  Node* CreateChild(Move m);
+
+  // Gets parent node.
   Node* GetParent() const { return parent_; }
+
+  // Returns whether a node has children.
+  bool HasChildren() const { return child_ != nullptr; }
+
+  // Returns move from the point of new of player BEFORE the position.
+  Move GetMove() const { return move_; }
+
+  // Returns move, with optional flip (false == player BEFORE the position).
+  Move GetMove(bool flip) const;
 
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
+  // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
   float GetQ() const { return n_ ? q_ : -parent_->q_; }
   // Returns U / (Puct * N[parent])
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
+  // Returns value of Value Head returned from the neural net.
   float GetV() const { return v_; }
+  // Returns value of Move probabilityreturned from the neural net.
+  // (but can be changed by adding Dirichlet noise).
   float GetP() const { return p_; }
+  // Returns whether the node is known to be draw/lose/win.
+  bool IsTerminal() const { return is_terminal_; }
+  uint16_t GetFullDepth() const { return full_depth_; }
+  uint16_t GetMaxDepth() const { return max_depth_; }
 
+  // Sets node own value (from neural net or win/draw/lose adjudication).
   void SetV(float val) { v_ = val; }
+  // Sets move probability.
   void SetP(float val) { p_ = val; }
-  void SetTerminal(bool val) { is_terminal_ = val; }
+  // Makes the node terminal and sets it's score.
+  void MakeTerminal(GameResult result);
 
-  bool TryStartScoreUpdate() {
-    if (n_ == 0 && n_in_flight_ > 0) return false;
-    ++n_in_flight_;
-    return true;
-  }
-  void CancelScoreUpdate() { --n_in_flight_; }
-  void FinalizeScoreUpdate(float v) {
-    // Add new value to W.
-    w_ += v;
-    // Increment N.
-    ++n_;
-    // Decrement virtual loss.
-    --n_in_flight_;
-    // Recompute Q.
-    q_ = w_ / n_;
-  }
+  // If this node is not in the process of being expanded by another thread
+  // (which can happen only if n==0 and n-in-flight==1), mark the node as
+  // "being updated" by incrementing n-in-flight, and return true.
+  // Otherwise return false.
+  bool TryStartScoreUpdate();
+  // Decrements n-in-flight back.
+  void CancelScoreUpdate();
+  // Updates the node with newly computed value v.
+  // Updates:
+  // * N (+=1)
+  // * N-in-flight (-=1)
+  // * W (+= v)
+  // * Q (=w/n)
+  void FinalizeScoreUpdate(float v);
 
-  void UpdateMaxDepth(int depth) {
-    if (depth > max_depth_) max_depth_ = depth;
-  }
+  // Updates max depth, if new depth is larger.
+  void UpdateMaxDepth(int depth);
 
-  bool UpdateFullDepth(uint16_t* depth) {
-    if (full_depth_ > *depth) return false;
-    for (Node* iter : Children()) {
-      if (*depth > iter->full_depth_) *depth = iter->full_depth_;
-    }
-    if (*depth >= full_depth_) {
-      full_depth_ = ++*depth;
-      return true;
-    }
-    return false;
-  }
+  // Calculates the full depth if new depth is larger, updates it, returns
+  // in depth parameter, and returns true if it was indeed updated.
+  bool UpdateFullDepth(uint16_t* depth);
+
+  V3TrainingData GetV3TrainingData(GameResult result,
+                                   const PositionHistory& history) const;
 
   class NodeRange {
    public:
@@ -116,13 +123,11 @@ class Node {
     friend class Node;
   };
 
-  bool HasChildren() const { return child_ != nullptr; }
+  // Returns range for iterating over children.
   NodeRange Children() const { return child_; }
-  void AddNoise(float eps, float val) { p_ = p_ * (1 - eps) + val * eps; }
-  void ScaleP(float scale) { p_ *= scale; }
-  bool IsTerminal() const { return is_terminal_; }
-  uint16_t GetFullDepth() const { return full_depth_; }
-  uint16_t GetMaxDepth() const { return max_depth_; }
+
+  // Debug information about the node.
+  std::string DebugString() const;
 
   class Pool;
 

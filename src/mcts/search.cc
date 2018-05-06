@@ -138,7 +138,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
   int noise_idx = 0;
   for (Node* iter : node->Children()) {
-    iter->AddNoise(eps, noise[noise_idx++] / total);
+    iter->SetP(iter->GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
   }
 }
 }  // namespace
@@ -209,7 +209,7 @@ void Search::Worker() {
         // Scale P values to add up to 1.0.
         if (total > 0.0f) {
           float scale = 1.0f / total;
-          for (Node* n : node->Children()) n->ScaleP(scale);
+          for (Node* n : node->Children()) n->SetP(n->GetP() * scale);
         }
         // Add Dirichlet noise if enabled and at root.
         if (kNoise && node == root_node_) {
@@ -540,32 +540,28 @@ void Search::ExtendNode(Node* node, const PositionHistory& history) {
   // Check whether it's a draw/lose by rules.
   if (legal_moves.empty()) {
     // Checkmate or stalemate.
-    node->SetTerminal(true);
     if (board.IsUnderCheck()) {
       // Checkmate.
-      node->SetV(1.0f);
+      node->MakeTerminal(GameResult::WHITE_WON);
     } else {
       // Stalemate.
-      node->SetV(0.0f);
+      node->MakeTerminal(GameResult::DRAW);
     }
     return;
   }
 
   if (!board.HasMatingMaterial()) {
-    node->SetTerminal(true);
-    node->SetV(0.0f);
+    node->MakeTerminal(GameResult::DRAW);
     return;
   }
 
   if (history.Last().GetNoCapturePly() >= 100) {
-    node->SetTerminal(true);
-    node->SetV(0.0f);
+    node->MakeTerminal(GameResult::DRAW);
     return;
   }
 
   if (history.Last().GetRepetitions() >= 2) {
-    node->SetTerminal(true);
-    node->SetV(0.0f);
+    node->MakeTerminal(GameResult::DRAW);
     return;
   }
 

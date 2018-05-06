@@ -221,6 +221,46 @@ Move Node::GetMove(bool flip) const {
   return m;
 }
 
+void Node::MakeTerminal(GameResult result) {
+  is_terminal_ = true;
+  v_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
+}
+
+bool Node::TryStartScoreUpdate() {
+  if (n_ == 0 && n_in_flight_ > 0) return false;
+  ++n_in_flight_;
+  return true;
+}
+
+void Node::CancelScoreUpdate() { --n_in_flight_; }
+
+void Node::FinalizeScoreUpdate(float v) {
+  // Add new value to W.
+  w_ += v;
+  // Increment N.
+  ++n_;
+  // Decrement virtual loss.
+  --n_in_flight_;
+  // Recompute Q.
+  q_ = w_ / n_;
+}
+
+void Node::UpdateMaxDepth(int depth) {
+  if (depth > max_depth_) max_depth_ = depth;
+}
+
+bool Node::UpdateFullDepth(uint16_t* depth) {
+  if (full_depth_ > *depth) return false;
+  for (Node* iter : Children()) {
+    if (*depth > iter->full_depth_) *depth = iter->full_depth_;
+  }
+  if (*depth >= full_depth_) {
+    full_depth_ = ++*depth;
+    return true;
+  }
+  return false;
+}
+
 namespace {
 // Reverse bits in every byte of a number
 uint64_t ReverseBitsInBytes(uint64_t v) {
