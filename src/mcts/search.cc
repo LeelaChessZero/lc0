@@ -19,10 +19,12 @@
 #include "mcts/search.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <thread>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
@@ -277,6 +279,10 @@ void Search::Worker() {
     {
       Mutex::Lock lock(counters_mutex_);
       if (stop_) break;
+    }
+    if (nodes_to_process.empty()) {
+      // If this thread had no work, sleep for some milliseconds.
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
 }
