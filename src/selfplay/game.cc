@@ -77,8 +77,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
   for (Node* node = tree_[0]->GetCurrentHead();
-       node != tree_[0]->GetGameBeginNode(); node = node->parent) {
-    moves.push_back(node->move);
+       node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
+    moves.push_back(node->GetMove());
   }
   std::reverse(moves.begin(), moves.end());
   return moves;

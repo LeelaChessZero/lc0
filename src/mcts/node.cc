@@ -30,13 +30,14 @@
 namespace lczero {
 
 /////////////////////////////////////////////////////////////////////////
-// NodePool
+// Node::Pool
 /////////////////////////////////////////////////////////////////////////
 
 namespace {
 const int kAllocationSize = 1024 * 64;
+}  // namespace
 
-class NodePool {
+class Node::Pool {
  public:
   // Allocates a new node and initializes it with all zeros.
   Node* AllocateNode();
@@ -75,7 +76,7 @@ class NodePool {
       GUARDED_BY(allocations_mutex_);
 };
 
-Node* NodePool::AllocateNode() {
+Node* Node::Pool::AllocateNode() {
   while (true) {
     Node* result = nullptr;
     {
@@ -110,18 +111,18 @@ Node* NodePool::AllocateNode() {
   }
 }
 
-void NodePool::ReleaseNode(Node* node) {
+void Node::Pool::ReleaseNode(Node* node) {
   Mutex::Lock lock(mutex_);
   ReleaseNodeInternal(node);
 }
 
-void NodePool::ReleaseNodeInternal(Node* node) REQUIRES(mutex_) {
+void Node::Pool::ReleaseNodeInternal(Node* node) REQUIRES(mutex_) {
   auto* free_node = reinterpret_cast<FreeNode*>(node);
   free_node->next = free_list_;
   free_list_ = free_node;
 }
 
-void NodePool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
+void Node::Pool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
   allocations_.emplace_back(std::make_unique<FreeNode[]>(kAllocationSize));
 
   FreeNode* new_nodes = allocations_.back().get();
@@ -132,91 +133,90 @@ void NodePool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
   }
 }
 
-void NodePool::ReleaseChildren(Node* node) {
+void Node::Pool::ReleaseChildren(Node* node) {
   Mutex::Lock lock(mutex_);
   ReleaseChildrenInternal(node);
 }
 
-void NodePool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
-  Node* next = node->child;
+void Node::Pool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
+  Node* next = node->child_;
+  // Iterating manually rather than with iterator, as node is released in the
+  // middle and can be taken by other threads, so we have to be careful.
   while (next) {
     Node* iter = next;
     // Getting next after releasing node, as otherwise it can be reallocated
     // and overwritten.
-    next = next->sibling;
+    next = next->sibling_;
     ReleaseSubtreeInternal(iter);
   }
-  node->child = nullptr;
+  node->child_ = nullptr;
 }
 
-void NodePool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
+void Node::Pool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
   Node* child = nullptr;
-  Node* next = root->child;
+  Node* next = root->child_;
   while (next) {
     Node* iter = next;
     // Getting next after releasing node, as otherwise it can be reallocated
     // and overwritten.
-    next = next->sibling;
+    next = next->sibling_;
     if (iter == subtree) {
       child = iter;
     } else {
       ReleaseSubtree(iter);
     }
   }
-  root->child = child;
+  root->child_ = child;
   if (child) {
-    child->sibling = nullptr;
+    child->sibling_ = nullptr;
   }
 }
 
-void NodePool::ReleaseSubtree(Node* node) {
+void Node::Pool::ReleaseSubtree(Node* node) {
   Mutex::Lock lock(mutex_);
   ReleaseSubtreeInternal(node);
 }
 
-void NodePool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
+void Node::Pool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
   ReleaseChildrenInternal(node);
   ReleaseNodeInternal(node);
 }
 
-NodePool gNodePool;
-}  // namespace
-
-/////////////////////////////////////////////////////////////////////////
+Node::Pool gNodePool;
 
 Node* Node::CreateChild(Move m) {
   Node* new_node = gNodePool.AllocateNode();
-  new_node->parent = this;
-  new_node->sibling = child;
-  new_node->move = m;
-  child = new_node;
+  new_node->parent_ = this;
+  new_node->sibling_ = child_;
+  new_node->move_ = m;
+  child_ = new_node;
   return new_node;
 }
 
 void Node::ResetStats() {
-  n_in_flight = 0;
-  n = 0;
-  v = 0.0;
-  q = 0.0;
-  w = 0.0;
-  p = 0.0;
-  max_depth = 0;
-  full_depth = 0;
-  is_terminal = false;
+  n_in_flight_ = 0;
+  n_ = 0;
+  v_ = 0.0;
+  q_ = 0.0;
+  w_ = 0.0;
+  p_ = 0.0;
+  max_depth_ = 0;
+  full_depth_ = 0;
+  is_terminal_ = false;
 }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << "Move: " << move.as_string() << " Term:" << is_terminal
-      << " This:" << this << " Parent:" << parent << " child:" << child
-      << " sibling:" << sibling << " P:" << p << " Q:" << q << " W:" << w
-      << " N:" << n << " N_:" << n_in_flight;
+  oss << "Move: " << move_.as_string() << " Term:" << is_terminal_
+      << " This:" << this << " Parent:" << parent_ << " child:" << child_
+      << " sibling:" << sibling_ << " P:" << p_ << " Q:" << q_ << " W:" << w_
+      << " N:" << n_ << " N_:" << n_in_flight_;
   return oss.str();
 }
 
 Move Node::GetMove(bool flip) const {
-  if (!flip) return move;
-  Move m = move;
+  if (!flip) return move_;
+  Move m = move_;
   m.Mirror();
   return m;
 }
@@ -239,10 +239,10 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   result.version = 3;
 
   // Populate probabilities.
-  float total_n = n - 1;  // First visit was expansion of it inself.
+  float total_n = n_ - 1;  // First visit was expansion of it inself.
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
-  for (Node* iter = child; iter; iter = iter->sibling) {
-    result.probabilities[iter->move.as_nn_index()] = iter->n / total_n;
+  for (Node* iter : Children()) {
+    result.probabilities[iter->move_.as_nn_index()] = iter->n_ / total_n;
   }
 
   // Populate planes.
@@ -280,8 +280,8 @@ void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
   Node* new_head = nullptr;
-  for (Node* n = current_head_->child; n; n = n->sibling) {
-    if (n->move == move) {
+  for (Node* n : current_head_->Children()) {
+    if (n->GetMove() == move) {
       new_head = n;
       break;
     }
@@ -322,7 +322,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // If we didn't see old head, it means that new position is shorter.
   // As we killed the search tree already, trim it to redo the search.
   if (!seen_old_head) {
-    assert(!current_head_->sibling);
+    assert(!current_head_->sibling_);
     gNodePool.ReleaseChildren(current_head_);
     current_head_->ResetStats();
   }
