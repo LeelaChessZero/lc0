@@ -47,7 +47,7 @@ const int kSmartPruningToleranceMs = 500;
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {
-  options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 128;
+  options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 256;
   options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<BoolOption>(kAggresiveCachingStr, "aggressive-caching") = false;
   options->Add<FloatOption>(kCpuctStr, 0, 100, "cpuct") = 1.7;
