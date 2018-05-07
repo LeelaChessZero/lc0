@@ -13,11 +13,13 @@
   <ItemGroup>
     <ClCompile Include="..\src\chess\bitboard.cc" />
     <ClCompile Include="..\src\chess\board.cc" />
+    <ClCompile Include="..\src\chess\position.cc" />
     <ClCompile Include="..\src\engine.cc" />
     <ClCompile Include="..\src\main.cc" />
     <ClCompile Include="..\src\mcts\node.cc" />
     <ClCompile Include="..\src\mcts\search.cc" />
     <ClCompile Include="..\src\neural\cache.cc" />
+    <ClCompile Include="..\src\neural\encoder.cc" />
     <ClCompile Include="..\src\neural\factory.cc" />
     <ClCompile Include="..\src\neural\loader.cc" />
     <ClCompile Include="..\src\neural\network_mux.cc" />
