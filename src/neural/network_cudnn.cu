@@ -550,20 +550,55 @@ FCLayer::~FCLayer() {
 
 class CudnnNetwork;
 
+struct InputsOutputs {
+  InputsOutputs()
+  {
+    reportCUDAErrors(cudaHostAlloc(&input_masks_mem_, kMaxBatchSize * kInputPlanes * sizeof(uint64_t), cudaHostAllocMapped));
+    reportCUDAErrors(cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
+
+    reportCUDAErrors(cudaHostAlloc(&input_val_mem_, kMaxBatchSize * kInputPlanes * sizeof(float), cudaHostAllocMapped));
+    reportCUDAErrors(cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
+
+    reportCUDAErrors(cudaHostAlloc(&op_policy_mem_, kMaxBatchSize *kNumOutputPolicy * sizeof(float), cudaHostAllocMapped));
+    reportCUDAErrors(cudaHostGetDevicePointer(&op_policy_mem_gpu_, op_policy_mem_, 0));
+
+    reportCUDAErrors(cudaHostAlloc(&op_value_mem_, kMaxBatchSize * sizeof(float), cudaHostAllocMapped));
+    reportCUDAErrors(cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
+  }
+  ~InputsOutputs()
+  {
+    reportCUDAErrors(cudaFreeHost(input_masks_mem_));
+    reportCUDAErrors(cudaFreeHost(input_val_mem_));
+    reportCUDAErrors(cudaFreeHost(op_policy_mem_));
+    reportCUDAErrors(cudaFreeHost(op_value_mem_));
+  }
+  uint64_t *input_masks_mem_;
+  float *input_val_mem_;
+  float *op_policy_mem_;
+  float *op_value_mem_;
+
+  // GPU pointers for the above allocations
+  uint64_t *input_masks_mem_gpu_;
+  float *input_val_mem_gpu_;
+  float *op_policy_mem_gpu_;
+  float *op_value_mem_gpu_;
+};
+
 class CudnnNetworkComputation : public NetworkComputation {
  public:
-  CudnnNetworkComputation(CudnnNetwork *network); 
+  CudnnNetworkComputation(CudnnNetwork *network);
+  ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes &&input) override {
 
-    auto iterMask = &input_plane_masks_[batch_size_ * kInputPlanes];
-    auto iterVal = &input_plane_values_[batch_size_ * kInputPlanes];
+    auto iterMask = &input_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
+    auto iterVal = &input_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
 
     int i = 0;
     for (const auto &plane : input) {
-        iterMask[i] = plane.mask;
-        iterVal[i] = plane.value;
-        i++;
+      iterMask[i] = plane.mask;
+      iterVal[i] = plane.value;
+      i++;
     }
 
     batch_size_++;
@@ -573,19 +608,15 @@ class CudnnNetworkComputation : public NetworkComputation {
 
   int GetBatchSize() const override { return batch_size_; }
 
-  float GetQVal(int sample) const override { return out_val_[sample]; }
+  float GetQVal(int sample) const override { return input_outputs_->op_value_mem_[sample]; }
   float GetPVal(int sample, int move_id) const override {
-    return out_pol_[sample*kNumOutputPolicy + move_id];
+    return input_outputs_->op_policy_mem_[sample*kNumOutputPolicy + move_id];
   }
 
  private:
-
+  
   // memory holding inputs, outputs
-  uint64_t *input_plane_masks_;
-  float *input_plane_values_;
-  float *out_pol_;
-  float *out_val_;
-
+  InputsOutputs *input_outputs_;
   int batch_size_;
 
   CudnnNetwork *network_;
@@ -712,7 +743,7 @@ class CudnnNetwork : public Network {
     reportCUDAErrors(cudaMalloc(&scratch_mem_, kCudaScratchSize));
   }
 
-  void forwardEval(int batchSize) {
+  void forwardEval(InputsOutputs *io, int batchSize) {
 
     std::lock_guard<std::mutex> lock(lock_);
 
@@ -721,12 +752,12 @@ class CudnnNetwork : public Network {
 #endif
 
     // expand packed planes to full planes
-    uint64_t *ipDataMasks = input_masks_mem_gpu_[std::this_thread::get_id()];
-    float *ipDataValues = input_val_mem_gpu_[std::this_thread::get_id()];
+    uint64_t *ipDataMasks = io->input_masks_mem_gpu_;
+    float *ipDataValues = io->input_val_mem_gpu_;
     expandPlanes(tensor_mem_[0], ipDataMasks, ipDataValues, batchSize * kInputPlanes);
 
-    float *opPol = op_policy_mem_gpu_[std::this_thread::get_id()];
-    float *opVal = op_value_mem_gpu_[std::this_thread::get_id()];
+    float *opPol = io->op_policy_mem_gpu_;
+    float *opVal = io->op_value_mem_gpu_;
 
     int l = 0;
     // input
@@ -799,6 +830,11 @@ class CudnnNetwork : public Network {
     if (scratch_mem_) reportCUDAErrors(cudaFree(scratch_mem_));
     cudnnDestroy(cudnn_);
     cublasDestroy(cublas_);
+
+    for (auto&& iter : free_inputs_outputs_) {
+      delete iter;
+    }
+    free_inputs_outputs_.clear();
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -807,44 +843,23 @@ class CudnnNetwork : public Network {
     return std::make_unique<CudnnNetworkComputation>(this);
   }
 
-  uint64_t* getInputMaskMem()
-  {
-      std::thread::id tid = std::this_thread::get_id();
-      if (input_masks_mem_.find(tid) == input_masks_mem_.end())
-      {
-          allocInputsOutputsMem(tid);
-      }
-      return input_masks_mem_[tid];
+  InputsOutputs* AllocateInputsOutputs() {
+    std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
+    if (free_inputs_outputs_.empty()) {
+      return new InputsOutputs;
+    }
+    else
+    {
+      InputsOutputs* resource = free_inputs_outputs_.front();
+      free_inputs_outputs_.pop_front();
+      return resource;
+    }
   }
 
-  float* getInputValMem()
+  void DeallocateInputsOutputs(InputsOutputs* io)
   {
-      std::thread::id tid = std::this_thread::get_id();
-      if (input_val_mem_.find(tid) == input_val_mem_.end())
-      {
-          allocInputsOutputsMem(tid);
-      }
-      return input_val_mem_[tid];
-  }
-
-  float* getOpPolicyMem()
-  {
-      std::thread::id tid = std::this_thread::get_id();
-      if (op_policy_mem_.find(tid) == op_policy_mem_.end())
-      {
-          allocInputsOutputsMem(tid);
-      }
-      return op_policy_mem_[tid];
-  }
-
-  float* getOpValueMem()
-  {
-      std::thread::id tid = std::this_thread::get_id();
-      if (op_value_mem_.find(tid) == op_value_mem_.end())
-      {
-          allocInputsOutputsMem(tid);
-      }
-      return op_value_mem_[tid];
+    std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
+    free_inputs_outputs_.push_back(io);
   }
 
  private:
@@ -867,34 +882,8 @@ class CudnnNetwork : public Network {
   float *tensor_mem_[3];
   float *scratch_mem_;
 
-  // GPU accessible system memory used to store inputs and outputs
-  // avoids copies system <-> device memory
-  std::map<std::thread::id, uint64_t *> input_masks_mem_;
-  std::map<std::thread::id, float *> input_val_mem_;
-  std::map<std::thread::id, float *> op_policy_mem_;
-  std::map<std::thread::id, float *> op_value_mem_;
-
-  // GPU pointers for the above allocations
-  std::map<std::thread::id, uint64_t *> input_masks_mem_gpu_;
-  std::map<std::thread::id, float *> input_val_mem_gpu_;
-  std::map<std::thread::id, float *> op_policy_mem_gpu_;
-  std::map<std::thread::id, float *> op_value_mem_gpu_;
-
-
-  void allocInputsOutputsMem(std::thread::id tid)
-  {
-      reportCUDAErrors(cudaHostAlloc(&input_masks_mem_[tid], kMaxBatchSize * kInputPlanes * sizeof(uint64_t), cudaHostAllocMapped));
-      reportCUDAErrors(cudaHostGetDevicePointer(&input_masks_mem_gpu_[tid], input_masks_mem_[tid], 0));
-
-      reportCUDAErrors(cudaHostAlloc(&input_val_mem_[tid], kMaxBatchSize * kInputPlanes * sizeof(float), cudaHostAllocMapped));
-      reportCUDAErrors(cudaHostGetDevicePointer(&input_val_mem_gpu_[tid], input_val_mem_[tid], 0));
-
-      reportCUDAErrors(cudaHostAlloc(&op_policy_mem_[tid], kMaxBatchSize *kNumOutputPolicy * sizeof(float), cudaHostAllocMapped));
-      reportCUDAErrors(cudaHostGetDevicePointer(&op_policy_mem_gpu_[tid], op_policy_mem_[tid], 0));
-
-      reportCUDAErrors(cudaHostAlloc(&op_value_mem_[tid], kMaxBatchSize * sizeof(float), cudaHostAllocMapped));
-      reportCUDAErrors(cudaHostGetDevicePointer(&op_value_mem_gpu_[tid], op_value_mem_[tid], 0));
-  }
+  mutable std::mutex inputs_outputs_lock_;
+  std::list<InputsOutputs *> free_inputs_outputs_;
 
   void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false) {
     const float epsilon = 1e-5f;
@@ -942,15 +931,17 @@ class CudnnNetwork : public Network {
 
 CudnnNetworkComputation::CudnnNetworkComputation(CudnnNetwork *network) : network_(network) {
     batch_size_ = 0;
-    input_plane_masks_ = network->getInputMaskMem();
-    input_plane_values_ = network->getInputValMem();
-    out_pol_ = network->getOpPolicyMem();
-    out_val_ = network->getOpValueMem();
+    input_outputs_ = network_->AllocateInputsOutputs();
+}
+
+CudnnNetworkComputation::~CudnnNetworkComputation() {
+  network_->DeallocateInputsOutputs(input_outputs_);
+  input_outputs_ = nullptr;
 }
 
 void CudnnNetworkComputation::ComputeBlocking() 
 {
-  network_->forwardEval(GetBatchSize());
+  network_->forwardEval(input_outputs_, GetBatchSize());
 }
 
 }  // namespace
