@@ -39,18 +39,28 @@ void cudnnError(cudnnStatus_t status, const char *file, const int &line) {
   }
 }
 
-const char* cublasGetErrorString(cublasStatus_t status) {
+const char *cublasGetErrorString(cublasStatus_t status) {
   switch (status) {
-    case CUBLAS_STATUS_SUCCESS: return "CUBLAS_STATUS_SUCCESS";
-    case CUBLAS_STATUS_NOT_INITIALIZED: return "CUBLAS_STATUS_NOT_INITIALIZED";
-    case CUBLAS_STATUS_ALLOC_FAILED: return "CUBLAS_STATUS_ALLOC_FAILED";
-    case CUBLAS_STATUS_INVALID_VALUE: return "CUBLAS_STATUS_INVALID_VALUE";
-    case CUBLAS_STATUS_ARCH_MISMATCH: return "CUBLAS_STATUS_ARCH_MISMATCH";
-    case CUBLAS_STATUS_MAPPING_ERROR: return "CUBLAS_STATUS_MAPPING_ERROR";
-    case CUBLAS_STATUS_EXECUTION_FAILED: return "CUBLAS_STATUS_EXECUTION_FAILED";
-    case CUBLAS_STATUS_INTERNAL_ERROR: return "CUBLAS_STATUS_INTERNAL_ERROR";
-    case CUBLAS_STATUS_NOT_SUPPORTED: return "CUBLAS_STATUS_NOT_SUPPORTED";
-    case CUBLAS_STATUS_LICENSE_ERROR: return "CUBLAS_STATUS_LICENSE_ERROR";
+    case CUBLAS_STATUS_SUCCESS:
+      return "CUBLAS_STATUS_SUCCESS";
+    case CUBLAS_STATUS_NOT_INITIALIZED:
+      return "CUBLAS_STATUS_NOT_INITIALIZED";
+    case CUBLAS_STATUS_ALLOC_FAILED:
+      return "CUBLAS_STATUS_ALLOC_FAILED";
+    case CUBLAS_STATUS_INVALID_VALUE:
+      return "CUBLAS_STATUS_INVALID_VALUE";
+    case CUBLAS_STATUS_ARCH_MISMATCH:
+      return "CUBLAS_STATUS_ARCH_MISMATCH";
+    case CUBLAS_STATUS_MAPPING_ERROR:
+      return "CUBLAS_STATUS_MAPPING_ERROR";
+    case CUBLAS_STATUS_EXECUTION_FAILED:
+      return "CUBLAS_STATUS_EXECUTION_FAILED";
+    case CUBLAS_STATUS_INTERNAL_ERROR:
+      return "CUBLAS_STATUS_INTERNAL_ERROR";
+    case CUBLAS_STATUS_NOT_SUPPORTED:
+      return "CUBLAS_STATUS_NOT_SUPPORTED";
+    case CUBLAS_STATUS_LICENSE_ERROR:
+      return "CUBLAS_STATUS_LICENSE_ERROR";
   }
   return "unknown cublas error";
 }
@@ -59,7 +69,7 @@ void cublasError(cublasStatus_t status, const char *file, const int &line) {
   if (status != CUBLAS_STATUS_SUCCESS) {
     char message[128];
     sprintf(message, "CUDNN error: %s (%s:%d) ", cublasGetErrorString(status),
-        file, line);
+            file, line);
     throw Exception(message);
   }
 }
@@ -68,11 +78,10 @@ void cudaError(cudaError_t status, const char *file, const int &line) {
   if (status != cudaSuccess) {
     char message[128];
     sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
-        file, line);
+            file, line);
     throw Exception(message);
   }
 }
-
 
 #define reportCUDNNErrors(status) cudnnError(status, __FILE__, __LINE__)
 #define reportCUBLASErrors(status) cublasError(status, __FILE__, __LINE__)
@@ -286,8 +295,8 @@ void batchNormForward(float *output, const float *input, const float *skipInput,
   reportCUDAErrors(cudaGetLastError());
 }
 
-__global__ void expandPlanes_kernel(float *output, const uint64_t *masks, const float *values, int n)
-{
+__global__ void expandPlanes_kernel(float *output, const uint64_t *masks,
+                                    const float *values, int n) {
   // block size of 256, same mask/val for 64 consecutive threads
   constexpr int kNumShmemElments = 256 / 64;
 
@@ -298,14 +307,12 @@ __global__ void expandPlanes_kernel(float *output, const uint64_t *masks, const 
 
   int planeIndex = index >> 6;
 
-  if (planeIndex >= n)
-      return;
+  if (planeIndex >= n) return;
 
   // load inputs to shared memory
-  if (threadIdx.x < kNumShmemElments)
-  {
-      shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
-      shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
+  if (threadIdx.x < kNumShmemElments) {
+    shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
+    shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
   }
   __syncthreads();
 
@@ -315,21 +322,20 @@ __global__ void expandPlanes_kernel(float *output, const uint64_t *masks, const 
   float op = 0;
 
   bool set = !!(mask & (1ull << sqIndex));
-  if (set)
-  {
-      op = shVals[threadIdx.x >> 6];
+  if (set) {
+    op = shVals[threadIdx.x >> 6];
   }
   output[index] = op;
 }
-void expandPlanes(float *output, const uint64_t *masks, const float *values, int n)
-{
-    int threads = n * 8 * 8;    // each thread writes a single element
-    const int blockSize = 256;
-    int blocks = divUp(threads, blockSize);
+void expandPlanes(float *output, const uint64_t *masks, const float *values,
+                  int n) {
+  int threads = n * 8 * 8;  // each thread writes a single element
+  const int blockSize = 256;
+  int blocks = divUp(threads, blockSize);
 
-    expandPlanes_kernel<<<blocks, blockSize>>>(output, masks, values, n);
+  expandPlanes_kernel<<<blocks, blockSize>>>(output, masks, values, n);
 
-    reportCUDAErrors(cudaGetLastError());
+  reportCUDAErrors(cudaGetLastError());
 }
 
 BaseLayer::BaseLayer(int c, int h, int w, BaseLayer *ip)
@@ -413,13 +419,13 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
 
 void ConvLayer::LoadWeights(float *pfilter, float *pBias) {
   size_t weightSize = bpe_ * c_input_ * C * filter_size_ * filter_size_;
-  reportCUDAErrors(cudaMemcpyAsync(weights, pfilter, weightSize, 
-                                   cudaMemcpyHostToDevice));
+  reportCUDAErrors(
+      cudaMemcpyAsync(weights, pfilter, weightSize, cudaMemcpyHostToDevice));
 
   size_t biasSize = bpe_ * C;
   if (pBias) {
-    reportCUDAErrors(cudaMemcpyAsync(biases, pBias, biasSize, 
-                                     cudaMemcpyHostToDevice));
+    reportCUDAErrors(
+        cudaMemcpyAsync(biases, pBias, biasSize, cudaMemcpyHostToDevice));
   } else {
     reportCUDAErrors(cudaMemset(biases, biasSize, 0));
   }
@@ -474,10 +480,10 @@ BNLayer::BNLayer(BaseLayer *ip, bool relu)
 
 void BNLayer::LoadWeights(float *cpuMeans, float *cpuVar) {
   size_t weightSize = bpe_ * C;
-  reportCUDAErrors(cudaMemcpyAsync(means_, cpuMeans, weightSize, 
-                                   cudaMemcpyHostToDevice));
-  reportCUDAErrors(cudaMemcpyAsync(variances_, cpuVar, weightSize, 
-                                   cudaMemcpyHostToDevice));
+  reportCUDAErrors(
+      cudaMemcpyAsync(means_, cpuMeans, weightSize, cudaMemcpyHostToDevice));
+  reportCUDAErrors(
+      cudaMemcpyAsync(variances_, cpuVar, weightSize, cudaMemcpyHostToDevice));
 }
 
 void BNLayer::Eval(int N, float *output, const float *input,
@@ -512,12 +518,12 @@ void FCLayer::LoadWeights(float *cpuWeight, float *cpuBias) {
   size_t weightSize =
       bpe_ * C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
 
-  reportCUDAErrors(cudaMemcpyAsync(weights_, cpuWeight, weightSize, 
-                                   cudaMemcpyHostToDevice));
+  reportCUDAErrors(
+      cudaMemcpyAsync(weights_, cpuWeight, weightSize, cudaMemcpyHostToDevice));
   if (use_bias_) {
     size_t biasSize = bpe_ * C * H * W;
-    reportCUDAErrors(cudaMemcpyAsync(biases_, cpuBias, biasSize, 
-                                     cudaMemcpyHostToDevice));
+    reportCUDAErrors(
+        cudaMemcpyAsync(biases_, cpuBias, biasSize, cudaMemcpyHostToDevice));
   }
 }
 
@@ -532,9 +538,10 @@ void FCLayer::Eval(int N, float *outputTensor, const float *inputTensor,
     // TODO: implement this!
     assert(0);
   } else {
-    reportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numOutputs, 
-                                   N, numInputs, &alpha, weights_, numInputs, inputTensor, 
-                                   numInputs, &beta, outputTensor, numOutputs));
+    reportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numOutputs,
+                                   N, numInputs, &alpha, weights_, numInputs,
+                                   inputTensor, numInputs, &beta, outputTensor,
+                                   numOutputs));
 
     if (use_bias_ || use_relu_ || use_tanh_) {
       addVectors(outputTensor, biases_, outputTensor, numOutputs * N,
@@ -552,18 +559,17 @@ class CudnnNetwork;
 
 class CudnnNetworkComputation : public NetworkComputation {
  public:
-  CudnnNetworkComputation(CudnnNetwork *network); 
+  CudnnNetworkComputation(CudnnNetwork *network);
 
   void AddInput(InputPlanes &&input) override {
-
     auto iterMask = &input_plane_masks_[batch_size_ * kInputPlanes];
     auto iterVal = &input_plane_values_[batch_size_ * kInputPlanes];
 
     int i = 0;
     for (const auto &plane : input) {
-        iterMask[i] = plane.mask;
-        iterVal[i] = plane.value;
-        i++;
+      iterMask[i] = plane.mask;
+      iterVal[i] = plane.value;
+      i++;
     }
 
     batch_size_++;
@@ -575,11 +581,10 @@ class CudnnNetworkComputation : public NetworkComputation {
 
   float GetQVal(int sample) const override { return out_val_[sample]; }
   float GetPVal(int sample, int move_id) const override {
-    return out_pol_[sample*kNumOutputPolicy + move_id];
+    return out_pol_[sample * kNumOutputPolicy + move_id];
   }
 
  private:
-
   // memory holding inputs, outputs
   uint64_t *input_plane_masks_;
   float *input_plane_values_;
@@ -594,14 +599,13 @@ class CudnnNetworkComputation : public NetworkComputation {
 class CudnnNetwork : public Network {
  public:
   CudnnNetwork(Weights weights, const OptionsDict &options) {
-
     gpuId_ = options.GetOrDefault<int>("gpu", 0);
 
     int totalGPUs;
     reportCUDAErrors(cudaGetDeviceCount(&totalGPUs));
 
     if (gpuId_ >= totalGPUs)
-        throw Exception("Invalid GPU Id: " + std::to_string(gpuId_));
+      throw Exception("Invalid GPU Id: " + std::to_string(gpuId_));
 
     // select GPU to run on (for *the current* thread)
     reportCUDAErrors(cudaSetDevice(gpuId_));
@@ -713,7 +717,6 @@ class CudnnNetwork : public Network {
   }
 
   void forwardEval(int batchSize) {
-
     std::lock_guard<std::mutex> lock(lock_);
 
 #if DEBUG_RAW_NPS == 1
@@ -723,7 +726,8 @@ class CudnnNetwork : public Network {
     // expand packed planes to full planes
     uint64_t *ipDataMasks = input_masks_mem_gpu_[std::this_thread::get_id()];
     float *ipDataValues = input_val_mem_gpu_[std::this_thread::get_id()];
-    expandPlanes(tensor_mem_[0], ipDataMasks, ipDataValues, batchSize * kInputPlanes);
+    expandPlanes(tensor_mem_[0], ipDataMasks, ipDataValues,
+                 batchSize * kInputPlanes);
 
     float *opPol = op_policy_mem_gpu_[std::this_thread::get_id()];
     float *opVal = op_value_mem_gpu_[std::this_thread::get_id()];
@@ -749,8 +753,8 @@ class CudnnNetwork : public Network {
                         scratch_mem_, cudnn_, cublas_);  // pol BN
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                         scratch_mem_, cudnn_, cublas_);  // pol FC
-    network_[l++]->Eval(batchSize, opPol, tensor_mem_[0], nullptr,
-                        scratch_mem_, cudnn_,
+    network_[l++]->Eval(batchSize, opPol, tensor_mem_[0], nullptr, scratch_mem_,
+                        cudnn_,
                         cublas_);  // pol softmax  // POLICY
 
     // value head
@@ -760,10 +764,9 @@ class CudnnNetwork : public Network {
                         scratch_mem_, cudnn_, cublas_);  // value BN
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                         scratch_mem_, cudnn_, cublas_);  // value FC1
-    network_[l++]->Eval(batchSize, opVal, tensor_mem_[0], nullptr,
-                        scratch_mem_, cudnn_,
+    network_[l++]->Eval(batchSize, opVal, tensor_mem_[0], nullptr, scratch_mem_,
+                        cudnn_,
                         cublas_);  // value FC2    // VALUE
-
 
     reportCUDAErrors(cudaDeviceSynchronize());
 
@@ -775,21 +778,20 @@ class CudnnNetwork : public Network {
 
     sumBatchSize += batchSize;
     numCalls++;
-    
+
     auto t_end = std::chrono::high_resolution_clock::now();
 
     double dt = std::chrono::duration<double>(t_end - t_start).count();
     totalTime += dt;
-    if (numCalls == reportingCalls)
-    {
-        double avgBatchSize = ((double)sumBatchSize) / numCalls;
-        printf("\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals\n", avgBatchSize, totalTime, sumBatchSize);
-        sumBatchSize = 0;
-        totalTime = 0;
-        numCalls = 0;
+    if (numCalls == reportingCalls) {
+      double avgBatchSize = ((double)sumBatchSize) / numCalls;
+      printf("\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals\n",
+             avgBatchSize, totalTime, sumBatchSize);
+      sumBatchSize = 0;
+      totalTime = 0;
+      numCalls = 0;
     }
 #endif
-
   }
 
   ~CudnnNetwork() {
@@ -802,49 +804,42 @@ class CudnnNetwork : public Network {
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    // set correct gpu id for this computation (as it might have been called from a different thread)
+    // set correct gpu id for this computation (as it might have been called
+    // from a different thread)
     reportCUDAErrors(cudaSetDevice(gpuId_));
     return std::make_unique<CudnnNetworkComputation>(this);
   }
 
-  uint64_t* getInputMaskMem()
-  {
-      std::thread::id tid = std::this_thread::get_id();
-      if (input_masks_mem_.find(tid) == input_masks_mem_.end())
-      {
-          allocInputsOutputsMem(tid);
-      }
-      return input_masks_mem_[tid];
+  uint64_t *getInputMaskMem() {
+    std::thread::id tid = std::this_thread::get_id();
+    if (input_masks_mem_.find(tid) == input_masks_mem_.end()) {
+      allocInputsOutputsMem(tid);
+    }
+    return input_masks_mem_[tid];
   }
 
-  float* getInputValMem()
-  {
-      std::thread::id tid = std::this_thread::get_id();
-      if (input_val_mem_.find(tid) == input_val_mem_.end())
-      {
-          allocInputsOutputsMem(tid);
-      }
-      return input_val_mem_[tid];
+  float *getInputValMem() {
+    std::thread::id tid = std::this_thread::get_id();
+    if (input_val_mem_.find(tid) == input_val_mem_.end()) {
+      allocInputsOutputsMem(tid);
+    }
+    return input_val_mem_[tid];
   }
 
-  float* getOpPolicyMem()
-  {
-      std::thread::id tid = std::this_thread::get_id();
-      if (op_policy_mem_.find(tid) == op_policy_mem_.end())
-      {
-          allocInputsOutputsMem(tid);
-      }
-      return op_policy_mem_[tid];
+  float *getOpPolicyMem() {
+    std::thread::id tid = std::this_thread::get_id();
+    if (op_policy_mem_.find(tid) == op_policy_mem_.end()) {
+      allocInputsOutputsMem(tid);
+    }
+    return op_policy_mem_[tid];
   }
 
-  float* getOpValueMem()
-  {
-      std::thread::id tid = std::this_thread::get_id();
-      if (op_value_mem_.find(tid) == op_value_mem_.end())
-      {
-          allocInputsOutputsMem(tid);
-      }
-      return op_value_mem_[tid];
+  float *getOpValueMem() {
+    std::thread::id tid = std::this_thread::get_id();
+    if (op_value_mem_.find(tid) == op_value_mem_.end()) {
+      allocInputsOutputsMem(tid);
+    }
+    return op_value_mem_[tid];
   }
 
  private:
@@ -880,20 +875,30 @@ class CudnnNetwork : public Network {
   std::map<std::thread::id, float *> op_policy_mem_gpu_;
   std::map<std::thread::id, float *> op_value_mem_gpu_;
 
+  void allocInputsOutputsMem(std::thread::id tid) {
+    reportCUDAErrors(cudaHostAlloc(
+        &input_masks_mem_[tid], kMaxBatchSize * kInputPlanes * sizeof(uint64_t),
+        cudaHostAllocMapped));
+    reportCUDAErrors(cudaHostGetDevicePointer(&input_masks_mem_gpu_[tid],
+                                              input_masks_mem_[tid], 0));
 
-  void allocInputsOutputsMem(std::thread::id tid)
-  {
-      reportCUDAErrors(cudaHostAlloc(&input_masks_mem_[tid], kMaxBatchSize * kInputPlanes * sizeof(uint64_t), cudaHostAllocMapped));
-      reportCUDAErrors(cudaHostGetDevicePointer(&input_masks_mem_gpu_[tid], input_masks_mem_[tid], 0));
+    reportCUDAErrors(cudaHostAlloc(&input_val_mem_[tid],
+                                   kMaxBatchSize * kInputPlanes * sizeof(float),
+                                   cudaHostAllocMapped));
+    reportCUDAErrors(cudaHostGetDevicePointer(&input_val_mem_gpu_[tid],
+                                              input_val_mem_[tid], 0));
 
-      reportCUDAErrors(cudaHostAlloc(&input_val_mem_[tid], kMaxBatchSize * kInputPlanes * sizeof(float), cudaHostAllocMapped));
-      reportCUDAErrors(cudaHostGetDevicePointer(&input_val_mem_gpu_[tid], input_val_mem_[tid], 0));
+    reportCUDAErrors(cudaHostAlloc(
+        &op_policy_mem_[tid], kMaxBatchSize * kNumOutputPolicy * sizeof(float),
+        cudaHostAllocMapped));
+    reportCUDAErrors(cudaHostGetDevicePointer(&op_policy_mem_gpu_[tid],
+                                              op_policy_mem_[tid], 0));
 
-      reportCUDAErrors(cudaHostAlloc(&op_policy_mem_[tid], kMaxBatchSize *kNumOutputPolicy * sizeof(float), cudaHostAllocMapped));
-      reportCUDAErrors(cudaHostGetDevicePointer(&op_policy_mem_gpu_[tid], op_policy_mem_[tid], 0));
-
-      reportCUDAErrors(cudaHostAlloc(&op_value_mem_[tid], kMaxBatchSize * sizeof(float), cudaHostAllocMapped));
-      reportCUDAErrors(cudaHostGetDevicePointer(&op_value_mem_gpu_[tid], op_value_mem_[tid], 0));
+    reportCUDAErrors(cudaHostAlloc(&op_value_mem_[tid],
+                                   kMaxBatchSize * sizeof(float),
+                                   cudaHostAllocMapped));
+    reportCUDAErrors(cudaHostGetDevicePointer(&op_value_mem_gpu_[tid],
+                                              op_value_mem_[tid], 0));
   }
 
   void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false) {
@@ -940,16 +945,16 @@ class CudnnNetwork : public Network {
   }
 };
 
-CudnnNetworkComputation::CudnnNetworkComputation(CudnnNetwork *network) : network_(network) {
-    batch_size_ = 0;
-    input_plane_masks_ = network->getInputMaskMem();
-    input_plane_values_ = network->getInputValMem();
-    out_pol_ = network->getOpPolicyMem();
-    out_val_ = network->getOpValueMem();
+CudnnNetworkComputation::CudnnNetworkComputation(CudnnNetwork *network)
+    : network_(network) {
+  batch_size_ = 0;
+  input_plane_masks_ = network->getInputMaskMem();
+  input_plane_values_ = network->getInputValMem();
+  out_pol_ = network->getOpPolicyMem();
+  out_val_ = network->getOpValueMem();
 }
 
-void CudnnNetworkComputation::ComputeBlocking() 
-{
+void CudnnNetworkComputation::ComputeBlocking() {
   network_->forwardEval(GetBatchSize());
 }
 
