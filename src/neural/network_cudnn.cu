@@ -597,8 +597,8 @@ class CudnnNetworkComputation : public NetworkComputation {
   ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes &&input) override {
-    auto iterMask = &input_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
-    auto iterVal = &input_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
+    auto iterMask = &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
+    auto iterVal = &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
 
     int i = 0;
     for (const auto &plane : input) {
@@ -614,15 +614,15 @@ class CudnnNetworkComputation : public NetworkComputation {
 
   int GetBatchSize() const override { return batch_size_; }
 
-  float GetQVal(int sample) const override { return input_outputs_->op_value_mem_[sample]; }
+  float GetQVal(int sample) const override { return inputs_outputs_->op_value_mem_[sample]; }
   float GetPVal(int sample, int move_id) const override {
-    return input_outputs_->op_policy_mem_[sample*kNumOutputPolicy + move_id];
+    return inputs_outputs_->op_policy_mem_[sample*kNumOutputPolicy + move_id];
   }
 
  private:
  
   // memory holding inputs, outputs
-  InputsOutputs *input_outputs_;
+   std::unique_ptr<InputsOutputs> inputs_outputs_;
   int batch_size_;
 
   CudnnNetwork *network_;
@@ -834,11 +834,6 @@ class CudnnNetwork : public Network {
     if (scratch_mem_) reportCUDAErrors(cudaFree(scratch_mem_));
     cudnnDestroy(cudnn_);
     cublasDestroy(cublas_);
-
-    for (auto&& iter : free_inputs_outputs_) {
-      delete iter;
-    }
-    free_inputs_outputs_.clear();
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -848,23 +843,23 @@ class CudnnNetwork : public Network {
     return std::make_unique<CudnnNetworkComputation>(this);
   }
 
-  InputsOutputs* AllocateInputsOutputs() {
+  std::unique_ptr<InputsOutputs> AllocateInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return new InputsOutputs;
+      return std::make_unique<InputsOutputs>();
     }
     else
     {
-      InputsOutputs* resource = free_inputs_outputs_.front();
+      std::unique_ptr<InputsOutputs> resource = std::move(free_inputs_outputs_.front());
       free_inputs_outputs_.pop_front();
       return resource;
     }
   }
 
-  void DeallocateInputsOutputs(InputsOutputs* io)
+  void DeallocateInputsOutputs(std::unique_ptr<InputsOutputs> &resource)
   {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
-    free_inputs_outputs_.push_back(io);
+    free_inputs_outputs_.push_back(std::move(resource));
   }
 
  private:
@@ -888,7 +883,7 @@ class CudnnNetwork : public Network {
   float *scratch_mem_;
 
   mutable std::mutex inputs_outputs_lock_;
-  std::list<InputsOutputs *> free_inputs_outputs_;
+  std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
   void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false) {
     const float epsilon = 1e-5f;
@@ -937,17 +932,17 @@ class CudnnNetwork : public Network {
 CudnnNetworkComputation::CudnnNetworkComputation(CudnnNetwork *network) 
     : network_(network) {
     batch_size_ = 0;
-    input_outputs_ = network_->AllocateInputsOutputs();
+    inputs_outputs_ = network_->AllocateInputsOutputs();
 }
 
 CudnnNetworkComputation::~CudnnNetworkComputation() {
-  network_->DeallocateInputsOutputs(input_outputs_);
-  input_outputs_ = nullptr;
+  network_->DeallocateInputsOutputs(inputs_outputs_);
+  inputs_outputs_ = nullptr;
 }
 
 void CudnnNetworkComputation::ComputeBlocking() 
 {
-  network_->forwardEval(input_outputs_, GetBatchSize());
+  network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
 }  // namespace
