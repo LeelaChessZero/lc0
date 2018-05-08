@@ -43,7 +43,7 @@ const char* kNoiseStr = "Add Dirichlet noise at root node";
 const char* kVerboseStatsStr = "Display verbose move stats";
 const char* kSmartPruningStr = "Enable smart pruning";
 const char* kVirtualLossBugStr = "Virtual loss bug";
-const char* kFpuReductionStr = "First Play Urgency Inflation";
+const char* kFpuReductionStr = "First Play Urgency Reduction";
 
 const int kSmartPruningToleranceNodes = 100;
 const int kSmartPruningToleranceMs = 200;
@@ -61,7 +61,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kVirtualLossBugStr, -100, 100, "virtual-loss-bug") =
       0.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
-      -0.2f;
+      0.2f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
