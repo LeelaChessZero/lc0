@@ -17,6 +17,8 @@
 */
 #include <cassert>
 #include <functional>
+#include <list>
+#include <memory>
 #include <mutex>
 #include "neural/factory.h"
 #include "utils/bititer.h"
@@ -558,22 +560,31 @@ FCLayer::~FCLayer() {
 class CudnnNetwork;
 
 struct InputsOutputs {
-  InputsOutputs()
-  {
-    reportCUDAErrors(cudaHostAlloc(&input_masks_mem_, kMaxBatchSize * kInputPlanes * sizeof(uint64_t), cudaHostAllocMapped));
-    reportCUDAErrors(cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
+  InputsOutputs() {
+    reportCUDAErrors(cudaHostAlloc(
+        &input_masks_mem_, kMaxBatchSize * kInputPlanes * sizeof(uint64_t),
+        cudaHostAllocMapped));
+    reportCUDAErrors(
+        cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
 
-    reportCUDAErrors(cudaHostAlloc(&input_val_mem_, kMaxBatchSize * kInputPlanes * sizeof(float), cudaHostAllocMapped));
-    reportCUDAErrors(cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
+    reportCUDAErrors(cudaHostAlloc(&input_val_mem_,
+                                   kMaxBatchSize * kInputPlanes * sizeof(float),
+                                   cudaHostAllocMapped));
+    reportCUDAErrors(
+        cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
 
-    reportCUDAErrors(cudaHostAlloc(&op_policy_mem_, kMaxBatchSize *kNumOutputPolicy * sizeof(float), cudaHostAllocMapped));
-    reportCUDAErrors(cudaHostGetDevicePointer(&op_policy_mem_gpu_, op_policy_mem_, 0));
+    reportCUDAErrors(cudaHostAlloc(
+        &op_policy_mem_, kMaxBatchSize * kNumOutputPolicy * sizeof(float),
+        cudaHostAllocMapped));
+    reportCUDAErrors(
+        cudaHostGetDevicePointer(&op_policy_mem_gpu_, op_policy_mem_, 0));
 
-    reportCUDAErrors(cudaHostAlloc(&op_value_mem_, kMaxBatchSize * sizeof(float), cudaHostAllocMapped));
-    reportCUDAErrors(cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
+    reportCUDAErrors(cudaHostAlloc(
+        &op_value_mem_, kMaxBatchSize * sizeof(float), cudaHostAllocMapped));
+    reportCUDAErrors(
+        cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
   }
-  ~InputsOutputs()
-  {
+  ~InputsOutputs() {
     reportCUDAErrors(cudaFreeHost(input_masks_mem_));
     reportCUDAErrors(cudaFreeHost(input_val_mem_));
     reportCUDAErrors(cudaFreeHost(op_policy_mem_));
@@ -597,7 +608,8 @@ class CudnnNetworkComputation : public NetworkComputation {
   ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes &&input) override {
-    auto iterMask = &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
+    auto iterMask =
+        &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
     auto iterVal = &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
 
     int i = 0;
@@ -614,15 +626,16 @@ class CudnnNetworkComputation : public NetworkComputation {
 
   int GetBatchSize() const override { return batch_size_; }
 
-  float GetQVal(int sample) const override { return inputs_outputs_->op_value_mem_[sample]; }
+  float GetQVal(int sample) const override {
+    return inputs_outputs_->op_value_mem_[sample];
+  }
   float GetPVal(int sample, int move_id) const override {
-    return inputs_outputs_->op_policy_mem_[sample*kNumOutputPolicy + move_id];
+    return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
 
  private:
- 
   // memory holding inputs, outputs
-   std::unique_ptr<InputsOutputs> inputs_outputs_;
+  std::unique_ptr<InputsOutputs> inputs_outputs_;
   int batch_size_;
 
   CudnnNetwork *network_;
@@ -749,7 +762,6 @@ class CudnnNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs *io, int batchSize) {
-
     std::lock_guard<std::mutex> lock(lock_);
 
 #if DEBUG_RAW_NPS == 1
@@ -843,21 +855,19 @@ class CudnnNetwork : public Network {
     return std::make_unique<CudnnNetworkComputation>(this);
   }
 
-  std::unique_ptr<InputsOutputs> AllocateInputsOutputs() {
+  std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>();
-    }
-    else
-    {
-      std::unique_ptr<InputsOutputs> resource = std::move(free_inputs_outputs_.front());
+    } else {
+      std::unique_ptr<InputsOutputs> resource =
+          std::move(free_inputs_outputs_.front());
       free_inputs_outputs_.pop_front();
       return resource;
     }
   }
 
-  void DeallocateInputsOutputs(std::unique_ptr<InputsOutputs> &resource)
-  {
+  void ReleaseInputsOutputs(std::unique_ptr<InputsOutputs> resource) {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     free_inputs_outputs_.push_back(std::move(resource));
   }
@@ -929,19 +939,17 @@ class CudnnNetwork : public Network {
   }
 };
 
-CudnnNetworkComputation::CudnnNetworkComputation(CudnnNetwork *network) 
+CudnnNetworkComputation::CudnnNetworkComputation(CudnnNetwork *network)
     : network_(network) {
-    batch_size_ = 0;
-    inputs_outputs_ = network_->AllocateInputsOutputs();
+  batch_size_ = 0;
+  inputs_outputs_ = network_->GetInputsOutputs();
 }
 
 CudnnNetworkComputation::~CudnnNetworkComputation() {
-  network_->DeallocateInputsOutputs(inputs_outputs_);
-  inputs_outputs_ = nullptr;
+  network_->ReleaseInputsOutputs(std::move(inputs_outputs_));
 }
 
-void CudnnNetworkComputation::ComputeBlocking() 
-{
+void CudnnNetworkComputation::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
