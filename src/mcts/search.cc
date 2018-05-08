@@ -58,7 +58,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
   options->Add<FloatOption>(kVirtualLossBugStr, -100, 100, "virtual-loss-bug") =
-      3.0f;
+      0.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
