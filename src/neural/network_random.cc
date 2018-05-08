@@ -67,6 +67,6 @@ class RandomNetwork : public Network {
   int delay_ms_ = 0;
 };
 
-REGISTER_NETWORK("random", RandomNetwork, -1000);
+REGISTER_NETWORK("random", RandomNetwork, -900);
 
 }  // namespace lczero

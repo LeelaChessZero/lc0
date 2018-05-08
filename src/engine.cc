@@ -56,7 +56,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
       std::bind(&EngineController::SetCacheSize, this, _1)) = 200000;
 
   const auto backends = NetworkFactory::Get()->GetBackendsList();
-  options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") = backends[0];
+  options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
+      backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
   options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 1.5;
 
