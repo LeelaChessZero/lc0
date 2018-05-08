@@ -67,7 +67,8 @@ class Node {
   uint32_t GetNInFlight() const { return n_in_flight_; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
-  float GetQ() const { return n_ ? q_ : -parent_->q_; }
+  // Returns Q if number of visits is more than 0,
+  float GetQ(float default_q) const { return n_ ? q_ : default_q; }
   // Returns U / (Puct * N[parent])
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
   // Returns value of Value Head returned from the neural net.

@@ -137,6 +137,7 @@ class Search {
   const bool kVerboseStats;
   const bool kSmartPruning;
   const float kVirtualLossBug;
+  const float kFpuReduction;
 };
 
 }  // namespace lczero

@@ -43,6 +43,7 @@ const char* kNoiseStr = "Add Dirichlet noise at root node";
 const char* kVerboseStatsStr = "Display verbose move stats";
 const char* kSmartPruningStr = "Enable smart pruning";
 const char* kVirtualLossBugStr = "Virtual loss bug";
+const char* kFpuReductionStr = "First Play Urgency Inflation";
 
 const int kSmartPruningToleranceNodes = 100;
 const int kSmartPruningToleranceMs = 200;
@@ -59,6 +60,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
   options->Add<FloatOption>(kVirtualLossBugStr, -100, 100, "virtual-loss-bug") =
       0.0f;
+  options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
+      -0.2f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -82,7 +85,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
       kSmartPruning(options.Get<bool>(kSmartPruningStr)),
-      kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)) {}
+      kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)),
+      kFpuReduction(options.Get<float>(kFpuReductionStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -294,10 +298,11 @@ int Search::PrefetchIntoCache(Node* node, int budget,
   typedef std::pair<float, Node*> ScoredNode;
   std::vector<ScoredNode> scores;
   float factor = kCpuct * std::sqrt(std::max(node->GetN(), 1u));
+  const float parent_q = -node->GetQ(0) - kFpuReduction;
   for (Node* iter : node->Children()) {
     if (iter->GetP() == 0.0f) continue;
     // Flipping sign of a score to be able to easily sort.
-    scores.emplace_back(-factor * iter->GetU() - iter->GetQ(), iter);
+    scores.emplace_back(-factor * iter->GetU() - iter->GetQ(parent_q), iter);
   }
 
   int first_unsorted_index = 0;
@@ -323,7 +328,7 @@ int Search::PrefetchIntoCache(Node* node, int budget,
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, flipping back.
       const float next_score = -scores[i + 1].first;
-      const float q = n->GetQ();
+      const float q = n->GetQ(-parent_q);
       if (next_score > q) {
         budget_to_spend = std::min(
             budget,
@@ -389,7 +394,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   uci_info_.nps =
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
-  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_node_->GetQ());
+  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_node_->GetQ(0));
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
@@ -422,6 +427,7 @@ uint64_t Search::GetTimeSinceStart() const {
 
 void Search::SendMovesStats() const {
   std::vector<const Node*> nodes;
+  const float parent_q = -root_node_->GetQ(0) - kFpuReduction;
   for (Node* iter : root_node_->Children()) {
     nodes.emplace_back(iter);
   }
@@ -444,16 +450,17 @@ void Search::SendMovesStats() const {
         << "%) ";
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << node->GetQ()
-        << ") ";
+    oss << "(Q: " << std::setw(8) << std::setprecision(5)
+        << node->GetQ(parent_q) << ") ";
     oss << "(U: " << std::setw(6) << std::setprecision(5)
         << node->GetU() * kCpuct *
                std::sqrt(std::max(node->GetParent()->GetN(), 1u))
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << node->GetQ() + node->GetU() * kCpuct *
-                              std::sqrt(std::max(node->GetParent()->GetN(), 1u))
+        << node->GetQ(parent_q) +
+               node->GetU() * kCpuct *
+                   std::sqrt(std::max(node->GetParent()->GetN(), 1u))
         << ") ";
     info.comment = oss.str();
     info_callback_(info);
@@ -601,6 +608,8 @@ Node* Search::PickNodeToExtend(Node* node, PositionHistory* history) {
     float factor = kCpuct * std::sqrt(std::max(node->GetN(), 1u));
     float best = -100.0f;
     int possible_moves = 0;
+    float parent_q = (is_root_node && kNoise) ? -node->GetQ(0)
+                                              : -node->GetQ(0) - kFpuReduction;
     for (Node* iter : node->Children()) {
       if (is_root_node) {
         // If there's no chance to catch up the currently best node with
@@ -614,7 +623,7 @@ Node* Search::PickNodeToExtend(Node* node, PositionHistory* history) {
         }
         ++possible_moves;
       }
-      float Q = iter->GetQ();
+      float Q = iter->GetQ(parent_q);
       if (kVirtualLossBug && iter->GetN() == 0) {
         Q = (Q * iter->GetParent()->GetN() - kVirtualLossBug) /
             (iter->GetParent()->GetN() + std::fabs(kVirtualLossBug));
