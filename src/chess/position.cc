@@ -86,7 +86,10 @@ void PositionHistory::Reset(const ChessBoard& board, int no_capture_ply,
 }
 
 void PositionHistory::Append(Move m) {
-  positions_.emplace_back(Last(), m);
+  // TODO(mooskagh) That should be emplace_back(Last(), m), but MSVS STL
+  //                has a bug in implementation of emplace_back, when
+  //                reallocation happens. (it also reallocates Last())
+  positions_.push_back(Position(Last(), m));
   positions_.back().SetRepetitions(ComputeLastMoveRepetitions());
 }
 
