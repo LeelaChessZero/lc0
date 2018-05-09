@@ -685,7 +685,7 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
     pawns_.set((square.row() == 2) ? 0 : 7, square.col());
   }
 
-  if (who_to_move == "b") {
+  if (who_to_move == "b" || who_to_move == "B") {
     Mirror();
   }
   if (no_capture_ply) *no_capture_ply = no_capture_halfmoves;
