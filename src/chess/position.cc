@@ -38,9 +38,7 @@ Position::Position(const ChessBoard& board, int no_capture_ply, int game_ply)
 }
 
 uint64_t Position::Hash() const {
-  // return board.Hash();
-  return HashCat({us_board_.Hash(), static_cast<unsigned long>(no_capture_ply_),
-                  static_cast<unsigned long>(repetitions_)});
+  return HashCat({us_board_.Hash(), static_cast<unsigned long>(repetitions_)});
 }
 
 bool Position::CanCastle(Castling castling) const {
@@ -106,6 +104,16 @@ int PositionHistory::ComputeLastMoveRepetitions() const {
     if (pos.GetNoCapturePly() < 2) return 0;
   }
   return 0;
+}
+
+uint64_t PositionHistory::HashLast(int positions) const {
+  uint64_t hash = positions;
+  for (auto iter = positions_.rbegin(), end = positions_.rend(); iter != end;
+       ++iter) {
+    if (!positions--) break;
+    hash = HashCat(hash, iter->Hash());
+  }
+  return HashCat(hash, Last().GetNoCapturePly());
 }
 
 }  // namespace lczero

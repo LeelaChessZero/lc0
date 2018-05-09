@@ -138,6 +138,7 @@ class Search {
   const bool kSmartPruning;
   const float kVirtualLossBug;
   const float kFpuReduction;
+  const bool kCacheHistoryLength;
 };
 
 }  // namespace lczero

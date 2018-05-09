@@ -44,6 +44,7 @@ const char* kVerboseStatsStr = "Display verbose move stats";
 const char* kSmartPruningStr = "Enable smart pruning";
 const char* kVirtualLossBugStr = "Virtual loss bug";
 const char* kFpuReductionStr = "First Play Urgency Reduction";
+const char* kCacheHistoryLengthStr = "Length of history to include in cache";
 
 const int kSmartPruningToleranceNodes = 100;
 const int kSmartPruningToleranceMs = 200;
@@ -62,6 +63,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
       0.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
       0.2f;
+  options->Add<IntOption>(kCacheHistoryLengthStr, 1, 8,
+                          "cache-history-length") = 1;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -86,13 +89,14 @@ Search::Search(const NodeTree& tree, Network* network,
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
       kSmartPruning(options.Get<bool>(kSmartPruningStr)),
       kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)),
-      kFpuReduction(options.Get<float>(kFpuReductionStr)) {}
+      kFpuReduction(options.Get<float>(kFpuReductionStr)),
+      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
                               const PositionHistory& history,
                               bool add_if_cached) {
-  auto hash = history.Last().Hash();
+  auto hash = history.HashLast(kCacheHistoryLength);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation->AddInputByHash(hash)) return true;

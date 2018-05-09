@@ -111,6 +111,9 @@ class PositionHistory {
   // Returns whether next move is history should be black's.
   bool IsBlackToMove() const { return Last().IsBlackToMove(); }
 
+  // Builds a hash from last X positions.
+  uint64_t HashLast(int positions) const;
+
  private:
   int ComputeLastMoveRepetitions() const;
 
