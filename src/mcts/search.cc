@@ -65,7 +65,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
       0.2f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 1, 8,
-                          "cache-history-length") = 1;
+                          "cache-history-length") = 8;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
