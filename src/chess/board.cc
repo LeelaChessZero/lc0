@@ -52,6 +52,8 @@ void ChessBoard::Mirror() {
 }
 
 namespace {
+static const BitBoard kPawnMask = 0x00FFFFFFFFFFFF00ULL;
+
 static const std::pair<int, int> kKingMoves[] = {
     {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
 
@@ -170,6 +172,8 @@ static const Move::Promotion kPromotions[] = {
 };
 
 }  // namespace
+
+BitBoard ChessBoard::pawns() const { return pawns_ * kPawnMask; }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;

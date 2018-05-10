@@ -115,7 +115,7 @@ class ChessBoard {
 
   BitBoard ours() const { return our_pieces_; }
   BitBoard theirs() const { return their_pieces_; }
-  BitBoard pawns() const { return pawns_ * kPawnMask; }
+  BitBoard pawns() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
   BitBoard queens() const { return rooks_ * bishops_; }
@@ -142,8 +142,6 @@ class ChessBoard {
   bool operator!=(const ChessBoard& other) const { return !operator==(other); }
 
  private:
-  static constexpr BitBoard kPawnMask = 0x00FFFFFFFFFFFF00ULL;
-
   // All white pieces.
   BitBoard our_pieces_;
   // All black pieces.

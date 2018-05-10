@@ -43,6 +43,7 @@ cuda_gen = generator(nvcc,
 
 files = [
   'src/analyzer/analyzer.cc',
+  'src/analyzer/table.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
@@ -61,6 +62,7 @@ files = [
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
+  'src/utils/string.cc',
   'src/utils/transpose.cc',
   'src/engine.cc',
   'src/selfplay/game.cc',

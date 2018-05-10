@@ -26,10 +26,13 @@
 
 namespace lczero {
 namespace {
+// TODO(mooskagh) Move threads parameter handling to search.
 const int kDefaultThreads = 2;
 const char* kThreadsOption = "Number of worker threads";
 const char* kDebugLogStr = "Do debug logging into file";
 
+// TODO(mooskagh) Move weights/backend/backend-opts parameter handling to
+//                network factory.
 const char* kWeightsStr = "Network weights file path";
 const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";

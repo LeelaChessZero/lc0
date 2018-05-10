@@ -27,6 +27,7 @@
 #include <unordered_set>
 #include <utility>
 #include "utils/exception.h"
+#include "utils/string.h"
 
 namespace lczero {
 
@@ -121,12 +122,8 @@ bool UciLoop::DispatchCommand(
     if (ContainsKey(params, "fen") == ContainsKey(params, "startpos")) {
       throw Exception("Position requires either fen or startpos");
     }
-    std::vector<std::string> moves;
-    {
-      std::istringstream iss(GetOrEmpty(params, "moves"));
-      std::string move;
-      while (iss >> move) moves.push_back(move);
-    }
+    std::vector<std::string> moves =
+        StrSplitAtWhitespace(GetOrEmpty(params, "moves"));
     CmdPosition(GetOrEmpty(params, "fen"), moves);
   } else if (command == "go") {
     GoParams go_params;
