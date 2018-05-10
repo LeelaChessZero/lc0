@@ -22,7 +22,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "mcts/callbacks.h"
+#include "chess/callbacks.h"
 #include "utils/exception.h"
 
 namespace lczero {

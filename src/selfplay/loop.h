@@ -19,9 +19,9 @@
 #pragma once
 
 #include <thread>
-#include "optionsparser.h"
+#include "chess/uciloop.h"
 #include "selfplay/tournament.h"
-#include "uciloop.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 

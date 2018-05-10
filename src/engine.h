@@ -18,12 +18,12 @@
 
 #pragma once
 
+#include "chess/uciloop.h"
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/network.h"
-#include "optionsparser.h"
-#include "uciloop.h"
 #include "utils/mutex.h"
+#include "utils/optionsparser.h"
 
 // CUDNN eval
 // comment/disable this to enable tensor flow path

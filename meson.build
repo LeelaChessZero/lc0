@@ -42,9 +42,11 @@ cuda_gen = generator(nvcc,
 )
 
 files = [
+  'src/analyzer/analyzer.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
+  'src/chess/uciloop.cc',
   'src/mcts/node.cc',
   'src/mcts/search.cc',
   'src/neural/cache.cc',
@@ -55,16 +57,15 @@ files = [
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
   'src/neural/network_tf.cc',
-  'src/utils/transpose.cc',
   'src/utils/commandline.cc',
   'src/utils/optionsdict.cc',
+  'src/utils/optionsparser.cc',
   'src/utils/random.cc',
+  'src/utils/transpose.cc',
   'src/engine.cc',
-  'src/optionsparser.cc',
   'src/selfplay/game.cc',
   'src/selfplay/tournament.cc',
   'src/selfplay/loop.cc',
-  'src/uciloop.cc',
   cuda_gen.process(cuda_files)
 ]
 

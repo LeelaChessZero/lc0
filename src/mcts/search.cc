@@ -33,19 +33,20 @@
 
 namespace lczero {
 
-namespace {
-const char* kMiniBatchSizeStr = "Minibatch size for NN inference";
-const char* kMiniPrefetchBatchStr = "Max prefetch nodes, per NN call";
-const char* kCpuctStr = "Cpuct MCTS option";
-const char* kTemperatureStr = "Initial temperature";
-const char* kTempDecayStr = "Per move temperature decay";
-const char* kNoiseStr = "Add Dirichlet noise at root node";
-const char* kVerboseStatsStr = "Display verbose move stats";
-const char* kSmartPruningStr = "Enable smart pruning";
-const char* kVirtualLossBugStr = "Virtual loss bug";
-const char* kFpuReductionStr = "First Play Urgency Reduction";
-const char* kCacheHistoryLengthStr = "Length of history to include in cache";
+const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
+const char* Search::kMiniPrefetchBatchStr = "Max prefetch nodes, per NN call";
+const char* Search::kCpuctStr = "Cpuct MCTS option";
+const char* Search::kTemperatureStr = "Initial temperature";
+const char* Search::kTempDecayStr = "Per move temperature decay";
+const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
+const char* Search::kVerboseStatsStr = "Display verbose move stats";
+const char* Search::kSmartPruningStr = "Enable smart pruning";
+const char* Search::kVirtualLossBugStr = "Virtual loss bug";
+const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
+const char* Search::kCacheHistoryLengthStr =
+    "Length of history to include in cache";
 
+namespace {
 const int kSmartPruningToleranceNodes = 100;
 const int kSmartPruningToleranceMs = 200;
 }  // namespace

@@ -96,6 +96,8 @@ class OptionsParser {
   const OptionsDict& GetOptionsDict(const std::string& context = {});
   // Gets the dictionary for given context which caller can modify.
   OptionsDict* GetMutableOptions(const std::string& context = {});
+  // Gets the mutable list of default options.
+  OptionsDict* GetMutableDefaultsOptions() { return &defaults_; }
   // Adds a subdictionary for a given context.
   void AddContext(const std::string&);
 

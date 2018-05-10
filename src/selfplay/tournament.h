@@ -19,10 +19,10 @@
 #pragma once
 
 #include <list>
-#include "optionsparser.h"
 #include "selfplay/game.h"
 #include "utils/mutex.h"
 #include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 

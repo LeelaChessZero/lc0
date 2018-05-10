@@ -21,8 +21,8 @@
 #include <memory>
 #include <mutex>
 #include "chess/board.h"
+#include "chess/callbacks.h"
 #include "chess/position.h"
-#include "mcts/callbacks.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
 

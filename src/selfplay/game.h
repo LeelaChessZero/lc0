@@ -19,11 +19,11 @@
 #pragma once
 
 #include "chess/position.h"
+#include "chess/uciloop.h"
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/network.h"
-#include "optionsparser.h"
-#include "uciloop.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 

@@ -21,14 +21,14 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
-#include "mcts/callbacks.h"
+#include "chess/callbacks.h"
+#include "chess/uciloop.h"
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/network.h"
-#include "optionsparser.h"
-#include "uciloop.h"
 #include "utils/mutex.h"
 #include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
@@ -69,6 +69,19 @@ class Search {
 
   // Returns best move, from the point of view of white player. And also ponder.
   std::pair<Move, Move> GetBestMove() const;
+
+  // Strings for UCI params. So that others can override defaults.
+  static const char* kMiniBatchSizeStr;
+  static const char* kMiniPrefetchBatchStr;
+  static const char* kCpuctStr;
+  static const char* kTemperatureStr;
+  static const char* kTempDecayStr;
+  static const char* kNoiseStr;
+  static const char* kVerboseStatsStr;
+  static const char* kSmartPruningStr;
+  static const char* kVirtualLossBugStr;
+  static const char* kFpuReductionStr;
+  static const char* kCacheHistoryLengthStr;
 
  private:
   // Can run several copies of it in separate threads.

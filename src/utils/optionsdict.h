@@ -117,7 +117,7 @@ T OptionsDict::GetOrDefault(const std::string& key,
 
 template <typename T>
 void OptionsDict::Set(const std::string& key, const T& value) {
-  TypeDict<T>::dict_.emplace(key, value);
+  TypeDict<T>::dict_[key] = value;
 }
 
 template <typename T>

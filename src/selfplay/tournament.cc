@@ -20,8 +20,8 @@
 #include "mcts/search.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
-#include "optionsparser.h"
 #include "selfplay/game.h"
+#include "utils/optionsparser.h"
 #include "utils/random.h"
 
 namespace lczero {
