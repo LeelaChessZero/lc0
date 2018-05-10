@@ -24,6 +24,7 @@
 namespace lczero {
 
 // Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(const PositionHistory& history);
+InputPlanes EncodePositionForNN(const PositionHistory& history,
+                                int history_planes);
 
 }  // namespace lczero

@@ -45,6 +45,7 @@ const char* Search::kVirtualLossBugStr = "Virtual loss bug";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
+const char* Search::kFillHistoryPlanesStr = "History planes to fill for NN";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -64,8 +65,9 @@ void Search::PopulateUciParams(OptionsParser* options) {
       0.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
       0.2f;
-  options->Add<IntOption>(kCacheHistoryLengthStr, 1, 8,
-                          "cache-history-length") = 8;
+  options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
+                          "cache-history-length") = 0;
+  options->Add<IntOption>(kFillHistoryPlanesStr, 0, 7, "history-planes") = 7;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -91,20 +93,21 @@ Search::Search(const NodeTree& tree, Network* network,
       kSmartPruning(options.Get<bool>(kSmartPruningStr)),
       kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
-      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)) {}
+      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
+      kFillHistoryPlanes(options.Get<int>(kFillHistoryPlanesStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
                               const PositionHistory& history,
                               bool add_if_cached) {
-  auto hash = history.HashLast(kCacheHistoryLength);
+  auto hash = history.HashLast(kCacheHistoryLength + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation->AddInputByHash(hash)) return true;
   } else {
     if (cache_->ContainsKey(hash)) return true;
   }
-  auto planes = EncodePositionForNN(history);
+  auto planes = EncodePositionForNN(history, kFillHistoryPlanes + 1);
 
   std::vector<uint16_t> moves;
 

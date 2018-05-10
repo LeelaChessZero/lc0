@@ -82,6 +82,7 @@ class Search {
   static const char* kVirtualLossBugStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
+  static const char* kFillHistoryPlanesStr;
 
  private:
   // Can run several copies of it in separate threads.
@@ -152,6 +153,7 @@ class Search {
   const float kVirtualLossBug;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
+  const int kFillHistoryPlanes;
 };
 
 }  // namespace lczero

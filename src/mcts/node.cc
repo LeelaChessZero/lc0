@@ -286,7 +286,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   }
 
   // Populate planes.
-  InputPlanes planes = EncodePositionForNN(history);
+  InputPlanes planes = EncodePositionForNN(history, 8);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
