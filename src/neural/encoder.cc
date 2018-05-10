@@ -17,6 +17,7 @@
 */
 
 #include "neural/encoder.h"
+#include <algorithm>
 
 namespace lczero {
 

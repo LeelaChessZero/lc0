@@ -17,6 +17,7 @@
 */
 
 #include "analyzer/table.h"
+#include <algorithm>
 #include <sstream>
 
 namespace lczero {
