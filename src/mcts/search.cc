@@ -538,14 +538,16 @@ void Search::UpdateRemainingMoves() {
     // Adding kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     auto remaining_visits =
-        limits_.visits - total_playouts_ - initial_visits_ + kMiniBatchSize;
+        limits_.visits - total_playouts_ - initial_visits_ + kMiniBatchSize - 1;
+
     if (remaining_visits < remaining_playouts_)
       remaining_playouts_ = remaining_visits;
   }
   if (limits_.playouts >= 0) {
     // Adding kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
-    auto remaining_playouts = limits_.visits - total_playouts_ + kMiniBatchSize;
+    auto remaining_playouts =
+        limits_.visits - total_playouts_ + kMiniBatchSize + 1;
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
   }
