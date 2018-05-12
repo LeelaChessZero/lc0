@@ -31,7 +31,7 @@ Position::Position(const Position& parent, Move m)
 }
 
 Position::Position(const ChessBoard& board, int no_capture_ply, int game_ply)
-    : no_capture_ply_(no_capture_ply), repetitions_(0), ply_count_(0) {
+    : no_capture_ply_(no_capture_ply), repetitions_(0), ply_count_(game_ply) {
   us_board_ = board;
   them_board_ = board;
   them_board_.Mirror();

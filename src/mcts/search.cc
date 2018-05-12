@@ -37,7 +37,7 @@ const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
 const char* Search::kMiniPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
 const char* Search::kTemperatureStr = "Initial temperature";
-const char* Search::kTempDecayStr = "Per move temperature decay";
+const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kSmartPruningStr = "Enable smart pruning";
@@ -56,7 +56,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<FloatOption>(kCpuctStr, 0, 100, "cpuct") = 1.2;
   options->Add<FloatOption>(kTemperatureStr, 0, 100, "temperature") = 0.0;
-  options->Add<FloatOption>(kTempDecayStr, 0, 1.00, "tempdecay") = 0.0;
+  options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
@@ -85,7 +85,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kMiniPrefetchBatch(options.Get<int>(kMiniPrefetchBatchStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
       kTemperature(options.Get<float>(kTemperatureStr)),
-      kTempDecay(options.Get<float>(kTempDecayStr)),
+      kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
       kSmartPruning(options.Get<bool>(kSmartPruningStr)),
@@ -375,15 +375,16 @@ Node* GetBestChild(Node* parent) {
 }
 
 Node* GetBestChildWithTemperature(Node* parent, float temperature) {
-  std::vector<double> cumulative_sums;
-  double sum = 0.0;
+  std::vector<float> cumulative_sums;
+  float sum = 0.0;
+  const float n_parent = parent->GetN();
 
   for (Node* node : parent->Children()) {
-    sum += std::pow(node->GetNStarted(), 1 / temperature);
+    sum += std::pow(node->GetNStarted() / n_parent, 1 / temperature);
     cumulative_sums.push_back(sum);
   }
 
-  double toss = Random::Get().GetDouble(cumulative_sums.back());
+  float toss = Random::Get().GetFloat(cumulative_sums.back());
   int idx =
       std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
       cumulative_sums.begin();
@@ -677,10 +678,15 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   if (!root_node_->HasChildren()) return {};
 
   float temperature = kTemperature;
-  if (temperature && kTempDecay)
-    temperature *=
-        std::pow(1 - kTempDecay, played_history_.Last().GetGamePly() / 2);
-  if (temperature < 0.01) temperature = 0.0;
+  if (temperature && kTempDecayMoves) {
+    int moves = played_history_.Last().GetGamePly() / 2;
+    if (moves >= kTempDecayMoves) {
+      temperature = 0.0;
+    } else {
+      temperature *=
+          static_cast<float>(kTempDecayMoves - moves) / kTempDecayMoves;
+    }
+  }
 
   Node* best_node = temperature
                         ? GetBestChildWithTemperature(root_node_, temperature)

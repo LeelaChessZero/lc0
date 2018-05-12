@@ -28,6 +28,7 @@ class Random {
  public:
   static Random& Get();
   double GetDouble(double max_val);
+  float GetFloat(float max_val);
   double GetGamma(double alpha, double beta);
   // Both sides are included.
   int GetInt(int min, int max);

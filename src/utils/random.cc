@@ -42,6 +42,12 @@ double Random::GetDouble(double maxval) {
   return dist(gen_);
 }
 
+float Random::GetFloat(float maxval) {
+  Mutex::Lock lock(mutex_);
+  std::uniform_real_distribution<> dist(0.0, maxval);
+  return dist(gen_);
+}
+
 std::string Random::GetString(int length) {
   std::string result;
   for (int i = 0; i < length; ++i) {

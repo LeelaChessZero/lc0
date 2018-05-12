@@ -75,7 +75,7 @@ class Search {
   static const char* kMiniPrefetchBatchStr;
   static const char* kCpuctStr;
   static const char* kTemperatureStr;
-  static const char* kTempDecayStr;
+  static const char* kTempDecayMovesStr;
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
   static const char* kSmartPruningStr;
@@ -145,7 +145,7 @@ class Search {
   const int kMiniPrefetchBatch;
   const float kCpuct;
   const float kTemperature;
-  const float kTempDecay;
+  const int kTempDecayMoves;
   const bool kNoise;
   const bool kVerboseStats;
   const bool kSmartPruning;
