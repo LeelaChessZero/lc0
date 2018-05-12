@@ -302,7 +302,7 @@ int Search::PrefetchIntoCache(Node* node, int budget,
   // Populate all subnodes and their scores.
   typedef std::pair<float, Node*> ScoredNode;
   std::vector<ScoredNode> scores;
-  float factor = kCpuct * std::sqrt(std::max(node->GetN(), 1u));
+  float factor = kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float parent_q = -node->GetQ(0) - kFpuReduction;
   for (Node* iter : node->Children()) {
     if (iter->GetP() == 0.0f) continue;
@@ -465,13 +465,14 @@ void Search::SendMovesStats() const {
         << node->GetQ(parent_q) << ") ";
     oss << "(U: " << std::setw(6) << std::setprecision(5)
         << node->GetU() * kCpuct *
-               std::sqrt(std::max(node->GetParent()->GetN(), 1u))
+               std::sqrt(std::max(node->GetParent()->GetChildrenVisits(), 1u))
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
         << node->GetQ(parent_q) +
                node->GetU() * kCpuct *
-                   std::sqrt(std::max(node->GetParent()->GetN(), 1u))
+                   std::sqrt(
+                       std::max(node->GetParent()->GetChildrenVisits(), 1u))
         << ") ";
     info.comment = oss.str();
     info_callback_(info);
@@ -616,7 +617,7 @@ Node* Search::PickNodeToExtend(Node* node, PositionHistory* history) {
 
     // Now we are not in leave, we need to go deeper.
     SharedMutex::SharedLock lock(nodes_mutex_);
-    float factor = kCpuct * std::sqrt(std::max(node->GetN(), 1u));
+    float factor = kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = -100.0f;
     int possible_moves = 0;
     float parent_q = (is_root_node && kNoise) ? -node->GetQ(0)
