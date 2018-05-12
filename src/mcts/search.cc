@@ -45,7 +45,6 @@ const char* Search::kVirtualLossBugStr = "Virtual loss bug";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
-const char* Search::kFillHistoryPlanesStr = "History planes to fill for NN";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -66,8 +65,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
       0.2f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
-                          "cache-history-length") = 0;
-  options->Add<IntOption>(kFillHistoryPlanesStr, 0, 7, "history-planes") = 7;
+                          "cache-history-length") = 7;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -93,8 +91,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kSmartPruning(options.Get<bool>(kSmartPruningStr)),
       kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
-      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
-      kFillHistoryPlanes(options.Get<int>(kFillHistoryPlanesStr)) {}
+      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -107,7 +104,7 @@ bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
   } else {
     if (cache_->ContainsKey(hash)) return true;
   }
-  auto planes = EncodePositionForNN(history, kFillHistoryPlanes + 1);
+  auto planes = EncodePositionForNN(history, 8);
 
   std::vector<uint16_t> moves;
 
