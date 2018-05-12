@@ -193,6 +193,14 @@ Node* Node::CreateChild(Move m) {
   return new_node;
 }
 
+float Node::GetVisitedPolicy() const {
+  float res = 0.0f;
+  for (const Node* node : Children()) {
+    if (node->GetNStarted() > 0) res += node->GetP();
+  }
+  return res;
+}
+
 void Node::ResetStats() {
   n_in_flight_ = 0;
   n_ = 0;

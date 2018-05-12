@@ -303,7 +303,8 @@ int Search::PrefetchIntoCache(Node* node, int budget,
   typedef std::pair<float, Node*> ScoredNode;
   std::vector<ScoredNode> scores;
   float factor = kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float parent_q = -node->GetQ(0) - kFpuReduction;
+  // FPU reduction is not taken into account.
+  const float parent_q = -node->GetQ(0);
   for (Node* iter : node->Children()) {
     if (iter->GetP() == 0.0f) continue;
     // Flipping sign of a score to be able to easily sort.
@@ -438,7 +439,9 @@ uint64_t Search::GetTimeSinceStart() const {
 
 void Search::SendMovesStats() const {
   std::vector<const Node*> nodes;
-  const float parent_q = -root_node_->GetQ(0) - kFpuReduction;
+  const float parent_q =
+      -root_node_->GetQ(0) -
+      kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
   for (Node* iter : root_node_->Children()) {
     nodes.emplace_back(iter);
   }
@@ -454,7 +457,7 @@ void Search::SendMovesStats() const {
     oss << std::left << std::setw(5)
         << node->GetMove(is_black_to_move).as_string();
     oss << " (" << std::setw(4) << node->GetMove().as_nn_index() << ")";
-    oss << " -> ";
+    oss << " N: ";
     oss << std::right << std::setw(7) << node->GetN() << " (+" << std::setw(2)
         << node->GetNInFlight() << ") ";
     oss << "(V: " << std::setw(6) << std::setprecision(2) << node->GetV() * 100
@@ -620,8 +623,11 @@ Node* Search::PickNodeToExtend(Node* node, PositionHistory* history) {
     float factor = kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = -100.0f;
     int possible_moves = 0;
-    float parent_q = (is_root_node && kNoise) ? -node->GetQ(0)
-                                              : -node->GetQ(0) - kFpuReduction;
+    float parent_q =
+        (is_root_node && kNoise)
+            ? -node->GetQ(0)
+            : -node->GetQ(0) -
+                  kFpuReduction * std::sqrt(node->GetVisitedPolicy());
     for (Node* iter : node->Children()) {
       if (is_root_node) {
         // If there's no chance to catch up the currently best node with

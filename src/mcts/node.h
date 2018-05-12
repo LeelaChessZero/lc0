@@ -63,9 +63,11 @@ class Node {
   // Returns move, with optional flip (false == player BEFORE the position).
   Move GetMove(bool flip) const;
 
+  // Returns sum of probabilities for visited children.
+  float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
-  uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 1; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
+  uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 1; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns Q if number of visits is more than 0,
