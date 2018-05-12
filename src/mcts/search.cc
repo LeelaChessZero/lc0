@@ -356,9 +356,15 @@ namespace {
 // Returns a child with most visits.
 Node* GetBestChild(Node* parent) {
   Node* best_node = nullptr;
-  std::pair<int, float> best(-1, 0.0);
+  // Best child is selected using the following criteria:
+  // * Largest number of playouts.
+  // * If two nodes have equal number:
+  //   * If that number is 0, the one with larger prior wins.
+  //   * If that number is larger than 0, the one wil larger eval wins.
+  std::tuple<int, float, float> best(-1, 0.0, 0.0);
   for (Node* node : parent->Children()) {
-    std::pair<int, float> val(node->GetNStarted(), node->GetP());
+    std::tuple<int, float, float> val(node->GetNStarted(), node->GetQ(-10.0),
+                                      node->GetP());
     if (val > best) {
       best = val;
       best_node = node;
