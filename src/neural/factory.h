@@ -73,6 +73,18 @@ class NetworkFactory {
   friend class Register;
 };
 
+#define REGISTER_NETWORK_WITH_COUNTER2(name, cls, priority, counter) \
+  namespace {                                                        \
+  static NetworkFactory::Register regH38fhs##counter(                \
+      name,                                                          \
+      [](const Weights& w, const OptionsDict& o) {                   \
+        return std::make_unique<cls>(w, o);                          \
+      },                                                             \
+      priority);                                                     \
+  }
+#define REGISTER_NETWORK_WITH_COUNTER(name, cls, priority, counter) \
+  REGISTER_NETWORK_WITH_COUNTER2(name, cls, priority, counter)
+
 // Registers a Network.
 // Constructor of a network class must have parameters:
 // (const Weights& w, const OptionsDict& o)
@@ -80,11 +92,6 @@ class NetworkFactory {
 // @cls -- class name of a backend.
 // @priority -- numeric priority of a backend. Higher is higher, highest number
 // is the default backend.
-#define REGISTER_NETWORK(name, cls, priority)             \
-  static NetworkFactory::Register regH38fhs##__COUNTER__( \
-      name,                                               \
-      [](const Weights& w, const OptionsDict& o) {        \
-        return std::make_unique<cls>(w, o);               \
-      },                                                  \
-      priority)
+#define REGISTER_NETWORK(name, cls, priority) \
+  REGISTER_NETWORK_WITH_COUNTER(name, cls, priority, __LINE__)
 }  // namespace lczero

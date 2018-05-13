@@ -61,24 +61,28 @@ Output Ones(const Scope& scope, TensorShape shape) {
   return MakeVals(scope, shape, 1.0f);
 }
 
+template <bool CPU>
 Output MakeConvBlock(const Scope& scope, Input input, int channels,
                      int input_channels, int output_channels,
                      const Weights::ConvBlock& weights,
                      Input* mixin = nullptr) {
+  // CPU only supports "NHWC", while for GPU "NCHW" is better.
+  const char* const kDataFormat = CPU ? "NHWC" : "NCHW";
+
   auto w_conv =
       MakeConst(scope, {channels, channels, input_channels, output_channels},
                 weights.weights, {3, 2, 0, 1});
 
   // auto b_conv = MakeConst(scope, {output_channels}, weights.biases);
   auto conv2d = Conv2D(scope, input, w_conv, {1, 1, 1, 1}, "SAME",
-                       Conv2D::DataFormat("NCHW"));
+                       Conv2D::DataFormat(kDataFormat));
 
   auto batch_norm =
       FusedBatchNorm(scope, conv2d, Ones(scope, {output_channels}),
                      Zeros(scope, {output_channels}),
                      MakeConst(scope, {output_channels}, weights.bn_means),
                      MakeConst(scope, {output_channels}, weights.bn_stddivs),
-                     FusedBatchNorm::DataFormat("NCHW").IsTraining(false))
+                     FusedBatchNorm::DataFormat(kDataFormat).IsTraining(false))
           .y;
 
   if (mixin) {
@@ -87,40 +91,54 @@ Output MakeConvBlock(const Scope& scope, Input input, int channels,
   return Relu(scope, batch_norm);
 }
 
+template <bool CPU>
 Output MakeResidualBlock(const Scope& scope, Input input, int channels,
                          const Weights::Residual& weights) {
   auto block1 =
-      MakeConvBlock(scope, input, 3, channels, channels, weights.conv1);
-  auto block2 = MakeConvBlock(scope, block1, 3, channels, channels,
-                              weights.conv2, &input);
+      MakeConvBlock<CPU>(scope, input, 3, channels, channels, weights.conv1);
+  auto block2 = MakeConvBlock<CPU>(scope, block1, 3, channels, channels,
+                                   weights.conv2, &input);
   return block2;
 }
 
+template <bool CPU>
 std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
                                       const Weights& weights) {
   const int filters = weights.input.weights.size() / kInputPlanes / 9;
 
   // Input convolution.
   auto flow =
-      MakeConvBlock(scope, input, 3, kInputPlanes, filters, weights.input);
+      MakeConvBlock<CPU>(scope, input, 3, kInputPlanes, filters, weights.input);
 
   // Residual tower
   for (const auto& block : weights.residual) {
-    flow = MakeResidualBlock(scope, flow, filters, block);
+    flow = MakeResidualBlock<CPU>(scope, flow, filters, block);
   }
 
   // Policy head
-  auto conv_pol = MakeConvBlock(scope, flow, 1, filters, 32, weights.policy);
+  auto conv_pol =
+      MakeConvBlock<CPU>(scope, flow, 1, filters, 32, weights.policy);
+  if (CPU) {
+    // conv_pol = Transpose(scope, conv_pol, {0, 3, 1, 2});
+  }
   conv_pol = Reshape(scope, conv_pol, Const(scope, {-1, 32 * 8 * 8}));
-  auto ip_pol_w = MakeConst(scope, {32 * 8 * 8, 1858}, weights.ip_pol_w);
+  auto ip_pol_w =
+      CPU ? MakeConst(scope, {8, 8, 32, 1858}, weights.ip_pol_w, {3, 2, 0, 1})
+          : MakeConst(scope, {32, 8, 8, 1858}, weights.ip_pol_w, {3, 0, 1, 2});
+  ip_pol_w = Reshape(scope, ip_pol_w, Const(scope, {32 * 8 * 8, 1858}));
   auto ip_pol_b = MakeConst(scope, {1858}, weights.ip_pol_b);
   auto policy_fc = Add(scope, MatMul(scope, conv_pol, ip_pol_w), ip_pol_b);
   auto policy_head = Softmax(scope, policy_fc);
 
   // Value head
-  auto conv_val = MakeConvBlock(scope, flow, 1, filters, 32, weights.value);
+  auto conv_val =
+      MakeConvBlock<CPU>(scope, flow, 1, filters, 32, weights.value);
   conv_val = Reshape(scope, conv_val, Const(scope, {-1, 32 * 8 * 8}));
-  auto ip1_val_w = MakeConst(scope, {32 * 8 * 8, 128}, weights.ip1_val_w);
+
+  auto ip1_val_w =
+      CPU ? MakeConst(scope, {8, 8, 32, 128}, weights.ip1_val_w, {3, 2, 0, 1})
+          : MakeConst(scope, {32, 8, 8, 128}, weights.ip1_val_w, {3, 0, 1, 2});
+  ip1_val_w = Reshape(scope, ip1_val_w, Const(scope, {32 * 8 * 8, 128}));
   auto ip1_val_b = MakeConst(scope, {128}, weights.ip1_val_b);
   auto value_flow =
       Relu(scope, Add(scope, MatMul(scope, conv_val, ip1_val_w), ip1_val_b));
@@ -132,7 +150,10 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
   return {policy_head, value_head};
 }
 
+template <bool CPU>
 class TFNetworkComputation;
+
+template <bool CPU>
 class TFNetwork : public Network {
  public:
   TFNetwork(const Weights& weights, const OptionsDict& options);
@@ -144,16 +165,17 @@ class TFNetwork : public Network {
 
  private:
   tensorflow::Scope scope_;
-  tensorflow::ClientSession session_;
+  std::unique_ptr<tensorflow::ClientSession> session_;
 
   std::unique_ptr<tensorflow::ops::Placeholder> input_;
   std::unique_ptr<tensorflow::Output> policy_head_;
   std::unique_ptr<tensorflow::Output> value_head_;
 };
 
+template <bool CPU>
 class TFNetworkComputation : public NetworkComputation {
  public:
-  TFNetworkComputation(const TFNetwork* network) : network_(network) {}
+  TFNetworkComputation(const TFNetwork<CPU>* network) : network_(network) {}
   void AddInput(InputPlanes&& input) override {
     raw_input_.emplace_back(input);
   }
@@ -165,33 +187,16 @@ class TFNetworkComputation : public NetworkComputation {
 
   int GetBatchSize() const override { return raw_input_.size(); }
   float GetQVal(int sample) const override {
-    return output_[0].matrix<float>()(sample, 0);
+    return output_[0].template matrix<float>()(sample, 0);
   }
   float GetPVal(int sample, int move_id) const override {
-    return output_[1].matrix<float>()(sample, move_id);
+    return output_[1].template matrix<float>()(sample, move_id);
   }
 
  private:
-  void PrepareInput() {
-    input_ = tensorflow::Tensor(
-        tensorflow::DataType::DT_FLOAT,
-        {static_cast<int>(raw_input_.size()), kInputPlanes, 8, 8});
+  void PrepareInput();
 
-    auto flat = input_.flat<float>();
-    memset(flat.data(), 0, flat.size() * sizeof(*flat.data()));
-    auto iter = flat.data();
-    for (const auto& sample : raw_input_) {
-      CHECK_EQ(sample.size(), kInputPlanes);
-      for (const auto& plane : sample) {
-        for (auto bit : IterateBits(plane.mask)) {
-          *(iter + bit) = plane.value;
-        }
-        iter += 64;
-      }
-    }
-  }
-
-  const TFNetwork* network_;
+  const TFNetwork<CPU>* network_;
   std::vector<InputPlanes> raw_input_;
 
   tensorflow::Tensor input_;
@@ -199,12 +204,70 @@ class TFNetworkComputation : public NetworkComputation {
   tensorflow::Status status_;
 };
 
-TFNetwork::TFNetwork(const Weights& weights, const OptionsDict& options)
-    : scope_(Scope::NewRootScope()), session_(scope_) {
-  input_ = std::make_unique<Placeholder>(
-      scope_, DataType::DT_FLOAT, Placeholder::Shape({-1, kInputPlanes, 8, 8}));
+// Version for GPU.
+template <>
+void TFNetworkComputation<false>::PrepareInput() {
+  input_ = tensorflow::Tensor(
+      tensorflow::DataType::DT_FLOAT,
+      {static_cast<int>(raw_input_.size()), kInputPlanes, 8, 8});
 
-  auto output = MakeNetwork(scope_, *input_, weights);
+  auto flat = input_.flat<float>();
+  memset(flat.data(), 0, flat.size() * sizeof(*flat.data()));
+  auto iter = flat.data();
+  for (const auto& sample : raw_input_) {
+    CHECK_EQ(sample.size(), kInputPlanes);
+    for (const auto& plane : sample) {
+      for (auto bit : IterateBits(plane.mask)) {
+        *(iter + bit) = plane.value;
+      }
+      iter += 64;
+    }
+  }
+}
+
+// Version for CPU.
+template <>
+void TFNetworkComputation<true>::PrepareInput() {
+  input_ = tensorflow::Tensor(
+      tensorflow::DataType::DT_FLOAT,
+      {static_cast<int>(raw_input_.size()), 8, 8, kInputPlanes});
+
+  auto flat = input_.flat<float>();
+  memset(flat.data(), 0, flat.size() * sizeof(*flat.data()));
+  auto* data = flat.data();
+  for (int input_idx = 0; input_idx < raw_input_.size(); ++input_idx) {
+    const auto& sample = raw_input_[input_idx];
+    int base = kInputPlanes * 8 * 8 * input_idx;
+
+    CHECK_EQ(sample.size(), kInputPlanes);
+    for (int plane_idx = 0; plane_idx < kInputPlanes; ++plane_idx) {
+      const auto& plane = sample[plane_idx];
+      for (auto bit : IterateBits(plane.mask)) {
+        data[base + bit * kInputPlanes + plane_idx] = plane.value;
+      }
+    }
+  }
+}  // namespace
+
+template <bool CPU>
+TFNetwork<CPU>::TFNetwork(const Weights& weights, const OptionsDict& options)
+    : scope_(Scope::NewRootScope()) {
+  tensorflow::SessionOptions session_options;
+  if (CPU) (*session_options.config.mutable_device_count())["GPU"] = 0;
+  session_ =
+      std::make_unique<tensorflow::ClientSession>(scope_, session_options);
+
+  if (CPU) {
+    input_ = std::make_unique<Placeholder>(
+        scope_, DataType::DT_FLOAT,
+        Placeholder::Shape({-1, 8, 8, kInputPlanes}));
+  } else {
+    input_ = std::make_unique<Placeholder>(
+        scope_, DataType::DT_FLOAT,
+        Placeholder::Shape({-1, kInputPlanes, 8, 8}));
+  }
+
+  auto output = MakeNetwork<CPU>(scope_, *input_, weights);
   CHECK(scope_.ok()) << scope_.status().ToString();
 
   policy_head_ = std::make_unique<Output>(output.first);
@@ -217,18 +280,21 @@ TFNetwork::TFNetwork(const Weights& weights, const OptionsDict& options)
   fake_request->ComputeBlocking();
 }
 
-tensorflow::Status TFNetwork::Compute(tensorflow::Tensor& input,
-                                      std::vector<Tensor>* outputs) const {
-  return session_.Run({{*input_, input}}, {*value_head_, *policy_head_},
-                      outputs);
+template <bool CPU>
+tensorflow::Status TFNetwork<CPU>::Compute(tensorflow::Tensor& input,
+                                           std::vector<Tensor>* outputs) const {
+  return session_->Run({{*input_, input}}, {*value_head_, *policy_head_},
+                       outputs);
 }
 
-std::unique_ptr<NetworkComputation> TFNetwork::NewComputation() {
-  return std::make_unique<TFNetworkComputation>(this);
+template <bool CPU>
+std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
+  return std::make_unique<TFNetworkComputation<CPU>>(this);
 }
 
 }  // namespace
 
-REGISTER_NETWORK("tensorflow", TFNetwork, 100);
+REGISTER_NETWORK("tensorflow", TFNetwork<false>, 100);
+REGISTER_NETWORK("tensorflow-cpu", TFNetwork<true>, 10);
 
 }  // namespace lczero
