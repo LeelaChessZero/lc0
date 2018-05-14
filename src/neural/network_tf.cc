@@ -294,7 +294,7 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 
 }  // namespace
 
-REGISTER_NETWORK("tensorflow", TFNetwork<false>, 100);
-REGISTER_NETWORK("tensorflow-cpu", TFNetwork<true>, 10);
+REGISTER_NETWORK("tensorflow-cpu", TFNetwork<true>, 90);
+REGISTER_NETWORK("tensorflow", TFNetwork<false>, 80);
 
 }  // namespace lczero
