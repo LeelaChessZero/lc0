@@ -134,6 +134,7 @@ void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 
 void EngineController::NewGame() {
   SharedLock lock(busy_mutex_);
+  cache_.Clear();
   search_.reset();
   tree_.reset();
   UpdateNetwork();

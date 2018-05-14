@@ -153,6 +153,12 @@ class LruCache {
     hash_.swap(new_hash);
   }
 
+  // Clears the cache;
+  void Clear() {
+    Mutex::Lock lock(mutex_);
+    ShrinkToCapacity(0);
+  }
+
   int GetSize() const {
     Mutex::Lock lock(mutex_);
     return size_;
