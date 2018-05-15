@@ -11,6 +11,10 @@ Building is not very streightforward, but here's roughly the process:
 5. If you decided not to install tensorflow or CUDA, comment out building network_tf.cc and/or network_cudnn.cu from meson.build.
 6. Run ./build.sh
 
+If you want to build with a different compiler, pass the `CC` and `CXX` environment variables:
+
+    CC=clang-6.0 CXX=clang++-6.0 ./build.sh
+
 ## Windows
 
 Building for windows is currently complicated, you can try executeing steps listed [here](https://github.com/glinscott/leela-chess/issues/334#issuecomment-382848569).
