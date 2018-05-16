@@ -12,3 +12,8 @@ option('cudnn_libdirs',
        type: 'array',
        value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'],
        description: 'Paths to Cuda/cudnn libraries')
+
+option('cudnn_include', 
+       type: 'array',
+       value: [],
+       description: 'Paths to cudnn include directory')

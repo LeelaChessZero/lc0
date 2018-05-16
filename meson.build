@@ -105,22 +105,32 @@ endif
 ## cuDNN
 #############################################################################
 cudnn_libdirs = get_option('cudnn_libdirs')
-cu_blas = cc.find_library('libcublas', dirs: cudnn_libdirs, required: false)
-cu_dnn = cc.find_library('libcudnn', dirs: cudnn_libdirs, required: false)
-cu_dart = cc.find_library('libcudart', dirs: cudnn_libdirs, required: false)
+cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
+cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
+cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
 nvcc = find_program('nvcc', required: false)
 
 cuda_files = [
   'src/neural/network_cudnn.cu',
 ]
-cuda_gen = generator(nvcc,
-    output: '@BASENAME@.o',
-    arguments: ['--std=c++14', '-c', '@INPUT@', '-o', '@OUTPUT@', '-I', '../src'],
-)
 
 if cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
-  files += cuda_gen.process(cuda_files)
+  includes += include_directories(get_option('cudnn_include'))
   deps += [cu_blas, cu_dnn, cu_dart]
+cuda_arguments = ['--std=c++14', '-c', '@INPUT@', '-o', '@OUTPUT@', '-I', meson.current_source_dir() + '/src']
+foreach x : get_option('cudnn_include')
+   cuda_arguments += ['-I', x]
+endforeach
+if host_machine.system() == 'windows'
+  outputname = '@BASENAME@.obj'
+else
+  outputname = '@BASENAME@.o'
+endif
+cuda_gen = generator(nvcc,
+    output: outputname,
+    arguments: cuda_arguments,
+)
+  files += cuda_gen.process(cuda_files)
 endif
 
 
