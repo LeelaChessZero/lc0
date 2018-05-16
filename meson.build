@@ -37,10 +37,12 @@ includes = []
 #############################################################################
 ## Main files
 #############################################################################
-deps += [
-  cc.find_library('stdc++fs'),
-  cc.find_library('pthread'),
-  ]
+if host_machine.system() != 'windows'
+  deps += [
+    cc.find_library('stdc++fs'),
+    cc.find_library('pthread'),
+    ]
+endif
 files += [
   'src/engine.cc',
   'src/analyzer/analyzer.cc',
