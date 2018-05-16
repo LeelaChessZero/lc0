@@ -51,10 +51,10 @@ class Search {
   static void PopulateUciParams(OptionsParser* options);
 
   // Starts worker threads and returns immediately.
-  void StartThreads(int how_many);
+  void StartThreads(size_t how_many);
 
   // Starts search with k threads and wait until it finishes.
-  void RunBlocking(int threads);
+  void RunBlocking(size_t threads);
 
   // Runs search single-threaded, blocking.
   void RunSingleThreaded();
@@ -88,7 +88,7 @@ class Search {
   void Worker();
 
   std::pair<Move, Move> GetBestMoveInternal() const;
-  uint64_t GetTimeSinceStart() const;
+  int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
@@ -127,13 +127,13 @@ class Search {
   Network* const network_;
   const SearchLimits limits_;
   const std::chrono::steady_clock::time_point start_time_;
-  const uint64_t initial_visits_;
+  const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
   Node* best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
   Node* last_outputted_best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
-  uint64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
+  int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int>::max();
 

@@ -557,8 +557,6 @@ FCLayer::~FCLayer() {
   reportCUDAErrors(cudaFree(biases_));
 }
 
-class CudnnNetwork;
-
 struct InputsOutputs {
   InputsOutputs() {
     reportCUDAErrors(cudaHostAlloc(
@@ -602,6 +600,11 @@ struct InputsOutputs {
   float *op_value_mem_gpu_;
 };
 
+// This namespace should be closed at the very end of file, but otherwise
+// there are nvcc warnings. Weird way to silence warnings.
+}  // namespace
+
+class CudnnNetwork;
 class CudnnNetworkComputation : public NetworkComputation {
  public:
   CudnnNetworkComputation(CudnnNetwork *network);
@@ -872,6 +875,11 @@ class CudnnNetwork : public Network {
     free_inputs_outputs_.push_back(std::move(resource));
   }
 
+  // Apparently nvcc doesn't see constructor invocations through make_unique.
+  // This function invokes constructor just to please complier and silence
+  // warning. Is never called (but compiler thinks that it could).
+  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io; }
+
  private:
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
@@ -952,8 +960,6 @@ CudnnNetworkComputation::~CudnnNetworkComputation() {
 void CudnnNetworkComputation::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
-
-}  // namespace
 
 REGISTER_NETWORK("cudnn", CudnnNetwork, 110);
 

@@ -55,8 +55,8 @@ FloatVectors LoadFloatsFromFile(const std::string& filename) {
   // Parse buffer.
   FloatVectors result;
   FloatVector line;
-  int start = 0;
-  for (int i = 0; i < buffer.size(); ++i) {
+  size_t start = 0;
+  for (size_t i = 0; i < buffer.size(); ++i) {
     char& c = buffer[i];
     const bool is_newline = (c == '\n' || c == '\r');
     if (!std::isspace(c)) continue;

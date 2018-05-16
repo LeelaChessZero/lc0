@@ -87,7 +87,7 @@ class SelfPlayTournament {
   const int kThreads[2];
   const int kTotalGames;
   const bool kShareTree;
-  const int kParallelism;
+  const size_t kParallelism;
   const bool kTraining;
 };
 

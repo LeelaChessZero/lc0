@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -238,6 +239,8 @@ class Move {
       case Promotion::Knight:
         return res + 'n';
     }
+    assert(false);
+    return "Error!";
   }
 
  private:

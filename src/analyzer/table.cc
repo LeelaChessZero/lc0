@@ -77,8 +77,8 @@ std::vector<std::vector<std::string>> Table3d::RenderTable(
 
   // Main table.
   for (const auto& row : rows) {
-    const int stripes = std::max(attrs.size(), row_attrs.size());
-    for (int i = 0; i < stripes; ++i) {
+    const size_t stripes = std::max(attrs.size(), row_attrs.size());
+    for (size_t i = 0; i < stripes; ++i) {
       line.clear();
       if (i == 0) {
         line.push_back(row);

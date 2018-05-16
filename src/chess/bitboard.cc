@@ -260,7 +260,7 @@ const Move kIdxToMove[] = {
 
 std::vector<unsigned short> BuildMoveIndices() {
   std::vector<unsigned short> res(4 * 64 * 64);
-  for (int i = 0; i < sizeof(kIdxToMove) / sizeof(kIdxToMove[0]); ++i) {
+  for (size_t i = 0; i < sizeof(kIdxToMove) / sizeof(kIdxToMove[0]); ++i) {
     res[kIdxToMove[i].as_packed_int()] = i;
   }
   return res;

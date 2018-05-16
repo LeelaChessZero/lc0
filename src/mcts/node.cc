@@ -97,7 +97,7 @@ Node* Node::Pool::AllocateNode() {
 
     // Have node! Return.
     if (result) {
-      std::memset(result, 0, sizeof(Node));
+      std::memset(reinterpret_cast<void*>(result), 0, sizeof(Node));
       return result;
     }
 

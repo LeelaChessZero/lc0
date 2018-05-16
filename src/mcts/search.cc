@@ -311,19 +311,19 @@ int Search::PrefetchIntoCache(Node* node, int budget,
     scores.emplace_back(-factor * iter->GetU() - iter->GetQ(parent_q), iter);
   }
 
-  int first_unsorted_index = 0;
+  size_t first_unsorted_index = 0;
   int total_budget_spent = 0;
   int budget_to_spend = budget;  // Initializing for the case there's only
                                  // on child.
-  for (int i = 0; i < scores.size(); ++i) {
+  for (size_t i = 0; i < scores.size(); ++i) {
     if (budget <= 0) break;
 
     // Sort next chunk of a vector. 3 of a time. Most of the times it's fine.
     if (first_unsorted_index != scores.size() &&
         i + 2 >= first_unsorted_index) {
-      const int new_unsorted_index = std::min(
-          static_cast<int>(scores.size()),
-          budget < 2 ? first_unsorted_index + 2 : first_unsorted_index + 3);
+      const int new_unsorted_index =
+          std::min(scores.size(), budget < 2 ? first_unsorted_index + 2
+                                             : first_unsorted_index + 3);
       std::partial_sort(scores.begin() + first_unsorted_index,
                         scores.begin() + new_unsorted_index, scores.end());
       first_unsorted_index = new_unsorted_index;
@@ -393,6 +393,7 @@ Node* GetBestChildWithTemperature(Node* parent, float temperature) {
     if (idx-- == 0) return node;
   }
   assert(false);
+  return nullptr;
 }
 }  // namespace
 
@@ -432,7 +433,7 @@ void Search::MaybeOutputInfo() {
   }
 }
 
-uint64_t Search::GetTimeSinceStart() const {
+int64_t Search::GetTimeSinceStart() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - start_time_)
       .count();
@@ -700,7 +701,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   return {best_node->GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
-void Search::StartThreads(int how_many) {
+void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
   while (threads_.size() < how_many) {
     threads_.emplace_back([&]() { Worker(); });
@@ -709,7 +710,7 @@ void Search::StartThreads(int how_many) {
 
 void Search::RunSingleThreaded() { Worker(); }
 
-void Search::RunBlocking(int threads) {
+void Search::RunBlocking(size_t threads) {
   if (threads == 1) {
     Worker();
   } else {

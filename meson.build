@@ -86,6 +86,7 @@ if tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
     tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
     tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
     tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
+    is_system: true
   )
   deps += [tf_dl_lib, tf_tensorflow_lib, tf_protobuf_lib]
   files += 'src/neural/network_tf.cc'

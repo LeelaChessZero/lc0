@@ -190,7 +190,7 @@ class Lexer {
   std::string string_val_;
   TokenType type_;
   const std::string str_;
-  int idx_ = 0;
+  size_t idx_ = 0;
   int last_offset_ = 0;
 };
 

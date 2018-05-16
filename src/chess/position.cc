@@ -17,6 +17,7 @@
 */
 
 #include "chess/position.h"
+#include <cassert>
 
 namespace lczero {
 
@@ -53,6 +54,8 @@ bool Position::CanCastle(Castling castling) const {
     case THEY_CAN_OO:
       return cast.they_can_00();
   }
+  assert(false);
+  return false;
 }
 
 std::string Position::DebugString() const { return us_board_.DebugString(); }

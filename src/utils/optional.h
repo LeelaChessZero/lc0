@@ -18,7 +18,7 @@ along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-namespace {
+namespace lczero {
 
 // Very poor-man implementation of std::optional. It literally cannot do
 // anything, but it's enough for our use case.
@@ -38,4 +38,4 @@ class optional {
   bool has_value_ = false;
 };
 
-}  // namespace
+}  // namespace lczero

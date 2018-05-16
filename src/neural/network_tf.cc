@@ -36,7 +36,8 @@ Output MakeConst(const Scope& scope, TensorShape shape,
                  const std::vector<float>& values,
                  const std::vector<int>& order = {}) {
   auto tensor = Tensor(DataType::DT_FLOAT, shape);
-  CHECK_EQ(tensor.NumElements(), values.size()) << shape.DebugString();
+  CHECK_EQ(tensor.NumElements(), static_cast<int>(values.size()))
+      << shape.DebugString();
 
   std::vector<int> dims;
   for (const auto& x : shape) {
@@ -235,7 +236,7 @@ void TFNetworkComputation<true>::PrepareInput() {
   auto flat = input_.flat<float>();
   memset(flat.data(), 0, flat.size() * sizeof(*flat.data()));
   auto* data = flat.data();
-  for (int input_idx = 0; input_idx < raw_input_.size(); ++input_idx) {
+  for (size_t input_idx = 0; input_idx < raw_input_.size(); ++input_idx) {
     const auto& sample = raw_input_[input_idx];
     int base = kInputPlanes * 8 * 8 * input_idx;
 
