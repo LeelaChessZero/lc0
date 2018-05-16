@@ -21,6 +21,12 @@ if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
+if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
+  add_project_arguments('-Wall', language : 'cpp')
+  add_project_arguments('-Wextra', language : 'cpp')
+  add_project_arguments('-pedantic', language : 'cpp')
+endif
+
 
 # Files to compile.
 deps = []
