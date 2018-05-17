@@ -22,9 +22,13 @@ if cc.get_id() == 'clang'
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
-  add_project_arguments('-Wall', language : 'cpp')
   add_project_arguments('-Wextra', language : 'cpp')
   add_project_arguments('-pedantic', language : 'cpp')
+
+  if get_option('buildtype') == 'release'
+    add_project_arguments('-march=native', language : 'cpp')
+    add_project_arguments('-mtune=native', language : 'cpp')
+  endif
 endif
 
 
@@ -148,7 +152,7 @@ endif
 #############################################################################
 
 executable('lc0', 'src/main.cc',
-  files, include_directories: includes, dependencies: deps)
+  files, include_directories: includes, dependencies: deps, install: true)
 
 
 ### Tests
