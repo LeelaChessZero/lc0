@@ -31,7 +31,7 @@ NetworkFactory* NetworkFactory::Get() {
 NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
                                    int priority) {
   NetworkFactory::Get()->RegisterNetwork(name, factory, priority);
-};
+}
 
 void NetworkFactory::RegisterNetwork(const std::string& name,
                                      FactoryFunc factory, int priority) {

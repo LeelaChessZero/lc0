@@ -407,8 +407,7 @@ bool BoolOption::ProcessLongFlag(const std::string& flag,
   return false;
 }
 
-bool BoolOption::ProcessShortFlagWithValue(char flag, const std::string& value,
-                                           OptionsDict* dict) {
+bool BoolOption::ProcessShortFlag(char flag, OptionsDict* dict) {
   if (flag == GetShortFlag()) {
     SetVal(dict, !GetVal(*dict));
     return true;

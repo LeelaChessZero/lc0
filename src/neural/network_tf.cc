@@ -251,7 +251,8 @@ void TFNetworkComputation<true>::PrepareInput() {
 }  // namespace
 
 template <bool CPU>
-TFNetwork<CPU>::TFNetwork(const Weights& weights, const OptionsDict& options)
+TFNetwork<CPU>::TFNetwork(const Weights& weights,
+                          const OptionsDict& /*options*/)
     : scope_(Scope::NewRootScope()) {
   tensorflow::SessionOptions session_options;
   if (CPU) (*session_options.config.mutable_device_count())["GPU"] = 0;
@@ -295,7 +296,7 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 
 }  // namespace
 
-REGISTER_NETWORK("tensorflow-cpu", TFNetwork<true>, 90);
-REGISTER_NETWORK("tensorflow", TFNetwork<false>, 80);
+REGISTER_NETWORK("tensorflow-cpu", TFNetwork<true>, 90)
+REGISTER_NETWORK("tensorflow", TFNetwork<false>, 80)
 
 }  // namespace lczero

@@ -52,16 +52,17 @@ class UciLoop {
   // Command handlers.
   virtual void CmdUci() { throw Exception("Not supported"); }
   virtual void CmdIsReady() { throw Exception("Not supported"); }
-  virtual void CmdSetOption(const std::string& name, const std::string& value,
-                            const std::string& context) {
+  virtual void CmdSetOption(const std::string& /*name*/,
+                            const std::string& /*value*/,
+                            const std::string& /*context*/) {
     throw Exception("Not supported");
   }
   virtual void CmdUciNewGame() { throw Exception("Not supported"); }
-  virtual void CmdPosition(const std::string& position,
-                           const std::vector<std::string>& moves) {
+  virtual void CmdPosition(const std::string& /*position*/,
+                           const std::vector<std::string>& /*moves*/) {
     throw Exception("Not supported");
   }
-  virtual void CmdGo(const GoParams& params) {
+  virtual void CmdGo(const GoParams& /*params*/) {
     throw Exception("Not supported");
   }
   virtual void CmdStop() { throw Exception("Not supported"); }
