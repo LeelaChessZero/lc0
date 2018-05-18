@@ -4,7 +4,7 @@ set -e
 
 BUILDTYPE=$1
 
-if [ -z ${BUILDTYPE} ]
+if [ -z "${BUILDTYPE}" ]
 then
   BUILDTYPE=release
 fi
