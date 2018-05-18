@@ -20,6 +20,7 @@
 #include "utils/filesystem.h"
 
 #include <windows.h>
+#undef CreateDirectory
 
 namespace lczero {
 
@@ -33,11 +34,11 @@ void CreateDirectory(const std::string& path) {
 std::vector<std::string> GetFileList(const std::string& directory) {
   std::vector<std::string> result;
   WIN32_FIND_DATA dir;
-  auto handle = FindFistFileA((directory + "\\*").c_str(), &dir);
-  if (handle == INVALID_FILE_HANDLE) return result;
+  auto handle = FindFirstFileA((directory + "\\*").c_str(), &dir);
+  if (handle == INVALID_HANDLE_VALUE) return result;
   do {
-    if (dir.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0) {
-      result.emplace_back(directory + "\\" + dir.cFileName);
+    if ((dir.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+      result.emplace_back(dir.cFileName);
     }
   } while (FindNextFile(handle, &dir) != 0);
   FindClose(handle);
@@ -49,7 +50,7 @@ uint64_t GetFileSize(const std::string& filename) {
   if (!GetFileAttributesExA(filename.c_str(), GetFileExInfoStandard, &s)) {
     throw Exception("Cannot stat file: " + filename);
   }
-  return static_cast<uint64_t>(s.nFileSizeHigh) << 32 + s.nFileSizeLow;
+  return (static_cast<uint64_t>(s.nFileSizeHigh) << 32) + s.nFileSizeLow;
 }
 
 time_t GetFileTime(const std::string& filename) {
@@ -57,8 +58,8 @@ time_t GetFileTime(const std::string& filename) {
   if (!GetFileAttributesExA(filename.c_str(), GetFileExInfoStandard, &s)) {
     throw Exception("Cannot stat file: " + filename);
   }
-  return static_cast<uint64_t>(s.ftLastWriteTime.dwHighDateTime)
-         << 32 + s.ftLastWriteTime.dwLowDateTime;
+  return (static_cast<uint64_t>(s.ftLastWriteTime.dwHighDateTime)
+         << 32) + s.ftLastWriteTime.dwLowDateTime;
 }
 
 }  // namespace lczero
