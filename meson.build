@@ -41,12 +41,6 @@ includes = []
 #############################################################################
 ## Main files
 #############################################################################
-if host_machine.system() != 'windows'
-  deps += [
-    cc.find_library('stdc++fs'),
-    cc.find_library('pthread'),
-    ]
-endif
 files += [
   'src/engine.cc',
   'src/analyzer/analyzer.cc',
@@ -75,6 +69,19 @@ files += [
   'src/utils/transpose.cc',
 ]
 includes += include_directories('src')
+
+
+#############################################################################
+## Platform specific files
+############################################################################
+if host_machine.system() == 'windows'
+  files += 'src/utils/filesystem.win32.cc'
+else
+  files += 'src/utils/filesystem.posix.cc'
+  deps += [
+    cc.find_library('pthread'),
+    ]
+endif
 
 
 #############################################################################
@@ -112,7 +119,7 @@ cudnn_libdirs = get_option('cudnn_libdirs')
 cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
 cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
 cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-nvcc = find_program('nvcc', required: false)
+nvcc = find_program('nvcc', '/usr/local/cuda-9.1/bin/nvcc', required: false)
 
 cuda_files = [
   'src/neural/network_cudnn.cu',

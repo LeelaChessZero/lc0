@@ -16,32 +16,25 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "neural/writer.h"
+#pragma once
 
-#include <iomanip>
-#include <sstream>
-#include "utils/commandline.h"
-#include "utils/filesystem.h"
-#include "utils/random.h"
+#include <string>
+#include <vector>
 
 namespace lczero {
 
-TrainingDataWriter::TrainingDataWriter(int game_id) {
-  static std::string directory =
-      CommandLine::BinaryDirectory() + "/data-" + Random::Get().GetString(12);
-  // It's fine if it already exists.
-  CreateDirectory(directory.c_str());
+// Creates directory at a given path. Throws exception if cannot.
+// Returns silently if already exists.
+void CreateDirectory(const std::string& path);
 
-  std::ostringstream oss;
-  oss << directory << '/' << "game_" << std::setfill('0') << std::setw(6)
-      << game_id;
+// Returns list of full paths of regular files in this directory.
+// Silently returns empty vector on error.
+std::vector<std::string> GetFileList(const std::string& directory);
 
-  filename_ = oss.str();
-  fout_.open(filename_.c_str(), std::ios::binary);
-}
+// Returns size of a file. Throws exception if file doesn't exist.
+uint64_t GetFileSize(const std::string& filename);
 
-void TrainingDataWriter::WriteChunk(const V3TrainingData& data) {
-  fout_.write(reinterpret_cast<const char*>(&data), sizeof(data));
-}
+// Returns modification time of a file. Throws exception if file doesn't exist.
+time_t GetFileTime(const std::string& filename);
 
 }  // namespace lczero
