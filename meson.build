@@ -121,7 +121,9 @@ cuda_files = [
 if cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
   includes += include_directories(get_option('cudnn_include'))
   deps += [cu_blas, cu_dnn, cu_dart]
-cuda_arguments = ['--std=c++14', '-c', '@INPUT@', '-o', '@OUTPUT@', '-I', meson.current_source_dir() + '/src']
+cuda_arguments = ['--std=c++14', '-c', '@INPUT@',
+                  '-o', '@OUTPUT@', '-Xcompiler', '-fPIC',
+                  '-I', meson.current_source_dir() + '/src']
 foreach x : get_option('cudnn_include')
    cuda_arguments += ['-I', x]
 endforeach
