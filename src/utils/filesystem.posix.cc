@@ -20,6 +20,7 @@
 #include "utils/filesystem.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 
 namespace lczero {
@@ -56,7 +57,11 @@ time_t GetFileTime(const std::string& filename) {
   if (stat(filename.c_str(), &s) < 0) {
     throw Exception("Cannot stat file: " + filename);
   }
+#ifdef __APPLE__
+  return s.st_mtimespec.tv_sec;
+#else
   return s.st_mtim.tv_sec;
+#endif
 }
 
 }  // namespace lczero
