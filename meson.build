@@ -41,12 +41,6 @@ includes = []
 #############################################################################
 ## Main files
 #############################################################################
-if host_machine.system() != 'windows'
-  deps += [
-    cc.find_library('stdc++fs'),
-    cc.find_library('pthread'),
-    ]
-endif
 files += [
   'src/engine.cc',
   'src/analyzer/analyzer.cc',
@@ -75,6 +69,19 @@ files += [
   'src/utils/transpose.cc',
 ]
 includes += include_directories('src')
+
+
+#############################################################################
+## Platform specific files
+############################################################################
+if host_machine.system() == 'windows'
+  files += 'src/utils/filesystem.win32.cc'
+else
+  files += 'src/utils/filesystem.posix.cc'
+  deps += [
+    cc.find_library('pthread'),
+    ]
+endif
 
 
 #############################################################################
