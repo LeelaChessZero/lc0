@@ -119,7 +119,7 @@ cudnn_libdirs = get_option('cudnn_libdirs')
 cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
 cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
 cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-nvcc = find_program('nvcc', '/usr/local/cuda-9.1/bin/nvcc', required: false)
+nvcc = find_program('/usr/local/cuda-9.1/bin/nvcc', 'nvcc', required: false)
 
 cuda_files = [
   'src/neural/network_cudnn.cu',
