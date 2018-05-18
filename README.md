@@ -1,6 +1,6 @@
 # Building and running Lc0
 
-Building right now is still a bit rough, we are still improving and finding ways to simplifying the build process.
+Building right now may be a bit rough, we are improving and finding ways to simplifying the build process.
 
 ## Linux
 
