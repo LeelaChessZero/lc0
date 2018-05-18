@@ -20,12 +20,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
-#include <experimental/filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include "utils/commandline.h"
 #include "utils/exception.h"
+#include "utils/filesystem.h"
 
 namespace lczero {
 
@@ -127,20 +127,20 @@ Weights LoadWeightsFromFile(const std::string& filename) {
 std::string DiscoveryWeightsFile() {
   const int kMinFileSize = 30000000;
 
-  using namespace std::experimental::filesystem;
-  std::string path = CommandLine::BinaryDirectory();
+  std::string root_path = CommandLine::BinaryDirectory();
 
-  std::vector<std::pair<file_time_type, std::string>> candidates;
-  for (const auto& file : recursive_directory_iterator(path)) {
-    if (!is_regular_file(file.path())) continue;
-    if (file_size(file.path()) < kMinFileSize) continue;
-    candidates.emplace_back(last_write_time(file.path()),
-                            file.path().generic_u8string());
+  std::vector<std::pair<time_t, std::string>> time_and_filename;
+  for (const auto& path : {"", "/networks"}) {
+    for (const auto& file : GetFileList(root_path + path)) {
+      const std::string filename = root_path + path + "/" + file;
+      if (GetFileSize(filename) < kMinFileSize) continue;
+      time_and_filename.emplace_back(GetFileSize(filename), filename);
+    }
   }
 
-  std::sort(candidates.rbegin(), candidates.rend());
+  std::sort(time_and_filename.rbegin(), time_and_filename.rend());
 
-  for (const auto& candidate : candidates) {
+  for (const auto& candidate : time_and_filename) {
     std::ifstream file(candidate.second.c_str());
     int val = 0;
     file >> val;

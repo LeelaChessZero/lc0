@@ -34,7 +34,7 @@ void TransposeTensor(const std::vector<int>& dims, std::vector<int> order,
       from_idx += cur_idx[i];
     }
     *to++ = from[from_idx];
-    for (size_t i = dims.size() - 1; i >= 0; --i) {
+    for (int i = static_cast<int>(dims.size()) - 1; i >= 0; --i) {
       if (++cur_idx[i] == dims[i]) {
         cur_idx[i] = 0;
       } else {

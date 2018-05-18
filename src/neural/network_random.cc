@@ -57,7 +57,7 @@ class RandomNetworkComputation : public NetworkComputation {
 
 class RandomNetwork : public Network {
  public:
-  RandomNetwork(const Weights& weights, const OptionsDict& options)
+  RandomNetwork(const Weights& /*weights*/, const OptionsDict& options)
       : delay_ms_(options.GetOrDefault<int>("delay", 0)) {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>(delay_ms_);
@@ -67,6 +67,6 @@ class RandomNetwork : public Network {
   int delay_ms_ = 0;
 };
 
-REGISTER_NETWORK("random", RandomNetwork, -900);
+REGISTER_NETWORK("random", RandomNetwork, -900)
 
 }  // namespace lczero

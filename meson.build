@@ -41,12 +41,6 @@ includes = []
 #############################################################################
 ## Main files
 #############################################################################
-if host_machine.system() != 'windows'
-  deps += [
-    cc.find_library('stdc++fs'),
-    cc.find_library('pthread'),
-    ]
-endif
 files += [
   'src/engine.cc',
   'src/analyzer/analyzer.cc',
@@ -75,6 +69,19 @@ files += [
   'src/utils/transpose.cc',
 ]
 includes += include_directories('src')
+
+
+#############################################################################
+## Platform specific files
+############################################################################
+if host_machine.system() == 'windows'
+  files += 'src/utils/filesystem.win32.cc'
+else
+  files += 'src/utils/filesystem.posix.cc'
+  deps += [
+    cc.find_library('pthread'),
+    ]
+endif
 
 
 #############################################################################
@@ -121,7 +128,9 @@ cuda_files = [
 if cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
   includes += include_directories(get_option('cudnn_include'))
   deps += [cu_blas, cu_dnn, cu_dart]
-cuda_arguments = ['--std=c++14', '-c', '@INPUT@', '-o', '@OUTPUT@', '-I', meson.current_source_dir() + '/src']
+cuda_arguments = ['--std=c++14', '-c', '@INPUT@',
+                  '-o', '@OUTPUT@', '-Xcompiler', '-fPIC',
+                  '-I', meson.current_source_dir() + '/src']
 foreach x : get_option('cudnn_include')
    cuda_arguments += ['-I', x]
 endforeach

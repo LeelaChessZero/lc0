@@ -961,6 +961,6 @@ void CudnnNetworkComputation::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
-REGISTER_NETWORK("cudnn", CudnnNetwork, 110);
+REGISTER_NETWORK("cudnn", CudnnNetwork, 110)
 
 }  // namespace lczero
