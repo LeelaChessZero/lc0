@@ -17,3 +17,8 @@ option('cudnn_include',
        type: 'array',
        value: [],
        description: 'Paths to cudnn include directory')
+
+option('build_backends',
+       type: 'boolean',
+       value: true,
+       description: 'Build backends for NN computation')
