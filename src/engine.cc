@@ -169,7 +169,10 @@ void EngineController::Go(const GoParams& params) {
 }
 
 void EngineController::Stop() {
-  if (search_) search_->Stop();
+  if (search_) {
+    search_->Stop();
+    search_->Wait();
+  }
 }
 
 EngineLoop::EngineLoop()
