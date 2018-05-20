@@ -2,3 +2,4 @@ build/
 testdata/
 LC0VSProj/
 CUDA_NN/
+.DS_Store

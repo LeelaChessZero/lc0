@@ -1,0 +1,428 @@
+/*
+ This file is part of Leela Chess Zero.
+ Copyright (C) 2018 The LCZero Authors
+ 
+ Leela Chess is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ 
+ Leela Chess is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ 
+ You should have received a copy of the GNU General Public License
+ along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "neural/factory.h"
+#include "neural/network.h"
+
+#include <condition_variable>
+#include <queue>
+#include <cassert>
+
+#include <thread>
+#include "utils/exception.h"
+
+#include "OpenCLUtils.h"
+using namespace Utils;
+
+#include "OpenCLParams.h"
+#include "OpenCLScheduler.h"
+
+#ifdef __APPLE__
+#include <Accelerate/Accelerate.h>
+#endif
+#ifdef USE_MKL
+#include <mkl.h>
+#endif
+#ifdef USE_OPENBLAS
+#include <cblas.h>
+#endif
+
+#include <iostream>
+
+
+namespace lczero {
+  
+  namespace {
+    
+    
+    static constexpr int NUM_VALUE_INPUT_PLANES = 32;
+    static constexpr int NUM_POLICY_INPUT_PLANES = 32;
+    
+    static constexpr int NUM_OUTPUT_POLICY = 1858;
+    static constexpr int NUM_VALUE_CHANNELS = 128;
+    
+    
+    class OpenCLNetwork;
+    
+    class OpenCLComputation : public NetworkComputation {
+      
+    public:
+      
+      OpenCLComputation(OpenCLNetwork& network, const Weights& weights):
+      input_data_(kInputPlanes*64),
+      value_data_(NUM_VALUE_CHANNELS),
+      policy_data_(NUM_OUTPUT_POLICY),
+      network_(network),
+      weights_(weights),
+      q_value_(0) {
+        
+      }
+      
+      virtual ~OpenCLComputation() {
+        
+      }
+      
+      // Adds a sample to the batch.
+      void AddInput(InputPlanes&& input) override {
+        planes_.push(input);
+      }
+
+      
+      
+    private:
+      
+      static void softmax(const std::vector<float>& input,
+                          std::vector<float>& output,
+                          float temperature) {
+ 
+        // assert(&input != &output); why ?
+        
+        auto alpha = *std::max_element(begin(input),
+                                       begin(input) + input.size());
+        alpha /= temperature;
+        
+        auto denom = 0.0f;
+        auto helper = std::vector<float>(output.size());
+        for (auto i = size_t{0}; i < output.size(); i++) {
+          auto val   = std::exp((input[i]/temperature) - alpha);
+          helper[i]  = val;
+          denom     += val;
+        }
+        for (auto i = size_t{0}; i < output.size(); i++) {
+          output[i] = helper[i] / denom;
+        }
+      }
+      
+      
+      static float innerproduct(const std::vector<float>& x, const std::vector<float>& y) {
+        // float cblas_sdot(const int __N, const float *__X, const int __incX, const float *__Y, const int __incY);
+        return cblas_sdot(x.size(), &x[0], 1, &y[0], 1);
+      }
+
+
+      
+    public:
+      
+
+      
+      
+      // Do the computation.
+      void ComputeBlocking() override {
+        
+        
+     auto sample=planes_.front();
+        
+        
+        int index=0;
+        for (const InputPlane& plane : sample) {
+          float value=plane.value;
+          const uint64_t one=1;
+          for (int i=0; i<64; i++)
+           input_data_[index++]=((plane.mask&(one<<i))==0 ) ? 0 : value;
+        }
+
+        planes_.pop();
+ 
+        opencl.forward(input_data_, policy_data_, value_data_);
+
+        // Get the moves
+        softmax(policy_data_, policy_data_, cfg_softmax_temp);
+        
+        // Now get the score
+        const std::vector<float>& ip2_val_w=weights_.ip2_val_w;
+        const std::vector<float>& ip2_val_b=weights_.ip2_val_b;
+   
+        /*
+        std::cerr << "--------  " << std::endl;
+        for (int i=0; i<value_data_.size(); i++)
+          std::cerr << "  " << value_data_[i] << std::endl;
+         */
+        
+        double winrate=innerproduct(ip2_val_w, value_data_)+ip2_val_b[0];
+       q_value_ = std::tanh(winrate);
+ 
+
+      }
+      
+      // Returns how many times AddInput() was called.
+      int GetBatchSize() const override {
+        return (int) planes_.size();
+      }
+      
+      // Returns Q value of @sample.
+      float GetQVal(int sample) const override {
+        assert(sample==0);
+        return q_value_;
+      }
+      
+      // Returns P value @move_id of @sample.
+      float GetPVal(int sample, int move_id) const override {
+        assert(sample==0);
+        return policy_data_[move_id];
+      }
+      
+    private:
+      
+      OpenCLNetwork& network_;
+      const Weights& weights_;
+      std::queue<InputPlanes> planes_;
+      std::vector<float> input_data_;
+      std::vector<float> policy_data_;
+      std::vector<float> value_data_;
+      double q_value_;
+      
+    };
+    
+    static constexpr auto WINOGRAD_ALPHA = 4;
+    static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
+    
+    class OpenCLNetwork : public Network {
+    public:
+      
+      virtual ~OpenCLNetwork(){};
+
+      
+    private:
+      
+      static std::vector<float> winograd_transform_f(const std::vector<float>& f,
+                                                             const int outputs,
+                                                             const int channels) {
+        // F(2x2, 3x3) Winograd filter transformation
+        // transpose(G.dot(f).dot(G.transpose()))
+        // U matrix is transposed for better memory layout in SGEMM
+        auto U = std::vector<float>(WINOGRAD_TILE * outputs * channels);
+        auto G = std::array<float, WINOGRAD_TILE>{ 1.0,  0.0,  0.0,
+          0.5,  0.5,  0.5,
+          0.5, -0.5,  0.5,
+          0.0,  0.0,  1.0};
+        auto temp = std::array<float, 12>{};
+        
+        for (auto o = 0; o < outputs; o++) {
+          for (auto c = 0; c < channels; c++) {
+            for (auto i = 0; i < 4; i++){
+              for (auto j = 0; j < 3; j++) {
+                auto acc = 0.0f;
+                for (auto k = 0; k < 3; k++) {
+                  acc += G[i*3 + k] * f[o*channels*9 + c*9 + k*3 + j];
+                }
+                temp[i*3 + j] = acc;
+              }
+            }
+            
+            for (auto xi = 0; xi < 4; xi++) {
+              for (auto nu = 0; nu < 4; nu++) {
+                auto acc = 0.0f;
+                for (int k = 0; k < 3; k++) {
+                  acc += temp[xi*3 + k] * G[nu*3 + k];
+                }
+                U[xi * (4 * outputs * channels)
+                  + nu * (outputs * channels)
+                  + c * outputs
+                  + o] = acc;
+              }
+            }
+          }
+        }
+        
+        return U;
+      }
+      
+      static std::vector<float> zeropad_U(const std::vector<float>& U,
+                                            const int outputs, const int channels,
+                                            const int outputs_pad,
+                                            const int channels_pad) {
+        // Fill with zeroes
+        auto Upad = std::vector<float>(WINOGRAD_TILE * outputs_pad * channels_pad);
+        
+        for(auto o = 0; o < outputs; o++) {
+          for(auto c = 0; c < channels; c++) {
+            for(auto xi = 0; xi < WINOGRAD_ALPHA; xi++){
+              for(auto nu = 0; nu < WINOGRAD_ALPHA; nu++) {
+                Upad[xi * (WINOGRAD_ALPHA * outputs_pad * channels_pad)
+                     + nu * (outputs_pad * channels_pad)
+                     + c * outputs_pad +
+                     o] =
+                U[xi * (WINOGRAD_ALPHA * outputs * channels)
+                  + nu * (outputs * channels)
+                  + c * outputs
+                  + o];
+              }
+            }
+          }
+        }
+        
+        return Upad;
+      }
+
+      
+      
+      
+      
+      
+      
+      
+    public:
+
+      OpenCLNetwork(const Weights& weights, const OptionsDict& options):
+      weights_(weights)
+      {
+        
+        const int inputChannels = kInputPlanes;
+        const int channels = weights.input.biases.size();
+        const size_t residual_blocks = weights.residual.size();
+        
+      
+        myprintf("Initializing OpenCL.\n");
+        opencl.initialize(channels);
+        
+        for(auto & opencl_net : opencl.get_networks()) {
+          auto tuners = opencl_net->getOpenCL().get_sgemm_tuners();
+          
+          auto mwg = tuners[0];
+          auto kwg = tuners[2];
+          auto vwm = tuners[3];
+          
+          
+          size_t m_ceil = ceilMultiple(ceilMultiple(channels, mwg), vwm);
+          size_t k_ceil = ceilMultiple(ceilMultiple(inputChannels, kwg), vwm);
+          
+          std::vector<float> input_conv_weights=winograd_transform_f(weights.input.weights, channels, inputChannels);
+          
+          auto Upad = zeropad_U(input_conv_weights,
+                                channels, inputChannels,
+                                m_ceil, k_ceil);
+          
+          std::vector<float> input_batchnorm_means=weights.input.bn_means;
+          // Biases are not calculated and are typically zero but some networks might
+          // still have non-zero biases.
+          // Move biases to batchnorm means to make the output match without having
+          // to separately add the biases.
+          for (int i=0; i<input_batchnorm_means.size(); i++) // copy ctor
+            input_batchnorm_means[i]-=weights.input.biases[i];
+          const std::vector<float>& input_batchnorm_stddivs=weights.input.bn_stddivs;
+
+          
+          // Winograd filter transformation changes filter size to 4x4
+          opencl_net->push_input_convolution(WINOGRAD_ALPHA, inputChannels, channels,
+                                             Upad, input_batchnorm_means, input_batchnorm_stddivs);
+          
+          // residual blocks
+          for (auto i = size_t{0}; i < residual_blocks; i++) {
+            
+            const Weights::Residual& residual=weights.residual[i];
+            const Weights::ConvBlock& conv1=residual.conv1;
+            const Weights::ConvBlock& conv2=residual.conv2;
+
+            std::vector<float> conv_weights_1=winograd_transform_f(conv1.weights, channels, channels);
+            std::vector<float> conv_weights_2=winograd_transform_f(conv2.weights, channels, channels);
+
+            auto Upad1 = zeropad_U(conv_weights_1,
+                                   channels, channels,
+                                   m_ceil, m_ceil);
+            auto Upad2 = zeropad_U(conv_weights_2,
+                                   channels, channels,
+                                   m_ceil, m_ceil);
+            
+
+            // Biases are not calculated and are typically zero but some networks might
+            // still have non-zero biases.
+            // Move biases to batchnorm means to make the output match without having
+            // to separately add the biases.
+            std::vector<float> batchnorm_means_1=conv1.bn_means; // copy ctor
+            for (int i=0; i<batchnorm_means_1.size(); i++)
+              batchnorm_means_1[i]-=conv1.biases[i];
+          
+            std::vector<float> batchnorm_means_2=conv2.bn_means;
+            for (int i=0; i<batchnorm_means_2.size(); i++)
+              batchnorm_means_2[i]-=conv2.biases[i];
+            
+            const std::vector<float>& batchnorm_stddivs_1=conv1.bn_stddivs;
+            const std::vector<float>& batchnorm_stddivs_2=conv2.bn_stddivs;
+
+            
+            opencl_net->push_residual(WINOGRAD_ALPHA, channels, channels,
+                                      Upad1,
+                                      batchnorm_means_1,
+                                      batchnorm_stddivs_1,
+                                      Upad2,
+                                      batchnorm_means_2,
+                                      batchnorm_stddivs_2);
+          }
+          
+          constexpr unsigned int width = 8;
+          constexpr unsigned int height = 8;
+
+
+          const std::vector<float>& conv_pol_w=weights.policy.weights;
+          std::vector<float> bn_pol_means=weights.policy.bn_means;
+          for (int i=0; i<bn_pol_means.size(); i++)
+            bn_pol_means[i]-=weights.policy.biases[i];
+          
+          const std::vector<float>& bn_pol_stddivs=weights.policy.bn_stddivs;
+          const std::vector<float>& ip_pol_w_vec=weights.ip_pol_w;
+          const std::vector<float>& ip_pol_b_vec=weights.ip_pol_b;
+
+          opencl_net->push_policy(channels, NUM_POLICY_INPUT_PLANES,
+                                  NUM_POLICY_INPUT_PLANES*width*height, NUM_OUTPUT_POLICY,
+                                  conv_pol_w,
+                                  bn_pol_means, bn_pol_stddivs,
+                                  ip_pol_w_vec, ip_pol_b_vec);
+          
+          const std::vector<float>& conv_val_w=weights.value.weights;
+          std::vector<float> bn_val_means=weights.value.bn_means;
+          for (int i=0; i<bn_val_means.size(); i++)
+            bn_val_means[i]-=weights.value.biases[i];
+
+          const std::vector<float>& bn_val_stddivs=weights.value.bn_stddivs;
+          const std::vector<float>& ip_val_w_vec=weights.ip1_val_w;
+          const std::vector<float>& ip_val_b_vec=weights.ip1_val_b;
+
+          opencl_net->push_value(channels, NUM_VALUE_INPUT_PLANES,
+                                 NUM_VALUE_INPUT_PLANES*width*height, NUM_VALUE_CHANNELS,
+                                 conv_val_w,
+                                 bn_val_means, bn_val_stddivs,
+                                 ip_val_w_vec, ip_val_b_vec);
+
+        }
+
+      }
+      
+      std::unique_ptr<NetworkComputation> NewComputation() override {
+        return std::make_unique<OpenCLComputation>(*this, weights_);
+      }
+      
+      
+    private:
+      
+      Weights weights_;
+      
+    };
+      
+
+      
+      
+      
+    
+    
+  } // namespace
+  
+  REGISTER_NETWORK("opencl", OpenCLNetwork, 100)
+  
+  
+} // namespace lc0
+
