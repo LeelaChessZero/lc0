@@ -1,6 +1,6 @@
 # Building and running this version of lc0.
 
-Building is not very streightforward, but here's roughly the process:
+Building is not very straightforward, but here's roughly the process:
 
 ## Linux
 
