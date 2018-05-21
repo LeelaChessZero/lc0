@@ -62,7 +62,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 1.5;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 2.2;
 
   Search::PopulateUciParams(options);
 }
