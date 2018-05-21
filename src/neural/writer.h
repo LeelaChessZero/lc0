@@ -16,6 +16,7 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <zlib.h>
 #include <fstream>
 #include "utils/cppattributes.h"
 
@@ -48,18 +49,22 @@ class TrainingDataWriter {
   // somewhere in the filename.
   TrainingDataWriter(int game_id);
 
+  ~TrainingDataWriter() {
+    if (fout_) Finalize();
+  }
+
   // Writes a chunk.
   void WriteChunk(const V3TrainingData& data);
 
   // Flushes file and closes it.
-  void Finalize() { fout_.close(); }
+  void Finalize();
 
   // Gets full filename of the file written.
   std::string GetFileName() const { return filename_; }
 
  private:
   std::string filename_;
-  std::ofstream fout_;
+  gzFile fout_;
 };
 
 }  // namespace lczero

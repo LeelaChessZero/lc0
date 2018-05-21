@@ -17,6 +17,7 @@
 */
 
 #include "neural/loader.h"
+#include <zlib.h>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -35,11 +36,11 @@ FloatVectors LoadFloatsFromFile(const std::string& filename) {
   int bytes_read = 0;
 
   // Read whole file into a buffer.
-  FILE* file = std::fopen(filename.c_str(), "rb");
+  gzFile file = gzopen(filename.c_str(), "rb");
   if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
-    auto sz = fread(&buffer[bytes_read], 1, buffer.size() - bytes_read, file);
-    if (sz == buffer.size() - bytes_read) {
+    int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
+    if (sz == static_cast<int>(buffer.size()) - bytes_read) {
       bytes_read = buffer.size();
       buffer.resize(buffer.size() * 2);
     } else {
@@ -50,7 +51,7 @@ FloatVectors LoadFloatsFromFile(const std::string& filename) {
       break;
     }
   }
-  std::fclose(file);
+  gzclose(file);
 
   // Parse buffer.
   FloatVectors result;
@@ -125,10 +126,12 @@ Weights LoadWeightsFromFile(const std::string& filename) {
 }
 
 std::string DiscoveryWeightsFile() {
-  const int kMinFileSize = 30000000;
+  const int kMinFileSize = 10000000;  // 10 MB
 
   std::string root_path = CommandLine::BinaryDirectory();
 
+  // Open all files in <binary dir> amd <binary dir>/networks,
+  // ones which are >= kMinFileSize are candidates.
   std::vector<std::pair<time_t, std::string>> time_and_filename;
   for (const auto& path : {"", "/networks"}) {
     for (const auto& file : GetFileList(root_path + path)) {
@@ -140,11 +143,22 @@ std::string DiscoveryWeightsFile() {
 
   std::sort(time_and_filename.rbegin(), time_and_filename.rend());
 
+  // Open all candidates, from newest to oldest, possibly gzipped, and try to
+  // read version for it. If version is 2, return it.
   for (const auto& candidate : time_and_filename) {
-    std::ifstream file(candidate.second.c_str());
+    gzFile file = gzopen(candidate.second.c_str(), "rb");
+
+    if (!file) continue;
+    char buf[256];
+    int sz = gzread(file, buf, 256);
+    gzclose(file);
+    if (sz < 0) continue;
+
+    std::string str(buf, buf + sz);
+    std::istringstream data(str);
     int val = 0;
-    file >> val;
-    if (!file.fail() && val == 2) {
+    data >> val;
+    if (!data.fail() && val == 2) {
       std::cerr << "Found network file: " << candidate.second << std::endl;
       return candidate.second;
     }
