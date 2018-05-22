@@ -277,15 +277,19 @@ Move::Move(const std::string& str, bool black) {
     if (str.size() != 5) throw Exception("Bad move: " + str);
     switch (str[4]) {
       case 'q':
+      case 'Q':
         promotion_ = Promotion::Queen;
         break;
       case 'r':
+      case 'R':
         promotion_ = Promotion::Rook;
         break;
       case 'b':
+      case 'B':
         promotion_ = Promotion::Bishop;
         break;
       case 'n':
+      case 'N':
         promotion_ = Promotion::Knight;
         break;
       default:
