@@ -692,7 +692,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
     }
   }
 
-  Node* best_node = temperature
+  Node* best_node = temperature && root_node_->GetN() > 1
                         ? GetBestChildWithTemperature(root_node_, temperature)
                         : GetBestChild(root_node_);
 
