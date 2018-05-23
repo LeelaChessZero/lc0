@@ -87,7 +87,7 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
   // Total time till control including increments.
   auto total_moves_time = std::max(
-      0LL, time + increment * (movestogo - 1) - move_overhead * movestogo);
+      int64_t{0}, time + increment * (movestogo - 1) - move_overhead * movestogo);
 
   const int kSmartPruningToleranceMs = 200;
 
@@ -101,7 +101,7 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
     this_move_time = total_moves_time / (movestogo - 1 + slowmover) * slowmover;
   }
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms = std::max(0LL, std::min(this_move_time, time - move_overhead));
+  limits.time_ms = std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
   return limits;
 }
 
