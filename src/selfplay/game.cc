@@ -76,12 +76,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
 
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
-  int count = 0;
-  for (Node* node = tree_[0]->GetCurrentHead();
-	   node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
-	++count;
-  }
-  bool flip = (count & 1) == 0;
+  bool flip = !tree_[0]->IsBlackToMove();
   for (Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
     moves.push_back(node->GetMove(flip));
