@@ -66,7 +66,7 @@ namespace lczero {
       OpenCLComputation(OpenCLNetwork& network, const Weights& weights):
       input_data_(kInputPlanes*64),
       value_data_(NUM_VALUE_CHANNELS),
-      policy_data_(NUM_OUTPUT_POLICY),
+      policy_data_(),
       network_(network),
       weights_(weights),
       q_value_(0) {
@@ -79,7 +79,7 @@ namespace lczero {
       
       // Adds a sample to the batch.
       void AddInput(InputPlanes&& input) override {
-        planes_.push(input);
+        planes_.emplace_back(input);
       }
 
       
@@ -124,8 +124,14 @@ namespace lczero {
       // Do the computation.
       void ComputeBlocking() override {
         
-        
-     auto sample=planes_.front();
+        for (auto& sample : planes_)
+          ComputeBlocking(sample);
+
+      }
+      
+      
+      
+      void ComputeBlocking(const InputPlanes &sample) {
         
         
         int index=0;
@@ -133,58 +139,58 @@ namespace lczero {
           float value=plane.value;
           const uint64_t one=1;
           for (int i=0; i<64; i++)
-           input_data_[index++]=((plane.mask&(one<<i))==0 ) ? 0 : value;
+            input_data_[index++]=((plane.mask&(one<<i))==0 ) ? 0 : value;
         }
-
-        planes_.pop();
- 
-        opencl.forward(input_data_, policy_data_, value_data_);
-
+        
+        std::vector<float> policy_data(NUM_OUTPUT_POLICY);
+        opencl.forward(input_data_, policy_data, value_data_);
+        
         // Get the moves
-        softmax(policy_data_, policy_data_, cfg_softmax_temp);
+        softmax(policy_data, policy_data, cfg_softmax_temp);
+        policy_data_.emplace_back(move(policy_data));
         
         // Now get the score
         const std::vector<float>& ip2_val_w=weights_.ip2_val_w;
         const std::vector<float>& ip2_val_b=weights_.ip2_val_b;
-   
+        
         /*
-        std::cerr << "--------  " << std::endl;
-        for (int i=0; i<value_data_.size(); i++)
-          std::cerr << "  " << value_data_[i] << std::endl;
+         std::cerr << "--------  " << std::endl;
+         for (int i=0; i<value_data_.size(); i++)
+         std::cerr << "  " << value_data_[i] << std::endl;
          */
         
         double winrate=innerproduct(ip2_val_w, value_data_)+ip2_val_b[0];
-       q_value_ = std::tanh(winrate);
- 
-
+        q_value_.emplace_back(std::tanh(winrate));
+        
       }
       
       // Returns how many times AddInput() was called.
       int GetBatchSize() const override {
-        return (int) planes_.size();
+        int size=planes_.size();
+  //      assert(size<2);
+        return size;
       }
       
       // Returns Q value of @sample.
       float GetQVal(int sample) const override {
-        assert(sample==0);
-        return q_value_;
+        return q_value_[sample];
       }
       
       // Returns P value @move_id of @sample.
       float GetPVal(int sample, int move_id) const override {
-        assert(sample==0);
-        return policy_data_[move_id];
+        return policy_data_[sample][move_id];
       }
       
     private:
       
       OpenCLNetwork& network_;
       const Weights& weights_;
-      std::queue<InputPlanes> planes_;
+      std::vector<InputPlanes> planes_;
       std::vector<float> input_data_;
-      std::vector<float> policy_data_;
       std::vector<float> value_data_;
-      double q_value_;
+      
+      std::vector<std::vector<float>> policy_data_;
+      std::vector<float> q_value_;
       
     };
     
@@ -282,6 +288,8 @@ namespace lczero {
       weights_(weights)
       {
         
+        const float EPSILON=1e-5;
+        
         const int inputChannels = kInputPlanes;
         const int channels = weights.input.biases.size();
         const size_t residual_blocks = weights.residual.size();
@@ -314,8 +322,10 @@ namespace lczero {
           // to separately add the biases.
           for (int i=0; i<input_batchnorm_means.size(); i++) // copy ctor
             input_batchnorm_means[i]-=weights.input.biases[i];
-          const std::vector<float>& input_batchnorm_stddivs=weights.input.bn_stddivs;
-
+          
+          std::vector<float> input_batchnorm_stddivs=weights.input.bn_stddivs;
+          for(auto&& w : input_batchnorm_stddivs)
+            w = 1.0f / std::sqrt(w + EPSILON);
           
           // Winograd filter transformation changes filter size to 4x4
           opencl_net->push_input_convolution(WINOGRAD_ALPHA, inputChannels, channels,
@@ -351,8 +361,13 @@ namespace lczero {
             for (int i=0; i<batchnorm_means_2.size(); i++)
               batchnorm_means_2[i]-=conv2.biases[i];
             
-            const std::vector<float>& batchnorm_stddivs_1=conv1.bn_stddivs;
-            const std::vector<float>& batchnorm_stddivs_2=conv2.bn_stddivs;
+            std::vector<float> batchnorm_stddivs_1=conv1.bn_stddivs;
+            for(auto&& w : batchnorm_stddivs_1)
+              w = 1.0f / std::sqrt(w + EPSILON);
+
+            std::vector<float> batchnorm_stddivs_2=conv2.bn_stddivs;
+            for(auto&& w : batchnorm_stddivs_2)
+              w = 1.0f / std::sqrt(w + EPSILON);
 
             
             opencl_net->push_residual(WINOGRAD_ALPHA, channels, channels,
@@ -373,7 +388,11 @@ namespace lczero {
           for (int i=0; i<bn_pol_means.size(); i++)
             bn_pol_means[i]-=weights.policy.biases[i];
           
-          const std::vector<float>& bn_pol_stddivs=weights.policy.bn_stddivs;
+          std::vector<float> bn_pol_stddivs=weights.policy.bn_stddivs;
+          for(auto&& w : bn_pol_stddivs)
+            w = 1.0f / std::sqrt(w + EPSILON);
+
+          
           const std::vector<float>& ip_pol_w_vec=weights.ip_pol_w;
           const std::vector<float>& ip_pol_b_vec=weights.ip_pol_b;
 
@@ -388,7 +407,10 @@ namespace lczero {
           for (int i=0; i<bn_val_means.size(); i++)
             bn_val_means[i]-=weights.value.biases[i];
 
-          const std::vector<float>& bn_val_stddivs=weights.value.bn_stddivs;
+          std::vector<float> bn_val_stddivs=weights.value.bn_stddivs;
+          for(auto&& w : bn_val_stddivs)
+            w = 1.0f / std::sqrt(w + EPSILON);
+
           const std::vector<float>& ip_val_w_vec=weights.ip1_val_w;
           const std::vector<float>& ip_val_b_vec=weights.ip1_val_b;
 

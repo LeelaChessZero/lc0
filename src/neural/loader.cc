@@ -132,7 +132,7 @@ std::string DiscoveryWeightsFile() {
   std::vector<std::pair<time_t, std::string>> time_and_filename;
   for (const auto& path : {"", "/networks"}) {
     for (const auto& file : GetFileList(root_path + path)) {
-      const std::string filename = root_path + path + "/" + file;
+      const std::string filename = /* root_path + path + "/" + */file;
       if (GetFileSize(filename) < kMinFileSize) continue;
       time_and_filename.emplace_back(GetFileSize(filename), filename);
     }
