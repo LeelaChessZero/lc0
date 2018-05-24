@@ -8,6 +8,11 @@ option('tensorflow_libdir',
        value: ['/usr/local/lib/tensorflow_cc/'],
        description: 'Paths to tensorflow libraries')
 
+option('opencl_libdirs',
+       type: 'array',
+       value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'],
+       description: 'Paths to OpenCL libraries')
+
 option('cudnn_libdirs',
        type: 'array',
        value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'],

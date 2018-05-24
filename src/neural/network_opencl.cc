@@ -20,17 +20,18 @@
 #include "neural/network.h"
 
 #include <condition_variable>
-#include <queue>
 #include <cassert>
-
+#include <iostream>
+#include <cmath>
+#include <algorithm>
 #include <thread>
 #include "utils/exception.h"
 
-#include "OpenCLUtils.h"
+#include "CL/OpenCLUtils.h"
 using namespace Utils;
 
-#include "OpenCLParams.h"
-#include "OpenCLScheduler.h"
+#include "CL/OpenCLParams.h"
+#include "CL/OpenCLScheduler.h"
 
 #ifdef __APPLE__
 #include <Accelerate/Accelerate.h>
@@ -41,8 +42,6 @@ using namespace Utils;
 #ifdef USE_OPENBLAS
 #include <cblas.h>
 #endif
-
-#include <iostream>
 
 
 namespace lczero {

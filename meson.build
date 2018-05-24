@@ -122,6 +122,37 @@ if get_option('build_backends')
   endif
     
 
+
+
+  ## ~~~~~
+  ## OpenCL
+  ## ~~~~~
+
+  opencl_libdirs = get_option('opencl_libdirs')
+  opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: true)
+  openblas_lib = cc.find_library('libopenblas', required: true)
+
+  if opencl_lib.found() and openblas_lib.found()
+
+    opencl_files = [
+    'src/neural/CL/OpenCL.cc',
+    'src/neural/CL/OpenCLRandom.cc',
+    'src/neural/CL/OpenCLScheduler.cc',
+    'src/neural/CL/OpenCLTuner.cc',
+    'src/neural/CL/OpenCLUtils.cc',
+    'src/neural/network_opencl.cc',
+    ]
+
+    add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+
+    files += opencl_files
+    deps += [ opencl_lib, openblas_lib ]
+
+    has_backends = true
+
+  endif
+
+
   ## ~~~~~
   ## cuDNN
   ## ~~~~~
