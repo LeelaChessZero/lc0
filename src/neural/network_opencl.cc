@@ -83,52 +83,15 @@ namespace lczero {
       }
 
       
-      
-    private:
-      
-      static void softmax(const std::vector<float>& input,
-                          std::vector<float>& output,
-                          float temperature) {
- 
-        // assert(&input != &output); why ?
-        
-        auto alpha = *std::max_element(begin(input),
-                                       begin(input) + input.size());
-        alpha /= temperature;
-        
-        auto denom = 0.0f;
-        auto helper = std::vector<float>(output.size());
-        for (auto i = size_t{0}; i < output.size(); i++) {
-          auto val   = std::exp((input[i]/temperature) - alpha);
-          helper[i]  = val;
-          denom     += val;
-        }
-        for (auto i = size_t{0}; i < output.size(); i++) {
-          output[i] = helper[i] / denom;
-        }
-      }
-      
-      
-      static float innerproduct(const std::vector<float>& x, const std::vector<float>& y) {
-        // float cblas_sdot(const int __N, const float *__X, const int __incX, const float *__Y, const int __incY);
-        return cblas_sdot(x.size(), &x[0], 1, &y[0], 1);
-      }
-
-
-      
     public:
       
-
-      
-      
-      // Do the computation.
+     // Do the computation.
       void ComputeBlocking() override {
         
         for (auto& sample : planes_)
           ComputeBlocking(sample);
 
       }
-      
       
       
       void ComputeBlocking(const InputPlanes &sample) {
@@ -182,7 +145,36 @@ namespace lczero {
       }
       
     private:
+  
+      static void softmax(const std::vector<float>& input,
+                          std::vector<float>& output,
+                          float temperature) {
+        
+        // assert(&input != &output); why ?
+        
+        auto alpha = *std::max_element(begin(input),
+                                       begin(input) + input.size());
+        alpha /= temperature;
+        
+        auto denom = 0.0f;
+        auto helper = std::vector<float>(output.size());
+        for (auto i = size_t{0}; i < output.size(); i++) {
+          auto val   = std::exp((input[i]/temperature) - alpha);
+          helper[i]  = val;
+          denom     += val;
+        }
+        for (auto i = size_t{0}; i < output.size(); i++) {
+          output[i] = helper[i] / denom;
+        }
+      }
       
+      
+      static float innerproduct(const std::vector<float>& x, const std::vector<float>& y) {
+        // float cblas_sdot(const int __N, const float *__X, const int __incX, const float *__Y, const int __incY);
+        return cblas_sdot(x.size(), &x[0], 1, &y[0], 1);
+      }
+      
+
       OpenCLNetwork& network_;
       const Weights& weights_;
       std::vector<InputPlanes> planes_;
