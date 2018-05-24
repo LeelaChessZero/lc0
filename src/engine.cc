@@ -37,6 +37,7 @@ const char* kWeightsStr = "Network weights file path";
 const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
 const char* kSlowMoverStr = "Scale thinking time";
+const char* kMoveOverheadStr = "Move time overhead in milliseconds";
 
 const char* kAutoDiscover = "<autodiscover>";
 }  // namespace
@@ -62,7 +63,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 1.5;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 2.2;
+  options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
 
   Search::PopulateUciParams(options);
 }
@@ -82,8 +84,10 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
 
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverStr);
+  int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
   // Total time till control including increments.
-  auto total_moves_time = (time + (increment * (movestogo - 1)));
+  auto total_moves_time = std::max(
+      int64_t{0}, time + increment * (movestogo - 1) - move_overhead * movestogo);
 
   const int kSmartPruningToleranceMs = 200;
 
@@ -94,13 +98,10 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   // reduce it.
   if (slowmover < 1.0 || this_move_time > kSmartPruningToleranceMs) {
     // Budget X*slowmover for current move, X*1.0 for the rest.
-    this_move_time =
-        slowmover ? total_moves_time / (movestogo - 1 + slowmover) * slowmover
-                  : 20;
+    this_move_time = total_moves_time / (movestogo - 1 + slowmover) * slowmover;
   }
-
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms = std::min(this_move_time, static_cast<int64_t>(time * 0.95));
+  limits.time_ms = std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
   return limits;
 }
 

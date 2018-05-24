@@ -576,19 +576,22 @@ void Search::ExtendNode(Node* node, const PositionHistory& history) {
     return;
   }
 
-  if (!board.HasMatingMaterial()) {
-    node->MakeTerminal(GameResult::DRAW);
-    return;
-  }
+  // If it's root node and we're asked to think, pretend there's no draw.
+  if (node != root_node_) {
+    if (!board.HasMatingMaterial()) {
+      node->MakeTerminal(GameResult::DRAW);
+      return;
+    }
 
-  if (history.Last().GetNoCapturePly() >= 100) {
-    node->MakeTerminal(GameResult::DRAW);
-    return;
-  }
+    if (history.Last().GetNoCapturePly() >= 100) {
+      node->MakeTerminal(GameResult::DRAW);
+      return;
+    }
 
-  if (history.Last().GetRepetitions() >= 2) {
-    node->MakeTerminal(GameResult::DRAW);
-    return;
+    if (history.Last().GetRepetitions() >= 2) {
+      node->MakeTerminal(GameResult::DRAW);
+      return;
+    }
   }
 
   // Add legal moves as children to this node.
@@ -689,7 +692,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
     }
   }
 
-  Node* best_node = temperature
+  Node* best_node = temperature && root_node_->GetN() > 1
                         ? GetBestChildWithTemperature(root_node_, temperature)
                         : GetBestChild(root_node_);
 

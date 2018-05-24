@@ -76,7 +76,7 @@ Output MakeConvBlock(const Scope& scope, Input input, int channels,
 
   // auto b_conv = MakeConst(scope, {output_channels}, weights.biases);
   auto conv2d = Conv2D(scope, input, w_conv, {1, 1, 1, 1}, "SAME",
-                       Conv2D::DataFormat(kDataFormat));
+                       Conv2D::DataFormat(kDataFormat).Dilations({1, 1, 1, 1}));
 
   auto batch_norm =
       FusedBatchNorm(scope, conv2d, Ones(scope, {output_channels}),

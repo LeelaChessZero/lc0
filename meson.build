@@ -175,12 +175,22 @@ endif
 
 
 #############################################################################
-## Profiler
+## Dependencies
 #############################################################################
-if get_option('buildtype') != 'release'
-  deps += cc.find_library('libprofiler',
-    dirs: ['/usr/local/lib'], required: false)
-endif
+  ## ~~~~
+  ## zlib
+  ## ~~~~
+  # Pick latest from https://wrapdb.mesonbuild.com/zlib and put into
+  # subprojects/zlib.wrap
+  deps += subproject('zlib').get_variable('zlib_dep')
+
+  ## ~~~~~~~~
+  ## Profiler
+  ## ~~~~~~~~
+  if get_option('buildtype') != 'release'
+    deps += cc.find_library('libprofiler',
+      dirs: ['/usr/local/lib'], required: false)
+  endif
 
 
 #############################################################################

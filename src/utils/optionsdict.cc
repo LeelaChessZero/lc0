@@ -17,6 +17,7 @@
 */
 
 #include "utils/optionsdict.h"
+#include <cassert>
 #include <cctype>
 #include <sstream>
 #include <string>
@@ -55,6 +56,10 @@ std::vector<std::string> OptionsDict::ListSubdicts() const {
     result.emplace_back(subdict.first);
   }
   return result;
+}
+
+bool OptionsDict::HasSubdict(const std::string& name) const {
+  return subdicts_.find(name) != subdicts_.end();
 }
 
 namespace {
@@ -199,22 +204,52 @@ class Parser {
   Parser(const std::string& str) : lexer_(str) {}
 
   void ParseMain(OptionsDict* dict) {
-    ParseList(dict);
-    EnsureToken(Lexer::L_EOF);
+    ParseList(dict);            // Parse list of options
+    EnsureToken(Lexer::L_EOF);  // Check that everything is read.
   }
 
  private:
+  // Returns first non-existing subdict with name like "[0]", "[24]", etc.
+  static std::string GetFreeSubdictName(OptionsDict* dict) {
+    for (int idx = 0;; ++idx) {
+      std::string id = "[" + std::to_string(idx) + "]";
+      if (!dict->HasSubdict(id)) return id;
+    }
+    assert(false);
+    return "";
+  }
+
+  // Parses comma separated list of either:
+  // * key=value, or
+  // * subdict(comma separated list)
+  // Note that in subdict all parts are optional:
+  // * (comma separated list) -- name will be synthesized (e.g. "[1]")
+  // * subdict() -- empty list
+  // * subdict -- the same.
   void ParseList(OptionsDict* dict) {
     while (true) {
-      if (lexer_.GetToken() != Lexer::L_IDENTIFIER) return;
-      std::string identifier = lexer_.GetStringVal();
-      lexer_.Next();
+      std::string identifier;
+      if (lexer_.GetToken() == Lexer::L_LEFT_PARENTHESIS) {
+        // List entry starts with "(", that's a special case of subdict without
+        // name, we have to come up with the name ourselves.
+        identifier = GetFreeSubdictName(dict);
+      } else if (lexer_.GetToken() == Lexer::L_IDENTIFIER) {
+        // Read identifier.
+        identifier = lexer_.GetStringVal();
+        lexer_.Next();
+      } else {
+        // Unexpected token, exiting parsing list.
+        return;
+      }
+      // If there is "=" after identifier, that's key=value entry, read value.
       if (lexer_.GetToken() == Lexer::L_EQUAL) {
         lexer_.Next();
         ReadVal(dict, identifier);
       } else {
+        // Otherwise it's subdict.
         ReadSubDict(dict, identifier);
       }
+      // If next val is not comma, end of the list.
       if (lexer_.GetToken() != Lexer::L_COMMA) return;
       lexer_.Next();
     }
@@ -231,6 +266,10 @@ class Parser {
     } else if (lexer_.GetToken() == Lexer::L_INTEGER) {
       dict->Set<int>(id, lexer_.GetIntVal());
     } else if (lexer_.GetToken() == Lexer::L_STRING) {
+      // Strings may be:
+      // * Single quoted: 'asdf'
+      // * Double quoted: "asdf"
+      // * Without quotes, if only alphanumeric and not "true" or "false".
       dict->Set<std::string>(id, lexer_.GetStringVal());
     } else if (lexer_.GetToken() == Lexer::L_IDENTIFIER) {
       if (lexer_.GetStringVal() == "true") {
@@ -248,6 +287,8 @@ class Parser {
 
   void ReadSubDict(OptionsDict* dict, const std::string& identifier) {
     OptionsDict* new_dict = dict->AddSubdict(identifier);
+    // If opening parentheses, read list of a subdict, otherwise list is empty,
+    // so return immediately.
     if (lexer_.GetToken() == Lexer::L_LEFT_PARENTHESIS) {
       lexer_.Next();
       ParseList(new_dict);
