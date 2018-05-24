@@ -128,9 +128,7 @@ namespace lczero {
       
       // Returns how many times AddInput() was called.
       int GetBatchSize() const override {
-        int size=planes_.size();
-  //      assert(size<2);
-        return size;
+         return planes_.size();
       }
       
       // Returns Q value of @sample.
@@ -143,27 +141,26 @@ namespace lczero {
         return policy_data_[sample][move_id];
       }
       
+      
     private:
   
+      
       static void softmax(const std::vector<float>& input,
                           std::vector<float>& output,
                           float temperature) {
-        
-        // assert(&input != &output); why ?
         
         auto alpha = *std::max_element(begin(input),
                                        begin(input) + input.size());
         alpha /= temperature;
         
         auto denom = 0.0f;
-        auto helper = std::vector<float>(output.size());
         for (auto i = size_t{0}; i < output.size(); i++) {
           auto val   = std::exp((input[i]/temperature) - alpha);
-          helper[i]  = val;
+          output[i]  = val;
           denom     += val;
         }
         for (auto i = size_t{0}; i < output.size(); i++) {
-          output[i] = helper[i] / denom;
+          output[i] = output[i] / denom;
         }
       }
       
@@ -265,12 +262,6 @@ namespace lczero {
         
         return Upad;
       }
-
-      
-      
-      
-      
-      
       
       
     public:
@@ -278,8 +269,7 @@ namespace lczero {
       OpenCLNetwork(const Weights& weights, const OptionsDict& options):
       weights_(weights)
       {
-        
-        const float EPSILON=1e-5;
+        constexpr float EPSILON=1e-5;
         
         const int inputChannels = kInputPlanes;
         const int channels = weights.input.biases.size();
@@ -425,10 +415,6 @@ namespace lczero {
       Weights weights_;
       
     };
-      
-
-      
-      
       
     
     
