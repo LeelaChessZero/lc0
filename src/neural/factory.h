@@ -42,7 +42,7 @@ class NetworkFactory {
     Register(const std::string& name, FactoryFunc factory, int priority = 0);
   };
 
-  // Returns list of backend names.
+  // Returns list of backend names, sorted by priority (higher priority first).
   std::vector<std::string> GetBackendsList() const;
 
   // Creates a backend given name and config.

@@ -52,7 +52,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kShareTreesStr, "share-trees") = false;
   options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
-  options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 1;
+  options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 8;
   options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
   options->Add<IntOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
   options->Add<StringOption>(kNetFileStr, "weights", 'w') = kAutoDiscover;
@@ -62,11 +62,17 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kTrainingStr, "training") = false;
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
-      backends.empty() ? "<none>" : backends[0];
+      "multiplexing";
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
   options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
 
   Search::PopulateUciParams(options);
+  auto defaults = options->GetMutableDefaultsOptions();
+  defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch
+  defaults->Set<bool>(Search::kSmartPruningStr, false);  // No smart pruning
+  defaults->Set<float>(Search::kTemperatureStr, 1.0);    // Temperature = 1.0
+  defaults->Set<bool>(Search::kNoiseStr, true);          // Dirichlet noise
+  defaults->Set<float>(Search::kFpuReductionStr, 0.0);   // No FPU reduction.
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
@@ -149,6 +155,13 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
         options.GetSubdict(kPlayerNames[idx]).Get<int>(kVisitsStr);
     search_limits_[idx].time_ms =
         options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsStr);
+
+    if (search_limits_[idx].playouts == -1 &&
+        search_limits_[idx].visits == -1 && search_limits_[idx].time_ms == -1) {
+      throw Exception(
+          "Please define --visits, --playouts or --movetime, otherwise it's "
+          "not clear when to stop search.");
+    }
   }
 }
 
