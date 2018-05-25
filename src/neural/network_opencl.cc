@@ -315,12 +315,12 @@ namespace lczero {
                               channels, inputChannels,
                               m_ceil, k_ceil);
         
-        std::vector<float> input_batchnorm_means=weights.input.bn_means;
         // Biases are not calculated and are typically zero but some networks might
         // still have non-zero biases.
         // Move biases to batchnorm means to make the output match without having
         // to separately add the biases.
-        for (int i=0; i<input_batchnorm_means.size(); i++) // copy ctor
+        std::vector<float> input_batchnorm_means=weights.input.bn_means; // copy ctor
+        for (int i=0; i<input_batchnorm_means.size(); i++)
           input_batchnorm_means[i]-=weights.input.biases[i];
         
         std::vector<float> input_batchnorm_stddivs=weights.input.bn_stddivs;
