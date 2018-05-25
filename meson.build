@@ -129,15 +129,13 @@ if get_option('build_backends')
   ## ~~~~~
 
   opencl_libdirs = get_option('opencl_libdirs')
-  opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: true)
-  openblas_lib = cc.find_library('libopenblas', required: true)
+  opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: false)
+  openblas_lib = cc.find_library('libopenblas', required: false)
 
   if opencl_lib.found() and openblas_lib.found()
 
     opencl_files = [
     'src/neural/CL/OpenCL.cc',
-    'src/neural/CL/OpenCLRandom.cc',
-    'src/neural/CL/OpenCLScheduler.cc',
     'src/neural/CL/OpenCLTuner.cc',
     'src/neural/CL/OpenCLUtils.cc',
     'src/neural/network_opencl.cc',
