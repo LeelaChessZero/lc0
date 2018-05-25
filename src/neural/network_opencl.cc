@@ -117,18 +117,9 @@ namespace lczero {
         int index=0;
         for (const InputPlane& plane : sample) {
           float value=plane.value;
-          for (auto bit : IterateBits(plane.mask)) {
-            input_data_[index+bit] = value;
-          }
-          index += 64;
-
-          // This algorithm looks slower but should be easier
-          // for the compiler to parallelize
-          /*
           const uint64_t one=1;
           for (int i=0; i<64; i++)
             input_data_[index++]=((plane.mask&(one<<i))==0 ) ? 0 : value;
-          */
         }
         
         std::vector<float> policy_data(NUM_OUTPUT_POLICY);
