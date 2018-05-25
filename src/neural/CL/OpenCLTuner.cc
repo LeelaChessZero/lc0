@@ -283,9 +283,9 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
       valid_params.emplace_back(i);
     }
   }
-  if (m_params.verbose) {
-    printf("Will try %zu valid configurations.\n", valid_params.size());
-  }
+
+  printf("Will try %zu valid configurations.\n", valid_params.size());
+
   std::string best_params;
   auto best_time = unsigned{0};
   
