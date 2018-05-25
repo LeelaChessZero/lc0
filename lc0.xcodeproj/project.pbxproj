@@ -126,7 +126,6 @@
 		0F05CC9120B0AF7000B0F0C9 /* OpenCLParams.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OpenCLParams.h; sourceTree = "<group>"; };
 		0F05CC9620B0B42700B0F0C9 /* OpenCL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenCL.framework; path = System/Library/Frameworks/OpenCL.framework; sourceTree = SDKROOT; };
 		0F05CC9820B0B5D000B0F0C9 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
-		0F05CC9D20B0B8E000B0F0C9 /* OpenCLThreadPool.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OpenCLThreadPool.h; sourceTree = "<group>"; };
 		0F31155320B750A3004F3847 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		0F6B309A20B042D400990C71 /* lc0 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = lc0; sourceTree = BUILT_PRODUCTS_DIR; };
 		0F6B309D20B042D400990C71 /* main.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cc; sourceTree = "<group>"; };
@@ -250,7 +249,6 @@
 				0F05CC8620B0A17400B0F0C9 /* OpenCL.h */,
 				0F05CC8A20B0A76B00B0F0C9 /* OpenCLUtils.cc */,
 				0F05CC8C20B0A76B00B0F0C9 /* OpenCLUtils.h */,
-				0F05CC9D20B0B8E000B0F0C9 /* OpenCLThreadPool.h */,
 				0F05CC9120B0AF7000B0F0C9 /* OpenCLParams.h */,
 				0F05CC8920B0A39800B0F0C9 /* cl2.hpp */,
 			);
