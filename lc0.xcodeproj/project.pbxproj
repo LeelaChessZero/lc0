@@ -37,10 +37,8 @@
 		0F05CC8720B0A17400B0F0C9 /* OpenCL.cc in Sources */ = {isa = PBXBuildFile; fileRef = 0F05CC8520B0A17400B0F0C9 /* OpenCL.cc */; };
 		0F05CC8D20B0A76B00B0F0C9 /* OpenCLUtils.cc in Sources */ = {isa = PBXBuildFile; fileRef = 0F05CC8A20B0A76B00B0F0C9 /* OpenCLUtils.cc */; };
 		0F05CC9020B0AAC800B0F0C9 /* OpenCLTuner.cc in Sources */ = {isa = PBXBuildFile; fileRef = 0F05CC8F20B0AAC800B0F0C9 /* OpenCLTuner.cc */; };
-		0F05CC9420B0B1F100B0F0C9 /* OpenCLRandom.cc in Sources */ = {isa = PBXBuildFile; fileRef = 0F05CC9320B0B1F000B0F0C9 /* OpenCLRandom.cc */; };
 		0F05CC9720B0B42700B0F0C9 /* OpenCL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F05CC9620B0B42700B0F0C9 /* OpenCL.framework */; };
 		0F05CC9920B0B5D000B0F0C9 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F05CC9820B0B5D000B0F0C9 /* Accelerate.framework */; };
-		0F05CC9C20B0B86500B0F0C9 /* OpenCLScheduler.cc in Sources */ = {isa = PBXBuildFile; fileRef = 0F05CC9A20B0B86500B0F0C9 /* OpenCLScheduler.cc */; };
 		0F31155420B750A3004F3847 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F31155320B750A3004F3847 /* libz.tbd */; };
 		0F6B309E20B042D400990C71 /* main.cc in Sources */ = {isa = PBXBuildFile; fileRef = 0F6B309D20B042D400990C71 /* main.cc */; };
 /* End PBXBuildFile section */
@@ -126,12 +124,8 @@
 		0F05CC8E20B0AAC800B0F0C9 /* OpenCLTuner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OpenCLTuner.h; sourceTree = "<group>"; };
 		0F05CC8F20B0AAC800B0F0C9 /* OpenCLTuner.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = OpenCLTuner.cc; sourceTree = "<group>"; };
 		0F05CC9120B0AF7000B0F0C9 /* OpenCLParams.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OpenCLParams.h; sourceTree = "<group>"; };
-		0F05CC9220B0B1F000B0F0C9 /* OpenCLRandom.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OpenCLRandom.h; sourceTree = "<group>"; };
-		0F05CC9320B0B1F000B0F0C9 /* OpenCLRandom.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = OpenCLRandom.cc; sourceTree = "<group>"; };
 		0F05CC9620B0B42700B0F0C9 /* OpenCL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenCL.framework; path = System/Library/Frameworks/OpenCL.framework; sourceTree = SDKROOT; };
 		0F05CC9820B0B5D000B0F0C9 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
-		0F05CC9A20B0B86500B0F0C9 /* OpenCLScheduler.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OpenCLScheduler.cc; path = src/neural/CL/OpenCLScheduler.cc; sourceTree = SOURCE_ROOT; };
-		0F05CC9B20B0B86500B0F0C9 /* OpenCLScheduler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OpenCLScheduler.h; path = src/neural/CL/OpenCLScheduler.h; sourceTree = SOURCE_ROOT; };
 		0F05CC9D20B0B8E000B0F0C9 /* OpenCLThreadPool.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OpenCLThreadPool.h; sourceTree = "<group>"; };
 		0F31155320B750A3004F3847 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		0F6B309A20B042D400990C71 /* lc0 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = lc0; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -250,16 +244,12 @@
 		0F05CC8820B0A38500B0F0C9 /* CL */ = {
 			isa = PBXGroup;
 			children = (
-				0F05CC9320B0B1F000B0F0C9 /* OpenCLRandom.cc */,
-				0F05CC9220B0B1F000B0F0C9 /* OpenCLRandom.h */,
 				0F05CC8F20B0AAC800B0F0C9 /* OpenCLTuner.cc */,
 				0F05CC8E20B0AAC800B0F0C9 /* OpenCLTuner.h */,
 				0F05CC8520B0A17400B0F0C9 /* OpenCL.cc */,
 				0F05CC8620B0A17400B0F0C9 /* OpenCL.h */,
 				0F05CC8A20B0A76B00B0F0C9 /* OpenCLUtils.cc */,
 				0F05CC8C20B0A76B00B0F0C9 /* OpenCLUtils.h */,
-				0F05CC9A20B0B86500B0F0C9 /* OpenCLScheduler.cc */,
-				0F05CC9B20B0B86500B0F0C9 /* OpenCLScheduler.h */,
 				0F05CC9D20B0B8E000B0F0C9 /* OpenCLThreadPool.h */,
 				0F05CC9120B0AF7000B0F0C9 /* OpenCLParams.h */,
 				0F05CC8920B0A39800B0F0C9 /* cl2.hpp */,
@@ -383,7 +373,6 @@
 				0F05CC6C20B0598300B0F0C9 /* factory.cc in Sources */,
 				0F05CC8720B0A17400B0F0C9 /* OpenCL.cc in Sources */,
 				0F05CC5220B0591400B0F0C9 /* optionsdict.cc in Sources */,
-				0F05CC9420B0B1F100B0F0C9 /* OpenCLRandom.cc in Sources */,
 				0F05CC5620B0591400B0F0C9 /* optionsparser.cc in Sources */,
 				0F05CC3820B057A600B0F0C9 /* board.cc in Sources */,
 				0F05CC5020B0591400B0F0C9 /* filesystem.posix.cc in Sources */,
@@ -396,7 +385,6 @@
 				0F05CC2720B0573600B0F0C9 /* analyzer.cc in Sources */,
 				0F05CC7E20B05A4600B0F0C9 /* tournament.cc in Sources */,
 				0F05CC5420B0591400B0F0C9 /* string.cc in Sources */,
-				0F05CC9C20B0B86500B0F0C9 /* OpenCLScheduler.cc in Sources */,
 				0F05CC7D20B05A4600B0F0C9 /* loop.cc in Sources */,
 				0F05CC3620B057A600B0F0C9 /* position.cc in Sources */,
 				0F05CC6720B0598300B0F0C9 /* writer.cc in Sources */,
