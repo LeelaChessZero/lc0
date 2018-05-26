@@ -84,14 +84,14 @@ void Analyzer::GatherStats(Table3d* table, const Node* root_node,
   uint64_t total_n = 0;
   float factor = play_options_->Get<float>(Search::kCpuctStr) *
                  std::sqrt(std::max(root_node->GetN(), 1u));
-  const float parent_q =
-      -root_node->GetQ(0) - play_options_->Get<float>(Search::kFpuReductionStr);
+  const float parent_q = -root_node->GetQ(0, 0) -
+                         play_options_->Get<float>(Search::kFpuReductionStr);
 
   for (Node* node : root_node->Children()) {
     const auto n = node->GetNStarted();
     total_n += n;
     const auto u = factor * node->GetU();
-    const auto q = node->GetQ(parent_q);
+    const auto q = node->GetQ(parent_q, 0);
     const auto move = node->GetMove(flip).as_string();
     table->Add3dVal(col, move, "N", std::to_string(n));
     table->Add3dVal(col, move, "U", std::to_string(u));
