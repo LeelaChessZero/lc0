@@ -29,6 +29,8 @@
 #endif
 
 #include <cassert>
+#include <algorithm>
+#include <cmath>
 
 namespace lczero 
 {
