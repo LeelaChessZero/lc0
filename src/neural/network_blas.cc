@@ -241,7 +241,7 @@ namespace lczero {
       virtual ~BlasNetwork(){};
 
       
-      BlasNetwork(const Weights& weights, const OptionsDict& options):
+      BlasNetwork(const Weights& weights, const OptionsDict& /* options */):
       weights_(weights)
       {
         constexpr float EPSILON=1e-5;
