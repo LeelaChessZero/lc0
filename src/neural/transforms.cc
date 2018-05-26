@@ -335,7 +335,8 @@ namespace lczero
                                 const std::vector<float>& input,
                                 const std::vector<float>& weights,
                                 const std::vector<float>& biases,
-                                std::vector<float>& output) {
+                                std::vector<float>& output,
+                                bool apply_relu) {
     
     cblas_sgemv(CblasRowMajor, CblasNoTrans,
                 // M     K
@@ -346,11 +347,10 @@ namespace lczero
     
     auto lambda_ReLU = [](float val) { return (val > 0.0f) ?
       val : 0.0f; };
-    static constexpr int NUM_VALUE_CHANNELS = 128;
     
     for (unsigned int o = 0; o < outputs; o++) {
       float val = biases[o] + output[o];
-      if (outputs == NUM_VALUE_CHANNELS) { // OH THE HORROR
+      if (apply_relu) {
         val = lambda_ReLU(val);
       }
       output[o] = val;

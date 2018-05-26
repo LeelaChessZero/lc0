@@ -71,7 +71,8 @@ namespace lczero {
                       const std::vector<float>& input,
                       const std::vector<float>& weights,
                       const std::vector<float>& biases,
-                      std::vector<float>& output);
+                      std::vector<float>& output,
+                      bool apply_relu=false);
     
     template <size_t spatial_size>
     static void batchnorm(size_t channels,

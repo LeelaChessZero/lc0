@@ -194,7 +194,7 @@ namespace lczero {
         
         auto ip1_val_w=weights_.ip1_val_w;
         auto ip1_val_b=weights_.ip1_val_b;
-        Transforms::innerproduct(NUM_VALUE_INPUT_PLANES*width*height, NUM_VALUE_CHANNELS, value_data, ip1_val_w, ip1_val_b, output_val);
+        Transforms::innerproduct(NUM_VALUE_INPUT_PLANES*width*height, NUM_VALUE_CHANNELS, value_data, ip1_val_w, ip1_val_b, output_val, true);
       }
       
       // Returns how many times AddInput() was called.
