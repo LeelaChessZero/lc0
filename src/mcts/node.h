@@ -74,7 +74,8 @@ class Node {
   float GetQ(float default_q, float virtual_loss) const {
     if (n_ == 0) return default_q;
     if (virtual_loss && n_in_flight_) {
-      return (w_ - n_in_flight_) / (n_ + n_in_flight_);
+      return (w_ - n_in_flight_ * virtual_loss) /
+             (n_ + n_in_flight_ * virtual_loss);
     } else {
       return q_;
     }
