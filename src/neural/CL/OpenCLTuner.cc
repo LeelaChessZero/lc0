@@ -378,7 +378,7 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
       auto kernel_ms = 1e-6f * (sum / runs);
       // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out
       auto kernel_gflops = total_flops / (sum / runs);
-      printf("(%u/%u) %s %.4f ms (%.1f GFLOPS)\n",
+      printf("(%zu/%zu) %s %.4f ms (%.1f GFLOPS)\n",
                param_counter, valid_params.size(), param_str.c_str(),
                kernel_ms, kernel_gflops);
       best_time = sum;

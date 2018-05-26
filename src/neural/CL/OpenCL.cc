@@ -1018,7 +1018,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   auto id = 0;
   
   if (verbose) {
-    printf("Detected %d OpenCL platforms.\n", platforms.size());
+    printf("Detected %zu OpenCL platforms.\n", platforms.size());
   }
   
   for (const auto &p : platforms) {
@@ -1152,17 +1152,17 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   m_wavefront_size =
   opencl_thread_data.m_sgemm_kernel.getWorkGroupInfo<CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE>(best_device);
   if (verbose) {
-    printf("Wavefront/Warp size: %d\n", m_wavefront_size);
+    printf("Wavefront/Warp size: %zu\n", m_wavefront_size);
   }
   
   m_max_workgroup_size = best_device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
   m_max_workgroup_dims = best_device.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
   
   if (verbose) {
-    printf("Max workgroup size: %d\n", m_max_workgroup_size);
+    printf("Max workgroup size: %zu\n", m_max_workgroup_size);
     printf("Max workgroup dimensions: ");
     for (auto d : m_max_workgroup_dims) {
-      printf("%d ", d);
+      printf("%zu ", d);
     }
     printf("\n");
   }
