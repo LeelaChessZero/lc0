@@ -139,26 +139,26 @@ if get_option('build_backends')
   if mkl_lib.found() 
     add_project_arguments('-DUSE_MKL', language : 'cpp')
     deps += [ mkl_lib ]
-  	has_blas = true
+      has_blas = true
 
   elif accelerate_lib.found()
-  	includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
+      includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
     deps += [ accelerate_lib ]
-  	has_blas = true
+      has_blas = true
 
   elif openblas_lib.found() 
     add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
     deps += [ openblas_lib ]
-  	has_blas = true
+      has_blas = true
 
   endif
 
   if has_blas
 
-  	blas_files = [
-	'src/neural/transforms.cc',
-	'src/neural/network_blas.cc'
-	]
+      blas_files = [
+    'src/neural/transforms.cc',
+    'src/neural/network_blas.cc'
+    ]
 
     files += blas_files
     has_backends = true
@@ -178,13 +178,13 @@ if get_option('build_backends')
 
   opencl_framework=dependency('OpenCL', required: false)
   if opencl_framework.found()
-  	deps += [ opencl_framework ]
-  	has_opencl = true
+      deps += [ opencl_framework ]
+      has_opencl = true
 
   elif opencl_lib.found()
 
-  	deps += [ opencl_lib ]
-  	has_opencl = true
+      deps += [ opencl_lib ]
+      has_opencl = true
 
   endif
   
