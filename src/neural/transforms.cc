@@ -28,6 +28,7 @@
 #include <cblas.h>
 #endif
 
+#include <cassert>
 
 namespace lczero 
 {
