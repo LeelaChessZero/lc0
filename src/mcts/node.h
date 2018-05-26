@@ -71,7 +71,15 @@ class Node {
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns Q if number of visits is more than 0,
-  float GetQ(float default_q) const { return n_ ? q_ : default_q; }
+  float GetQ(float default_q, float virtual_loss) const {
+    if (n_ == 0) return default_q;
+    if (virtual_loss && n_in_flight_) {
+      return (w_ - n_in_flight_ * virtual_loss) /
+             (n_ + n_in_flight_ * virtual_loss);
+    } else {
+      return q_;
+    }
+  }
   // Returns U / (Puct * N[parent])
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
   // Returns value of Value Head returned from the neural net.

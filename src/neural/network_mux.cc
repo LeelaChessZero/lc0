@@ -79,24 +79,30 @@ class MuxingNetwork : public Network {
 
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
-      throw Exception("Empty list of backends passed to a Muxing backend");
+      // If options are empty, or multipliexer configured in root object,
+      // initialize on root object and default backend.
+      auto backends = NetworkFactory::Get()->GetBackendsList();
+      AddBackend(backends[0], weights, options);
     }
 
     for (const auto& name : parents) {
-      const auto& opts = options.GetSubdict(name);
-      const int nn_threads = opts.GetOrDefault<int>("threads", 1);
-      const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
-      const std::string backend =
-          opts.GetOrDefault<std::string>("backend", name);
+      AddBackend(name, weights, options.GetSubdict(name));
+    }
+  }
 
-      networks_.emplace_back(
-          NetworkFactory::Get()->Create(backend, weights, opts));
-      Network* net = networks_.back().get();
+  void AddBackend(const std::string& name, const Weights& weights,
+                  const OptionsDict& opts) {
+    const int nn_threads = opts.GetOrDefault<int>("threads", 1);
+    const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
+    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
 
-      for (int i = 0; i < nn_threads; ++i) {
-        threads_.emplace_back(
-            [this, net, max_batch]() { Worker(net, max_batch); });
-      }
+    networks_.emplace_back(
+        NetworkFactory::Get()->Create(backend, weights, opts));
+    Network* net = networks_.back().get();
+
+    for (int i = 0; i < nn_threads; ++i) {
+      threads_.emplace_back(
+          [this, net, max_batch]() { Worker(net, max_batch); });
     }
   }
 
