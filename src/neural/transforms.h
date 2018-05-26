@@ -67,8 +67,7 @@ namespace lczero {
                   const std::vector<float>& biases,
                   std::vector<float>& output);
     
-    static void innerproduct(unsigned int inputs, unsigned int outputs,
-                      const std::vector<float>& input,
+    static void innerproduct(const std::vector<float>& input,
                       const std::vector<float>& weights,
                       const std::vector<float>& biases,
                       std::vector<float>& output,

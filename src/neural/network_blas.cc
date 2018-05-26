@@ -33,16 +33,8 @@
 namespace lczero {
   
   namespace {
-    
-    static constexpr int NUM_VALUE_INPUT_PLANES = 32;
-    static constexpr int NUM_POLICY_INPUT_PLANES = 32;
-    
-    static constexpr int NUM_OUTPUT_POLICY = 1858;
-    static constexpr int NUM_VALUE_CHANNELS = 128;
-    
-    static constexpr auto WINOGRAD_ALPHA = 4;
-    static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
 
+    
     class BlasNetwork;
     
     
@@ -54,7 +46,7 @@ namespace lczero {
       BlasComputation(const Weights& weights):
       weights_(weights),
       input_data_(kInputPlanes*64),
-      value_data_(NUM_VALUE_CHANNELS),
+      value_data_(weights_.ip1_val_b.size()),
       policy_data_(),
       q_value_(0) {
         
@@ -90,7 +82,7 @@ namespace lczero {
         }
 
 
-        std::vector<float> policy_data(NUM_OUTPUT_POLICY);
+        std::vector<float> policy_data(weights_.ip_pol_b.size());
         forward(input_data_, policy_data, value_data_);
 
         // Get the moves
@@ -104,8 +96,6 @@ namespace lczero {
         const std::vector<float>& ip2_val_b=weights_.ip2_val_b;
         
         double winrate=Transforms::innerproduct(ip2_val_w, value_data_)+ip2_val_b[0];
-//        std::cerr<<"win rate"<<winrate <<std::endl;
-
         q_value_.emplace_back(std::tanh(winrate));
 
       }
@@ -120,6 +110,21 @@ namespace lczero {
         constexpr int height = 8;
         constexpr int tiles = width * height / 4;
         
+        /*
+         static constexpr int NUM_VALUE_INPUT_PLANES = 32;
+         static constexpr int NUM_POLICY_INPUT_PLANES = 32;
+         static constexpr int NUM_OUTPUT_POLICY = 1858;
+         static constexpr int NUM_VALUE_CHANNELS = 128;
+         */
+        
+        int NUM_VALUE_INPUT_PLANES=weights_.value.bn_means.size();
+        int NUM_POLICY_INPUT_PLANES=weights_.policy.bn_means.size();
+        int NUM_OUTPUT_POLICY=weights_.ip_pol_b.size();
+        int NUM_VALUE_CHANNELS=weights_.ip1_val_b.size();
+
+        static constexpr auto WINOGRAD_ALPHA = 4;
+        static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
+
         const std::vector<float>& input_conv_biases=weights_.input.biases;
         const std::vector<float>& input_conv_weights=weights_.input.weights;
         
@@ -190,11 +195,13 @@ namespace lczero {
         
         auto v2_ip_pol_w=weights_.ip_pol_w;
         auto v2_ip_pol_b=weights_.ip_pol_b;
-        Transforms::innerproduct(NUM_POLICY_INPUT_PLANES*width*height, NUM_OUTPUT_POLICY, policy_data, v2_ip_pol_w, v2_ip_pol_b, output_pol);
+        // NUM_POLICY_INPUT_PLANES*width*height x NUM_OUTPUT_POLICY
+        Transforms::innerproduct(policy_data, v2_ip_pol_w, v2_ip_pol_b, output_pol);
         
         auto ip1_val_w=weights_.ip1_val_w;
         auto ip1_val_b=weights_.ip1_val_b;
-        Transforms::innerproduct(NUM_VALUE_INPUT_PLANES*width*height, NUM_VALUE_CHANNELS, value_data, ip1_val_w, ip1_val_b, output_val, true);
+        // NUM_VALUE_INPUT_PLANES*width*height x NUM_VALUE_CHANNELS,
+        Transforms::innerproduct(value_data, ip1_val_w, ip1_val_b, output_val, true);
       }
       
       // Returns how many times AddInput() was called.
@@ -235,8 +242,6 @@ namespace lczero {
       BlasNetwork(const Weights& weights, const OptionsDict& /* options */):
       weights_(weights)
       {
-        constexpr float EPSILON=1e-5;
-
         const int inputChannels = kInputPlanes;
         const int channels = weights.input.biases.size();
         const size_t residual_blocks = weights.residual.size();
@@ -252,9 +257,9 @@ namespace lczero {
         // residual blocks
         for (auto i = 0; i < residual_blocks; i++) {
           
-          Weights::Residual& residual=weights_.residual[i];
-          Weights::ConvBlock& conv1=residual.conv1;
-          Weights::ConvBlock& conv2=residual.conv2;
+          auto& residual=weights_.residual[i];
+          auto& conv1=residual.conv1;
+          auto& conv2=residual.conv2;
           
           conv1.weights=Transforms::winograd_transform_f(conv1.weights, channels, channels);
           conv2.weights=Transforms::winograd_transform_f(conv2.weights, channels, channels);

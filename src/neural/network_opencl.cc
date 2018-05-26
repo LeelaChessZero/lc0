@@ -43,14 +43,7 @@ namespace lczero {
   
   namespace {
     
-    
-    static constexpr int NUM_VALUE_INPUT_PLANES = 32;
-    static constexpr int NUM_POLICY_INPUT_PLANES = 32;
-    
-    static constexpr int NUM_OUTPUT_POLICY = 1858;
-    static constexpr int NUM_VALUE_CHANNELS = 128;
-    
-    
+   
     class OpenCLNetwork;
     
     // Copy the vectors we need after weights is deallocated
@@ -58,10 +51,14 @@ namespace lczero {
       
       const std::vector<float> ip2_val_w;
       const std::vector<float> ip2_val_b;
+      const size_t num_output_policies;
+      const size_t num_value_channels;
       
       OpenCLWeights(const Weights& weights):
       ip2_val_w(weights.ip2_val_w),
-      ip2_val_b(weights.ip2_val_b)
+      ip2_val_b(weights.ip2_val_b),
+      num_output_policies(weights.ip_pol_b.size()),
+      num_value_channels(weights.ip1_val_b.size())
       {
         
       }
@@ -78,7 +75,7 @@ namespace lczero {
       opencl_net_(opencl_net),
       weights_(weights),
       input_data_(kInputPlanes*64),
-      value_data_(NUM_VALUE_CHANNELS),
+      value_data_(weights_.num_value_channels),
       policy_data_(),
       q_value_(0) {
         
@@ -116,7 +113,7 @@ namespace lczero {
             input_data_[index++]=((plane.mask&(one<<i))==0 ) ? 0 : value;
         }
         
-        std::vector<float> policy_data(NUM_OUTPUT_POLICY);
+        std::vector<float> policy_data(weights_.num_output_policies);
         opencl_net_.forward(input_data_, policy_data, value_data_);
         
         // Get the moves
@@ -187,7 +184,6 @@ namespace lczero {
       
     };
     
-    static constexpr auto WINOGRAD_ALPHA = 4;
     
     class OpenCLNetwork : public Network {
     public:
@@ -211,8 +207,21 @@ namespace lczero {
         const int inputChannels = kInputPlanes;
         const int channels = weights.input.biases.size();
         const size_t residual_blocks = weights.residual.size();
+  
+        /*
+         static constexpr int NUM_VALUE_INPUT_PLANES = 32;
+         static constexpr int NUM_POLICY_INPUT_PLANES = 32;
+         static constexpr int NUM_OUTPUT_POLICY = 1858;
+         static constexpr int NUM_VALUE_CHANNELS = 128;
+         */
         
-        
+        int NUM_VALUE_INPUT_PLANES=weights.value.bn_means.size();
+        int NUM_POLICY_INPUT_PLANES=weights.policy.bn_means.size();
+        int NUM_OUTPUT_POLICY=weights.ip_pol_b.size();
+        int NUM_VALUE_CHANNELS=weights.ip1_val_b.size();
+
+        static constexpr auto WINOGRAD_ALPHA = 4;
+
         opencl_.initialize(channels, params_);
         
         auto tuners = opencl_.get_sgemm_tuners();
@@ -296,7 +305,8 @@ namespace lczero {
         const std::vector<float>& ip_pol_b_vec=weights.ip_pol_b;
         
         opencl_net_.push_policy(channels, NUM_POLICY_INPUT_PLANES,
-                                NUM_POLICY_INPUT_PLANES*width*height, NUM_OUTPUT_POLICY,
+                                NUM_POLICY_INPUT_PLANES*width*height,
+                                NUM_OUTPUT_POLICY,
                                 conv_pol_w,
                                 bn_pol_means, bn_pol_stddivs,
                                 ip_pol_w_vec, ip_pol_b_vec);
@@ -312,7 +322,8 @@ namespace lczero {
         const std::vector<float>& ip_val_b_vec=weights.ip1_val_b;
         
         opencl_net_.push_value(channels, NUM_VALUE_INPUT_PLANES,
-                               NUM_VALUE_INPUT_PLANES*width*height, NUM_VALUE_CHANNELS,
+                               NUM_VALUE_INPUT_PLANES*width*height,
+                               NUM_VALUE_CHANNELS,
                                conv_val_w,
                                bn_val_means, bn_val_stddivs,
                                ip_val_w_vec, ip_val_b_vec);

@@ -331,32 +331,31 @@ namespace lczero
     }
   }
   
-  void Transforms::innerproduct(unsigned int inputs,unsigned int outputs,
-                                const std::vector<float>& input,
+  void Transforms::innerproduct(const std::vector<float>& inputs,
                                 const std::vector<float>& weights,
                                 const std::vector<float>& biases,
-                                std::vector<float>& output,
+                                std::vector<float>& outputs,
                                 bool apply_relu) {
     
     cblas_sgemv(CblasRowMajor, CblasNoTrans,
                 // M     K
-                outputs, inputs,
-                1.0f, &weights[0], inputs,
-                &input[0], 1,
-                0.0f, &output[0], 1);
+                outputs.size(), inputs.size(),
+                1.0f, weights.data(), inputs.size(),
+                inputs.data(), 1, 0.0f,
+                outputs.data(), 1);
     
     auto lambda_ReLU = [](float val) { return (val > 0.0f) ?
       val : 0.0f; };
     
-    for (unsigned int o = 0; o < outputs; o++) {
-      float val = biases[o] + output[o];
+    for (unsigned int o = 0; o < outputs.size(); o++) {
+      float val = biases[o] + outputs[o];
       if (apply_relu) {
         val = lambda_ReLU(val);
       }
-      output[o] = val;
+      outputs[o] = val;
     }
   }
-  
+
   template <size_t spatial_size>
   void Transforms::batchnorm(size_t channels,
                              std::vector<float>& data,
