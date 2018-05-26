@@ -31,6 +31,11 @@ namespace lczero {
     static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
 
     
+    static std::vector<float> zeropad_U(const std::vector<float>& U,
+                                        const int outputs, const int channels,
+                                        const int outputs_pad,
+                                        const int channels_pad);
+    
     static std::vector<float> winograd_transform_f(const std::vector<float>& f,
                                             const int outputs,
                                             const int channels);

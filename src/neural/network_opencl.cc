@@ -18,6 +18,7 @@
 
 #include "neural/factory.h"
 #include "neural/network.h"
+#include "neural/transforms.h"
 
 #include <condition_variable>
 #include <cassert>
@@ -33,6 +34,7 @@
 
 #include "CL/OpenCLParams.h"
 #include "CL/OpenCL.h"
+
 
 #include "utils/blas.h"
 
@@ -193,82 +195,6 @@ namespace lczero {
       
       virtual ~OpenCLNetwork(){};
 
-      
-    private:
-      
-      static std::vector<float> winograd_transform_f(const std::vector<float>& f,
-                                                             const int outputs,
-                                                             const int channels) {
-        // F(2x2, 3x3) Winograd filter transformation
-        // transpose(G.dot(f).dot(G.transpose()))
-        // U matrix is transposed for better memory layout in SGEMM
-        auto U = std::vector<float>(WINOGRAD_TILE * outputs * channels);
-        auto G = std::array<float, WINOGRAD_TILE>{ 1.0,  0.0,  0.0,
-          0.5,  0.5,  0.5,
-          0.5, -0.5,  0.5,
-          0.0,  0.0,  1.0};
-        auto temp = std::array<float, 12>{};
-        
-        for (auto o = 0; o < outputs; o++) {
-          for (auto c = 0; c < channels; c++) {
-            for (auto i = 0; i < 4; i++){
-              for (auto j = 0; j < 3; j++) {
-                auto acc = 0.0f;
-                for (auto k = 0; k < 3; k++) {
-                  acc += G[i*3 + k] * f[o*channels*9 + c*9 + k*3 + j];
-                }
-                temp[i*3 + j] = acc;
-              }
-            }
-            
-            for (auto xi = 0; xi < 4; xi++) {
-              for (auto nu = 0; nu < 4; nu++) {
-                auto acc = 0.0f;
-                for (int k = 0; k < 3; k++) {
-                  acc += temp[xi*3 + k] * G[nu*3 + k];
-                }
-                U[xi * (4 * outputs * channels)
-                  + nu * (outputs * channels)
-                  + c * outputs
-                  + o] = acc;
-              }
-            }
-          }
-        }
-        
-        return U;
-      }
-      
-      static std::vector<float> zeropad_U(const std::vector<float>& U,
-                                            const int outputs, const int channels,
-                                            const int outputs_pad,
-                                            const int channels_pad) {
-        // Fill with zeroes
-        auto Upad = std::vector<float>(WINOGRAD_TILE * outputs_pad * channels_pad);
-        
-        for(auto o = 0; o < outputs; o++) {
-          for(auto c = 0; c < channels; c++) {
-            for(auto xi = 0; xi < WINOGRAD_ALPHA; xi++){
-              for(auto nu = 0; nu < WINOGRAD_ALPHA; nu++) {
-                Upad[xi * (WINOGRAD_ALPHA * outputs_pad * channels_pad)
-                     + nu * (outputs_pad * channels_pad)
-                     + c * outputs_pad +
-                     o] =
-                U[xi * (WINOGRAD_ALPHA * outputs * channels)
-                  + nu * (outputs * channels)
-                  + c * outputs
-                  + o];
-              }
-            }
-          }
-        }
-        
-        return Upad;
-      }
-      
-      
-    public:
-
       OpenCLNetwork(const Weights& weights, const OptionsDict& options):
       weights_(weights),
       params_(),
@@ -301,9 +227,9 @@ namespace lczero {
         size_t m_ceil = ceilMultiple(ceilMultiple(channels, mwg), vwm);
         size_t k_ceil = ceilMultiple(ceilMultiple(inputChannels, kwg), vwm);
         
-        std::vector<float> input_conv_weights=winograd_transform_f(weights.input.weights, channels, inputChannels);
+        std::vector<float> input_conv_weights=Transforms::winograd_transform_f(weights.input.weights, channels, inputChannels);
         
-        auto Upad = zeropad_U(input_conv_weights,
+        auto Upad = Transforms::zeropad_U(input_conv_weights,
                               channels, inputChannels,
                               m_ceil, k_ceil);
         
@@ -330,13 +256,13 @@ namespace lczero {
           const Weights::ConvBlock& conv1=residual.conv1;
           const Weights::ConvBlock& conv2=residual.conv2;
           
-          std::vector<float> conv_weights_1=winograd_transform_f(conv1.weights, channels, channels);
-          std::vector<float> conv_weights_2=winograd_transform_f(conv2.weights, channels, channels);
+          std::vector<float> conv_weights_1=Transforms::winograd_transform_f(conv1.weights, channels, channels);
+          std::vector<float> conv_weights_2=Transforms::winograd_transform_f(conv2.weights, channels, channels);
           
-          auto Upad1 = zeropad_U(conv_weights_1,
+          auto Upad1 = Transforms::zeropad_U(conv_weights_1,
                                  channels, channels,
                                  m_ceil, m_ceil);
-          auto Upad2 = zeropad_U(conv_weights_2,
+          auto Upad2 = Transforms::zeropad_U(conv_weights_2,
                                  channels, channels,
                                  m_ceil, m_ceil);
           
