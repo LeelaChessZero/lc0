@@ -133,7 +133,7 @@ if get_option('build_backends')
   accelerate_lib = dependency('Accelerate', required: false)
 
   mkl_libdirs = get_option('mkl_libdirs')
-  mkl_lib = cc.find_library('mkl', dirs: mkl_libdirs, required: false)
+  mkl_lib = cc.find_library('mkl_rt', dirs: mkl_libdirs, required: false)
 
   openblas_lib = cc.find_library('openblas', required: false)
 
