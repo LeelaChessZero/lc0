@@ -32,15 +32,8 @@
 #include "OpenCLTuner.h"
 #include "OpenCLUtils.h"
 
-#ifdef __APPLE__
-#include <Accelerate/Accelerate.h>
-#endif
-#ifdef USE_MKL
-#include <mkl.h>
-#endif
-#ifdef USE_OPENBLAS
-#include <cblas.h>
-#endif
+#include "utils/blas.h"
+
 
 const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
 constexpr auto MAX_ERROR = 1e-4f;

@@ -26,19 +26,9 @@
 #include <cmath>
 #include <algorithm>
 #include <thread>
+
 #include "utils/exception.h"
-
-
-#ifdef __APPLE__
-#include <Accelerate/Accelerate.h>
-#endif
-#ifdef USE_MKL
-#include <mkl.h>
-#endif
-#ifdef USE_OPENBLAS
-#include <cblas.h>
-#endif
-
+#include "utils/blas.h"
 
 namespace lczero {
   
@@ -318,20 +308,17 @@ namespace lczero {
         for(auto&& w : bn_val_stddivs)
           w = 1.0f / std::sqrt(w + EPSILON);
 
-#ifdef USE_BLAS
-#ifndef __APPLE__
 #ifdef USE_OPENBLAS
         openblas_set_num_threads(1);
         myprintf("BLAS Core: %s\n", openblas_get_corename());
 #endif
+        
 #ifdef USE_MKL
         //mkl_set_threading_layer(MKL_THREADING_SEQUENTIAL);
         mkl_set_num_threads(1);
         MKLVersion Version;
         mkl_get_version(&Version);
         myprintf("BLAS core: MKL %s\n", Version.Processor);
-#endif
-#endif
 #endif
 
       }

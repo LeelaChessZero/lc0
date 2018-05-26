@@ -18,15 +18,8 @@
 
 #include "transforms.h"
 
-#ifdef __APPLE__
-#include <Accelerate/Accelerate.h>
-#endif
-#ifdef USE_MKL
-#include <mkl.h>
-#endif
-#ifdef USE_OPENBLAS
-#include <cblas.h>
-#endif
+#include "utils/blas.h"
+
 
 #include <cassert>
 #include <algorithm>
