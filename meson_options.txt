@@ -20,7 +20,7 @@ option('cudnn_libdirs',
 
 option('mkl_libdirs',
        type: 'array',
-       value: ['/opt/intel/lib/intel64'],
+       value: ['/opt/intel/lib/intel64', '/opt/intel/mkl/lib/intel64'],
        description: 'Paths to MKL libraries')
 
 option('cudnn_include', 
