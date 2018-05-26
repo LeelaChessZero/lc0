@@ -232,10 +232,10 @@ namespace lczero {
                               m_ceil, k_ceil);
         
         std::vector<float> input_batchnorm_means=weights.input.bn_means; // copy ctor
-        OffsetBatchNormMeans(input_batchnorm_means, weights.input.biases);
+        Transforms::offsetBatchNormMeans(input_batchnorm_means, weights.input.biases);
         
         std::vector<float> input_batchnorm_stddivs=weights.input.bn_stddivs;
-        InvertBatchNormStddev(input_batchnorm_stddivs);
+        Transforms::invertBatchNormStddev(input_batchnorm_stddivs);
         
         // Winograd filter transformation changes filter size to 4x4
         opencl_net_.push_input_convolution(WINOGRAD_ALPHA, inputChannels, channels,
@@ -260,16 +260,16 @@ namespace lczero {
           
           
           std::vector<float> batchnorm_means_1=conv1.bn_means; // copy ctor
-          OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
+          Transforms::offsetBatchNormMeans(batchnorm_means_1, conv1.biases);
           
           std::vector<float> batchnorm_means_2=conv2.bn_means; // copy ctor
-          OffsetBatchNormMeans(batchnorm_means_2, conv2.biases);
+          Transforms::offsetBatchNormMeans(batchnorm_means_2, conv2.biases);
           
           std::vector<float> batchnorm_stddivs_1=conv1.bn_stddivs; // copy ctor
-          InvertBatchNormStddev(batchnorm_stddivs_1);
+          Transforms::invertBatchNormStddev(batchnorm_stddivs_1);
           
           std::vector<float> batchnorm_stddivs_2=conv2.bn_stddivs; // copy ctor
-          InvertBatchNormStddev(batchnorm_stddivs_2);
+          Transforms::invertBatchNormStddev(batchnorm_stddivs_2);
           
           opencl_net_.push_residual(WINOGRAD_ALPHA, channels, channels,
                                     Upad1,
@@ -286,10 +286,10 @@ namespace lczero {
         
         
         std::vector<float> bn_pol_means=weights.policy.bn_means; // copy ctor
-        OffsetBatchNormMeans(bn_pol_means, weights.policy.biases);
+        Transforms::offsetBatchNormMeans(bn_pol_means, weights.policy.biases);
         
         std::vector<float> bn_pol_stddivs=weights.policy.bn_stddivs;
-        InvertBatchNormStddev(bn_pol_stddivs);
+        Transforms::invertBatchNormStddev(bn_pol_stddivs);
         
         const std::vector<float>& conv_pol_w=weights.policy.weights;
         const std::vector<float>& ip_pol_w_vec=weights.ip_pol_w;
@@ -302,10 +302,10 @@ namespace lczero {
                                 ip_pol_w_vec, ip_pol_b_vec);
         
         std::vector<float> bn_val_means=weights.value.bn_means;
-        OffsetBatchNormMeans(bn_val_means, weights.value.biases);
+        Transforms::offsetBatchNormMeans(bn_val_means, weights.value.biases);
         
         std::vector<float> bn_val_stddivs=weights.value.bn_stddivs;
-        InvertBatchNormStddev(bn_val_stddivs);
+        Transforms::invertBatchNormStddev(bn_val_stddivs);
         
         const std::vector<float>& conv_val_w=weights.value.weights;
         const std::vector<float>& ip_val_w_vec=weights.ip1_val_w;
@@ -318,21 +318,7 @@ namespace lczero {
                                ip_val_w_vec, ip_val_b_vec);
       }
       
-      static void OffsetBatchNormMeans(std::vector<float>& bn_means, const std::vector<float>& biases) {
-        // Biases are not calculated and are typically zero but some networks might
-        // still have non-zero biases.
-        // Move biases to batchnorm means to make the output match without having
-        // to separately add the biases.
-        for (auto i=0; i<bn_means.size(); i++)
-          bn_means[i]-=biases[i];
-      }
-      
-      static void InvertBatchNormStddev(std::vector<float>& weights) {
-        constexpr float EPSILON=1e-5;
-        for(auto&& w : weights)
-          w = 1.0f / std::sqrt(w + EPSILON);
-      }
-      
+  
       std::unique_ptr<NetworkComputation> NewComputation() override {
         return std::make_unique<OpenCLComputation>(opencl_net_, weights_);
       }

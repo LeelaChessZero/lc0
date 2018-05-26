@@ -452,6 +452,25 @@ namespace lczero
       output[i] = output[i] / denom;
     }
   }
+  
+  
+  
+  void Transforms::offsetBatchNormMeans(std::vector<float>& bn_means, const std::vector<float>& biases) {
+    // Biases are not calculated and are typically zero but some networks might
+    // still have non-zero biases.
+    // Move biases to batchnorm means to make the output match without having
+    // to separately add the biases.
+    for (auto i=0; i<bn_means.size(); i++)
+      bn_means[i] -= biases[i];
+  }
+  
+  void Transforms::invertBatchNormStddev(std::vector<float>& weights) {
+    constexpr float EPSILON = 1e-5;
+    for(auto& w : weights)
+      w = 1.0f / std::sqrt(w + EPSILON);
+  }
+
+  
 
   /* Template instantiations and specializations */
   

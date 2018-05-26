@@ -34,7 +34,6 @@ namespace lczero {
   
   namespace {
     
-    
     static constexpr int NUM_VALUE_INPUT_PLANES = 32;
     static constexpr int NUM_POLICY_INPUT_PLANES = 32;
     
@@ -76,7 +75,6 @@ namespace lczero {
         
         for (auto& sample : planes_)
           ComputeBlocking(sample);
-
       }
       
       
@@ -94,13 +92,6 @@ namespace lczero {
 
         std::vector<float> policy_data(NUM_OUTPUT_POLICY);
         forward(input_data_, policy_data, value_data_);
-
-        
-/*        for (int i=0; i<value_data_.size(); i++) {
-          std::cerr<<value_data_[i]<<"  ";
-        }
-        std::cerr<<std::endl;
- */
 
         // Get the moves
         Transforms::softmax(policy_data, policy_data);
@@ -253,10 +244,10 @@ namespace lczero {
         weights_.input.weights=Transforms::winograd_transform_f(weights_.input.weights, channels, inputChannels);
         
         std::vector<float>& input_batchnorm_means=weights_.input.bn_means;
-        OffsetBatchNormMeans(input_batchnorm_means, weights_.input.biases);
+        Transforms::offsetBatchNormMeans(input_batchnorm_means, weights_.input.biases);
      
         std::vector<float>& input_batchnorm_stddivs=weights_.input.bn_stddivs;
-        InvertBatchNormStddev(input_batchnorm_stddivs);
+        Transforms::invertBatchNormStddev(input_batchnorm_stddivs);
         
         // residual blocks
         for (auto i = 0; i < residual_blocks; i++) {
@@ -269,29 +260,29 @@ namespace lczero {
           conv2.weights=Transforms::winograd_transform_f(conv2.weights, channels, channels);
           
           std::vector<float>& batchnorm_means_1=conv1.bn_means;
-          OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
+          Transforms::offsetBatchNormMeans(batchnorm_means_1, conv1.biases);
 
           std::vector<float>& batchnorm_means_2=conv2.bn_means;
-          OffsetBatchNormMeans(batchnorm_means_2, conv2.biases);
+          Transforms::offsetBatchNormMeans(batchnorm_means_2, conv2.biases);
 
           std::vector<float>& batchnorm_stddivs_1=conv1.bn_stddivs;
-          InvertBatchNormStddev(batchnorm_stddivs_1);
+          Transforms::invertBatchNormStddev(batchnorm_stddivs_1);
           
           std::vector<float>& batchnorm_stddivs_2=conv2.bn_stddivs;
-          InvertBatchNormStddev(batchnorm_stddivs_2);
+          Transforms::invertBatchNormStddev(batchnorm_stddivs_2);
         }
         
         std::vector<float>& bn_pol_means=weights_.policy.bn_means;
-        OffsetBatchNormMeans(bn_pol_means, weights_.policy.biases);
+        Transforms::offsetBatchNormMeans(bn_pol_means, weights_.policy.biases);
         
         std::vector<float>& bn_pol_stddivs=weights_.policy.bn_stddivs;
-        InvertBatchNormStddev(bn_pol_stddivs);
+        Transforms::invertBatchNormStddev(bn_pol_stddivs);
         
         std::vector<float>& bn_val_means=weights_.value.bn_means;
-        OffsetBatchNormMeans(bn_val_means, weights_.value.biases);
+        Transforms::offsetBatchNormMeans(bn_val_means, weights_.value.biases);
 
         std::vector<float>& bn_val_stddivs=weights_.value.bn_stddivs;
-        InvertBatchNormStddev(bn_val_stddivs);
+        Transforms::invertBatchNormStddev(bn_val_stddivs);
 
 #ifdef USE_OPENBLAS
         //openblas_set_num_threads(1);
@@ -308,22 +299,6 @@ namespace lczero {
 
       }
 
-      static void OffsetBatchNormMeans(std::vector<float>& bn_means, const std::vector<float>& biases) {
-        // Biases are not calculated and are typically zero but some networks might
-        // still have non-zero biases.
-        // Move biases to batchnorm means to make the output match without having
-        // to separately add the biases.
-        for (auto i=0; i<bn_means.size(); i++)
-          bn_means[i]-=biases[i];
-      }
-      
-      static void InvertBatchNormStddev(std::vector<float>& weights) {
-        constexpr float EPSILON=1e-5;
-        for(auto&& w : weights)
-          w = 1.0f / std::sqrt(w + EPSILON);
-      }
-
-    
       std::unique_ptr<NetworkComputation> NewComputation() override {
         return std::make_unique<BlasComputation>(weights_);
       }

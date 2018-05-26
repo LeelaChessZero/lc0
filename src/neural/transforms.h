@@ -88,6 +88,11 @@ namespace lczero {
     
     static float innerproduct(const std::vector<float>& x, const std::vector<float>& y);
 
+    
+    static void offsetBatchNormMeans(std::vector<float>& bn_means, const std::vector<float>& biases);
+    
+    static void invertBatchNormStddev(std::vector<float>& weights);
+
 
   };
   
