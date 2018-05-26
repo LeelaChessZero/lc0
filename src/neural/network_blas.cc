@@ -318,7 +318,7 @@ namespace lczero {
         mkl_set_num_threads(1);
         MKLVersion Version;
         mkl_get_version(&Version);
-        myprintf("BLAS core: MKL %s\n", Version.Processor);
+        printf("BLAS core: MKL %s\n", Version.Processor);
 #endif
 
       }
