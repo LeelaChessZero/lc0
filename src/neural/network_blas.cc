@@ -309,7 +309,7 @@ namespace lczero {
           w = 1.0f / std::sqrt(w + EPSILON);
 
 #ifdef USE_OPENBLAS
-        openblas_set_num_threads(1);
+        //openblas_set_num_threads(1);
         //printf("BLAS Core: %s\n", openblas_get_corename());
 #endif
         
