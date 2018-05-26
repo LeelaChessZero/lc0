@@ -310,7 +310,7 @@ namespace lczero {
 
 #ifdef USE_OPENBLAS
         openblas_set_num_threads(1);
-        myprintf("BLAS Core: %s\n", openblas_get_corename());
+        printf("BLAS Core: %s\n", openblas_get_corename());
 #endif
         
 #ifdef USE_MKL
