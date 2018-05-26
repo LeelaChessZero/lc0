@@ -18,6 +18,11 @@ option('cudnn_libdirs',
        value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'],
        description: 'Paths to Cuda/cudnn libraries')
 
+option('mkl_libdirs',
+       type: 'array',
+       value: ['/opt/intel/lib/intel64'],
+       description: 'Paths to MKL libraries')
+
 option('cudnn_include', 
        type: 'array',
        value: [],

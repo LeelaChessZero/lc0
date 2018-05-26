@@ -130,17 +130,20 @@ if get_option('build_backends')
   has_blas = false
 
   accelerate_lib = dependency('Accelerate', required: false)
-  mkl_lib = cc.find_library('mkl', required: false)
+
+  mkl_libdirs = get_option('mkl_libdirs')
+  mkl_lib = cc.find_library('mkl', dirs: mkl_libdirs, required: false)
+
   openblas_lib = cc.find_library('openblas', required: false)
 
-  if accelerate_lib.found()
-  	includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
-    deps += [ accelerate_lib ]
-  	has_blas = true
-
-  elif mkl_lib.found() 
+  if mkl_lib.found() 
     add_project_arguments('-DUSE_MKL', language : 'cpp')
     deps += [ mkl_lib ]
+  	has_blas = true
+
+  elif accelerate_lib.found()
+  	includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
+    deps += [ accelerate_lib ]
   	has_blas = true
 
   elif openblas_lib.found() 
