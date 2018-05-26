@@ -188,7 +188,6 @@ namespace lczero {
     };
     
     static constexpr auto WINOGRAD_ALPHA = 4;
-    static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
     
     class OpenCLNetwork : public Network {
     public:
