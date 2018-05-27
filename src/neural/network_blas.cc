@@ -116,11 +116,9 @@ namespace lczero {
 
         static constexpr auto WINOGRAD_ALPHA = 4;
         static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
-
-        const std::vector<float>& input_conv_biases=weights_.input.biases;
         
         // Calculate output channels
-        const auto output_channels = input_conv_biases.size();
+        const auto output_channels = weights_.input.biases.size();
         //input_channels is the maximum number of input channels of any convolution.
         //Residual blocks are identical, but the first convolution might be bigger
         //when the network has very few filters
