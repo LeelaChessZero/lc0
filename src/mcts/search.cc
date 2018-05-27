@@ -660,7 +660,7 @@ Node* Search::PickNodeToExtend(Node* node, PositionHistory* history) {
       }
     }
     history->Append(node->GetMove());
-    if (is_root_node && possible_moves <= 1) {
+    if (is_root_node && possible_moves <= 1 && !limits_.infinite) {
       // If there is only one move theoretically possible within remaining time,
       // output it.
       Mutex::Lock counters_lock(counters_mutex_);
