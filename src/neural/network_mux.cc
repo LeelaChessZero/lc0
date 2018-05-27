@@ -199,5 +199,5 @@ void MuxingComputation::ComputeBlocking() {
 }  // namespace
 
 REGISTER_NETWORK("multiplexing", MuxingNetwork, -1000)
-
+  
 }  // namespace lczero

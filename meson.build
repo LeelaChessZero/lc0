@@ -59,6 +59,7 @@ files += [
   'src/neural/factory.cc',
   'src/neural/loader.cc',
   'src/neural/network_mux.cc',
+  'src/neural/network_check.cc',
   'src/neural/network_random.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
@@ -121,6 +122,86 @@ if get_option('build_backends')
     has_backends = true
   endif
     
+
+
+  ## ~~~~~
+  ## Blas
+  ## ~~~~~
+
+  has_blas = false
+
+  accelerate_lib = dependency('Accelerate', required: false)
+
+  mkl_libdirs = get_option('mkl_libdirs')
+  mkl_lib = cc.find_library('mkl_rt', dirs: mkl_libdirs, required: false)
+
+  openblas_lib = cc.find_library('openblas', required: false)
+
+  if mkl_lib.found() 
+    add_project_arguments('-DUSE_MKL', language : 'cpp')
+    deps += [ mkl_lib ]
+    has_blas = true
+
+  elif accelerate_lib.found()
+    includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
+    deps += [ accelerate_lib ]
+    has_blas = true
+
+  elif openblas_lib.found() 
+    add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+    deps += [ openblas_lib ]
+    has_blas = true
+
+  endif
+
+  if has_blas
+
+    blas_files = [
+    'src/neural/transforms.cc',
+    'src/neural/network_blas.cc'
+    ]
+
+    files += blas_files
+    has_backends = true
+
+  endif
+
+
+  ## ~~~~~
+  ## OpenCL
+  ## ~~~~~
+
+  has_opencl = false
+
+  opencl_libdirs = get_option('opencl_libdirs')
+  opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: false)
+
+  opencl_framework=dependency('OpenCL', required: false)
+  if opencl_framework.found()
+      deps += [ opencl_framework ]
+      has_opencl = true
+
+  elif opencl_lib.found()
+
+      deps += [ opencl_lib ]
+      has_opencl = true
+
+  endif
+  
+
+  if has_opencl and has_blas
+
+    opencl_files = [
+    'src/neural/CL/OpenCL.cc',
+    'src/neural/CL/OpenCLTuner.cc',
+    'src/neural/network_opencl.cc',
+    ]
+
+    files += opencl_files
+    has_backends = true
+
+  endif
+
 
   ## ~~~~~
   ## cuDNN
