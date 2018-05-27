@@ -49,7 +49,7 @@ List of command line flags:
 | <nobr>--[no-]verbose-move-stats | Display verbose move stats | Display Q, V, N, U and P values of every move candidate after each move.<br>Default: `false` |
 | --[no-]smart-pruning  | Enable smart pruning | Default: `true` |
 | --virtual-loss-bug=NUM | Virtual loss bug | Default: `0` |
-| --fpu-reduction=NUM | First Play Urgency Reduction | Default: `0` |
+| --fpu-reduction=NUM | First Play Urgency Reduction | Default: `0.2` |
 | --cache-history-length=NUM | Length of history to include in cache | Default: `7` |
 | --extra-virtual-loss=NUM | Extra virtual loss | Default: `0` |
 | -l,<br>--debuglog=FILENAME | Do debug logging into file | Default if off. (empty string) |

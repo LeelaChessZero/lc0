@@ -64,7 +64,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kVirtualLossBugStr, -100, 100, "virtual-loss-bug") =
       0.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
-      0.0f;
+      0.2f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
                           "cache-history-length") = 7;
   options->Add<FloatOption>(kExtraVirtualLossStr, 0.0, 100.0,
