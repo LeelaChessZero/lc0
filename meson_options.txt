@@ -3,6 +3,11 @@ option('tensorflow_include',
        value: ['/usr/local/include/tensorflow/'],
        description: 'Paths to tensorflow include directories')
 
+option('openblas_include',
+       type: 'array',
+       value: ['/usr/include/openblas/'],
+       description: 'Paths to openblas include directories')
+
 option('tensorflow_libdir',
        type: 'array',
        value: ['/usr/local/lib/tensorflow_cc/'],
