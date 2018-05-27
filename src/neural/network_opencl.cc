@@ -98,13 +98,11 @@ namespace lczero {
         
         for (auto& sample : planes_)
           ComputeBlocking(sample);
-
       }
       
       
       void ComputeBlocking(const InputPlanes &sample) {
-        
-        
+      
         int index=0;
         for (const InputPlane& plane : sample) {
           float value=plane.value;
@@ -121,10 +119,7 @@ namespace lczero {
         policy_data_.emplace_back(move(policy_data));
         
         // Now get the score
-        const std::vector<float>& ip2_val_w=weights_.ip2_val_w;
-        const std::vector<float>& ip2_val_b=weights_.ip2_val_b;
-        
-        double winrate=innerproduct(ip2_val_w, value_data_)+ip2_val_b[0];
+        double winrate=innerproduct(weights_.ip2_val_w, value_data_)+weights_.ip2_val_b[0];
         q_value_.emplace_back(std::tanh(winrate));
         
       }
@@ -253,9 +248,9 @@ namespace lczero {
         // residual blocks
         for (auto i = size_t{0}; i < residual_blocks; i++) {
           
-          const Weights::Residual& residual=weights.residual[i];
-          const Weights::ConvBlock& conv1=residual.conv1;
-          const Weights::ConvBlock& conv2=residual.conv2;
+          auto& residual=weights.residual[i];
+          auto& conv1=residual.conv1;
+          auto& conv2=residual.conv2;
           
           std::vector<float> conv_weights_1=Transforms::winograd_transform_f(conv1.weights, channels, channels);
           std::vector<float> conv_weights_2=Transforms::winograd_transform_f(conv2.weights, channels, channels);
@@ -292,24 +287,20 @@ namespace lczero {
         constexpr unsigned int width = 8;
         constexpr unsigned int height = 8;
         
-        
-        
         std::vector<float> bn_pol_means=weights.policy.bn_means; // copy ctor
         Transforms::offsetBatchNormMeans(bn_pol_means, weights.policy.biases);
         
         std::vector<float> bn_pol_stddivs=weights.policy.bn_stddivs;
         Transforms::invertBatchNormStddev(bn_pol_stddivs);
         
-        const std::vector<float>& conv_pol_w=weights.policy.weights;
-        const std::vector<float>& ip_pol_w_vec=weights.ip_pol_w;
-        const std::vector<float>& ip_pol_b_vec=weights.ip_pol_b;
-        
         opencl_net_.push_policy(channels, NUM_POLICY_INPUT_PLANES,
                                 NUM_POLICY_INPUT_PLANES*width*height,
                                 NUM_OUTPUT_POLICY,
-                                conv_pol_w,
-                                bn_pol_means, bn_pol_stddivs,
-                                ip_pol_w_vec, ip_pol_b_vec);
+                                weights.policy.weights,
+                                bn_pol_means,
+                                bn_pol_stddivs,
+                                weights.ip_pol_w,
+                                weights.ip_pol_b);
         
         std::vector<float> bn_val_means=weights.value.bn_means;
         Transforms::offsetBatchNormMeans(bn_val_means, weights.value.biases);
@@ -317,16 +308,14 @@ namespace lczero {
         std::vector<float> bn_val_stddivs=weights.value.bn_stddivs;
         Transforms::invertBatchNormStddev(bn_val_stddivs);
         
-        const std::vector<float>& conv_val_w=weights.value.weights;
-        const std::vector<float>& ip_val_w_vec=weights.ip1_val_w;
-        const std::vector<float>& ip_val_b_vec=weights.ip1_val_b;
-        
         opencl_net_.push_value(channels, NUM_VALUE_INPUT_PLANES,
                                NUM_VALUE_INPUT_PLANES*width*height,
                                NUM_VALUE_CHANNELS,
-                               conv_val_w,
-                               bn_val_means, bn_val_stddivs,
-                               ip_val_w_vec, ip_val_b_vec);
+                               weights.value.weights,
+                               bn_val_means,
+                               bn_val_stddivs,
+                               weights.ip1_val_w,
+                               weights.ip1_val_b);
       }
       
   
@@ -341,7 +330,6 @@ namespace lczero {
       OpenCLParams params_;
       OpenCL opencl_;
       OpenCL_Network opencl_net_;
-      
     };
       
     
