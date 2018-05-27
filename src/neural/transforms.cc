@@ -31,15 +31,15 @@ std::vector<float> Transforms::zeropad_U(const std::vector<float>& U,
                                          const int outputs_pad,
                                          const int channels_pad) {
   // Fill with zeroes
-  auto Upad = std::vector<float>(WINOGRAD_TILE * outputs_pad * channels_pad);
+  auto Upad = std::vector<float>(kWinogradTile * outputs_pad * channels_pad);
 
   for (auto o = 0; o < outputs; o++) {
     for (auto c = 0; c < channels; c++) {
-      for (auto xi = 0; xi < WINOGRAD_ALPHA; xi++) {
-        for (auto nu = 0; nu < WINOGRAD_ALPHA; nu++) {
-          Upad[xi * (WINOGRAD_ALPHA * outputs_pad * channels_pad) +
+      for (auto xi = 0; xi < kWinogradAlpha; xi++) {
+        for (auto nu = 0; nu < kWinogradAlpha; nu++) {
+          Upad[xi * (kWinogradAlpha * outputs_pad * channels_pad) +
                nu * (outputs_pad * channels_pad) + c * outputs_pad + o] =
-              U[xi * (WINOGRAD_ALPHA * outputs * channels) +
+              U[xi * (kWinogradAlpha * outputs * channels) +
                 nu * (outputs * channels) + c * outputs + o];
         }
       }
@@ -55,8 +55,8 @@ std::vector<float> Transforms::winograd_transform_f(const std::vector<float>& f,
   // F(2x2, 3x3) Winograd filter transformation
   // transpose(G.dot(f).dot(G.transpose()))
   // U matrix is transposed for better memory layout in SGEMM
-  auto U = std::vector<float>(WINOGRAD_TILE * outputs * channels);
-  auto G = std::array<float, WINOGRAD_TILE>{1.0, 0.0,  0.0, 0.5, 0.5, 0.5,
+  auto U = std::vector<float>(kWinogradTile * outputs * channels);
+  auto G = std::array<float, kWinogradTile>{1.0, 0.0,  0.0, 0.5, 0.5, 0.5,
                                             0.5, -0.5, 0.5, 0.0, 0.0, 1.0};
   auto temp = std::array<float, 12>{};
 
@@ -104,11 +104,11 @@ void Transforms::winograd_transform_in(const std::vector<float>& in,
 
         // Cache input tile and handle zero padding
         using WinogradTile =
-            std::array<std::array<float, WINOGRAD_ALPHA>, WINOGRAD_ALPHA>;
+            std::array<std::array<float, kWinogradAlpha>, kWinogradAlpha>;
         WinogradTile x;
 
-        for (auto i = 0; i < WINOGRAD_ALPHA; i++) {
-          for (auto j = 0; j < WINOGRAD_ALPHA; j++) {
+        for (auto i = 0; i < kWinogradAlpha; i++) {
+          for (auto j = 0; j < kWinogradAlpha; j++) {
             if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < H &&
                 (xin + j) < W) {
               x[i][j] = in[ch * (W * H) + (yin + i) * W + (xin + j)];
@@ -162,9 +162,9 @@ void Transforms::winograd_transform_in(const std::vector<float>& in,
         T2[3][2] = T1[3][2] - T1[3][1];
         T2[3][3] = T1[3][1] - T1[3][3];
 
-        for (auto i = 0; i < WINOGRAD_ALPHA; i++) {
-          for (auto j = 0; j < WINOGRAD_ALPHA; j++) {
-            V[(i * WINOGRAD_ALPHA + j) * C * P + offset] = T2[i][j];
+        for (auto i = 0; i < kWinogradAlpha; i++) {
+          for (auto j = 0; j < kWinogradAlpha; j++) {
+            V[(i * kWinogradAlpha + j) * C * P + offset] = T2[i][j];
           }
         }
       }
@@ -175,9 +175,9 @@ void Transforms::winograd_transform_in(const std::vector<float>& in,
 void Transforms::winograd_sgemm(const std::vector<float>& U,
                                 std::vector<float>& V, std::vector<float>& M,
                                 const int C, const int K) {
-  constexpr auto P = 8 * 8 / WINOGRAD_ALPHA;
+  constexpr auto P = 8 * 8 / kWinogradAlpha;
 
-  for (auto b = 0; b < WINOGRAD_TILE; b++) {
+  for (auto b = 0; b < kWinogradTile; b++) {
     auto offset_u = b * K * C;
     auto offset_v = b * C * P;
     auto offset_m = b * K * P;
@@ -201,11 +201,11 @@ void Transforms::winograd_transform_out(const std::vector<float>& M,
         const auto y = 2 * block_y;
 
         const auto b = block_y * wtiles + block_x;
-        std::array<float, WINOGRAD_TILE> temp_m;
-        for (auto xi = 0; xi < WINOGRAD_ALPHA; xi++) {
-          for (auto nu = 0; nu < WINOGRAD_ALPHA; nu++) {
-            temp_m[xi * WINOGRAD_ALPHA + nu] =
-                M[xi * (WINOGRAD_ALPHA * K * P) + nu * (K * P) + k * P + b];
+        std::array<float, kWinogradTile> temp_m;
+        for (auto xi = 0; xi < kWinogradAlpha; xi++) {
+          for (auto nu = 0; nu < kWinogradAlpha; nu++) {
+            temp_m[xi * kWinogradAlpha + nu] =
+                M[xi * (kWinogradAlpha * K * P) + nu * (K * P) + k * P + b];
           }
         }
 
@@ -252,7 +252,7 @@ void Transforms::winograd_convolve3(const int outputs,
                                     std::vector<float>& V,
                                     std::vector<float>& M,
                                     std::vector<float>& output) {
-  constexpr unsigned int filter_len = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
+  constexpr unsigned int filter_len = kWinogradAlpha * kWinogradAlpha;
   const auto input_channels = U.size() / (outputs * filter_len);
 
   winograd_transform_in(input, V, input_channels);

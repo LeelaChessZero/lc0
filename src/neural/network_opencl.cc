@@ -173,7 +173,7 @@ class OpenCLNetwork : public Network {
     int NUM_OUTPUT_POLICY = weights.ip_pol_b.size();
     int NUM_VALUE_CHANNELS = weights.ip1_val_b.size();
 
-    static constexpr auto WINOGRAD_ALPHA = 4;
+    static constexpr auto kWinogradAlpha = 4;
 
     opencl_.initialize(channels, params_);
 
@@ -201,7 +201,7 @@ class OpenCLNetwork : public Network {
     Transforms::invertBatchNormStddev(input_batchnorm_stddivs);
 
     // Winograd filter transformation changes filter size to 4x4
-    opencl_net_.push_input_convolution(WINOGRAD_ALPHA, inputChannels, channels,
+    opencl_net_.push_input_convolution(kWinogradAlpha, inputChannels, channels,
                                        Upad, input_batchnorm_means,
                                        input_batchnorm_stddivs);
 
@@ -233,7 +233,7 @@ class OpenCLNetwork : public Network {
       std::vector<float> batchnorm_stddivs_2 = conv2.bn_stddivs;  // copy ctor
       Transforms::invertBatchNormStddev(batchnorm_stddivs_2);
 
-      opencl_net_.push_residual(WINOGRAD_ALPHA, channels, channels, Upad1,
+      opencl_net_.push_residual(kWinogradAlpha, channels, channels, Upad1,
                                 batchnorm_means_1, batchnorm_stddivs_1, Upad2,
                                 batchnorm_means_2, batchnorm_stddivs_2);
     }

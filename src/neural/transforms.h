@@ -25,8 +25,8 @@ namespace lczero {
 
 class Transforms {
  public:
-  static constexpr auto WINOGRAD_ALPHA = 4;
-  static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
+  static constexpr auto kWinogradAlpha = 4;
+  static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
 
   static std::vector<float> zeropad_U(const std::vector<float>& U,
                                       const int outputs, const int channels,

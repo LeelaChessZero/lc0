@@ -96,8 +96,8 @@ class BlasComputation : public NetworkComputation {
     int NUM_OUTPUT_POLICY = weights_.ip_pol_b.size();
     int NUM_VALUE_CHANNELS = weights_.ip1_val_b.size();
 
-    static constexpr auto WINOGRAD_ALPHA = 4;
-    static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
+    static constexpr auto kWinogradAlpha = 4;
+    static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
 
     // Calculate output channels
     const auto output_channels = weights_.input.biases.size();
@@ -109,8 +109,8 @@ class BlasComputation : public NetworkComputation {
                                          static_cast<size_t>(kInputPlanes));
     auto conv_out = std::vector<float>(output_channels * width * height);
 
-    auto V = std::vector<float>(WINOGRAD_TILE * input_channels * tiles);
-    auto M = std::vector<float>(WINOGRAD_TILE * output_channels * tiles);
+    auto V = std::vector<float>(kWinogradTile * input_channels * tiles);
+    auto M = std::vector<float>(kWinogradTile * output_channels * tiles);
 
     std::vector<float> policy_data(NUM_POLICY_INPUT_PLANES * width * height);
     std::vector<float> value_data(NUM_VALUE_INPUT_PLANES * width * height);
