@@ -194,7 +194,6 @@ if get_option('build_backends')
     opencl_files = [
     'src/neural/CL/OpenCL.cc',
     'src/neural/CL/OpenCLTuner.cc',
-    'src/neural/CL/OpenCLUtils.cc',
     'src/neural/network_opencl.cc',
     ]
 
