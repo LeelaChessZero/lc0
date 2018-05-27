@@ -186,19 +186,19 @@ class OpenCLNetwork : public Network {
     size_t m_ceil = ceilMultiple(ceilMultiple(channels, mwg), vwm);
     size_t k_ceil = ceilMultiple(ceilMultiple(inputChannels, kwg), vwm);
 
-    std::vector<float> input_conv_weights = Transforms::winograd_transform_f(
+    std::vector<float> input_conv_weights = Transforms::WinogradTransformF(
         weights.input.weights, channels, inputChannels);
 
-    auto Upad = Transforms::zeropad_U(input_conv_weights, channels,
+    auto Upad = Transforms::ZeropadU(input_conv_weights, channels,
                                       inputChannels, m_ceil, k_ceil);
 
     std::vector<float> input_batchnorm_means =
         weights.input.bn_means;  // copy ctor
-    Transforms::offsetBatchNormMeans(input_batchnorm_means,
+    Transforms::OffsetBatchNormMeans(input_batchnorm_means,
                                      weights.input.biases);
 
     std::vector<float> input_batchnorm_stddivs = weights.input.bn_stddivs;
-    Transforms::invertBatchNormStddev(input_batchnorm_stddivs);
+    Transforms::InvertBatchNormStddev(input_batchnorm_stddivs);
 
     // Winograd filter transformation changes filter size to 4x4
     opencl_net_.push_input_convolution(kWinogradAlpha, inputChannels, channels,
@@ -212,26 +212,26 @@ class OpenCLNetwork : public Network {
       auto& conv2 = residual.conv2;
 
       std::vector<float> conv_weights_1 =
-          Transforms::winograd_transform_f(conv1.weights, channels, channels);
+          Transforms::WinogradTransformF(conv1.weights, channels, channels);
       std::vector<float> conv_weights_2 =
-          Transforms::winograd_transform_f(conv2.weights, channels, channels);
+          Transforms::WinogradTransformF(conv2.weights, channels, channels);
 
-      auto Upad1 = Transforms::zeropad_U(conv_weights_1, channels, channels,
+      auto Upad1 = Transforms::ZeropadU(conv_weights_1, channels, channels,
                                          m_ceil, m_ceil);
-      auto Upad2 = Transforms::zeropad_U(conv_weights_2, channels, channels,
+      auto Upad2 = Transforms::ZeropadU(conv_weights_2, channels, channels,
                                          m_ceil, m_ceil);
 
       std::vector<float> batchnorm_means_1 = conv1.bn_means;  // copy ctor
-      Transforms::offsetBatchNormMeans(batchnorm_means_1, conv1.biases);
+      Transforms::OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
 
       std::vector<float> batchnorm_means_2 = conv2.bn_means;  // copy ctor
-      Transforms::offsetBatchNormMeans(batchnorm_means_2, conv2.biases);
+      Transforms::OffsetBatchNormMeans(batchnorm_means_2, conv2.biases);
 
       std::vector<float> batchnorm_stddivs_1 = conv1.bn_stddivs;  // copy ctor
-      Transforms::invertBatchNormStddev(batchnorm_stddivs_1);
+      Transforms::InvertBatchNormStddev(batchnorm_stddivs_1);
 
       std::vector<float> batchnorm_stddivs_2 = conv2.bn_stddivs;  // copy ctor
-      Transforms::invertBatchNormStddev(batchnorm_stddivs_2);
+      Transforms::InvertBatchNormStddev(batchnorm_stddivs_2);
 
       opencl_net_.push_residual(kWinogradAlpha, channels, channels, Upad1,
                                 batchnorm_means_1, batchnorm_stddivs_1, Upad2,
@@ -242,10 +242,10 @@ class OpenCLNetwork : public Network {
     constexpr unsigned int height = 8;
 
     std::vector<float> bn_pol_means = weights.policy.bn_means;  // copy ctor
-    Transforms::offsetBatchNormMeans(bn_pol_means, weights.policy.biases);
+    Transforms::OffsetBatchNormMeans(bn_pol_means, weights.policy.biases);
 
     std::vector<float> bn_pol_stddivs = weights.policy.bn_stddivs;
-    Transforms::invertBatchNormStddev(bn_pol_stddivs);
+    Transforms::InvertBatchNormStddev(bn_pol_stddivs);
 
     opencl_net_.push_policy(channels, NUM_POLICY_INPUT_PLANES,
                             NUM_POLICY_INPUT_PLANES * width * height,
@@ -254,10 +254,10 @@ class OpenCLNetwork : public Network {
                             weights.ip_pol_b);
 
     std::vector<float> bn_val_means = weights.value.bn_means;
-    Transforms::offsetBatchNormMeans(bn_val_means, weights.value.biases);
+    Transforms::OffsetBatchNormMeans(bn_val_means, weights.value.biases);
 
     std::vector<float> bn_val_stddivs = weights.value.bn_stddivs;
-    Transforms::invertBatchNormStddev(bn_val_stddivs);
+    Transforms::InvertBatchNormStddev(bn_val_stddivs);
 
     opencl_net_.push_value(channels, NUM_VALUE_INPUT_PLANES,
                            NUM_VALUE_INPUT_PLANES * width * height,

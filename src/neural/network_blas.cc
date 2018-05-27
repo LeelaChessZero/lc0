@@ -68,11 +68,11 @@ class BlasComputation : public NetworkComputation {
     forward(input_data_, policy_data, value_data_);
 
     // Get the moves
-    Transforms::softmax(policy_data, policy_data);
+    Transforms::Softmax(policy_data, policy_data);
     policy_data_.emplace_back(move(policy_data));
 
     // Now get the score
-    double winrate = Transforms::innerproduct(weights_.ip2_val_w, value_data_) +
+    double winrate = Transforms::Innerproduct(weights_.ip2_val_w, value_data_) +
                      weights_.ip2_val_b[0];
     q_value_.emplace_back(std::tanh(winrate));
   }
@@ -115,9 +115,9 @@ class BlasComputation : public NetworkComputation {
     std::vector<float> policy_data(NUM_POLICY_INPUT_PLANES * width * height);
     std::vector<float> value_data(NUM_VALUE_INPUT_PLANES * width * height);
 
-    Transforms::winograd_convolve3(output_channels, input,
+    Transforms::WinogradConvolve3(output_channels, input,
                                    weights_.input.weights, V, M, conv_out);
-    Transforms::batchnorm<64>(output_channels, conv_out,
+    Transforms::Batchnorm<64>(output_channels, conv_out,
                               weights_.input.bn_means.data(),
                               weights_.input.bn_stddivs.data());
 
@@ -131,43 +131,43 @@ class BlasComputation : public NetworkComputation {
       std::swap(conv_out, conv_in);
       std::copy(begin(conv_in), end(conv_in), begin(res));
 
-      Transforms::winograd_convolve3(output_channels, conv_in, conv1.weights, V,
+      Transforms::WinogradConvolve3(output_channels, conv_in, conv1.weights, V,
                                      M, conv_out);
-      Transforms::batchnorm<64>(output_channels, conv_out,
+      Transforms::Batchnorm<64>(output_channels, conv_out,
                                 conv1.bn_means.data(), conv1.bn_stddivs.data());
 
       auto& conv2 = residual.conv2;
       output_channels = conv2.biases.size();
       std::swap(conv_out, conv_in);
-      Transforms::winograd_convolve3(output_channels, conv_in, conv2.weights, V,
+      Transforms::WinogradConvolve3(output_channels, conv_in, conv2.weights, V,
                                      M, conv_out);
-      Transforms::batchnorm<64>(output_channels, conv_out,
+      Transforms::Batchnorm<64>(output_channels, conv_out,
                                 conv2.bn_means.data(), conv2.bn_stddivs.data(),
                                 res.data());
     }
 
-    Transforms::convolve<1>(NUM_POLICY_INPUT_PLANES, conv_out,
+    Transforms::Convolve<1>(NUM_POLICY_INPUT_PLANES, conv_out,
                             weights_.policy.weights, weights_.policy.biases,
                             policy_data);
 
-    Transforms::convolve<1>(NUM_VALUE_INPUT_PLANES, conv_out,
+    Transforms::Convolve<1>(NUM_VALUE_INPUT_PLANES, conv_out,
                             weights_.value.weights, weights_.value.biases,
                             value_data);
 
-    Transforms::batchnorm<width * height>(NUM_POLICY_INPUT_PLANES, policy_data,
+    Transforms::Batchnorm<width * height>(NUM_POLICY_INPUT_PLANES, policy_data,
                                           weights_.policy.bn_means.data(),
                                           weights_.policy.bn_stddivs.data());
 
-    Transforms::batchnorm<width * height>(NUM_VALUE_INPUT_PLANES, value_data,
+    Transforms::Batchnorm<width * height>(NUM_VALUE_INPUT_PLANES, value_data,
                                           weights_.value.bn_means.data(),
                                           weights_.value.bn_stddivs.data());
 
     // NUM_POLICY_INPUT_PLANES*width*height x NUM_OUTPUT_POLICY
-    Transforms::innerproduct(policy_data, weights_.ip_pol_w, weights_.ip_pol_b,
+    Transforms::Innerproduct(policy_data, weights_.ip_pol_w, weights_.ip_pol_b,
                              output_pol);
 
     // NUM_VALUE_INPUT_PLANES*width*height x NUM_VALUE_CHANNELS,
-    Transforms::innerproduct(value_data, weights_.ip1_val_w, weights_.ip1_val_b,
+    Transforms::Innerproduct(value_data, weights_.ip1_val_w, weights_.ip1_val_b,
                              output_val, true);
   }
 
@@ -203,15 +203,15 @@ class BlasNetwork : public Network {
     const int channels = weights.input.biases.size();
     const size_t residual_blocks = weights.residual.size();
 
-    weights_.input.weights = Transforms::winograd_transform_f(
+    weights_.input.weights = Transforms::WinogradTransformF(
         weights_.input.weights, channels, inputChannels);
 
     std::vector<float>& input_batchnorm_means = weights_.input.bn_means;
-    Transforms::offsetBatchNormMeans(input_batchnorm_means,
+    Transforms::OffsetBatchNormMeans(input_batchnorm_means,
                                      weights_.input.biases);
 
     std::vector<float>& input_batchnorm_stddivs = weights_.input.bn_stddivs;
-    Transforms::invertBatchNormStddev(input_batchnorm_stddivs);
+    Transforms::InvertBatchNormStddev(input_batchnorm_stddivs);
 
     // residual blocks
     for (auto i = 0; i < residual_blocks; i++) {
@@ -220,34 +220,34 @@ class BlasNetwork : public Network {
       auto& conv2 = residual.conv2;
 
       conv1.weights =
-          Transforms::winograd_transform_f(conv1.weights, channels, channels);
+          Transforms::WinogradTransformF(conv1.weights, channels, channels);
       conv2.weights =
-          Transforms::winograd_transform_f(conv2.weights, channels, channels);
+          Transforms::WinogradTransformF(conv2.weights, channels, channels);
 
       std::vector<float>& batchnorm_means_1 = conv1.bn_means;
-      Transforms::offsetBatchNormMeans(batchnorm_means_1, conv1.biases);
+      Transforms::OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
 
       std::vector<float>& batchnorm_means_2 = conv2.bn_means;
-      Transforms::offsetBatchNormMeans(batchnorm_means_2, conv2.biases);
+      Transforms::OffsetBatchNormMeans(batchnorm_means_2, conv2.biases);
 
       std::vector<float>& batchnorm_stddivs_1 = conv1.bn_stddivs;
-      Transforms::invertBatchNormStddev(batchnorm_stddivs_1);
+      Transforms::InvertBatchNormStddev(batchnorm_stddivs_1);
 
       std::vector<float>& batchnorm_stddivs_2 = conv2.bn_stddivs;
-      Transforms::invertBatchNormStddev(batchnorm_stddivs_2);
+      Transforms::InvertBatchNormStddev(batchnorm_stddivs_2);
     }
 
     std::vector<float>& bn_pol_means = weights_.policy.bn_means;
-    Transforms::offsetBatchNormMeans(bn_pol_means, weights_.policy.biases);
+    Transforms::OffsetBatchNormMeans(bn_pol_means, weights_.policy.biases);
 
     std::vector<float>& bn_pol_stddivs = weights_.policy.bn_stddivs;
-    Transforms::invertBatchNormStddev(bn_pol_stddivs);
+    Transforms::InvertBatchNormStddev(bn_pol_stddivs);
 
     std::vector<float>& bn_val_means = weights_.value.bn_means;
-    Transforms::offsetBatchNormMeans(bn_val_means, weights_.value.biases);
+    Transforms::OffsetBatchNormMeans(bn_val_means, weights_.value.biases);
 
     std::vector<float>& bn_val_stddivs = weights_.value.bn_stddivs;
-    Transforms::invertBatchNormStddev(bn_val_stddivs);
+    Transforms::InvertBatchNormStddev(bn_val_stddivs);
 
 #ifdef USE_OPENBLAS
 // openblas_set_num_threads(1);
