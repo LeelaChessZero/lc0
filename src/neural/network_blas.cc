@@ -53,14 +53,12 @@ namespace lczero {
       }
       
       virtual ~BlasComputation() {
-        
       }
       
       // Adds a sample to the batch.
       void AddInput(InputPlanes&& input) override {
         planes_.emplace_back(input);
       }
-
             
      // Do the computation.
       void ComputeBlocking() override {
@@ -81,21 +79,15 @@ namespace lczero {
             input_data_[index++]=((plane.mask&(one<<i))==0 ) ? 0 : value;
         }
 
-
         std::vector<float> policy_data(weights_.ip_pol_b.size());
         forward(input_data_, policy_data, value_data_);
 
         // Get the moves
         Transforms::softmax(policy_data, policy_data);
-        
-  
         policy_data_.emplace_back(move(policy_data));
         
         // Now get the score
-        const std::vector<float>& ip2_val_w=weights_.ip2_val_w;
-        const std::vector<float>& ip2_val_b=weights_.ip2_val_b;
-        
-        double winrate=Transforms::innerproduct(ip2_val_w, value_data_)+ip2_val_b[0];
+        double winrate=Transforms::innerproduct(weights_.ip2_val_w, value_data_)+weights_.ip2_val_b[0];
         q_value_.emplace_back(std::tanh(winrate));
 
       }
@@ -126,7 +118,6 @@ namespace lczero {
         static constexpr auto WINOGRAD_TILE = WINOGRAD_ALPHA * WINOGRAD_ALPHA;
 
         const std::vector<float>& input_conv_biases=weights_.input.biases;
-        const std::vector<float>& input_conv_weights=weights_.input.weights;
         
         // Calculate output channels
         const auto output_channels = input_conv_biases.size();
@@ -144,7 +135,9 @@ namespace lczero {
         std::vector<float> policy_data(NUM_POLICY_INPUT_PLANES * width * height);
         std::vector<float> value_data(NUM_VALUE_INPUT_PLANES * width * height);
         
-        Transforms::winograd_convolve3(output_channels, input, input_conv_weights, V, M, conv_out);
+        Transforms::winograd_convolve3(output_channels, input,
+                                       weights_.input.weights,
+                                       V, M, conv_out);
         Transforms::batchnorm<64>(output_channels, conv_out,
                                   weights_.input.bn_means.data(),
                                   weights_.input.bn_stddivs.data());
@@ -177,31 +170,39 @@ namespace lczero {
                                     res.data());
         }
 
-        auto conv_pol_w=weights_.policy.weights;
-        auto conv_pol_b=weights_.policy.biases;
-        Transforms::convolve<1>(NUM_POLICY_INPUT_PLANES, conv_out, conv_pol_w, conv_pol_b, policy_data);
+        Transforms::convolve<1>(NUM_POLICY_INPUT_PLANES,
+                                conv_out,
+                                weights_.policy.weights,
+                                weights_.policy.biases,
+                                policy_data);
         
-        auto conv_val_w=weights_.value.weights;
-        auto conv_val_b=weights_.value.biases;
-        Transforms::convolve<1>(NUM_VALUE_INPUT_PLANES, conv_out, conv_val_w, conv_val_b, value_data);
+        Transforms::convolve<1>(NUM_VALUE_INPUT_PLANES,
+                                conv_out,
+                                weights_.value.weights,
+                                weights_.value.biases,
+                                value_data);
         
-        auto bn_pol_w1=weights_.policy.bn_means;
-        auto bn_pol_w2=weights_.policy.bn_stddivs;
-        Transforms::batchnorm<width*height>(NUM_POLICY_INPUT_PLANES, policy_data, bn_pol_w1.data(), bn_pol_w2.data());
+        Transforms::batchnorm<width*height>(NUM_POLICY_INPUT_PLANES,
+                                            policy_data,
+                                            weights_.policy.bn_means.data(),
+                                            weights_.policy.bn_stddivs.data());
+
+        Transforms::batchnorm<width*height>(NUM_VALUE_INPUT_PLANES,
+                                            value_data,
+                                            weights_.value.bn_means.data(),
+                                            weights_.value.bn_stddivs.data());
         
-        auto bn_val_w1=weights_.value.bn_means;
-        auto bn_val_w2=weights_.value.bn_stddivs;
-        Transforms::batchnorm<width*height>(NUM_VALUE_INPUT_PLANES, value_data, bn_val_w1.data(), bn_val_w2.data());
-        
-        auto v2_ip_pol_w=weights_.ip_pol_w;
-        auto v2_ip_pol_b=weights_.ip_pol_b;
         // NUM_POLICY_INPUT_PLANES*width*height x NUM_OUTPUT_POLICY
-        Transforms::innerproduct(policy_data, v2_ip_pol_w, v2_ip_pol_b, output_pol);
+        Transforms::innerproduct(policy_data,
+                                 weights_.ip_pol_w,
+                                 weights_.ip_pol_b,
+                                 output_pol);
         
-        auto ip1_val_w=weights_.ip1_val_w;
-        auto ip1_val_b=weights_.ip1_val_b;
         // NUM_VALUE_INPUT_PLANES*width*height x NUM_VALUE_CHANNELS,
-        Transforms::innerproduct(value_data, ip1_val_w, ip1_val_b, output_val, true);
+        Transforms::innerproduct(value_data,
+                                 weights_.ip1_val_w,
+                                 weights_.ip1_val_b,
+                                 output_val, true);
       }
       
       // Returns how many times AddInput() was called.
