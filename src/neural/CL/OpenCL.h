@@ -34,6 +34,12 @@ using net_t = float;
 #include "OpenCLParams.h"
 
 
+inline size_t ceilMultiple(size_t a, size_t b) {
+  if (a % b == 0)
+    return a;  
+  return  a + (b - a % b);
+}
+
 static constexpr auto WINOGRAD_P = 8 * 8 / 4;
 static constexpr auto WINOGRAD_TILE = 4 * 4;
 

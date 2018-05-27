@@ -30,7 +30,6 @@
 #include "OpenCLParams.h"
 #include "OpenCL.h"
 #include "OpenCLTuner.h"
-#include "OpenCLUtils.h"
 
 #include "utils/blas.h"
 

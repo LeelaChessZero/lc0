@@ -30,8 +30,6 @@
 #include "utils/exception.h"
 #include "utils/bititer.h"
 
-#include "CL/OpenCLUtils.h"
-
 #include "CL/OpenCLParams.h"
 #include "CL/OpenCL.h"
 

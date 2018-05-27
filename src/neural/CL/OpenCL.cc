@@ -33,12 +33,12 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 
-#include "OpenCLUtils.h"
-
 
 #include "OpenCL.h"
 #include "OpenCLTuner.h"
 #include "OpenCLParams.h"
+
+
 
 
 static std::string cl_args =

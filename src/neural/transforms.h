@@ -23,6 +23,7 @@
 
 namespace lczero {
   
+  
   class Transforms {
     
   public:
