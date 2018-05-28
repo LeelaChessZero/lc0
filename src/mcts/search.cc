@@ -46,6 +46,7 @@ const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
 const char* Search::kExtraVirtualLossStr = "Extra virtual loss";
+const char* Search::KPolicySoftmaxTempStr = "Policy softmax temperature";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -69,6 +70,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
                           "cache-history-length") = 7;
   options->Add<FloatOption>(kExtraVirtualLossStr, 0.0, 100.0,
                             "extra-virtual-loss") = 0.0f;
+  options->Add<FloatOption>(KPolicySoftmaxTempStr, 0.1, 10.0, "policy-softmax-temp") = 1.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -95,7 +97,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
-      kExtraVirtualLoss(options.Get<float>(kExtraVirtualLossStr)) {}
+      kExtraVirtualLoss(options.Get<float>(kExtraVirtualLossStr)),
+      KPolicySoftmaxTemp(options.Get<float>(KPolicySoftmaxTempStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -216,6 +219,9 @@ void Search::Worker() {
         for (Node* n : node->Children()) {
           float p = computation.GetPVal(idx_in_computation,
                                         n->GetMove().as_nn_index());
+          if(KPolicySoftmaxTemp != 1.0f){
+              p = pow(p, 1/KPolicySoftmaxTemp);
+          }
           total += p;
           n->SetP(p);
         }

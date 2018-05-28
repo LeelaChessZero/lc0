@@ -84,6 +84,7 @@ class Search {
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
   static const char* kExtraVirtualLossStr;
+  static const char* KPolicySoftmaxTempStr;
 
  private:
   // Can run several copies of it in separate threads.
@@ -155,6 +156,7 @@ class Search {
   const float kFpuReduction;
   const bool kCacheHistoryLength;
   const float kExtraVirtualLoss;
+  const float KPolicySoftmaxTemp;
 };
 
 }  // namespace lczero
