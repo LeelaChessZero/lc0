@@ -33,7 +33,7 @@ void CreateDirectory(const std::string& path) {
 
 std::vector<std::string> GetFileList(const std::string& directory) {
   std::vector<std::string> result;
-  WIN32_FIND_DATA dir;
+  WIN32_FIND_DATAA dir;
   auto handle = FindFirstFileA((directory + "\\*").c_str(), &dir);
   if (handle == INVALID_HANDLE_VALUE) return result;
   do {
