@@ -219,7 +219,7 @@ void Search::Worker() {
         for (Node* n : node->Children()) {
           float p = computation.GetPVal(idx_in_computation,
                                         n->GetMove().as_nn_index());
-          if(p > 0.0f){
+          if(KPolicySoftmaxTemp != 1.0f && p != 1.0f && p > 0.0f){
               p = pow(p, 1/KPolicySoftmaxTemp);
           }
           total += p;
