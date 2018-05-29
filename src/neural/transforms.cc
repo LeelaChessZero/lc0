@@ -27,9 +27,9 @@
 namespace lczero {
 
 std::vector<float> Transforms::ZeropadU(const std::vector<float>& U,
-                                         const int outputs, const int channels,
-                                         const int outputs_pad,
-                                         const int channels_pad) {
+                                        const int outputs, const int channels,
+                                        const int outputs_pad,
+                                        const int channels_pad) {
   // Fill with zeroes
   auto Upad = std::vector<float>(kWinogradTile * outputs_pad * channels_pad);
 
@@ -50,8 +50,8 @@ std::vector<float> Transforms::ZeropadU(const std::vector<float>& U,
 }
 
 std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
-                                                    const int outputs,
-                                                    const int channels) {
+                                                  const int outputs,
+                                                  const int channels) {
   // F(2x2, 3x3) Winograd filter transformation
   // transpose(G.dot(f).dot(G.transpose()))
   // U matrix is transposed for better memory layout in SGEMM
@@ -89,7 +89,7 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
 }
 
 void Transforms::WinogradTransformIn(const std::vector<float>& in,
-                                       std::vector<float>& V, const int C) {
+                                     std::vector<float>& V, const int C) {
   constexpr auto W = 8;
   constexpr auto H = 8;
   constexpr auto wtiles = (W + 1) / 2;
@@ -173,8 +173,8 @@ void Transforms::WinogradTransformIn(const std::vector<float>& in,
 }
 
 void Transforms::WinogradSgemm(const std::vector<float>& U,
-                                std::vector<float>& V, std::vector<float>& M,
-                                const int C, const int K) {
+                               std::vector<float>& V, std::vector<float>& M,
+                               const int C, const int K) {
   constexpr auto P = 8 * 8 / kWinogradAlpha;
 
   for (auto b = 0; b < kWinogradTile; b++) {
@@ -188,7 +188,7 @@ void Transforms::WinogradSgemm(const std::vector<float>& U,
 }
 
 void Transforms::WinogradTransformOut(const std::vector<float>& M,
-                                        std::vector<float>& Y, const int K) {
+                                      std::vector<float>& Y, const int K) {
   constexpr auto W = 8;
   constexpr auto H = 8;
   constexpr auto wtiles = (W + 1) / 2;
@@ -247,11 +247,10 @@ void Transforms::WinogradTransformOut(const std::vector<float>& M,
 }
 
 void Transforms::WinogradConvolve3(const int outputs,
-                                    const std::vector<float>& input,
-                                    const std::vector<float>& U,
-                                    std::vector<float>& V,
-                                    std::vector<float>& M,
-                                    std::vector<float>& output) {
+                                   const std::vector<float>& input,
+                                   const std::vector<float>& U,
+                                   std::vector<float>& V, std::vector<float>& M,
+                                   std::vector<float>& output) {
   constexpr unsigned int filter_len = kWinogradAlpha * kWinogradAlpha;
   const auto input_channels = U.size() / (outputs * filter_len);
 
@@ -419,7 +418,7 @@ void Transforms::OffsetBatchNormMeans(std::vector<float>& bn_means,
   // still have non-zero biases.
   // Move biases to batchnorm means to make the output match without having
   // to separately add the biases.
-  for (auto i = 0; i < bn_means.size(); i++) bn_means[i] -= biases[i];
+  for (size_t i = 0; i < bn_means.size(); i++) bn_means[i] -= biases[i];
 }
 
 void Transforms::InvertBatchNormStddev(std::vector<float>& weights) {
