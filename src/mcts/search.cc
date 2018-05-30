@@ -737,10 +737,12 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
                         : GetBestChild(root_node_);
 
   Move ponder_move;
+  /*  // Doesn't seem to work for now, so disabling.
   if (best_node->HasChildren()) {
     ponder_move =
         GetBestChild(best_node)->GetMove(!played_history_.IsBlackToMove());
   }
+  */
   return {best_node->GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
