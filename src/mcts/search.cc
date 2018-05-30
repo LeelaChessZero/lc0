@@ -75,7 +75,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1, 10.0,
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
-                          "allowed-node-collisions") = 0;
+                          "allowed-node-collisions") = 32;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
