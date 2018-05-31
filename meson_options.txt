@@ -37,3 +37,23 @@ option('build_backends',
        type: 'boolean',
        value: true,
        description: 'Build backends for NN computation')
+
+option('blas',
+       type: 'boolean',
+       value: true,
+       description: 'Enable BLAS backend')
+
+option('cudnn',
+       type: 'boolean',
+       value: true,
+       description: 'Enable cuDNN backend')
+
+option('opencl',
+       type: 'boolean',
+       value: true,
+       description: 'Enable OpenCL backend')
+
+option('tf',
+       type: 'boolean',
+       value: true,
+       description: 'Enable TensorFlow backend')
