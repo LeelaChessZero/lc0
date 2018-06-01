@@ -61,7 +61,7 @@ class BlasComputation : public NetworkComputation {
       float value = plane.value;
       const uint64_t one = 1;
       for (int i = 0; i < 64; i++)
-        input_data_[index++] = ((plane.mask & (one << i)) == 0) ? 0 : value;
+        input_data_[index++] = plane.mask & (one << i) ? value : 0;
     }
 
     std::vector<float> policy_data(weights_.ip_pol_b.size());
@@ -197,12 +197,10 @@ class BlasNetwork : public Network {
     weights_.input.weights = Transforms::WinogradTransformF(
         weights_.input.weights, channels, inputChannels);
 
-    std::vector<float>& input_batchnorm_means = weights_.input.bn_means;
-    Transforms::OffsetBatchNormMeans(input_batchnorm_means,
+    Transforms::OffsetBatchNormMeans(weights_.input.bn_means,
                                      weights_.input.biases);
 
-    std::vector<float>& input_batchnorm_stddivs = weights_.input.bn_stddivs;
-    Transforms::InvertBatchNormStddev(input_batchnorm_stddivs);
+    Transforms::InvertBatchNormStddev(weights_.input.bn_stddivs);
 
     // residual blocks
     for (size_t i = 0; i < residual_blocks; i++) {
@@ -215,30 +213,18 @@ class BlasNetwork : public Network {
       conv2.weights =
           Transforms::WinogradTransformF(conv2.weights, channels, channels);
 
-      std::vector<float>& batchnorm_means_1 = conv1.bn_means;
-      Transforms::OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
+      Transforms::OffsetBatchNormMeans(conv1.bn_means, conv1.biases);
+      Transforms::OffsetBatchNormMeans(conv2.bn_means, conv2.biases);
 
-      std::vector<float>& batchnorm_means_2 = conv2.bn_means;
-      Transforms::OffsetBatchNormMeans(batchnorm_means_2, conv2.biases);
-
-      std::vector<float>& batchnorm_stddivs_1 = conv1.bn_stddivs;
-      Transforms::InvertBatchNormStddev(batchnorm_stddivs_1);
-
-      std::vector<float>& batchnorm_stddivs_2 = conv2.bn_stddivs;
-      Transforms::InvertBatchNormStddev(batchnorm_stddivs_2);
+      Transforms::InvertBatchNormStddev(conv1.bn_stddivs);
+      Transforms::InvertBatchNormStddev(conv2.bn_stddivs);
     }
 
-    std::vector<float>& bn_pol_means = weights_.policy.bn_means;
-    Transforms::OffsetBatchNormMeans(bn_pol_means, weights_.policy.biases);
+    Transforms::OffsetBatchNormMeans(weights_.policy.bn_means, weights_.policy.biases);
+    Transforms::InvertBatchNormStddev(weights_.policy.bn_stddivs);
 
-    std::vector<float>& bn_pol_stddivs = weights_.policy.bn_stddivs;
-    Transforms::InvertBatchNormStddev(bn_pol_stddivs);
-
-    std::vector<float>& bn_val_means = weights_.value.bn_means;
-    Transforms::OffsetBatchNormMeans(bn_val_means, weights_.value.biases);
-
-    std::vector<float>& bn_val_stddivs = weights_.value.bn_stddivs;
-    Transforms::InvertBatchNormStddev(bn_val_stddivs);
+    Transforms::OffsetBatchNormMeans(weights_.value.bn_means, weights_.value.biases);
+    Transforms::InvertBatchNormStddev(weights_.value.bn_stddivs);
 
 #ifdef USE_OPENBLAS
 // openblas_set_num_threads(1);
