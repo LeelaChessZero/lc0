@@ -106,7 +106,7 @@ if get_option('build_backends')
   tf_protobuf_lib = cc.find_library('libprotobuf',
             dirs: tensorflow_libdir, required: false)
 
-  if tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
+  if get_option('tf') and tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
     includes += include_directories(
       tensorflow_include,
       tensorflow_include[0] + '/bazel-genfiles',
@@ -121,7 +121,6 @@ if get_option('build_backends')
     files += 'src/neural/network_tf.cc'
     has_backends = true
   endif
-    
 
 
   ## ~~~~~
@@ -155,7 +154,7 @@ if get_option('build_backends')
 
   endif
 
-  if has_blas
+  if get_option('blas') and has_blas
 
     blas_files = [
     'src/neural/CL/transforms.cc',
@@ -190,13 +189,17 @@ if get_option('build_backends')
   endif
   
 
-  if has_opencl and has_blas
+  if get_option('opencl') and has_opencl and has_blas
 
     opencl_files = [
     'src/neural/CL/OpenCL.cc',
     'src/neural/CL/OpenCLTuner.cc',
     'src/neural/network_opencl.cc',
     ]
+
+    if not get_option('blas')
+      opencl_files += 'src/neural/transforms.cc'
+    endif
 
     files += opencl_files
     has_backends = true
@@ -219,7 +222,7 @@ if get_option('build_backends')
     'src/neural/network_cudnn.cu',
   ]
 
-  if cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
+  if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     includes += include_directories(get_option('cudnn_include'))
     deps += [cu_blas, cu_dnn, cu_dart]
   cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
