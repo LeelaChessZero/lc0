@@ -83,7 +83,7 @@ class OpenCLComputation : public NetworkComputation {
       float value = plane.value;
       const uint64_t one = 1;
       for (int i = 0; i < 64; i++)
-        input_data_[index++] = plane.mask & (one << i) ? value : 0;
+        input_data_[index++] = (plane.mask & (one << i))!=0 ? value : 0;
     }
 
     std::vector<float> policy_data(weights_.num_output_policies);
