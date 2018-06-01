@@ -84,7 +84,8 @@ class Search {
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
   static const char* kExtraVirtualLossStr;
-  static const char* KPolicySoftmaxTempStr;
+  static const char* kPolicySoftmaxTempStr;
+  static const char* kAllowedNodeCollisionsStr;
 
  private:
   // Can run several copies of it in separate threads.
@@ -104,7 +105,7 @@ class Search {
 
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
-  Node* PickNodeToExtend(Node* node, PositionHistory* history);
+  std::pair<Node*, bool> PickNodeToExtend(Node* node, PositionHistory* history);
   void ExtendNode(Node* node, const PositionHistory& history);
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
@@ -156,7 +157,8 @@ class Search {
   const float kFpuReduction;
   const bool kCacheHistoryLength;
   const float kExtraVirtualLoss;
-  const float KPolicySoftmaxTemp;
+  const float kPolicySoftmaxTemp;
+  const int kAllowedNodeCollisions;
 };
 
 }  // namespace lczero
