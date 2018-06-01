@@ -16,9 +16,9 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/network.h"
+#include "neural/CL/transforms.h"
 #include "neural/factory.h"
-#include "neural/transforms.h"
+#include "neural/network.h"
 
 #include <algorithm>
 #include <cassert>
@@ -190,7 +190,7 @@ class OpenCLNetwork : public Network {
         weights.input.weights, channels, inputChannels);
 
     auto Upad = Transforms::ZeropadU(input_conv_weights, channels,
-                                      inputChannels, m_ceil, k_ceil);
+                                     inputChannels, m_ceil, k_ceil);
 
     std::vector<float> input_batchnorm_means =
         weights.input.bn_means;  // copy ctor
@@ -217,9 +217,9 @@ class OpenCLNetwork : public Network {
           Transforms::WinogradTransformF(conv2.weights, channels, channels);
 
       auto Upad1 = Transforms::ZeropadU(conv_weights_1, channels, channels,
-                                         m_ceil, m_ceil);
+                                        m_ceil, m_ceil);
       auto Upad2 = Transforms::ZeropadU(conv_weights_2, channels, channels,
-                                         m_ceil, m_ceil);
+                                        m_ceil, m_ceil);
 
       std::vector<float> batchnorm_means_1 = conv1.bn_means;  // copy ctor
       Transforms::OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
@@ -281,4 +281,4 @@ class OpenCLNetwork : public Network {
 
 REGISTER_NETWORK("opencl", OpenCLNetwork, 100)
 
-}  // namespace lc0
+}  // namespace lczero

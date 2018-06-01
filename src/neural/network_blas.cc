@@ -16,9 +16,9 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/network.h"
+#include "neural/CL/transforms.h"
 #include "neural/factory.h"
-#include "neural/transforms.h"
+#include "neural/network.h"
 
 #include <algorithm>
 #include <cassert>
@@ -84,17 +84,8 @@ class BlasComputation : public NetworkComputation {
     constexpr int height = 8;
     constexpr int tiles = width * height / 4;
 
-    /*
-     static constexpr int NUM_VALUE_INPUT_PLANES = 32;
-     static constexpr int NUM_POLICY_INPUT_PLANES = 32;
-     static constexpr int NUM_OUTPUT_POLICY = 1858;
-     static constexpr int NUM_VALUE_CHANNELS = 128;
-     */
-
     int NUM_VALUE_INPUT_PLANES = weights_.value.bn_means.size();
     int NUM_POLICY_INPUT_PLANES = weights_.policy.bn_means.size();
-    int NUM_OUTPUT_POLICY = weights_.ip_pol_b.size();
-    int NUM_VALUE_CHANNELS = weights_.ip1_val_b.size();
 
     static constexpr auto kWinogradAlpha = 4;
     static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
@@ -116,7 +107,7 @@ class BlasComputation : public NetworkComputation {
     std::vector<float> value_data(NUM_VALUE_INPUT_PLANES * width * height);
 
     Transforms::WinogradConvolve3(output_channels, input,
-                                   weights_.input.weights, V, M, conv_out);
+                                  weights_.input.weights, V, M, conv_out);
     Transforms::Batchnorm<64>(output_channels, conv_out,
                               weights_.input.bn_means.data(),
                               weights_.input.bn_stddivs.data());
@@ -132,7 +123,7 @@ class BlasComputation : public NetworkComputation {
       std::copy(begin(conv_in), end(conv_in), begin(res));
 
       Transforms::WinogradConvolve3(output_channels, conv_in, conv1.weights, V,
-                                     M, conv_out);
+                                    M, conv_out);
       Transforms::Batchnorm<64>(output_channels, conv_out,
                                 conv1.bn_means.data(), conv1.bn_stddivs.data());
 
@@ -140,7 +131,7 @@ class BlasComputation : public NetworkComputation {
       output_channels = conv2.biases.size();
       std::swap(conv_out, conv_in);
       Transforms::WinogradConvolve3(output_channels, conv_in, conv2.weights, V,
-                                     M, conv_out);
+                                    M, conv_out);
       Transforms::Batchnorm<64>(output_channels, conv_out,
                                 conv2.bn_means.data(), conv2.bn_stddivs.data(),
                                 res.data());
@@ -214,7 +205,7 @@ class BlasNetwork : public Network {
     Transforms::InvertBatchNormStddev(input_batchnorm_stddivs);
 
     // residual blocks
-    for (auto i = 0; i < residual_blocks; i++) {
+    for (size_t i = 0; i < residual_blocks; i++) {
       auto& residual = weights_.residual[i];
       auto& conv1 = residual.conv1;
       auto& conv2 = residual.conv2;
@@ -275,4 +266,4 @@ class BlasNetwork : public Network {
 
 REGISTER_NETWORK("blas", BlasNetwork, 50)
 
-}  // namespace lc0
+}  // namespace lczero

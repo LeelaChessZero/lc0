@@ -16,9 +16,9 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/network.h"
+#include "neural/CL/transforms.h"
 #include "neural/factory.h"
-#include "neural/transforms.h"
+#include "neural/network.h"
 
 #include <algorithm>
 #include <cassert>
@@ -164,4 +164,4 @@ class CheckNetwork : public Network {
 
 REGISTER_NETWORK("check", CheckNetwork, -800)
 
-}  // namespace lc0
+}  // namespace lczero
