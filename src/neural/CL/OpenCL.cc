@@ -53,18 +53,30 @@ const std::string sourceCode_convolve3 =
 #include "clsource/convolve3.opencl"
     ;
 
-// Important: keep the follow includes in the same orders.
-// Beware of using a formatting tool like clang-format
-// that could mess with this order.
-// The correct order is: common/part1/part2/part3/batched.
-
-const std::string sourceCode_sgemm =
+const std::string sourceCode_blast_level3_common =
 #include "clblast_level3/common.opencl"
+    ;
+
+const std::string sourceCode_blast_level3_xgemm_part1 =
 #include "clblast_level3/xgemm_part1.opencl"
+    ;
+
+const std::string sourceCode_blast_level3_xgemm_part2 =
 #include "clblast_level3/xgemm_part2.opencl"
+    ;
+
+const std::string sourceCode_blast_level3_xgemm_part3 =
 #include "clblast_level3/xgemm_part3.opencl"
+    ;
+
+const std::string sourceCode_blast_level3_xgemm_batched =
 #include "clblast_level3/xgemm_batched.opencl"
     ;
+
+const std::string sourceCode_sgemm =
+    sourceCode_blast_level3_common + sourceCode_blast_level3_xgemm_part1 +
+    sourceCode_blast_level3_xgemm_part2 + sourceCode_blast_level3_xgemm_part3 +
+    sourceCode_blast_level3_xgemm_batched;
 
 const std::string sourceCode_sgemv =
 #include "clblast_level3/xgemv.opencl"
