@@ -157,7 +157,7 @@ if get_option('build_backends')
   if get_option('blas') and has_blas
 
     blas_files = [
-    'src/neural/CL/transforms.cc',
+    'src/neural/BLAS/transforms.cc',
     'src/neural/network_blas.cc'
     ]
 
