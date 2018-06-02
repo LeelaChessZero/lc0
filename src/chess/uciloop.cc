@@ -41,7 +41,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
          {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth",
-          "nodes", "movetime"}},
+          "nodes", "movetime", "searchmoves"}},
         {{"start"}, {}},
         {{"stop"}, {}},
         {{"quit"}, {}},
@@ -137,6 +137,10 @@ bool UciLoop::DispatchCommand(
         throw Exception("Unexpected token " + GetOrEmpty(params, "infinite"));
       }
       go_params.infinite = true;
+    }
+    if (ContainsKey(params, "searchmoves")) {
+      go_params.searchmoves =
+          StrSplitAtWhitespace(GetOrEmpty(params, "searchmoves"));
     }
 #define OPTION(x)                                    \
   if (ContainsKey(params, #x)) {                     \

@@ -694,6 +694,13 @@ std::pair<Node*, bool> Search::PickNodeToExtend(Node* node,
                 best_node_n - static_cast<int>(iter->GetN())) {
           continue;
         }
+        // If searchmoves was sent, restrict the search only in that moves
+        if (!limits_.searchmoves.empty() &&
+            std::find(limits_.searchmoves.begin(),
+                      limits_.searchmoves.end(),
+                      iter->GetMove()) == limits_.searchmoves.end()) {
+            continue;
+        }
         ++possible_moves;
       }
       float Q = iter->GetQ(parent_q, kExtraVirtualLoss);
