@@ -230,9 +230,12 @@ class BlasNetwork : public Network {
     Transforms::InvertBatchNormStddev(weights_.value.bn_stddivs);
 
 #ifdef USE_OPENBLAS
-    openblas_set_num_threads(1);
-    if (verbose)
-      printf("BLAS Core: %s\n", openblas_get_corename());
+    if (verbose) {
+      printf("OpenBLAS: core is %s.\n", openblas_get_corename());
+      printf("OpenBLAS: number of procs %d.\n", openblas_get_num_procs());
+      printf("OpenBLAS: multi-threading off.\,");
+   }
+   openblas_set_num_threads(1);
 #endif
 
 #ifdef USE_MKL
