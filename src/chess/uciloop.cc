@@ -96,10 +96,18 @@ int GetNumeric(
   	throw Exception("Unexpected error");
   }
   std::string str=iter->second.c_str();
-  if (str.empty()) {
-    throw Exception("expected value after "+key);
+  try {
+    if (str.empty()) {
+      throw Exception("expected value after "+key);
+    }
+    return stoi(str);
   }
-  return stoi(str);
+  catch(std::invalid_argument& e){
+    throw Exception("invalid value "+str);
+  }
+ 
+  
+ 
 }
 
 
