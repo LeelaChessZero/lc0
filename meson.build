@@ -138,6 +138,7 @@ if get_option('build_backends')
 
   if mkl_lib.found() 
     add_project_arguments('-DUSE_MKL', language : 'cpp')
+    includes += include_directories(get_option('mkl_include'))
     deps += [ mkl_lib ]
     has_blas = true
 
