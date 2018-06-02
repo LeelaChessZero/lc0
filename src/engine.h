@@ -43,6 +43,8 @@ class EngineController {
     search_.reset();
   }
 
+  void UpdateNetwork();
+
   void PopulateOptions(OptionsParser* options);
 
   // Blocks.
@@ -65,8 +67,6 @@ class EngineController {
                                     const GoParams& params);
 
  private:
-  void UpdateNetwork();
-
   const OptionsDict& options_;
 
   BestMoveInfo::Callback best_move_callback_;

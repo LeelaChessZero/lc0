@@ -222,6 +222,8 @@ void EngineLoop::CmdUci() {
 }
 
 void EngineLoop::CmdIsReady() {
+  EnsureOptionsSent();
+  engine_.UpdateNetwork();
   engine_.EnsureReady();
   SendResponse("readyok");
 }
