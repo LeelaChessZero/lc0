@@ -88,6 +88,21 @@ std::string GetOrEmpty(
   return iter->second;
 }
 
+int GetNumeric(
+    const std::unordered_map<std::string, std::string>& params,
+    const std::string& key) {
+  auto iter = params.find(key);
+  if (iter == params.end()) {
+  	throw Exception("Unexpected error");
+  }
+  std::string str=iter->second.c_str();
+  if (str.empty()) {
+    throw Exception("expected value after "+key);
+  }
+  return stoi(str);
+}
+
+
 bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
                  const std::string& key) {
   return params.find(key) != params.end();
@@ -138,9 +153,9 @@ bool UciLoop::DispatchCommand(
       }
       go_params.infinite = true;
     }
-#define OPTION(x)                                    \
-  if (ContainsKey(params, #x)) {                     \
-    go_params.x = std::stoi(GetOrEmpty(params, #x)); \
+#define OPTION(x)                         \
+  if (ContainsKey(params, #x)) {          \
+    go_params.x = GetNumeric(params, #x); \
   }
     OPTION(wtime);
     OPTION(btime);
