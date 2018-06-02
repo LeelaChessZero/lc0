@@ -34,7 +34,7 @@
 namespace lczero {
 
 const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
-const char* Search::kMiniPrefetchBatchStr = "Max prefetch nodes, per NN call";
+const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
 const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
@@ -56,8 +56,12 @@ const int kSmartPruningToleranceMs = 200;
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {
-  options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 256;
-  options->Add<IntOption>(kMiniPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
+  // Here the "safe defaults" are listed.
+  // Many of them are overriden with optimized defaults in engine.cc and
+  // tournament.cc
+
+  options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
+  options->Add<IntOption>(kMaxPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<FloatOption>(kCpuctStr, 0, 100, "cpuct") = 1.2;
   options->Add<FloatOption>(kTemperatureStr, 0, 100, "temperature") = 0.0;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
@@ -67,7 +71,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kVirtualLossBugStr, -100, 100, "virtual-loss-bug") =
       0.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
-      0.2f;
+      0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
                           "cache-history-length") = 7;
   options->Add<FloatOption>(kExtraVirtualLossStr, 0.0, 100.0,
@@ -75,7 +79,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1, 10.0,
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
-                          "allowed-node-collisions") = 32;
+                          "allowed-node-collisions") = 0;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -92,7 +96,7 @@ Search::Search(const NodeTree& tree, Network* network,
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
-      kMiniPrefetchBatch(options.Get<int>(kMiniPrefetchBatchStr)),
+      kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
       kTemperature(options.Get<float>(kTemperatureStr)),
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
@@ -222,11 +226,11 @@ void Search::Worker() {
     // If there are requests to NN, but the batch is not full, try to prefetch
     // nodes which are likely useful in future.
     if (computation.GetCacheMisses() > 0 &&
-        computation.GetCacheMisses() < kMiniPrefetchBatch) {
+        computation.GetCacheMisses() < kMaxPrefetchBatch) {
       history.Trim(played_history_.GetLength());
       SharedMutex::SharedLock lock(nodes_mutex_);
       PrefetchIntoCache(root_node_,
-                        kMiniPrefetchBatch - computation.GetCacheMisses(),
+                        kMaxPrefetchBatch - computation.GetCacheMisses(),
                         &computation, &history);
     }
 

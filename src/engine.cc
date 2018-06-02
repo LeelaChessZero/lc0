@@ -67,6 +67,13 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
 
   Search::PopulateUciParams(options);
+
+  auto defaults = options->GetMutableDefaultsOptions();
+
+  defaults->Set<int>(Search::kMiniBatchSizeStr, 256);   // Minibatch = 256
+  defaults->Set<float>(Search::kFpuReductionStr, 0.2);  // FPU reduction = 0.2
+  defaults->Set<float>(Search::kCpuctStr, 3.1);         // CPUCT = 3.1
+  defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
@@ -87,8 +94,9 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   float slowmover = options_.Get<float>(kSlowMoverStr);
   int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
   // Total time till control including increments.
-  auto total_moves_time = std::max(
-      int64_t{0}, time + increment * (movestogo - 1) - move_overhead * movestogo);
+  auto total_moves_time =
+      std::max(int64_t{0},
+               time + increment * (movestogo - 1) - move_overhead * movestogo);
 
   const int kSmartPruningToleranceMs = 200;
 
@@ -102,7 +110,8 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
     this_move_time = total_moves_time / (movestogo - 1 + slowmover) * slowmover;
   }
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms = std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
+  limits.time_ms =
+      std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
   return limits;
 }
 
