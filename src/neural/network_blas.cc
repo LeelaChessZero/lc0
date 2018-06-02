@@ -233,7 +233,7 @@ class BlasNetwork : public Network {
     if (verbose) {
       printf("OpenBLAS: core is %s.\n", openblas_get_corename());
       printf("OpenBLAS: number of procs %d.\n", openblas_get_num_procs());
-      printf("OpenBLAS: multi-threading off.\,");
+      printf("OpenBLAS: multi-threading off.\n");
    }
    openblas_set_num_threads(1);
 #endif
