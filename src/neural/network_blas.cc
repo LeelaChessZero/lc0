@@ -266,7 +266,7 @@ class BlasNetwork : public Network {
 
 #ifdef USE_ACCELERATE
     if (verbose) {
-      printf("BLAS vendor: Apple vecLib\n");
+      printf("BLAS vendor: Apple vecLib.\n");
     }
 #endif
   }
