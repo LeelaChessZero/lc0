@@ -53,6 +53,8 @@ const char* Search::kAllowedNodeCollisionsStr =
 namespace {
 const int kSmartPruningToleranceNodes = 100;
 const int kSmartPruningToleranceMs = 200;
+// Maximum delay between outputting "uci info" when nothing interesting happens.
+const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
 
 void Search::PopulateUciParams(OptionsParser* options) {
@@ -478,7 +480,8 @@ void Search::MaybeOutputInfo() {
   if (!responded_bestmove_ && best_move_node_ &&
       (best_move_node_ != last_outputted_best_move_node_ ||
        uci_info_.depth != root_node_->GetFullDepth() ||
-       uci_info_.seldepth != root_node_->GetMaxDepth())) {
+       uci_info_.seldepth != root_node_->GetMaxDepth() ||
+       uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
   }
 }
