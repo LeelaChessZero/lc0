@@ -30,7 +30,7 @@
 #include "OpenCLParams.h"
 #include "OpenCLTuner.h"
 
-#include "../BLAS/blas.h"
+#include "neural/BLAS/blas.h"
 
 const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
 constexpr auto MAX_ERROR = 1e-4f;

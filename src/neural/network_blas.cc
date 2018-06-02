@@ -16,10 +16,10 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/network.h"
+#include "network.h"
 #include "BLAS/blas.h"
 #include "BLAS/transforms.h"
-#include "neural/factory.h"
+#include "factory.h"
 
 #include <algorithm>
 #include <cassert>
