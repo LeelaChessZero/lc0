@@ -235,8 +235,8 @@ class BlasNetwork : public Network {
       int num_procs=openblas_get_num_procs();
       blas_cores=std::min(num_procs, blas_cores);
       const char* core_name=openblas_get_corename();
-      printf("OpenBLAS: found %d %s cores.\n", num_procs, core_name);
-      printf("OpenBLAS: using %d core for this backend\n", blas_cores);
+      printf("OpenBLAS: found %d %s core(s).\n", num_procs, core_name);
+      printf("OpenBLAS: using %d core(s) for this backend\n", blas_cores);
    }
    openblas_set_num_threads(blas_cores);
 #endif
