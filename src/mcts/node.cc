@@ -41,9 +41,9 @@ class Node::Pool {
  public:
   // Allocates a new node and initializes it with all zeros.
   Node* AllocateNode();
-  // Return node to the pool.
-  void ReleaseNode(Node*);
 
+  // Release* function don't release trees immediately but rather schedule
+  // release until when GarbageCollect() is called.
   // Releases all children of the node, except specified. Also updates pointers
   // accordingly.
   void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
@@ -51,12 +51,11 @@ class Node::Pool {
   void ReleaseChildren(Node*);
   // Releases all children and the node itself;
   void ReleaseSubtree(Node*);
+  // Really releases subtrees makerd for release earlier.
+  void GarbageCollect();
 
  private:
   void AllocateNewBatch();
-  void ReleaseNodeInternal(Node*);
-  void ReleaseChildrenInternal(Node*);
-  void ReleaseSubtreeInternal(Node*);
 
   union FreeNode {
     FreeNode* next;
@@ -64,6 +63,8 @@ class Node::Pool {
 
     FreeNode() {}
   };
+
+  static FreeNode* UnrollNodeTree(FreeNode* node);
 
   mutable Mutex mutex_;
   // Linked list of free nodes.
@@ -74,7 +75,40 @@ class Node::Pool {
   FreeNode* reserve_list_ GUARDED_BY(allocations_mutex_) = nullptr;
   std::vector<std::unique_ptr<FreeNode[]>> allocations_
       GUARDED_BY(allocations_mutex_);
+
+  mutable Mutex gc_mutex_;
+  std::vector<Node*> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
 };
+
+Node::Pool::FreeNode* Node::Pool::UnrollNodeTree(FreeNode* node) {
+  if (!node->node.child_) return node;
+  FreeNode* prev = node;
+  for (Node* iter = node->node.child_; iter; iter = iter->sibling_) {
+    FreeNode* next = reinterpret_cast<FreeNode*>(iter);
+    prev->next = next;
+    prev = UnrollNodeTree(next);
+  }
+  return prev;
+}
+
+void Node::Pool::GarbageCollect() {
+  while (true) {
+    Node* node_to_gc = nullptr;
+    {
+      Mutex::Lock lock(gc_mutex_);
+      if (subtrees_to_gc_.empty()) return;
+      node_to_gc = subtrees_to_gc_.back();
+      subtrees_to_gc_.pop_back();
+    }
+    FreeNode* head = reinterpret_cast<FreeNode*>(node_to_gc);
+    FreeNode* tail = UnrollNodeTree(head);
+    {
+      Mutex::Lock lock(mutex_);
+      tail->next = free_list_;
+      free_list_ = head;
+    }
+  }
+}
 
 Node* Node::Pool::AllocateNode() {
   while (true) {
@@ -111,17 +145,6 @@ Node* Node::Pool::AllocateNode() {
   }
 }
 
-void Node::Pool::ReleaseNode(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseNodeInternal(node);
-}
-
-void Node::Pool::ReleaseNodeInternal(Node* node) REQUIRES(mutex_) {
-  auto* free_node = reinterpret_cast<FreeNode*>(node);
-  free_node->next = free_list_;
-  free_list_ = free_node;
-}
-
 void Node::Pool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
   allocations_.emplace_back(std::make_unique<FreeNode[]>(kAllocationSize));
 
@@ -134,11 +157,6 @@ void Node::Pool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
 }
 
 void Node::Pool::ReleaseChildren(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseChildrenInternal(node);
-}
-
-void Node::Pool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
   Node* next = node->child_;
   // Iterating manually rather than with iterator, as node is released in the
   // middle and can be taken by other threads, so we have to be careful.
@@ -147,7 +165,7 @@ void Node::Pool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
     // Getting next after releasing node, as otherwise it can be reallocated
     // and overwritten.
     next = next->sibling_;
-    ReleaseSubtreeInternal(iter);
+    ReleaseSubtree(iter);
   }
   node->child_ = nullptr;
 }
@@ -173,16 +191,17 @@ void Node::Pool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
 }
 
 void Node::Pool::ReleaseSubtree(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseSubtreeInternal(node);
-}
-
-void Node::Pool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
-  ReleaseChildrenInternal(node);
-  ReleaseNodeInternal(node);
+  Mutex::Lock lock(gc_mutex_);
+  subtrees_to_gc_.push_back(node);
 }
 
 Node::Pool gNodePool;
+
+void GarbageCollectNodePool() { gNodePool.GarbageCollect(); }
+
+/////////////////////////////////////////////////////////////////////////
+// Node
+/////////////////////////////////////////////////////////////////////////
 
 Node* Node::CreateChild(Move m) {
   Node* new_node = gNodePool.AllocateNode();
@@ -325,7 +344,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   return result;
 }
 
-void NodeTree::MakeMove(Move move) {
+void NodeTree::MakeMove(Move move, bool auto_garbage_collect) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
   Node* new_head = nullptr;
@@ -338,10 +357,13 @@ void NodeTree::MakeMove(Move move) {
   gNodePool.ReleaseAllChildrenExceptOne(current_head_, new_head);
   current_head_ = new_head ? new_head : current_head_->CreateChild(move);
   history_.Append(move);
+
+  if (auto_garbage_collect) GarbageCollectNodePool();
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
-                               const std::vector<Move>& moves) {
+                               const std::vector<Move>& moves,
+                               bool auto_garbage_collect) {
   ChessBoard starting_board;
   int no_capture_ply;
   int full_moves;
@@ -364,7 +386,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   current_head_ = gamebegin_node_;
   bool seen_old_head = (gamebegin_node_ == old_head);
   for (const auto& move : moves) {
-    MakeMove(move);
+    MakeMove(move, false);
     if (old_head == current_head_) seen_old_head = true;
   }
 
@@ -375,6 +397,8 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
     gNodePool.ReleaseChildren(current_head_);
     current_head_->ResetStats();
   }
+
+  if (auto_garbage_collect) GarbageCollectNodePool();
 }
 
 void NodeTree::DeallocateTree() {

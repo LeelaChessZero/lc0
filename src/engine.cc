@@ -144,6 +144,11 @@ void EngineController::UpdateNetwork() {
 
 void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 
+void EngineController::EnsureReady() {
+  GarbageCollectNodePool();
+  std::unique_lock<RpSharedMutex> lock(busy_mutex_);
+}
+
 void EngineController::NewGame() {
   SharedLock lock(busy_mutex_);
   cache_.Clear();
@@ -161,7 +166,7 @@ void EngineController::SetPosition(const std::string& fen,
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  tree_->ResetToPosition(fen, moves);
+  tree_->ResetToPosition(fen, moves, false);
   UpdateNetwork();
 }
 
@@ -172,6 +177,11 @@ void EngineController::Go(const GoParams& params) {
 
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
                                      tree_->IsBlackToMove(), params);
+
+  BestMoveInfo::Callback best_move_callback = [this](const BestMoveInfo& info) {
+    best_move_callback_(info);
+    GarbageCollectNodePool();
+  };
 
   search_ =
       std::make_unique<Search>(*tree_, network_.get(), best_move_callback_,
