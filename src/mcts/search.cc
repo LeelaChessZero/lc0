@@ -62,21 +62,22 @@ void Search::PopulateUciParams(OptionsParser* options) {
 
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
   options->Add<IntOption>(kMaxPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
-  options->Add<FloatOption>(kCpuctStr, 0, 100, "cpuct") = 1.2;
-  options->Add<FloatOption>(kTemperatureStr, 0, 100, "temperature") = 0.0;
+  options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
+  options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
+      0.0f;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
-  options->Add<FloatOption>(kVirtualLossBugStr, -100, 100, "virtual-loss-bug") =
-      0.0f;
-  options->Add<FloatOption>(kFpuReductionStr, -100, 100, "fpu-reduction") =
-      0.0f;
+  options->Add<FloatOption>(kVirtualLossBugStr, -100.0f, 100.0f,
+                            "virtual-loss-bug") = 0.0f;
+  options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
+                            "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
                           "cache-history-length") = 7;
-  options->Add<FloatOption>(kExtraVirtualLossStr, 0.0, 100.0,
+  options->Add<FloatOption>(kExtraVirtualLossStr, 0.0f, 100.0f,
                             "extra-virtual-loss") = 0.0f;
-  options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1, 10.0,
+  options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1f, 10.0f,
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;

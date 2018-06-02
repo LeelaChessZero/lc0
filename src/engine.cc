@@ -63,16 +63,16 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 2.2;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.2f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
 
   Search::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
 
-  defaults->Set<int>(Search::kMiniBatchSizeStr, 256);   // Minibatch = 256
-  defaults->Set<float>(Search::kFpuReductionStr, 0.2);  // FPU reduction = 0.2
-  defaults->Set<float>(Search::kCpuctStr, 3.1);         // CPUCT = 3.1
+  defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
+  defaults->Set<float>(Search::kFpuReductionStr, 0.2f);  // FPU reduction = 0.2
+  defaults->Set<float>(Search::kCpuctStr, 3.1f);         // CPUCT = 3.1
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
@@ -107,7 +107,8 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   // reduce it.
   if (slowmover < 1.0 || this_move_time > kSmartPruningToleranceMs) {
     // Budget X*slowmover for current move, X*1.0 for the rest.
-    this_move_time = total_moves_time / (movestogo - 1 + slowmover) * slowmover;
+    this_move_time = static_cast<int64_t>(
+        total_moves_time / (movestogo - 1 + slowmover) * slowmover);
   }
   // Make sure we don't exceed current time limit with what we calculated.
   limits.time_ms =

@@ -287,7 +287,8 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   result.version = 3;
 
   // Populate probabilities.
-  float total_n = n_ - 1;  // First visit was expansion of it inself.
+  float total_n =
+      static_cast<float>(n_ - 1);  // First visit was expansion of it inself.
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
   for (Node* iter : Children()) {
     result.probabilities[iter->move_.as_nn_index()] = iter->n_ / total_n;
