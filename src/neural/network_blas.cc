@@ -16,10 +16,10 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "neural/network.h"
 #include "BLAS/blas.h"
 #include "BLAS/transforms.h"
 #include "neural/factory.h"
-#include "neural/network.h"
 
 #include <algorithm>
 #include <cassert>
@@ -61,7 +61,7 @@ class BlasComputation : public NetworkComputation {
       float value = plane.value;
       const uint64_t one = 1;
       for (int i = 0; i < 64; i++)
-        input_data_[index++] = (plane.mask & (one << i))!=0 ? value : 0;
+        input_data_[index++] = (plane.mask & (one << i)) != 0 ? value : 0;
     }
 
     std::vector<float> policy_data(weights_.ip_pol_b.size());
@@ -188,9 +188,8 @@ class BlasNetwork : public Network {
  public:
   virtual ~BlasNetwork(){};
 
-  BlasNetwork(const Weights& weights, const OptionsDict& options )
+  BlasNetwork(const Weights& weights, const OptionsDict& options)
       : weights_(weights) {
-        
     bool verbose = options.GetOrDefault<bool>("verbose", false);
     int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
 
@@ -224,48 +223,52 @@ class BlasNetwork : public Network {
       Transforms::InvertBatchNormStddev(conv2.bn_stddivs);
     }
 
-    Transforms::OffsetBatchNormMeans(weights_.policy.bn_means, weights_.policy.biases);
+    Transforms::OffsetBatchNormMeans(weights_.policy.bn_means,
+                                     weights_.policy.biases);
     Transforms::InvertBatchNormStddev(weights_.policy.bn_stddivs);
 
-    Transforms::OffsetBatchNormMeans(weights_.value.bn_means, weights_.value.biases);
+    Transforms::OffsetBatchNormMeans(weights_.value.bn_means,
+                                     weights_.value.biases);
     Transforms::InvertBatchNormStddev(weights_.value.bn_stddivs);
 
 #ifdef USE_OPENBLAS
-    int num_procs=openblas_get_num_procs();
-    blas_cores=std::min(num_procs, blas_cores);
+    int num_procs = openblas_get_num_procs();
+    blas_cores = std::min(num_procs, blas_cores);
     openblas_set_num_threads(blas_cores);
     if (verbose) {
-      const char* core_name=openblas_get_corename();
-      const char* config=openblas_get_config();
-      printf("BLAS vendor: OpenBlas.");
-      printf("OpenBlas config: %s.\n", config);
+      const char* core_name = openblas_get_corename();
+      const char* config = openblas_get_config();
+      printf("BLAS vendor: OpenBlas.\n");
+      printf("OpenBlas [%s].\n", config);
       printf("OpenBlas found %d %s core(s).\n", num_procs, core_name);
-      printf("OpenBLAS: using %d core(s) for this backend\n", blas_cores);
-   }
+      printf("OpenBLAS using %d core(s) for this backend.\n", blas_cores);
+    }
 #endif
 
 #ifdef USE_MKL
-    int max_procs=mkl_get_max_threads();
-    blas_cores=std::min(num_procs, blas_cores);
+    int max_procs = mkl_get_max_threads();
+    blas_cores = std::min(max_procs, blas_cores);
     mkl_set_num_threads(blas_cores);
     if (verbose) {
       printf("BLAS vendor: MKL.\n");
+      constexpr int len = 256;
+      char versionbuf[len];
+      mkl_get_version_string(versionbuf, len);
+      printf("MKL %s.\n", versionbuf);
       MKLVersion version;
       mkl_get_version(&version);
-      printf("MKL config: %s\n.",mkl_get_version_string());
-      printf("MKL platform %s, processor %s.\n", version.Platform, version.Processor);
+      printf("MKL platform: %s, processor: %s.\n", version.Platform,
+             version.Processor);
       printf("MKL can use up to  %d thread(s).\n", max_procs);
-   }
-#endif
-             
-             
-#ifdef USE_ACCELERATE
-    if (verbose) {
-       printf("BLAS vendor: Apple vecLib\n");
+      printf("MKL using %d thread(s) for this backend.\n", blas_cores);
     }
 #endif
-             
-             
+
+#ifdef USE_ACCELERATE
+    if (verbose) {
+      printf("BLAS vendor: Apple vecLib\n");
+    }
+#endif
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {

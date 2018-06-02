@@ -35,7 +35,6 @@
 #include "CL/OpenCL.h"
 #include "CL/OpenCLParams.h"
 
-
 namespace lczero {
 
 namespace {
@@ -84,7 +83,7 @@ class OpenCLComputation : public NetworkComputation {
       float value = plane.value;
       const uint64_t one = 1;
       for (int i = 0; i < 64; i++)
-        input_data_[index++] = (plane.mask & (one << i))!=0 ? value : 0;
+        input_data_[index++] = (plane.mask & (one << i)) != 0 ? value : 0;
     }
 
     std::vector<float> policy_data(weights_.num_output_policies);
@@ -95,8 +94,8 @@ class OpenCLComputation : public NetworkComputation {
     policy_data_.emplace_back(move(policy_data));
 
     // Now get the score
-    double winrate =
-        Transforms::Innerproduct(weights_.ip2_val_w, value_data_) + weights_.ip2_val_b[0];
+    double winrate = Transforms::Innerproduct(weights_.ip2_val_w, value_data_) +
+                     weights_.ip2_val_b[0];
     q_value_.emplace_back(std::tanh(winrate));
   }
 
@@ -112,8 +111,6 @@ class OpenCLComputation : public NetworkComputation {
   }
 
  private:
-
-
   const OpenCL_Network& opencl_net_;
   const OpenCLWeights& weights_;
 
@@ -135,7 +132,8 @@ class OpenCLNetwork : public Network {
     params_.verbose = options.GetOrDefault<bool>("verbose", false);
     params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
-    params_.tune_exhaustive = options.GetOrDefault<bool>("tune_exhaustive", false);
+    params_.tune_exhaustive =
+        options.GetOrDefault<bool>("tune_exhaustive", false);
 
     const int inputChannels = kInputPlanes;
     const int channels = weights.input.biases.size();
