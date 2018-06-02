@@ -73,6 +73,7 @@ const std::string sourceCode_blast_level3_xgemm_batched =
 #include "clblast_level3/xgemm_batched.opencl"
     ;
 
+// Important: Keep the following order (common/part1/part2/part3/batched).
 const std::string sourceCode_sgemm =
     sourceCode_blast_level3_common + sourceCode_blast_level3_xgemm_part1 +
     sourceCode_blast_level3_xgemm_part2 + sourceCode_blast_level3_xgemm_part3 +
