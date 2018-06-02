@@ -68,7 +68,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   Search::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
-  defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch
+  defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch size
   defaults->Set<bool>(Search::kSmartPruningStr, false);  // No smart pruning
   defaults->Set<float>(Search::kTemperatureStr, 1.0);    // Temperature = 1.0
   defaults->Set<bool>(Search::kNoiseStr, true);          // Dirichlet noise

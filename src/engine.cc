@@ -63,10 +63,17 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 2.2;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.2f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
 
   Search::PopulateUciParams(options);
+
+  auto defaults = options->GetMutableDefaultsOptions();
+
+  defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
+  defaults->Set<float>(Search::kFpuReductionStr, 0.2f);  // FPU reduction = 0.2
+  defaults->Set<float>(Search::kCpuctStr, 3.1f);         // CPUCT = 3.1
+  defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
@@ -87,8 +94,9 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   float slowmover = options_.Get<float>(kSlowMoverStr);
   int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
   // Total time till control including increments.
-  auto total_moves_time = std::max(
-      int64_t{0}, time + increment * (movestogo - 1) - move_overhead * movestogo);
+  auto total_moves_time =
+      std::max(int64_t{0},
+               time + increment * (movestogo - 1) - move_overhead * movestogo);
 
   const int kSmartPruningToleranceMs = 200;
 
@@ -99,10 +107,12 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   // reduce it.
   if (slowmover < 1.0 || this_move_time > kSmartPruningToleranceMs) {
     // Budget X*slowmover for current move, X*1.0 for the rest.
-    this_move_time = total_moves_time / (movestogo - 1 + slowmover) * slowmover;
+    this_move_time = static_cast<int64_t>(
+        total_moves_time / (movestogo - 1 + slowmover) * slowmover);
   }
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms = std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
+  limits.time_ms =
+      std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
   return limits;
 }
 
@@ -134,6 +144,11 @@ void EngineController::UpdateNetwork() {
 
 void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 
+void EngineController::EnsureReady() {
+  GarbageCollectNodePool();
+  std::unique_lock<RpSharedMutex> lock(busy_mutex_);
+}
+
 void EngineController::NewGame() {
   SharedLock lock(busy_mutex_);
   cache_.Clear();
@@ -151,7 +166,7 @@ void EngineController::SetPosition(const std::string& fen,
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  tree_->ResetToPosition(fen, moves);
+  tree_->ResetToPosition(fen, moves, false);
   UpdateNetwork();
 }
 
@@ -162,6 +177,11 @@ void EngineController::Go(const GoParams& params) {
 
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
                                      tree_->IsBlackToMove(), params);
+
+  BestMoveInfo::Callback best_move_callback = [this](const BestMoveInfo& info) {
+    best_move_callback_(info);
+    GarbageCollectNodePool();
+  };
 
   search_ =
       std::make_unique<Search>(*tree_, network_.get(), best_move_callback_,

@@ -357,8 +357,8 @@
         cl::unmapSVM(inputB);
         cl::unmapSVM(output2);
 
-	    cl_int error;
-	    vectorAddKernel(
+        cl_int error;
+        vectorAddKernel(
             cl::EnqueueArgs(
                 cl::NDRange(numElements/2),
                 cl::NDRange(numElements/2)),
@@ -369,7 +369,7 @@
             3,
             aPipe,
             defaultDeviceQueue,
-		    error
+            error
             );
 
         cl::copy(outputBuffer, begin(output), end(output));
@@ -3069,7 +3069,7 @@ public:
      */
     cl_int setCallback(
         cl_int type,
-        void (CL_CALLBACK * pfn_notify)(cl_event, cl_int, void *),		
+        void (CL_CALLBACK * pfn_notify)(cl_event, cl_int, void *),      
         void * user_data = NULL)
     {
         return detail::errHandler(
@@ -3258,7 +3258,7 @@ public:
      *  value - not the Memory class instance.
      */
     cl_int setDestructorCallback(
-        void (CL_CALLBACK * pfn_notify)(cl_mem, void *),		
+        void (CL_CALLBACK * pfn_notify)(cl_mem, void *),        
         void * user_data = NULL)
     {
         return detail::errHandler(
@@ -3849,7 +3849,7 @@ public:
         }
 
         return result;
-    }		
+    }       
 #endif // CL_HPP_TARGET_OPENCL_VERSION >= 110
 };
 
@@ -4269,7 +4269,7 @@ public:
         {
             CL_MEM_OBJECT_IMAGE1D,
             width,
-            0, 0, 0, 0, 0, 0, 0, 0
+            0, 0, 0, 0, 0, 0, 0, {0}
         };
         object_ = ::clCreateImage(
             context(), 
@@ -4358,7 +4358,7 @@ public:
             CL_MEM_OBJECT_IMAGE1D_BUFFER,
             width,
             0, 0, 0, 0, 0, 0, 0,
-            buffer()
+            {buffer()}
         };
         object_ = ::clCreateImage(
             context(), 
@@ -4446,7 +4446,7 @@ public:
             0, 0,  // height, depth (unused)
             arraySize,
             rowPitch,
-            0, 0, 0, 0
+            0, 0, 0, {0}
         };
         object_ = ::clCreateImage(
             context(), 
@@ -4561,7 +4561,7 @@ public:
                 height,
                 0, 0, // depth, array size (unused)
                 row_pitch,
-                0, 0, 0, 0
+                0, 0, 0, {0}
             };
             object_ = ::clCreateImage(
                 context(),
@@ -4879,7 +4879,7 @@ public:
             arraySize,
             rowPitch,
             slicePitch,
-            0, 0, 0
+            0, 0, {0}
         };
         object_ = ::clCreateImage(
             context(), 
@@ -4994,7 +4994,7 @@ public:
                 0,      // array size (unused)
                 row_pitch,
                 slice_pitch,
-                0, 0, 0
+                0, 0, {0}
             };
             object_ = ::clCreateImage(
                 context(), 

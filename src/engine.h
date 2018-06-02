@@ -46,7 +46,7 @@ class EngineController {
   void PopulateOptions(OptionsParser* options);
 
   // Blocks.
-  void EnsureReady() { std::unique_lock<RpSharedMutex> lock(busy_mutex_); }
+  void EnsureReady();
 
   // Must not block.
   void NewGame();

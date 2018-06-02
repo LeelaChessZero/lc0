@@ -73,7 +73,7 @@ class Search {
 
   // Strings for UCI params. So that others can override defaults.
   static const char* kMiniBatchSizeStr;
-  static const char* kMiniPrefetchBatchStr;
+  static const char* kMaxPrefetchBatchStr;
   static const char* kCpuctStr;
   static const char* kTemperatureStr;
   static const char* kTempDecayMovesStr;
@@ -146,7 +146,7 @@ class Search {
 
   // External parameters.
   const int kMiniBatchSize;
-  const int kMiniPrefetchBatch;
+  const int kMaxPrefetchBatch;
   const float kCpuct;
   const float kTemperature;
   const int kTempDecayMoves;
