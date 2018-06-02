@@ -16,7 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "transforms.h"
+#include "blas_transforms.h"
 
 #include "utils/blas.h"
 
@@ -26,7 +26,7 @@
 
 namespace lczero {
 
-std::vector<float> Transforms::ZeropadU(const std::vector<float>& U,
+std::vector<float> BlasTransforms::ZeropadU(const std::vector<float>& U,
                                         const int outputs, const int channels,
                                         const int outputs_pad,
                                         const int channels_pad) {
@@ -49,7 +49,7 @@ std::vector<float> Transforms::ZeropadU(const std::vector<float>& U,
   return Upad;
 }
 
-std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
+std::vector<float> BlasTransforms::WinogradTransformF(const std::vector<float>& f,
                                                   const int outputs,
                                                   const int channels) {
   // F(2x2, 3x3) Winograd filter transformation
@@ -88,7 +88,7 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
   return U;
 }
 
-void Transforms::WinogradTransformIn(const std::vector<float>& in,
+void BlasTransforms::WinogradTransformIn(const std::vector<float>& in,
                                      std::vector<float>& V, const int C) {
   constexpr auto W = 8;
   constexpr auto H = 8;
@@ -172,7 +172,7 @@ void Transforms::WinogradTransformIn(const std::vector<float>& in,
   }
 }
 
-void Transforms::WinogradSgemm(const std::vector<float>& U,
+void BlasTransforms::WinogradSgemm(const std::vector<float>& U,
                                std::vector<float>& V, std::vector<float>& M,
                                const int C, const int K) {
   constexpr auto P = 8 * 8 / kWinogradAlpha;
@@ -187,7 +187,7 @@ void Transforms::WinogradSgemm(const std::vector<float>& U,
   }
 }
 
-void Transforms::WinogradTransformOut(const std::vector<float>& M,
+void BlasTransforms::WinogradTransformOut(const std::vector<float>& M,
                                       std::vector<float>& Y, const int K) {
   constexpr auto W = 8;
   constexpr auto H = 8;
@@ -246,7 +246,7 @@ void Transforms::WinogradTransformOut(const std::vector<float>& M,
   }
 }
 
-void Transforms::WinogradConvolve3(const int outputs,
+void BlasTransforms::WinogradConvolve3(const int outputs,
                                    const std::vector<float>& input,
                                    const std::vector<float>& U,
                                    std::vector<float>& V, std::vector<float>& M,
@@ -260,7 +260,7 @@ void Transforms::WinogradConvolve3(const int outputs,
 }
 
 template <unsigned int filter_size>
-void Transforms::Convolve(size_t outputs, const std::vector<float>& input,
+void BlasTransforms::Convolve(size_t outputs, const std::vector<float>& input,
                           const std::vector<float>& weights,
                           const std::vector<float>& biases,
                           std::vector<float>& output) {
@@ -301,7 +301,7 @@ void Transforms::Convolve(size_t outputs, const std::vector<float>& input,
   }
 }
 
-void Transforms::Innerproduct(const std::vector<float>& inputs,
+void BlasTransforms::Innerproduct(const std::vector<float>& inputs,
                               const std::vector<float>& weights,
                               const std::vector<float>& biases,
                               std::vector<float>& outputs, bool apply_relu) {
@@ -322,7 +322,7 @@ void Transforms::Innerproduct(const std::vector<float>& inputs,
 }
 
 template <size_t spatial_size>
-void Transforms::Batchnorm(size_t channels, std::vector<float>& data,
+void BlasTransforms::Batchnorm(size_t channels, std::vector<float>& data,
                            const float* means, const float* stddivs,
                            const float* eltwise) {
   auto lambda_ReLU = [](float val) { return (val > 0.0f) ? val : 0.0f; };
@@ -349,7 +349,7 @@ void Transforms::Batchnorm(size_t channels, std::vector<float>& data,
 }
 
 template <unsigned long filter_size>
-void Transforms::Im2Col(const int channels, const std::vector<float>& input,
+void BlasTransforms::Im2Col(const int channels, const std::vector<float>& input,
                         std::vector<float>& output) {
   constexpr unsigned int height = 8;
   constexpr unsigned int width = 8;
@@ -390,14 +390,14 @@ void Transforms::Im2Col(const int channels, const std::vector<float>& input,
   }
 }
 
-float Transforms::Innerproduct(const std::vector<float>& x,
+float BlasTransforms::Innerproduct(const std::vector<float>& x,
                                const std::vector<float>& y) {
   // float cblas_sdot(const int __N, const float *__X, const int __incX, const
   // float *__Y, const int __incY);
   return cblas_sdot(x.size(), &x[0], 1, &y[0], 1);
 }
 
-void Transforms::Softmax(const std::vector<float>& input,
+void BlasTransforms::Softmax(const std::vector<float>& input,
                          std::vector<float>& output) {
   auto alpha = *std::max_element(begin(input), begin(input) + input.size());
 
@@ -412,7 +412,7 @@ void Transforms::Softmax(const std::vector<float>& input,
   }
 }
 
-void Transforms::OffsetBatchNormMeans(std::vector<float>& bn_means,
+void BlasTransforms::OffsetBatchNormMeans(std::vector<float>& bn_means,
                                       const std::vector<float>& biases) {
   // Biases are not calculated and are typically zero but some networks might
   // still have non-zero biases.
@@ -421,7 +421,7 @@ void Transforms::OffsetBatchNormMeans(std::vector<float>& bn_means,
   for (size_t i = 0; i < bn_means.size(); i++) bn_means[i] -= biases[i];
 }
 
-void Transforms::InvertBatchNormStddev(std::vector<float>& weights) {
+void BlasTransforms::InvertBatchNormStddev(std::vector<float>& weights) {
   constexpr float EPSILON = 1e-5;
   for (auto& w : weights) w = 1.0f / std::sqrt(w + EPSILON);
 }
@@ -429,7 +429,7 @@ void Transforms::InvertBatchNormStddev(std::vector<float>& weights) {
 /* Template instantiations and specializations */
 
 template <>
-void Transforms::Im2Col<1>(const int channels, const std::vector<float>& input,
+void BlasTransforms::Im2Col<1>(const int channels, const std::vector<float>& input,
                            std::vector<float>& output) {
   constexpr unsigned int boardsize = 8;
   auto outSize = size_t{channels * boardsize * boardsize};
@@ -437,13 +437,13 @@ void Transforms::Im2Col<1>(const int channels, const std::vector<float>& input,
   std::copy(begin(input), begin(input) + outSize, begin(output));
 }
 
-template void Transforms::Batchnorm<64>(size_t channels,
+template void BlasTransforms::Batchnorm<64>(size_t channels,
                                         std::vector<float>& data,
                                         const float* means,
                                         const float* stddivs,
                                         const float* eltwise);
 
-template void Transforms::Convolve<1>(size_t outputs,
+template void BlasTransforms::Convolve<1>(size_t outputs,
                                       const std::vector<float>& input,
                                       const std::vector<float>& weights,
                                       const std::vector<float>& biases,

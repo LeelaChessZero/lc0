@@ -16,7 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/CL/transforms.h"
+#include "neural/blas_transforms.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 
