@@ -53,3 +53,12 @@ Then either:
 Or.
 
 7. Opten generated solution `build/lc0.sln` in Visual Studio and build yourself.
+
+## Mac
+
+1. Install brew as per the instructions at https://brew.sh/
+2. Install python3: `brew install python3`
+3. Install meson: `brew install meson`
+4. Install ninja: `brew install ninja`
+5. Run `./build.sh`
+6. The resulting binary will be in build/release
