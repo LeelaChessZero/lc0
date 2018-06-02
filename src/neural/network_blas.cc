@@ -192,7 +192,8 @@ class BlasNetwork : public Network {
       : weights_(weights) {
         
     bool verbose = options.GetOrDefault<bool>("verbose", false);
-        
+    int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
+
     const int inputChannels = kInputPlanes;
     const int channels = weights.input.biases.size();
     const size_t residual_blocks = weights.residual.size();
@@ -231,11 +232,13 @@ class BlasNetwork : public Network {
 
 #ifdef USE_OPENBLAS
     if (verbose) {
-      printf("OpenBLAS: core is %s.\n", openblas_get_corename());
-      printf("OpenBLAS: number of procs %d.\n", openblas_get_num_procs());
-      printf("OpenBLAS: multi-threading off.\n");
+      int num_procs=openblas_get_num_procs();
+      blas_cores=std::min(num_procs, blas_cores);
+      const char* core_name=openblas_get_corename();
+      printf("OpenBLAS: found %d %s cores.\n", num_procs, core_name);
+      printf("OpenBLAS: using %d core for this backend\n", blas_cores);
    }
-   openblas_set_num_threads(1);
+   openblas_set_num_threads(blas_cores);
 #endif
 
 #ifdef USE_MKL
