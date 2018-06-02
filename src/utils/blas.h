@@ -27,6 +27,13 @@
 
 #ifdef USE_OPENBLAS
 #include <cblas.h>
+
+// Specific openblas routines.
+extern "C" {
+  void openblas_set_num_threads(int num_threads);
+  char* openblas_get_corename();
+}
+
 #else
 
 #ifdef __APPLE__

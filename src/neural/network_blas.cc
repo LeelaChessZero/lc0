@@ -188,8 +188,11 @@ class BlasNetwork : public Network {
  public:
   virtual ~BlasNetwork(){};
 
-  BlasNetwork(const Weights& weights, const OptionsDict& /* options */)
+  BlasNetwork(const Weights& weights, const OptionsDict& options )
       : weights_(weights) {
+        
+    bool verbose = options.GetOrDefault<bool>("verbose", false);
+        
     const int inputChannels = kInputPlanes;
     const int channels = weights.input.biases.size();
     const size_t residual_blocks = weights.residual.size();
@@ -227,8 +230,9 @@ class BlasNetwork : public Network {
     Transforms::InvertBatchNormStddev(weights_.value.bn_stddivs);
 
 #ifdef USE_OPENBLAS
-// openblas_set_num_threads(1);
-// printf("BLAS Core: %s\n", openblas_get_corename());
+    openblas_set_num_threads(1);
+    if (verbose)
+      printf("BLAS Core: %s\n", openblas_get_corename());
 #endif
 
 #ifdef USE_MKL
