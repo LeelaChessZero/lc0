@@ -16,7 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/CL/transforms.h"
+#include "BLAS/blas.h"
+#include "BLAS/transforms.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 
@@ -27,7 +28,6 @@
 #include <iostream>
 #include <thread>
 
-#include "utils/blas.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -231,23 +231,41 @@ class BlasNetwork : public Network {
     Transforms::InvertBatchNormStddev(weights_.value.bn_stddivs);
 
 #ifdef USE_OPENBLAS
+    int num_procs=openblas_get_num_procs();
+    blas_cores=std::min(num_procs, blas_cores);
+    openblas_set_num_threads(blas_cores);
     if (verbose) {
-      int num_procs=openblas_get_num_procs();
-      blas_cores=std::min(num_procs, blas_cores);
       const char* core_name=openblas_get_corename();
-      printf("OpenBLAS: found %d %s core(s).\n", num_procs, core_name);
+      const char* config=openblas_get_config();
+      printf("BLAS vendor: OpenBlas.");
+      printf("OpenBlas config: %s.\n", config);
+      printf("OpenBlas found %d %s core(s).\n", num_procs, core_name);
       printf("OpenBLAS: using %d core(s) for this backend\n", blas_cores);
    }
-   openblas_set_num_threads(blas_cores);
 #endif
 
 #ifdef USE_MKL
-    // mkl_set_threading_layer(MKL_THREADING_SEQUENTIAL);
-    mkl_set_num_threads(1);
-    MKLVersion Version;
-    mkl_get_version(&Version);
-    printf("BLAS core: MKL %s\n", Version.Processor);
+    int max_procs=mkl_get_max_threads();
+    blas_cores=std::min(num_procs, blas_cores);
+    mkl_set_num_threads(blas_cores);
+    if (verbose) {
+      printf("BLAS vendor: MKL.\n");
+      MKLVersion version;
+      mkl_get_version(&version);
+      printf("MKL config: %s\n.",mkl_get_version_string());
+      printf("MKL platform %s, processor %s.\n", version.Platform, version.Processor);
+      printf("MKL can use up to  %d thread(s).\n", max_procs);
+   }
 #endif
+             
+             
+#ifdef USE_ACCELERATE
+    if (verbose) {
+       printf("BLAS vendor: Apple vecLib\n");
+    }
+#endif
+             
+             
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {

@@ -18,7 +18,7 @@
 
 #include "transforms.h"
 
-#include "utils/blas.h"
+#include "blas.h"
 
 #include <algorithm>
 #include <cassert>

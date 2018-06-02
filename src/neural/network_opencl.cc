@@ -16,7 +16,9 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/CL/transforms.h"
+#include "BLAS/blas.h"
+#include "BLAS/transforms.h"
+
 #include "neural/factory.h"
 #include "neural/network.h"
 
@@ -33,7 +35,6 @@
 #include "CL/OpenCL.h"
 #include "CL/OpenCLParams.h"
 
-#include "utils/blas.h"
 
 namespace lczero {
 

@@ -32,7 +32,8 @@
 extern "C" {
   int openblas_get_num_procs(void);
   void openblas_set_num_threads(int num_threads);
-  char* openblas_get_corename();
+  char* openblas_get_corename(void);
+  char* openblas_get_config(void);
 }
 
 #else
