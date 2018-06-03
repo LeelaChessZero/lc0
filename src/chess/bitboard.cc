@@ -267,6 +267,10 @@ std::vector<unsigned short> BuildMoveIndices() {
 }
 
 const std::vector<unsigned short> kMoveToIdx = BuildMoveIndices();
+const int kKingCastleIndex =
+    kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("h1").as_int()];
+const int kQueenCastleIndex =
+    kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("a1").as_int()];
 }  // namespace
 
 Move::Move(const std::string& str, bool black) {
@@ -307,6 +311,10 @@ uint16_t Move::as_packed_int() const {
   }
 }
 
-uint16_t Move::as_nn_index() const { return kMoveToIdx[as_packed_int()]; }
+uint16_t Move::as_nn_index() const {
+  if (!castling_) return kMoveToIdx[as_packed_int()];
+  if (from_.col() < to_.col()) return kKingCastleIndex;
+  return kQueenCastleIndex;
+}
 
 }  // namespace lczero

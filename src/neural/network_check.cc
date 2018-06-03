@@ -117,8 +117,9 @@ class CheckComputation : public NetworkComputation {
     constexpr float ABSOLUTE_TOLERANCE = 1e-6;
     constexpr float RELATIVE_TOLERANCE = 1e-2;
 
-    return abs(a - b) <= std::max(RELATIVE_TOLERANCE * std::max(abs(a), abs(b)),
-                                  ABSOLUTE_TOLERANCE);
+    return std::abs(a - b) <=
+           std::max(RELATIVE_TOLERANCE * std::max(std::abs(a), std::abs(b)),
+                    ABSOLUTE_TOLERANCE);
   }
 
   std::unique_ptr<NetworkComputation> refComp_;

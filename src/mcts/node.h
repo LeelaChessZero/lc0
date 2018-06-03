@@ -192,11 +192,16 @@ inline void Node_Iterator::operator++() { node_ = node_->sibling_; }
 class NodeTree {
  public:
   ~NodeTree() { DeallocateTree(); }
-  // Adds a move to current_head_;
-  void MakeMove(Move move);
+  // Adds a move to current_head_.
+  // If @auto_garbage_collect, nodes which are released are also garbage
+  // collected. (may take some milliseconds).
+  void MakeMove(Move move, bool auto_garbage_collect = true);
   // Sets the position in a tree, trying to reuse the tree.
+  // If @auto_garbage_collect, old tree is garbage collected immediately. (may
+  // take some milliseconds)
   void ResetToPosition(const std::string& starting_fen,
-                       const std::vector<Move>& moves);
+                       const std::vector<Move>& moves,
+                       bool auto_garbage_collect = true);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
   bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }
@@ -210,4 +215,8 @@ class NodeTree {
   Node* gamebegin_node_ = nullptr;
   PositionHistory history_;
 };
+
+// Performs garbage collection on node pool. Thread safe.
+void GarbageCollectNodePool();
+
 }  // namespace lczero

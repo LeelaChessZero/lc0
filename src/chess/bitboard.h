@@ -222,11 +222,7 @@ class Move {
   }
 
   std::string as_string() const {
-    BoardSquare to = to_;
-    if (castling_) {
-      to = BoardSquare(to.row(), (to.col() == 7) ? 6 : 2);
-    }
-    std::string res = from_.as_string() + to.as_string();
+    std::string res = from_.as_string() + to_.as_string();
     switch (promotion_) {
       case Promotion::None:
         return res;

@@ -80,7 +80,7 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
   for (Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
     moves.push_back(node->GetMove(flip));
-	flip = !flip;
+    flip = !flip;
   }
   std::reverse(moves.begin(), moves.end());
   return moves;
