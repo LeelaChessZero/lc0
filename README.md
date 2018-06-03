@@ -52,7 +52,7 @@ Then either:
 
 Or.
 
-7. Opten generated solution `build/lc0.sln` in Visual Studio and build yourself.
+7. Open generated solution `build/lc0.sln` in Visual Studio and build yourself.
 
 ## Mac
 
