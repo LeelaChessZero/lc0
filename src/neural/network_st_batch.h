@@ -24,6 +24,21 @@ namespace lczero {
 
 // This is a network that helps to combine batches from multiple games running
 // is a single thread. Not thread safe.
+// Usage:
+//   network.Reset();   // Creates new parent computation
+//   computations = []
+//   multiple times:
+//     x = network.NewComputation()
+//     computations += x
+//     x.AddInput();
+//     x.AddInput();
+//     x.AddInput();
+//     ...
+//   for x in computations:
+//     x.ComputeBlocking()   // Only last call actually computes, and they are
+//                           // computed together in one batch.
+//   for x in computations:
+//     use(x)
 class SingleThreadBatchingNetwork : public Network {
  public:
   SingleThreadBatchingNetwork(std::unique_ptr<Network> parent);
