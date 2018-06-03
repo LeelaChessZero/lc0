@@ -12,7 +12,7 @@ fi
 BUILDDIR=build/${BUILDTYPE}
 
 rm -fr ${BUILDDIR}
-meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local}
+meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} --Dwarning_level=3 --Dwerror=true
 
 pushd ${BUILDDIR}
 
