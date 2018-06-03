@@ -414,8 +414,12 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_RELU,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
   } else {
+#if CUDNN_MAJOR>=7
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_IDENTITY,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
+#else
+    throw Exception("Need cudnn 7+ for CUDNN_ACTIVATION_IDENTITY");
+#endif
   }
 }
 
