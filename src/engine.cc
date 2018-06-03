@@ -154,6 +154,7 @@ void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 
 void EngineController::EnsureReady() {
   GarbageCollectNodePool();
+  UpdateNetwork();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
 }
 
