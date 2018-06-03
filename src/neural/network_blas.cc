@@ -190,7 +190,7 @@ class BlasNetwork : public Network {
 
   BlasNetwork(const Weights& weights, const OptionsDict& options)
       : weights_(weights) {
-    bool verbose = options.GetOrDefault<bool>("verbose", false);
+    bool verbose = options.GetOrDefault<bool>("verbose", true);
     int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
 
     const int inputChannels = kInputPlanes;
@@ -238,10 +238,10 @@ class BlasNetwork : public Network {
     if (verbose) {
       const char* core_name = openblas_get_corename();
       const char* config = openblas_get_config();
-      printf("BLAS vendor: OpenBlas.\n");
-      printf("OpenBlas [%s].\n", config);
-      printf("OpenBlas found %d %s core(s).\n", num_procs, core_name);
-      printf("OpenBLAS using %d core(s) for this backend.\n", blas_cores);
+      fprintf(stderr, "BLAS vendor: OpenBlas.\n");
+      fprintf(stderr, "OpenBlas [%s].\n", config);
+      fprintf(stderr, "OpenBlas found %d %s core(s).\n", num_procs, core_name);
+      fprintf(stderr, "OpenBLAS using %d core(s) for this backend.\n", blas_cores);
     }
 #endif
 
@@ -250,23 +250,23 @@ class BlasNetwork : public Network {
     blas_cores = std::min(max_procs, blas_cores);
     mkl_set_num_threads(blas_cores);
     if (verbose) {
-      printf("BLAS vendor: MKL.\n");
+      fprintf(stderr, "BLAS vendor: MKL.\n");
       constexpr int len = 256;
       char versionbuf[len];
       mkl_get_version_string(versionbuf, len);
-      printf("MKL %s.\n", versionbuf);
+      fprintf(stderr, "MKL %s.\n", versionbuf);
       MKLVersion version;
       mkl_get_version(&version);
-      printf("MKL platform: %s, processor: %s.\n", version.Platform,
+      fprintf(stderr, "MKL platform: %s, processor: %s.\n", version.Platform,
              version.Processor);
-      printf("MKL can use up to  %d thread(s).\n", max_procs);
-      printf("MKL using %d thread(s) for this backend.\n", blas_cores);
+      fprintf(stderr, "MKL can use up to  %d thread(s).\n", max_procs);
+      fprintf(stderr, "MKL using %d thread(s) for this backend.\n", blas_cores);
     }
 #endif
 
 #ifdef USE_ACCELERATE
     if (verbose) {
-      printf("BLAS vendor: Apple vecLib.\n");
+      fprintf(stderr, "BLAS vendor: Apple vecLib.\n");
     }
 #endif
   }
