@@ -625,13 +625,13 @@ std::vector<size_t> OpenCL::get_sgemm_tuners(void) {
 void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   bool verbose = params.verbose;
   if (verbose) {
-    printf("Initializing OpenCL.\n");
+    fprintf(stderr, "Initializing OpenCL.\n");
   }
   std::vector<cl::Platform> platforms;
   try {
     cl::Platform::get(&platforms);
   } catch (const cl::Error& e) {
-    printf("OpenCL: %s\n", e.what());
+    fprintf(stderr, "OpenCL: %s\n", e.what());
     throw;
   }
 
@@ -644,7 +644,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   auto id = 0;
 
   if (verbose) {
-    printf("Detected %zu OpenCL platforms.\n", platforms.size());
+    fprintf(stderr, "Detected %zu OpenCL platforms.\n", platforms.size());
   }
 
   for (const auto& p : platforms) {
@@ -653,11 +653,11 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
       std::string platprof = p.getInfo<CL_PLATFORM_PROFILE>();
       std::string platname = p.getInfo<CL_PLATFORM_NAME>();
       std::string platvend = p.getInfo<CL_PLATFORM_VENDOR>();
-      printf("Platform version: %s\n", platvers.c_str());
+      fprintf(stderr, "Platform version: %s\n", platvers.c_str());
       ;
-      printf("Platform profile: %s\n", platprof.c_str());
-      printf("Platform name:    %s\n", platname.c_str());
-      printf("Platform vendor:  %s\n", platvend.c_str());
+      fprintf(stderr, "Platform profile: %s\n", platprof.c_str());
+      fprintf(stderr, "Platform name:    %s\n", platname.c_str());
+      fprintf(stderr, "Platform vendor:  %s\n", platvend.c_str());
     }
 
     std::istringstream versstream(platvers);
@@ -669,21 +669,21 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
     try {
       p.getDevices(CL_DEVICE_TYPE_ALL, &devices);
     } catch (const cl::Error& e) {
-      printf("Error getting device(s): %s: %d\n", e.what(), e.err());
+      fprintf(stderr, "Error getting device(s): %s: %d\n", e.what(), e.err());
       devices.clear();
     }
     for (auto& d : devices) {
       if (verbose) {
-        printf("Device ID:     %d\n", id);
-        printf("Device name:   %s\n",
+        fprintf(stderr, "Device ID:     %d\n", id);
+        fprintf(stderr, "Device name:   %s\n",
                trim(d.getInfo<CL_DEVICE_NAME>()).c_str());
-        printf("Device type:   %s\n",
+        fprintf(stderr, "Device type:   %s\n",
                opencl_dev_type_to_string(d.getInfo<CL_DEVICE_TYPE>()).c_str());
-        printf("Device vendor: %s\n", d.getInfo<CL_DEVICE_VENDOR>().c_str());
-        printf("Device driver: %s\n", d.getInfo<CL_DRIVER_VERSION>().c_str());
-        printf("Device speed:  %u MHz\n",
+        fprintf(stderr, "Device vendor: %s\n", d.getInfo<CL_DEVICE_VENDOR>().c_str());
+        fprintf(stderr, "Device driver: %s\n", d.getInfo<CL_DRIVER_VERSION>().c_str());
+        fprintf(stderr, "Device speed:  %u MHz\n",
                d.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>());
-        printf("Device cores:  %u CU\n",
+        fprintf(stderr, "Device cores:  %u CU\n",
                d.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>());
       }
 
@@ -698,7 +698,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
       this_score += 100 * (d.getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU);
       this_score += opencl_version * 10;
       if (verbose) {
-        printf("Device score:  %d\n", this_score);
+        fprintf(stderr, "Device score:  %d\n", this_score);
       }
 
       bool preferred = params.gpuId == id;
@@ -724,17 +724,17 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   }
 
   if (verbose) {
-    printf("Selected platform: %s\n",
+    fprintf(stderr, "Selected platform: %s\n",
            best_platform.getInfo<CL_PLATFORM_NAME>().c_str());
-    printf("Selected device: %s\n",
+    fprintf(stderr, "Selected device: %s\n",
            trim(best_device.getInfo<CL_DEVICE_NAME>()).c_str());
-    printf("with OpenCL %2.1f capability.\n", best_version);
+    fprintf(stderr, "with OpenCL %2.1f capability.\n", best_version);
   }
   cl::Context context;
   try {
     context = cl::Context(best_device);
   } catch (const cl::Error& e) {
-    printf("Error creating OpenCL context: %s: %d", e.what(), e.err());
+    fprintf(stderr, "Error creating OpenCL context: %s: %d", e.what(), e.err());
     throw std::runtime_error("Error creating OpenCL context.");
   }
   m_context = context;
@@ -747,7 +747,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
                                    sourceCode_convolve3 + sourceCode_sgemm +
                                    sourceCode_sgemv);
   } catch (const cl::Error& e) {
-    printf("Error getting kernels: %s: %d", e.what(), e.err());
+    fprintf(stderr, "Error getting kernels: %s: %d", e.what(), e.err());
     throw std::runtime_error("Error getting OpenCL kernels.");
   }
 
@@ -763,7 +763,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
     args += sgemm_tuners;
     m_program.build(args.c_str());
   } catch (const cl::Error&) {
-    printf("Error building kernels: %s\n",
+    fprintf(stderr, "Error building kernels: %s\n",
            m_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device).c_str());
     throw std::runtime_error("Error building OpenCL kernels.");
   }
@@ -776,19 +776,19 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
           .getWorkGroupInfo<CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE>(
               best_device);
   if (verbose) {
-    printf("Wavefront/Warp size: %zu\n", m_wavefront_size);
+    fprintf(stderr, "Wavefront/Warp size: %zu\n", m_wavefront_size);
   }
 
   m_max_workgroup_size = best_device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
   m_max_workgroup_dims = best_device.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
 
   if (verbose) {
-    printf("Max workgroup size: %zu\n", m_max_workgroup_size);
-    printf("Max workgroup dimensions: ");
+    fprintf(stderr, "Max workgroup size: %zu\n", m_max_workgroup_size);
+    fprintf(stderr, "Max workgroup dimensions: ");
     for (auto d : m_max_workgroup_dims) {
-      printf("%zu ", d);
+      fprintf(stderr, "%zu ", d);
     }
-    printf("\n");
+    fprintf(stderr, "\n");
   }
   m_init_ok = true;
 }
