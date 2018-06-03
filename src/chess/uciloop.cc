@@ -88,28 +88,22 @@ std::string GetOrEmpty(
   return iter->second;
 }
 
-int GetNumeric(
-    const std::unordered_map<std::string, std::string>& params,
-    const std::string& key) {
+int GetNumeric(const std::unordered_map<std::string, std::string>& params,
+               const std::string& key) {
   auto iter = params.find(key);
   if (iter == params.end()) {
-  	throw Exception("Unexpected error");
+    throw Exception("Unexpected error");
   }
-  std::string str=iter->second.c_str();
+  std::string str = iter->second;
   try {
     if (str.empty()) {
-      throw Exception("expected value after "+key);
+      throw Exception("expected value after " + key);
     }
     return stoi(str);
+  } catch (std::invalid_argument& e) {
+    throw Exception("invalid value " + str);
   }
-  catch(std::invalid_argument& e){
-    throw Exception("invalid value "+str);
-  }
- 
-  
- 
 }
-
 
 bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
                  const std::string& key) {
