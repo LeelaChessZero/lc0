@@ -76,7 +76,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
-SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
+SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
                                                     const GoParams& params) {
   SearchLimits limits;
   limits.visits = params.nodes;
@@ -107,6 +107,7 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   // reduce it.
   if (slowmover < 1.0 || this_move_time > kSmartPruningToleranceMs) {
     // Budget X*slowmover for current move, X*1.0 for the rest.
+    slowmover *= pow( (1 + exp((ply - 64.5) / 6.85)), -0.171) + DBL_MIN
     this_move_time = static_cast<int64_t>(
         total_moves_time / (movestogo - 1 + slowmover) * slowmover);
   }
