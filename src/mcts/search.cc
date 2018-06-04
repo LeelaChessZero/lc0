@@ -471,7 +471,8 @@ void SearchWorker::GatherMinibatch() {
     nodes_to_process_.emplace_back(PickNodeToExtend());
     auto* node = nodes_to_process_.back().node;
 
-    // If there is collision, add to a vector to undo the virtual loss later.
+    // There was a collision. If limit has been reached, return, otherwise
+    // just start search of another node.
     if (nodes_to_process_.back().is_collision) {
       if (++collisions_found > search_->kAllowedNodeCollisions) return;
       continue;
