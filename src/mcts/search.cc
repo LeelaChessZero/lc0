@@ -493,8 +493,7 @@ void SearchWorker::GatherMinibatch() {
   }
 }
 
-// Returns node, whether it's a collision, and
-// whether it was actually evaluated by network
+// Returns node and whether it's a threading collision
 SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   Node* node = search_->root_node_;
   // Initialize position sequence with pre-move position.
@@ -511,10 +510,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   bool is_root_node = true;
   while (true) {
     {
+      // First, shortcircuit-return threading collisions and leaf nodes.
       SharedMutex::Lock lock(search_->nodes_mutex_);
-      // Check for threading collision...
+      // Threading collision, another thread is already expanding this node
       if (!node->TryStartScoreUpdate()) return {node, true};
-      // Check for leaf node...
+      // Unexamined leaf node
       if (!node->HasChildren()) return {node, false};
     }
 
@@ -569,6 +569,19 @@ void SearchWorker::ExtendNode(Node* node) {
   // Not taking mutex because other threads will see that N=0 and N-in-flight=1
   // and will not touch this node.
   const auto& board = history_.Last().GetBoard();
+  auto legal_moves = board.GenerateLegalMoves();
+
+  // Check whether it's a draw/lose by position. Importantly, we must check
+  // these before doing the by-rule checks below.
+  if (legal_moves.empty()) {
+    // Could be a checkmate or a stalemate
+    if (board.IsUnderCheck()) {
+      node->MakeTerminal(GameResult::WHITE_WON);
+    } else {
+      node->MakeTerminal(GameResult::DRAW);
+    }
+    return;
+  }
 
   // We can shortcircuit these draws-by-rule only if they aren't root;
   // if they are root, then thinking about them is the point.
@@ -587,19 +600,6 @@ void SearchWorker::ExtendNode(Node* node) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
-  }
-
-  auto legal_moves = board.GenerateLegalMoves();
-
-  // Check whether it's a draw/lose by position
-  if (legal_moves.empty()) {
-    // Could be a checkmate or a stalemate
-    if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
-    } else {
-      node->MakeTerminal(GameResult::DRAW);
-    }
-    return;
   }
 
   // Add legal moves as children to this node.
@@ -718,7 +718,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
       if (next_score > q) {
         budget_to_spend = std::min(
             budget,
-            int(n->GetP() * puct_mult / (next_score-q) - n->GetNStarted()) + 1);
+            int(n->GetP() * puct_mult / (next_score - q) - n->GetNStarted())
+                + 1);
       } else {
         budget_to_spend = budget;
       }
@@ -828,7 +829,7 @@ void SearchWorker::DoBackupUpdate() {
 // 7. UpdateCounters()
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
-  search_->UpdateRemainingMoves(); // Uses smart pruning.
+  search_->UpdateRemainingMoves(); // Updates smart pruning counters
   search_->MaybeOutputInfo();
   search_->MaybeTriggerStop();
 
