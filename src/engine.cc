@@ -71,8 +71,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   auto defaults = options->GetMutableDefaultsOptions();
 
   defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
-  defaults->Set<float>(Search::kFpuReductionStr, 0.2f);  // FPU reduction = 0.2
-  defaults->Set<float>(Search::kCpuctStr, 3.1f);         // CPUCT = 3.1
+  defaults->Set<float>(Search::kFpuReductionStr, 0.9f);  // FPU reduction = 0.9
+  defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
+  defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
