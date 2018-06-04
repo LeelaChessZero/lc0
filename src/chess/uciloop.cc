@@ -94,12 +94,12 @@ int GetNumeric(const std::unordered_map<std::string, std::string>& params,
   if (iter == params.end()) {
     throw Exception("Unexpected error");
   }
-  std::string str = iter->second;
+  const std::string& str = iter->second;
   try {
     if (str.empty()) {
       throw Exception("expected value after " + key);
     }
-    return stoi(str);
+    return std::stoi(str);
   } catch (std::invalid_argument& e) {
     throw Exception("invalid value " + str);
   }
