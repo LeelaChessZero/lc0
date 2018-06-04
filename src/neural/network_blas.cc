@@ -16,10 +16,10 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "network.h"
-#include "BLAS/blas.h"
-#include "BLAS/transforms.h"
-#include "factory.h"
+#include "neural/network.h"
+#include "neural/factory.h"
+#include "neural/BLAS/blas.h"
+#include "neural/BLAS/transforms.h"
 
 #include <algorithm>
 #include <cassert>
@@ -241,7 +241,8 @@ class BlasNetwork : public Network {
       fprintf(stderr, "BLAS vendor: OpenBlas.\n");
       fprintf(stderr, "OpenBlas [%s].\n", config);
       fprintf(stderr, "OpenBlas found %d %s core(s).\n", num_procs, core_name);
-      fprintf(stderr, "OpenBLAS using %d core(s) for this backend.\n", blas_cores);
+      fprintf(stderr, "OpenBLAS using %d core(s) for this backend.\n",
+              blas_cores);
     }
 #endif
 
@@ -258,7 +259,7 @@ class BlasNetwork : public Network {
       MKLVersion version;
       mkl_get_version(&version);
       fprintf(stderr, "MKL platform: %s, processor: %s.\n", version.Platform,
-             version.Processor);
+              version.Processor);
       fprintf(stderr, "MKL can use up to  %d thread(s).\n", max_procs);
       fprintf(stderr, "MKL using %d thread(s) for this backend.\n", blas_cores);
     }
