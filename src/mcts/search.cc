@@ -196,7 +196,7 @@ Node* Search::GetBestChildWithTemperature(Node* parent,
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_node_) return;
   last_outputted_best_move_node_ = best_move_node_;
-  uci_info_.depth = root_node_->GetFullDepth();
+  uci_info_.depth = root_node_->GetAverageDepth();
   uci_info_.seldepth = root_node_->GetMaxDepth();
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_playouts_ + initial_visits_;
@@ -213,6 +213,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
        iter = GetBestChild(iter), flip = !flip) {
     uci_info_.pv.push_back(iter->GetMove(flip));
   }
+  //std::ostringstream comment;
+  //comment << "branchfactor " << TODO; // todo: top 5 moves visits and value
   uci_info_.comment.clear();
   info_callback_(uci_info_);
 }
@@ -224,7 +226,7 @@ void Search::MaybeOutputInfo() {
   Mutex::Lock counters_lock(counters_mutex_);
   if (!responded_bestmove_ && best_move_node_ &&
       (best_move_node_ != last_outputted_best_move_node_ ||
-       uci_info_.depth != root_node_->GetFullDepth() ||
+       uci_info_.depth != root_node_->GetAverageDepth() ||
        uci_info_.seldepth != root_node_->GetMaxDepth() ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
@@ -279,6 +281,7 @@ void Search::SendMovesStats() const {
     info.comment = oss.str();
     info_callback_(info);
   }
+  //std::cout << root_node_->DebugString();
 }
 
 void Search::MaybeTriggerStop() {
@@ -309,6 +312,7 @@ void Search::MaybeTriggerStop() {
     if (kVerboseStats) SendMovesStats();
     best_move_ = GetBestMoveInternal();
     best_move_callback_({best_move_.first, best_move_.second});
+    //std::cout << root_node_->DebugString();
     responded_bestmove_ = true;
     best_move_node_ = nullptr;
   }
@@ -828,10 +832,6 @@ void SearchWorker::DoBackupUpdate() {
     float v = node->GetV();
     // Maximum depth the node is explored.
     uint16_t depth = 0;
-    // If the node is terminal, mark it as fully explored to an "infinite"
-    // depth.
-    uint16_t cur_full_depth = node->IsTerminal() ? 999 : 0;
-    bool full_depth_updated = true;
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
@@ -842,9 +842,8 @@ void SearchWorker::DoBackupUpdate() {
       // Update the stats.
       // Max depth.
       n->UpdateMaxDepth(depth);
-      // Full depth.
-      if (full_depth_updated)
-        full_depth_updated = n->UpdateFullDepth(&cur_full_depth);
+      // num leaves
+      n->UpdateNumLeaves();
       // Best move.
       if (n->GetParent() == search_->root_node_) {
         if (!search_->best_move_node_ ||
@@ -854,6 +853,7 @@ void SearchWorker::DoBackupUpdate() {
       }
     }
     ++search_->total_playouts_;
+    //std::cout << node->DebugString();
   }
 }
 

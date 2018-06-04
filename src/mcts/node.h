@@ -65,6 +65,7 @@ class Node {
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
+
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 1; }
@@ -90,13 +91,12 @@ class Node {
   float GetP() const { return p_; }
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
-  uint16_t GetFullDepth() const { return full_depth_; }
-  uint16_t GetMaxDepth() const { return max_depth_; }
 
   // Sets node own value (from neural net or win/draw/lose adjudication).
   void SetV(float val) { v_ = val; }
   // Sets move probability.
   void SetP(float val) { p_ = val; }
+
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
 
@@ -105,8 +105,10 @@ class Node {
   // "being updated" by incrementing n-in-flight, and return true.
   // Otherwise return false.
   bool TryStartScoreUpdate();
+
   // Decrements n-in-flight back.
   void CancelScoreUpdate();
+
   // Updates the node with newly computed value v.
   // Updates:
   // * N (+=1)
@@ -117,10 +119,11 @@ class Node {
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
+  // Non-recursively sums child leaves into this node
+  void UpdateNumLeaves();
+  uint16_t GetMaxDepth() const { return max_depth_; }
+  uint16_t GetAverageDepth() const;
 
-  // Calculates the full depth if new depth is larger, updates it, returns
-  // in depth parameter, and returns true if it was indeed updated.
-  bool UpdateFullDepth(uint16_t* depth);
 
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
@@ -171,14 +174,14 @@ class Node {
 
   // Maximum depth any subnodes of this node were looked at.
   uint16_t max_depth_;
-  // Complete depth all subnodes of this node were fully searched.
-  uint16_t full_depth_;
+  // How many nodes have at most 1 playout in this subtree (including self).
+  uint32_t num_leaves_;
   // Does this node end game (with a winning of either sides or draw).
   bool is_terminal_;
 
   // Pointer to a parent node. nullptr for the root.
   Node* parent_;
-  // Pointer to a first child. nullptr for leave node.
+  // Pointer to a first child. nullptr for leaf node.
   Node* child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   Node* sibling_;
