@@ -16,7 +16,6 @@
  along with Leela Zero.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-//#include "config.h"
 
 #include <array>
 #include <cassert>
@@ -33,9 +32,10 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 
-#include "OpenCL.h"
-#include "OpenCLParams.h"
-#include "OpenCLTuner.h"
+#include "neural/CL/OpenCL.h"
+#include "neural/CL/OpenCLParams.h"
+#include "neural/CL/OpenCLTuner.h"
+
 
 static std::string cl_args =
     "-cl-mad-enable -cl-fast-relaxed-math -cl-no-signed-zeros "

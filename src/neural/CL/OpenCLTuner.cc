@@ -26,9 +26,9 @@
 #include <sstream>
 #include <string>
 
-#include "OpenCL.h"
-#include "OpenCLParams.h"
-#include "OpenCLTuner.h"
+#include "neural/CL/OpenCL.h"
+#include "neural/CL/OpenCLParams.h"
+#include "neural/CL/OpenCLTuner.h"
 
 #include "utils/blas.h"
 
