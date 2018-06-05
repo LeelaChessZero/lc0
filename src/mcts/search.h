@@ -93,6 +93,11 @@ class Search {
   void Worker();
 
   std::pair<Move, Move> GetBestMoveInternal() const;
+
+  // Returns a child with most visits.
+  Node* GetBestChild(Node* parent) const;
+  Node* GetBestChildWithTemperature(Node* parent, float temperature) const;
+
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
