@@ -159,7 +159,7 @@ if get_option('build_backends')
   if get_option('blas') and has_blas
 
     blas_files = [
-    'src/neural/BLAS/transforms.cc',
+    'src/neural/blas/transforms.cc',
     'src/neural/network_blas.cc'
     ]
 
@@ -189,19 +189,19 @@ if get_option('build_backends')
       has_opencl = true
 
   endif
-  
+
 
   if get_option('opencl') and has_opencl
 
     if has_blas
       opencl_files = [
-      'src/neural/CL/OpenCL.cc',
-      'src/neural/CL/OpenCLTuner.cc',
+      'src/neural/opencl/OpenCL.cc',
+      'src/neural/opencl/OpenCLTuner.cc',
       'src/neural/network_opencl.cc',
       ]
 
       if not get_option('blas')
-        opencl_files += 'src/neural/BLAS/transforms.cc'
+        opencl_files += 'src/neural/blas/transforms.cc'
       endif
 
       files += opencl_files
@@ -259,7 +259,7 @@ endif # if get_option('build_backends')
 if not has_backends and get_option('build_backends')
   error('''
 
-        No usable computation backends (cudnn/tensorflow/etc) are found. 
+        No usable computation backends (cudnn/tensorflow/etc) are found.
         If you want to build it with random only backend, pass
         -D build_backends=false to a meson build.''')
 endif

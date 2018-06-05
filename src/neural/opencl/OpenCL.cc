@@ -32,9 +32,9 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 
-#include "neural/CL/OpenCL.h"
-#include "neural/CL/OpenCLParams.h"
-#include "neural/CL/OpenCLTuner.h"
+#include "neural/opencl/OpenCL.h"
+#include "neural/opencl/OpenCLParams.h"
+#include "neural/opencl/OpenCLTuner.h"
 
 
 static std::string cl_args =
