@@ -16,9 +16,12 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/CL/transforms.h"
-#include "neural/factory.h"
 #include "neural/network.h"
+#include "neural/factory.h"
+#include "neural/CL/OpenCL.h"
+#include "neural/CL/OpenCLParams.h"
+#include "neural/BLAS/blas.h"
+#include "neural/BLAS/transforms.h"
 
 #include <algorithm>
 #include <cassert>
@@ -30,10 +33,6 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
-#include "CL/OpenCL.h"
-#include "CL/OpenCLParams.h"
-
-#include "utils/blas.h"
 
 namespace lczero {
 
@@ -83,7 +82,7 @@ class OpenCLComputation : public NetworkComputation {
       float value = plane.value;
       const uint64_t one = 1;
       for (int i = 0; i < 64; i++)
-        input_data_[index++] = (plane.mask & (one << i))!=0 ? value : 0;
+        input_data_[index++] = (plane.mask & (one << i)) != 0 ? value : 0;
     }
 
     std::vector<float> policy_data(weights_.num_output_policies);
@@ -94,8 +93,8 @@ class OpenCLComputation : public NetworkComputation {
     policy_data_.emplace_back(move(policy_data));
 
     // Now get the score
-    double winrate =
-        Transforms::Innerproduct(weights_.ip2_val_w, value_data_) + weights_.ip2_val_b[0];
+    double winrate = Transforms::Innerproduct(weights_.ip2_val_w, value_data_) +
+                     weights_.ip2_val_b[0];
     q_value_.emplace_back(std::tanh(winrate));
   }
 
@@ -111,8 +110,6 @@ class OpenCLComputation : public NetworkComputation {
   }
 
  private:
-
-
   const OpenCL_Network& opencl_net_;
   const OpenCLWeights& weights_;
 
@@ -131,10 +128,11 @@ class OpenCLNetwork : public Network {
   OpenCLNetwork(const Weights& weights, const OptionsDict& options)
       : weights_(weights), params_(), opencl_(), opencl_net_(opencl_) {
     params_.gpuId = options.GetOrDefault<int>("gpu", -1);
-    params_.verbose = options.GetOrDefault<bool>("verbose", false);
+    params_.verbose = options.GetOrDefault<bool>("verbose", true);
     params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
-    params_.tune_exhaustive = options.GetOrDefault<bool>("tune_exhaustive", false);
+    params_.tune_exhaustive =
+        options.GetOrDefault<bool>("tune_exhaustive", false);
 
     const int inputChannels = kInputPlanes;
     const int channels = weights.input.biases.size();
