@@ -85,10 +85,10 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   limits.infinite = params.infinite;
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
-    bool color = is_black;
+    bool flip = is_black;
     for (const auto& move : params.searchmoves) {
-      limits.searchmoves.emplace_back(move, color);
-      color = !color;
+      limits.searchmoves.emplace_back(move, flip);
+      flip = !flip;
     }
   }
   if (params.infinite || time < 0) return limits;
