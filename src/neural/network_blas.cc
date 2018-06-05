@@ -104,9 +104,9 @@ class BlasComputation : public NetworkComputation {
 
     Transforms::WinogradConvolve3(weights_.input.biases.size(), input,
                                   weights_.input.weights, V, M, conv_out);
-    Transforms::Batchnorm<64>(weights_.input.biases.size(), conv_out,
-                              weights_.input.bn_means.data(),
-                              weights_.input.bn_stddivs.data());
+    Transforms::Batchnorm(weights_.input.biases.size(), conv_out,
+                              weights_.input.bn_means,
+                              weights_.input.bn_stddivs);
 
     ////////////////////////////////////////////////////////////////////////////
     // Residual tower
@@ -121,36 +121,36 @@ class BlasComputation : public NetworkComputation {
 
       Transforms::WinogradConvolve3(conv1.biases.size(), conv_in, conv1.weights, V,
                                     M, conv_out);
-      Transforms::Batchnorm<64>(conv1.biases.size(), conv_out,
-                                conv1.bn_means.data(), conv1.bn_stddivs.data());
+      Transforms::Batchnorm(conv1.biases.size(), conv_out,
+                                conv1.bn_means, conv1.bn_stddivs);
 
       auto& conv2 = residual.conv2;
       std::swap(conv_out, conv_in);
       Transforms::WinogradConvolve3(conv2.biases.size(), conv_in, conv2.weights, V,
                                     M, conv_out);
-      Transforms::Batchnorm<64>(conv2.biases.size(), conv_out,
-                                conv2.bn_means.data(), conv2.bn_stddivs.data(),
+      Transforms::Batchnorm(conv2.biases.size(), conv_out,
+                                conv2.bn_means, conv2.bn_stddivs,
                                 res.data());
     }
 
     ////////////////////////////////////////////////////////////////////////////
     // Value/policy heads
 
-    Transforms::Convolve<1>(weights_.policy.bn_means.size(), conv_out,
-                            weights_.policy.weights, weights_.policy.biases,
-                            policy_data);
+    Transforms::Convolve(weights_.policy.bn_means.size(), conv_out,
+                         weights_.policy.weights, weights_.policy.biases,
+                         policy_data);
 
-    Transforms::Convolve<1>(weights_.value.bn_means.size(), conv_out,
-                            weights_.value.weights, weights_.value.biases,
-                            value_data);
+    Transforms::Convolve(weights_.value.bn_means.size(), conv_out,
+                         weights_.value.weights, weights_.value.biases,
+                         value_data);
 
-    Transforms::Batchnorm<width * height>(weights_.policy.bn_means.size(), policy_data,
-                                          weights_.policy.bn_means.data(),
-                                          weights_.policy.bn_stddivs.data());
+    Transforms::Batchnorm(weights_.policy.bn_means.size(), policy_data,
+                          weights_.policy.bn_means,
+                          weights_.policy.bn_stddivs);
 
-    Transforms::Batchnorm<width * height>(weights_.value.bn_means.size(), value_data,
-                                          weights_.value.bn_means.data(),
-                                          weights_.value.bn_stddivs.data());
+    Transforms::Batchnorm(weights_.value.bn_means.size(), value_data,
+                          weights_.value.bn_means,
+                          weights_.value.bn_stddivs);
 
 
     Transforms::Innerproduct(policy_data, weights_.ip_pol_w, weights_.ip_pol_b,

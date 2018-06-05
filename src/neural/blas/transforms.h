@@ -53,7 +53,6 @@ class Transforms {
                                 std::vector<float>& V, std::vector<float>& M,
                                 std::vector<float>& output);
 
-  template <unsigned int filter_size>
   static void Convolve(size_t outputs, const std::vector<float>& input,
                        const std::vector<float>& weights,
                        const std::vector<float>& biases,
@@ -64,14 +63,9 @@ class Transforms {
                            const std::vector<float>& biases,
                            std::vector<float>& output, bool apply_relu = false);
 
-  template <size_t spatial_size>
   static void Batchnorm(size_t channels, std::vector<float>& data,
-                        const float* means, const float* stddivs,
+                        const std::vector<float>& means, const std::vector<float>& stddivs,
                         const float* eltwise = nullptr);
-
-  template <unsigned long filter_size>
-  static void Im2Col(const int channels, const std::vector<float>& input,
-                     std::vector<float>& output);
 
   static void Softmax(const std::vector<float>& input,
                       std::vector<float>& output);
