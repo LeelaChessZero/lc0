@@ -17,10 +17,11 @@
  */
 
 #include "neural/network.h"
+#include "neural/factory.h"
 #include "neural/CL/OpenCL.h"
 #include "neural/CL/OpenCLParams.h"
-#include "neural/CL/transforms.h"
-#include "neural/factory.h"
+#include "neural/BLAS/blas.h"
+#include "neural/BLAS/transforms.h"
 
 #include <algorithm>
 #include <cassert>
@@ -32,7 +33,6 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
-#include "utils/blas.h"
 
 namespace lczero {
 
