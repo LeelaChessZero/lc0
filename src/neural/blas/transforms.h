@@ -23,11 +23,12 @@
 
 namespace lczero {
 
-class Transforms {
- public:
-  static constexpr auto kWinogradAlpha = 4;
-  static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
+static constexpr auto kWinogradAlpha = 4;
+static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
 
+class Transforms {
+
+ public:
   static std::vector<float> ZeropadU(const std::vector<float>& U,
                                      const int outputs, const int channels,
                                      const int outputs_pad,
