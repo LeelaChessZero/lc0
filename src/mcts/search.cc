@@ -493,8 +493,12 @@ void SearchWorker::GatherMinibatch() {
   }
 }
 
-// Returns node and whether it's a threading collision
+// Returns node and whether there's been a search collision on the node.
 SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
+  // Starting from search_->root_node_, generate a playout, choosing a
+  // node at each level according to the MCTS formula. n_in_flight_ is
+  // incremented for each node in the playout (via TryStartScoreUpdate()).
+
   Node* node = search_->root_node_;
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
@@ -509,16 +513,18 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   while (true) {
+    // First, terminate if we find collisions or leaf nodes.
     {
-      // First, shortcircuit-return threading collisions and leaf nodes.
       SharedMutex::Lock lock(search_->nodes_mutex_);
-      // Threading collision, another thread is already expanding this node
+      // n_in_flight_ is incremented. If the method returns false, then there is
+      // a search collision, and this node is alredy being expanded.
       if (!node->TryStartScoreUpdate()) return {node, true};
-      // Unexamined leaf node
+      // Unexamined leaf node. We've hit the end of this playout.
       if (!node->HasChildren()) return {node, false};
+      // If we fall through, then n_in_flight_ has been incremented but this
+      // playout remains incomplete; we must go deeper.
     }
 
-    // Now we are not in a leaf, we need to go deeper.
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
     float puct_mult =
         search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -829,7 +835,7 @@ void SearchWorker::DoBackupUpdate() {
 // 7. UpdateCounters()
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
-  search_->UpdateRemainingMoves(); // Updates smart pruning counters
+  search_->UpdateRemainingMoves(); // Updates smart pruning counters.
   search_->MaybeOutputInfo();
   search_->MaybeTriggerStop();
 
