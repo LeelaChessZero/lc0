@@ -138,8 +138,8 @@ void Analyzer::RunOnePosition(const std::vector<Move>& moves) {
 
   // Fetch MCTS-agnostic per-move stats P and V.
   std::vector<const Node*> nodes;
-  for (Node* iter : tree.GetCurrentHead()->Children()) {
-    nodes.emplace_back(iter);
+  for (Node* child : tree.GetCurrentHead()->Children()) {
+    nodes.emplace_back(child);
   }
   std::sort(nodes.begin(), nodes.end(), [](const Node* a, const Node* b) {
     return a->GetNStarted() > b->GetNStarted();

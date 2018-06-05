@@ -63,7 +63,7 @@ class Node {
   // Returns move, with optional flip (false == player BEFORE the position).
   Move GetMove(bool flip) const;
 
-  // Returns sum of probabilities for visited children.
+  // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
@@ -80,11 +80,12 @@ class Node {
       return q_;
     }
   }
-  // Returns U / (Puct * N[parent])
+  // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
+  // equation. So it's really more of a "reduced U" than raw U.
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
   // Returns value of Value Head returned from the neural net.
   float GetV() const { return v_; }
-  // Returns value of Move probabilityreturned from the neural net.
+  // Returns value of Move probability returned from the neural net
   // (but can be changed by adding Dirichlet noise).
   float GetP() const { return p_; }
   // Returns whether the node is known to be draw/lose/win.
