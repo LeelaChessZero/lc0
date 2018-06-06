@@ -86,6 +86,7 @@ class Search {
   static const char* kExtraVirtualLossStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kResignPercentageStr;
 
  private:
   // Can run several copies of it in separate threads.
@@ -159,6 +160,7 @@ class Search {
   const float kExtraVirtualLoss;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const int kResignPercentage;
 };
 
 }  // namespace lczero
