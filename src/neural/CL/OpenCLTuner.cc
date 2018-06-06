@@ -26,11 +26,11 @@
 #include <sstream>
 #include <string>
 
-#include "OpenCL.h"
-#include "OpenCLParams.h"
-#include "OpenCLTuner.h"
+#include "neural/CL/OpenCL.h"
+#include "neural/CL/OpenCLParams.h"
+#include "neural/CL/OpenCLTuner.h"
 
-#include "utils/blas.h"
+#include "neural/BLAS/blas.h"
 
 const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
 constexpr auto MAX_ERROR = 1e-4f;
@@ -222,7 +222,7 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
   auto cBuffer = cl::Buffer(m_context, CL_MEM_READ_WRITE,
                             sizeof(float) * c_size, nullptr, nullptr);
 
-  printf("\nStarted OpenCL SGEMM tuner.\n");
+  fprintf(stderr, "\nStarted OpenCL SGEMM tuner.\n");
 
   auto valid_params = std::vector<int>{};
   auto cfgs = 1;
@@ -242,7 +242,7 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
     }
   }
 
-  printf("Will try %zu valid configurations.\n", valid_params.size());
+  fprintf(stderr, "Will try %zu valid configurations.\n", valid_params.size());
 
   std::string best_params;
   auto best_time = unsigned{0};
@@ -337,14 +337,14 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
       auto kernel_ms = 1e-6f * (sum / runs);
       // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out
       auto kernel_gflops = total_flops / (sum / runs);
-      printf("(%zu/%zu) %s %.4f ms (%.1f GFLOPS)\n", param_counter,
+      fprintf(stderr, "(%zu/%zu) %s %.4f ms (%.1f GFLOPS)\n", param_counter,
              valid_params.size(), param_str.c_str(), kernel_ms, kernel_gflops);
       best_time = sum;
       best_params = defines;
     }
   }
   if (best_time == 0) {
-    printf(
+    fprintf(stderr, 
         "Failed to find a working configuration.\nCheck your OpenCL "
         "drivers.\n");
     throw std::runtime_error("Tuner failed to find working configuration.");
@@ -388,8 +388,8 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
   file << tuning_line << std::endl;
 
   if (file.fail()) {
-    printf("Could not save the tuning result.\n");
-    printf("Do I have write permissions on %s?\n", TUNER_FILE_LOCAL.c_str());
+    fprintf(stderr, "Could not save the tuning result.\n");
+    fprintf(stderr, "Do I have write permissions on %s?\n", TUNER_FILE_LOCAL.c_str());
   }
 }
 
@@ -449,7 +449,7 @@ std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
         auto tuners = sgemm_tuners_from_line(line, m, n, k, batch_size);
         if (tuners.size() != 0) {
           if (m_params.verbose) {
-            printf("Loaded existing SGEMM tuning.\n");
+            fprintf(stderr, "Loaded existing SGEMM tuning.\n");
           }
           return tuners;
         }

@@ -139,6 +139,7 @@ if get_option('build_backends')
 
   if mkl_lib.found() 
     add_project_arguments('-DUSE_MKL', language : 'cpp')
+    includes += include_directories(get_option('mkl_include'))
     deps += [ mkl_lib ]
     has_blas = true
 
@@ -158,7 +159,7 @@ if get_option('build_backends')
   if get_option('blas') and has_blas
 
     blas_files = [
-    'src/neural/CL/transforms.cc',
+    'src/neural/BLAS/transforms.cc',
     'src/neural/network_blas.cc'
     ]
 
