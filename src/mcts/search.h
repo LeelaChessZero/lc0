@@ -69,7 +69,8 @@ class Search {
   void Wait();
 
   // Returns best move, from the point of view of white player. And also ponder.
-  std::pair<Move, Move> GetBestMove() const;
+  // The integer represents whether or not the engine believes this is a helpless move based on resign settings.
+  std::tuple<Move, Move, int> GetBestMove() const;
 
   // Strings for UCI params. So that others can override defaults.
   static const char* kMiniBatchSizeStr;
@@ -92,6 +93,7 @@ class Search {
   // Can run several copies of it in separate threads.
   void Worker();
 
+  Node* GetBestNodeInternal() const;
   std::pair<Move, Move> GetBestMoveInternal() const;
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
