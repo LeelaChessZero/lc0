@@ -49,6 +49,8 @@ const char* Search::kExtraVirtualLossStr = "Extra virtual loss";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+const char* Search::kResignPercentageStr = 
+    "(NOT IMPLEMENTED) Minimum estimated win chance before resign. Zero is off.";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -83,6 +85,10 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
+  // resign does nothing... at the moment. this is intentional.
+  options->Add<IntOption>(kResignPercentageStr, 0, 100, 
+                          "resignpct", 'r') = 0; 
+
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -111,7 +117,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kExtraVirtualLoss(options.Get<float>(kExtraVirtualLossStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kResignPercentage(options.Get<int>(kResignPercentageStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
