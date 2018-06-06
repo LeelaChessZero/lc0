@@ -25,35 +25,32 @@ namespace lczero {
 
 class Transforms {
  public:
-  
-  
   static constexpr auto kWinogradAlpha = 4;
   static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
 
-  
   static std::vector<float> ZeropadU(const std::vector<float>& U,
-                                      const int outputs, const int channels,
-                                      const int outputs_pad,
-                                      const int channels_pad);
+                                     const int outputs, const int channels,
+                                     const int outputs_pad,
+                                     const int channels_pad);
 
   static std::vector<float> WinogradTransformF(const std::vector<float>& f,
-                                                 const int outputs,
-                                                 const int channels);
+                                               const int outputs,
+                                               const int channels);
 
   static void WinogradTransformIn(const std::vector<float>& in,
-                                    std::vector<float>& V, const int C);
+                                  std::vector<float>& V, const int C);
 
   static void WinogradSgemm(const std::vector<float>& U, std::vector<float>& V,
-                             std::vector<float>& M, const int C, const int K);
+                            std::vector<float>& M, const int C, const int K);
 
   static void WinogradTransformOut(const std::vector<float>& M,
-                                     std::vector<float>& Y, const int K);
+                                   std::vector<float>& Y, const int K);
 
   static void WinogradConvolve3(const int outputs,
-                                 const std::vector<float>& input,
-                                 const std::vector<float>& U,
-                                 std::vector<float>& V, std::vector<float>& M,
-                                 std::vector<float>& output);
+                                const std::vector<float>& input,
+                                const std::vector<float>& U,
+                                std::vector<float>& V, std::vector<float>& M,
+                                std::vector<float>& output);
 
   template <unsigned int filter_size>
   static void Convolve(size_t outputs, const std::vector<float>& input,
