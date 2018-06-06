@@ -471,7 +471,16 @@ void ConvLayer::Eval(int N, float *output, const float *input,
           out_tensor_desc_, output));
     }
     else {
-      throw Exception("use_bias_ without use_relu_ not supported");
+      reportCUDNNErrors(cudnnConvolutionForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
+          out_tensor_desc_, output));
+      reportCUDNNErrors(cudnnAddTensor(
+          cudnn, &alpha, out_tensor_desc_, input2, &alpha,
+          out_tensor_desc_, output));
+      reportCUDNNErrors(cudnnAddTensor(
+          cudnn, &alpha, bias_desc_, biases, &alpha, out_tensor_desc_,
+          output));
     }
 #endif
   } else {
@@ -490,7 +499,13 @@ void ConvLayer::Eval(int N, float *output, const float *input,
           out_tensor_desc_, output));
     }
     else {
-      throw Exception("use_bias_ without use_relu_ not supported");
+      reportCUDNNErrors(cudnnConvolutionForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
+          out_tensor_desc_, output));
+      reportCUDNNErrors(cudnnAddTensor(
+          cudnn, &alpha, bias_desc_, biases, &alpha, out_tensor_desc_,
+          output));
     }
 #endif
   }
