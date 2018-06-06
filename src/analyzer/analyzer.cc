@@ -133,7 +133,7 @@ void Analyzer::RunOnePosition(const std::vector<Move>& moves) {
     auto col = std::to_string(nodes);
     cols.push_back(col);
     GatherStats(&table, tree.GetCurrentHead(), col, tree.IsBlackToMove());
-    table.AddColVal(col, "bestmove", search.GetBestMove().first.as_string());
+    table.AddColVal(col, "bestmove", std::get<0>(search.GetBestMove()).as_string());
   }
 
   // Fetch MCTS-agnostic per-move stats P and V.
