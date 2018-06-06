@@ -111,8 +111,8 @@ void Node::Pool::GarbageCollectThread() {
 Node::Pool::FreeNode* Node::Pool::UnrollNodeTree(FreeNode* node) {
   if (!node->node.child_) return node;
   FreeNode* prev = node;
-  for (Node* iter = node->node.child_; iter; iter = iter->sibling_) {
-    FreeNode* next = reinterpret_cast<FreeNode*>(iter);
+  for (Node* child = node->node.child_; child; child = child->sibling_) {
+    FreeNode* next = reinterpret_cast<FreeNode*>(child);
     prev->next = next;
     prev = UnrollNodeTree(next);
   }
@@ -304,8 +304,8 @@ void Node::UpdateMaxDepth(int depth) {
 
 bool Node::UpdateFullDepth(uint16_t* depth) {
   if (full_depth_ > *depth) return false;
-  for (Node* iter : Children()) {
-    if (*depth > iter->full_depth_) *depth = iter->full_depth_;
+  for (Node* child : Children()) {
+    if (*depth > child->full_depth_) *depth = child->full_depth_;
   }
   if (*depth >= full_depth_) {
     full_depth_ = ++*depth;
@@ -335,8 +335,8 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   float total_n =
       static_cast<float>(n_ - 1);  // First visit was expansion of it inself.
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
-  for (Node* iter : Children()) {
-    result.probabilities[iter->move_.as_nn_index()] = iter->n_ / total_n;
+  for (Node* child : Children()) {
+    result.probabilities[child->move_.as_nn_index()] = child->n_ / total_n;
   }
 
   // Populate planes.

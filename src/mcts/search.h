@@ -72,6 +72,8 @@ class Search {
   std::pair<Move, Move> GetBestMove() const;
 
   // Strings for UCI params. So that others can override defaults.
+  // TODO(mooskagh) There are too many options for now. Factor out that into a
+  // separate class.
   static const char* kMiniBatchSizeStr;
   static const char* kMaxPrefetchBatchStr;
   static const char* kCpuctStr;
@@ -88,25 +90,13 @@ class Search {
   static const char* kAllowedNodeCollisionsStr;
 
  private:
-  // Can run several copies of it in separate threads.
-  void Worker();
-
   std::pair<Move, Move> GetBestMoveInternal() const;
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   void SendMovesStats() const;
-  bool AddNodeToCompute(Node* node, CachingComputation* computation,
-                        const PositionHistory& history,
-                        bool add_if_cached = true);
-  int PrefetchIntoCache(Node* node, int budget, CachingComputation* computation,
-                        PositionHistory* history);
-
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
-
-  std::pair<Node*, bool> PickNodeToExtend(Node* node, PositionHistory* history);
-  void ExtendNode(Node* node, const PositionHistory& history);
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -159,6 +149,80 @@ class Search {
   const float kExtraVirtualLoss;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+
+  friend class SearchWorker;
+};
+
+// Single thread worker of the search engine.
+// That used to be just a function Search::Worker(), but to paralellize it
+// within one thread, have to split into stages.
+class SearchWorker {
+ public:
+  SearchWorker(Search* search)
+      : search_(search), history_(search_->played_history_) {}
+
+  // Runs iterations while needed.
+  void RunBlocking() {
+    while (IsSearchActive()) {
+      ExecuteOneIteration();
+    }
+  }
+
+  // Does one full iteration of MCTS search:
+  // 1. Initialize internal structures.
+  // 2. Gather minibatch.
+  // 3. Prefetch into cache.
+  // 4. Run NN computation.
+  // 5. Populate computed nodes with results of the NN computation.
+  // 6. Update nodes.
+  // 7. Update status/counters.
+  void ExecuteOneIteration();
+
+  // Returns whether another search iteration is needed (false means exit).
+  bool IsSearchActive() const;
+
+  // The same operations one by one:
+  // 1. Initialize internal structures.
+  // @computation is the computation to use on this iteration.
+  void InitializeIteration(std::unique_ptr<NetworkComputation> computation);
+
+  // 2. Gather minibatch.
+  void GatherMinibatch();
+
+  // 3. Prefetch into cache.
+  void MaybePrefetchIntoCache();
+
+  // 4. Run NN computation.
+  void RunNNComputation();
+
+  // 5. Populate computed nodes with results of the NN computation.
+  void FetchNNResults();
+
+  // 6. Update nodes.
+  void DoBackupUpdate();
+
+  // 7. Update status/counters.
+  void UpdateCounters();
+
+ private:
+  struct NodeToProcess {
+    NodeToProcess(Node* node, bool is_collision)
+        : node(node), is_collision(is_collision) {}
+    Node* node;
+    bool is_collision = false;
+    bool nn_queried = false;
+  };
+
+  NodeToProcess PickNodeToExtend();
+  void ExtendNode(Node* node);
+  bool AddNodeToCompute(Node* node, bool add_if_cached = true);
+  int PrefetchIntoCache(Node* node, int budget);
+
+  Search* const search_;
+  std::vector<NodeToProcess> nodes_to_process_;
+  std::unique_ptr<CachingComputation> computation_;
+  // History is reset and extended by PickNodeToExtend().
+  PositionHistory history_;
 };
 
 }  // namespace lczero
