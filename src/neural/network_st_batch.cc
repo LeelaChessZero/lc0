@@ -46,7 +46,7 @@ void SingleThreadBatchingNetworkComputation::AddInput(InputPlanes&& input) {
   assert(start_idx_ + batch_size_ ==
          network_->parent_computation_->GetBatchSize());
   ++batch_size_;
-  network_->parent_computation_->AddInput(std::forward<InputPlanes>(input));
+  network_->parent_computation_->AddInput(std::move(input));
 }
 
 void SingleThreadBatchingNetworkComputation::ComputeBlocking() {
