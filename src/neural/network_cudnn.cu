@@ -417,8 +417,7 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
 #if CUDNN_MAJOR>=7
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_IDENTITY,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
-#else
-    throw Exception("Need cudnn 7+ for CUDNN_ACTIVATION_IDENTITY");
+
 #endif
   }
 }
@@ -456,18 +455,44 @@ void ConvLayer::Eval(int N, float *output, const float *input,
         conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
         out_tensor_desc_, output));
   } else if (input2) {
+#if CUDNN_MAJOR>=7
     // fused bias + sum + relu!
     reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, convAlgo, scratch, kCudaScratchSize, &alpha,
         out_tensor_desc_, input2, bias_desc_, biases, activation_,
         out_tensor_desc_, output));
+#else
+    if (use_relu_) {
+      reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, convAlgo, scratch, kCudaScratchSize, &alpha,
+          out_tensor_desc_, input2, bias_desc_, biases, activation_,
+          out_tensor_desc_, output));
+    }
+    else {
+      throw Exception("use_bias_ without use_relu_ not supported");
+    }
+#endif
   } else {
+#if CUDNN_MAJOR>=7
     reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
         out_tensor_desc_, output, bias_desc_, biases, activation_,
         out_tensor_desc_, output));
+#else
+    if (use_relu_) {
+      reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
+          out_tensor_desc_, output, bias_desc_, biases, activation_,
+          out_tensor_desc_, output));
+    }
+    else {
+      throw Exception("use_bias_ without use_relu_ not supported");
+    }
+#endif
   }
 }
 
