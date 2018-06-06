@@ -85,7 +85,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
-  // resign does nothing... at the moment. this is intentional.
   options->Add<IntOption>(kResignPercentageStr, 0, 100, 
                           "resignpct", 'r') = 0; 
 
