@@ -107,7 +107,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // reduce it.
   if (slowmover < 1.0 || this_move_time > kSmartPruningToleranceMs) {
     // Budget X*slowmover for current move, X*1.0 for the rest.
-    slowmover *= pow( (1 + exp((ply - 64.5) / 6.85)), -0.171) + DBL_MIN
+    slowmover *= std::pow( (1 + std::exp((ply - 64.5f) / 6.85f)), -0.171f) + std::numeric_limits::min();
     this_move_time = static_cast<int64_t>(
         total_moves_time / (movestogo - 1 + slowmover) * slowmover);
   }
