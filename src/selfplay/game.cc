@@ -73,7 +73,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
     if (std::get<2>(move_data)) { 
       game_result_ = blacks_move ? 
         GameResult::WHITE_WON : GameResult::BLACK_WON;
-      puts("Will resign.");
       break; 
     } 
 
