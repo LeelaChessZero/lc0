@@ -24,12 +24,18 @@
 #include "neural/network.h"
 #include "utils/mutex.h"
 #include "utils/optionsparser.h"
+#include "utils/optional.h"
 
 // CUDNN eval
 // comment/disable this to enable tensor flow path
 #define CUDNN_EVAL 1
 
 namespace lczero {
+
+struct CurrentPosition {
+  std::string fen;
+  std::vector<std::string> moves;
+};
 
 class EngineController {
  public:
@@ -57,6 +63,7 @@ class EngineController {
 
   // Must not block.
   void Go(const GoParams& params);
+  void PonderHit();
   // Must not block.
   void Stop();
   void SetCacheSize(int size);
@@ -66,6 +73,8 @@ class EngineController {
 
  private:
   void UpdateNetwork();
+  void SetupPosition(const std::string& fen,
+                     const std::vector<std::string>& moves);
 
   const OptionsDict& options_;
 
@@ -87,6 +96,9 @@ class EngineController {
   std::string network_path_;
   std::string backend_;
   std::string backend_options_;
+
+  optional<CurrentPosition> current_position_;
+  GoParams go_params_;
 };
 
 class EngineLoop : public UciLoop {
@@ -102,6 +114,7 @@ class EngineLoop : public UciLoop {
   void CmdPosition(const std::string& position,
                    const std::vector<std::string>& moves) override;
   void CmdGo(const GoParams& params) override;
+  void CmdPonderHit() override;
   void CmdStop() override;
 
  private:

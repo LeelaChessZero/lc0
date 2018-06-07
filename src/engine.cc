@@ -66,6 +66,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.2f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
 
+  options->Add<BoolOption>("Ponder", "ponder") = false;
+
   Search::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
@@ -83,8 +85,8 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   limits.visits = params.nodes;
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
-  limits.infinite = params.infinite;
-  if (params.infinite || time < 0) return limits;
+  limits.infinite = params.infinite || params.ponder;
+  if (limits.infinite || time < 0) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
   int movestogo = params.movestogo < 0 ? 50 : params.movestogo;
@@ -155,11 +157,20 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
+  current_position_ = optional<CurrentPosition>();
   UpdateNetwork();
 }
 
 void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
+  current_position_ = CurrentPosition { fen, moves_str };
+
+  SharedLock lock(busy_mutex_);
+  search_.reset();
+}
+
+void EngineController::SetupPosition(const std::string& fen,
+                                      const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
   search_.reset();
 
@@ -172,8 +183,40 @@ void EngineController::SetPosition(const std::string& fen,
 }
 
 void EngineController::Go(const GoParams& params) {
-  if (!tree_) {
-    SetPosition(ChessBoard::kStartingFen, {});
+  go_params_ = params;
+
+  ThinkingInfo::Callback info_callback(info_callback_);
+
+  if(current_position_) {
+    if (params.ponder && !(*current_position_).moves.empty()) {
+      std::vector<std::string> moves((*current_position_).moves);
+      std::string ponder_move = moves.back();
+      moves.pop_back();
+      SetupPosition((*current_position_).fen, moves);
+
+      info_callback = [this, ponder_move](const ThinkingInfo& info) {
+        ThinkingInfo ponder_info(info);
+        if (!ponder_info.pv.empty() && ponder_info.pv[0].as_string() == ponder_move) {
+          ponder_info.pv.erase(ponder_info.pv.begin());
+        } else {
+          ponder_info.pv.clear();
+        }
+        if(ponder_info.score) {
+          ponder_info.score = -*ponder_info.score;
+        }
+        if(ponder_info.depth > 1) {
+          ponder_info.depth--;
+        }
+        if(ponder_info.seldepth > 1) {
+          ponder_info.seldepth--;
+        }
+        info_callback_(ponder_info);
+      };
+    } else {
+      SetupPosition((*current_position_).fen, (*current_position_).moves);
+    }
+  } else {
+    SetupPosition(ChessBoard::kStartingFen, {});
   }
 
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
@@ -181,9 +224,14 @@ void EngineController::Go(const GoParams& params) {
 
   search_ =
       std::make_unique<Search>(*tree_, network_.get(), best_move_callback_,
-                               info_callback_, limits, options_, &cache_);
+                               info_callback, limits, options_, &cache_);
 
   search_->StartThreads(options_.Get<int>(kThreadsOption));
+}
+
+void EngineController::PonderHit() {
+  go_params_.ponder = false;
+  Go(go_params_);
 }
 
 void EngineController::Stop() {
@@ -253,6 +301,10 @@ void EngineLoop::CmdPosition(const std::string& position,
 void EngineLoop::CmdGo(const GoParams& params) {
   EnsureOptionsSent();
   engine_.Go(params);
+}
+
+void EngineLoop::CmdPonderHit() {
+  engine_.PonderHit();
 }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }

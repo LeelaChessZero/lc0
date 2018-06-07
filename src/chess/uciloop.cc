@@ -41,9 +41,10 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
          {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth",
-          "nodes", "movetime"}},
+          "nodes", "movetime", "ponder"}},
         {{"start"}, {}},
         {{"stop"}, {}},
+        {{"ponderhit"}, {}},
         {{"quit"}, {}},
 };
 
@@ -155,6 +156,12 @@ bool UciLoop::DispatchCommand(
       }
       go_params.infinite = true;
     }
+    if (ContainsKey(params, "ponder")) {
+      if (!GetOrEmpty(params, "ponder").empty()) {
+        throw Exception("Unexpected token " + GetOrEmpty(params, "ponder"));
+      }
+      go_params.ponder = true;
+    }
 #define OPTION(x)                         \
   if (ContainsKey(params, #x)) {          \
     go_params.x = GetNumeric(params, #x); \
@@ -171,6 +178,8 @@ bool UciLoop::DispatchCommand(
     CmdGo(go_params);
   } else if (command == "stop") {
     CmdStop();
+  } else if (command == "ponderhit") {
+    CmdPonderHit();
   } else if (command == "start") {
     CmdStart();
   } else if (command == "quit") {
