@@ -49,8 +49,6 @@ const char* Search::kExtraVirtualLossStr = "Extra virtual loss";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
-const char* Search::kResignPercentageStr = 
-    "Minimum estimated win chance before resign. Zero is off.";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -85,9 +83,9 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
-  options->Add<IntOption>(kResignPercentageStr, 0, 100, 
-                          "resignpct", 'r') = 0; 
-
+  // resign does nothing... at the moment. this is intentional.
+  options->Add<FloatOption>(kResignPercentageStr, 0, 100, "resignpct", 'r') =
+      0.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -117,7 +115,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kExtraVirtualLoss(options.Get<float>(kExtraVirtualLossStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kResignPercentage(options.Get<int>(kResignPercentageStr)) {}
+      kResignPercentage(options.Get<float>(kResignPercentageStr)) {}
 
 // Returns whether node was already in cache.
 bool Search::AddNodeToCompute(Node* node, CachingComputation* computation,
@@ -725,29 +723,29 @@ std::pair<Node*, bool> Search::PickNodeToExtend(Node* node,
   }
 }
 
-std::tuple<Move, Move, int> Search::GetBestMove() const {
+std::tuple<Move, Move, bool> Search::GetBestMove() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
 
   auto best = GetBestMoveInternal();
 
   // guard for the case where we aren't ever resigning
-  if (kResignPercentage == 0) { 
+  if (kResignPercentage == 0) {
     return std::make_tuple(best.first, best.second, 0);
   }
 
   // if resigning is enabled, we check if we should resign.
-  auto win_percent = GetBestNodeInternal()->GetQ(0, 0) + 1;
+  // std::min()'d to make the variable name accurate
+  // someone, *please* suggest a better name.
+  auto win_percent =
+      std::min((GetBestNodeInternal()->GetQ(0, 0) + 1) * 100, 100);
 
-  return std::make_tuple(
-    best.first, 
-    best.second, 
-    win_percent * 100 < kResignPercentage ? 1 : 0
-  );
+  return std::make_tuple(best.first, best.second,
+                         win_percent < kResignPercentage);
 }
 
-Node* Search::GetBestNodeInternal() const
-    REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) { 
+const Node* Search::GetBestNodeInternal() const REQUIRES_SHARED(nodes_mutex_)
+    REQUIRES_SHARED(counters_mutex_) {
   float temperature = kTemperature;
   if (temperature && kTempDecayMoves) {
     int moves = played_history_.Last().GetGamePly() / 2;
@@ -760,18 +758,16 @@ Node* Search::GetBestNodeInternal() const
   }
 
   return temperature && root_node_->GetN() > 1
-                      ? GetBestChildWithTemperature(root_node_, temperature)
-                      : GetBestChild(root_node_);
+             ? GetBestChildWithTemperature(root_node_, temperature)
+             : GetBestChild(root_node_);
 }
-
-
 
 std::pair<Move, Move> Search::GetBestMoveInternal() const
     REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) {
   if (responded_bestmove_) return best_move_;
   if (!root_node_->HasChildren()) return {};
 
-  Node* best_node = GetBestNodeInternal();
+  const Node* best_node = GetBestNodeInternal();
 
   Move ponder_move;
   /*  // Doesn't seem to work for now, so disabling.
