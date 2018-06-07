@@ -260,7 +260,7 @@ void Transforms::Convolve(size_t outputs, const std::vector<float>& input,
                           const std::vector<float>& weights,
                           const std::vector<float>& biases,
                           std::vector<float>& output) {
-  constexpr unsigned int filter_len = 1;
+  constexpr unsigned int filter_len = 1; // filter_size * filter_size;
   // fixed for 8x8
   constexpr unsigned int width = 8;
   constexpr unsigned int height = 8;
@@ -270,7 +270,17 @@ void Transforms::Convolve(size_t outputs, const std::vector<float>& input,
   assert(outputs * board_squares == output.size());
 
   std::vector<float> col(filter_dim * width * height);
-
+  //Im2Col<filter_size>(input_channels, input, col);
+  // The Im2Col function was implemented in lczero, but was never called
+  // except for its specialization to when <filter_size> was <1>, and that
+  // specialization was nothing more than the std::copy below, and that its
+  // only use; therefore the unused general implementation and the
+  // specialization were both removed, in favor of just the one inplace
+  // copy(). In the unlikely case that the network architecture changes in the
+  // future, the old code can be found either in the lczero repository, the
+  // the original Leela Zero repository, or lc0 commit
+  // 9aff76d9e4e10bb853715b532a59175589c22e62
+  // from which this comment originates.
   std::copy(begin(input), begin(input)+col.size(), begin(col));
 
   // Weight shape (output, input, filter_size, filter_size)
