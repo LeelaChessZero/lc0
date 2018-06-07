@@ -49,6 +49,8 @@ const char* Search::kExtraVirtualLossStr = "Extra virtual loss";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+const char* Search::kResignPercentageStr = 
+    "Minimum win chance before resign";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -84,8 +86,9 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   // resign does nothing... at the moment. this is intentional.
-  options->Add<FloatOption>(kResignPercentageStr, 0, 100, "resignpct", 'r') =
-      0.0f;
+  options->Add<FloatOption>(kResignPercentageStr, 0, 100, 
+                          "resignpct", 'r') = 0.0f; 
+
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -730,22 +733,25 @@ std::tuple<Move, Move, bool> Search::GetBestMove() const {
   auto best = GetBestMoveInternal();
 
   // guard for the case where we aren't ever resigning
-  if (kResignPercentage == 0) {
+  if (kResignPercentage == 0) { 
     return std::make_tuple(best.first, best.second, 0);
   }
 
   // if resigning is enabled, we check if we should resign.
-  // std::min()'d to make the variable name accurate
+  // std::min()'d to make the variable name accurate 
   // someone, *please* suggest a better name.
-  auto win_percent =
-      std::min((GetBestNodeInternal()->GetQ(0, 0) + 1) * 100, 100);
+  auto win_percent = std::min(
+    (GetBestNodeInternal()->GetQ(0, 0) + 1) * 100, 100.0f);
 
-  return std::make_tuple(best.first, best.second,
-                         win_percent < kResignPercentage);
+  return std::make_tuple(
+    best.first, 
+    best.second, 
+    win_percent < kResignPercentage
+  );
 }
 
-const Node* Search::GetBestNodeInternal() const REQUIRES_SHARED(nodes_mutex_)
-    REQUIRES_SHARED(counters_mutex_) {
+const Node* Search::GetBestNodeInternal() const
+    REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) { 
   float temperature = kTemperature;
   if (temperature && kTempDecayMoves) {
     int moves = played_history_.Last().GetGamePly() / 2;
@@ -758,9 +764,11 @@ const Node* Search::GetBestNodeInternal() const REQUIRES_SHARED(nodes_mutex_)
   }
 
   return temperature && root_node_->GetN() > 1
-             ? GetBestChildWithTemperature(root_node_, temperature)
-             : GetBestChild(root_node_);
+                      ? GetBestChildWithTemperature(root_node_, temperature)
+                      : GetBestChild(root_node_);
 }
+
+
 
 std::pair<Move, Move> Search::GetBestMoveInternal() const
     REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) {
