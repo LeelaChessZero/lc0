@@ -215,7 +215,7 @@ class SearchWorker {
 
   NodeToProcess PickNodeToExtend();
   void ExtendNode(Node* node);
-  bool AddNodeToCompute(Node* node, bool add_if_cached = true);
+  bool AddNodeToComputation(Node* node, bool add_if_cached = true);
   int PrefetchIntoCache(Node* node, int budget);
 
   Search* const search_;
