@@ -318,7 +318,7 @@ void Search::UpdateRemainingMoves() {
   }
   // Check how many visits are left.
   if (limits_.visits >= 0) {
-    // Adding kMiniBatchSize, as it's possible to exceed visits limit by that
+    // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     auto remaining_visits =
         limits_.visits - total_playouts_ - initial_visits_ + kMiniBatchSize - 1;
@@ -327,7 +327,7 @@ void Search::UpdateRemainingMoves() {
       remaining_playouts_ = remaining_visits;
   }
   if (limits_.playouts >= 0) {
-    // Adding kMiniBatchSize, as it's possible to exceed visits limit by that
+    // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     auto remaining_playouts =
         limits_.visits - total_playouts_ + kMiniBatchSize + 1;
@@ -480,7 +480,7 @@ void SearchWorker::GatherMinibatch() {
     }
     ++nodes_found;
 
-    // If node is already known as terminal (win/lose/draw according to rules
+    // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
     if (node->IsTerminal()) continue;
 
@@ -490,7 +490,7 @@ void SearchWorker::GatherMinibatch() {
     // Only send non-terminal nodes to neural network
     if (!node->IsTerminal()) {
       nodes_to_process_.back().nn_queried = true;
-      AddNodeToCompute(node);
+      AddNodeToComputation(node);
     }
   }
 }
@@ -574,8 +574,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
 }
 
 void SearchWorker::ExtendNode(Node* node) {
-  // Not taking mutex because other threads will see that N=0 and N-in-flight=1
-  // and will not touch this node.
+  // We don't need the mutex because other threads will see that N=0 and
+  // N-in-flight=1 and will not touch this node.
   const auto& board = history_.Last().GetBoard();
   auto legal_moves = board.GenerateLegalMoves();
 
@@ -615,7 +615,7 @@ void SearchWorker::ExtendNode(Node* node) {
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToCompute(Node* node, bool add_if_cached) {
+bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   auto hash = history_.HashLast(search_->kCacheHistoryLength + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
@@ -628,7 +628,7 @@ bool SearchWorker::AddNodeToCompute(Node* node, bool add_if_cached) {
   std::vector<uint16_t> moves;
 
   if (node->HasChildren()) {
-    // Legal moves are known, using them.
+    // Legal moves are known, use them.
     for (Node* child : node->Children()) {
       moves.emplace_back(child->GetMove().as_nn_index());
     }
@@ -671,7 +671,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
   // We are in a leaf, which is not yet being processed.
   if (node->GetNStarted() == 0) {
-    if (AddNodeToCompute(node, false)) {
+    if (AddNodeToComputation(node, false)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
@@ -693,7 +693,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   const float parent_q = -node->GetQ(0, search_->kExtraVirtualLoss);
   for (Node* child : node->Children()) {
     if (child->GetP() == 0.0f) continue;
-    // Flipping sign of a score to be able to easily sort.
+    // Flip the sign of a score to be able to easily sort.
     scores.emplace_back(-puct_mult * child->GetU() -
                             child->GetQ(parent_q, search_->kExtraVirtualLoss),
                         child);
@@ -706,7 +706,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   for (size_t i = 0; i < scores.size(); ++i) {
     if (budget <= 0) break;
 
-    // Sort next chunk of a vector. 3 of a time. Most of the times it's fine.
+    // Sort next chunk of a vector. 3 at a time. Most of the time it's fine.
     if (first_unsorted_index != scores.size() &&
         i + 2 >= first_unsorted_index) {
       const int new_unsorted_index =
@@ -816,7 +816,7 @@ void SearchWorker::DoBackupUpdate() {
       // Q will be flipped for opponent.
       v = -v;
 
-      // Updating stats.
+      // Update the stats.
       // Max depth.
       n->UpdateMaxDepth(depth);
       // Full depth.
