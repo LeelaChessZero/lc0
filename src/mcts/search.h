@@ -69,8 +69,9 @@ class Search {
   void Wait();
 
   // Returns best move, from the point of view of white player. And also ponder.
-  // The integer represents whether or not the engine believes this is a helpless move based on resign settings.
-  std::tuple<Move, Move, int> GetBestMove() const;
+  // The integer represents whether or not the engine believes this is a
+  // helpless move based on resign settings.
+  std::tuple<Move, Move, bool> GetBestMove() const;
 
   // Strings for UCI params. So that others can override defaults.
   static const char* kMiniBatchSizeStr;
@@ -93,7 +94,7 @@ class Search {
   // Can run several copies of it in separate threads.
   void Worker();
 
-  Node* GetBestNodeInternal() const;
+  const Node* GetBestNodeInternal() const;
   std::pair<Move, Move> GetBestMoveInternal() const;
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
@@ -161,8 +162,8 @@ class Search {
   const bool kCacheHistoryLength;
   const float kExtraVirtualLoss;
   const float kPolicySoftmaxTemp;
+  const float kResignPercentage;
   const int kAllowedNodeCollisions;
-  const int kResignPercentage;
 };
 
 }  // namespace lczero
