@@ -58,9 +58,10 @@ files += [
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
   'src/neural/loader.cc',
-  'src/neural/network_mux.cc',
   'src/neural/network_check.cc',
+  'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
+  'src/neural/network_st_batch.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
@@ -138,6 +139,7 @@ if get_option('build_backends')
 
   if mkl_lib.found() 
     add_project_arguments('-DUSE_MKL', language : 'cpp')
+    includes += include_directories(get_option('mkl_include'))
     deps += [ mkl_lib ]
     has_blas = true
 
@@ -157,7 +159,7 @@ if get_option('build_backends')
   if get_option('blas') and has_blas
 
     blas_files = [
-    'src/neural/CL/transforms.cc',
+    'src/neural/BLAS/transforms.cc',
     'src/neural/network_blas.cc'
     ]
 

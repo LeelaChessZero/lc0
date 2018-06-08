@@ -23,6 +23,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <thread>
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/hashcat.h"
@@ -34,11 +35,17 @@ namespace lczero {
 /////////////////////////////////////////////////////////////////////////
 
 namespace {
+// How many nodes to allocate a once.
 const int kAllocationSize = 1024 * 64;
+// Periodicity of garbage collection, milliseconds.
+const int kGCIntervalMs = 100;
 }  // namespace
 
 class Node::Pool {
  public:
+  Pool();
+  ~Pool();
+
   // Allocates a new node and initializes it with all zeros.
   Node* AllocateNode();
 
@@ -55,6 +62,10 @@ class Node::Pool {
   void GarbageCollect();
 
  private:
+  // Runs garbabe collection every kGCIntervalMs milliseconds.
+  void GarbageCollectThread();
+  // Allocates a new set of nodes of size kAllocationSize and puts it into
+  // reserve_list_.
   void AllocateNewBatch();
 
   union FreeNode {
@@ -78,13 +89,30 @@ class Node::Pool {
 
   mutable Mutex gc_mutex_;
   std::vector<Node*> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
+
+  // Should garbage colletion thread stop?
+  volatile bool stop_ = false;
+  std::thread gc_thread_;
 };
+
+Node::Pool::Pool() : gc_thread_([this]() { GarbageCollectThread(); }) {}
+Node::Pool::~Pool() {
+  stop_ = true;
+  gc_thread_.join();
+}
+
+void Node::Pool::GarbageCollectThread() {
+  while (!stop_) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
+    GarbageCollect();
+  };
+}
 
 Node::Pool::FreeNode* Node::Pool::UnrollNodeTree(FreeNode* node) {
   if (!node->node.child_) return node;
   FreeNode* prev = node;
-  for (Node* iter = node->node.child_; iter; iter = iter->sibling_) {
-    FreeNode* next = reinterpret_cast<FreeNode*>(iter);
+  for (Node* child = node->node.child_; child; child = child->sibling_) {
+    FreeNode* next = reinterpret_cast<FreeNode*>(child);
     prev->next = next;
     prev = UnrollNodeTree(next);
   }
@@ -197,8 +225,6 @@ void Node::Pool::ReleaseSubtree(Node* node) {
 
 Node::Pool gNodePool;
 
-void GarbageCollectNodePool() { gNodePool.GarbageCollect(); }
-
 /////////////////////////////////////////////////////////////////////////
 // Node
 /////////////////////////////////////////////////////////////////////////
@@ -278,8 +304,8 @@ void Node::UpdateMaxDepth(int depth) {
 
 bool Node::UpdateFullDepth(uint16_t* depth) {
   if (full_depth_ > *depth) return false;
-  for (Node* iter : Children()) {
-    if (*depth > iter->full_depth_) *depth = iter->full_depth_;
+  for (Node* child : Children()) {
+    if (*depth > child->full_depth_) *depth = child->full_depth_;
   }
   if (*depth >= full_depth_) {
     full_depth_ = ++*depth;
@@ -309,8 +335,8 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   float total_n =
       static_cast<float>(n_ - 1);  // First visit was expansion of it inself.
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
-  for (Node* iter : Children()) {
-    result.probabilities[iter->move_.as_nn_index()] = iter->n_ / total_n;
+  for (Node* child : Children()) {
+    result.probabilities[child->move_.as_nn_index()] = child->n_ / total_n;
   }
 
   // Populate planes.
@@ -344,7 +370,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   return result;
 }
 
-void NodeTree::MakeMove(Move move, bool auto_garbage_collect) {
+void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
   Node* new_head = nullptr;
@@ -357,13 +383,10 @@ void NodeTree::MakeMove(Move move, bool auto_garbage_collect) {
   gNodePool.ReleaseAllChildrenExceptOne(current_head_, new_head);
   current_head_ = new_head ? new_head : current_head_->CreateChild(move);
   history_.Append(move);
-
-  if (auto_garbage_collect) GarbageCollectNodePool();
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
-                               const std::vector<Move>& moves,
-                               bool auto_garbage_collect) {
+                               const std::vector<Move>& moves) {
   ChessBoard starting_board;
   int no_capture_ply;
   int full_moves;
@@ -386,7 +409,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   current_head_ = gamebegin_node_;
   bool seen_old_head = (gamebegin_node_ == old_head);
   for (const auto& move : moves) {
-    MakeMove(move, false);
+    MakeMove(move);
     if (old_head == current_head_) seen_old_head = true;
   }
 
@@ -397,8 +420,6 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
     gNodePool.ReleaseChildren(current_head_);
     current_head_->ResetStats();
   }
-
-  if (auto_garbage_collect) GarbageCollectNodePool();
 }
 
 void NodeTree::DeallocateTree() {

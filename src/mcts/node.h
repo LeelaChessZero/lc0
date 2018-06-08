@@ -63,7 +63,7 @@ class Node {
   // Returns move, with optional flip (false == player BEFORE the position).
   Move GetMove(bool flip) const;
 
-  // Returns sum of probabilities for visited children.
+  // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
@@ -80,11 +80,12 @@ class Node {
       return q_;
     }
   }
-  // Returns U / (Puct * N[parent])
+  // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
+  // equation. So it's really more of a "reduced U" than raw U.
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
   // Returns value of Value Head returned from the neural net.
   float GetV() const { return v_; }
-  // Returns value of Move probabilityreturned from the neural net.
+  // Returns value of Move probability returned from the neural net
   // (but can be changed by adding Dirichlet noise).
   float GetP() const { return p_; }
   // Returns whether the node is known to be draw/lose/win.
@@ -193,15 +194,12 @@ class NodeTree {
  public:
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
-  // If @auto_garbage_collect, nodes which are released are also garbage
-  // collected. (may take some milliseconds).
-  void MakeMove(Move move, bool auto_garbage_collect = true);
+  void MakeMove(Move move);
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)
   void ResetToPosition(const std::string& starting_fen,
-                       const std::vector<Move>& moves,
-                       bool auto_garbage_collect = true);
+                       const std::vector<Move>& moves);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
   bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }
@@ -215,8 +213,5 @@ class NodeTree {
   Node* gamebegin_node_ = nullptr;
   PositionHistory history_;
 };
-
-// Performs garbage collection on node pool. Thread safe.
-void GarbageCollectNodePool();
 
 }  // namespace lczero
