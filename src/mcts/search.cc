@@ -45,7 +45,6 @@ const char* Search::kVirtualLossBugStr = "Virtual loss bug";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
-const char* Search::kExtraVirtualLossStr = "Extra virtual loss";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
@@ -77,8 +76,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
                           "cache-history-length") = 7;
-  options->Add<FloatOption>(kExtraVirtualLossStr, 0.0f, 100.0f,
-                            "extra-virtual-loss") = 0.0f;
   options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1f, 10.0f,
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
@@ -109,7 +106,6 @@ Search::Search(const NodeTree& tree, Network* network,
       kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
-      kExtraVirtualLoss(options.Get<float>(kExtraVirtualLossStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
 
@@ -144,7 +140,7 @@ Node* GetBestChild(Node* parent) {
   //   * If that number is larger than 0, the one wil larger eval wins.
   std::tuple<int, float, float> best(-1, 0.0, 0.0);
   for (Node* node : parent->Children()) {
-    std::tuple<int, float, float> val(node->GetN(), node->GetQ(-10.0, 0.0),
+    std::tuple<int, float, float> val(node->GetN(), node->GetQ(-10.0),
                                       node->GetP());
     if (val > best) {
       best = val;
@@ -188,8 +184,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   uci_info_.nps =
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
-  uci_info_.score =
-      290.680623072 * tan(1.548090806 * best_move_node_->GetQ(0, 0));
+  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_node_->GetQ(0));
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
@@ -224,7 +219,7 @@ int64_t Search::GetTimeSinceStart() const {
 void Search::SendMovesStats() const {
   std::vector<const Node*> nodes;
   const float parent_q =
-      -root_node_->GetQ(0, 0) -
+      -root_node_->GetQ(0) -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
   for (Node* child : root_node_->Children()) {
     nodes.emplace_back(child);
@@ -248,14 +243,14 @@ void Search::SendMovesStats() const {
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
-        << node->GetQ(parent_q, 0) << ") ";
+        << node->GetQ(parent_q) << ") ";
     oss << "(U: " << std::setw(6) << std::setprecision(5)
         << node->GetU() * kCpuct *
                std::sqrt(std::max(node->GetParent()->GetChildrenVisits(), 1u))
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << node->GetQ(parent_q, 0) +
+        << node->GetQ(parent_q) +
                node->GetU() * kCpuct *
                    std::sqrt(
                        std::max(node->GetParent()->GetChildrenVisits(), 1u))
@@ -534,8 +529,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     int possible_moves = 0;
     float parent_q =
         (is_root_node && search_->kNoise)
-            ? -node->GetQ(0, search_->kExtraVirtualLoss)
-            : -node->GetQ(0, search_->kExtraVirtualLoss) -
+            ? -node->GetQ(0)
+            : -node->GetQ(0) -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
     for (Node* child : node->Children()) {
       if (is_root_node) {
@@ -551,7 +546,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         }
         ++possible_moves;
       }
-      float Q = child->GetQ(parent_q, search_->kExtraVirtualLoss);
+      float Q = child->GetQ(parent_q);
       if (search_->kVirtualLossBug && child->GetN() == 0) {
         Q = (Q * child->GetParent()->GetN() - search_->kVirtualLossBug) /
             (child->GetParent()->GetN() + std::fabs(search_->kVirtualLossBug));
@@ -690,12 +685,11 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   float puct_mult =
       search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
-  const float parent_q = -node->GetQ(0, search_->kExtraVirtualLoss);
+  const float parent_q = -node->GetQ(0);
   for (Node* child : node->Children()) {
     if (child->GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-puct_mult * child->GetU() -
-                            child->GetQ(parent_q, search_->kExtraVirtualLoss),
+    scores.emplace_back(-puct_mult * child->GetU() - child->GetQ(parent_q),
                         child);
   }
 
@@ -722,12 +716,12 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = n->GetQ(-parent_q, search_->kExtraVirtualLoss);
+      const float q = n->GetQ(-parent_q);
       if (next_score > q) {
         budget_to_spend = std::min(
             budget,
-            int(n->GetP() * puct_mult / (next_score - q) - n->GetNStarted())
-                + 1);
+            int(n->GetP() * puct_mult / (next_score - q) - n->GetNStarted()) +
+                1);
       } else {
         budget_to_spend = budget;
       }
@@ -837,7 +831,7 @@ void SearchWorker::DoBackupUpdate() {
 // 7. UpdateCounters()
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
-  search_->UpdateRemainingMoves(); // Updates smart pruning counters.
+  search_->UpdateRemainingMoves();  // Updates smart pruning counters.
   search_->MaybeOutputInfo();
   search_->MaybeTriggerStop();
 

@@ -71,14 +71,9 @@ class Node {
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns Q if number of visits is more than 0,
-  float GetQ(float default_q, float virtual_loss) const {
+  float GetQ(float default_q) const {
     if (n_ == 0) return default_q;
-    if (virtual_loss && n_in_flight_) {
-      return (w_ - n_in_flight_ * virtual_loss) /
-             (n_ + n_in_flight_ * virtual_loss);
-    } else {
-      return q_;
-    }
+    return q_;
   }
   // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
   // equation. So it's really more of a "reduced U" than raw U.

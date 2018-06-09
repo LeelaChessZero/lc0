@@ -85,7 +85,6 @@ class Search {
   static const char* kVirtualLossBugStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
-  static const char* kExtraVirtualLossStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
 
@@ -146,7 +145,6 @@ class Search {
   const float kVirtualLossBug;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
-  const float kExtraVirtualLoss;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
 
