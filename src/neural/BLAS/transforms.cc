@@ -94,6 +94,10 @@ void Transforms::WinogradTransformIn(const float* in,
   constexpr auto wtiles = (W + 1) / 2;
   constexpr auto P = wtiles * wtiles;
 
+  float x[kWinogradAlpha][kWinogradAlpha];
+  float T1[kWinogradAlpha][kWinogradAlpha];
+  float T2[kWinogradAlpha][kWinogradAlpha];
+
   for (auto ch = 0; ch < C; ch++) {
     for (auto block_y = 0; block_y < wtiles; block_y++) {
       for (auto block_x = 0; block_x < wtiles; block_x++) {
@@ -101,10 +105,6 @@ void Transforms::WinogradTransformIn(const float* in,
         const auto yin = 2 * block_y - 1;
         const auto xin = 2 * block_x - 1;
 
-        // Cache input tile and handle zero padding
-        using WinogradTile =
-            std::array<std::array<float, kWinogradAlpha>, kWinogradAlpha>;
-        WinogradTile x;
 
         for (auto i = 0; i < kWinogradAlpha; i++) {
           for (auto j = 0; j < kWinogradAlpha; j++) {
@@ -125,7 +125,7 @@ void Transforms::WinogradTransformIn(const float* in,
         //      [-1.0,  1.0,  1.0,  0.0],
         //      [ 0.0,  0.0,  0.0, -1.0]]
 
-        WinogradTile T1, T2;
+   //     WinogradTile T1, T2;
 
         T1[0][0] = x[0][0] - x[2][0];
         T1[0][1] = x[0][1] - x[2][1];
@@ -253,9 +253,13 @@ void Transforms::WinogradTransformOut(const float* M,
                                      float* V, float* M,
                                      float* output) {
     
+ 
+    
+    
     for (int i=0; i<batch_size; i++) {
       int input_offset=i*64*input_channels;
       int output_offset=i*64*output_channels;
+      
       WinogradTransformIn(input+input_offset, V, input_channels);
       WinogradSgemm(weights, V, M, input_channels, output_channels);
       WinogradTransformOut(M, output+output_offset, output_channels);
@@ -322,7 +326,7 @@ void Transforms::WinogradTransformOut(const float* M,
                                const float* weights,
                                const float* biases,
                                float* output) {
-    
+   
     for (int i=0; i<batch_size; i++) {
 
       // C←αAB + βC
@@ -364,7 +368,7 @@ void Transforms::WinogradTransformOut(const float* M,
       input+=64*input_channels;
       output+=64*output_channels;
     }
-    
+
   }
   
   
