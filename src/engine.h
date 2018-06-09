@@ -97,6 +97,9 @@ class EngineController {
   std::string backend_;
   std::string backend_options_;
 
+  // The current position as given with SetPosition. For normal (ie. non-ponder)
+  // search, the tree is set up with this position, however, during ponder we
+  // actually search the position one move earlier.
   optional<CurrentPosition> current_position_;
   GoParams go_params_;
 };

@@ -65,7 +65,6 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
   options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.2f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
-
   options->Add<BoolOption>("Ponder", "ponder") = false;
 
   Search::PopulateUciParams(options);
@@ -82,10 +81,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
                                                     const GoParams& params) {
   SearchLimits limits;
-  limits.visits = params.nodes;
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   limits.infinite = params.infinite || params.ponder;
+  limits.visits = limits.infinite ? -1 : params.nodes;
   if (limits.infinite || time < 0) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
@@ -157,7 +156,7 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  current_position_ = optional<CurrentPosition>();
+  current_position_.reset();
   UpdateNetwork();
 }
 
@@ -215,9 +214,10 @@ void EngineController::Go(const GoParams& params) {
     } else {
       SetupPosition((*current_position_).fen, (*current_position_).moves);
     }
-  } else {
+  } else if (!tree_) {
     SetupPosition(ChessBoard::kStartingFen, {});
   }
+
 
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
                                      tree_->IsBlackToMove(), params);

@@ -32,6 +32,7 @@ class optional {
     has_value_ = true;
     return *this;
   }
+  void reset() { has_value_ = false; }
 
  private:
   T value_;
