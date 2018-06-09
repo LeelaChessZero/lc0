@@ -28,6 +28,7 @@ namespace lczero {
 
 namespace {
 const char* kShareTreesStr = "Share game trees for two players";
+const char* kNoTreeReuseStr = "Clear tree after every move.";
 const char* kTotalGamesStr = "Number of games to play";
 const char* kParallelGamesStr = "Number of games to play in parallel";
 const char* kThreadsStr = "Number of CPU threads for every game";
@@ -51,6 +52,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player2");
 
   options->Add<BoolOption>(kShareTreesStr, "share-trees") = false;
+  options->Add<BoolOption>(kNoTreeReuseStr, "disable-tree-reuse") = false;
   options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
   options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 8;
   options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
@@ -92,6 +94,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       },
       kTotalGames(options.Get<int>(kTotalGamesStr)),
       kShareTree(options.Get<bool>(kShareTreesStr)),
+      kNoTreeReuse(options.Get<bool>(kNoTreeReuseStr)),
       kParallelism(options.Get<int>(kParallelGamesStr)),
       kTraining(options.Get<bool>(kTrainingStr)) {
   // If playing just one game, the player1 is white, otherwise randomize.
@@ -140,7 +143,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(
       options.GetSubdict("player1").Get<int>(kNnCacheSizeStr));
-  if (kShareTree) {
+  if (kShareTree || networks_[0] == networks_[1]) {
     cache_[1] = cache_[0];
   } else {
     cache_[1] = std::make_shared<NNCache>(
@@ -227,7 +230,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   {
     Mutex::Lock lock(mutex_);
     games_.emplace_front(
-        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
+        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree, kNoTreeReuse));
     game_iter = games_.begin();
   }
   auto& game = **game_iter;
