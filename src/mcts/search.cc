@@ -36,8 +36,10 @@ namespace lczero {
 const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
 const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
-const char* Search::kTemperatureStr = "Initial temperature";
-const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
+const char* Search::kMoveTempStr = "Initial move-decay temperature";
+const char* Search::kMoveTempDecayStr = "Move-decay temperature decay rate";
+const char* Search::kEvalTempStr = "Initial eval-decay temperature";
+const char* Search::kEvalTempDecayStr = "Eval-decay temperature decay rate";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kSmartPruningStr = "Enable smart pruning";
@@ -65,9 +67,12 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
   options->Add<IntOption>(kMaxPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
-  options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
-      0.0f;
-  options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
+  options->Add<FloatOption>(kMoveTempStr, 0.0f, 100.0f, "move-temp") = 0.0f;
+  options->Add<FloatOption>(kMoveTempDecayStr, 1.0f, 1e15f,
+                            "move-temp-decay") = 100.0f;
+  options->Add<FloatOption>(kEvalTempStr, 0.0f, 100.0f, "eval-temp") = 0.0f;
+  options->Add<FloatOption>(kEvalTempDecayStr, 1.0f, 1e15f,
+                            "eval-temp-decay") = 5.0f;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
@@ -101,8 +106,10 @@ Search::Search(const NodeTree& tree, Network* network,
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
       kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
-      kTemperature(options.Get<float>(kTemperatureStr)),
-      kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
+      kMoveTemp(options.Get<float>(kMoveTempStr)),
+      kMoveTempDecay(options.Get<float>(kMoveTempDecayStr)),
+      kEvalTemp(options.Get<float>(kEvalTempStr)),
+      kEvalTempDecay(options.Get<float>(kEvalTempDecayStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
       kSmartPruning(options.Get<bool>(kSmartPruningStr)),
@@ -134,6 +141,14 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
   }
 }
 } // namespace
+
+bool Search::IsSearchmovesAndNodeNotInSearchmoves(Node* node) const {
+  return !limits_.searchmoves.empty() &&
+         std::find(limits_.searchmoves.begin(),
+                   limits_.searchmoves.end(),
+                   node->GetMove())
+           == limits_.searchmoves.end();
+}
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_node_) return;
@@ -320,17 +335,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   if (responded_bestmove_) return best_move_;
   if (!root_node_->HasChildren()) return {};
 
-  float temperature = kTemperature;
-  if (temperature && kTempDecayMoves) {
-    int moves = played_history_.Last().GetGamePly() / 2;
-    if (moves >= kTempDecayMoves) {
-      temperature = 0.0;
-    } else {
-      temperature *=
-          static_cast<float>(kTempDecayMoves - moves) / kTempDecayMoves;
-    }
-  }
-
+  float temperature = CalculateTemperature();
   Node* best_node = temperature && root_node_->GetN() > 1
                         ? GetBestChildWithTemperature(root_node_, temperature)
                         : GetBestChildNoTemperature(root_node_);
@@ -350,9 +355,7 @@ Node* Search::GetBestChildNoTemperature(Node* parent) const {
   //   * If that number is larger than 0, the one wil larger eval wins.
   std::tuple<int, float, float> best(-1, 0.0, 0.0);
   for (Node* node : parent->Children()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  node->GetMove()) == limits_.searchmoves.end()) {
+    if (parent == root_node_ && IsSearchmovesAndNodeNotInSearchmoves(node)) {
       continue;
     }
     std::tuple<int, float, float> val(node->GetN(), node->GetQ(-10.0, 0.0),
@@ -368,35 +371,62 @@ Node* Search::GetBestChildNoTemperature(Node* parent) const {
 // Returns a child chosen according to weighted-by-temperature visit count.
 Node* Search::GetBestChildWithTemperature(Node* parent,
                                           float temperature) const {
-  std::vector<float> cumulative_sums;
+  const float coldness = 1 / temperature, n_parent = parent->GetN();
+  std::vector<float> partial_sums;
   float sum = 0.0;
-  const float n_parent = parent->GetN();
 
   for (Node* node : parent->Children()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  node->GetMove()) == limits_.searchmoves.end()) {
+    if (parent == root_node_ && IsSearchmovesAndNodeNotInSearchmoves(node)) {
       continue;
     }
-    sum += std::pow(node->GetN() / n_parent, 1 / temperature);
-    cumulative_sums.push_back(sum);
+    sum += std::pow(node->GetN() / n_parent, coldness);
+    partial_sums.push_back(sum);
   }
 
-  float toss = Random::Get().GetFloat(cumulative_sums.back());
+  float toss = Random::Get().GetFloat(partial_sums.back());
   int idx =
-      std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
-      cumulative_sums.begin();
+      std::lower_bound(partial_sums.begin(), partial_sums.end(), toss) -
+      partial_sums.begin();
 
   for (Node* node : parent->Children()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  node->GetMove()) == limits_.searchmoves.end()) {
+    if (parent == root_node_ && IsSearchmovesAndNodeNotInSearchmoves(node)) {
       continue;
     }
     if (idx-- == 0) return node;
   }
   assert(false);
   return nullptr;
+}
+
+float Search::CalculateTemperature() const {
+  // Put a floor on temperature to limit powers computed, as well as prevent
+  // underflow (for especially large visit counts). Temps below the floor
+  // are rounded to 0. We round each component separately for better control.
+  // The value of 0.10 is meant for easy user memorability. It could,
+  // theoretically, be tuned such that some default movedecay value crosses this
+  // floor at some chosen movecount, but which values of movedecay and movecount
+  // are "best default" is highly subjective, so better to just make it easier
+  // for users to remember than target some subjective default value.
+  const float tempfloor = 0.10f;
+
+  // movetemp ~ 1/log(move*decay)
+  int movenum = played_history_.Last().GetGamePly() / 2;
+  float movetemp = kMoveTemp / (1 + std::log(1 + kMoveTempDecay * movenum));
+  if (movetemp < tempfloor) movetemp = 0.0f;
+
+  // evaltemp ~ 1/log(eval^2*decay)
+  // negative sign here because node->GetQ returns eval from node->parent_'s
+  // perspective (though it doesn't really matter since evaltemp is symmetric
+  // by design anyways)
+  float eval = -root_node_->GetQ(0, 0);
+  float evaltemp = kEvalTemp /
+                   (1 + std::log(1 + kEvalTempDecay * std::pow(eval, 2)));
+  if (evaltemp < tempfloor) evaltemp = 0.0f;
+
+  float temperature = movetemp + evaltemp;
+  //std::cout << "move: " << movenum << " movetemp: " << movetemp << " eval: " << eval << " evaltemp: " << evaltemp << " temp: " << temperature << "\n";
+
+  return temperature;
 }
 
 void Search::StartThreads(size_t how_many) {
@@ -579,11 +609,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
                 best_node_n - static_cast<int>(child->GetN())) {
           continue;
         }
-        // If searchmoves was sent, restrict the search only in that moves
-        if (!search_->limits_.searchmoves.empty() &&
-            std::find(search_->limits_.searchmoves.begin(),
-                      search_->limits_.searchmoves.end(),
-                      child->GetMove()) == search_->limits_.searchmoves.end()) {
+        // If searchmoves was sent, restrict the search to only those moves
+        if (search_->IsSearchmovesAndNodeNotInSearchmoves(child)) {
             continue;
         }
         ++possible_moves;
