@@ -94,7 +94,7 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs = LoadFloatsFromFile(filename);
 
   if (vecs.size() <= 19)
-    throw Exception("Weithts file " + filename +
+    throw Exception("Weights file " + filename +
                     " should have at least 19 lines");
   if (vecs[0][0] != 2) throw Exception("Weights version 2 expected");
 
