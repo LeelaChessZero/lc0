@@ -146,7 +146,7 @@ class Lexer {
     for (; idx_ < str_.size(); ++idx_) {
       if (str_[idx_] == quote) {
         type_ = L_STRING;
-        string_val_ = str_.substr(last_offset_ + 1, last_offset_ + idx_ - 1);
+        string_val_ = str_.substr(last_offset_ + 1, idx_ - last_offset_ - 1);
         ++idx_;
         return;
       }

@@ -28,6 +28,11 @@ option('mkl_libdirs',
        value: ['/opt/intel/lib/intel64', '/opt/intel/mkl/lib/intel64'],
        description: 'Paths to MKL libraries')
 
+option('mkl_include',
+       type: 'array',
+       value: ['/opt/intel/mkl/include'],
+       description: 'Paths to MKL libraries')
+
 option('cudnn_include', 
        type: 'array',
        value: [],

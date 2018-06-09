@@ -23,6 +23,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <thread>
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/hashcat.h"
@@ -34,16 +35,22 @@ namespace lczero {
 /////////////////////////////////////////////////////////////////////////
 
 namespace {
+// How many nodes to allocate a once.
 const int kAllocationSize = 1024 * 64;
+// Periodicity of garbage collection, milliseconds.
+const int kGCIntervalMs = 100;
 }  // namespace
 
 class Node::Pool {
  public:
+  Pool();
+  ~Pool();
+
   // Allocates a new node and initializes it with all zeros.
   Node* AllocateNode();
-  // Return node to the pool.
-  void ReleaseNode(Node*);
 
+  // Release* function don't release trees immediately but rather schedule
+  // release until when GarbageCollect() is called.
   // Releases all children of the node, except specified. Also updates pointers
   // accordingly.
   void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
@@ -51,12 +58,15 @@ class Node::Pool {
   void ReleaseChildren(Node*);
   // Releases all children and the node itself;
   void ReleaseSubtree(Node*);
+  // Really releases subtrees makerd for release earlier.
+  void GarbageCollect();
 
  private:
+  // Runs garbabe collection every kGCIntervalMs milliseconds.
+  void GarbageCollectThread();
+  // Allocates a new set of nodes of size kAllocationSize and puts it into
+  // reserve_list_.
   void AllocateNewBatch();
-  void ReleaseNodeInternal(Node*);
-  void ReleaseChildrenInternal(Node*);
-  void ReleaseSubtreeInternal(Node*);
 
   union FreeNode {
     FreeNode* next;
@@ -64,6 +74,8 @@ class Node::Pool {
 
     FreeNode() {}
   };
+
+  static FreeNode* UnrollNodeTree(FreeNode* node);
 
   mutable Mutex mutex_;
   // Linked list of free nodes.
@@ -74,7 +86,57 @@ class Node::Pool {
   FreeNode* reserve_list_ GUARDED_BY(allocations_mutex_) = nullptr;
   std::vector<std::unique_ptr<FreeNode[]>> allocations_
       GUARDED_BY(allocations_mutex_);
+
+  mutable Mutex gc_mutex_;
+  std::vector<Node*> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
+
+  // Should garbage colletion thread stop?
+  volatile bool stop_ = false;
+  std::thread gc_thread_;
 };
+
+Node::Pool::Pool() : gc_thread_([this]() { GarbageCollectThread(); }) {}
+Node::Pool::~Pool() {
+  stop_ = true;
+  gc_thread_.join();
+}
+
+void Node::Pool::GarbageCollectThread() {
+  while (!stop_) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
+    GarbageCollect();
+  };
+}
+
+Node::Pool::FreeNode* Node::Pool::UnrollNodeTree(FreeNode* node) {
+  if (!node->node.child_) return node;
+  FreeNode* prev = node;
+  for (Node* child = node->node.child_; child; child = child->sibling_) {
+    FreeNode* next = reinterpret_cast<FreeNode*>(child);
+    prev->next = next;
+    prev = UnrollNodeTree(next);
+  }
+  return prev;
+}
+
+void Node::Pool::GarbageCollect() {
+  while (true) {
+    Node* node_to_gc = nullptr;
+    {
+      Mutex::Lock lock(gc_mutex_);
+      if (subtrees_to_gc_.empty()) return;
+      node_to_gc = subtrees_to_gc_.back();
+      subtrees_to_gc_.pop_back();
+    }
+    FreeNode* head = reinterpret_cast<FreeNode*>(node_to_gc);
+    FreeNode* tail = UnrollNodeTree(head);
+    {
+      Mutex::Lock lock(mutex_);
+      tail->next = free_list_;
+      free_list_ = head;
+    }
+  }
+}
 
 Node* Node::Pool::AllocateNode() {
   while (true) {
@@ -111,17 +173,6 @@ Node* Node::Pool::AllocateNode() {
   }
 }
 
-void Node::Pool::ReleaseNode(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseNodeInternal(node);
-}
-
-void Node::Pool::ReleaseNodeInternal(Node* node) REQUIRES(mutex_) {
-  auto* free_node = reinterpret_cast<FreeNode*>(node);
-  free_node->next = free_list_;
-  free_list_ = free_node;
-}
-
 void Node::Pool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
   allocations_.emplace_back(std::make_unique<FreeNode[]>(kAllocationSize));
 
@@ -134,11 +185,6 @@ void Node::Pool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
 }
 
 void Node::Pool::ReleaseChildren(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseChildrenInternal(node);
-}
-
-void Node::Pool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
   Node* next = node->child_;
   // Iterating manually rather than with iterator, as node is released in the
   // middle and can be taken by other threads, so we have to be careful.
@@ -147,7 +193,7 @@ void Node::Pool::ReleaseChildrenInternal(Node* node) REQUIRES(mutex_) {
     // Getting next after releasing node, as otherwise it can be reallocated
     // and overwritten.
     next = next->sibling_;
-    ReleaseSubtreeInternal(iter);
+    ReleaseSubtree(iter);
   }
   node->child_ = nullptr;
 }
@@ -173,16 +219,15 @@ void Node::Pool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
 }
 
 void Node::Pool::ReleaseSubtree(Node* node) {
-  Mutex::Lock lock(mutex_);
-  ReleaseSubtreeInternal(node);
-}
-
-void Node::Pool::ReleaseSubtreeInternal(Node* node) REQUIRES(mutex_) {
-  ReleaseChildrenInternal(node);
-  ReleaseNodeInternal(node);
+  Mutex::Lock lock(gc_mutex_);
+  subtrees_to_gc_.push_back(node);
 }
 
 Node::Pool gNodePool;
+
+/////////////////////////////////////////////////////////////////////////
+// Node
+/////////////////////////////////////////////////////////////////////////
 
 Node* Node::CreateChild(Move m) {
   Node* new_node = gNodePool.AllocateNode();
@@ -259,8 +304,8 @@ void Node::UpdateMaxDepth(int depth) {
 
 bool Node::UpdateFullDepth(uint16_t* depth) {
   if (full_depth_ > *depth) return false;
-  for (Node* iter : Children()) {
-    if (*depth > iter->full_depth_) *depth = iter->full_depth_;
+  for (Node* child : Children()) {
+    if (*depth > child->full_depth_) *depth = child->full_depth_;
   }
   if (*depth >= full_depth_) {
     full_depth_ = ++*depth;
@@ -287,10 +332,11 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   result.version = 3;
 
   // Populate probabilities.
-  float total_n = n_ - 1;  // First visit was expansion of it inself.
+  float total_n =
+      static_cast<float>(n_ - 1);  // First visit was expansion of it inself.
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
-  for (Node* iter : Children()) {
-    result.probabilities[iter->move_.as_nn_index()] = iter->n_ / total_n;
+  for (Node* child : Children()) {
+    result.probabilities[child->move_.as_nn_index()] = child->n_ / total_n;
   }
 
   // Populate planes.
