@@ -149,12 +149,11 @@ void Analyzer::RunOnePosition(const std::vector<Move>& moves) {
     auto move = node->GetMove(tree.IsBlackToMove()).as_string();
     rows.push_back(move);
     table.AddRowVal(move, "P", std::to_string(node->GetP()));
-    table.AddRowVal(move, "V", std::to_string(node->GetV()));
   }
 
   // Dump table to log.
   auto lines = table.RenderTable(cols, rows, {"N", "N%", "U", "Q", "U+Q"},
-                                 {"P", "V"}, {"bestmove"});
+                                 {"P"}, {"bestmove"});
   for (const auto& line : lines) WriteToTsvLog(line);
 }
 

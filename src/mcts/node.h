@@ -78,18 +78,15 @@ class Node {
   // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
   // equation. So it's really more of a "reduced U" than raw U.
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
-  // Returns value of Value Head returned from the neural net.
-  float GetV() const { return v_; }
   // Returns value of Move probability returned from the neural net
   // (but can be changed by adding Dirichlet noise).
   float GetP() const { return p_; }
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
+  float GetTerminalNodeValue() const { return q_; }
   uint16_t GetFullDepth() const { return full_depth_; }
   uint16_t GetMaxDepth() const { return max_depth_; }
 
-  // Sets node own value (from neural net or win/draw/lose adjudication).
-  void SetV(float val) { v_ = val; }
   // Sets move probability.
   void SetP(float val) { p_ = val; }
   // Makes the node terminal and sets it's score.
@@ -104,11 +101,10 @@ class Node {
   void CancelScoreUpdate();
   // Updates the node with newly computed value v.
   // Updates:
+  // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  // * W (+= v)
-  // * Q (=w/n)
-  void FinalizeScoreUpdate(float v);
+  void FinalizeScoreUpdate(float v, float gamma);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -145,15 +141,9 @@ class Node {
   // Root node contains move a1a1.
   Move move_;
 
-  // Q value fetched from neural network.
-  float v_;
   // Average value (from value head of neural network) of all visited nodes in
-  // subtree. Terminal nodes (which lead to checkmate or draw) may be visited
-  // several times, those are counted several times. q = w / n
+  // subtree. For terminal nodes, eval is stored.
   float q_;
-  // Sum of values of all visited nodes in a subtree. Used to compute an
-  // average.
-  float w_;
   // Probabality that this move will be made. From policy head of the neural
   // network.
   float p_;

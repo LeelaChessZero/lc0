@@ -87,6 +87,7 @@ class Search {
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kBackPropagateGammaStr;
 
  private:
   std::pair<Move, Move> GetBestMoveInternal() const;
@@ -147,6 +148,7 @@ class Search {
   const bool kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const float kBackPropagateGamma;
 
   friend class SearchWorker;
 };
@@ -209,6 +211,8 @@ class SearchWorker {
     Node* node;
     bool is_collision = false;
     bool nn_queried = false;
+    // Value from NN's value head, or -1/0/1 for terminal nodes.
+    float v;
   };
 
   NodeToProcess PickNodeToExtend();

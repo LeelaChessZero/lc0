@@ -48,6 +48,7 @@ const char* Search::kCacheHistoryLengthStr =
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+const char* Search::kBackPropagateGammaStr = "Backpropagation gamma";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -80,6 +81,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
+  options->Add<FloatOption>(kBackPropagateGammaStr, -100.0f, 100.0f,
+                            "backpropagate-gamma") = 1.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -107,7 +110,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kBackPropagateGamma(options.Get<float>(kBackPropagateGammaStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -238,8 +242,9 @@ void Search::SendMovesStats() const {
     oss << " N: ";
     oss << std::right << std::setw(7) << node->GetN() << " (+" << std::setw(2)
         << node->GetNInFlight() << ") ";
-    oss << "(V: " << std::setw(6) << std::setprecision(2) << node->GetV() * 100
-        << "%) ";
+    // oss << "(V: " << std::setw(6) << std::setprecision(2) << node->GetV() *
+    // 100
+    //     << "%) ";
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
@@ -751,10 +756,13 @@ void SearchWorker::FetchNNResults() {
   // Copy NN results into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
-    if (!node_to_process.nn_queried) continue;
+    if (!node_to_process.nn_queried) {
+      node_to_process.v = node_to_process.node->GetTerminalNodeValue();
+      continue;
+    }
     Node* node = node_to_process.node;
-    // Populate Q value.
-    node->SetV(-computation_->GetQVal(idx_in_computation));
+    // Populate V value.
+    node_to_process.v = -computation_->GetQVal(idx_in_computation);
     // Populate P values.
     float total = 0.0;
     for (Node* n : node->Children()) {
@@ -795,8 +803,8 @@ void SearchWorker::DoBackupUpdate() {
       continue;
     }
 
-    // Backup V value up to a root.
-    float v = node->GetV();
+    // Backup V value up to a root. After 1 visit, V = Q.
+    float v = node_to_process.v;
     // Maximum depth the node is explored.
     uint16_t depth = 0;
     // If the node is terminal, mark it as fully explored to an "infinite"
@@ -806,7 +814,7 @@ void SearchWorker::DoBackupUpdate() {
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
-      n->FinalizeScoreUpdate(v);
+      n->FinalizeScoreUpdate(v, search_->kBackPropagateGamma);
       // Q will be flipped for opponent.
       v = -v;
 
