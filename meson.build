@@ -137,23 +137,25 @@ if get_option('build_backends')
 
   openblas_lib = cc.find_library('openblas', required: false)
 
-  if mkl_lib.found() 
-    add_project_arguments('-DUSE_MKL', language : 'cpp')
-    includes += include_directories(get_option('mkl_include'))
-    deps += [ mkl_lib ]
-    has_blas = true
+  if get_option('blas') or get_option('opencl')
+    if mkl_lib.found()
+      add_project_arguments('-DUSE_MKL', language : 'cpp')
+      includes += include_directories(get_option('mkl_include'))
+      deps += [ mkl_lib ]
+      has_blas = true
 
-  elif accelerate_lib.found()
-    includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
-    deps += [ accelerate_lib ]
-    has_blas = true
+    elif accelerate_lib.found()
+      includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
+      deps += [ accelerate_lib ]
+      has_blas = true
 
-  elif openblas_lib.found() 
-    add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
-    includes += include_directories(get_option('openblas_include'))
-    deps += [ openblas_lib ]
-    has_blas = true
+    elif openblas_lib.found()
+      add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+      includes += include_directories(get_option('openblas_include'))
+      deps += [ openblas_lib ]
+      has_blas = true
 
+    endif
   endif
 
   if get_option('blas') and has_blas
