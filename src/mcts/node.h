@@ -57,7 +57,7 @@ class Node {
   // Returns whether a node has children.
   bool HasChildren() const { return child_ != nullptr; }
 
-  // Returns move from the point of new of player BEFORE the position.
+  // Returns move from the point of view of player BEFORE the position.
   Move GetMove() const { return move_; }
 
   // Returns move, with optional flip (false == player BEFORE the position).

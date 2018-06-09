@@ -83,6 +83,12 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   SearchLimits limits;
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
+  if (!params.searchmoves.empty()) {
+    limits.searchmoves.reserve(params.searchmoves.size());
+    for (const auto& move : params.searchmoves) {
+      limits.searchmoves.emplace_back(move, is_black);
+    }
+  }
   limits.infinite = params.infinite || params.ponder;
   limits.visits = limits.infinite ? -1 : params.nodes;
   if (limits.infinite || time < 0) return limits;
@@ -217,7 +223,6 @@ void EngineController::Go(const GoParams& params) {
   } else if (!tree_) {
     SetupPosition(ChessBoard::kStartingFen, {});
   }
-
 
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
                                      tree_->IsBlackToMove(), params);

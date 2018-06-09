@@ -37,6 +37,7 @@ struct GoParams {
   int nodes = -1;
   std::int64_t movetime = -1;
   bool infinite = false;
+  std::vector<std::string> searchmoves;
   bool ponder = false;
 };
 
