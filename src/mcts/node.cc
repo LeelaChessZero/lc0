@@ -286,9 +286,9 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
-void Node::FinalizeScoreUpdate(float v, float gamma) {
+void Node::FinalizeScoreUpdate(float v, float gamma, float beta) {
   // Recompute Q.
-  q_ += (v - q_) / (std::pow(static_cast<float>(n_), gamma) + 1);
+  q_ += (v - q_) / (std::pow(static_cast<float>(n_), gamma) * beta + 1);
   // Increment N.
   ++n_;
   // Decrement virtual loss.
