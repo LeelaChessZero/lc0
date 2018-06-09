@@ -40,8 +40,7 @@ class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const Weights& weights)
       : weights_(weights),
-        input_data_(kInputPlanes * 64),
-        value_data_(weights_.ip1_val_b.size()),
+  
         policy_data_(),
         q_value_(0) {}
 
@@ -52,44 +51,93 @@ class BlasComputation : public NetworkComputation {
 
   // Do the computation.
   void ComputeBlocking() override {
-    for (auto& sample : planes_) ComputeBlocking(sample);
-  }
+    
+    const int plane_count=static_cast<int>(planes_.size());
+    const int max_batch_size=std::min(64, plane_count);
+    const int num_value_channels=static_cast<int>(weights_.ip1_val_b.size());
+    const int num_ouput_policy=static_cast<int>(weights_.ip_pol_b.size());
+    
+    std::vector<float> input_data(max_batch_size*kInputPlanes * 64);
+    std::vector<float> value_data(max_batch_size*num_value_channels);
+    std::vector<float> policy_data(max_batch_size*num_ouput_policy);
 
-  void ComputeBlocking(const InputPlanes& sample) {
-    int index = 0;
-    for (const InputPlane& plane : sample) {
-      float value = plane.value;
-      const uint64_t one = 1;
-      for (int i = 0; i < 64; i++)
-        input_data_[index++] = (plane.mask & (one << i)) != 0 ? value : 0;
+    for (int i=0; i<plane_count; i+=max_batch_size) {
+      const int batch_size=std::min(plane_count-i, max_batch_size);
+      for (int j=0; j<batch_size; j++) {
+        EncodePlanes(planes_[i+j], &input_data[j*64*kInputPlanes]);
+      }
+
+      forward(batch_size, input_data, policy_data, value_data);
+      
+      for (int j=0; j<batch_size; j++) {
+        std::vector<float> policy(num_ouput_policy);
+        
+        // Get the moves
+        Transforms::Softmax(num_ouput_policy, &policy_data[j*num_ouput_policy], policy.data());
+
+        policy_data_.emplace_back(std::move(policy));
+        
+        // Now get the score
+        double winrate = Transforms::DotProduct(num_value_channels,
+                                                weights_.ip2_val_w.data(),
+                                                &value_data[j*num_value_channels]) +
+        weights_.ip2_val_b[0];
+
+        q_value_.emplace_back(std::tanh(winrate));
+      }
+      
     }
 
-    std::vector<float> policy_data(weights_.ip_pol_b.size());
-    forward(input_data_, policy_data, value_data_);
-
-    // Get the moves
-    Transforms::Softmax(policy_data, policy_data);
-    policy_data_.emplace_back(move(policy_data));
-
-    // Now get the score
-    double winrate = Transforms::Innerproduct(weights_.ip2_val_w, value_data_) +
-                     weights_.ip2_val_b[0];
-    q_value_.emplace_back(std::tanh(winrate));
   }
 
-  void forward(std::vector<float>& input, std::vector<float>& output_pol,
+  // Returns how many times AddInput() was called.
+  int GetBatchSize() const override { return planes_.size(); }
+  
+  // Returns Q value of @sample.
+  float GetQVal(int sample) const override { return q_value_[sample]; }
+  
+  // Returns P value @move_id of @sample.
+  float GetPVal(int sample, int move_id) const override {
+    return policy_data_[sample][move_id];
+  }
+  
+private:
+
+
+  
+  
+  void EncodePlanes(const InputPlanes& sample, float* buffer) {
+    for (const InputPlane& plane : sample) {
+      float value = plane.value;
+      static constexpr uint64_t one = 1;
+      for (int i = 0; i < 64; i++)
+        *(buffer++) = (plane.mask & (one << i)) != 0 ? value : 0;
+    }
+  }
+
+  void forward(const int batch_size,
+               std::vector<float>& input, std::vector<float>& output_pol,
                std::vector<float>& output_val) {
     // Input convolution
     constexpr int width = 8;
     constexpr int height = 8;
     constexpr int tiles = width * height / 4;
 
+    /*
+     static constexpr int NUM_VALUE_INPUT_PLANES = 32;
+     static constexpr int NUM_POLICY_INPUT_PLANES = 32;
+     static constexpr int NUM_OUTPUT_POLICY = 1858;
+     static constexpr int NUM_VALUE_CHANNELS = 128;
+     */
+    
     int NUM_VALUE_INPUT_PLANES = weights_.value.bn_means.size();
     int NUM_POLICY_INPUT_PLANES = weights_.policy.bn_means.size();
+    int NUM_OUTPUT_POLICY = weights_.ip_pol_b.size();
+    int NUM_VALUE_CHANNELS = weights_.ip1_val_b.size();
 
     static constexpr auto kWinogradAlpha = 4;
     static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
-
+    
     // Calculate output channels
     const auto output_channels = weights_.input.biases.size();
     // input_channels is the maximum number of input channels of any
@@ -98,87 +146,94 @@ class BlasComputation : public NetworkComputation {
     // when the network has very few filters
     const auto input_channels = std::max(static_cast<size_t>(output_channels),
                                          static_cast<size_t>(kInputPlanes));
-    auto conv_out = std::vector<float>(output_channels * width * height);
-
+    auto conv_out = std::vector<float>(batch_size*output_channels * width * height);
+    
     auto V = std::vector<float>(kWinogradTile * input_channels * tiles);
     auto M = std::vector<float>(kWinogradTile * output_channels * tiles);
+    
+    std::vector<float> policy_data(batch_size*NUM_POLICY_INPUT_PLANES * width * height);
+    std::vector<float> value_data(batch_size*NUM_VALUE_INPUT_PLANES * width * height);
+    
+    
+    Transforms::WinogradConvolve3(batch_size,
+                                  kInputPlanes, output_channels, &input[0],
+                                  &weights_.input.weights[0], &V[0], &M[0], &conv_out[0]);
+    
 
-    std::vector<float> policy_data(NUM_POLICY_INPUT_PLANES * width * height);
-    std::vector<float> value_data(NUM_VALUE_INPUT_PLANES * width * height);
-
-    Transforms::WinogradConvolve3(output_channels, input,
-                                  weights_.input.weights, V, M, conv_out);
-    Transforms::Batchnorm<64>(output_channels, conv_out,
-                              weights_.input.bn_means.data(),
-                              weights_.input.bn_stddivs.data());
+    Transforms::Batchnorm(batch_size,
+                          output_channels, &conv_out[0],
+                          weights_.input.bn_means.data(),
+                          weights_.input.bn_stddivs.data());
+    
 
     // Residual tower
-    auto conv_in = std::vector<float>(output_channels * width * height);
-    auto res = std::vector<float>(output_channels * width * height);
-
+    auto conv_in = std::vector<float>(batch_size*output_channels * width * height);
+    auto res = std::vector<float>(batch_size*output_channels * width * height);
+    
     for (auto& residual : weights_.residual) {
       auto& conv1 = residual.conv1;
       auto output_channels = conv1.biases.size();
       std::swap(conv_out, conv_in);
       std::copy(begin(conv_in), end(conv_in), begin(res));
 
-      Transforms::WinogradConvolve3(output_channels, conv_in, conv1.weights, V,
-                                    M, conv_out);
-      Transforms::Batchnorm<64>(output_channels, conv_out,
+
+      Transforms::WinogradConvolve3(batch_size,
+                                    output_channels, output_channels, &conv_in[0], &conv1.weights[0], &V[0], &M[0], &conv_out[0]);
+
+
+      Transforms::Batchnorm(batch_size,
+                             output_channels, &conv_out[0],
                                 conv1.bn_means.data(), conv1.bn_stddivs.data());
 
       auto& conv2 = residual.conv2;
       output_channels = conv2.biases.size();
       std::swap(conv_out, conv_in);
-      Transforms::WinogradConvolve3(output_channels, conv_in, conv2.weights, V,
-                                    M, conv_out);
-      Transforms::Batchnorm<64>(output_channels, conv_out,
-                                conv2.bn_means.data(), conv2.bn_stddivs.data(),
-                                res.data());
+      Transforms::WinogradConvolve3(batch_size,
+                                    output_channels, output_channels, &conv_in[0], &conv2.weights[0], &V[0], &M[0], &conv_out[0]);
+      Transforms::Batchnorm(batch_size,
+                            output_channels, &conv_out[0],
+                            conv2.bn_means.data(), conv2.bn_stddivs.data(),
+                            res.data());
     }
 
-    Transforms::Convolve<1>(NUM_POLICY_INPUT_PLANES, conv_out,
-                            weights_.policy.weights, weights_.policy.biases,
-                            policy_data);
+    Transforms::Convolve<1>(batch_size, output_channels, NUM_POLICY_INPUT_PLANES, conv_out.data(),
+                            weights_.policy.weights.data(), weights_.policy.biases.data(),
+                            policy_data.data());
+    
 
-    Transforms::Convolve<1>(NUM_VALUE_INPUT_PLANES, conv_out,
-                            weights_.value.weights, weights_.value.biases,
-                            value_data);
+    Transforms::Convolve<1>(batch_size, output_channels, NUM_VALUE_INPUT_PLANES, conv_out.data(),
+                            weights_.value.weights.data(), weights_.value.biases.data(),
+                            value_data.data());
+    
 
-    Transforms::Batchnorm<width * height>(NUM_POLICY_INPUT_PLANES, policy_data,
-                                          weights_.policy.bn_means.data(),
-                                          weights_.policy.bn_stddivs.data());
+    Transforms::Batchnorm(batch_size,
+                          NUM_POLICY_INPUT_PLANES, &policy_data[0],
+                          weights_.policy.bn_means.data(),
+                          weights_.policy.bn_stddivs.data());
+    
 
-    Transforms::Batchnorm<width * height>(NUM_VALUE_INPUT_PLANES, value_data,
-                                          weights_.value.bn_means.data(),
-                                          weights_.value.bn_stddivs.data());
+    Transforms::Batchnorm(batch_size,
+                          NUM_VALUE_INPUT_PLANES, &value_data[0],
+                          weights_.value.bn_means.data(),
+                          weights_.value.bn_stddivs.data());
 
-    // NUM_POLICY_INPUT_PLANES*width*height x NUM_OUTPUT_POLICY
-    Transforms::Innerproduct(policy_data, weights_.ip_pol_w, weights_.ip_pol_b,
-                             output_pol);
+    Transforms::Innerproduct(batch_size,
+                             NUM_POLICY_INPUT_PLANES*width*height,
+                             NUM_OUTPUT_POLICY,
+                             policy_data.data(), weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
+                             false,
+                             output_pol.data());
 
-    // NUM_VALUE_INPUT_PLANES*width*height x NUM_VALUE_CHANNELS,
-    Transforms::Innerproduct(value_data, weights_.ip1_val_w, weights_.ip1_val_b,
-                             output_val, true);
+    Transforms::Innerproduct(batch_size,
+                             NUM_VALUE_INPUT_PLANES*width*height,
+                             NUM_VALUE_CHANNELS,
+                             value_data.data(), weights_.ip1_val_w.data(), weights_.ip1_val_b.data(),
+                             true,
+                             output_val.data());
   }
-
-  // Returns how many times AddInput() was called.
-  int GetBatchSize() const override { return planes_.size(); }
-
-  // Returns Q value of @sample.
-  float GetQVal(int sample) const override { return q_value_[sample]; }
-
-  // Returns P value @move_id of @sample.
-  float GetPVal(int sample, int move_id) const override {
-    return policy_data_[sample][move_id];
-  }
-
- private:
   const Weights& weights_;
 
   std::vector<InputPlanes> planes_;
-  std::vector<float> input_data_;
-  std::vector<float> value_data_;
 
   std::vector<std::vector<float>> policy_data_;
   std::vector<float> q_value_;

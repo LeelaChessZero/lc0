@@ -89,12 +89,14 @@ class OpenCLComputation : public NetworkComputation {
     opencl_net_.forward(input_data_, policy_data, value_data_);
 
     // Get the moves
-    Transforms::Softmax(policy_data, policy_data);
+    Transforms::Softmax(weights_.num_output_policies,
+                        policy_data.data(), policy_data.data());
     policy_data_.emplace_back(move(policy_data));
-
+    
     // Now get the score
-    double winrate = Transforms::Innerproduct(weights_.ip2_val_w, value_data_) +
-                     weights_.ip2_val_b[0];
+    double winrate = Transforms::DotProduct(weights_.num_value_channels,
+                                            weights_.ip2_val_w.data(), value_data_.data()) +
+    weights_.ip2_val_b[0];
     q_value_.emplace_back(std::tanh(winrate));
   }
 

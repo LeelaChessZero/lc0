@@ -37,46 +37,57 @@ class Transforms {
                                                const int outputs,
                                                const int channels);
 
-  static void WinogradTransformIn(const std::vector<float>& in,
-                                  std::vector<float>& V, const int C);
+  static void WinogradTransformIn(const float* in,
+                                  float* V, const int C);
 
-  static void WinogradSgemm(const std::vector<float>& U, std::vector<float>& V,
-                            std::vector<float>& M, const int C, const int K);
+  static void WinogradSgemm(const float* U, float* V,
+                            float* M, const int C, const int K);
 
-  static void WinogradTransformOut(const std::vector<float>& M,
-                                   std::vector<float>& Y, const int K);
+  static void WinogradTransformOut(const float* M,
+                                   float* Y, const int K);
 
-  static void WinogradConvolve3(const int outputs,
-                                const std::vector<float>& input,
-                                const std::vector<float>& U,
-                                std::vector<float>& V, std::vector<float>& M,
-                                std::vector<float>& output);
+  static void WinogradConvolve3(const int batch_size,
+                                const int input_channels,
+                                const int output_channels,
+                                const float* input,
+                                const float* weights,
+                                float* V, float* M,
+                                float* output);
 
   template <unsigned int filter_size>
-  static void Convolve(size_t outputs, const std::vector<float>& input,
-                       const std::vector<float>& weights,
-                       const std::vector<float>& biases,
-                       std::vector<float>& output);
+  static void Convolve(const int batch_size,
+                       const int input_channels,
+                       const int output_channels,
+                       const float* input,
+                       const float*  weights,
+                       const float*  biases,
+                       float*  output);
 
-  static void Innerproduct(const std::vector<float>& input,
-                           const std::vector<float>& weights,
-                           const std::vector<float>& biases,
-                           std::vector<float>& output, bool apply_relu = false);
+  static void Innerproduct(const int batch_size,
+                           const int input_size,
+                           const int output_size,
+                           const float* input,
+                           const float*  weights,
+                           const float*  biases,
+                           bool apply_relu,
+                           float* output);
 
-  template <size_t spatial_size>
-  static void Batchnorm(size_t channels, std::vector<float>& data,
+  static void Batchnorm(const int batch_size,
+                        const int channels, float* data,
                         const float* means, const float* stddivs,
                         const float* eltwise = nullptr);
 
   template <unsigned long filter_size>
-  static void Im2Col(const int channels, const std::vector<float>& input,
-                     std::vector<float>& output);
+  static void Im2Col(const int channels, const float* input,
+                     float* output);
 
-  static void Softmax(const std::vector<float>& input,
-                      std::vector<float>& output);
-
-  static float Innerproduct(const std::vector<float>& x,
-                            const std::vector<float>& y);
+  static void Softmax(const int size,
+                      const float* input,
+                      float* output);
+  
+  static float DotProduct(const int size,
+                          const float* x,
+                          const float* y);
 
   static void OffsetBatchNormMeans(std::vector<float>& bn_means,
                                    const std::vector<float>& biases);

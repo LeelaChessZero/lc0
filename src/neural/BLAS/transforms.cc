@@ -87,8 +87,8 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
   return U;
 }
 
-void Transforms::WinogradTransformIn(const std::vector<float>& in,
-                                     std::vector<float>& V, const int C) {
+void Transforms::WinogradTransformIn(const float* in,
+                                     float* V, const int C) {
   constexpr auto W = 8;
   constexpr auto H = 8;
   constexpr auto wtiles = (W + 1) / 2;
@@ -171,8 +171,8 @@ void Transforms::WinogradTransformIn(const std::vector<float>& in,
   }
 }
 
-void Transforms::WinogradSgemm(const std::vector<float>& U,
-                               std::vector<float>& V, std::vector<float>& M,
+void Transforms::WinogradSgemm(const float* U,
+                               float* V, float* M,
                                const int C, const int K) {
   constexpr auto P = 8 * 8 / kWinogradAlpha;
 
@@ -186,8 +186,8 @@ void Transforms::WinogradSgemm(const std::vector<float>& U,
   }
 }
 
-void Transforms::WinogradTransformOut(const std::vector<float>& M,
-                                      std::vector<float>& Y, const int K) {
+void Transforms::WinogradTransformOut(const float* M,
+                                      float* Y, const int K) {
   constexpr auto W = 8;
   constexpr auto H = 8;
   constexpr auto wtiles = (W + 1) / 2;
@@ -244,112 +244,248 @@ void Transforms::WinogradTransformOut(const std::vector<float>& M,
     }
   }
 }
-
-void Transforms::WinogradConvolve3(const int outputs,
-                                   const std::vector<float>& input,
-                                   const std::vector<float>& U,
-                                   std::vector<float>& V, std::vector<float>& M,
-                                   std::vector<float>& output) {
-  constexpr unsigned int filter_len = kWinogradAlpha * kWinogradAlpha;
-  const auto input_channels = U.size() / (outputs * filter_len);
-
-  WinogradTransformIn(input, V, input_channels);
-  WinogradSgemm(U, V, M, input_channels, outputs);
-  WinogradTransformOut(M, output, outputs);
-}
-
-template <unsigned int filter_size>
-void Transforms::Convolve(size_t outputs, const std::vector<float>& input,
-                          const std::vector<float>& weights,
-                          const std::vector<float>& biases,
-                          std::vector<float>& output) {
-  // fixed for 8x8
-  constexpr unsigned int width = 8;
-  constexpr unsigned int height = 8;
-  constexpr unsigned int board_squares = width * height;
-  constexpr unsigned int filter_len = filter_size * filter_size;
-  const auto input_channels = weights.size() / (biases.size() * filter_len);
-  const auto filter_dim = filter_len * input_channels;
-  assert(outputs * board_squares == output.size());
-
-  std::vector<float> col(filter_dim * width * height);
-  Im2Col<filter_size>(input_channels, input, col);
-
-  // Weight shape (output, input, filter_size, filter_size)
-  // 96 22 3 3
-  // outputs[96,8x8] = weights[96,22x3x3] x col[22x3x3,8x8]
-  // C←αAB + βC
-  // M Number of rows in matrices A and C.
-  // N Number of columns in matrices B and C.
-  // K Number of columns in matrix A; number of rows in matrix B.
-  // lda The size of the first dimention of matrix A; if you are
-  // passing a matrix A[m][n], the value should be m.
-  //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
-  //                ldb, beta, C, N);
-
-  cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
-              // M        N            K
-              outputs, board_squares, filter_dim, 1.0f, &weights[0], filter_dim,
-              &col[0], board_squares, 0.0f, &output[0], board_squares);
-
-  for (unsigned int o = 0; o < outputs; o++) {
-    for (unsigned int b = 0; b < board_squares; b++) {
-      output[(o * board_squares) + b] =
-          biases[o] + output[(o * board_squares) + b];
+  
+  void Transforms::WinogradConvolve3(const int batch_size,
+                                     const int input_channels,
+                                     const int output_channels,
+                                     const float* input,
+                                     const float* weights,
+                                     float* V, float* M,
+                                     float* output) {
+    
+    for (int i=0; i<batch_size; i++) {
+      int input_offset=i*64*input_channels;
+      int output_offset=i*64*output_channels;
+      WinogradTransformIn(input+input_offset, V, input_channels);
+      WinogradSgemm(weights, V, M, input_channels, output_channels);
+      WinogradTransformOut(M, output+output_offset, output_channels);
     }
   }
-}
-
-void Transforms::Innerproduct(const std::vector<float>& inputs,
-                              const std::vector<float>& weights,
-                              const std::vector<float>& biases,
-                              std::vector<float>& outputs, bool apply_relu) {
-  cblas_sgemv(CblasRowMajor, CblasNoTrans,
-              // M     K
-              outputs.size(), inputs.size(), 1.0f, weights.data(),
-              inputs.size(), inputs.data(), 1, 0.0f, outputs.data(), 1);
-
-  auto lambda_ReLU = [](float val) { return (val > 0.0f) ? val : 0.0f; };
-
-  for (unsigned int o = 0; o < outputs.size(); o++) {
-    float val = biases[o] + outputs[o];
-    if (apply_relu) {
-      val = lambda_ReLU(val);
-    }
-    outputs[o] = val;
-  }
-}
-
-template <size_t spatial_size>
-void Transforms::Batchnorm(size_t channels, std::vector<float>& data,
-                           const float* means, const float* stddivs,
-                           const float* eltwise) {
-  auto lambda_ReLU = [](float val) { return (val > 0.0f) ? val : 0.0f; };
-
-  for (auto c = size_t{0}; c < channels; ++c) {
-    auto mean = means[c];
-    auto scale_stddiv = stddivs[c];
-
-    if (eltwise == nullptr) {
-      // Classical BN
-      auto arr = &data[c * spatial_size];
-      for (auto b = size_t{0}; b < spatial_size; b++) {
-        arr[b] = lambda_ReLU(scale_stddiv * (arr[b] - mean));
+  
+  template <unsigned int filter_size>
+  void Transforms::Convolve(const int batch_size,
+                            const int input_channels,
+                            const int output_channels,
+                            const float* input,
+                            const float* weights,
+                            const float* biases,
+                            float* output) {
+    // fixed for 8x8
+    constexpr unsigned int width = 8;
+    constexpr unsigned int height = 8;
+    constexpr unsigned int board_squares = width * height;
+    constexpr unsigned int filter_len = filter_size * filter_size;
+    const auto filter_dim = filter_len * input_channels;
+    
+    float col[filter_dim * width * height];
+    
+    for (int i=0; i<batch_size; i++) {
+      
+      Im2Col<filter_size>(input_channels, input, col);
+      
+      // Weight shape (output, input, filter_size, filter_size)
+      // 96 22 3 3
+      // outputs[96,8x8] = weights[96,22x3x3] x col[22x3x3,8x8]
+      // C←αAB + βC
+      // M Number of rows in matrices A and C.
+      // N Number of columns in matrices B and C.
+      // K Number of columns in matrix A; number of rows in matrix B.
+      // lda The size of the first dimention of matrix A; if you are
+      // passing a matrix A[m][n], the value should be m.
+      //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
+      //                ldb, beta, C, N);
+      
+      cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                  // M                  N            K
+                  output_channels, board_squares, filter_dim, 1.0f, weights, filter_dim,
+                  col, board_squares, 0.0f, output, board_squares);
+      
+      int index=0;
+      for (unsigned int o = 0; o < output_channels; o++) {
+        for (unsigned int b = 0; b < board_squares; b++) {
+          output[index++] += biases[o];
+        }
       }
-    } else {
-      // BN + residual add
-      auto arr = &data[c * spatial_size];
-      auto res = &eltwise[c * spatial_size];
-      for (auto b = size_t{0}; b < spatial_size; b++) {
-        arr[b] = lambda_ReLU(res[b] + (scale_stddiv * (arr[b] - mean)));
+      
+      
+      input+=64*input_channels;
+      output+=64*output_channels;
+    }
+    
+  }
+  
+  template <>
+  void Transforms::Convolve<1>(const int batch_size,
+                               const int input_channels,
+                               const int output_channels,
+                               const float* input,
+                               const float* weights,
+                               const float* biases,
+                               float* output) {
+    
+    for (int i=0; i<batch_size; i++) {
+
+      // C←αAB + βC
+      // M Number of rows in matrices A and C.
+      // N Number of columns in matrices B and C.
+      // K Number of columns in matrix A; number of rows in matrix B.
+      // lda The size of the first dimention of matrix A; if you are
+      // passing a matrix A[m][n], the value should be m.
+      //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
+      //                ldb, beta, C, N);
+
+      //             C                               A                     B
+      //
+      //           outputs             :=          weights        x      input
+      //
+      //   cols:     64 (N)                   input_channels (K)         64 (N)
+      //
+      //   rows:  output_channels (M)         output_channels (M)        input_channels (K)
+      
+
+      cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                  // M              N         K         alpha
+                  output_channels, 64, input_channels, 1.0f,
+                  // A     lda
+                  weights, input_channels,
+                  // B    ldb   beta,
+                  input,  64,  0.0f,
+                  // C   ldc
+                  output, 64);
+      
+      
+      int index=0;
+      for (unsigned int o = 0; o < output_channels; o++) {
+        for (unsigned int b = 0; b < 64; b++) {
+          output[index++] += biases[o];
+        }
       }
+      
+      input+=64*input_channels;
+      output+=64*output_channels;
+    }
+    
+  }
+  
+  
+  
+  void Transforms::Innerproduct(int batch_size,
+                                const int input_size,
+                                const int output_size,
+                                const float* inputs,
+                                const float* weights,
+                                const float* biases,
+                                bool apply_relu,
+                                float* outputs) {
+    
+    if (batch_size==1) {
+      
+      //             C                A                     B
+      //
+      //         outputs    :=     weights      x       inputs
+      //
+      //   cols:   1               input_size            1
+      //
+      //   rows  output_size      output_size          input_size
+      //
+      
+      cblas_sgemv(CblasRowMajor, CblasNoTrans,
+                  // M     K
+                  output_size, input_size, 1.0f, weights,
+                  input_size, inputs, 1, 0.0f, outputs, 1);
+    }
+    else {
+      
+      //             C                     A                         B
+      //
+      //            outputs      :=       weights        x         inputs
+      //
+      //   cols:   batch_size (N)       input_size  (K)          batch_size (N)
+      //
+      //   rows  output_size (M)        output_size (M)         input_size (K)
+      //
+
+      // C←αAB + βC
+      // M Number of rows in matrices A and C.
+      // N Number of columns in matrices B and C.
+      // K Number of columns in matrix A; number of rows in matrix B.
+      // lda The size of the first dimention of matrix A; if you are
+      // passing a matrix A[m][n], the value should be m.
+      //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
+      //                ldb, beta, C, N);
+
+      cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+                  // M              N         K         alpha
+                  output_size, batch_size, input_size, 1.0f,
+                  // A     lda
+                  weights, input_size,
+                  // B    ldb   beta,
+                  inputs,  input_size,  0.0f,
+                  // C   ldc
+                  outputs, output_size);
+
+      
+      
+    }
+    for (int i=0; i<batch_size; i++) {
+      
+      if (apply_relu) {
+        for (unsigned int o = 0; o < output_size; o++) {
+          float val = biases[o] + outputs[o];
+          outputs[o] = val>=0 ? val : 0;
+        }
+      }
+      else {
+        for (unsigned int o = 0; o < output_size; o++) {
+          outputs[o] += biases[o];
+        }
+      }
+      
+      outputs+=output_size;
+      inputs+=input_size;
+    }
+
+  
+}
+  
+  
+  
+  void Transforms::Batchnorm(const int batch_size,
+                             const int channels, float* data,
+                             const float* means, const float* stddivs,
+                             const float* eltwise) {
+    
+    for (int i=0; i<batch_size; i++) {
+      for (int c=0; c < channels; ++c) {
+        auto mean = means[c];
+        auto scale_stddiv = stddivs[c];
+        
+        if (eltwise == nullptr) {
+          // Classical BN
+          auto arr = &data[c * 64];
+          for (int b=0; b < 64; b++) {
+            float val = scale_stddiv * (arr[b] - mean);
+            arr[b] = val>0 ? val : 0;
+          }
+        } else {
+          // BN + residual add
+          auto arr = &data[c * 64];
+          auto res = &eltwise[c * 64];
+          for (int b=0; b < 64; b++) {
+            float val =res[b] + (scale_stddiv * (arr[b] - mean));
+            arr[b] = val>0 ? val : 0;
+          }
+        }
+      }
+      data+=channels*64;
+      if (eltwise!=nullptr)
+        eltwise+=channels*64;
     }
   }
-}
 
 template <unsigned long filter_size>
-void Transforms::Im2Col(const int channels, const std::vector<float>& input,
-                        std::vector<float>& output) {
+void Transforms::Im2Col(const int channels, const float* data_im,
+                        float* data_col) {
   constexpr unsigned int height = 8;
   constexpr unsigned int width = 8;
   constexpr unsigned int channel_size = height * width;
@@ -358,8 +494,6 @@ void Transforms::Im2Col(const int channels, const std::vector<float>& input,
   constexpr unsigned int output_h = height + 2 * pad - filter_size + 1;
   constexpr unsigned int output_w = width + 2 * pad - filter_size + 1;
 
-  const float* data_im = input.data();
-  float* data_col = output.data();
 
   for (int channel = channels; channel--; data_im += channel_size) {
     for (unsigned int kernel_row = 0; kernel_row < filter_size; kernel_row++) {
@@ -389,24 +523,26 @@ void Transforms::Im2Col(const int channels, const std::vector<float>& input,
   }
 }
 
-float Transforms::Innerproduct(const std::vector<float>& x,
-                               const std::vector<float>& y) {
+float Transforms::DotProduct(const int size,
+                             const float* x,
+                             const float* y) {
   // float cblas_sdot(const int __N, const float *__X, const int __incX, const
   // float *__Y, const int __incY);
-  return cblas_sdot(x.size(), &x[0], 1, &y[0], 1);
+  return cblas_sdot(size, x, 1, y, 1);
 }
 
-void Transforms::Softmax(const std::vector<float>& input,
-                         std::vector<float>& output) {
-  auto alpha = *std::max_element(begin(input), begin(input) + input.size());
+void Transforms::Softmax(const int size,
+                         const float* input,
+                         float* output) {
+  auto alpha = *std::max_element(input, input+size);
 
   auto denom = 0.0f;
-  for (auto i = size_t{0}; i < output.size(); i++) {
+  for (int i=0; i < size; i++) {
     auto val = std::exp(input[i] - alpha);
     output[i] = val;
     denom += val;
   }
-  for (auto i = size_t{0}; i < output.size(); i++) {
+  for (int i=0; i < size; i++) {
     output[i] = output[i] / denom;
   }
 }
@@ -428,23 +564,13 @@ void Transforms::InvertBatchNormStddev(std::vector<float>& weights) {
 /* Template instantiations and specializations */
 
 template <>
-void Transforms::Im2Col<1>(const int channels, const std::vector<float>& input,
-                           std::vector<float>& output) {
+void Transforms::Im2Col<1>(const int channels, const float* input,
+                           float* output) {
   constexpr unsigned int boardsize = 8;
   auto outSize = size_t{channels * boardsize * boardsize};
-  assert(output.size() == outSize);
-  std::copy(begin(input), begin(input) + outSize, begin(output));
+  std::copy(input, input + outSize, output);
 }
 
-template void Transforms::Batchnorm<64>(size_t channels,
-                                        std::vector<float>& data,
-                                        const float* means,
-                                        const float* stddivs,
-                                        const float* eltwise);
 
-template void Transforms::Convolve<1>(size_t outputs,
-                                      const std::vector<float>& input,
-                                      const std::vector<float>& weights,
-                                      const std::vector<float>& biases,
-                                      std::vector<float>& output);
+  
 }

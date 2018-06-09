@@ -141,7 +141,7 @@ class CheckNetwork : public Network {
     checkNet_ = NetworkFactory::Get()->Create("blas", weights, options);
   }
 
-  static constexpr int CHECK_PROBABILITY = 20;
+  static constexpr int CHECK_PROBABILITY = 5;
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     bool check = Random::Get().GetInt(0, CHECK_PROBABILITY) == 0;
