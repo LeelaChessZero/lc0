@@ -140,17 +140,11 @@ class OpenCLNetwork : public Network {
     const int channels = weights.input.biases.size();
     const size_t residual_blocks = weights.residual.size();
 
-    /*
-     static constexpr int NUM_VALUE_INPUT_PLANES = 32;
-     static constexpr int NUM_POLICY_INPUT_PLANES = 32;
-     static constexpr int NUM_OUTPUT_POLICY = 1858;
-     static constexpr int NUM_VALUE_CHANNELS = 128;
-     */
 
-    int NUM_VALUE_INPUT_PLANES = weights.value.bn_means.size();
-    int NUM_POLICY_INPUT_PLANES = weights.policy.bn_means.size();
-    int NUM_OUTPUT_POLICY = weights.ip_pol_b.size();
-    int NUM_VALUE_CHANNELS = weights.ip1_val_b.size();
+    int num_value_input_planes = weights.value.bn_means.size();
+    int num_policy_input_planes = weights.policy.bn_means.size();
+    int num_output_policy = weights.ip_pol_b.size();
+    int num_value_channels = weights.ip1_val_b.size();
 
     static constexpr auto kWinogradAlpha = 4;
 
@@ -226,9 +220,9 @@ class OpenCLNetwork : public Network {
     std::vector<float> bn_pol_stddivs = weights.policy.bn_stddivs;
     Transforms::InvertBatchNormStddev(bn_pol_stddivs);
 
-    opencl_net_.push_policy(channels, NUM_POLICY_INPUT_PLANES,
-                            NUM_POLICY_INPUT_PLANES * width * height,
-                            NUM_OUTPUT_POLICY, weights.policy.weights,
+    opencl_net_.push_policy(channels, num_policy_input_planes,
+                            num_policy_input_planes * width * height,
+                            num_output_policy, weights.policy.weights,
                             bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
                             weights.ip_pol_b);
 
@@ -238,9 +232,9 @@ class OpenCLNetwork : public Network {
     std::vector<float> bn_val_stddivs = weights.value.bn_stddivs;
     Transforms::InvertBatchNormStddev(bn_val_stddivs);
 
-    opencl_net_.push_value(channels, NUM_VALUE_INPUT_PLANES,
-                           NUM_VALUE_INPUT_PLANES * width * height,
-                           NUM_VALUE_CHANNELS, weights.value.weights,
+    opencl_net_.push_value(channels, num_value_input_planes,
+                           num_value_input_planes * width * height,
+                           num_value_channels, weights.value.weights,
                            bn_val_means, bn_val_stddivs, weights.ip1_val_w,
                            weights.ip1_val_b);
   }

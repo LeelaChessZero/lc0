@@ -170,20 +170,91 @@ void Transforms::WinogradTransformIn(const float* in,
     }
   }
 }
+  
+  void Transforms::WinogradSgemm(const float* weights,
+                                 float* V, float* M,
+                                 const int input_channels,
+                                 const int output_channels) {
+    constexpr auto P = 8 * 8 / kWinogradAlpha;
 
-void Transforms::WinogradSgemm(const float* U,
-                               float* V, float* M,
-                               const int C, const int K) {
-  constexpr auto P = 8 * 8 / kWinogradAlpha;
+#ifdef USE_MKL
+    
+    /*
+     void cblas_sgemm_batch (const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE* transa_array, const CBLAS_TRANSPOSE* transb_array, const MKL_INT* m_array, const MKL_INT* n_array, const MKL_INT* k_array, const float* alpha_array, const float **a_array, const MKL_INT* lda_array, const float **b_array, const MKL_INT* ldb_array, const float* beta_array, float **c_array, const MKL_INT* ldc_array, const MKL_INT group_count, const MKL_INT* group_size);
+     */
+    
+    
+    CBLAS_TRANSPOSE transA=CblasTrans;
+    CBLAS_TRANSPOSE transB=CblasNoTrans;
+    int m_array=output_channels;
+    int n_array=P;
+    int k_array=input_channels;
+    float alpha_array=1.0;
+    const float* a_array[kWinogradTile];
+    int lda_array=output_channels;
+    const float* b_array[kWinogradTile];
+    int ldb_array=P;
+    float* c_array[kWinogradTile];
+    int ldc_array=P;
+    float beta_array=0.0;
+    int groupSize=kWinogradTile;
+    
+    for (auto b = 0; b < kWinogradTile; b++) {
+      auto offset_u = b * output_channels * input_channels;
+      auto offset_v = b * input_channels * P;
+      auto offset_m = b * output_channels * P;
+      
+      a_array[b]=&weights[offset_u];
+      b_array[b]=&V[offset_v];
+      c_array[b]=&M[offset_m];
+    }
+    
+    cblas_sgemm_batch(CblasRowMajor, &transA, &transB,
+                      &m_array, &n_array, &k_array, &alpha_array,
+                      a_array, &lda_array,
+                      b_array, &ldb_array, &beta_array,
+                      c_array, &ldc_array,
+                      1, &groupSize);
 
-  for (auto b = 0; b < kWinogradTile; b++) {
-    auto offset_u = b * K * C;
-    auto offset_v = b * C * P;
-    auto offset_m = b * K * P;
 
-    cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, K, P, C, 1.0f,
-                &U[offset_u], K, &V[offset_v], P, 0.0f, &M[offset_m], P);
-  }
+#else
+    
+    
+      for (auto b = 0; b < kWinogradTile; b++) {
+        auto offset_u = b * output_channels * input_channels;
+        auto offset_v = b * input_channels * P;
+        auto offset_m = b * output_channels * P;
+
+        
+        //           M                 =         weights(T)           x     V
+        //
+        // cols      P                        input_channels              P
+        // rows      output_channels          output_channels            input_channels
+        
+       cblas_sgemm(// Format       trans W       transV
+                      CblasRowMajor, CblasTrans, CblasNoTrans,
+                      // rows W, M     cols V, M     cols W, rows V       alpha
+                      output_channels,      P,         input_channels,     1.0f,
+                      // W         ldW
+                      &weights[offset_u], output_channels,
+                      // V         ldV   beta
+                      &V[offset_v], P,  0.0f,
+                      // M         ldM
+                      &M[offset_m], P);
+   
+/* Also possible
+ 
+        cblas_sgemm(CblasColMajor, CblasNoTrans, CblasTrans,
+                    P,      output_channels,         input_channels,     1.0f,
+                    &V[offset_v], P,
+                    &weights[offset_u], output_channels, 0.0f,
+                    &M[offset_m], P);
+*/
+      }
+
+#endif
+    
+ 
 }
 
 void Transforms::WinogradTransformOut(const float* M,
@@ -193,6 +264,8 @@ void Transforms::WinogradTransformOut(const float* M,
   constexpr auto wtiles = (W + 1) / 2;
   constexpr auto P = wtiles * wtiles;
 
+  float temp_m[kWinogradTile];
+
   for (auto k = 0; k < K; k++) {
     for (auto block_x = 0; block_x < wtiles; block_x++) {
       for (auto block_y = 0; block_y < wtiles; block_y++) {
@@ -200,7 +273,6 @@ void Transforms::WinogradTransformOut(const float* M,
         const auto y = 2 * block_y;
 
         const auto b = block_y * wtiles + block_x;
-        std::array<float, kWinogradTile> temp_m;
         for (auto xi = 0; xi < kWinogradAlpha; xi++) {
           for (auto nu = 0; nu < kWinogradAlpha; nu++) {
             temp_m[xi * kWinogradAlpha + nu] =
@@ -253,9 +325,6 @@ void Transforms::WinogradTransformOut(const float* M,
                                      float* V, float* M,
                                      float* output) {
     
- 
-    
-    
     for (int i=0; i<batch_size; i++) {
       int input_offset=i*64*input_channels;
       int output_offset=i*64*output_channels;
@@ -263,7 +332,9 @@ void Transforms::WinogradTransformOut(const float* M,
       WinogradTransformIn(input+input_offset, V, input_channels);
       WinogradSgemm(weights, V, M, input_channels, output_channels);
       WinogradTransformOut(M, output+output_offset, output_channels);
+
     }
+    
   }
   
   template <unsigned int filter_size>
@@ -384,6 +455,8 @@ void Transforms::WinogradTransformOut(const float* M,
     
     if (batch_size==1) {
       
+      // Just matrix-vecttor multplication
+      //
       //             C                A                     B
       //
       //         outputs    :=     weights      x       inputs
@@ -400,6 +473,8 @@ void Transforms::WinogradTransformOut(const float* M,
     }
     else {
       
+      // matrix-matrix multplication
+      //
       //             C                     A                         B
       //
       //            outputs      :=       weights        x         inputs
