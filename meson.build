@@ -202,7 +202,7 @@ if get_option('build_backends')
     ]
 
     if not get_option('blas')
-      opencl_files += 'src/neural/transforms.cc'
+      opencl_files += 'src/neural/BLAS/transforms.cc'
     endif
 
     files += opencl_files
