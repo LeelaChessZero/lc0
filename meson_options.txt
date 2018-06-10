@@ -62,3 +62,18 @@ option('tf',
        type: 'boolean',
        value: true,
        description: 'Enable TensorFlow backend')
+
+option('openblas',
+       type: 'boolean',
+       value: true,
+       description: 'Enable OpenBLAS support')
+
+option('mkl',
+       type: 'boolean',
+       value: true,
+       description: 'Enable MKL BLAS support')
+
+option('accelerate',
+       type: 'boolean',
+       value: true,
+       description: 'Enable Accelerate BLAS support')
