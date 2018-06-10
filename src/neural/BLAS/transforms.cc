@@ -430,7 +430,7 @@ void Transforms::WinogradTransformOut(const float* M,
       
       
       int index=0;
-      for (unsigned int o = 0; o < output_channels; o++) {
+      for (int o = 0; o < output_channels; o++) {
         for (unsigned int b = 0; b < 64; b++) {
           output[index++] += biases[o];
         }
@@ -509,13 +509,13 @@ void Transforms::WinogradTransformOut(const float* M,
     for (int i=0; i<batch_size; i++) {
       
       if (apply_relu) {
-        for (unsigned int o = 0; o < output_size; o++) {
+        for (int o = 0; o < output_size; o++) {
           float val = biases[o] + outputs[o];
           outputs[o] = val>=0 ? val : 0;
         }
       }
       else {
-        for (unsigned int o = 0; o < output_size; o++) {
+        for (int o = 0; o < output_size; o++) {
           outputs[o] += biases[o];
         }
       }
