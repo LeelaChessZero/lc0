@@ -193,20 +193,24 @@ if get_option('build_backends')
   endif
   
 
-  if get_option('opencl') and has_opencl and has_blas
+  if get_option('opencl') and has_opencl
 
-    opencl_files = [
-    'src/neural/CL/OpenCL.cc',
-    'src/neural/CL/OpenCLTuner.cc',
-    'src/neural/network_opencl.cc',
-    ]
+    if has_blas
+      opencl_files = [
+      'src/neural/CL/OpenCL.cc',
+      'src/neural/CL/OpenCLTuner.cc',
+      'src/neural/network_opencl.cc',
+      ]
 
-    if not get_option('blas')
-      opencl_files += 'src/neural/BLAS/transforms.cc'
+      if not get_option('blas')
+        opencl_files += 'src/neural/BLAS/transforms.cc'
+      endif
+
+      files += opencl_files
+      has_backends = true
+    else
+      warning('The OpenCL backend requires a BLAS library')
     endif
-
-    files += opencl_files
-    has_backends = true
 
   endif
 
