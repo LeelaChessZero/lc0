@@ -23,6 +23,14 @@
 
 namespace lczero {
 
+namespace{
+const char* kReuseTreeeStr = "Reuse the node statistics between moves";
+}
+
+void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
+  options->Add<BoolOption>(kReuseTreeeStr, "reuse-tree") = true;
+}
+
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree)
     : options_{player1, player2} {
@@ -49,6 +57,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
 
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
+    if (!options_[idx].uci_options->Get<bool>(kReuseTreeeStr)) {
+      tree_[idx]->TrimTreeAtHead();
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;

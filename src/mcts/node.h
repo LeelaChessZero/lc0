@@ -195,6 +195,9 @@ class NodeTree {
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
   void MakeMove(Move move);
+  // Resets the current head to ensure it doesn't carry over details from a
+  // previous search.
+  void TrimTreeAtHead();
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)
