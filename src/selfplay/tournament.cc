@@ -143,7 +143,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(
       options.GetSubdict("player1").Get<int>(kNnCacheSizeStr));
-  if (kShareTree || networks_[0] == networks_[1]) {
+  if (kShareTree) {
     cache_[1] = cache_[0];
   } else {
     cache_[1] = std::make_shared<NNCache>(
