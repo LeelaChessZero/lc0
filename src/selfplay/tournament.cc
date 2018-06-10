@@ -28,7 +28,6 @@ namespace lczero {
 
 namespace {
 const char* kShareTreesStr = "Share game trees for two players";
-const char* kReuseTreeeStr = "Reuse the node statistics between moves.";
 const char* kTotalGamesStr = "Number of games to play";
 const char* kParallelGamesStr = "Number of games to play in parallel";
 const char* kThreadsStr = "Number of CPU threads for every game";
@@ -52,7 +51,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player2");
 
   options->Add<BoolOption>(kShareTreesStr, "share-trees") = false;
-  options->Add<BoolOption>(kReuseTreeeStr, "reuse-tree") = true;
   options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
   options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 8;
   options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
@@ -69,6 +67,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
 
   Search::PopulateUciParams(options);
+  SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch size
   defaults->Set<bool>(Search::kSmartPruningStr, false);  // No smart pruning
@@ -94,7 +93,6 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       },
       kTotalGames(options.Get<int>(kTotalGamesStr)),
       kShareTree(options.Get<bool>(kShareTreesStr)),
-      kReuseTree(options.Get<bool>(kReuseTreeeStr)),
       kParallelism(options.Get<int>(kParallelGamesStr)),
       kTraining(options.Get<bool>(kTrainingStr)) {
   // If playing just one game, the player1 is white, otherwise randomize.
@@ -230,7 +228,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   {
     Mutex::Lock lock(mutex_);
     games_.emplace_front(
-        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree, kReuseTree));
+        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
     game_iter = games_.begin();
   }
   auto& game = **game_iter;
