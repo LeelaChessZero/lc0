@@ -24,8 +24,8 @@
 namespace lczero {
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree, bool no_tree_reuse)
-    : options_{player1, player2}, no_tree_reuse_(no_tree_reuse) {
+                           bool shared_tree, bool reuse_tree)
+    : options_{player1, player2}, reuse_tree_(reuse_tree) {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartingFen, {});
 
@@ -68,8 +68,16 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
 
     // Add best move to the tree.
     Move move = search_->GetBestMove().first;
-    tree_[0]->MakeMove(move, no_tree_reuse_);
-    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move, no_tree_reuse_);
+    tree_[0]->MakeMove(move);
+    if (!reuse_tree_) {
+      tree_[0]->TrimTreeAtHead();
+    }
+    if (tree_[0] != tree_[1]) {
+      tree_[1]->MakeMove(move);
+      if (!reuse_tree_) {
+        tree_[1]->TrimTreeAtHead();
+      }
+    }
     blacks_move = !blacks_move;
   }
 }

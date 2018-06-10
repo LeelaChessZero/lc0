@@ -194,8 +194,8 @@ class NodeTree {
  public:
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
-  // If no_tree_reuse is true, ensures the new head is pristine.
-  void MakeMove(Move move, bool no_tree_reuse = false);
+  void MakeMove(Move move);
+  void TrimTreeAtHead();
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)

@@ -370,7 +370,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   return result;
 }
 
-void NodeTree::MakeMove(Move move, bool no_tree_reuse) {
+void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
   Node* new_head = nullptr;
@@ -382,11 +382,12 @@ void NodeTree::MakeMove(Move move, bool no_tree_reuse) {
   }
   gNodePool.ReleaseAllChildrenExceptOne(current_head_, new_head);
   current_head_ = new_head ? new_head : current_head_->CreateChild(move);
-  if (no_tree_reuse) {
-    gNodePool.ReleaseChildren(current_head_);
-    current_head_->ResetStats();
-  }
   history_.Append(move);
+}
+
+void NodeTree::TrimTreeAtHead() {
+  gNodePool.ReleaseChildren(current_head_);
+  current_head_->ResetStats();
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
