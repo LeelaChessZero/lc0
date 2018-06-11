@@ -37,13 +37,16 @@ class Transforms {
                                                const int outputs,
                                                const int channels);
 
-  static void WinogradTransformIn(const float* in,
+  static void WinogradTransformIn(const int batch_size,
+                                  const float* in,
                                   float* V, const int C);
 
-  static void WinogradSgemm(const float* U, float* V,
+  static void WinogradSgemm(int batch_size,
+                            const float* U, float* V,
                             float* M, const int C, const int K);
 
-  static void WinogradTransformOut(const float* M,
+  static void WinogradTransformOut(const int batch_size,
+                                   const float* M,
                                    float* Y, const int K);
 
   static void WinogradConvolve3(const int batch_size,
