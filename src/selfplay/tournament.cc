@@ -67,6 +67,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
 
   Search::PopulateUciParams(options);
+  SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch size
   defaults->Set<bool>(Search::kSmartPruningStr, false);  // No smart pruning

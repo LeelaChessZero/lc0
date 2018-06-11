@@ -37,6 +37,7 @@ struct SearchLimits {
   std::int64_t playouts = -1;
   std::int64_t time_ms = -1;
   bool infinite = false;
+  MoveList searchmoves;
 };
 
 class Search {
@@ -91,6 +92,11 @@ class Search {
 
  private:
   std::pair<Move, Move> GetBestMoveInternal() const;
+
+  // Returns a child with most visits.
+  Node* GetBestChild(Node* parent) const;
+  Node* GetBestChildWithTemperature(Node* parent, float temperature) const;
+
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();

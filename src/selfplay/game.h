@@ -51,6 +51,9 @@ class SelfPlayGame {
   // and white (useful i.e. when they use different networks).
   SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree);
 
+  // Populate command line options that it uses.
+  static void PopulateUciParams(OptionsParser* options);
+
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads);
   // Aborts the game currently played, doesn't matter if it's synchronous or
