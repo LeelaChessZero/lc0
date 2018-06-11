@@ -90,20 +90,20 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
   void Transforms::WinogradTransformIn(const int batch_size,
                                        const float* input1,
                                        float* V1, const int channels) {
-    constexpr auto W = 8;
-    constexpr auto H = 8;
-    constexpr auto wtiles = (W + 1) / 2;
+    constexpr auto width = 8;
+    constexpr auto height = 8;
+    constexpr auto wtiles = (width + 1) / 2;
     constexpr auto tiles = wtiles * wtiles;
     
     float x[kWinogradAlpha][kWinogradAlpha];
     float T1[kWinogradAlpha][kWinogradAlpha];
     float T2[kWinogradAlpha][kWinogradAlpha];
     
-    for (int batch_index=0; batch_index<batch_size; batch_index++) {
+    for (auto batch_index=0; batch_index<batch_size; batch_index++) {
       float* V=V1+batch_index*(tiles*kWinogradTile*channels);
-      const float* input=input1+batch_index*W*H*channels;
-      
+      const float* input=input1+batch_index*width*height*channels;
       for (auto channel = 0; channel < channels; channel++) {
+        
         for (auto block_y = 0; block_y < wtiles; block_y++) {
           for (auto block_x = 0; block_x < wtiles; block_x++) {
             // Tiles overlap by 2
@@ -113,9 +113,9 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
             
             for (auto i = 0; i < kWinogradAlpha; i++) {
               for (auto j = 0; j < kWinogradAlpha; j++) {
-                if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < H &&
-                    (xin + j) < W) {
-                  x[i][j] = input[channel * (W * H) + (yin + i) * W + (xin + j)];
+                if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < height &&
+                    (xin + j) < width) {
+                  x[i][j] = input[channel * (width * height) + (yin + i) * width + (xin + j)];
                 } else {
                   x[i][j] = 0.0f;
                 }
@@ -183,8 +183,8 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
                                  const int input_channels,
                                  const int output_channels) {
     
-    constexpr int width = 8;
-    constexpr int height = 8;
+    constexpr auto width = 8;
+    constexpr auto height = 8;
     constexpr auto tiles = width * height / kWinogradAlpha;
     
 #ifdef USE_MKL
@@ -281,11 +281,11 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
     
     float temp_m[kWinogradTile];
     
-    for (int batch_index=0; batch_index<batch_size; batch_index++) {
+    for (auto batch_index=0; batch_index<batch_size; batch_index++) {
       const float* M=Mbatch+batch_index*(tiles*kWinogradTile*channels);
       float* Y=output+batch_index*width*height*channels;
       
-      for (auto k = 0; k < channels; k++) {
+      for (auto channel = 0; channel < channels; channel++) {
         for (auto block_x = 0; block_x < wtiles; block_x++) {
           for (auto block_y = 0; block_y < wtiles; block_y++) {
             const auto x = 2 * block_x;
@@ -295,7 +295,7 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
             for (auto xi = 0; xi < kWinogradAlpha; xi++) {
               for (auto nu = 0; nu < kWinogradAlpha; nu++) {
                 temp_m[xi * kWinogradAlpha + nu] =
-                M[xi * (kWinogradAlpha * channels * tiles) + nu * (channels * tiles) + k * tiles + b];
+                M[xi * (kWinogradAlpha * channels * tiles) + nu * (channels * tiles) + channel * tiles + b];
               }
             }
             
@@ -321,14 +321,14 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
             temp_m[2 * 4 + 1] + temp_m[2 * 4 + 2] + temp_m[2 * 4 + 3] -
             temp_m[3 * 4 + 1] + temp_m[3 * 4 + 2] + temp_m[3 * 4 + 3];
             
-            Y[k * (height * width) + (y)*width + (x)] = o11;
+            Y[channel * (height * width) + (y)*width + (x)] = o11;
             if (x + 1 < width) {
-              Y[k * (height * width) + (y)*width + (x + 1)] = o12;
+              Y[channel * (height * width) + (y)*width + (x + 1)] = o12;
             }
             if (y + 1 < height) {
-              Y[k * (height * width) + (y + 1) * width + (x)] = o21;
+              Y[channel * (height * width) + (y + 1) * width + (x)] = o21;
               if (x + 1 < width) {
-                Y[k * (height * width) + (y + 1) * width + (x + 1)] = o22;
+                Y[channel * (height * width) + (y + 1) * width + (x + 1)] = o22;
               }
             }
           }
