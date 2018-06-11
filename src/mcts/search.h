@@ -89,6 +89,7 @@ class Search {
   static const char* kExtraVirtualLossStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kDepthOneValueModeStr;
 
  private:
   std::pair<Move, Move> GetBestMoveInternal() const;
@@ -155,6 +156,7 @@ class Search {
   const float kExtraVirtualLoss;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const bool kDepthOneValueMode;
 
   friend class SearchWorker;
 };

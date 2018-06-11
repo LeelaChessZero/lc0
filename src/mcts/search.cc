@@ -49,6 +49,8 @@ const char* Search::kExtraVirtualLossStr = "Extra virtual loss";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+const char* Search::kDepthOneValueModeStr =
+    "Picks move based on value eval at depth 1";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -83,6 +85,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
+  options->Add<BoolOption>(kDepthOneValueModeStr, "depth-one-value-mode") =
+      false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -111,7 +115,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kExtraVirtualLoss(options.Get<float>(kExtraVirtualLossStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kDepthOneValueMode(options.Get<bool>(kDepthOneValueModeStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -554,6 +559,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
             : -node->GetQ(0, search_->kExtraVirtualLoss) -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
     for (Node* child : node->Children()) {
+      // Never want to visit anywhere more than once if trying for a depth one
+      // value evaluation. Doing this before the next if statement means batch
+      // gathering terminates when there are no more unvisited children due to
+      // the possible_moves count not ever getting incremented.
+      if (search_->kDepthOneValueMode && child->GetN() > 0) continue;
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
         // remaining playouts, don't consider it.
