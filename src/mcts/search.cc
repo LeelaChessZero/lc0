@@ -544,6 +544,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       if (!node->TryStartScoreUpdate()) return {node, true};
       // Unexamined leaf node. We've hit the end of this playout.
       if (!node->HasChildren()) return {node, false};
+      // In depth one value mode the only way we can get here is if there are
+      // no more children to pick from - so this can be treated like a
+      // collision.
+      if (search_->kDepthOneValueMode && !is_root_node) return {node, true};
       // If we fall through, then n_in_flight_ has been incremented but this
       // playout remains incomplete; we must go deeper.
     }
@@ -596,7 +600,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       }
     }
     history_.Append(node->GetMove());
-    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
+    if (is_root_node && possible_moves <= 1 &&
+        (search_->kDepthOneValueMode || !search_->limits_.infinite)) {
       // If there is only one move theoretically possible within remaining time,
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
