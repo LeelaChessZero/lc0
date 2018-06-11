@@ -200,6 +200,11 @@ void UciLoop::SendResponse(const std::string& response) {
   std::cout << response << std::endl;
 }
 
+void UciLoop::SendId() {
+  SendResponse("id name The Lc0 chess engine. v0.13");
+  SendResponse("id author The LCZero Authors.");
+}
+
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
   std::string res = "bestmove " + move.bestmove.as_string();
   if (move.ponder) res += " ponder " + move.ponder.as_string();

@@ -40,6 +40,9 @@ void SelfPlayLoop::RunLoop() {
   if (options_.GetOptionsDict().Get<bool>(kInteractive)) {
     UciLoop::RunLoop();
   } else {
+    // Send id before starting tournament to allow wrapping client to know
+    // who we are.
+    SendId();
     SelfPlayTournament tournament(
         options_.GetOptionsDict(),
         std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
@@ -51,8 +54,7 @@ void SelfPlayLoop::RunLoop() {
 }
 
 void SelfPlayLoop::CmdUci() {
-  SendResponse("id name The Lc0 chess engine.");
-  SendResponse("id author The LCZero Authors.");
+  SendId();
   for (const auto& option : options_.ListOptionsUci()) {
     SendResponse(option);
   }

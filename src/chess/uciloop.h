@@ -49,6 +49,7 @@ class UciLoop {
   virtual void SendResponse(const std::string& response);
   void SendBestMove(const BestMoveInfo& move);
   void SendInfo(const ThinkingInfo& info);
+  void SendId();
 
   // Command handlers.
   virtual void CmdUci() { throw Exception("Not supported"); }
