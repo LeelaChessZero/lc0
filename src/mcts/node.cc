@@ -264,8 +264,7 @@ std::string Node::DebugString() const {
   oss << "Move: " << move_.as_string() << " Term:" << is_terminal_
       << " This:" << this << " Parent:" << parent_ << " child:" << child_
       << " sibling:" << sibling_ << " P:" << p_ << " Q:" << q_ << " W:" << w_
-      << " N:" << n_ << " N_:" << n_in_flight_ << " nleaves:" << num_leaves_ << "\n";
-  //for (Node* child : Children()) { oss << child->DebugString(); }
+      << " N:" << n_ << " N_:" << n_in_flight_ << " nleaves:" << num_leaves_;
   return oss.str();
 }
 
@@ -323,7 +322,8 @@ uint16_t Node::GetAverageDepth() const {
   assert(n_ > 0);
   double branchfactor = (double)(n_ - 1) / (double)(n_ - num_leaves_);
   double depth = std::log((double)n_) / std::log(branchfactor);
-  std::cerr << "Branch factor: " << branchfactor << " Depth: " << depth << "\n";
+  // TODO: return a pair of depth and branch factor?
+  //std::cerr << "Branch factor: " << branchfactor << " Depth: " << depth << "\n";
   // at small tree sizes, whacky stuff happens with the log
   return std::min((uint16_t)std::floor(depth), GetMaxDepth());
 }

@@ -213,8 +213,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
        iter = GetBestChild(iter), flip = !flip) {
     uci_info_.pv.push_back(iter->GetMove(flip));
   }
-  //std::ostringstream comment;
-  //comment << "branchfactor " << TODO; // todo: top 5 moves visits and value
   uci_info_.comment.clear();
   info_callback_(uci_info_);
 }
@@ -281,7 +279,6 @@ void Search::SendMovesStats() const {
     info.comment = oss.str();
     info_callback_(info);
   }
-  //std::cout << root_node_->DebugString();
 }
 
 void Search::MaybeTriggerStop() {
@@ -302,6 +299,10 @@ void Search::MaybeTriggerStop() {
       total_playouts_ + initial_visits_ >= limits_.visits) {
     stop_ = true;
   }
+  // Stop if reached depth limit.
+  if (limits_.depth >= 0 && root_node_->GetAverageDepth() > limits_.depth) {
+    stop_ = true;
+  }
   // Stop if reached time limit.
   if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
     stop_ = true;
@@ -312,7 +313,6 @@ void Search::MaybeTriggerStop() {
     if (kVerboseStats) SendMovesStats();
     best_move_ = GetBestMoveInternal();
     best_move_callback_({best_move_.first, best_move_.second});
-    //std::cout << root_node_->DebugString();
     responded_bestmove_ = true;
     best_move_node_ = nullptr;
   }
@@ -354,6 +354,7 @@ void Search::UpdateRemainingMoves() {
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
   }
+  // TODO: create estimated remaining_playouts if limits_.depth >= 0?
   // Even if we exceeded limits, don't go crazy by not allowing any playouts.
   if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
 }
@@ -853,7 +854,6 @@ void SearchWorker::DoBackupUpdate() {
       }
     }
     ++search_->total_playouts_;
-    //std::cout << node->DebugString();
   }
 }
 
