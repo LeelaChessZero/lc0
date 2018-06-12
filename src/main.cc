@@ -17,7 +17,6 @@
 */
 
 #include <iostream>
-#include "analyzer/analyzer.h"
 #include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
@@ -30,16 +29,11 @@ int main(int argc, const char** argv) {
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
   CommandLine::RegisterMode("selfplay", "Play games with itself");
-  CommandLine::RegisterMode("debug", "Generate debug data for a position");
 
   if (CommandLine::ConsumeCommand("selfplay")) {
     // Selfplay mode.
     SelfPlayLoop loop;
     loop.RunLoop();
-  } else if (CommandLine::ConsumeCommand("debug")) {
-    // Runs analyzer mode.
-    Analyzer analyzer;
-    analyzer.Run();
   } else {
     // Consuming optional "uci" mode.
     CommandLine::ConsumeCommand("uci");
