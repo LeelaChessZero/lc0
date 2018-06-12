@@ -28,7 +28,7 @@
 #include <utility>
 #include "utils/exception.h"
 #include "utils/string.h"
-#include "../version.inc"
+#include "version.inc"
 
 namespace lczero {
 
