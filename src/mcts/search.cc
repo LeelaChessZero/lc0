@@ -296,6 +296,18 @@ void Search::UpdateRemainingMoves() {
   if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
 }
 
+// Return the evaluation of the actual best child, regardless of temperature
+// settings. This differs from GetBestMove, which does obey any temperature
+// settings. So, somethimes, they may return results of different moves.
+float Search::GetBestEval() const {
+  SharedMutex::SharedLock lock(nodes_mutex_);
+  Mutex::Lock counters_lock(counters_mutex_);
+  float parent_q = -root_node_->GetQ(0, 0);
+  if (!root_node_->HasChildren()) return parent_q;
+  Node* best_node = GetBestChildNoTemperature(root_node_);
+  return best_node->GetQ(parent_q, 0);
+}
+
 std::pair<Move, Move> Search::GetBestMove() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);

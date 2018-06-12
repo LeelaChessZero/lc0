@@ -80,7 +80,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
         GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
 
     const float resignpct =
-            options_[idx].uci_options->Get<float>(kResignPctStr);
+            options_[idx].uci_options->Get<float>(kResignPctStr) / 100;
     if (resignpct > 0) {
       float eval = search_->GetBestEval();
       eval = (eval + 1) / 2;
