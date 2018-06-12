@@ -282,7 +282,7 @@ namespace lczero {
         //            batch x wtile x channel x tiles
         // we need
         //
-        //            wtile x batch x channel x tiles
+        //            wtile x batch x tiles x channel
         
         
         cblas_sgemm(// Format       trans W       transV
