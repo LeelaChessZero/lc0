@@ -40,7 +40,8 @@ const char* kTrainingStr = "Write training data";
 const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
 const char* kVerboseThinkingStr = "Show verbose thinking messages";
-const char* kResignPlaythroughStr = "What percentage of games ignore resign";
+const char* kResignPlaythroughStr =
+              "The percentage of games which ignore resign";
 
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
@@ -66,8 +67,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
       "multiplexing";
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
   options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
-  options->Add<FloatOption>(kResignPlaythroughStr, 0, 100, "resign-playthrough")
-                                                                    = 0.0f;
+  options->Add<FloatOption>(kResignPlaythroughStr, 0.0f, 100.0f,
+                            "resign-playthrough") = 0.0f;
 
   Search::PopulateUciParams(options);
   SelfPlayGame::PopulateUciParams(options);
@@ -237,13 +238,13 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
   auto& game = **game_iter;
 
-  bool use_resign = true;
+  bool disable_resign = false;
   if (kResignPlaythrough > 0) {
-    use_resign = Random::Get().GetFloat(100) >= kResignPlaythrough;
+    disable_resign = Random::Get().GetFloat(100.0f) < kResignPlaythrough;
   }
 
   // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], use_resign);
+  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], disable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {

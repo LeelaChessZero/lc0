@@ -25,12 +25,13 @@ namespace lczero {
 
 namespace{
 const char* kReuseTreeStr = "Reuse the node statistics between moves";
-const char* kResignPctStr = "Resign when win percentage drops below n";
+const char* kResignPercentageStr = "Resign when win percentage drops below n";
 }
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeStr, "reuse-tree") = false;
-  options->Add<FloatOption>(kResignPctStr, 0, 100, "resignpct", 'r')  = 0.0f;
+  options->Add<FloatOption>(kResignPercentageStr, 0.0f, 100.0f,
+                            "resign-percentage", 'r')  = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
@@ -47,7 +48,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
   }
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads, bool use_resign) {
+void SelfPlayGame::Play(int white_threads, int black_threads, bool disable_resign) {
   bool blacks_move = false;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -79,9 +80,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool use_resign) {
     training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
         GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
 
-    if (use_resign) {
+    if (!disable_resign) {
       const float resignpct =
-              options_[idx].uci_options->Get<float>(kResignPctStr) / 100;
+              options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
       if (resignpct > 0) {
         float eval = search_->GetBestEval();
         eval = (eval + 1) / 2;
