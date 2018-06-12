@@ -51,7 +51,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player1");
   options->AddContext("player2");
 
-  options->Add<BoolOption>(kShareTreesStr, "share-trees") = false;
+  options->Add<BoolOption>(kShareTreesStr, "share-trees") = true;
   options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
   options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 8;
   options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;

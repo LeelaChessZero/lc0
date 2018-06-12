@@ -29,7 +29,7 @@ const char* kResignPctStr = "Resign when win percentage drops below n";
 }
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
-  options->Add<BoolOption>(kReuseTreeeStr, "reuse-tree") = true;
+  options->Add<BoolOption>(kReuseTreeeStr, "reuse-tree") = false;
   options->Add<FloatOption>(kResignPctStr, 0, 100, "resignpct", 'r')  = 0.0f;
 }
 
