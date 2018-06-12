@@ -47,7 +47,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
   }
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads) {
+void SelfPlayGame::Play(int white_threads, int black_threads, bool use_resign) {
   bool blacks_move = false;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -79,15 +79,17 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
     training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
         GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
 
-    const float resignpct =
-            options_[idx].uci_options->Get<float>(kResignPctStr) / 100;
-    if (resignpct > 0) {
-      float eval = search_->GetBestEval();
-      eval = (eval + 1) / 2;
-      if (eval < resignpct) {
-        game_result_ = blacks_move ? GameResult::WHITE_WON
-                                   : GameResult::BLACK_WON;
-        break;
+    if (use_resign) {
+      const float resignpct =
+              options_[idx].uci_options->Get<float>(kResignPctStr) / 100;
+      if (resignpct > 0) {
+        float eval = search_->GetBestEval();
+        eval = (eval + 1) / 2;
+        if (eval < resignpct) {
+          game_result_ = blacks_move ? GameResult::WHITE_WON
+                                     : GameResult::BLACK_WON;
+          break;
+        }
       }
     }
 
