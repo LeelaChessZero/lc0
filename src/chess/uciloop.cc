@@ -28,6 +28,7 @@
 #include <utility>
 #include "utils/exception.h"
 #include "utils/string.h"
+#include "../version.inc"
 
 namespace lczero {
 
@@ -201,7 +202,7 @@ void UciLoop::SendResponse(const std::string& response) {
 }
 
 void UciLoop::SendId() {
-  SendResponse("id name The Lc0 chess engine. v0.13");
+  SendResponse("id name The Lc0 chess engine. " LC0_VERSION_STRING);
   SendResponse("id author The LCZero Authors.");
 }
 

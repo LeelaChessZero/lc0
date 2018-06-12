@@ -1,0 +1,9 @@
+#define LC0_VERSION_MAJOR 0
+#define LC0_VERSION_MINOR 13
+#define LC0_VERSION_PATCH 0
+#define STR_INNER(a) #a
+#define STR(a) STR_INNER(a)
+#define LC0_VERSION_STRING     \
+    "v" STR(LC0_VERSION_MAJOR) \
+    "." STR(LC0_VERSION_MINOR) \
+    "." STR(LC0_VERSION_PATCH)
