@@ -25,10 +25,12 @@ namespace lczero {
 
 namespace{
 const char* kReuseTreeeStr = "Reuse the node statistics between moves";
+const char* kResignPctStr = "Resign when win percentage drops below n";
 }
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeeStr, "reuse-tree") = true;
+  options->Add<FloatOption>(kResignPctStr, 0, 100, "resignpct", 'r')  = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
@@ -77,8 +79,17 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
     training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
         GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
 
+    auto move_data = search_->GetBestMove();
+    auto move = std::get<0>(move_data);
+
+    // Resign if practical.
+    if (std::get<2>(move_data)) {
+      game_result_ = blacks_move ?
+        GameResult::WHITE_WON : GameResult::BLACK_WON;
+      break;
+    }
+
     // Add best move to the tree.
-    Move move = search_->GetBestMove().first;
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
