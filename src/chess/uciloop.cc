@@ -201,10 +201,20 @@ void UciLoop::SendResponse(const std::string& response) {
   std::cout << response << std::endl;
 }
 
+#define STR_INNER(a) #a
+#define STR(a) STR_INNER(a)
+#define LC0_VERSION_STRING     \
+    "v" STR(LC0_VERSION_MAJOR) \
+    "." STR(LC0_VERSION_MINOR) \
+    "." STR(LC0_VERSION_PATCH)
+
 void UciLoop::SendId() {
   SendResponse("id name The Lc0 chess engine. " LC0_VERSION_STRING);
   SendResponse("id author The LCZero Authors.");
 }
+#undef STR_INNER
+#undef STR
+#undef LC0_VERSION_STRING
 
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
   std::string res = "bestmove " + move.bestmove.as_string();
