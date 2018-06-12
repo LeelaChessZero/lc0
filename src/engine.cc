@@ -37,9 +37,11 @@ const char* kDebugLogStr = "Do debug logging into file";
 const char* kWeightsStr = "Network weights file path";
 const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
+const char* kSlowMoverStr = "Scale thinking time";
 const char* kMoveOverheadStr = "Move time overhead in milliseconds";
 const char* kTimeCurvePeak = "Time weight curve peak ply";
-const char* kTimeCurveWidth = "Time weight curve peak width";
+const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
+const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
 
 const char* kAutoDiscover = "<autodiscover>";
 }  // namespace
@@ -65,11 +67,14 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 1.8f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
-  options->Add<FloatOption>(kTimeCurvePeak, 0.0f, 1000.0f, "time-curve-peak") =
-      28.0f;
-  options->Add<FloatOption>(kTimeCurveWidth, 0.0f, 1000.0f,
-                            "time-curve-width") = 25.0f;
+  options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
+                            "time-curve-peak") = 41.0f;
+  options->Add<FloatOption>(kTimeCurveLeftWidth, 0.0f, 1000.0f,
+                            "time-curve-left-width") = 1000.0f;
+  options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
+                            "time-curve-right-width") = 39.5f;
 
   Search::PopulateUciParams(options);
 
@@ -82,9 +87,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
-double move_weight(int ply, float peak, float width) {
-  return std::exp(-std::exp(-((ply - peak - 1) / width)) -
-                  ((ply - peak - 1) / width) + 1.0f);
+double move_weight(int ply, float peak, float left_width, float right_width) {
+  const float width = ply > peak ? right_width : left_width;
+  constexpr float width_scaler = 2 / std::log(2 + std::sqrt(3));
+  return std::pow(std::cosh((ply - peak) / width / width_scaler), -2);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
@@ -102,28 +108,40 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   if (movestogo == 0) movestogo = 1;
 
   // How to scale moves time.
+  float slowmover = options_.Get<float>(kSlowMoverStr);
   int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
   float time_curve_peak = options_.Get<float>(kTimeCurvePeak);
-  float time_curve_width = options_.Get<float>(kTimeCurveWidth);
+  float time_curve_left_width = options_.Get<float>(kTimeCurveLeftWidth);
+  float time_curve_right_width = options_.Get<float>(kTimeCurveRightWidth);
 
   // Total time till control including increments.
   auto total_moves_time =
       std::max(int64_t{0},
                time + increment * (movestogo - 1) - move_overhead * movestogo);
 
-  float this_move_weight = move_weight(ply, time_curve_peak, time_curve_width);
+  constexpr int kSmartPruningToleranceMs = 200;
+  float this_move_weight = move_weight(
+      ply, time_curve_peak, time_curve_left_width, time_curve_right_width);
   float other_move_weights = 0.0f;
   for (int i = 1; i < movestogo; ++i)
     other_move_weights +=
-        move_weight(ply + 2 * i, time_curve_peak, time_curve_width);
+        move_weight(ply + 2 * i, time_curve_peak, time_curve_left_width,
+                    time_curve_right_width);
+  // Compute the move time without slowmover.
+  float this_move_time = total_moves_time * this_move_weight /
+                         (this_move_weight + other_move_weights);
 
-  int64_t this_move_time =
-      static_cast<int64_t>(total_moves_time * this_move_weight /
-                           (this_move_weight + other_move_weights));
+  // Only extend thinking time with slowmover if smart pruning can potentially
+  // reduce it.
+  if (slowmover < 1.0 ||
+      this_move_time * slowmover > kSmartPruningToleranceMs) {
+    this_move_time *= slowmover;
+  }
 
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms =
-      std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
+  limits.time_ms = std::max(
+      int64_t{0},
+      std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
   return limits;
 }
 
