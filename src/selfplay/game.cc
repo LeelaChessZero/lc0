@@ -28,7 +28,7 @@ const char* kReuseTreeeStr = "Reuse the node statistics between moves";
 }
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
-  options->Add<BoolOption>(kReuseTreeeStr, "reuse-tree") = true;
+  options->Add<BoolOption>(kReuseTreeeStr, "reuse-tree") = false;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
