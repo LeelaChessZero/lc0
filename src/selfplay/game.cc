@@ -24,12 +24,12 @@
 namespace lczero {
 
 namespace{
-const char* kReuseTreeeStr = "Reuse the node statistics between moves";
+const char* kReuseTreeStr = "Reuse the node statistics between moves";
 const char* kResignPctStr = "Resign when win percentage drops below n";
 }
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
-  options->Add<BoolOption>(kReuseTreeeStr, "reuse-tree") = false;
+  options->Add<BoolOption>(kReuseTreeStr, "reuse-tree") = false;
   options->Add<FloatOption>(kResignPctStr, 0, 100, "resignpct", 'r')  = 0.0f;
 }
 
@@ -59,7 +59,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool use_resign) {
 
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
-    if (!options_[idx].uci_options->Get<bool>(kReuseTreeeStr)) {
+    if (!options_[idx].uci_options->Get<bool>(kReuseTreeStr)) {
       tree_[idx]->TrimTreeAtHead();
     }
     {
