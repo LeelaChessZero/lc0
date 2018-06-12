@@ -21,10 +21,15 @@
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
 
+//constexpr char version[] = "0.11.0";
+constexpr char version[] = "v0.10";
+
 int main(int argc, const char** argv) {
   std::cerr << "       _" << std::endl;
   std::cerr << "|   _ | |" << std::endl;
   std::cerr << "|_ |_ |_| built " << __DATE__ << std::endl;
+  std::cout << "version: " << version << std::endl;
+
   using namespace lczero;
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
