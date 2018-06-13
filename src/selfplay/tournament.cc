@@ -238,13 +238,11 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
   auto& game = **game_iter;
 
-  bool disable_resign = false;
-  if (kResignPlaythrough > 0) {
-    disable_resign = Random::Get().GetFloat(100.0f) < kResignPlaythrough;
-  }
+  // If kResignPlaythrough == 0, then this comparison is unconditionally true
+  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
 
   // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], disable_resign);
+  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
