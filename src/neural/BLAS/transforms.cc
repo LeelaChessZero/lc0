@@ -239,7 +239,7 @@ namespace lczero {
     constexpr auto height = 8;
     constexpr auto tiles = width * height / kWinogradAlpha;
     
-#if 0  // def USE_MKL
+#ifdef USE_MKL
 
     /*
      void cblas_sgemm_batch (const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE* transa_array, const CBLAS_TRANSPOSE* transb_array, const MKL_INT* m_array, const MKL_INT* n_array, const MKL_INT* k_array, const float* alpha_array, const float **a_array, const MKL_INT* lda_array, const float **b_array, const MKL_INT* ldb_array, const float* beta_array, float **c_array, const MKL_INT* ldc_array, const MKL_INT group_count, const MKL_INT* group_size);
