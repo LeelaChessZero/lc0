@@ -46,8 +46,6 @@ has_backends = false
 #############################################################################
 files += [
   'src/engine.cc',
-  'src/analyzer/analyzer.cc',
-  'src/analyzer/table.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
