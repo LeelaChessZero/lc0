@@ -31,11 +31,8 @@ class RandomNetworkComputation : public NetworkComputation {
     std::uint64_t hash = 0;
     for (const auto& plane : input) {
       hash = HashCat({hash, plane.mask});
-      // This assumes value is not large and not very granular, which should
-      // be a reasonable assumption for a NN input.
       std::uint64_t value_hash = 
-          static_cast<std::uint64_t>(
-              static_cast<std::int64_t>(plane.value * 10000));
+          *reinterpret_cast<const std::uint32_t*>(&plane.value);
       hash = HashCat({hash, value_hash});
     }
     inputs_.push_back(hash);
