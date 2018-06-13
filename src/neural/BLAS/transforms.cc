@@ -113,7 +113,7 @@ namespace lczero {
     // V[ D( C (B*a+b) +c) +d ]
     
     // V [batch_index*tiles*kWinogradTile*channels+ wTile_index*channels*tiles+channel*tiles+tile_index]
-   
+    
     // A=batch_size           a=batch_index
     // B=kWinogradTile        b=wTile_index
     // C=channels             c=channel
@@ -126,18 +126,38 @@ namespace lczero {
     // offset3=tiles*channels
     // offset4=tile
     // offset34=tiles*channels+tile
-
+    
+    // we need
+    
+    // A=kWinogradTile        a=wTile_index
+    // B=batch_size           b=batch_index
+    // C=tiles                c=tile
+    // D=channels             d=channel
+    
+    // offset1=channels*tiles*batch_size*wTile_index
+    // offset2=channels*tiles*batch_index
+    // offset3=channels*tile
+    // offset4=channel
+    
+    
     
     
     for (auto batch_index=0; batch_index<batch_size; batch_index++) {
-      int offset1=batch_index*tiles*kWinogradTile*channels;
-      float* V1=V+offset1;
-
+      
       const float* input=input1+batch_index*width*height*channels;
       for (auto channel = 0; channel < channels; channel++) {
         
+        const auto offset2=channels*tiles*batch_index;
+        const auto offset4=channel;
+        float* V24=V+offset2+offset4;
+        
         for (auto block_y = 0; block_y < wtiles; block_y++) {
           for (auto block_x = 0; block_x < wtiles; block_x++) {
+            
+            const auto offset3 =channels*(block_y * wtiles + block_x);
+            float* V234=V24+offset3;
+            
+            
             // Tiles overlap by 2
             const auto yin = 2 * block_y - 1;
             const auto xin = 2 * block_x - 1;
@@ -154,9 +174,6 @@ namespace lczero {
               }
             }
             
-            const auto offset3 = channel * tiles + block_y * wtiles + block_x;
-            float* V3=V1+offset3;
-
             // Calculates transpose(B).x.B
             // B = [[ 1.0,  0.0,  0.0,  0.0],
             //      [ 0.0,  1.0, -1.0,  1.0],
@@ -201,8 +218,9 @@ namespace lczero {
             
             for (auto i = 0; i < kWinogradAlpha; i++) {
               for (auto j = 0; j < kWinogradAlpha; j++) {
-                int offset2=(i * kWinogradAlpha + j) * channels * tiles;
-                V3[offset2] = T2[i][j];
+                
+                const auto offset1=channels*tiles*batch_size*(i * kWinogradAlpha + j);
+                V234[offset1] = T2[i][j];
               }
             }
           }
@@ -221,82 +239,134 @@ namespace lczero {
     constexpr auto height = 8;
     constexpr auto tiles = width * height / kWinogradAlpha;
     
-#ifdef USE_MKL
-    
+#if 0  // def USE_MKL
+
     /*
      void cblas_sgemm_batch (const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE* transa_array, const CBLAS_TRANSPOSE* transb_array, const MKL_INT* m_array, const MKL_INT* n_array, const MKL_INT* k_array, const float* alpha_array, const float **a_array, const MKL_INT* lda_array, const float **b_array, const MKL_INT* ldb_array, const float* beta_array, float **c_array, const MKL_INT* ldc_array, const MKL_INT group_count, const MKL_INT* group_size);
      */
+   
     
-    
-    CBLAS_TRANSPOSE transA=CblasTrans;
+    CBLAS_TRANSPOSE transA=CblasNoTrans;
     CBLAS_TRANSPOSE transB=CblasNoTrans;
     int m_array=output_channels;
-    int n_array=tiles;
+    int n_array=batch_size*tiles;
     int k_array=input_channels;
     float alpha_array=1.0;
     const float* a_array[kWinogradTile];
     int lda_array=output_channels;
     const float* b_array[kWinogradTile];
-    int ldb_array=tiles;
+    int ldb_array=input_channels;
     float* c_array[kWinogradTile];
-    int ldc_array=tiles;
+    int ldc_array=output_channels;
     float beta_array=0.0;
     int groupSize=kWinogradTile;
     
     for (auto b = 0; b < kWinogradTile; b++) {
       auto offset_u = b * output_channels * input_channels;
-      auto offset_v = b * input_channels * tiles;
-      auto offset_m = b * output_channels * tiles;
-      
+      auto offset_v = b*batch_size * input_channels * tiles;
+      auto offset_m = b*batch_size * output_channels * tiles;
+
       a_array[b]=&weights[offset_u];
       b_array[b]=&V[offset_v];
       c_array[b]=&M[offset_m];
     }
     
-    cblas_sgemm_batch(CblasRowMajor, &transA, &transB,
+    cblas_sgemm_batch(CblasColMajor, &transA, &transB,
                       &m_array, &n_array, &k_array, &alpha_array,
                       a_array, &lda_array,
                       b_array, &ldb_array, &beta_array,
                       c_array, &ldc_array,
                       1, &groupSize);
     
-    
 #else
+
     
     for (auto b = 0; b < kWinogradTile; b++) {
       
       auto offset_u = b * output_channels * input_channels;
       
-      for (int i=0; i<batch_size; i++) {
-        
-        auto offset_v = (i*kWinogradTile+b) * input_channels * tiles;
-        auto offset_m = (i*kWinogradTile+b) * output_channels * tiles;
-        
-        //                                             t
-        //            M               =         weights        x          V
-        //
-        // cols      tiles                  input_channels              tiles
-        // rows   output_channels          output_channels            input_channels
-        
-        // M/V are
-        //            batch x wtile x channel x tiles
-        // we need
-        //
-        //            wtile x batch x tiles x channel
-        
-        
-        cblas_sgemm(// Format       trans W       transV
-                    CblasRowMajor, CblasTrans, CblasNoTrans,
-                    // rows W, M     cols V, M     cols W, rows V       alpha
-                    output_channels,      tiles,         input_channels,     1.0f,
-                    // W         ldW
-                    &weights[offset_u], output_channels,
-                    // V         ldV   beta
-                    &V[offset_v], tiles,  0.0f,
-                    // M         ldM
-                    &M[offset_m], tiles);
-        
-      }
+      /*
+       
+       for (int i=0; i<batch_size; i++) {
+       
+       auto offset_v = (i*kWinogradTile+b) * input_channels * tiles;
+       auto offset_m = (i*kWinogradTile+b) * output_channels * tiles;
+       
+       // In row major:
+       //                                              t
+       //            M               =         weights        x          V
+       //
+       // cols      tiles                  input_channels              tiles
+       // rows   output_channels          output_channels            input_channels
+       
+       // M/V are
+       //            batch x wtile x channel x tiles
+       
+       
+       cblas_sgemm(// Format       trans W       transV
+       CblasRowMajor, CblasTrans, CblasNoTrans,
+       // rows W, M     cols V, M     cols W, rows V       alpha
+       output_channels,      tiles,         input_channels,     1.0f,
+       // W         ldW
+       &weights[offset_u], output_channels,
+       // V         ldV   beta
+       &V[offset_v], tiles,  0.0f,
+       // M         ldM
+       &M[offset_m], tiles);
+       
+       // M/V are
+       //
+       //            wtile x batch x tiles x channel
+       
+       // In col major
+       //
+       //            M               =         weights(T)        x          V
+       //
+       // cols      tiles                  input_channels              tiles
+       // rows   output_channels          output_channels            input_channels
+       
+       
+       auto offset_v = (b*batch_size+i) * input_channels * tiles;
+       auto offset_m = (b*batch_size+i) * output_channels * tiles;
+       
+       
+       cblas_sgemm(// Format       trans W       transV
+       CblasColMajor, CblasNoTrans, CblasNoTrans,
+       // rows W, M     cols V, M     cols W, rows V       alpha
+       output_channels,      tiles,         input_channels,     1.0f,
+       // W         ldW
+       &weights[offset_u], output_channels,
+       // V         ldV   beta
+       &V[offset_v], input_channels,  0.0f,
+       // M         ldM
+       &M[offset_m], output_channels);
+       
+       }
+       */
+      
+      // In col major
+      //
+      //            M               =         weights(T)        x          V
+      //
+      // cols      tiles                  input_channels              tiles
+      // rows   output_channels          output_channels            input_channels
+      
+      auto offset_v = b*batch_size * input_channels * tiles;
+      auto offset_m = b*batch_size * output_channels * tiles;
+      
+      
+      cblas_sgemm(// Format       trans W       transV
+                  CblasColMajor, CblasNoTrans, CblasNoTrans,
+                  // rows W, M     cols V, M     cols W, rows V       alpha
+                  output_channels,      batch_size*tiles,         input_channels,     1.0f,
+                  // W         ldW
+                  &weights[offset_u], output_channels,
+                  // V         ldV   beta
+                  &V[offset_v], input_channels,  0.0f,
+                  // M         ldM
+                  &M[offset_m], output_channels);
+      
+      
       
     }
     
@@ -316,24 +386,30 @@ namespace lczero {
     float temp_m[kWinogradTile];
     
     for (auto batch_index=0; batch_index<batch_size; batch_index++) {
-      int index1=batch_index*tiles*kWinogradTile*channels;
-      const float* M1=M+index1;
+      const auto offset2=channels*tiles*batch_index;
+      
       float* output1=output+batch_index*width*height*channels;
       
       for (auto channel = 0; channel < channels; channel++) {
+        
+        auto offset4=channel;
+        const float* M24=M+offset2+offset4;
+        
         for (auto block_x = 0; block_x < wtiles; block_x++) {
           for (auto block_y = 0; block_y < wtiles; block_y++) {
             const auto x = 2 * block_x;
             const auto y = 2 * block_y;
             
             const auto b = block_y * wtiles + block_x;
+            const auto offset3=channels*b;
+            const float* M234=M24+offset3;
+            
             for (auto xi = 0; xi < kWinogradAlpha; xi++) {
               for (auto nu = 0; nu < kWinogradAlpha; nu++) {
                 
-                int offset2=xi * (kWinogradAlpha * channels * tiles) + nu * (channels * tiles);
-                int offset34=channel * tiles + b;
+                const auto offset1=channels*tiles*batch_size*(xi * kWinogradAlpha+nu);
                 
-                temp_m[xi * kWinogradAlpha + nu] =M1[offset2 + offset34];
+                temp_m[xi * kWinogradAlpha + nu] =M234[offset1];
               }
             }
             
