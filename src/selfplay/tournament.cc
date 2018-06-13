@@ -23,6 +23,7 @@
 #include "selfplay/game.h"
 #include "utils/optionsparser.h"
 #include "utils/random.h"
+#include <iostream>
 
 namespace lczero {
 
@@ -240,6 +241,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
   // If kResignPlaythrough == 0, then this comparison is unconditionally true
   bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
+  std::cout << "use_resign: " << enable_resign << std::endl;
 
   // PLAY GAME!
   game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], enable_resign);

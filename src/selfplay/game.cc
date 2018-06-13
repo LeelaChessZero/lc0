@@ -18,6 +18,7 @@
 
 #include "selfplay/game.h"
 #include <algorithm>
+#include <iostream>
 
 #include "neural/writer.h"
 
@@ -85,7 +86,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool enable_resign
               options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
       float eval = search_->GetBestEval();
       eval = (eval + 1) / 2;
+      std::cout << "eval: " << eval << std::endl;
       if (eval < resignpct) { // always false when resignpct == 0
+        std::cout << "resigning" << std::endl;
         game_result_ = blacks_move ? GameResult::WHITE_WON
                                    : GameResult::BLACK_WON;
         break;
