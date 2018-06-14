@@ -92,7 +92,7 @@ class BlasComputation : public NetworkComputation {
   }
 
   // Returns how many times AddInput() was called.
-  int GetBatchSize() const override { return planes_.size(); }
+  int GetBatchSize() const override { return static_cast<int>(planes_.size()); }
   
   // Returns Q value of @sample.
   float GetQVal(int sample) const override { return q_value_[sample]; }
@@ -103,7 +103,6 @@ class BlasComputation : public NetworkComputation {
   }
   
 private:
-
 
   void EncodePlanes(const InputPlanes& sample, float* buffer) {
     for (const InputPlane& plane : sample) {
@@ -128,7 +127,6 @@ private:
     int num_output_policy = (int)  weights_.ip_pol_b.size();
     int num_value_channels = (int)  weights_.ip1_val_b.size();
     
-
     static constexpr auto kWinogradAlpha = 4;
     static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
     
@@ -164,30 +162,32 @@ private:
     auto res = std::vector<float>(batch_size*output_channels * width * height);
     
     for (auto& residual : weights_.residual) {
+      
       auto& conv1 = residual.conv1;
+      auto& conv2 = residual.conv2;
+      
       std::swap(conv_out, conv_in);
-
+      
       Transforms::WinogradConvolve3(batch_size,
                                     output_channels, output_channels, &conv_in[0],
                                     &conv1.weights[0], &V[0], &M[0], &conv_out[0]);
-
+      
       Transforms::Batchnorm(batch_size,
-                             output_channels, &conv_out[0],
-                                conv1.bn_means.data(), conv1.bn_stddivs.data());
-
-      auto& conv2 = residual.conv2;
+                            output_channels, &conv_out[0],
+                            conv1.bn_means.data(), conv1.bn_stddivs.data());
+      
       
       std::swap(conv_in, res);
       std::swap(conv_out, conv_in);
       
       Transforms::WinogradConvolve3(batch_size,
-                                    output_channels, output_channels, &conv_in[0], &conv2.weights[0], &V[0], &M[0], &conv_out[0]);
-
+                                    output_channels, output_channels, &conv_in[0],
+                                    &conv2.weights[0], &V[0], &M[0], &conv_out[0]);
+      
       Transforms::Batchnorm(batch_size,
                             output_channels, &conv_out[0],
                             conv2.bn_means.data(), conv2.bn_stddivs.data(),
                             res.data());
-      
     }
 
     Transforms::Convolve<1>(batch_size, output_channels, num_policy_input_planes, conv_out.data(),
@@ -198,7 +198,6 @@ private:
                             weights_.value.weights.data(), weights_.value.biases.data(),
                             value_data.data());
     
-
     Transforms::Batchnorm(batch_size,
                           num_policy_input_planes, &policy_data[0],
                           weights_.policy.bn_means.data(),
@@ -222,7 +221,6 @@ private:
                              value_data.data(), weights_.ip1_val_w.data(), weights_.ip1_val_b.data(),
                              true, // Relu On
                              output_val.data());
- 
   }
   
   const Weights& weights_;
