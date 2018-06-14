@@ -31,6 +31,9 @@ class RandomNetworkComputation : public NetworkComputation {
     std::uint64_t hash = seed_;
     for (const auto& plane : input) {
       hash = HashCat({hash, plane.mask});
+      std::uint64_t value_hash = 
+          *reinterpret_cast<const std::uint32_t*>(&plane.value);
+      hash = HashCat({hash, value_hash});
     }
     inputs_.push_back(hash);
   }
