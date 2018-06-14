@@ -123,17 +123,17 @@ private:
     constexpr int height = 8;
     constexpr int tiles = width * height / 4;
 
-    int num_value_input_planes = weights_.value.bn_means.size();
-    int num_policy_input_planes = weights_.policy.bn_means.size();
-    int num_output_policy = weights_.ip_pol_b.size();
-    int num_value_channels = weights_.ip1_val_b.size();
+    int num_value_input_planes = (int) weights_.value.bn_means.size();
+    int num_policy_input_planes = (int)  weights_.policy.bn_means.size();
+    int num_output_policy = (int)  weights_.ip_pol_b.size();
+    int num_value_channels = (int)  weights_.ip1_val_b.size();
     
 
     static constexpr auto kWinogradAlpha = 4;
     static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
     
     // Calculate output channels
-    const auto output_channels = weights_.input.biases.size();
+    const auto output_channels = (int) weights_.input.biases.size();
 
     // input_channels is the maximum number of input channels of any
     // convolution.
@@ -165,7 +165,6 @@ private:
     
     for (auto& residual : weights_.residual) {
       auto& conv1 = residual.conv1;
-      auto output_channels = conv1.biases.size();
       std::swap(conv_out, conv_in);
 
       Transforms::WinogradConvolve3(batch_size,
@@ -177,7 +176,6 @@ private:
                                 conv1.bn_means.data(), conv1.bn_stddivs.data());
 
       auto& conv2 = residual.conv2;
-      output_channels = conv2.biases.size();
       
       std::swap(conv_in, res);
       std::swap(conv_out, conv_in);
@@ -244,7 +242,7 @@ class BlasNetwork : public Network {
         
     bool verbose = options.GetOrDefault<bool>("verbose", true);
     int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
-    max_batch_size_ = options.GetOrDefault<int>("max_batch_size", 32);
+    max_batch_size_ = options.GetOrDefault<int>("batch_size", 128);
 
     const int inputChannels = kInputPlanes;
     const int channels = static_cast<int>(weights.input.biases.size());
@@ -321,11 +319,11 @@ class BlasNetwork : public Network {
 #ifdef USE_ACCELERATE
     if (verbose) {
       fprintf(stderr, "BLAS vendor: Apple vecLib.\n");
-    }
+      fprintf(stderr, "Apple vecLib ignores blas_cores (%d) parameter.\n", blas_cores);
+}
 #endif
         
-      fprintf(stderr, "BLAS: max batch size: %d\n", max_batch_size_);
-
+      fprintf(stderr, "BLAS max batch size is %d.\n", max_batch_size_);
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
