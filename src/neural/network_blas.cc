@@ -134,15 +134,17 @@ private:
     
     // Calculate output channels
     const auto output_channels = weights_.input.biases.size();
+
     // input_channels is the maximum number of input channels of any
     // convolution.
     // Residual blocks are identical, but the first convolution might be bigger
     // when the network has very few filters
-    const auto input_channels = std::max(static_cast<size_t>(output_channels),
+    const auto max_channels = std::max(static_cast<size_t>(output_channels),
                                          static_cast<size_t>(kInputPlanes));
+    
     auto conv_out = std::vector<float>(batch_size*output_channels * width * height);
     
-    auto V = std::vector<float>(batch_size*kWinogradTile * input_channels * tiles);
+    auto V = std::vector<float>(batch_size*kWinogradTile * max_channels * tiles);
     auto M = std::vector<float>(batch_size*kWinogradTile * output_channels * tiles);
     
     std::vector<float> policy_data(batch_size*num_policy_input_planes * width * height);
@@ -161,12 +163,10 @@ private:
     auto conv_in = std::vector<float>(batch_size*output_channels * width * height);
     auto res = std::vector<float>(batch_size*output_channels * width * height);
     
-
     for (auto& residual : weights_.residual) {
       auto& conv1 = residual.conv1;
       auto output_channels = conv1.biases.size();
       std::swap(conv_out, conv_in);
-      std::copy(begin(conv_in), end(conv_in), begin(res));
 
       Transforms::WinogradConvolve3(batch_size,
                                     output_channels, output_channels, &conv_in[0],
@@ -178,7 +178,10 @@ private:
 
       auto& conv2 = residual.conv2;
       output_channels = conv2.biases.size();
+      
+      std::swap(conv_in, res);
       std::swap(conv_out, conv_in);
+      
       Transforms::WinogradConvolve3(batch_size,
                                     output_channels, output_channels, &conv_in[0], &conv2.weights[0], &V[0], &M[0], &conv_out[0]);
 
