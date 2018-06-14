@@ -37,6 +37,7 @@ struct SearchLimits {
   std::int64_t playouts = -1;
   std::int64_t time_ms = -1;
   bool infinite = false;
+  MoveList searchmoves;
 };
 
 class Search {
@@ -69,7 +70,12 @@ class Search {
   void Wait();
 
   // Returns best move, from the point of view of white player. And also ponder.
+  // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove() const;
+  // Returns the evaluation of the best move, WITHOUT temperature. This differs
+  // from the above function; with temperature enabled, these two functions may
+  // return results from different possible moves.
+  float GetBestEval() const;
 
   // Strings for UCI params. So that others can override defaults.
   // TODO(mooskagh) There are too many options for now. Factor out that into a
@@ -91,7 +97,13 @@ class Search {
   static const char* kBackPropagateGammaStr;
 
  private:
+  // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
+
+  // Returns a child with most visits, with or without temperature.
+  Node* GetBestChildNoTemperature(Node* parent) const;
+  Node* GetBestChildWithTemperature(Node* parent, float temperature) const;
+
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();

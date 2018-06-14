@@ -137,48 +137,6 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
     child->SetP(child->GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
   }
 }
-
-// Returns a child with most visits.
-Node* GetBestChild(Node* parent) {
-  Node* best_node = nullptr;
-  // Best child is selected using the following criteria:
-  // * Largest number of playouts.
-  // * If two nodes have equal number:
-  //   * If that number is 0, the one with larger prior wins.
-  //   * If that number is larger than 0, the one wil larger eval wins.
-  std::tuple<int, float, float> best(-1, 0.0, 0.0);
-  for (Node* node : parent->Children()) {
-    std::tuple<int, float, float> val(node->GetN(), node->GetQ(-10.0),
-                                      node->GetP());
-    if (val > best) {
-      best = val;
-      best_node = node;
-    }
-  }
-  return best_node;
-}
-
-Node* GetBestChildWithTemperature(Node* parent, float temperature) {
-  std::vector<float> cumulative_sums;
-  float sum = 0.0;
-  const float n_parent = parent->GetN();
-
-  for (Node* node : parent->Children()) {
-    sum += std::pow(node->GetN() / n_parent, 1 / temperature);
-    cumulative_sums.push_back(sum);
-  }
-
-  float toss = Random::Get().GetFloat(cumulative_sums.back());
-  int idx =
-      std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
-      cumulative_sums.begin();
-
-  for (Node* node : parent->Children()) {
-    if (idx-- == 0) return node;
-  }
-  assert(false);
-  return nullptr;
-}
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
@@ -197,7 +155,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 
   bool flip = played_history_.IsBlackToMove();
   for (Node* iter = best_move_node_; iter;
-       iter = GetBestChild(iter), flip = !flip) {
+       iter = GetBestChildNoTemperature(iter), flip = !flip) {
     uci_info_.pv.push_back(iter->GetMove(flip));
   }
   uci_info_.comment.clear();
@@ -342,12 +300,25 @@ void Search::UpdateRemainingMoves() {
   if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
 }
 
+// Return the evaluation of the actual best child, regardless of temperature
+// settings. This differs from GetBestMove, which does obey any temperature
+// settings. So, somethimes, they may return results of different moves.
+float Search::GetBestEval() const {
+  SharedMutex::SharedLock lock(nodes_mutex_);
+  Mutex::Lock counters_lock(counters_mutex_);
+  float parent_q = -root_node_->GetQ(0);
+  if (!root_node_->HasChildren()) return parent_q;
+  Node* best_node = GetBestChildNoTemperature(root_node_);
+  return best_node->GetQ(parent_q);
+}
+
 std::pair<Move, Move> Search::GetBestMove() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
   return GetBestMoveInternal();
 }
 
+// Returns the best move, maybe with temperature (according to the settings).
 std::pair<Move, Move> Search::GetBestMoveInternal() const
     REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) {
   if (responded_bestmove_) return best_move_;
@@ -366,11 +337,70 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
 
   Node* best_node = temperature && root_node_->GetN() > 1
                         ? GetBestChildWithTemperature(root_node_, temperature)
-                        : GetBestChild(root_node_);
+                        : GetBestChildNoTemperature(root_node_);
 
   Move ponder_move;  // Default is "null move" which means "don't display
                      // anything".
   return {best_node->GetMove(played_history_.IsBlackToMove()), ponder_move};
+}
+
+// Returns a child with most visits.
+Node* Search::GetBestChildNoTemperature(Node* parent) const {
+  Node* best_node = nullptr;
+  // Best child is selected using the following criteria:
+  // * Largest number of playouts.
+  // * If two nodes have equal number:
+  //   * If that number is 0, the one with larger prior wins.
+  //   * If that number is larger than 0, the one wil larger eval wins.
+  std::tuple<int, float, float> best(-1, 0.0, 0.0);
+  for (Node* node : parent->Children()) {
+    if (parent == root_node_ && !limits_.searchmoves.empty() &&
+        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
+                  node->GetMove()) == limits_.searchmoves.end()) {
+      continue;
+    }
+    std::tuple<int, float, float> val(node->GetN(), node->GetQ(-10.0),
+                                      node->GetP());
+    if (val > best) {
+      best = val;
+      best_node = node;
+    }
+  }
+  return best_node;
+}
+
+// Returns a child chosen according to weighted-by-temperature visit count.
+Node* Search::GetBestChildWithTemperature(Node* parent,
+                                          float temperature) const {
+  std::vector<float> cumulative_sums;
+  float sum = 0.0;
+  const float n_parent = parent->GetN();
+
+  for (Node* node : parent->Children()) {
+    if (parent == root_node_ && !limits_.searchmoves.empty() &&
+        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
+                  node->GetMove()) == limits_.searchmoves.end()) {
+      continue;
+    }
+    sum += std::pow(node->GetN() / n_parent, 1 / temperature);
+    cumulative_sums.push_back(sum);
+  }
+
+  float toss = Random::Get().GetFloat(cumulative_sums.back());
+  int idx =
+      std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
+      cumulative_sums.begin();
+
+  for (Node* node : parent->Children()) {
+    if (parent == root_node_ && !limits_.searchmoves.empty() &&
+        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
+                  node->GetMove()) == limits_.searchmoves.end()) {
+      continue;
+    }
+    if (idx-- == 0) return node;
+  }
+  assert(false);
+  return nullptr;
 }
 
 void Search::StartThreads(size_t how_many) {
@@ -551,6 +581,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         if (child != search_->best_move_node_ &&
             search_->remaining_playouts_ <
                 best_node_n - static_cast<int>(child->GetN())) {
+          continue;
+        }
+        // If searchmoves was sent, restrict the search only in that moves
+        if (!search_->limits_.searchmoves.empty() &&
+            std::find(search_->limits_.searchmoves.begin(),
+                      search_->limits_.searchmoves.end(),
+                      child->GetMove()) == search_->limits_.searchmoves.end()) {
           continue;
         }
         ++possible_moves;

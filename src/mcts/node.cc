@@ -382,6 +382,11 @@ void NodeTree::MakeMove(Move move) {
   history_.Append(move);
 }
 
+void NodeTree::TrimTreeAtHead() {
+  gNodePool.ReleaseChildren(current_head_);
+  current_head_->ResetStats();
+}
+
 void NodeTree::ResetToPosition(const std::string& starting_fen,
                                const std::vector<Move>& moves) {
   ChessBoard starting_board;

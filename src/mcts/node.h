@@ -57,7 +57,7 @@ class Node {
   // Returns whether a node has children.
   bool HasChildren() const { return child_ != nullptr; }
 
-  // Returns move from the point of new of player BEFORE the position.
+  // Returns move from the point of view of player BEFORE the position.
   Move GetMove() const { return move_; }
 
   // Returns move, with optional flip (false == player BEFORE the position).
@@ -180,6 +180,9 @@ class NodeTree {
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
   void MakeMove(Move move);
+  // Resets the current head to ensure it doesn't carry over details from a
+  // previous search.
+  void TrimTreeAtHead();
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)

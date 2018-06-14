@@ -46,8 +46,6 @@ has_backends = false
 #############################################################################
 files += [
   'src/engine.cc',
-  'src/analyzer/analyzer.cc',
-  'src/analyzer/table.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
@@ -137,29 +135,31 @@ if get_option('build_backends')
 
   openblas_lib = cc.find_library('openblas', required: false)
 
-  if mkl_lib.found() 
-    add_project_arguments('-DUSE_MKL', language : 'cpp')
-    includes += include_directories(get_option('mkl_include'))
-    deps += [ mkl_lib ]
-    has_blas = true
+  if get_option('blas') or get_option('opencl')
+    if get_option('mkl') and mkl_lib.found()
+      add_project_arguments('-DUSE_MKL', language : 'cpp')
+      includes += include_directories(get_option('mkl_include'))
+      deps += [ mkl_lib ]
+      has_blas = true
 
-  elif accelerate_lib.found()
-    includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
-    deps += [ accelerate_lib ]
-    has_blas = true
+    elif get_option('accelerate') and accelerate_lib.found()
+      includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
+      deps += [ accelerate_lib ]
+      has_blas = true
 
-  elif openblas_lib.found() 
-    add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
-    includes += include_directories(get_option('openblas_include'))
-    deps += [ openblas_lib ]
-    has_blas = true
+    elif get_option('openblas') and openblas_lib.found()
+      add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+      includes += include_directories(get_option('openblas_include'))
+      deps += [ openblas_lib ]
+      has_blas = true
 
+    endif
   endif
 
   if get_option('blas') and has_blas
 
     blas_files = [
-    'src/neural/BLAS/transforms.cc',
+    'src/neural/blas/transforms.cc',
     'src/neural/network_blas.cc'
     ]
 
@@ -189,22 +189,26 @@ if get_option('build_backends')
       has_opencl = true
 
   endif
-  
 
-  if get_option('opencl') and has_opencl and has_blas
 
-    opencl_files = [
-    'src/neural/CL/OpenCL.cc',
-    'src/neural/CL/OpenCLTuner.cc',
-    'src/neural/network_opencl.cc',
-    ]
+  if get_option('opencl') and has_opencl
 
-    if not get_option('blas')
-      opencl_files += 'src/neural/transforms.cc'
+    if has_blas
+      opencl_files = [
+      'src/neural/opencl/OpenCL.cc',
+      'src/neural/opencl/OpenCLTuner.cc',
+      'src/neural/network_opencl.cc',
+      ]
+
+      if not get_option('blas')
+        opencl_files += 'src/neural/blas/transforms.cc'
+      endif
+
+      files += opencl_files
+      has_backends = true
+    else
+      warning('The OpenCL backend requires a BLAS library')
     endif
-
-    files += opencl_files
-    has_backends = true
 
   endif
 
@@ -255,7 +259,7 @@ endif # if get_option('build_backends')
 if not has_backends and get_option('build_backends')
   error('''
 
-        No usable computation backends (cudnn/tensorflow/etc) are found. 
+        No usable computation backends (cudnn/tensorflow/etc) are found.
         If you want to build it with random only backend, pass
         -D build_backends=false to a meson build.''')
 endif

@@ -16,8 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/BLAS/transforms.h"
-#include "neural/BLAS/blas.h"
+#include "neural/blas/transforms.h"
+#include "neural/blas/blas.h"
 
 #include <algorithm>
 #include <cassert>
