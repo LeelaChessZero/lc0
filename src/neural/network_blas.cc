@@ -241,8 +241,8 @@ class BlasNetwork : public Network {
       : weights_(weights) {
         
     bool verbose = options.GetOrDefault<bool>("verbose", true);
-    int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
-    max_batch_size_ = options.GetOrDefault<int>("batch_size", 128);
+    int blas_cores = options.GetOrDefault<int>("blas_cores", 4);
+    max_batch_size_ = options.GetOrDefault<int>("batch_size", 256);
 
     const int inputChannels = kInputPlanes;
     const int channels = static_cast<int>(weights.input.biases.size());
