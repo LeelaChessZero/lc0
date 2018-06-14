@@ -160,18 +160,18 @@ bool UciLoop::DispatchCommand(
       go_params.searchmoves =
           StrSplitAtWhitespace(GetOrEmpty(params, "searchmoves"));
     }
-#define OPTION(x)                         \
+#define LC0_OPTION(x)                         \
   if (ContainsKey(params, #x)) {          \
     go_params.x = GetNumeric(params, #x); \
   }
-    OPTION(wtime);
-    OPTION(btime);
-    OPTION(winc);
-    OPTION(binc);
-    OPTION(movestogo);
-    OPTION(depth);
-    OPTION(nodes);
-    OPTION(movetime);
+    LC0_OPTION(wtime);
+    LC0_OPTION(btime);
+    LC0_OPTION(winc);
+    LC0_OPTION(binc);
+    LC0_OPTION(movestogo);
+    LC0_OPTION(depth);
+    LC0_OPTION(nodes);
+    LC0_OPTION(movetime);
 #undef OPTION
     CmdGo(go_params);
   } else if (command == "stop") {
@@ -201,19 +201,20 @@ void UciLoop::SendResponse(const std::string& response) {
   std::cout << response << std::endl;
 }
 
-#define STR_INNER(a) #a
-#define STR(a) STR_INNER(a)
+// TODO: remove these monstrosities
+#define LC0V_STR_INNER(a) #a
+#define LC0V_STR(a) LC0V_STR_INNER(a)
 #define LC0_VERSION_STRING     \
-    "v" STR(LC0_VERSION_MAJOR) \
-    "." STR(LC0_VERSION_MINOR) \
-    "." STR(LC0_VERSION_PATCH)
+    "v" LC0V_STR(LC0_VERSION_MAJOR) \
+    "." LC0V_STR(LC0_VERSION_MINOR) \
+    "." LC0V_STR(LC0_VERSION_PATCH)
 
 void UciLoop::SendId() {
   SendResponse("id name The Lc0 chess engine. " LC0_VERSION_STRING);
   SendResponse("id author The LCZero Authors.");
 }
-#undef STR_INNER
-#undef STR
+#undef LC0V_STR_INNER
+#undef LC0V_STR
 #undef LC0_VERSION_STRING
 
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
