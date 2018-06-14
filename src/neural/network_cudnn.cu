@@ -414,8 +414,11 @@ ConvLayer::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, int Cin,
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_RELU,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
   } else {
+#if CUDNN_MAJOR>=7
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_IDENTITY,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
+
+#endif
   }
 }
 
@@ -452,18 +455,59 @@ void ConvLayer::Eval(int N, float *output, const float *input,
         conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
         out_tensor_desc_, output));
   } else if (input2) {
+#if CUDNN_MAJOR>=7
     // fused bias + sum + relu!
     reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, convAlgo, scratch, kCudaScratchSize, &alpha,
         out_tensor_desc_, input2, bias_desc_, biases, activation_,
         out_tensor_desc_, output));
+#else
+    if (use_relu_) {
+      reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, convAlgo, scratch, kCudaScratchSize, &alpha,
+          out_tensor_desc_, input2, bias_desc_, biases, activation_,
+          out_tensor_desc_, output));
+    }
+    else {
+      reportCUDNNErrors(cudnnConvolutionForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
+          out_tensor_desc_, output));
+      reportCUDNNErrors(cudnnAddTensor(
+          cudnn, &alpha, out_tensor_desc_, input2, &alpha,
+          out_tensor_desc_, output));
+      reportCUDNNErrors(cudnnAddTensor(
+          cudnn, &alpha, bias_desc_, biases, &alpha, out_tensor_desc_,
+          output));
+    }
+#endif
   } else {
+#if CUDNN_MAJOR>=7
     reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
         out_tensor_desc_, output, bias_desc_, biases, activation_,
         out_tensor_desc_, output));
+#else
+    if (use_relu_) {
+      reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
+          out_tensor_desc_, output, bias_desc_, biases, activation_,
+          out_tensor_desc_, output));
+    }
+    else {
+      reportCUDNNErrors(cudnnConvolutionForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, convAlgo, scratch, kCudaScratchSize, &beta,
+          out_tensor_desc_, output));
+      reportCUDNNErrors(cudnnAddTensor(
+          cudnn, &alpha, bias_desc_, biases, &alpha, out_tensor_desc_,
+          output));
+    }
+#endif
   }
 }
 
