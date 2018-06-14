@@ -215,8 +215,7 @@ void EngineLoop::RunLoop() {
 }
 
 void EngineLoop::CmdUci() {
-  SendResponse("id name The Lc0 chess engine.");
-  SendResponse("id author The LCZero Authors.");
+  SendId();
   for (const auto& option : options_.ListOptionsUci()) {
     SendResponse(option);
   }
