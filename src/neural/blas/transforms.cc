@@ -102,17 +102,17 @@ namespace lczero {
     float T1[kWinogradAlpha][kWinogradAlpha];
     float T2[kWinogradAlpha][kWinogradAlpha];
     float* T2flat=(float*) T2;
-
+    
     for (auto batch_index=0; batch_index<batch_size; batch_index++) {
       
       const float* input_batch=input+batch_index*width*height*channels;
       float* V_batch=V+channels*tiles*batch_index;
-
+      
       for (auto channel = 0; channel < channels; channel++) {
         
         float* V_channel=V_batch+channel;
         const float* input_channel=input_batch+channel * (width * height);
-
+        
         for (auto block_y = 0; block_y < wtiles; block_y++) {
           for (auto block_x = 0; block_x < wtiles; block_x++) {
             
@@ -198,11 +198,11 @@ namespace lczero {
     constexpr auto tiles = width * height / kWinogradAlpha;
     
 #ifdef USE_MKL
-
+    
     /*
      void cblas_sgemm_batch (const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE* transa_array, const CBLAS_TRANSPOSE* transb_array, const MKL_INT* m_array, const MKL_INT* n_array, const MKL_INT* k_array, const float* alpha_array, const float **a_array, const MKL_INT* lda_array, const float **b_array, const MKL_INT* ldb_array, const float* beta_array, float **c_array, const MKL_INT* ldc_array, const MKL_INT group_count, const MKL_INT* group_size);
      */
-   
+    
     
     CBLAS_TRANSPOSE transA=CblasNoTrans;
     CBLAS_TRANSPOSE transB=CblasNoTrans;
@@ -223,7 +223,7 @@ namespace lczero {
       auto offset_u = b * output_channels * input_channels;
       auto offset_v = b*batch_size * input_channels * tiles;
       auto offset_m = b*batch_size * output_channels * tiles;
-
+      
       a_array[b]=&weights[offset_u];
       b_array[b]=&V[offset_v];
       c_array[b]=&M[offset_m];
@@ -237,12 +237,12 @@ namespace lczero {
                       1, &groupSize);
     
 #else
-
+    
     
     for (auto b = 0; b < kWinogradTile; b++) {
       
       auto offset_u = b * output_channels * input_channels;
-    
+      
       // In col major
       //
       //            M               =         weights(T)        x          V
@@ -264,7 +264,7 @@ namespace lczero {
                   &V[offset_v], input_channels,  0.0f,
                   // M         ldM
                   &M[offset_m], output_channels);
-    
+      
     }
     
 #endif
@@ -286,7 +286,7 @@ namespace lczero {
     float m[kWinogradTile];
     
     for (auto batch_index=0; batch_index<batch_size; batch_index++) {
-
+      
       const float* M_batch=M+channels*tiles*batch_index;
       float* output_batch=output+batch_index*width*height*channels;
       
@@ -301,8 +301,7 @@ namespace lczero {
             const auto y = 2 * block_y;
             
             const auto b = block_y * wtiles + block_x;
-            const auto offset3=channels*b;
-            const float* M_wtile=M_channel+offset3;
+            const float* M_wtile=M_channel+channels*b;
             const int M_incr=channels*tiles*batch_size;
             
             for (auto wTile=0; wTile<kWinogradTile; wTile++) {
@@ -333,20 +332,16 @@ namespace lczero {
             m[3 * 4 + 1] + m[3 * 4 + 2] + m[3 * 4 + 3];
             
             output_channel[ (y)*width + (x)] = o11;
-            if (x + 1 < width) {
-              output_channel[ (y)*width + (x + 1)] = o12;
-            }
-            if (y + 1 < height) {
-              output_channel[(y + 1) * width + (x)] = o21;
-              if (x + 1 < width) {
-                output_channel[ (y + 1) * width + (x + 1)] = o22;
-              }
-            }
+            output_channel[ (y)*width + (x + 1)] = o12;
+            output_channel[(y + 1) * width + (x)] = o21;
+            output_channel[ (y + 1) * width + (x + 1)] = o22;
+            
           }
         }
       }
     }
   }
+  
   
   void Transforms::WinogradConvolve3(const int batch_size,
                                      const int input_channels,
@@ -375,7 +370,6 @@ namespace lczero {
     constexpr unsigned int board_squares = width * height;
     constexpr unsigned int filter_len = filter_size * filter_size;
     const auto filter_dim = filter_len * input_channels;
-    
     float col[filter_dim * width * height];
     
     for (int i=0; i<batch_size; i++) {
