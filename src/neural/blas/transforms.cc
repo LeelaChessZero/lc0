@@ -88,7 +88,7 @@ namespace lczero {
   
   
   void Transforms::WinogradTransformIn(const int batch_size,
-                                       const float* input1,
+                                       const float* input,
                                        float* V, const int channels) {
     constexpr auto width = 8;
     constexpr auto height = 8;
@@ -101,61 +101,20 @@ namespace lczero {
     float x[kWinogradAlpha][kWinogradAlpha];
     float T1[kWinogradAlpha][kWinogradAlpha];
     float T2[kWinogradAlpha][kWinogradAlpha];
-    
-    // V [batch_size][wtiles][channels][tiles]
-    // V [batch_index*(tiles*kWinogradTile*channels)+ (i * kWinogradAlpha + j) * channels * tiles + offset]
-    // with offset=channel * tiles + block_y * wtiles + block_x;
-    
-    // V[A][B][C][D]
-    // V[ d+ D*c +D*C*b + D*C*B*a ]
-    // V[ D*C*B*a + D*C*b + D*c + d]
-    // V[ D( C*B+a + C*b + c) +d ]
-    // V[ D( C (B*a+b) +c) +d ]
-    
-    // V [batch_index*tiles*kWinogradTile*channels+ wTile_index*channels*tiles+channel*tiles+tile_index]
-    
-    // A=batch_size           a=batch_index
-    // B=kWinogradTile        b=wTile_index
-    // C=channels             c=channel
-    // D=tiles                d=tile
-    
-    // V[ tiles(channels(kWinogradTile*batch_index+wTile_index)+channel) +tile]
-    //
-    // offset1=tiles*channels*kWinogradTile*batch_index
-    // offset2=tiles*channels*wTile_index
-    // offset3=tiles*channels
-    // offset4=tile
-    // offset34=tiles*channels+tile
-    
-    // we need
-    
-    // A=kWinogradTile        a=wTile_index
-    // B=batch_size           b=batch_index
-    // C=tiles                c=tile
-    // D=channels             d=channel
-    
-    // offset1=channels*tiles*batch_size*wTile_index
-    // offset2=channels*tiles*batch_index
-    // offset3=channels*tile
-    // offset4=channel
-    
-    
-    
-    
+    float* T2flat=(float*) T2;
+
     for (auto batch_index=0; batch_index<batch_size; batch_index++) {
       
-      const float* input=input1+batch_index*width*height*channels;
+      const float* input_batch=input+batch_index*width*height*channels;
+      float* V_batch=V+channels*tiles*batch_index;
+
       for (auto channel = 0; channel < channels; channel++) {
         
-        const auto offset2=channels*tiles*batch_index;
-        const auto offset4=channel;
-        float* V24=V+offset2+offset4;
-        
+        float* V_channel=V_batch+channel;
+        const float* input_channel=input_batch+channel * (width * height);
+
         for (auto block_y = 0; block_y < wtiles; block_y++) {
           for (auto block_x = 0; block_x < wtiles; block_x++) {
-            
-            const auto offset3 =channels*(block_y * wtiles + block_x);
-            float* V234=V24+offset3;
             
             
             // Tiles overlap by 2
@@ -167,7 +126,7 @@ namespace lczero {
               for (auto j = 0; j < kWinogradAlpha; j++) {
                 if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < height &&
                     (xin + j) < width) {
-                  x[i][j] = input[channel * (width * height) + (yin + i) * width + (xin + j)];
+                  x[i][j] = input_channel[(yin + i) * width + (xin + j)];
                 } else {
                   x[i][j] = 0.0f;
                 }
@@ -216,12 +175,11 @@ namespace lczero {
             T2[3][2] = T1[3][2] - T1[3][1];
             T2[3][3] = T1[3][1] - T1[3][3];
             
-            for (auto i = 0; i < kWinogradAlpha; i++) {
-              for (auto j = 0; j < kWinogradAlpha; j++) {
-                
-                const auto offset1=channels*tiles*batch_size*(i * kWinogradAlpha + j);
-                V234[offset1] = T2[i][j];
-              }
+            const int V_incr=channels*tiles*batch_size;
+            float* wTile_V=V_channel+channels*(block_y * wtiles + block_x);
+            for (auto wTile = 0; wTile < kWinogradTile; wTile++) {
+              *wTile_V = T2flat[wTile];
+              wTile_V+=V_incr;
             }
           }
         }
@@ -284,66 +242,7 @@ namespace lczero {
     for (auto b = 0; b < kWinogradTile; b++) {
       
       auto offset_u = b * output_channels * input_channels;
-      
-      /*
-       
-       for (int i=0; i<batch_size; i++) {
-       
-       auto offset_v = (i*kWinogradTile+b) * input_channels * tiles;
-       auto offset_m = (i*kWinogradTile+b) * output_channels * tiles;
-       
-       // In row major:
-       //                                              t
-       //            M               =         weights        x          V
-       //
-       // cols      tiles                  input_channels              tiles
-       // rows   output_channels          output_channels            input_channels
-       
-       // M/V are
-       //            batch x wtile x channel x tiles
-       
-       
-       cblas_sgemm(// Format       trans W       transV
-       CblasRowMajor, CblasTrans, CblasNoTrans,
-       // rows W, M     cols V, M     cols W, rows V       alpha
-       output_channels,      tiles,         input_channels,     1.0f,
-       // W         ldW
-       &weights[offset_u], output_channels,
-       // V         ldV   beta
-       &V[offset_v], tiles,  0.0f,
-       // M         ldM
-       &M[offset_m], tiles);
-       
-       // M/V are
-       //
-       //            wtile x batch x tiles x channel
-       
-       // In col major
-       //
-       //            M               =         weights(T)        x          V
-       //
-       // cols      tiles                  input_channels              tiles
-       // rows   output_channels          output_channels            input_channels
-       
-       
-       auto offset_v = (b*batch_size+i) * input_channels * tiles;
-       auto offset_m = (b*batch_size+i) * output_channels * tiles;
-       
-       
-       cblas_sgemm(// Format       trans W       transV
-       CblasColMajor, CblasNoTrans, CblasNoTrans,
-       // rows W, M     cols V, M     cols W, rows V       alpha
-       output_channels,      tiles,         input_channels,     1.0f,
-       // W         ldW
-       &weights[offset_u], output_channels,
-       // V         ldV   beta
-       &V[offset_v], input_channels,  0.0f,
-       // M         ldM
-       &M[offset_m], output_channels);
-       
-       }
-       */
-      
+    
       // In col major
       //
       //            M               =         weights(T)        x          V
@@ -365,9 +264,7 @@ namespace lczero {
                   &V[offset_v], input_channels,  0.0f,
                   // M         ldM
                   &M[offset_m], output_channels);
-      
-      
-      
+    
     }
     
 #endif
@@ -383,17 +280,20 @@ namespace lczero {
     constexpr auto wtiles = (width + 1) / 2;
     constexpr auto tiles = wtiles * wtiles;
     
-    float temp_m[kWinogradTile];
+    // kWinogradAlpha = 4
+    // kWinogradTile = kWinogradAlpha * kWinogradAlpha = 16
+    
+    float m[kWinogradTile];
     
     for (auto batch_index=0; batch_index<batch_size; batch_index++) {
-      const auto offset2=channels*tiles*batch_index;
-      
-      float* output1=output+batch_index*width*height*channels;
+
+      const float* M_batch=M+channels*tiles*batch_index;
+      float* output_batch=output+batch_index*width*height*channels;
       
       for (auto channel = 0; channel < channels; channel++) {
         
-        auto offset4=channel;
-        const float* M24=M+offset2+offset4;
+        const float* M_channel=M_batch+channel;
+        float* output_channel=output_batch+channel * (height * width);
         
         for (auto block_x = 0; block_x < wtiles; block_x++) {
           for (auto block_y = 0; block_y < wtiles; block_y++) {
@@ -402,15 +302,12 @@ namespace lczero {
             
             const auto b = block_y * wtiles + block_x;
             const auto offset3=channels*b;
-            const float* M234=M24+offset3;
+            const float* M_wtile=M_channel+offset3;
+            const int M_incr=channels*tiles*batch_size;
             
-            for (auto xi = 0; xi < kWinogradAlpha; xi++) {
-              for (auto nu = 0; nu < kWinogradAlpha; nu++) {
-                
-                const auto offset1=channels*tiles*batch_size*(xi * kWinogradAlpha+nu);
-                
-                temp_m[xi * kWinogradAlpha + nu] =M234[offset1];
-              }
+            for (auto wTile=0; wTile<kWinogradTile; wTile++) {
+              m[wTile]=*M_wtile;
+              M_wtile+=M_incr;
             }
             
             // Calculates transpose(A).temp_m.A
@@ -419,30 +316,30 @@ namespace lczero {
             //        [1.0, -1.0],
             //        [0.0, -1.0]]
             
-            auto o11 = temp_m[0 * 4 + 0] + temp_m[0 * 4 + 1] + temp_m[0 * 4 + 2] +
-            temp_m[1 * 4 + 0] + temp_m[1 * 4 + 1] + temp_m[1 * 4 + 2] +
-            temp_m[2 * 4 + 0] + temp_m[2 * 4 + 1] + temp_m[2 * 4 + 2];
+            auto o11 = m[0 * 4 + 0] + m[0 * 4 + 1] + m[0 * 4 + 2] +
+            m[1 * 4 + 0] + m[1 * 4 + 1] + m[1 * 4 + 2] +
+            m[2 * 4 + 0] + m[2 * 4 + 1] + m[2 * 4 + 2];
             
-            auto o12 = temp_m[0 * 4 + 1] - temp_m[0 * 4 + 2] - temp_m[0 * 4 + 3] +
-            temp_m[1 * 4 + 1] - temp_m[1 * 4 + 2] - temp_m[1 * 4 + 3] +
-            temp_m[2 * 4 + 1] - temp_m[2 * 4 + 2] - temp_m[2 * 4 + 3];
+            auto o12 = m[0 * 4 + 1] - m[0 * 4 + 2] - m[0 * 4 + 3] +
+            m[1 * 4 + 1] - m[1 * 4 + 2] - m[1 * 4 + 3] +
+            m[2 * 4 + 1] - m[2 * 4 + 2] - m[2 * 4 + 3];
             
-            auto o21 = temp_m[1 * 4 + 0] + temp_m[1 * 4 + 1] + temp_m[1 * 4 + 2] -
-            temp_m[2 * 4 + 0] - temp_m[2 * 4 + 1] - temp_m[2 * 4 + 2] -
-            temp_m[3 * 4 + 0] - temp_m[3 * 4 + 1] - temp_m[3 * 4 + 2];
+            auto o21 = m[1 * 4 + 0] + m[1 * 4 + 1] + m[1 * 4 + 2] -
+            m[2 * 4 + 0] - m[2 * 4 + 1] - m[2 * 4 + 2] -
+            m[3 * 4 + 0] - m[3 * 4 + 1] - m[3 * 4 + 2];
             
-            auto o22 = temp_m[1 * 4 + 1] - temp_m[1 * 4 + 2] - temp_m[1 * 4 + 3] -
-            temp_m[2 * 4 + 1] + temp_m[2 * 4 + 2] + temp_m[2 * 4 + 3] -
-            temp_m[3 * 4 + 1] + temp_m[3 * 4 + 2] + temp_m[3 * 4 + 3];
+            auto o22 = m[1 * 4 + 1] - m[1 * 4 + 2] - m[1 * 4 + 3] -
+            m[2 * 4 + 1] + m[2 * 4 + 2] + m[2 * 4 + 3] -
+            m[3 * 4 + 1] + m[3 * 4 + 2] + m[3 * 4 + 3];
             
-            output1[channel * (height * width) + (y)*width + (x)] = o11;
+            output_channel[ (y)*width + (x)] = o11;
             if (x + 1 < width) {
-              output1[channel * (height * width) + (y)*width + (x + 1)] = o12;
+              output_channel[ (y)*width + (x + 1)] = o12;
             }
             if (y + 1 < height) {
-              output1[channel * (height * width) + (y + 1) * width + (x)] = o21;
+              output_channel[(y + 1) * width + (x)] = o21;
               if (x + 1 < width) {
-                output1[channel * (height * width) + (y + 1) * width + (x + 1)] = o22;
+                output_channel[ (y + 1) * width + (x + 1)] = o22;
               }
             }
           }
