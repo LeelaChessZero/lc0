@@ -26,11 +26,11 @@
 #include <sstream>
 #include <string>
 
-#include "neural/CL/OpenCL.h"
-#include "neural/CL/OpenCLParams.h"
-#include "neural/CL/OpenCLTuner.h"
+#include "neural/opencl/OpenCL.h"
+#include "neural/opencl/OpenCLParams.h"
+#include "neural/opencl/OpenCLTuner.h"
 
-#include "neural/BLAS/blas.h"
+#include "neural/blas/blas.h"
 
 const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
 constexpr auto MAX_ERROR = 1e-4f;

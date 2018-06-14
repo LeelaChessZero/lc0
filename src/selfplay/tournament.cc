@@ -40,6 +40,8 @@ const char* kTrainingStr = "Write training data";
 const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
 const char* kVerboseThinkingStr = "Show verbose thinking messages";
+const char* kResignPlaythroughStr =
+              "The percentage of games which ignore resign";
 
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
@@ -50,7 +52,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player1");
   options->AddContext("player2");
 
-  options->Add<BoolOption>(kShareTreesStr, "share-trees") = false;
+  options->Add<BoolOption>(kShareTreesStr, "share-trees") = true;
   options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
   options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 8;
   options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
@@ -65,8 +67,11 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
       "multiplexing";
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
   options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
+  options->Add<FloatOption>(kResignPlaythroughStr, 0.0f, 100.0f,
+                            "resign-playthrough") = 0.0f;
 
   Search::PopulateUciParams(options);
+  SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch size
   defaults->Set<bool>(Search::kSmartPruningStr, false);  // No smart pruning
@@ -93,7 +98,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kTotalGames(options.Get<int>(kTotalGamesStr)),
       kShareTree(options.Get<bool>(kShareTreesStr)),
       kParallelism(options.Get<int>(kParallelGamesStr)),
-      kTraining(options.Get<bool>(kTrainingStr)) {
+      kTraining(options.Get<bool>(kTrainingStr)),
+      kResignPlaythrough(options.Get<float>(kResignPlaythroughStr)) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     next_game_black_ = Random::Get().GetBool();
@@ -232,8 +238,11 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
   auto& game = **game_iter;
 
+  // If kResignPlaythrough == 0, then this comparison is unconditionally true
+  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
+
   // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]]);
+  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {

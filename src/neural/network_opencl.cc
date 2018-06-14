@@ -18,10 +18,10 @@
 
 #include "neural/network.h"
 #include "neural/factory.h"
-#include "neural/CL/OpenCL.h"
-#include "neural/CL/OpenCLParams.h"
-#include "neural/BLAS/blas.h"
-#include "neural/BLAS/transforms.h"
+#include "neural/opencl/OpenCL.h"
+#include "neural/opencl/OpenCLParams.h"
+#include "neural/blas/blas.h"
+#include "neural/blas/transforms.h"
 
 #include <algorithm>
 #include <cassert>
