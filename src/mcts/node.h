@@ -80,6 +80,8 @@ class Node {
       return q_;
     }
   }
+  // Returns q_ converted to standard cpscore form for UCI
+  int GetCPScore() const;
   // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
   // equation. So it's really more of a "reduced U" than raw U.
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }

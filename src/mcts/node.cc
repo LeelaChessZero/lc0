@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -244,6 +245,22 @@ float Node::GetVisitedPolicy() const {
     if (node->GetNStarted() > 0) res += node->GetP();
   }
   return res;
+}
+
+// raw value head output, scaled up by 5
+int Node::GetCPScore() const {
+  // 5*atanh(1-feps) = 91.84, while 5*atanh(1-deps) = 89.55, where deps and
+  // feps are float epsilon and double epsilon respectively. So set the maximum
+  // value to 90.
+  float q = GetQ(0, 0);
+  if (q >= 1) {
+    return 9000; // leela can never get over 9000 heh
+  } else if (q <= -1) {
+    return -9000;
+  } else {
+    // This factor of 5 is probably further tweakable in the future.
+    return 500 * std::atanh(q);
+  }
 }
 
 void Node::ResetStats() {
