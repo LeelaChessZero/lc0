@@ -75,9 +75,12 @@ class Node {
     if (n_ == 0) return default_q;
     return q_;
   }
+
   // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
   // equation. So it's really more of a "reduced U" than raw U.
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
+  // Returns value of Value Head returned from the neural net.
+  float GetV() const { return v_; }
   // Returns value of Move probability returned from the neural net
   // (but can be changed by adding Dirichlet noise).
   float GetP() const { return p_; }
@@ -141,6 +144,8 @@ class Node {
   // Root node contains move a1a1.
   Move move_;
 
+  // Q value fetched from neural network. Only used for debug output.
+  float v_;
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored.
   float q_;

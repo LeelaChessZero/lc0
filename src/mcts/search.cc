@@ -204,9 +204,8 @@ void Search::SendMovesStats() const {
     oss << " N: ";
     oss << std::right << std::setw(7) << node->GetN() << " (+" << std::setw(2)
         << node->GetNInFlight() << ") ";
-    // oss << "(V: " << std::setw(6) << std::setprecision(2) << node->GetV() *
-    // 100
-    //     << "%) ";
+    oss << "(V: " << std::setw(6) << std::setprecision(2) << node->GetV() * 100
+        << "%) ";
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
     oss << "(Q: " << std::setw(8) << std::setprecision(5)

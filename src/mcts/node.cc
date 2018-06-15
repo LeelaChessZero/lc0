@@ -275,7 +275,7 @@ Move Node::GetMove(bool flip) const {
 
 void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
-  q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
+  v_ = q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
 }
 
 bool Node::TryStartScoreUpdate() {
@@ -287,6 +287,8 @@ bool Node::TryStartScoreUpdate() {
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
 void Node::FinalizeScoreUpdate(float v, float gamma, float beta) {
+  // Update v;
+  if (n_ == 0) v_ = v;
   // Recompute Q.
   q_ += (v - q_) / (std::pow(static_cast<float>(n_), gamma) * beta + 1);
   // Increment N.
