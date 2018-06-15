@@ -87,18 +87,9 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
 
 void Transforms::WinogradTransformIn(const int batch_size, const float* input,
                                      float* V, const int channels) {
-  constexpr auto width = 8;
-  constexpr auto height = 8;
-  constexpr auto wtiles = (width + 1) / 2;  // 4
-  constexpr auto tiles = wtiles * wtiles;   // 16
-
-  // kWinogradAlpha = 4
-  // kWinogradTile = kWinogradAlpha * kWinogradAlpha = 16
 
   float x[kWinogradAlpha][kWinogradAlpha];
   float T1[kWinogradAlpha][kWinogradAlpha];
-  float T2[kWinogradAlpha][kWinogradAlpha];
-  float* T2flat = (float*)T2;
 
   for (auto batch_index = 0; batch_index < batch_size; batch_index++) {
     const float* input_batch = input + batch_index * width * height * channels;
@@ -150,29 +141,42 @@ void Transforms::WinogradTransformIn(const int batch_size, const float* input,
           T1[3][2] = x[1][2] - x[3][2];
           T1[3][3] = x[1][3] - x[3][3];
 
-          T2[0][0] = T1[0][0] - T1[0][2];
-          T2[0][1] = T1[0][1] + T1[0][2];
-          T2[0][2] = T1[0][2] - T1[0][1];
-          T2[0][3] = T1[0][1] - T1[0][3];
-          T2[1][0] = T1[1][0] - T1[1][2];
-          T2[1][1] = T1[1][1] + T1[1][2];
-          T2[1][2] = T1[1][2] - T1[1][1];
-          T2[1][3] = T1[1][1] - T1[1][3];
-          T2[2][0] = T1[2][0] - T1[2][2];
-          T2[2][1] = T1[2][1] + T1[2][2];
-          T2[2][2] = T1[2][2] - T1[2][1];
-          T2[2][3] = T1[2][1] - T1[2][3];
-          T2[3][0] = T1[3][0] - T1[3][2];
-          T2[3][1] = T1[3][1] + T1[3][2];
-          T2[3][2] = T1[3][2] - T1[3][1];
-          T2[3][3] = T1[3][1] - T1[3][3];
-
           const int V_incr = channels * tiles * batch_size;
           float* wTile_V = V_channel + channels * (block_y * wtiles + block_x);
-          for (auto wTile = 0; wTile < kWinogradTile; wTile++) {
-            *wTile_V = T2flat[wTile];
-            wTile_V += V_incr;
-          }
+
+
+          *wTile_V  = T1[0][0] - T1[0][2];
+          wTile_V += V_incr;
+          *wTile_V  = T1[0][1] + T1[0][2];
+          wTile_V += V_incr;
+          *wTile_V  = T1[0][2] - T1[0][1];
+          wTile_V += V_incr;
+          *wTile_V  = T1[0][1] - T1[0][3];
+          wTile_V += V_incr;
+          *wTile_V  = T1[1][0] - T1[1][2];
+          wTile_V += V_incr;
+          *wTile_V  = T1[1][1] + T1[1][2];
+          wTile_V += V_incr;
+          *wTile_V  = T1[1][2] - T1[1][1];
+          wTile_V += V_incr;
+          *wTile_V  = T1[1][1] - T1[1][3];
+          wTile_V += V_incr;
+          *wTile_V  = T1[2][0] - T1[2][2];
+          wTile_V += V_incr;
+          *wTile_V  = T1[2][1] + T1[2][2];
+          wTile_V += V_incr;
+          *wTile_V  = T1[2][2] - T1[2][1];
+          wTile_V += V_incr;
+          *wTile_V  = T1[2][1] - T1[2][3];
+          wTile_V += V_incr;
+          *wTile_V  = T1[3][0] - T1[3][2];
+          wTile_V += V_incr;
+          *wTile_V  = T1[3][1] + T1[3][2];
+          wTile_V += V_incr;
+          *wTile_V  = T1[3][2] - T1[3][1];
+          wTile_V += V_incr;
+          *wTile_V  = T1[3][1] - T1[3][3];
+
         }
       }
     }
