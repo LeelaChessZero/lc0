@@ -37,6 +37,7 @@ struct GoParams {
   int nodes = -1;
   std::int64_t movetime = -1;
   bool infinite = false;
+  std::vector<std::string> searchmoves;
 };
 
 class UciLoop {
@@ -48,6 +49,7 @@ class UciLoop {
   virtual void SendResponse(const std::string& response);
   void SendBestMove(const BestMoveInfo& move);
   void SendInfo(const ThinkingInfo& info);
+  void SendId();
 
   // Command handlers.
   virtual void CmdUci() { throw Exception("Not supported"); }

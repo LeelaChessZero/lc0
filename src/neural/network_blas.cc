@@ -18,7 +18,8 @@
 
 #include "neural/network.h"
 #include "neural/factory.h"
-#include "neural/transforms.h"
+#include "neural/blas/blas.h"
+#include "neural/blas/transforms.h"
 
 #include <algorithm>
 #include <cassert>
@@ -27,7 +28,6 @@
 #include <iostream>
 #include <thread>
 
-#include "utils/blas.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -61,7 +61,7 @@ class BlasComputation : public NetworkComputation {
       float value = plane.value;
       const uint64_t one = 1;
       for (int i = 0; i < 64; i++)
-        input_data_[index++] = ((plane.mask & (one << i)) == 0) ? 0 : value;
+        input_data_[index++] = (plane.mask & (one << i)) != 0 ? value : 0;
     }
 
     std::vector<float> policy_data(weights_.ip_pol_b.size());
@@ -84,17 +84,8 @@ class BlasComputation : public NetworkComputation {
     constexpr int height = 8;
     constexpr int tiles = width * height / 4;
 
-    /*
-     static constexpr int NUM_VALUE_INPUT_PLANES = 32;
-     static constexpr int NUM_POLICY_INPUT_PLANES = 32;
-     static constexpr int NUM_OUTPUT_POLICY = 1858;
-     static constexpr int NUM_VALUE_CHANNELS = 128;
-     */
-
     int NUM_VALUE_INPUT_PLANES = weights_.value.bn_means.size();
     int NUM_POLICY_INPUT_PLANES = weights_.policy.bn_means.size();
-    int NUM_OUTPUT_POLICY = weights_.ip_pol_b.size();
-    int NUM_VALUE_CHANNELS = weights_.ip1_val_b.size();
 
     static constexpr auto kWinogradAlpha = 4;
     static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
@@ -116,7 +107,7 @@ class BlasComputation : public NetworkComputation {
     std::vector<float> value_data(NUM_VALUE_INPUT_PLANES * width * height);
 
     Transforms::WinogradConvolve3(output_channels, input,
-                                   weights_.input.weights, V, M, conv_out);
+                                  weights_.input.weights, V, M, conv_out);
     Transforms::Batchnorm<64>(output_channels, conv_out,
                               weights_.input.bn_means.data(),
                               weights_.input.bn_stddivs.data());
@@ -132,7 +123,7 @@ class BlasComputation : public NetworkComputation {
       std::copy(begin(conv_in), end(conv_in), begin(res));
 
       Transforms::WinogradConvolve3(output_channels, conv_in, conv1.weights, V,
-                                     M, conv_out);
+                                    M, conv_out);
       Transforms::Batchnorm<64>(output_channels, conv_out,
                                 conv1.bn_means.data(), conv1.bn_stddivs.data());
 
@@ -140,7 +131,7 @@ class BlasComputation : public NetworkComputation {
       output_channels = conv2.biases.size();
       std::swap(conv_out, conv_in);
       Transforms::WinogradConvolve3(output_channels, conv_in, conv2.weights, V,
-                                     M, conv_out);
+                                    M, conv_out);
       Transforms::Batchnorm<64>(output_channels, conv_out,
                                 conv2.bn_means.data(), conv2.bn_stddivs.data(),
                                 res.data());
@@ -197,8 +188,11 @@ class BlasNetwork : public Network {
  public:
   virtual ~BlasNetwork(){};
 
-  BlasNetwork(const Weights& weights, const OptionsDict& /* options */)
+  BlasNetwork(const Weights& weights, const OptionsDict& options)
       : weights_(weights) {
+    bool verbose = options.GetOrDefault<bool>("verbose", true);
+    int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
+
     const int inputChannels = kInputPlanes;
     const int channels = weights.input.biases.size();
     const size_t residual_blocks = weights.residual.size();
@@ -206,15 +200,13 @@ class BlasNetwork : public Network {
     weights_.input.weights = Transforms::WinogradTransformF(
         weights_.input.weights, channels, inputChannels);
 
-    std::vector<float>& input_batchnorm_means = weights_.input.bn_means;
-    Transforms::OffsetBatchNormMeans(input_batchnorm_means,
+    Transforms::OffsetBatchNormMeans(weights_.input.bn_means,
                                      weights_.input.biases);
 
-    std::vector<float>& input_batchnorm_stddivs = weights_.input.bn_stddivs;
-    Transforms::InvertBatchNormStddev(input_batchnorm_stddivs);
+    Transforms::InvertBatchNormStddev(weights_.input.bn_stddivs);
 
     // residual blocks
-    for (auto i = 0; i < residual_blocks; i++) {
+    for (size_t i = 0; i < residual_blocks; i++) {
       auto& residual = weights_.residual[i];
       auto& conv1 = residual.conv1;
       auto& conv2 = residual.conv2;
@@ -224,42 +216,59 @@ class BlasNetwork : public Network {
       conv2.weights =
           Transforms::WinogradTransformF(conv2.weights, channels, channels);
 
-      std::vector<float>& batchnorm_means_1 = conv1.bn_means;
-      Transforms::OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
+      Transforms::OffsetBatchNormMeans(conv1.bn_means, conv1.biases);
+      Transforms::OffsetBatchNormMeans(conv2.bn_means, conv2.biases);
 
-      std::vector<float>& batchnorm_means_2 = conv2.bn_means;
-      Transforms::OffsetBatchNormMeans(batchnorm_means_2, conv2.biases);
-
-      std::vector<float>& batchnorm_stddivs_1 = conv1.bn_stddivs;
-      Transforms::InvertBatchNormStddev(batchnorm_stddivs_1);
-
-      std::vector<float>& batchnorm_stddivs_2 = conv2.bn_stddivs;
-      Transforms::InvertBatchNormStddev(batchnorm_stddivs_2);
+      Transforms::InvertBatchNormStddev(conv1.bn_stddivs);
+      Transforms::InvertBatchNormStddev(conv2.bn_stddivs);
     }
 
-    std::vector<float>& bn_pol_means = weights_.policy.bn_means;
-    Transforms::OffsetBatchNormMeans(bn_pol_means, weights_.policy.biases);
+    Transforms::OffsetBatchNormMeans(weights_.policy.bn_means,
+                                     weights_.policy.biases);
+    Transforms::InvertBatchNormStddev(weights_.policy.bn_stddivs);
 
-    std::vector<float>& bn_pol_stddivs = weights_.policy.bn_stddivs;
-    Transforms::InvertBatchNormStddev(bn_pol_stddivs);
-
-    std::vector<float>& bn_val_means = weights_.value.bn_means;
-    Transforms::OffsetBatchNormMeans(bn_val_means, weights_.value.biases);
-
-    std::vector<float>& bn_val_stddivs = weights_.value.bn_stddivs;
-    Transforms::InvertBatchNormStddev(bn_val_stddivs);
+    Transforms::OffsetBatchNormMeans(weights_.value.bn_means,
+                                     weights_.value.biases);
+    Transforms::InvertBatchNormStddev(weights_.value.bn_stddivs);
 
 #ifdef USE_OPENBLAS
-// openblas_set_num_threads(1);
-// printf("BLAS Core: %s\n", openblas_get_corename());
+    int num_procs = openblas_get_num_procs();
+    blas_cores = std::min(num_procs, blas_cores);
+    openblas_set_num_threads(blas_cores);
+    if (verbose) {
+      const char* core_name = openblas_get_corename();
+      const char* config = openblas_get_config();
+      fprintf(stderr, "BLAS vendor: OpenBlas.\n");
+      fprintf(stderr, "OpenBlas [%s].\n", config);
+      fprintf(stderr, "OpenBlas found %d %s core(s).\n", num_procs, core_name);
+      fprintf(stderr, "OpenBLAS using %d core(s) for this backend.\n",
+              blas_cores);
+    }
 #endif
 
 #ifdef USE_MKL
-    // mkl_set_threading_layer(MKL_THREADING_SEQUENTIAL);
-    mkl_set_num_threads(1);
-    MKLVersion Version;
-    mkl_get_version(&Version);
-    printf("BLAS core: MKL %s\n", Version.Processor);
+    int max_procs = mkl_get_max_threads();
+    blas_cores = std::min(max_procs, blas_cores);
+    mkl_set_num_threads(blas_cores);
+    if (verbose) {
+      fprintf(stderr, "BLAS vendor: MKL.\n");
+      constexpr int len = 256;
+      char versionbuf[len];
+      mkl_get_version_string(versionbuf, len);
+      fprintf(stderr, "MKL %s.\n", versionbuf);
+      MKLVersion version;
+      mkl_get_version(&version);
+      fprintf(stderr, "MKL platform: %s, processor: %s.\n", version.Platform,
+              version.Processor);
+      fprintf(stderr, "MKL can use up to  %d thread(s).\n", max_procs);
+      fprintf(stderr, "MKL using %d thread(s) for this backend.\n", blas_cores);
+    }
+#endif
+
+#ifdef USE_ACCELERATE
+    if (verbose) {
+      fprintf(stderr, "BLAS vendor: Apple vecLib.\n");
+    }
 #endif
   }
 
@@ -275,4 +284,4 @@ class BlasNetwork : public Network {
 
 REGISTER_NETWORK("blas", BlasNetwork, 50)
 
-}  // namespace lc0
+}  // namespace lczero

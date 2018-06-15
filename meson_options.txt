@@ -25,7 +25,12 @@ option('cudnn_libdirs',
 
 option('mkl_libdirs',
        type: 'array',
-       value: ['/opt/intel/lib/intel64', '/opt/intel/mkl/lib/intel64'],
+       value: ['/opt/intel/lib/intel64', '/opt/intel/mkl/lib/intel64', '/opt/intel/mkl/lib'],
+       description: 'Paths to MKL libraries')
+
+option('mkl_include',
+       type: 'array',
+       value: ['/opt/intel/mkl/include'],
        description: 'Paths to MKL libraries')
 
 option('cudnn_include', 
@@ -37,3 +42,38 @@ option('build_backends',
        type: 'boolean',
        value: true,
        description: 'Build backends for NN computation')
+
+option('blas',
+       type: 'boolean',
+       value: true,
+       description: 'Enable BLAS backend')
+
+option('cudnn',
+       type: 'boolean',
+       value: true,
+       description: 'Enable cuDNN backend')
+
+option('opencl',
+       type: 'boolean',
+       value: true,
+       description: 'Enable OpenCL backend')
+
+option('tf',
+       type: 'boolean',
+       value: true,
+       description: 'Enable TensorFlow backend')
+
+option('openblas',
+       type: 'boolean',
+       value: true,
+       description: 'Enable OpenBLAS support')
+
+option('mkl',
+       type: 'boolean',
+       value: true,
+       description: 'Enable MKL BLAS support')
+
+option('accelerate',
+       type: 'boolean',
+       value: true,
+       description: 'Enable Accelerate BLAS support')

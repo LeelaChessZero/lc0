@@ -18,7 +18,10 @@
 
 #include "neural/network.h"
 #include "neural/factory.h"
-#include "neural/transforms.h"
+#include "neural/opencl/OpenCL.h"
+#include "neural/opencl/OpenCLParams.h"
+#include "neural/blas/blas.h"
+#include "neural/blas/transforms.h"
 
 #include <algorithm>
 #include <cassert>
@@ -30,10 +33,6 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
-#include "CL/OpenCL.h"
-#include "CL/OpenCLParams.h"
-
-#include "utils/blas.h"
 
 namespace lczero {
 
@@ -83,19 +82,19 @@ class OpenCLComputation : public NetworkComputation {
       float value = plane.value;
       const uint64_t one = 1;
       for (int i = 0; i < 64; i++)
-        input_data_[index++] = ((plane.mask & (one << i)) == 0) ? 0 : value;
+        input_data_[index++] = (plane.mask & (one << i)) != 0 ? value : 0;
     }
 
     std::vector<float> policy_data(weights_.num_output_policies);
     opencl_net_.forward(input_data_, policy_data, value_data_);
 
     // Get the moves
-    softmax(policy_data, policy_data);
+    Transforms::Softmax(policy_data, policy_data);
     policy_data_.emplace_back(move(policy_data));
 
     // Now get the score
-    double winrate =
-        innerproduct(weights_.ip2_val_w, value_data_) + weights_.ip2_val_b[0];
+    double winrate = Transforms::Innerproduct(weights_.ip2_val_w, value_data_) +
+                     weights_.ip2_val_b[0];
     q_value_.emplace_back(std::tanh(winrate));
   }
 
@@ -111,28 +110,6 @@ class OpenCLComputation : public NetworkComputation {
   }
 
  private:
-  static void softmax(const std::vector<float>& input,
-                      std::vector<float>& output) {
-    auto alpha = *std::max_element(begin(input), begin(input) + input.size());
-
-    auto denom = 0.0f;
-    for (auto i = size_t{0}; i < output.size(); i++) {
-      auto val = std::exp(input[i] - alpha);
-      output[i] = val;
-      denom += val;
-    }
-    for (auto i = size_t{0}; i < output.size(); i++) {
-      output[i] = output[i] / denom;
-    }
-  }
-
-  static float innerproduct(const std::vector<float>& x,
-                            const std::vector<float>& y) {
-    // float cblas_sdot(const int __N, const float *__X, const int __incX, const
-    // float *__Y, const int __incY);
-    return cblas_sdot(x.size(), &x[0], 1, &y[0], 1);
-  }
-
   const OpenCL_Network& opencl_net_;
   const OpenCLWeights& weights_;
 
@@ -151,11 +128,11 @@ class OpenCLNetwork : public Network {
   OpenCLNetwork(const Weights& weights, const OptionsDict& options)
       : weights_(weights), params_(), opencl_(), opencl_net_(opencl_) {
     params_.gpuId = options.GetOrDefault<int>("gpu", -1);
-    params_.verbose = options.GetOrDefault<bool>("verbose", false);
-    params_.force_tune = options.GetOrDefault<int>("force_tune", false);
-    params_.tune_only = options.GetOrDefault<int>("tune_only", false);
+    params_.verbose = options.GetOrDefault<bool>("verbose", true);
+    params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
+    params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
-        options.GetOrDefault<int>("tune_exhaustive", false);
+        options.GetOrDefault<bool>("tune_exhaustive", false);
 
     const int inputChannels = kInputPlanes;
     const int channels = weights.input.biases.size();
@@ -190,7 +167,7 @@ class OpenCLNetwork : public Network {
         weights.input.weights, channels, inputChannels);
 
     auto Upad = Transforms::ZeropadU(input_conv_weights, channels,
-                                      inputChannels, m_ceil, k_ceil);
+                                     inputChannels, m_ceil, k_ceil);
 
     std::vector<float> input_batchnorm_means =
         weights.input.bn_means;  // copy ctor
@@ -217,9 +194,9 @@ class OpenCLNetwork : public Network {
           Transforms::WinogradTransformF(conv2.weights, channels, channels);
 
       auto Upad1 = Transforms::ZeropadU(conv_weights_1, channels, channels,
-                                         m_ceil, m_ceil);
+                                        m_ceil, m_ceil);
       auto Upad2 = Transforms::ZeropadU(conv_weights_2, channels, channels,
-                                         m_ceil, m_ceil);
+                                        m_ceil, m_ceil);
 
       std::vector<float> batchnorm_means_1 = conv1.bn_means;  // copy ctor
       Transforms::OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
@@ -281,4 +258,4 @@ class OpenCLNetwork : public Network {
 
 REGISTER_NETWORK("opencl", OpenCLNetwork, 100)
 
-}  // namespace lc0
+}  // namespace lczero

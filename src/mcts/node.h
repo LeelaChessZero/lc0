@@ -57,13 +57,13 @@ class Node {
   // Returns whether a node has children.
   bool HasChildren() const { return child_ != nullptr; }
 
-  // Returns move from the point of new of player BEFORE the position.
+  // Returns move from the point of view of player BEFORE the position.
   Move GetMove() const { return move_; }
 
   // Returns move, with optional flip (false == player BEFORE the position).
   Move GetMove(bool flip) const;
 
-  // Returns sum of probabilities for visited children.
+  // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
@@ -71,29 +71,25 @@ class Node {
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns Q if number of visits is more than 0,
-  float GetQ(float default_q, float virtual_loss) const {
+  float GetQ(float default_q) const {
     if (n_ == 0) return default_q;
-    if (virtual_loss && n_in_flight_) {
-      return (w_ - n_in_flight_ * virtual_loss) /
-             (n_ + n_in_flight_ * virtual_loss);
-    } else {
-      return q_;
-    }
+    return q_;
   }
-  // Returns U / (Puct * N[parent])
+
+  // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
+  // equation. So it's really more of a "reduced U" than raw U.
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
   // Returns value of Value Head returned from the neural net.
   float GetV() const { return v_; }
-  // Returns value of Move probabilityreturned from the neural net.
+  // Returns value of Move probability returned from the neural net
   // (but can be changed by adding Dirichlet noise).
   float GetP() const { return p_; }
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
+  float GetTerminalNodeValue() const { return q_; }
   uint16_t GetFullDepth() const { return full_depth_; }
   uint16_t GetMaxDepth() const { return max_depth_; }
 
-  // Sets node own value (from neural net or win/draw/lose adjudication).
-  void SetV(float val) { v_ = val; }
   // Sets move probability.
   void SetP(float val) { p_ = val; }
   // Makes the node terminal and sets it's score.
@@ -108,11 +104,10 @@ class Node {
   void CancelScoreUpdate();
   // Updates the node with newly computed value v.
   // Updates:
+  // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  // * W (+= v)
-  // * Q (=w/n)
-  void FinalizeScoreUpdate(float v);
+  void FinalizeScoreUpdate(float v, float gamma, float beta);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -149,15 +144,11 @@ class Node {
   // Root node contains move a1a1.
   Move move_;
 
-  // Q value fetched from neural network.
+  // Q value fetched from neural network. Only used for debug output.
   float v_;
   // Average value (from value head of neural network) of all visited nodes in
-  // subtree. Terminal nodes (which lead to checkmate or draw) may be visited
-  // several times, those are counted several times. q = w / n
+  // subtree. For terminal nodes, eval is stored.
   float q_;
-  // Sum of values of all visited nodes in a subtree. Used to compute an
-  // average.
-  float w_;
   // Probabality that this move will be made. From policy head of the neural
   // network.
   float p_;
@@ -192,9 +183,14 @@ inline void Node_Iterator::operator++() { node_ = node_->sibling_; }
 class NodeTree {
  public:
   ~NodeTree() { DeallocateTree(); }
-  // Adds a move to current_head_;
+  // Adds a move to current_head_.
   void MakeMove(Move move);
+  // Resets the current head to ensure it doesn't carry over details from a
+  // previous search.
+  void TrimTreeAtHead();
   // Sets the position in a tree, trying to reuse the tree.
+  // If @auto_garbage_collect, old tree is garbage collected immediately. (may
+  // take some milliseconds)
   void ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
   const Position& HeadPosition() const { return history_.Last(); }
@@ -210,4 +206,5 @@ class NodeTree {
   Node* gamebegin_node_ = nullptr;
   PositionHistory history_;
 };
+
 }  // namespace lczero

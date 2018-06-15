@@ -74,16 +74,21 @@ Output MakeConvBlock(const Scope& scope, Input input, int channels,
       MakeConst(scope, {channels, channels, input_channels, output_channels},
                 weights.weights, {3, 2, 0, 1});
 
-  // auto b_conv = MakeConst(scope, {output_channels}, weights.biases);
+  auto b_conv = MakeConst(scope, {output_channels}, weights.biases);
   auto conv2d = Conv2D(scope, input, w_conv, {1, 1, 1, 1}, "SAME",
                        Conv2D::DataFormat(kDataFormat).Dilations({1, 1, 1, 1}));
 
+  auto bn_means = MakeConst(scope, {output_channels}, weights.bn_means);
+  auto means = Sub(scope, bn_means, b_conv);
+
   auto batch_norm =
-      FusedBatchNorm(scope, conv2d, Ones(scope, {output_channels}),
-                     Zeros(scope, {output_channels}),
-                     MakeConst(scope, {output_channels}, weights.bn_means),
-                     MakeConst(scope, {output_channels}, weights.bn_stddivs),
-                     FusedBatchNorm::DataFormat(kDataFormat).IsTraining(false))
+      FusedBatchNorm(
+          scope, conv2d, Ones(scope, {output_channels}),
+          Zeros(scope, {output_channels}), means,
+          MakeConst(scope, {output_channels}, weights.bn_stddivs),
+          FusedBatchNorm::DataFormat(kDataFormat)
+              .IsTraining(false)
+              .Epsilon(1.0000001e-5f))  // Cuda doesn't support eps <= 1e-5
           .y;
 
   if (mixin) {

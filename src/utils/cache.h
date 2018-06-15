@@ -33,7 +33,8 @@ class LruCache {
 
  public:
   LruCache(int capacity = 128)
-      : capacity_(capacity), hash_(capacity * kLoadFactor + 1) {
+      : capacity_(capacity),
+        hash_(static_cast<size_t>(capacity * kLoadFactor + 1)) {
     std::memset(&hash_[0], 0, sizeof(hash_[0]) * hash_.size());
   }
 
@@ -138,7 +139,8 @@ class LruCache {
     ShrinkToCapacity(capacity);
     capacity_ = capacity;
 
-    std::vector<Item*> new_hash(capacity * kLoadFactor + 1);
+    std::vector<Item*> new_hash(
+        static_cast<size_t>(capacity * kLoadFactor + 1));
     std::memset(&new_hash[0], 0, sizeof(new_hash[0]) * new_hash.size());
 
     if (size_ != 0) {

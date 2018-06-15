@@ -16,9 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/network.h"
 #include "neural/factory.h"
-#include "neural/transforms.h"
+#include "neural/network.h"
 
 #include <algorithm>
 #include <cassert>
@@ -117,8 +116,9 @@ class CheckComputation : public NetworkComputation {
     constexpr float ABSOLUTE_TOLERANCE = 1e-6;
     constexpr float RELATIVE_TOLERANCE = 1e-2;
 
-    return abs(a - b) <= std::max(RELATIVE_TOLERANCE * std::max(abs(a), abs(b)),
-                                  ABSOLUTE_TOLERANCE);
+    return std::abs(a - b) <=
+           std::max(RELATIVE_TOLERANCE * std::max(std::abs(a), std::abs(b)),
+                    ABSOLUTE_TOLERANCE);
   }
 
   std::unique_ptr<NetworkComputation> refComp_;
@@ -164,4 +164,4 @@ class CheckNetwork : public Network {
 
 REGISTER_NETWORK("check", CheckNetwork, -800)
 
-}  // namespace lc0
+}  // namespace lczero

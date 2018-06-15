@@ -63,10 +63,18 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0, 100.0, "slowmover") = 2.2;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.2f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
 
   Search::PopulateUciParams(options);
+
+  auto defaults = options->GetMutableDefaultsOptions();
+
+  defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
+  defaults->Set<float>(Search::kFpuReductionStr, 0.9f);  // FPU reduction = 0.9
+  defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
+  defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
+  defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
@@ -76,6 +84,12 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   limits.infinite = params.infinite;
+  if (!params.searchmoves.empty()) {
+    limits.searchmoves.reserve(params.searchmoves.size());
+    for (const auto& move : params.searchmoves) {
+      limits.searchmoves.emplace_back(move, is_black);
+    }
+  }
   if (params.infinite || time < 0) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
@@ -87,8 +101,9 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   float slowmover = options_.Get<float>(kSlowMoverStr);
   int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
   // Total time till control including increments.
-  auto total_moves_time = std::max(
-      int64_t{0}, time + increment * (movestogo - 1) - move_overhead * movestogo);
+  auto total_moves_time =
+      std::max(int64_t{0},
+               time + increment * (movestogo - 1) - move_overhead * movestogo);
 
   const int kSmartPruningToleranceMs = 200;
 
@@ -99,10 +114,12 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   // reduce it.
   if (slowmover < 1.0 || this_move_time > kSmartPruningToleranceMs) {
     // Budget X*slowmover for current move, X*1.0 for the rest.
-    this_move_time = total_moves_time / (movestogo - 1 + slowmover) * slowmover;
+    this_move_time = static_cast<int64_t>(
+        total_moves_time / (movestogo - 1 + slowmover) * slowmover);
   }
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms = std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
+  limits.time_ms =
+      std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
   return limits;
 }
 
@@ -133,6 +150,11 @@ void EngineController::UpdateNetwork() {
 }
 
 void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
+
+void EngineController::EnsureReady() {
+  UpdateNetwork();
+  std::unique_lock<RpSharedMutex> lock(busy_mutex_);
+}
 
 void EngineController::NewGame() {
   SharedLock lock(busy_mutex_);
@@ -193,8 +215,7 @@ void EngineLoop::RunLoop() {
 }
 
 void EngineLoop::CmdUci() {
-  SendResponse("id name The Lc0 chess engine.");
-  SendResponse("id author The LCZero Authors.");
+  SendId();
   for (const auto& option : options_.ListOptionsUci()) {
     SendResponse(option);
   }

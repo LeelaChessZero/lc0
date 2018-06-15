@@ -26,11 +26,14 @@ namespace lczero {
 
 class RandomNetworkComputation : public NetworkComputation {
  public:
-  RandomNetworkComputation(int delay) : delay_ms_(delay) {}
+  RandomNetworkComputation(int delay, int seed) : delay_ms_(delay), seed_(seed) {}
   void AddInput(InputPlanes&& input) override {
-    std::uint64_t hash = 0;
+    std::uint64_t hash = seed_;
     for (const auto& plane : input) {
       hash = HashCat({hash, plane.mask});
+      std::uint64_t value_hash = 
+          *reinterpret_cast<const std::uint32_t*>(&plane.value);
+      hash = HashCat({hash, value_hash});
     }
     inputs_.push_back(hash);
   }
@@ -53,18 +56,21 @@ class RandomNetworkComputation : public NetworkComputation {
  private:
   std::vector<std::uint64_t> inputs_;
   int delay_ms_ = 0;
+  int seed_ = 0;
 };
 
 class RandomNetwork : public Network {
  public:
   RandomNetwork(const Weights& /*weights*/, const OptionsDict& options)
-      : delay_ms_(options.GetOrDefault<int>("delay", 0)) {}
+      : delay_ms_(options.GetOrDefault<int>("delay", 0)), 
+        seed_(options.GetOrDefault<int>("seed", 0)) {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<RandomNetworkComputation>(delay_ms_);
+    return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_);
   }
 
  private:
   int delay_ms_ = 0;
+  int seed_ = 0;
 };
 
 REGISTER_NETWORK("random", RandomNetwork, -900)
