@@ -21,8 +21,9 @@
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/blas/blas.h"
-#include "neural/blas/transforms.h"
+#include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/winograd_convolution3.h"
+#include "neural/blas/batchnorm.h"
 
 #include <algorithm>
 #include <cassert>
@@ -90,12 +91,12 @@ class OpenCLComputation : public NetworkComputation {
     opencl_net_.forward(input_data_, policy_data, value_data_);
 
     // Get the moves
-    Transforms::Softmax(weights_.num_output_policies,
+    FullyConnected::Softmax(weights_.num_output_policies,
                         policy_data.data(), policy_data.data());
     policy_data_.emplace_back(move(policy_data));
     
     // Now get the score
-    double winrate = Transforms::DotProduct(weights_.num_value_channels,
+    double winrate = FullyConnected::ToScalar(weights_.num_value_channels,
                                             weights_.ip2_val_w.data(), value_data_.data()) +
     weights_.ip2_val_b[0];
     q_value_.emplace_back(std::tanh(winrate));
@@ -168,11 +169,11 @@ class OpenCLNetwork : public Network {
 
     std::vector<float> input_batchnorm_means =
         weights.input.bn_means;  // copy ctor
-    Transforms::OffsetBatchNormMeans(input_batchnorm_means,
+    Batchnorm::OffsetMeans(input_batchnorm_means,
                                      weights.input.biases);
 
     std::vector<float> input_batchnorm_stddivs = weights.input.bn_stddivs;
-    Transforms::InvertBatchNormStddev(input_batchnorm_stddivs);
+    Batchnorm::InvertStddev(input_batchnorm_stddivs);
 
     // Winograd filter transformation changes filter size to 4x4
     opencl_net_.push_input_convolution(kWinogradAlpha, inputChannels, channels,
@@ -196,16 +197,16 @@ class OpenCLNetwork : public Network {
                                         m_ceil, m_ceil);
 
       std::vector<float> batchnorm_means_1 = conv1.bn_means;  // copy ctor
-      Transforms::OffsetBatchNormMeans(batchnorm_means_1, conv1.biases);
+      Batchnorm::OffsetMeans(batchnorm_means_1, conv1.biases);
 
       std::vector<float> batchnorm_means_2 = conv2.bn_means;  // copy ctor
-      Transforms::OffsetBatchNormMeans(batchnorm_means_2, conv2.biases);
+      Batchnorm::OffsetMeans(batchnorm_means_2, conv2.biases);
 
       std::vector<float> batchnorm_stddivs_1 = conv1.bn_stddivs;  // copy ctor
-      Transforms::InvertBatchNormStddev(batchnorm_stddivs_1);
+      Batchnorm::InvertStddev(batchnorm_stddivs_1);
 
       std::vector<float> batchnorm_stddivs_2 = conv2.bn_stddivs;  // copy ctor
-      Transforms::InvertBatchNormStddev(batchnorm_stddivs_2);
+      Batchnorm::InvertStddev(batchnorm_stddivs_2);
 
       opencl_net_.push_residual(kWinogradAlpha, channels, channels, Upad1,
                                 batchnorm_means_1, batchnorm_stddivs_1, Upad2,
@@ -216,10 +217,10 @@ class OpenCLNetwork : public Network {
     constexpr unsigned int height = 8;
 
     std::vector<float> bn_pol_means = weights.policy.bn_means;  // copy ctor
-    Transforms::OffsetBatchNormMeans(bn_pol_means, weights.policy.biases);
+    Batchnorm::OffsetMeans(bn_pol_means, weights.policy.biases);
 
     std::vector<float> bn_pol_stddivs = weights.policy.bn_stddivs;
-    Transforms::InvertBatchNormStddev(bn_pol_stddivs);
+    Batchnorm::InvertStddev(bn_pol_stddivs);
 
     opencl_net_.push_policy(channels, num_policy_input_planes,
                             num_policy_input_planes * width * height,
@@ -228,10 +229,10 @@ class OpenCLNetwork : public Network {
                             weights.ip_pol_b);
 
     std::vector<float> bn_val_means = weights.value.bn_means;
-    Transforms::OffsetBatchNormMeans(bn_val_means, weights.value.biases);
+    Batchnorm::OffsetMeans(bn_val_means, weights.value.biases);
 
     std::vector<float> bn_val_stddivs = weights.value.bn_stddivs;
-    Transforms::InvertBatchNormStddev(bn_val_stddivs);
+    Batchnorm::InvertStddev(bn_val_stddivs);
 
     opencl_net_.push_value(channels, num_value_input_planes,
                            num_value_input_planes * width * height,

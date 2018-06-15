@@ -18,8 +18,10 @@
 
 #include "neural/network.h"
 #include "neural/blas/blas.h"
-#include "neural/blas/transforms.h"
+#include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/winograd_convolution3.h"
+#include "neural/blas/convolution.h"
+#include "neural/blas/batchnorm.h"
 #include "neural/factory.h"
 
 #include <algorithm>
@@ -56,14 +58,13 @@ namespace lczero {
   private:
     
     void EncodePlanes(const InputPlanes& sample, float* buffer) ;
-
+    
     static constexpr int kWidth = 8;
     static constexpr int kHeight = 8;
     static constexpr int kSquares= kWidth*kHeight;
     static constexpr int kTiles = kSquares / 4;
     static constexpr int kWinogradAlpha = 4;
     static constexpr int kWinogradTile = kWinogradAlpha * kWinogradAlpha;
-    
     
     const Weights& weights_;
     int max_batch_size_;
@@ -84,7 +85,8 @@ namespace lczero {
     
   private:
     
-    static constexpr int kMaxBatchSize = 1024;
+    // A cap on the max batch size since it's consume a lot of memory
+    static constexpr int kMaxBatchSize = 2048;
     
     Weights weights_;
     int max_batch_size_;
@@ -129,7 +131,7 @@ namespace lczero {
     std::vector<float> policy_buffer(largest_batch_size * num_policy_input_planes * kSquares);
     std::vector<float> value_buffer(largest_batch_size * num_value_input_planes * kSquares);
     
-    // This ones will rotate during the computation
+    // These ones will rotate during the computation
     float* conv_in=res_buffer1.data();
     float* conv_out=res_buffer2.data();
     float* res=res_buffer3.data();
@@ -143,15 +145,16 @@ namespace lczero {
       // Input convolution
       
       convolve3.Forward(batch_size,
-                                    kInputPlanes, output_channels,
-                                    conv_in, &weights_.input.weights[0],
-                       conv_out);
+                        kInputPlanes, output_channels,
+                        conv_in, &weights_.input.weights[0],
+                        conv_out);
       
-      Transforms::Batchnorm(batch_size, output_channels, conv_out,
-                            weights_.input.bn_means.data(),
-                            weights_.input.bn_stddivs.data());
+      Batchnorm::Apply(batch_size, output_channels, conv_out,
+                       weights_.input.bn_means.data(),
+                       weights_.input.bn_stddivs.data());
       
       // Residual tower
+      
       for (auto& residual : weights_.residual) {
         auto& conv1 = residual.conv1;
         auto& conv2 = residual.conv2;
@@ -159,71 +162,71 @@ namespace lczero {
         std::swap(conv_out, conv_in);
         
         convolve3.Forward(batch_size,
-                                      output_channels, output_channels, conv_in,
-                                      &conv1.weights[0], conv_out);
+                          output_channels, output_channels, conv_in,
+                          &conv1.weights[0], conv_out);
         
-        Transforms::Batchnorm(batch_size, output_channels, &conv_out[0],
-                              conv1.bn_means.data(), conv1.bn_stddivs.data());
+        Batchnorm::Apply(batch_size, output_channels, &conv_out[0],
+                         conv1.bn_means.data(), conv1.bn_stddivs.data());
         
         std::swap(conv_in, res);
         std::swap(conv_out, conv_in);
         
         convolve3.Forward(batch_size,
-                                      output_channels, output_channels, conv_in,
-                                      &conv2.weights[0], conv_out);
+                          output_channels, output_channels, conv_in,
+                          &conv2.weights[0], conv_out);
         
-        Transforms::Batchnorm(batch_size,
-                              output_channels, conv_out,
-                              conv2.bn_means.data(), conv2.bn_stddivs.data(),
-                              res);
+        Batchnorm::Apply(batch_size,
+                         output_channels, conv_out,
+                         conv2.bn_means.data(), conv2.bn_stddivs.data(),
+                         res);
       }
       
-      Transforms::Convolve<1>(batch_size,
+      Convolution<1>::Forward(batch_size,
                               output_channels,
                               num_policy_input_planes, conv_out,
                               weights_.policy.weights.data(),
                               weights_.policy.biases.data(), policy_buffer.data());
       
-      Transforms::Convolve<1>(batch_size,
+      Convolution<1>::Forward(batch_size,
                               output_channels, num_value_input_planes,
                               conv_out, weights_.value.weights.data(),
                               weights_.value.biases.data(), value_buffer.data());
       
-      Transforms::Batchnorm(batch_size,
-                            num_policy_input_planes, &policy_buffer[0],
-                            weights_.policy.bn_means.data(),
-                            weights_.policy.bn_stddivs.data());
+      Batchnorm::Apply(batch_size,
+                       num_policy_input_planes, &policy_buffer[0],
+                       weights_.policy.bn_means.data(),
+                       weights_.policy.bn_stddivs.data());
       
-      Transforms::Batchnorm(batch_size,
-                            num_value_input_planes, &value_buffer[0],
-                            weights_.value.bn_means.data(),
-                            weights_.value.bn_stddivs.data());
+      Batchnorm::Apply(batch_size,
+                       num_value_input_planes, &value_buffer[0],
+                       weights_.value.bn_means.data(),
+                       weights_.value.bn_stddivs.data());
       
-      Transforms::Innerproduct(batch_size,
-                               num_policy_input_planes * kSquares, num_output_policy,
-                               policy_buffer.data(), weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
-                               false,  // Relu Off
-                               output_pol.data());
+      FullyConnected::Forward(batch_size,
+                              num_policy_input_planes * kSquares, num_output_policy,
+                              policy_buffer.data(), weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
+                              false,  // Relu Off
+                              output_pol.data());
       
-      Transforms::Innerproduct(batch_size,
-                               num_value_input_planes * kSquares, num_value_channels,
-                               value_buffer.data(), weights_.ip1_val_w.data(), weights_.ip1_val_b.data(),
-                               true,  // Relu On
-                               output_val.data());
+      FullyConnected::Forward(batch_size,
+                              num_value_input_planes * kSquares, num_value_channels,
+                              value_buffer.data(), weights_.ip1_val_w.data(), weights_.ip1_val_b.data(),
+                              true,  // Relu On
+                              output_val.data());
       
       
       for (int j = 0; j < batch_size; j++) {
         std::vector<float> policy(num_output_policy);
         
         // Get the moves
-        Transforms::Softmax(num_output_policy,
-                            &output_pol[j * num_output_policy], policy.data());
+        FullyConnected::Softmax(num_output_policy,
+                                &output_pol[j * num_output_policy], policy.data());
         
         policies_.emplace_back(std::move(policy));
         
         // Now get the score
-        double winrate = Transforms::DotProduct(num_value_channels, weights_.ip2_val_w.data(),
-                                                &output_val[j * num_value_channels]) +
+        double winrate = FullyConnected::ToScalar(num_value_channels, weights_.ip2_val_w.data(),
+                                                  &output_val[j * num_value_channels]) +
         weights_.ip2_val_b[0];
         
         q_values_.emplace_back(std::tanh(winrate));
@@ -255,12 +258,12 @@ namespace lczero {
     const size_t residual_blocks = weights.residual.size();
     
     weights_.input.weights = WinogradConvolution3::TransformF(
-                                                            weights_.input.weights, channels, inputChannels);
+                                                              weights_.input.weights, channels, inputChannels);
     
-    Transforms::OffsetBatchNormMeans(weights_.input.bn_means,
-                                     weights_.input.biases);
+    Batchnorm::OffsetMeans(weights_.input.bn_means,
+                           weights_.input.biases);
     
-    Transforms::InvertBatchNormStddev(weights_.input.bn_stddivs);
+    Batchnorm::InvertStddev(weights_.input.bn_stddivs);
     
     // residual blocks
     for (size_t i = 0; i < residual_blocks; i++) {
@@ -273,20 +276,20 @@ namespace lczero {
       conv2.weights =
       WinogradConvolution3::TransformF(conv2.weights, channels, channels);
       
-      Transforms::OffsetBatchNormMeans(conv1.bn_means, conv1.biases);
-      Transforms::OffsetBatchNormMeans(conv2.bn_means, conv2.biases);
+      Batchnorm::OffsetMeans(conv1.bn_means, conv1.biases);
+      Batchnorm::OffsetMeans(conv2.bn_means, conv2.biases);
       
-      Transforms::InvertBatchNormStddev(conv1.bn_stddivs);
-      Transforms::InvertBatchNormStddev(conv2.bn_stddivs);
+      Batchnorm::InvertStddev(conv1.bn_stddivs);
+      Batchnorm::InvertStddev(conv2.bn_stddivs);
     }
     
-    Transforms::OffsetBatchNormMeans(weights_.policy.bn_means,
-                                     weights_.policy.biases);
-    Transforms::InvertBatchNormStddev(weights_.policy.bn_stddivs);
+    Batchnorm::OffsetMeans(weights_.policy.bn_means,
+                           weights_.policy.biases);
+    Batchnorm::InvertStddev(weights_.policy.bn_stddivs);
     
-    Transforms::OffsetBatchNormMeans(weights_.value.bn_means,
-                                     weights_.value.biases);
-    Transforms::InvertBatchNormStddev(weights_.value.bn_stddivs);
+    Batchnorm::OffsetMeans(weights_.value.bn_means,
+                           weights_.value.biases);
+    Batchnorm::InvertStddev(weights_.value.bn_stddivs);
     
 #ifdef USE_OPENBLAS
     int num_procs = openblas_get_num_procs();
