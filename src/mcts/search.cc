@@ -138,7 +138,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_node_) return;
   last_outputted_best_move_node_ = best_move_node_;
-  uci_info_.depth = root_node_->GetFullDepth();
+  uci_info_.depth = root_node_->GetAverageDepth();
   uci_info_.seldepth = root_node_->GetMaxDepth();
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_playouts_ + initial_visits_;
@@ -166,7 +166,7 @@ void Search::MaybeOutputInfo() {
   Mutex::Lock counters_lock(counters_mutex_);
   if (!responded_bestmove_ && best_move_node_ &&
       (best_move_node_ != last_outputted_best_move_node_ ||
-       uci_info_.depth != root_node_->GetFullDepth() ||
+       uci_info_.depth != root_node_->GetAverageDepth() ||
        uci_info_.seldepth != root_node_->GetMaxDepth() ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
@@ -241,6 +241,10 @@ void Search::MaybeTriggerStop() {
       total_playouts_ + initial_visits_ >= limits_.visits) {
     stop_ = true;
   }
+  // Stop if reached depth limit.
+  if (limits_.depth >= 0 && root_node_->GetAverageDepth() > limits_.depth) {
+    stop_ = true;
+  }
   // Stop if reached time limit.
   if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
     stop_ = true;
@@ -292,6 +296,7 @@ void Search::UpdateRemainingMoves() {
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
   }
+  // TODO: create estimated remaining_playouts if limits_.depth >= 0?
   // Even if we exceeded limits, don't go crazy by not allowing any playouts.
   if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
 }
@@ -842,10 +847,6 @@ void SearchWorker::DoBackupUpdate() {
     float v = node->GetV();
     // Maximum depth the node is explored.
     uint16_t depth = 0;
-    // If the node is terminal, mark it as fully explored to an "infinite"
-    // depth.
-    uint16_t cur_full_depth = node->IsTerminal() ? 999 : 0;
-    bool full_depth_updated = true;
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
@@ -856,9 +857,8 @@ void SearchWorker::DoBackupUpdate() {
       // Update the stats.
       // Max depth.
       n->UpdateMaxDepth(depth);
-      // Full depth.
-      if (full_depth_updated)
-        full_depth_updated = n->UpdateFullDepth(&cur_full_depth);
+      // num leaves
+      n->UpdateNumLeaves();
       // Best move.
       if (n->GetParent() == search_->root_node_) {
         if (!search_->best_move_node_ ||

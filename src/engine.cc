@@ -81,6 +81,7 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
                                                     const GoParams& params) {
   SearchLimits limits;
   limits.visits = params.nodes;
+  limits.depth = params.depth;
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   limits.infinite = params.infinite;

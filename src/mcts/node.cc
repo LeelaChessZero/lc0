@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -254,7 +255,7 @@ void Node::ResetStats() {
   w_ = 0.0;
   p_ = 0.0;
   max_depth_ = 0;
-  full_depth_ = 0;
+  num_leaves_ = 0;
   is_terminal_ = false;
 }
 
@@ -263,7 +264,7 @@ std::string Node::DebugString() const {
   oss << "Move: " << move_.as_string() << " Term:" << is_terminal_
       << " This:" << this << " Parent:" << parent_ << " child:" << child_
       << " sibling:" << sibling_ << " P:" << p_ << " Q:" << q_ << " W:" << w_
-      << " N:" << n_ << " N_:" << n_in_flight_;
+      << " N:" << n_ << " N_:" << n_in_flight_ << " nleaves:" << num_leaves_;
   return oss.str();
 }
 
@@ -302,16 +303,29 @@ void Node::UpdateMaxDepth(int depth) {
   if (depth > max_depth_) max_depth_ = depth;
 }
 
-bool Node::UpdateFullDepth(uint16_t* depth) {
-  if (full_depth_ > *depth) return false;
-  for (Node* child : Children()) {
-    if (*depth > child->full_depth_) *depth = child->full_depth_;
+void Node::UpdateNumLeaves() {
+  if (n_ > 1 && HasChildren()) {
+    num_leaves_ = 0;
+    for (Node* child : Children()) {
+      num_leaves_ += child->num_leaves_;
+    }
+  } else {
+    num_leaves_ = n_; // assume that n_ > 1 and !HasChildren() never happens
   }
-  if (*depth >= full_depth_) {
-    full_depth_ = ++*depth;
-    return true;
-  }
-  return false;
+}
+
+// We calculate the average branching factor, then use that as the base of the
+// logarithm of the total tree size.
+// ABF = (sum of bfactors) / (total non-leaf nodes)
+//     = (number of non-root nodes) / (total nodes - leaf nodes)
+uint16_t Node::GetAverageDepth() const {
+  assert(n_ > 0);
+  double branchfactor = (double)(n_ - 1) / (double)(n_ - num_leaves_);
+  double depth = std::log((double)n_) / std::log(branchfactor);
+  // TODO: return a pair of depth and branch factor?
+  //std::cerr << "Branch factor: " << branchfactor << " Depth: " << depth << "\n";
+  // at small tree sizes, whacky stuff happens with the log
+  return std::min((uint16_t)std::floor(depth), GetMaxDepth());
 }
 
 namespace {
