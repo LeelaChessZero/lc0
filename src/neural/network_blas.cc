@@ -19,6 +19,7 @@
 #include "neural/network.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/transforms.h"
+#include "neural/blas/winograd_convolve3.h"
 #include "neural/factory.h"
 
 #include <algorithm>
@@ -123,8 +124,8 @@ namespace lczero {
     std::vector<float> res_buffer2(largest_batch_size * output_channels * kSquares);
     std::vector<float> res_buffer3(largest_batch_size * output_channels * kSquares);
     
-    std::vector<float> V(largest_batch_size * kWinogradTile * max_channels * kTiles);
-    std::vector<float> M(largest_batch_size * kWinogradTile * max_channels * kTiles);
+    WinogradConvolve3 convolve3(largest_batch_size, max_channels, output_channels);
+    
     std::vector<float> policy_buffer(largest_batch_size * num_policy_input_planes * kSquares);
     std::vector<float> value_buffer(largest_batch_size * num_value_input_planes * kSquares);
     
@@ -141,12 +142,12 @@ namespace lczero {
       
       // Input convolution
       
-      Transforms::WinogradConvolve3(batch_size,
+      convolve3.Forward(batch_size,
                                     kInputPlanes, output_channels,
-                                    conv_in, &weights_.input.weights[0], &V[0],
-                                    &M[0], &conv_out[0]);
+                                    conv_in, &weights_.input.weights[0],
+                       conv_out);
       
-      Transforms::Batchnorm(batch_size, output_channels, &conv_out[0],
+      Transforms::Batchnorm(batch_size, output_channels, conv_out,
                             weights_.input.bn_means.data(),
                             weights_.input.bn_stddivs.data());
       
@@ -157,9 +158,9 @@ namespace lczero {
         
         std::swap(conv_out, conv_in);
         
-        Transforms::WinogradConvolve3(batch_size,
-                                      output_channels, output_channels, &conv_in[0],
-                                      &conv1.weights[0], &V[0], &M[0], &conv_out[0]);
+        convolve3.Forward(batch_size,
+                                      output_channels, output_channels, conv_in,
+                                      &conv1.weights[0], conv_out);
         
         Transforms::Batchnorm(batch_size, output_channels, &conv_out[0],
                               conv1.bn_means.data(), conv1.bn_stddivs.data());
@@ -167,12 +168,12 @@ namespace lczero {
         std::swap(conv_in, res);
         std::swap(conv_out, conv_in);
         
-        Transforms::WinogradConvolve3(batch_size,
-                                      output_channels, output_channels, &conv_in[0],
-                                      &conv2.weights[0], &V[0], &M[0], &conv_out[0]);
+        convolve3.Forward(batch_size,
+                                      output_channels, output_channels, conv_in,
+                                      &conv2.weights[0], conv_out);
         
         Transforms::Batchnorm(batch_size,
-                              output_channels, &conv_out[0],
+                              output_channels, conv_out,
                               conv2.bn_means.data(), conv2.bn_stddivs.data(),
                               res);
       }
@@ -253,7 +254,7 @@ namespace lczero {
     const int channels = static_cast<int>(weights.input.biases.size());
     const size_t residual_blocks = weights.residual.size();
     
-    weights_.input.weights = Transforms::WinogradTransformF(
+    weights_.input.weights = WinogradConvolve3::TransformF(
                                                             weights_.input.weights, channels, inputChannels);
     
     Transforms::OffsetBatchNormMeans(weights_.input.bn_means,
@@ -268,9 +269,9 @@ namespace lczero {
       auto& conv2 = residual.conv2;
       
       conv1.weights =
-      Transforms::WinogradTransformF(conv1.weights, channels, channels);
+      WinogradConvolve3::TransformF(conv1.weights, channels, channels);
       conv2.weights =
-      Transforms::WinogradTransformF(conv2.weights, channels, channels);
+      WinogradConvolve3::TransformF(conv2.weights, channels, channels);
       
       Transforms::OffsetBatchNormMeans(conv1.bn_means, conv1.biases);
       Transforms::OffsetBatchNormMeans(conv2.bn_means, conv2.biases);

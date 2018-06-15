@@ -22,6 +22,7 @@
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/transforms.h"
+#include "neural/blas/winograd_convolve3.h"
 
 #include <algorithm>
 #include <cassert>
@@ -159,10 +160,10 @@ class OpenCLNetwork : public Network {
     size_t m_ceil = ceilMultiple(ceilMultiple(channels, mwg), vwm);
     size_t k_ceil = ceilMultiple(ceilMultiple(inputChannels, kwg), vwm);
 
-    std::vector<float> input_conv_weights = Transforms::WinogradTransformF(
+    std::vector<float> input_conv_weights = WinogradConvolve3::TransformF(
         weights.input.weights, channels, inputChannels);
 
-    auto Upad = Transforms::ZeropadU(input_conv_weights, channels,
+    auto Upad = WinogradConvolve3::ZeropadU(input_conv_weights, channels,
                                      inputChannels, m_ceil, k_ceil);
 
     std::vector<float> input_batchnorm_means =
@@ -185,13 +186,13 @@ class OpenCLNetwork : public Network {
       auto& conv2 = residual.conv2;
 
       std::vector<float> conv_weights_1 =
-          Transforms::WinogradTransformF(conv1.weights, channels, channels);
+          WinogradConvolve3::TransformF(conv1.weights, channels, channels);
       std::vector<float> conv_weights_2 =
-          Transforms::WinogradTransformF(conv2.weights, channels, channels);
+          WinogradConvolve3::TransformF(conv2.weights, channels, channels);
 
-      auto Upad1 = Transforms::ZeropadU(conv_weights_1, channels, channels,
+      auto Upad1 = WinogradConvolve3::ZeropadU(conv_weights_1, channels, channels,
                                         m_ceil, m_ceil);
-      auto Upad2 = Transforms::ZeropadU(conv_weights_2, channels, channels,
+      auto Upad2 = WinogradConvolve3::ZeropadU(conv_weights_2, channels, channels,
                                         m_ceil, m_ceil);
 
       std::vector<float> batchnorm_means_1 = conv1.bn_means;  // copy ctor

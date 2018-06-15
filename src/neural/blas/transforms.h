@@ -26,42 +26,7 @@ namespace lczero {
 class Transforms {
  public:
   
-  static constexpr auto kWidth = 8;
-  static constexpr auto kHeight = 8;
-  static constexpr auto kWtiles = (kWidth + 1) / 2;  // 4
-  static constexpr auto kTiles = kWtiles * kWtiles;   // 16
-  
-  static constexpr auto kWinogradAlpha = 4;
-  static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
-
-  static constexpr auto kSquares = kWidth * kHeight;
-  
-  
-  static std::vector<float> ZeropadU(const std::vector<float>& U,
-                                     const int outputs, const int channels,
-                                     const int outputs_pad,
-                                     const int channels_pad);
-
-  static std::vector<float> WinogradTransformF(const std::vector<float>& f,
-                                               const int outputs,
-                                               const int channels);
-
-  static void WinogradTransformIn(const int batch_size, const float* input,
-                                  float* V, const int channels);
-
-  static void WinogradSgemm(int batch_size, const float* weights, float* V,
-                            float* M, const int input_channels,
-                            const int output_channels);
-
-  static void WinogradTransformOut(const int batch_size, const float* M,
-                                   float* output, const int channels);
-
-  static void WinogradConvolve3(const int batch_size, const int input_channels,
-                                const int output_channels, const float* input,
-                                const float* weights, float* V, float* M,
-                                float* output);
-
-  template <unsigned int filter_size>
+   template <unsigned int filter_size>
   static void Convolve(const int batch_size, const int input_channels,
                        const int output_channels, const float* input,
                        const float* weights, const float* biases,
@@ -87,6 +52,16 @@ class Transforms {
                                    const std::vector<float>& biases);
 
   static void InvertBatchNormStddev(std::vector<float>& weights);
+  
+  
+private:
+  
+  
+  static constexpr auto kWidth = 8;
+  static constexpr auto kHeight = 8;
+  static constexpr auto kSquares = kWidth * kHeight;
+
+  
 };
 
 }  // lczero
