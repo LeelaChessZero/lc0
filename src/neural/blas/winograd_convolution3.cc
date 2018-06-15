@@ -217,7 +217,7 @@ void WinogradConvolution3::Sgemm(const int batch_size, const float* weights,
   CBLAS_TRANSPOSE transA = CblasNoTrans;
   CBLAS_TRANSPOSE transB = CblasNoTrans;
   int m_array = output_channels;
-  int n_array = batch_size * tiles;
+  int n_array = batch_size * kTiles;
   int k_array = input_channels;
   float alpha_array = 1.0;
   const float* a_array[kWinogradTile];
@@ -231,12 +231,12 @@ void WinogradConvolution3::Sgemm(const int batch_size, const float* weights,
 
   for (auto b = 0; b < kWinogradTile; b++) {
     auto offset_u = b * output_channels * input_channels;
-    auto offset_v = b * batch_size * input_channels * tiles;
-    auto offset_m = b * batch_size * output_channels * tiles;
+    auto offset_v = b * batch_size * input_channels * kTiles;
+    auto offset_m = b * batch_size * output_channels * kTiles;
 
     a_array[b] = &weights[offset_u];
-    b_array[b] = &V[offset_v];
-    c_array[b] = &M[offset_m];
+    b_array[b] = &V_[offset_v];
+    c_array[b] = &M_[offset_m];
   }
 
   cblas_sgemm_batch(CblasColMajor, &transA, &transB, &m_array, &n_array,
