@@ -26,14 +26,17 @@ namespace lczero {
 class Transforms {
  public:
   
-  static constexpr auto width = 8;
-  static constexpr auto height = 8;
-  static constexpr auto wtiles = (width + 1) / 2;  // 4
-  static constexpr auto tiles = wtiles * wtiles;   // 16
+  static constexpr auto kWidth = 8;
+  static constexpr auto kHeight = 8;
+  static constexpr auto kWtiles = (kWidth + 1) / 2;  // 4
+  static constexpr auto kTiles = kWtiles * kWtiles;   // 16
   
   static constexpr auto kWinogradAlpha = 4;
   static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
 
+  static constexpr auto kSquares = kWidth * kHeight;
+  
+  
   static std::vector<float> ZeropadU(const std::vector<float>& U,
                                      const int outputs, const int channels,
                                      const int outputs_pad,

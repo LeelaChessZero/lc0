@@ -92,24 +92,24 @@ void Transforms::WinogradTransformIn(const int batch_size, const float* input,
   float T1[kWinogradAlpha][kWinogradAlpha];
 
   for (auto batch_index = 0; batch_index < batch_size; batch_index++) {
-    const float* input_batch = input + batch_index * width * height * channels;
-    float* V_batch = V + channels * tiles * batch_index;
+    const float* input_batch = input + batch_index * kWidth * kHeight * channels;
+    float* V_batch = V + channels * kTiles * batch_index;
 
     for (auto channel = 0; channel < channels; channel++) {
       float* V_channel = V_batch + channel;
-      const float* input_channel = input_batch + channel * (width * height);
+      const float* input_channel = input_batch + channel * (kWidth * kHeight);
 
-      for (auto block_y = 0; block_y < wtiles; block_y++) {
-        for (auto block_x = 0; block_x < wtiles; block_x++) {
+      for (auto block_y = 0; block_y < kWtiles; block_y++) {
+        for (auto block_x = 0; block_x < kWtiles; block_x++) {
           // Tiles overlap by 2
           const auto yin = 2 * block_y - 1;
           const auto xin = 2 * block_x - 1;
 
           for (auto i = 0; i < kWinogradAlpha; i++) {
             for (auto j = 0; j < kWinogradAlpha; j++) {
-              if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < height &&
-                  (xin + j) < width) {
-                x[i][j] = input_channel[(yin + i) * width + (xin + j)];
+              if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < kHeight &&
+                  (xin + j) < kWidth) {
+                x[i][j] = input_channel[(yin + i) * kWidth + (xin + j)];
               } else {
                 x[i][j] = 0.0f;
               }
@@ -141,8 +141,8 @@ void Transforms::WinogradTransformIn(const int batch_size, const float* input,
           T1[3][2] = x[1][2] - x[3][2];
           T1[3][3] = x[1][3] - x[3][3];
 
-          const int V_incr = channels * tiles * batch_size;
-          float* wTile_V = V_channel + channels * (block_y * wtiles + block_x);
+          const int V_incr = channels * kTiles * batch_size;
+          float* wTile_V = V_channel + channels * (block_y * kWtiles + block_x);
 
 
           *wTile_V  = T1[0][0] - T1[0][2];
@@ -186,10 +186,6 @@ void Transforms::WinogradTransformIn(const int batch_size, const float* input,
 void Transforms::WinogradSgemm(int batch_size, const float* weights, float* V,
                                float* M, const int input_channels,
                                const int output_channels) {
-  constexpr auto width = 8;
-  constexpr auto height = 8;
-  constexpr auto tiles = width * height / kWinogradAlpha;
-
 #ifdef USE_MKL
 
   /*
@@ -243,13 +239,13 @@ void Transforms::WinogradSgemm(int batch_size, const float* weights, float* V,
     // cols      tiles                  input_channels              tiles
     // rows   output_channels          output_channels            input_channels
 
-    auto offset_v = b * batch_size * input_channels * tiles;
-    auto offset_m = b * batch_size * output_channels * tiles;
+    auto offset_v = b * batch_size * input_channels * kTiles;
+    auto offset_m = b * batch_size * output_channels * kTiles;
 
     cblas_sgemm(  // Format       trans W       transV
         CblasColMajor, CblasNoTrans, CblasNoTrans,
         // rows W, M     cols V, M     cols W, rows V       alpha
-        output_channels, batch_size * tiles, input_channels, 1.0f,
+        output_channels, batch_size * kTiles, input_channels, 1.0f,
         // W         ldW
         &weights[offset_u], output_channels,
         // V         ldV   beta
@@ -263,32 +259,25 @@ void Transforms::WinogradSgemm(int batch_size, const float* weights, float* V,
 
 void Transforms::WinogradTransformOut(const int batch_size, const float* M,
                                       float* output, const int channels) {
-  constexpr auto width = 8;
-  constexpr auto height = 8;
-  constexpr auto wtiles = (width + 1) / 2;
-  constexpr auto tiles = wtiles * wtiles;
-
-  // kWinogradAlpha = 4
-  // kWinogradTile = kWinogradAlpha * kWinogradAlpha = 16
 
   float m[kWinogradTile];
 
   for (auto batch_index = 0; batch_index < batch_size; batch_index++) {
-    const float* M_batch = M + channels * tiles * batch_index;
-    float* output_batch = output + batch_index * width * height * channels;
+    const float* M_batch = M + channels * kTiles * batch_index;
+    float* output_batch = output + batch_index * kWidth * kHeight * channels;
 
     for (auto channel = 0; channel < channels; channel++) {
       const float* M_channel = M_batch + channel;
-      float* output_channel = output_batch + channel * (height * width);
+      float* output_channel = output_batch + channel * (kHeight * kWidth);
 
-      for (auto block_x = 0; block_x < wtiles; block_x++) {
-        for (auto block_y = 0; block_y < wtiles; block_y++) {
+      for (auto block_x = 0; block_x < kWtiles; block_x++) {
+        for (auto block_y = 0; block_y < kWtiles; block_y++) {
           const auto x = 2 * block_x;
           const auto y = 2 * block_y;
 
-          const auto b = block_y * wtiles + block_x;
+          const auto b = block_y * kWtiles + block_x;
           const float* M_wtile = M_channel + channels * b;
-          const int M_incr = channels * tiles * batch_size;
+          const int M_incr = channels * kTiles * batch_size;
 
           for (auto wTile = 0; wTile < kWinogradTile; wTile++) {
             m[wTile] = *M_wtile;
@@ -317,10 +306,10 @@ void Transforms::WinogradTransformOut(const int batch_size, const float* M,
                      m[2 * 4 + 2] + m[2 * 4 + 3] - m[3 * 4 + 1] + m[3 * 4 + 2] +
                      m[3 * 4 + 3];
 
-          output_channel[(y)*width + (x)] = o11;
-          output_channel[(y)*width + (x + 1)] = o12;
-          output_channel[(y + 1) * width + (x)] = o21;
-          output_channel[(y + 1) * width + (x + 1)] = o22;
+          output_channel[(y)*kWidth + (x)] = o11;
+          output_channel[(y)*kWidth + (x + 1)] = o12;
+          output_channel[(y + 1) * kWidth + (x)] = o21;
+          output_channel[(y + 1) * kWidth + (x + 1)] = o22;
         }
       }
     }
@@ -342,13 +331,9 @@ void Transforms::Convolve(const int batch_size, const int input_channels,
                           const int output_channels, const float* input,
                           const float* weights, const float* biases,
                           float* output) {
-  // fixed for 8x8
-  constexpr unsigned int width = 8;
-  constexpr unsigned int height = 8;
-  constexpr unsigned int board_squares = width * height;
-  constexpr unsigned int filter_len = filter_size * filter_size;
+ constexpr unsigned int filter_len = filter_size * filter_size;
   const auto filter_dim = filter_len * input_channels;
-  float col[filter_dim * width * height];
+  float col[filter_dim * kWidth * kHeight];
 
   for (int i = 0; i < batch_size; i++) {
     Im2Col<filter_size>(input_channels, input, col);
@@ -367,12 +352,12 @@ void Transforms::Convolve(const int batch_size, const int input_channels,
 
     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                 // M                  N            K
-                output_channels, board_squares, filter_dim, 1.0f, weights,
-                filter_dim, col, board_squares, 0.0f, output, board_squares);
+                output_channels, kSquares, filter_dim, 1.0f, weights,
+                filter_dim, col, kSquares, 0.0f, output, kSquares);
 
     int index = 0;
     for (unsigned int o = 0; o < output_channels; o++) {
-      for (unsigned int b = 0; b < board_squares; b++) {
+      for (unsigned int b = 0; b < kSquares; b++) {
         output[index++] += biases[o];
       }
     }
@@ -596,7 +581,7 @@ void Transforms::OffsetBatchNormMeans(std::vector<float>& bn_means,
 }
 
 void Transforms::InvertBatchNormStddev(std::vector<float>& weights) {
-  constexpr float EPSILON = 1e-5;
+  constexpr float EPSILON = 1e-5f;
   for (auto& w : weights) w = 1.0f / std::sqrt(w + EPSILON);
 }
 
