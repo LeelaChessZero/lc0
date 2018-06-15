@@ -18,37 +18,29 @@
 
 #pragma once
 
-
 #include <vector>
 
 namespace lczero {
 
 class FullyConnected {
-  
  public:
-  
-  
   // From input_size to output_size (batched)
   static void Forward(const int batch_size, const int input_size,
-                           const int output_size, const float* input,
-                           const float* weights, const float* biases,
-                           bool apply_relu, float* output);
+                      const int output_size, const float* input,
+                      const float* weights, const float* biases,
+                      bool apply_relu, float* output);
 
   // No batched, from input_size to scalar
-  static float ToScalar(const int input_size, const float* input, const float* weights);
-  
+  static float ToScalar(const int input_size, const float* input,
+                        const float* weights);
+
   // Activations
   static void Softmax(const int size, const float* input, float* output);
 
-  
-private:
-  
-  
+ private:
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
-
-  
 };
 
 }  // lczero

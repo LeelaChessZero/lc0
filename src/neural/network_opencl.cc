@@ -17,13 +17,13 @@
  */
 
 #include "neural/network.h"
-#include "neural/factory.h"
-#include "neural/opencl/OpenCL.h"
-#include "neural/opencl/OpenCLParams.h"
+#include "neural/blas/batchnorm.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/winograd_convolution3.h"
-#include "neural/blas/batchnorm.h"
+#include "neural/factory.h"
+#include "neural/opencl/OpenCL.h"
+#include "neural/opencl/OpenCLParams.h"
 
 #include <algorithm>
 #include <cassert>
@@ -34,7 +34,6 @@
 
 #include "utils/bititer.h"
 #include "utils/exception.h"
-
 
 namespace lczero {
 
@@ -91,14 +90,15 @@ class OpenCLComputation : public NetworkComputation {
     opencl_net_.forward(input_data_, policy_data, value_data_);
 
     // Get the moves
-    FullyConnected::Softmax(weights_.num_output_policies,
-                        policy_data.data(), policy_data.data());
+    FullyConnected::Softmax(weights_.num_output_policies, policy_data.data(),
+                            policy_data.data());
     policy_data_.emplace_back(move(policy_data));
-    
+
     // Now get the score
     double winrate = FullyConnected::ToScalar(weights_.num_value_channels,
-                                            weights_.ip2_val_w.data(), value_data_.data()) +
-    weights_.ip2_val_b[0];
+                                              weights_.ip2_val_w.data(),
+                                              value_data_.data()) +
+                     weights_.ip2_val_b[0];
     q_value_.emplace_back(std::tanh(winrate));
   }
 
@@ -142,7 +142,6 @@ class OpenCLNetwork : public Network {
     const int channels = weights.input.biases.size();
     const size_t residual_blocks = weights.residual.size();
 
-
     int num_value_input_planes = weights.value.bn_means.size();
     int num_policy_input_planes = weights.policy.bn_means.size();
     int num_output_policy = weights.ip_pol_b.size();
@@ -165,12 +164,11 @@ class OpenCLNetwork : public Network {
         weights.input.weights, channels, inputChannels);
 
     auto Upad = WinogradConvolution3::ZeropadU(input_conv_weights, channels,
-                                     inputChannels, m_ceil, k_ceil);
+                                               inputChannels, m_ceil, k_ceil);
 
     std::vector<float> input_batchnorm_means =
         weights.input.bn_means;  // copy ctor
-    Batchnorm::OffsetMeans(input_batchnorm_means,
-                                     weights.input.biases);
+    Batchnorm::OffsetMeans(input_batchnorm_means, weights.input.biases);
 
     std::vector<float> input_batchnorm_stddivs = weights.input.bn_stddivs;
     Batchnorm::InvertStddev(input_batchnorm_stddivs);
@@ -191,10 +189,10 @@ class OpenCLNetwork : public Network {
       std::vector<float> conv_weights_2 =
           WinogradConvolution3::TransformF(conv2.weights, channels, channels);
 
-      auto Upad1 = WinogradConvolution3::ZeropadU(conv_weights_1, channels, channels,
-                                        m_ceil, m_ceil);
-      auto Upad2 = WinogradConvolution3::ZeropadU(conv_weights_2, channels, channels,
-                                        m_ceil, m_ceil);
+      auto Upad1 = WinogradConvolution3::ZeropadU(conv_weights_1, channels,
+                                                  channels, m_ceil, m_ceil);
+      auto Upad2 = WinogradConvolution3::ZeropadU(conv_weights_2, channels,
+                                                  channels, m_ceil, m_ceil);
 
       std::vector<float> batchnorm_means_1 = conv1.bn_means;  // copy ctor
       Batchnorm::OffsetMeans(batchnorm_means_1, conv1.biases);

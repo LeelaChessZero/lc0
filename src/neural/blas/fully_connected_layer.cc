@@ -25,13 +25,10 @@
 
 namespace lczero {
 
-
-
-
 void FullyConnected::Forward(int batch_size, const int input_size,
-                              const int output_size, const float* inputs,
-                              const float* weights, const float* biases,
-                              bool apply_relu, float* outputs) {
+                             const int output_size, const float* inputs,
+                             const float* weights, const float* biases,
+                             bool apply_relu, float* outputs) {
   if (batch_size == 1) {
     // Just matrix-vecttor multplication
     //
@@ -102,7 +99,8 @@ float FullyConnected::ToScalar(const int size, const float* x, const float* y) {
   return cblas_sdot(size, x, 1, y, 1);
 }
 
-void FullyConnected::Softmax(const int size, const float* input, float* output) {
+void FullyConnected::Softmax(const int size, const float* input,
+                             float* output) {
   auto alpha = *std::max_element(input, input + size);
 
   auto denom = 0.0f;
@@ -115,6 +113,4 @@ void FullyConnected::Softmax(const int size, const float* input, float* output) 
     output[i] = output[i] / denom;
   }
 }
-
-
 }
