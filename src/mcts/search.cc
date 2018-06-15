@@ -204,8 +204,6 @@ void Search::SendMovesStats() const {
     oss << " N: ";
     oss << std::right << std::setw(7) << node->GetN() << " (+" << std::setw(2)
         << node->GetNInFlight() << ") ";
-    oss << "(V: " << std::setw(6) << std::setprecision(2) << node->GetV() * 100
-        << "%) ";
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
@@ -515,13 +513,20 @@ void SearchWorker::GatherMinibatch() {
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    if (node->IsTerminal()) continue;
+    // Furthermore, we must pass this termination value to NodeToProcess::v,
+    // both here and after ExtendNode.
+    if (node->IsTerminal()) {
+      nodes_to_process_.back().v = node->GetTerminalNodeValue();
+      continue;
+    }
 
-    // Node was never visited, extending.
+    // Node was never visited, extend it.
     ExtendNode(node);
 
     // Only send non-terminal nodes to neural network
-    if (!node->IsTerminal()) {
+    if (node->IsTerminal()) {
+      nodes_to_process_.back().v = node->GetTerminalNodeValue();
+    } else {
       nodes_to_process_.back().nn_queried = true;
       AddNodeToComputation(node);
     }
@@ -799,7 +804,7 @@ void SearchWorker::FetchNNResults() {
     if (!node_to_process.nn_queried) continue;
     Node* node = node_to_process.node;
     // Populate V value.
-    node->SetV(-computation_->GetQVal(idx_in_computation));
+    node_to_process.v = -computation_->GetQVal(idx_in_computation);
     // Populate P values.
     float total = 0.0;
     for (Node* n : node->Children()) {
@@ -841,7 +846,7 @@ void SearchWorker::DoBackupUpdate() {
     }
 
     // Backup V value up to a root. After 1 visit, V = Q.
-    float v = node->GetV();
+    float v = node_to_process.v;
     // Maximum depth the node is explored.
     uint16_t depth = 0;
     // If the node is terminal, mark it as fully explored to an "infinite"
