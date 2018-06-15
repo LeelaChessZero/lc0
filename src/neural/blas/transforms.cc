@@ -418,8 +418,9 @@ void Transforms::Convolve<1>(const int batch_size, const int input_channels,
 
     int index = 0;
     for (int o = 0; o < output_channels; o++) {
+      const auto bias=biases[o];
       for (unsigned int b = 0; b < 64; b++) {
-        output[index++] += biases[o];
+        output[index++] += bias;
       }
     }
 
