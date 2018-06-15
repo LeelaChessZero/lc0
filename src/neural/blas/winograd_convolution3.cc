@@ -16,7 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/blas/winograd_convolve3.h"
+#include "neural/blas/winograd_convolution3.h"
 #include "neural/blas/blas.h"
 
 #include <algorithm>
@@ -27,7 +27,7 @@
 
 namespace lczero {
   
-  std::vector<float> WinogradConvolve3::ZeropadU(const std::vector<float>& U,
+  std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
                                           const int outputs, const int channels,
                                           const int outputs_pad,
                                           const int channels_pad) {
@@ -50,7 +50,7 @@ namespace lczero {
   }
   
   
-  std::vector<float> WinogradConvolve3::TransformF(const std::vector<float>& f,
+  std::vector<float> WinogradConvolution3::TransformF(const std::vector<float>& f,
                                                     const int outputs,
                                                     const int channels) {
     // F(2x2, 3x3) Winograd filter transformation
@@ -89,7 +89,7 @@ namespace lczero {
   }
   
   
-  WinogradConvolve3::WinogradConvolve3(const int max_batch_size,
+  WinogradConvolution3::WinogradConvolution3(const int max_batch_size,
                                     const int max_input_layers,
                                     const int max_output_layers):
   V_(max_batch_size * kWinogradTile * max_input_layers * kTiles),
@@ -99,7 +99,7 @@ namespace lczero {
   }
   
   
-  void WinogradConvolve3::Forward(const int batch_size,
+  void WinogradConvolution3::Forward(const int batch_size,
                                      const int input_channels,
                                      const int output_channels,
                                      const float* input, const float* weights,
@@ -111,7 +111,7 @@ namespace lczero {
 
   
   
-  void WinogradConvolve3::TransformIn(const int batch_size, const float* input, const int channels) {
+  void WinogradConvolution3::TransformIn(const int batch_size, const float* input, const int channels) {
     
     float x[kWinogradAlpha][kWinogradAlpha];
     float T1[kWinogradAlpha][kWinogradAlpha];
@@ -210,7 +210,7 @@ namespace lczero {
 
   
   
-  void WinogradConvolve3::Sgemm(const int batch_size, const float* weights, const int input_channels,
+  void WinogradConvolution3::Sgemm(const int batch_size, const float* weights, const int input_channels,
                                  const int output_channels) {
 #ifdef USE_MKL
     
@@ -285,7 +285,7 @@ namespace lczero {
   
   
   
-  void WinogradConvolve3::TransformOut(const int batch_size,
+  void WinogradConvolution3::TransformOut(const int batch_size,
                                         float* output, const int channels) {
     
     float m[kWinogradTile];

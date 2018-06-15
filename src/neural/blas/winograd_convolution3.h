@@ -34,7 +34,7 @@ namespace lczero {
   // https://ai.intel.com/winograd-2/
   
   
-  class WinogradConvolve3 {
+  class WinogradConvolution3 {
   public:
     
     
@@ -50,7 +50,7 @@ namespace lczero {
                                          const int channels);
     
     // Allocate for the largest
-    WinogradConvolve3(const int max_batch_size,
+    WinogradConvolution3(const int max_batch_size,
                       const int max_input_layers,
                       const int max_output_layers);
     

@@ -19,7 +19,7 @@
 #include "neural/network.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/transforms.h"
-#include "neural/blas/winograd_convolve3.h"
+#include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
 
 #include <algorithm>
@@ -124,7 +124,7 @@ namespace lczero {
     std::vector<float> res_buffer2(largest_batch_size * output_channels * kSquares);
     std::vector<float> res_buffer3(largest_batch_size * output_channels * kSquares);
     
-    WinogradConvolve3 convolve3(largest_batch_size, max_channels, output_channels);
+    WinogradConvolution3 convolve3(largest_batch_size, max_channels, output_channels);
     
     std::vector<float> policy_buffer(largest_batch_size * num_policy_input_planes * kSquares);
     std::vector<float> value_buffer(largest_batch_size * num_value_input_planes * kSquares);
@@ -254,7 +254,7 @@ namespace lczero {
     const int channels = static_cast<int>(weights.input.biases.size());
     const size_t residual_blocks = weights.residual.size();
     
-    weights_.input.weights = WinogradConvolve3::TransformF(
+    weights_.input.weights = WinogradConvolution3::TransformF(
                                                             weights_.input.weights, channels, inputChannels);
     
     Transforms::OffsetBatchNormMeans(weights_.input.bn_means,
@@ -269,9 +269,9 @@ namespace lczero {
       auto& conv2 = residual.conv2;
       
       conv1.weights =
-      WinogradConvolve3::TransformF(conv1.weights, channels, channels);
+      WinogradConvolution3::TransformF(conv1.weights, channels, channels);
       conv2.weights =
-      WinogradConvolve3::TransformF(conv2.weights, channels, channels);
+      WinogradConvolution3::TransformF(conv2.weights, channels, channels);
       
       Transforms::OffsetBatchNormMeans(conv1.bn_means, conv1.biases);
       Transforms::OffsetBatchNormMeans(conv2.bn_means, conv2.biases);
