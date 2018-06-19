@@ -783,7 +783,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::RunNNComputation() {
-  computation_->ComputeBlocking();
+  // This function is so small as to be silly, but its parent function is
+  // conceptually cleaner for it.
+  if (computation_->GetBatchSize() != 0) computation_->ComputeBlocking();
 }
 
 // 5. Populate computed nodes with results of the NN computation.
@@ -794,13 +796,10 @@ void SearchWorker::FetchNNResults() {
   // Copy NN results into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
-    if (!node_to_process.nn_queried) {
-      node_to_process.v = node_to_process.node->GetTerminalNodeValue();
-      continue;
-    }
+    if (!node_to_process.nn_queried) continue;
     Node* node = node_to_process.node;
     // Populate V value.
-    node_to_process.v = -computation_->GetQVal(idx_in_computation);
+    node->SetV(-computation_->GetQVal(idx_in_computation));
     // Populate P values.
     float total = 0.0;
     for (Node* n : node->Children()) {
@@ -842,7 +841,7 @@ void SearchWorker::DoBackupUpdate() {
     }
 
     // Backup V value up to a root. After 1 visit, V = Q.
-    float v = node_to_process.v;
+    float v = node->GetV();
     // Maximum depth the node is explored.
     uint16_t depth = 0;
     // If the node is terminal, mark it as fully explored to an "infinite"
