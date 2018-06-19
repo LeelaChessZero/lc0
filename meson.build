@@ -204,6 +204,9 @@ if get_option('build_backends')
         opencl_files += 'src/neural/blas/transforms.cc'
       endif
 
+      deps += dependency('boost', required: true)
+
+      includes += include_directories(get_option('opencl_include'))
       files += opencl_files
       has_backends = true
     else
