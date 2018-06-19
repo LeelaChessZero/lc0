@@ -783,9 +783,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::RunNNComputation() {
-  // This function is so small as to be silly, but its parent function is
-  // conceptually cleaner for it.
-  if (computation_->GetBatchSize() != 0) computation_->ComputeBlocking();
+  computation_->ComputeBlocking();
 }
 
 // 5. Populate computed nodes with results of the NN computation.
