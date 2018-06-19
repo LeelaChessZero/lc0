@@ -796,10 +796,13 @@ void SearchWorker::FetchNNResults() {
   // Copy NN results into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
-    if (!node_to_process.nn_queried) continue;
+    if (!node_to_process.nn_queried) {
+      node_to_process.v = node_to_process.node->GetTerminalNodeValue();
+      continue;
+    }
     Node* node = node_to_process.node;
     // Populate V value.
-    node->SetV(-computation_->GetQVal(idx_in_computation));
+    node_to_process.v = -computation_->GetQVal(idx_in_computation);
     // Populate P values.
     float total = 0.0;
     for (Node* n : node->Children()) {
@@ -841,7 +844,7 @@ void SearchWorker::DoBackupUpdate() {
     }
 
     // Backup V value up to a root. After 1 visit, V = Q.
-    float v = node->GetV();
+    float v = node_to_process.v;
     // Maximum depth the node is explored.
     uint16_t depth = 0;
     // If the node is terminal, mark it as fully explored to an "infinite"
