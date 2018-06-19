@@ -225,8 +225,6 @@ class SearchWorker {
     Node* node;
     bool is_collision = false;
     bool nn_queried = false;
-    // Value from NN's value head, or -1/0/1 for terminal nodes.
-    float v;
   };
 
   NodeToProcess PickNodeToExtend();
