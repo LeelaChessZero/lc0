@@ -690,10 +690,10 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
       std::string this_vendor = d.getInfo<CL_DEVICE_VENDOR>();
       std::transform(this_vendor.begin(), this_vendor.end(), this_vendor.begin(), ::tolower);
       this_score +=
-          1000 * (bool)strstr(this_vendor.c_str(), "advanced micro devices");
-      this_score += 1000 * (bool)strstr(this_vendor.c_str(), "amd");
-      this_score += 1000 * (bool)strstr(this_vendor.c_str(), "nvidia");
-      this_score += 500 * (bool)strstr(this_vendor.c_str(), "intel");
+          1000 * (this_vendor.find("advanced micro devices") != std::string::npos);
+      this_score += 1000 * (this_vendor.find("amd") != std::string::npos);
+      this_score += 1000 * (this_vendor.find("nvidia") != std::string::npos);
+      this_score += 500 * (this_vendor.find("intel") != std::string::npos);
       this_score += 100 * (d.getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU);
       this_score += opencl_version * 10;
       if (verbose) {
