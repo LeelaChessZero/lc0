@@ -89,7 +89,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
 double move_weight(int ply, float peak, float left_width, float right_width) {
   const float width = ply > peak ? right_width : left_width;
-  constexpr float width_scaler = 2 / std::log(2 + std::sqrt(3));
+  constexpr float width_scaler = 1.518651485; // 2 / log(2 + sqrt(3))
   return std::pow(std::cosh((ply - peak) / width / width_scaler), -2);
 }
 
