@@ -17,8 +17,8 @@ jobs:
       - run:
           name: Build
           command: ./build.sh
-deployment:
-  staging:
-    branch: master
-    heroku:
-      appname: lc0
+      - run:
+          command: cp build/release/lc0 /tmp/lc0
+      - store_artifacts:
+          path: /tmp/lc0
+          destination: lc0-ubuntu-18-04
