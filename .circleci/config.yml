@@ -1,0 +1,24 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/buildpack-deps:bionic
+    steps:
+      - checkout
+      - run:
+          name: Install APT dependencies
+          command: sudo apt-get install clang-6.0 ninja-build python3-pip nvidia-opencl-dev libopenblas-dev libboost-dev
+      - run:
+          name: Install Python dependencies
+          command: sudo -H pip3 install meson
+      - run:
+          name: (Workaround) Create a symlink for the OpenBlas include files
+          command: sudo ln -s /usr/include/ /usr/include/openblas
+      - run:
+          name: Build
+          command: ./build.sh
+deployment:
+  staging:
+    branch: master
+    heroku:
+      appname: lc0
