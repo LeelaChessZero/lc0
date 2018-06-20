@@ -47,10 +47,11 @@ const char* Search::kVirtualLossBugStr = "Virtual loss bug";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
-const char* Search::kExtraVirtualLossStr = "Extra virtual loss";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+const char* Search::kBackPropagateBetaStr = "Backpropagation gamma";
+const char* Search::kBackPropagateGammaStr = "Backpropagation beta";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -82,12 +83,14 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
                           "cache-history-length") = 7;
-  options->Add<FloatOption>(kExtraVirtualLossStr, 0.0f, 100.0f,
-                            "extra-virtual-loss") = 0.0f;
   options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1f, 10.0f,
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
+  options->Add<FloatOption>(kBackPropagateBetaStr, 0.0f, 100.0f,
+                            "backpropagate-beta") = 1.0f;
+  options->Add<FloatOption>(kBackPropagateGammaStr, -100.0f, 100.0f,
+                            "backpropagate-gamma") = 1.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -116,9 +119,10 @@ Search::Search(const NodeTree& tree, Network* network,
       kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
-      kExtraVirtualLoss(options.Get<float>(kExtraVirtualLossStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kBackPropagateBeta(options.Get<float>(kBackPropagateBetaStr)),
+      kBackPropagateGamma(options.Get<float>(kBackPropagateGammaStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -140,7 +144,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
     child->SetP(child->GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
   }
 }
-} // namespace
+}  // namespace
 
 bool Search::IsSearchmovesAndNodeNotInSearchmoves(Node* node) const {
   return !limits_.searchmoves.empty() &&
@@ -161,8 +165,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   uci_info_.nps =
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
-  uci_info_.score =
-      290.680623072 * tan(1.548090806 * best_move_node_->GetQ(0, 0));
+  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_node_->GetQ(0));
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
@@ -197,7 +200,7 @@ int64_t Search::GetTimeSinceStart() const {
 void Search::SendMovesStats() const {
   std::vector<const Node*> nodes;
   const float parent_q =
-      -root_node_->GetQ(0, 0) -
+      -root_node_->GetQ(0) -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
   for (Node* child : root_node_->Children()) {
     nodes.emplace_back(child);
@@ -221,14 +224,14 @@ void Search::SendMovesStats() const {
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
-        << node->GetQ(parent_q, 0) << ") ";
+        << node->GetQ(parent_q) << ") ";
     oss << "(U: " << std::setw(6) << std::setprecision(5)
         << node->GetU() * kCpuct *
                std::sqrt(std::max(node->GetParent()->GetChildrenVisits(), 1u))
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << node->GetQ(parent_q, 0) +
+        << node->GetQ(parent_q) +
                node->GetU() * kCpuct *
                    std::sqrt(
                        std::max(node->GetParent()->GetChildrenVisits(), 1u))
@@ -317,10 +320,10 @@ void Search::UpdateRemainingMoves() {
 float Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  float parent_q = -root_node_->GetQ(0, 0);
+  float parent_q = -root_node_->GetQ(0);
   if (!root_node_->HasChildren()) return parent_q;
   Node* best_node = GetBestChildNoTemperature(root_node_);
-  return best_node->GetQ(parent_q, 0);
+  return best_node->GetQ(parent_q);
 }
 
 std::pair<Move, Move> Search::GetBestMove() const {
@@ -358,7 +361,7 @@ Node* Search::GetBestChildNoTemperature(Node* parent) const {
     if (parent == root_node_ && IsSearchmovesAndNodeNotInSearchmoves(node)) {
       continue;
     }
-    std::tuple<int, float, float> val(node->GetN(), node->GetQ(-10.0, 0.0),
+    std::tuple<int, float, float> val(node->GetN(), node->GetQ(-10.0),
                                       node->GetP());
     if (val > best) {
       best = val;
@@ -418,7 +421,7 @@ float Search::CalculateTemperature() const {
   // negative sign here because node->GetQ returns eval from node->parent_'s
   // perspective (though it doesn't really matter since evaltemp is symmetric
   // by design anyways)
-  float eval = -root_node_->GetQ(0, 0);
+  float eval = -root_node_->GetQ(0);
   float evaltemp = kEvalTemp /
                    (1 + std::log(1 + kEvalTempDecay * std::pow(eval, 2)));
   if (evaltemp < tempfloor) evaltemp = 0.0f;
@@ -594,8 +597,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     int possible_moves = 0;
     float parent_q =
         (is_root_node && search_->kNoise)
-            ? -node->GetQ(0, search_->kExtraVirtualLoss)
-            : -node->GetQ(0, search_->kExtraVirtualLoss) -
+            ? -node->GetQ(0)
+            : -node->GetQ(0) -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
     for (Node* child : node->Children()) {
       if (is_root_node) {
@@ -615,7 +618,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         }
         ++possible_moves;
       }
-      float Q = child->GetQ(parent_q, search_->kExtraVirtualLoss);
+      float Q = child->GetQ(parent_q);
       if (search_->kVirtualLossBug && child->GetN() == 0) {
         Q = (Q * child->GetParent()->GetN() - search_->kVirtualLossBug) /
             (child->GetParent()->GetN() + std::fabs(search_->kVirtualLossBug));
@@ -754,12 +757,11 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   float puct_mult =
       search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
-  const float parent_q = -node->GetQ(0, search_->kExtraVirtualLoss);
+  const float parent_q = -node->GetQ(0);
   for (Node* child : node->Children()) {
     if (child->GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-puct_mult * child->GetU() -
-                            child->GetQ(parent_q, search_->kExtraVirtualLoss),
+    scores.emplace_back(-puct_mult * child->GetU() - child->GetQ(parent_q),
                         child);
   }
 
@@ -786,12 +788,12 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = n->GetQ(-parent_q, search_->kExtraVirtualLoss);
+      const float q = n->GetQ(-parent_q);
       if (next_score > q) {
         budget_to_spend = std::min(
             budget,
-            int(n->GetP() * puct_mult / (next_score - q) - n->GetNStarted())
-                + 1);
+            int(n->GetP() * puct_mult / (next_score - q) - n->GetNStarted()) +
+                1);
       } else {
         budget_to_spend = budget;
       }
@@ -823,7 +825,7 @@ void SearchWorker::FetchNNResults() {
   for (auto& node_to_process : nodes_to_process_) {
     if (!node_to_process.nn_queried) continue;
     Node* node = node_to_process.node;
-    // Populate Q value.
+    // Populate V value.
     node->SetV(-computation_->GetQVal(idx_in_computation));
     // Populate P values.
     float total = 0.0;
@@ -865,7 +867,7 @@ void SearchWorker::DoBackupUpdate() {
       continue;
     }
 
-    // Backup V value up to a root.
+    // Backup V value up to a root. After 1 visit, V = Q.
     float v = node->GetV();
     // Maximum depth the node is explored.
     uint16_t depth = 0;
@@ -876,7 +878,8 @@ void SearchWorker::DoBackupUpdate() {
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
-      n->FinalizeScoreUpdate(v);
+      n->FinalizeScoreUpdate(v, search_->kBackPropagateGamma,
+                             search_->kBackPropagateBeta);
       // Q will be flipped for opponent.
       v = -v;
 
@@ -901,7 +904,7 @@ void SearchWorker::DoBackupUpdate() {
 // 7. UpdateCounters()
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
-  search_->UpdateRemainingMoves(); // Updates smart pruning counters.
+  search_->UpdateRemainingMoves();  // Updates smart pruning counters.
   search_->MaybeOutputInfo();
   search_->MaybeTriggerStop();
 

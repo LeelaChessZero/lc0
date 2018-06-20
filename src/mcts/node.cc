@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -249,10 +250,9 @@ float Node::GetVisitedPolicy() const {
 void Node::ResetStats() {
   n_in_flight_ = 0;
   n_ = 0;
-  v_ = 0.0;
-  q_ = 0.0;
-  w_ = 0.0;
-  p_ = 0.0;
+  v_ = 0.0f;
+  q_ = 0.0f;
+  p_ = 0.0f;
   max_depth_ = 0;
   full_depth_ = 0;
   is_terminal_ = false;
@@ -262,8 +262,8 @@ std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.as_string() << " Term:" << is_terminal_
       << " This:" << this << " Parent:" << parent_ << " child:" << child_
-      << " sibling:" << sibling_ << " P:" << p_ << " Q:" << q_ << " W:" << w_
-      << " N:" << n_ << " N_:" << n_in_flight_;
+      << " sibling:" << sibling_ << " P:" << p_ << " Q:" << q_ << " N:" << n_
+      << " N_:" << n_in_flight_;
   return oss.str();
 }
 
@@ -276,7 +276,7 @@ Move Node::GetMove(bool flip) const {
 
 void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
-  v_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
+  v_ = q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
 }
 
 bool Node::TryStartScoreUpdate() {
@@ -287,15 +287,13 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
-void Node::FinalizeScoreUpdate(float v) {
-  // Add new value to W.
-  w_ += v;
+void Node::FinalizeScoreUpdate(float v, float gamma, float beta) {
+  // Recompute Q.
+  q_ += (v - q_) / (std::pow(static_cast<float>(n_), gamma) * beta + 1);
   // Increment N.
   ++n_;
   // Decrement virtual loss.
   --n_in_flight_;
-  // Recompute Q.
-  q_ = w_ / n_;
 }
 
 void Node::UpdateMaxDepth(int depth) {
