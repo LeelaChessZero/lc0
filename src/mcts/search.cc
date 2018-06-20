@@ -721,7 +721,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     return 1;
   }
 
-  // If it's a node in process of expansion or is terminal, don't prefetch it.
+  // n = 0 and n_in_flight_ > 0, that means the node is being extended.
+  if (node->GetN() == 0) return 0;
+  // The node is terminal; don't prefetch it.
   if (!node->HasChildren()) return 0;
 
   // Populate all subnodes and their scores.
