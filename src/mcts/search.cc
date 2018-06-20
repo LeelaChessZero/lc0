@@ -721,8 +721,10 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     return 1;
   }
 
-  // If it's a node in process of expansion or is terminal, don't prefetch it.
-  if (!node->HasChildren()) return 0;
+  // n = 0 and n_in_flight_ > 0, that means the node is being extended.
+  if (node->GetN() == 0) return 0;
+  // The node is terminal; don't prefetch it.
+  if (node->IsTerminal()) return 0;
 
   // Populate all subnodes and their scores.
   typedef std::pair<float, Node*> ScoredNode;
@@ -796,13 +798,10 @@ void SearchWorker::FetchNNResults() {
   // Copy NN results into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
-    if (!node_to_process.nn_queried) {
-      node_to_process.v = node_to_process.node->GetTerminalNodeValue();
-      continue;
-    }
+    if (!node_to_process.nn_queried) continue;
     Node* node = node_to_process.node;
     // Populate V value.
-    node_to_process.v = -computation_->GetQVal(idx_in_computation);
+    node->SetV(-computation_->GetQVal(idx_in_computation));
     // Populate P values.
     float total = 0.0;
     for (Node* n : node->Children()) {
@@ -844,7 +843,7 @@ void SearchWorker::DoBackupUpdate() {
     }
 
     // Backup V value up to a root. After 1 visit, V = Q.
-    float v = node_to_process.v;
+    float v = node->GetV();
     // Maximum depth the node is explored.
     uint16_t depth = 0;
     // If the node is terminal, mark it as fully explored to an "infinite"

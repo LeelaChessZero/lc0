@@ -250,8 +250,9 @@ float Node::GetVisitedPolicy() const {
 void Node::ResetStats() {
   n_in_flight_ = 0;
   n_ = 0;
-  q_ = 0.0;
-  p_ = 0.0;
+  v_ = 0.0f;
+  q_ = 0.0f;
+  p_ = 0.0f;
   max_depth_ = 0;
   full_depth_ = 0;
   is_terminal_ = false;
@@ -287,8 +288,6 @@ bool Node::TryStartScoreUpdate() {
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
 void Node::FinalizeScoreUpdate(float v, float gamma, float beta) {
-  // Update v;
-  if (n_ == 0) v_ = v;
   // Recompute Q.
   q_ += (v - q_) / (std::pow(static_cast<float>(n_), gamma) * beta + 1);
   // Increment N.
