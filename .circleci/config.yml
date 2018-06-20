@@ -16,7 +16,7 @@ jobs:
           command: sudo ln -s /usr/include/ /usr/include/openblas
       - run:
           name: Build
-          command: ./build.sh
+          command: CC=clang-6.0 CXX=clang++-6.0 ./build.sh
       - run:
           command: cp build/release/lc0 /tmp/lc0
       - store_artifacts:
