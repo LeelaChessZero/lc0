@@ -22,8 +22,7 @@
 
 namespace lczero {
 
-template <unsigned int filter_size>
-class Convolution {
+class Convolution1 {
  public:
   static void Forward(const int batch_size, const int input_channels,
                       const int output_channels, const float* input,
@@ -34,6 +33,5 @@ class Convolution {
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
 
-  static void Im2Col(const int channels, const float* input, float* output);
 };
 }

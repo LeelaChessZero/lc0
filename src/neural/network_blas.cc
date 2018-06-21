@@ -19,7 +19,7 @@
 #include "neural/network.h"
 #include "neural/blas/batchnorm.h"
 #include "neural/blas/blas.h"
-#include "neural/blas/convolution.h"
+#include "neural/blas/convolution1.h"
 #include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
@@ -173,12 +173,12 @@ void BlasComputation::ComputeBlocking() {
                        conv2.bn_means.data(), conv2.bn_stddivs.data(), res);
     }
 
-    Convolution<1>::Forward(
+    Convolution1::Forward(
         batch_size, output_channels, num_policy_input_planes, conv_out,
         weights_.policy.weights.data(), weights_.policy.biases.data(),
         policy_buffer.data());
 
-    Convolution<1>::Forward(batch_size, output_channels, num_value_input_planes,
+    Convolution1::Forward(batch_size, output_channels, num_value_input_planes,
                             conv_out, weights_.value.weights.data(),
                             weights_.value.biases.data(), value_buffer.data());
 
