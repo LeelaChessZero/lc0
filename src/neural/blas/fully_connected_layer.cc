@@ -25,8 +25,8 @@
 
 namespace lczero {
 
-void FullyConnected::Forward(int batch_size, const int input_size,
-                             const int output_size, const float* inputs,
+void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
+                             const size_t output_size, const float* inputs,
                              const float* weights, const float* biases,
                              bool apply_relu, float* outputs) {
   if (batch_size == 1) {
@@ -44,7 +44,7 @@ void FullyConnected::Forward(int batch_size, const int input_size,
 
     cblas_sgemv(CblasRowMajor, CblasNoTrans,
                 // M     K
-                output_size, input_size, 1.0f, weights, input_size, inputs, 1,
+                (int) output_size, (int) input_size, 1.0f, weights, (int) input_size, inputs, 1,
                 0.0f, outputs, 1);
   } else {
     
@@ -70,22 +70,22 @@ void FullyConnected::Forward(int batch_size, const int input_size,
 
     cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
                 // M              N         K         alpha
-                output_size, batch_size, input_size, 1.0f,
+                (int) output_size, (int)  batch_size, (int) input_size, 1.0f,
                 // A     lda
-                weights, input_size,
+                weights, (int) input_size,
                 // B    ldb   beta,
-                inputs, input_size, 0.0f,
+                inputs, (int) input_size, 0.0f,
                 // C   ldc
-                outputs, output_size);
+                outputs, (int)  output_size);
   }
-  for (int i = 0; i < batch_size; i++) {
+  for (size_t i = 0; i < batch_size; i++) {
     if (apply_relu) {
-      for (int o = 0; o < output_size; o++) {
+      for (size_t o = 0; o < output_size; o++) {
         float val = biases[o] + outputs[o];
         outputs[o] = val >= 0 ? val : 0;
       }
     } else {
-      for (int o = 0; o < output_size; o++) {
+      for (size_t o = 0; o < output_size; o++) {
         outputs[o] += biases[o];
       }
     }
@@ -95,26 +95,26 @@ void FullyConnected::Forward(int batch_size, const int input_size,
   }
 }
 
-float FullyConnected::ToScalar(const int size, const float* x, const float* y) {
+float FullyConnectedLayer::Forward0D(const size_t size, const float* x, const float* y) {
   
   // That a scalar product, also known as a dot-produt.
   
   // float cblas_sdot(const int __N, const float *__X, const int __incX, const
   // float *__Y, const int __incY);
-  return cblas_sdot(size, x, 1, y, 1);
+  return cblas_sdot((int) size, x, 1, y, 1);
 }
 
-void FullyConnected::Softmax(const int size, const float* input,
+void FullyConnectedLayer::Softmax(const size_t size, const float* input,
                              float* output) {
   auto alpha = *std::max_element(input, input + size);
 
   auto denom = 0.0f;
-  for (int i = 0; i < size; i++) {
+  for (size_t i = 0; i < size; i++) {
     auto val = std::exp(input[i] - alpha);
     output[i] = val;
     denom += val;
   }
-  for (int i = 0; i < size; i++) {
+  for (size_t i = 0; i < size; i++) {
     output[i] = output[i] / denom;
   }
 }

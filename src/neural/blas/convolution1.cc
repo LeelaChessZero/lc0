@@ -22,11 +22,11 @@
 namespace lczero {
 
 
-void Convolution1::Forward(const int batch_size, const int input_channels,
-                             const int output_channels, const float* input,
+void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
+                             const size_t output_channels, const float* input,
                              const float* weights, const float* biases,
                              float* output) {
-  for (int i = 0; i < batch_size; i++) {
+  for (size_t i = 0; i < batch_size; i++) {
     // C←αAB + βC
     // M Number of rows in matrices A and C.
     // N Number of columns in matrices B and C.
@@ -40,29 +40,29 @@ void Convolution1::Forward(const int batch_size, const int input_channels,
     //
     //           outputs             :=          weights        x      input
     //
-    //   cols:     64 (N)                   input_channels (K)         64 (N)
+    //   cols:  kSquares (N)                 input_channels (K)      kSquares (N)
     //
     //   rows:  output_channels (M)         output_channels (M)
     //   input_channels (K)
 
-    const float* input_batch=input+i*kSquares * input_channels;
-    float* output_batch=output+i*kSquares * output_channels;
+    const float* batch_input=input+i*kSquares * input_channels;
+    float* batch_output=output+i*kSquares * output_channels;
 
     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                 // M              N         K         alpha
-                output_channels, 64, input_channels, 1.0f,
+                (int) output_channels, kSquares, (int) input_channels, 1.0f,
                 // A     lda
-                weights, input_channels,
+                weights, (int) input_channels,
                 // B    ldb   beta,
-                input_batch, 64, 0.0f,
+                batch_input, kSquares, 0.0f,
                 // C   ldc
-                output_batch, 64);
+                batch_output, kSquares);
 
-    int index = 0;
-    for (int o = 0; o < output_channels; o++) {
+    auto index = 0;
+    for (size_t o = 0; o < output_channels; o++) {
       const auto bias = biases[o];
-      for (unsigned int b = 0; b < 64; b++) {
-        output_batch[index++] += bias;
+      for (size_t b = 0; b < kSquares; b++) {
+        batch_output[index++] += bias;
       }
     }
   }

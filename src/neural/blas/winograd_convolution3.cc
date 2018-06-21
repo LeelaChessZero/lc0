@@ -28,17 +28,17 @@
 namespace lczero {
 
 std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
-                                                  const int outputs,
-                                                  const int channels,
-                                                  const int outputs_pad,
-                                                  const int channels_pad) {
+                                                  const size_t outputs,
+                                                  const size_t channels,
+                                                  const size_t outputs_pad,
+                                                  const size_t channels_pad) {
   // Fill with zeroes
   auto Upad = std::vector<float>(kWinogradTile * outputs_pad * channels_pad);
 
-  for (auto o = 0; o < outputs; o++) {
-    for (auto c = 0; c < channels; c++) {
-      for (auto xi = 0; xi < kWinogradAlpha; xi++) {
-        for (auto nu = 0; nu < kWinogradAlpha; nu++) {
+  for (size_t o = 0; o < outputs; o++) {
+    for (size_t c = 0; c < channels; c++) {
+      for (size_t xi = 0; xi < kWinogradAlpha; xi++) {
+        for (size_t nu = 0; nu < kWinogradAlpha; nu++) {
           Upad[xi * (kWinogradAlpha * outputs_pad * channels_pad) +
                nu * (outputs_pad * channels_pad) + c * outputs_pad + o] =
               U[xi * (kWinogradAlpha * outputs * channels) +
@@ -51,8 +51,8 @@ std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
 }
 
 std::vector<float> WinogradConvolution3::TransformF(const std::vector<float>& f,
-                                                    const int outputs,
-                                                    const int channels) {
+                                                    const size_t outputs,
+                                                    const size_t channels) {
   // F(2x2, 3x3) Winograd filter transformation
   // transpose(G.dot(f).dot(G.transpose()))
   // U matrix is transposed for better memory layout in SGEMM
@@ -61,22 +61,22 @@ std::vector<float> WinogradConvolution3::TransformF(const std::vector<float>& f,
                                             0.5, -0.5, 0.5, 0.0, 0.0, 1.0};
   auto temp = std::array<float, 12>{};
 
-  for (auto o = 0; o < outputs; o++) {
-    for (auto c = 0; c < channels; c++) {
-      for (auto i = 0; i < 4; i++) {
-        for (auto j = 0; j < 3; j++) {
+  for (size_t o = 0; o < outputs; o++) {
+    for (size_t c = 0; c < channels; c++) {
+      for (size_t i = 0; i < 4; i++) {
+        for (size_t j = 0; j < 3; j++) {
           auto acc = 0.0f;
-          for (auto k = 0; k < 3; k++) {
+          for (size_t k = 0; k < 3; k++) {
             acc += G[i * 3 + k] * f[o * channels * 9 + c * 9 + k * 3 + j];
           }
           temp[i * 3 + j] = acc;
         }
       }
 
-      for (auto xi = 0; xi < 4; xi++) {
-        for (auto nu = 0; nu < 4; nu++) {
+      for (size_t xi = 0; xi < 4; xi++) {
+        for (size_t nu = 0; nu < 4; nu++) {
           auto acc = 0.0f;
-          for (int k = 0; k < 3; k++) {
+          for (size_t k = 0; k < 3; k++) {
             acc += temp[xi * 3 + k] * G[nu * 3 + k];
           }
           U[xi * (4 * outputs * channels) + nu * (outputs * channels) +
@@ -88,15 +88,15 @@ std::vector<float> WinogradConvolution3::TransformF(const std::vector<float>& f,
   return U;
 }
 
-WinogradConvolution3::WinogradConvolution3(const int max_batch_size,
-                                           const int max_input_layers,
-                                           const int max_output_layers)
+WinogradConvolution3::WinogradConvolution3(const size_t max_batch_size,
+                                           const size_t max_input_layers,
+                                           const size_t max_output_layers)
     : V_(max_batch_size * kWinogradTile * max_input_layers * kTiles),
       M_(max_batch_size * kWinogradTile * max_output_layers * kTiles) {}
 
-void WinogradConvolution3::Forward(const int batch_size,
-                                   const int input_channels,
-                                   const int output_channels,
+void WinogradConvolution3::Forward(const size_t batch_size,
+                                   const size_t input_channels,
+                                   const size_t output_channels,
                                    const float* input, const float* weights,
                                    float* output) {
   TransformIn(batch_size, input, input_channels);
@@ -104,28 +104,28 @@ void WinogradConvolution3::Forward(const int batch_size,
   TransformOut(batch_size, output, output_channels);
 }
 
-void WinogradConvolution3::TransformIn(const int batch_size, const float* input,
-                                       const int channels) {
+void WinogradConvolution3::TransformIn(const size_t batch_size, const float* input,
+                                       const size_t channels) {
   float x[kWinogradAlpha][kWinogradAlpha];
   float T1[kWinogradAlpha][kWinogradAlpha];
 
-  for (auto batch_index = 0; batch_index < batch_size; batch_index++) {
+  for (size_t batch_index = 0; batch_index < batch_size; batch_index++) {
     const float* input_batch =
         input + batch_index * kWidth * kHeight * channels;
     float* V_batch = &V_[channels * kTiles * batch_index];
 
-    for (auto channel = 0; channel < channels; channel++) {
+    for (size_t channel = 0; channel < channels; channel++) {
       float* V_channel = V_batch + channel;
       const float* input_channel = input_batch + channel * (kWidth * kHeight);
 
-      for (auto block_y = 0; block_y < kWtiles; block_y++) {
-        for (auto block_x = 0; block_x < kWtiles; block_x++) {
+      for (int block_y = 0; block_y < kWtiles; block_y++) {
+        for (int block_x = 0; block_x < kWtiles; block_x++) {
           // Tiles overlap by 2
-          const auto yin = 2 * block_y - 1;
-          const auto xin = 2 * block_x - 1;
+          const int yin = 2 * block_y - 1;
+          const int xin = 2 * block_x - 1;
 
-          for (auto i = 0; i < kWinogradAlpha; i++) {
-            for (auto j = 0; j < kWinogradAlpha; j++) {
+          for (int i = 0; i < kWinogradAlpha; i++) {
+            for (int j = 0; j < kWinogradAlpha; j++) {
               if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < kHeight &&
                   (xin + j) < kWidth) {
                 x[i][j] = input_channel[(yin + i) * kWidth + (xin + j)];
@@ -160,7 +160,7 @@ void WinogradConvolution3::TransformIn(const int batch_size, const float* input,
           T1[3][2] = x[1][2] - x[3][2];
           T1[3][3] = x[1][3] - x[3][3];
 
-          const int V_incr = channels * kTiles * batch_size;
+          const auto V_incr = channels * kTiles * batch_size;
           float* wTile_V = V_channel + channels * (block_y * kWtiles + block_x);
 
           *wTile_V = T1[0][0] - T1[0][2];
@@ -200,9 +200,9 @@ void WinogradConvolution3::TransformIn(const int batch_size, const float* input,
   }
 }
 
-void WinogradConvolution3::Sgemm(const int batch_size, const float* weights,
-                                 const int input_channels,
-                                 const int output_channels) {
+void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
+                                 const size_t input_channels,
+                                 const size_t output_channels) {
 #ifdef USE_MKL
 
   /*
@@ -216,18 +216,18 @@ void WinogradConvolution3::Sgemm(const int batch_size, const float* weights,
 
   CBLAS_TRANSPOSE transA = CblasNoTrans;
   CBLAS_TRANSPOSE transB = CblasNoTrans;
-  int m_array = output_channels;
-  int n_array = batch_size * kTiles;
-  int k_array = input_channels;
+  MKL_INT m_array = output_channels;
+  MKL_INT n_array = batch_size * kTiles;
+  MKL_INT k_array = input_channels;
   float alpha_array = 1.0;
   const float* a_array[kWinogradTile];
-  int lda_array = output_channels;
+  MKL_INT lda_array = output_channels;
   const float* b_array[kWinogradTile];
-  int ldb_array = input_channels;
+  MKL_INT ldb_array = input_channels;
   float* c_array[kWinogradTile];
-  int ldc_array = output_channels;
+  MKL_INT ldc_array = output_channels;
   float beta_array = 0.0;
-  int groupSize = kWinogradTile;
+  MKL_INT groupSize = kWinogradTile;
 
   for (auto b = 0; b < kWinogradTile; b++) {
     auto offset_u = b * output_channels * input_channels;
@@ -246,7 +246,7 @@ void WinogradConvolution3::Sgemm(const int batch_size, const float* weights,
 
 #else
 
-  for (auto b = 0; b < kWinogradTile; b++) {
+  for (size_t b = 0; b < kWinogradTile; b++) {
     auto offset_u = b * output_channels * input_channels;
 
     // In col major
@@ -262,40 +262,40 @@ void WinogradConvolution3::Sgemm(const int batch_size, const float* weights,
     cblas_sgemm(  // Format       trans W       transV
         CblasColMajor, CblasNoTrans, CblasNoTrans,
         // rows W, M     cols V, M     cols W, rows V       alpha
-        output_channels, batch_size * kTiles, input_channels, 1.0f,
+        (int) output_channels, (int) (batch_size * kTiles), (int) input_channels, 1.0f,
         // W         ldW
-        &weights[offset_u], output_channels,
+        &weights[offset_u], (int) output_channels,
         // V         ldV   beta
-        &V_[offset_v], input_channels, 0.0f,
+        &V_[offset_v], (int)input_channels, 0.0f,
         // M         ldM
-        &M_[offset_m], output_channels);
+        &M_[offset_m], (int) output_channels);
   }
 
 #endif
 }
 
-void WinogradConvolution3::TransformOut(const int batch_size, float* output,
-                                        const int channels) {
+void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
+                                        const size_t channels) {
   float m[kWinogradTile];
 
-  for (auto batch_index = 0; batch_index < batch_size; batch_index++) {
+  for (size_t batch_index = 0; batch_index < batch_size; batch_index++) {
     const float* M_batch = &M_[channels * kTiles * batch_index];
     float* output_batch = output + batch_index * kWidth * kHeight * channels;
 
-    for (auto channel = 0; channel < channels; channel++) {
+    for (size_t channel = 0; channel < channels; channel++) {
       const float* M_channel = M_batch + channel;
       float* output_channel = output_batch + channel * (kHeight * kWidth);
 
-      for (auto block_x = 0; block_x < kWtiles; block_x++) {
-        for (auto block_y = 0; block_y < kWtiles; block_y++) {
+      for (int block_x = 0; block_x < kWtiles; block_x++) {
+        for (int block_y = 0; block_y < kWtiles; block_y++) {
           const auto x = 2 * block_x;
           const auto y = 2 * block_y;
 
           const auto b = block_y * kWtiles + block_x;
           const float* M_wtile = M_channel + channels * b;
-          const int M_incr = channels * kTiles * batch_size;
+          const auto M_incr = channels * kTiles * batch_size;
 
-          for (auto wTile = 0; wTile < kWinogradTile; wTile++) {
+          for (int wTile = 0; wTile < kWinogradTile; wTile++) {
             m[wTile] = *M_wtile;
             M_wtile += M_incr;
           }

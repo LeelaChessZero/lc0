@@ -19,23 +19,24 @@
 #pragma once
 
 #include <vector>
+#include <cstddef>
 
 namespace lczero {
 
-class FullyConnected {
+class FullyConnectedLayer {
  public:
   // From input_size to output_size (batched)
-  static void Forward(const int batch_size, const int input_size,
-                      const int output_size, const float* input,
+  static void Forward1D(const size_t batch_size, const size_t input_size,
+                      const size_t output_size, const float* input,
                       const float* weights, const float* biases,
                       bool apply_relu, float* output);
 
   // No batched, from input_size to scalar
-  static float ToScalar(const int input_size, const float* input,
+  static float Forward0D(const size_t input_size, const float* input,
                         const float* weights);
 
   // Activations
-  static void Softmax(const int size, const float* input, float* output);
+  static void Softmax(const size_t size, const float* input, float* output);
 
  private:
   static constexpr auto kWidth = 8;

@@ -32,7 +32,7 @@ namespace lczero {
 
 class BlasComputation : public NetworkComputation {
  public:
-  BlasComputation(const Weights& weights, const int max_batch_size);
+  BlasComputation(const Weights& weights, const size_t max_batch_size);
 
   virtual ~BlasComputation() {}
 
@@ -56,12 +56,12 @@ class BlasComputation : public NetworkComputation {
  private:
   void EncodePlanes(const InputPlanes& sample, float* buffer);
 
-  static constexpr int kWidth = 8;
-  static constexpr int kHeight = 8;
-  static constexpr int kSquares = kWidth * kHeight;
+  static constexpr auto kWidth = 8;
+  static constexpr auto kHeight = 8;
+  static constexpr auto kSquares = kWidth * kHeight;
  
   const Weights& weights_;
-  int max_batch_size_;
+  size_t max_batch_size_;
   std::vector<InputPlanes> planes_;
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
@@ -78,14 +78,14 @@ class BlasNetwork : public Network {
 
  private:
   // A cap on the max batch size since it's consume a lot of memory
-  static constexpr int kMaxBatchSize = 2048;
+  static constexpr auto kMaxBatchSize = 2048;
 
   Weights weights_;
-  int max_batch_size_;
+  size_t max_batch_size_;
 };
 
 BlasComputation::BlasComputation(const Weights& weights,
-                                 const int max_batch_size)
+                                 const size_t max_batch_size)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
@@ -93,23 +93,22 @@ BlasComputation::BlasComputation(const Weights& weights,
 
 void BlasComputation::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure
-  const int num_value_channels = static_cast<int>(weights_.ip1_val_b.size());
-  const int num_value_input_planes =
-      static_cast<int>(weights_.value.bn_means.size());
-  const int num_policy_input_planes =
-      static_cast<int>(weights_.policy.bn_means.size());
-  const int num_output_policy = static_cast<int>(weights_.ip_pol_b.size());
-  const int output_channels = static_cast<int>(weights_.input.biases.size());
+  const auto num_value_channels = weights_.ip1_val_b.size();
+  const auto num_value_input_planes = weights_.value.bn_means.size();
+  const auto num_policy_input_planes = weights_.policy.bn_means.size();
+  const auto num_output_policy = weights_.ip_pol_b.size();
+  const auto output_channels = weights_.input.biases.size();
 
   // max_channels is the maximum number of input channels of any
   // convolution.
   // Residual blocks are identical, but the first convolution might be bigger
   // when the network has very few filters
-  const int max_channels = std::max(output_channels, kInputPlanes);
+  const auto input_channels = static_cast<size_t>(kInputPlanes);
+  const auto max_channels = std::max(output_channels, input_channels);
 
   // Determine the largest batch for allocations
-  const int plane_count = static_cast<int>(planes_.size());
-  const int largest_batch_size = std::min(max_batch_size_, plane_count);
+  const auto plane_count = planes_.size();
+  const auto largest_batch_size = std::min(max_batch_size_, plane_count);
 
   // Allocate data for the whole batch
   std::vector<float> output_val(largest_batch_size * num_value_channels);
@@ -134,9 +133,9 @@ void BlasComputation::ComputeBlocking() {
   float* conv_out = res_buffer2.data();
   float* res = res_buffer3.data();
 
-  for (int i = 0; i < plane_count; i += largest_batch_size) {
-    const int batch_size = std::min(plane_count - i, largest_batch_size);
-    for (int j = 0; j < batch_size; j++) {
+  for (size_t i = 0; i < plane_count; i += largest_batch_size) {
+    const auto batch_size = std::min(plane_count - i, largest_batch_size);
+    for (size_t j = 0; j < batch_size; j++) {
       EncodePlanes(planes_[i + j], &conv_in[j * kSquares * kInputPlanes]);
     }
 
@@ -190,30 +189,30 @@ void BlasComputation::ComputeBlocking() {
                      weights_.value.bn_means.data(),
                      weights_.value.bn_stddivs.data());
 
-    FullyConnected::Forward(batch_size, num_policy_input_planes * kSquares,
+    FullyConnectedLayer::Forward1D(batch_size, num_policy_input_planes * kSquares,
                             num_output_policy, policy_buffer.data(),
                             weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
                             false,  // Relu Off
                             output_pol.data());
 
-    FullyConnected::Forward(batch_size, num_value_input_planes * kSquares,
+    FullyConnectedLayer::Forward1D(batch_size, num_value_input_planes * kSquares,
                             num_value_channels, value_buffer.data(),
                             weights_.ip1_val_w.data(),
                             weights_.ip1_val_b.data(),
                             true,  // Relu On
                             output_val.data());
 
-    for (int j = 0; j < batch_size; j++) {
+    for (size_t j = 0; j < batch_size; j++) {
       std::vector<float> policy(num_output_policy);
 
       // Get the moves
-      FullyConnected::Softmax(
+      FullyConnectedLayer::Softmax(
           num_output_policy, &output_pol[j * num_output_policy], policy.data());
 
       policies_.emplace_back(std::move(policy));
 
       // Now get the score
-      double winrate = FullyConnected::ToScalar(
+      double winrate = FullyConnectedLayer::Forward0D(
                            num_value_channels, weights_.ip2_val_w.data(),
                            &output_val[j * num_value_channels]) +
                        weights_.ip2_val_b[0];
@@ -226,7 +225,7 @@ void BlasComputation::ComputeBlocking() {
 void BlasComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
   for (const InputPlane& plane : sample) {
     const float value = plane.value;
-    for (int i = 0; i < kSquares; i++)
+    for (auto i = 0; i < kSquares; i++)
       *(buffer++) = (plane.mask & (((uint64_t)1) << i)) != 0 ? value : 0;
   }
 }
@@ -235,17 +234,17 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
     : weights_(weights) {
   bool verbose = options.GetOrDefault<bool>("verbose", true);
   int blas_cores = options.GetOrDefault<int>("blas_cores", 4);
-  max_batch_size_ = options.GetOrDefault<int>("batch_size", 256);
+  max_batch_size_ = static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
   if (max_batch_size_ > kMaxBatchSize) {
     max_batch_size_ = kMaxBatchSize;
-    fprintf(stderr, "BLAS warning, maximum batch size set to %d.",
+    fprintf(stderr, "BLAS warning, maximum batch size set to %ld.",
             max_batch_size_);
   }
 
-  const int inputChannels = kInputPlanes;
-  const int channels = static_cast<int>(weights.input.biases.size());
-  const size_t residual_blocks = weights.residual.size();
+  const auto inputChannels = kInputPlanes;
+  const auto channels = static_cast<int>(weights.input.biases.size());
+  const auto residual_blocks = weights.residual.size();
 
   weights_.input.weights = WinogradConvolution3::TransformF(
       weights_.input.weights, channels, inputChannels);
@@ -320,7 +319,7 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
   }
 #endif
 
-  fprintf(stderr, "BLAS max batch size is %d.\n", max_batch_size_);
+  fprintf(stderr, "BLAS max batch size is %ld.\n", max_batch_size_);
 }
 
 REGISTER_NETWORK("blas", BlasNetwork, 50)

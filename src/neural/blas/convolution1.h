@@ -19,13 +19,14 @@
 #pragma once
 
 #include <vector>
+#include <cstddef>
 
 namespace lczero {
 
 class Convolution1 {
  public:
-  static void Forward(const int batch_size, const int input_channels,
-                      const int output_channels, const float* input,
+  static void Forward(const size_t batch_size, const size_t input_channels,
+                      const size_t output_channels, const float* input,
                       const float* weights, const float* biases, float* output);
 
  private:

@@ -25,7 +25,7 @@ namespace lczero {
 
 class Batchnorm {
  public:
-  static void Apply(const int batch_size, const int channels, float* data,
+  static void Apply(const size_t batch_size, const size_t channels, float* data,
                     const float* means, const float* stddivs,
                     const float* eltwise = nullptr);
 

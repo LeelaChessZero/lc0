@@ -32,43 +32,47 @@ namespace lczero {
 // https://ai.intel.com/winograd/
 // https://ai.intel.com/winograd-2/
 
+#include <cstddef>
+
+  
 class WinogradConvolution3 {
  public:
   static std::vector<float> ZeropadU(const std::vector<float>& U,
-                                     const int outputs, const int channels,
-                                     const int outputs_pad,
-                                     const int channels_pad);
+                                     const size_t outputs, const size_t channels,
+                                     const size_t outputs_pad,
+                                     const size_t channels_pad);
 
   // Transform the weights
   static std::vector<float> TransformF(const std::vector<float>& f,
-                                       const int outputs, const int channels);
+                                       const size_t outputs, const size_t channels);
 
   // Allocate for the largest
-  WinogradConvolution3(const int max_batch_size, const int max_input_layers,
-                       const int max_output_layers);
+  WinogradConvolution3(const size_t max_batch_size, const size_t max_input_layers,
+                       const size_t max_output_layers);
 
-  void Forward(const int batch_size, const int input_channels,
-               const int output_channels, const float* input,
+  void Forward(const size_t batch_size, const size_t input_channels,
+               const size_t output_channels, const float* input,
                const float* weights, float* output);
 
  private:
-  void TransformIn(const int batch_size, const float* input,
-                   const int channels);
+  void TransformIn(const size_t batch_size, const float* input,
+                   const size_t channels);
 
-  void Sgemm(const int batch_size, const float* weights,
-             const int input_channels, const int output_channels);
+  void Sgemm(const size_t batch_size, const float* weights,
+             const size_t input_channels, const size_t output_channels);
 
-  void TransformOut(const int batch_size, float* output, const int channels);
+  void TransformOut(const size_t batch_size, float* output, const size_t channels);
 
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
+  static constexpr auto kSquares = kWidth * kHeight;
+
   static constexpr auto kWtiles = (kWidth + 1) / 2;  // 4
   static constexpr auto kTiles = kWtiles * kWtiles;  // 16
 
   static constexpr auto kWinogradAlpha = 4;
   static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
 
-  static constexpr auto kSquares = kWidth * kHeight;
 
   std::vector<float> V_;
   std::vector<float> M_;
