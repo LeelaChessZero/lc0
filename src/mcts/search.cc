@@ -60,7 +60,7 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 
 void Search::PopulateUciParams(OptionsParser* options) {
   // Here the "safe defaults" are listed.
-  // Many of them are overriden with optimized defaults in engine.cc and
+  // Many of them are overridden with optimized defaults in engine.cc and
   // tournament.cc
 
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
@@ -350,7 +350,7 @@ Node* Search::GetBestChildNoTemperature(Node* parent) const {
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
-  //   * If that number is larger than 0, the one wil larger eval wins.
+  //   * If that number is larger than 0, the one with larger eval wins.
   std::tuple<int, float, float> best(-1, 0.0, 0.0);
   for (Node* node : parent->Children()) {
     if (parent == root_node_ && !limits_.searchmoves.empty() &&
@@ -552,7 +552,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     {
       SharedMutex::Lock lock(search_->nodes_mutex_);
       // n_in_flight_ is incremented. If the method returns false, then there is
-      // a search collision, and this node is alredy being expanded.
+      // a search collision, and this node is already being expanded.
       if (!node->TryStartScoreUpdate()) return {node, true};
       // Unexamined leaf node. We've hit the end of this playout.
       if (!node->HasChildren()) return {node, false};

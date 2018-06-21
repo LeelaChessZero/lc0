@@ -168,7 +168,7 @@ class Search {
 };
 
 // Single thread worker of the search engine.
-// That used to be just a function Search::Worker(), but to paralellize it
+// That used to be just a function Search::Worker(), but to parallelize it
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
