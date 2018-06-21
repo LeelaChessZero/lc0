@@ -151,7 +151,7 @@ class Node {
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored.
   float q_;
-  // Probabality that this move will be made. From policy head of the neural
+  // Probability that this move will be made. From policy head of the neural
   // network.
   float p_;
   // How many completed visits this node had.
