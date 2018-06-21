@@ -147,6 +147,15 @@ class OpenCLNetwork : public Network {
     const auto num_output_policy = weights.ip_pol_b.size();
     const auto num_value_channels = weights.ip1_val_b.size();
 
+    /* Typically
+     input_channels = 112
+     output_channels = 192
+     num_value_input_planes = 32
+     num_policy_input_planes = 32
+     num_value_channels = 128
+     num_output_policy = 1858
+     */
+
     static constexpr auto kWinogradAlpha = 4;
 
     opencl_.initialize(channels, params_);

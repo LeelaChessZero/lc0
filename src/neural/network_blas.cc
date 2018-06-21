@@ -98,7 +98,7 @@ void BlasComputation::ComputeBlocking() {
   const auto num_policy_input_planes = weights_.policy.bn_means.size();
   const auto num_output_policy = weights_.ip_pol_b.size();
   const auto output_channels = weights_.input.biases.size();
-
+  
   // max_channels is the maximum number of input channels of any
   // convolution.
   // Residual blocks are identical, but the first convolution might be bigger
@@ -109,6 +109,16 @@ void BlasComputation::ComputeBlocking() {
   // Determine the largest batch for allocations
   const auto plane_count = planes_.size();
   const auto largest_batch_size = std::min(max_batch_size_, plane_count);
+  
+  /* Typically
+   input_channels = 112
+   output_channels = 192
+   max_channels = 192
+   num_value_input_planes = 32
+   num_policy_input_planes = 32
+   num_value_channels = 128
+   num_output_policy = 1858
+   */
 
   // Allocate data for the whole batch
   std::vector<float> output_val(largest_batch_size * num_value_channels);
