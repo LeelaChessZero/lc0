@@ -59,10 +59,7 @@ class BlasComputation : public NetworkComputation {
   static constexpr int kWidth = 8;
   static constexpr int kHeight = 8;
   static constexpr int kSquares = kWidth * kHeight;
-  static constexpr int kTiles = kSquares / 4;
-  static constexpr int kWinogradAlpha = 4;
-  static constexpr int kWinogradTile = kWinogradAlpha * kWinogradAlpha;
-
+ 
   const Weights& weights_;
   int max_batch_size_;
   std::vector<InputPlanes> planes_;
