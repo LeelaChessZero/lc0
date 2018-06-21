@@ -44,6 +44,16 @@ const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
 const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
 
 const char* kAutoDiscover = "<autodiscover>";
+
+float ComputeMoveWeight(int ply, float peak, float left_width,
+                        float right_width) {
+  // Inflection points of the function are at ply = peak +/- width.
+  // At these points the function is at 2/3 of its max value.
+  const float width = ply > peak ? right_width : left_width;
+  constexpr float width_scaler = 1.518651485f;  // 2 / log(2 + sqrt(3))
+  return std::pow(std::cosh((ply - peak) / width / width_scaler), -2.0f);
+}
+
 }  // namespace
 
 EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
@@ -87,12 +97,6 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
-double move_weight(int ply, float peak, float left_width, float right_width) {
-  const float width = ply > peak ? right_width : left_width;
-  constexpr float width_scaler = 1.518651485; // 2 / log(2 + sqrt(3))
-  return std::pow(std::cosh((ply - peak) / width / width_scaler), -2);
-}
-
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
                                                     const GoParams& params) {
   SearchLimits limits;
@@ -120,13 +124,13 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
                time + increment * (movestogo - 1) - move_overhead * movestogo);
 
   constexpr int kSmartPruningToleranceMs = 200;
-  float this_move_weight = move_weight(
+  float this_move_weight = ComputeMoveWeight(
       ply, time_curve_peak, time_curve_left_width, time_curve_right_width);
   float other_move_weights = 0.0f;
   for (int i = 1; i < movestogo; ++i)
     other_move_weights +=
-        move_weight(ply + 2 * i, time_curve_peak, time_curve_left_width,
-                    time_curve_right_width);
+        ComputeMoveWeight(ply + 2 * i, time_curve_peak, time_curve_left_width,
+                          time_curve_right_width);
   // Compute the move time without slowmover.
   float this_move_time = total_moves_time * this_move_weight /
                          (this_move_weight + other_move_weights);
