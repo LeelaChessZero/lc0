@@ -187,11 +187,20 @@ void Search::SendMovesStats() const {
   const float parent_q =
       -root_node_->GetQ(0) -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
+  const float puct_u_coeff =
+      kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+
   for (Node* child : root_node_->Children()) {
     nodes.emplace_back(child);
   }
   std::sort(nodes.begin(), nodes.end(),
-            [](const Node* a, const Node* b) { return a->GetN() < b->GetN(); });
+            [&parent_q, &puct_u_coeff](const Node* a, const Node* b) {
+              auto an = a->GetN(), bn = b->GetN();
+              return (an < bn) ||
+                     (an == bn &&
+                       a->GetQ(parent_q) + a->GetU() * puct_u_coeff
+                     < b->GetQ(parent_q) + b->GetU() * puct_u_coeff);
+            });
 
   const bool is_black_to_move = played_history_.IsBlackToMove();
   ThinkingInfo info;
@@ -215,11 +224,7 @@ void Search::SendMovesStats() const {
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << node->GetQ(parent_q) +
-               node->GetU() * kCpuct *
-                   std::sqrt(
-                       std::max(node->GetParent()->GetChildrenVisits(), 1u))
-        << ") ";
+        << node->GetQ(parent_q) + puct_u_coeff * node->GetU() << ") ";
     info.comment = oss.str();
     info_callback_(info);
   }
