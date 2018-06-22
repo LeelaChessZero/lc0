@@ -63,7 +63,7 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
     // M Number of rows in matrices A and C.
     // N Number of columns in matrices B and C.
     // K Number of columns in matrix A; number of rows in matrix B.
-    // lda The size of the first dimention of matrix A; if you are
+    // lda The size of the first dimension of matrix A; if you are
     // passing a matrix A[m][n], the value should be m.
     //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
     //                ldb, beta, C, N);
