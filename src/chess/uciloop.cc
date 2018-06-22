@@ -160,19 +160,19 @@ bool UciLoop::DispatchCommand(
       go_params.searchmoves =
           StrSplitAtWhitespace(GetOrEmpty(params, "searchmoves"));
     }
-#define LC0_OPTION(x)                         \
+#define UCIGOOPTION(x)                    \
   if (ContainsKey(params, #x)) {          \
     go_params.x = GetNumeric(params, #x); \
   }
-    LC0_OPTION(wtime);
-    LC0_OPTION(btime);
-    LC0_OPTION(winc);
-    LC0_OPTION(binc);
-    LC0_OPTION(movestogo);
-    LC0_OPTION(depth);
-    LC0_OPTION(nodes);
-    LC0_OPTION(movetime);
-#undef OPTION
+    UCIGOOPTION(wtime);
+    UCIGOOPTION(btime);
+    UCIGOOPTION(winc);
+    UCIGOOPTION(binc);
+    UCIGOOPTION(movestogo);
+    UCIGOOPTION(depth);
+    UCIGOOPTION(nodes);
+    UCIGOOPTION(movetime);
+#undef UCIGOOPTION
     CmdGo(go_params);
   } else if (command == "stop") {
     CmdStop();

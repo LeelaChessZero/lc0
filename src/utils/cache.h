@@ -117,7 +117,7 @@ class LruCache {
       cur = &el->next_in_hash;
     }
 
-    // Now lookup in actve list.
+    // Now lookup in active list.
     auto hash = hasher_(key) % hash_.size();
     for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
       if (key == iter->key && value == iter->value.get()) {
@@ -197,7 +197,7 @@ class LruCache {
       iter->next_in_queue->prev_in_queue = iter->prev_in_queue;
     }
 
-    // Destroy or move into evicted list dependending on whether it's pinned.
+    // Destroy or move into evicted list depending on whether it's pinned.
     Item** cur = &hash_[hasher_(iter->key) % hash_.size()];
     for (Item* el = *cur; el; el = el->next_in_hash) {
       if (el == iter) {
