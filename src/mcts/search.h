@@ -108,8 +108,10 @@ class Search {
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
-  void SendMovesStats() const;
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
+
+  void SendMovesStats() const;
+  std::string GetCachedFirstPlyValue(const Node* node) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.

@@ -204,6 +204,7 @@ void Search::SendMovesStats() const {
     oss << " N: ";
     oss << std::right << std::setw(7) << node->GetN() << " (+" << std::setw(2)
         << node->GetNInFlight() << ") ";
+    oss << "(V: " << GetCachedFirstPlyValue(node) << "%) ";
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
@@ -222,6 +223,25 @@ void Search::SendMovesStats() const {
     info.comment = oss.str();
     info_callback_(info);
   }
+}
+
+std::string Search::GetCachedFirstPlyValue(const Node* node) const {
+  assert(node->GetParent() == root_node_);
+  static PositionHistory history(played_history_); // A bit of a hack.
+  // It's not really worth making a fully fledged member variable, but also no
+  // sense recopying it for every call to this function.
+  std::ostringstream oss;
+  oss << std::fixed;
+  history.Append(node->GetMove());
+  auto hash = history.HashLast(kCacheHistoryLength + 1);
+  auto nneval = cache_->Lookup(hash); // "Pins" the node, but no big deal
+  if (nneval == nullptr) {
+    oss << " --.--";
+  } else {
+    oss << std::setw(6) << std::setprecision(2) << -nneval->q * 100;
+  }
+  history.Pop();
+  return oss.str();
 }
 
 void Search::MaybeTriggerStop() {
