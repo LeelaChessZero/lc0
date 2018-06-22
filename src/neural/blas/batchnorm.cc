@@ -54,10 +54,6 @@ void Batchnorm::Apply(const size_t batch_size, const size_t channels, float* dat
 
 void Batchnorm::OffsetMeans(std::vector<float>& bn_means,
                             const std::vector<float>& biases) {
-  // Biases are not calculated and are typically zero but some networks might
-  // still have non-zero biases.
-  // Move biases to batchnorm means to make the output match without having
-  // to separately add the biases.
   for (size_t i = 0; i < bn_means.size(); i++) bn_means[i] -= biases[i];
 }
 
