@@ -30,7 +30,6 @@ void FullyConnected::Forward(int batch_size, const int input_size,
                              const float* weights, const float* biases,
                              bool apply_relu, float* outputs) {
   if (batch_size == 1) {
-    
     // Just a matrix-vector multiplication
     //
     //             C                A                     B
@@ -47,7 +46,6 @@ void FullyConnected::Forward(int batch_size, const int input_size,
                 output_size, input_size, 1.0f, weights, input_size, inputs, 1,
                 0.0f, outputs, 1);
   } else {
-    
     // more columns, matrix-matrix multiplication
     //
     //             C                     A                         B
@@ -96,9 +94,8 @@ void FullyConnected::Forward(int batch_size, const int input_size,
 }
 
 float FullyConnected::ToScalar(const int size, const float* x, const float* y) {
-  
   // That a scalar product, also known as a dot-produt.
-  
+
   // float cblas_sdot(const int __N, const float *__X, const int __incX, const
   // float *__Y, const int __incY);
   return cblas_sdot(size, x, 1, y, 1);

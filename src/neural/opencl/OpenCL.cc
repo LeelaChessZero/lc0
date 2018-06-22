@@ -29,8 +29,8 @@
 #include <string>
 #include <thread>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/format.hpp>
+//#include <boost/algorithm/string.hpp>
+//#include <boost/format.hpp>
 
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
@@ -527,7 +527,7 @@ static std::string opencl_dev_type_to_string(T type) {
 }
 
 static std::string trim(std::string trim_me) {
-  boost::algorithm::trim(trim_me);
+  //boost::algorithm::trim(trim_me);
   return trim_me;
 }
 
@@ -690,11 +690,13 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
       // assign score, try to find best device
       int this_score = 0;
       std::string this_vendor = d.getInfo<CL_DEVICE_VENDOR>();
-      this_score +=
-          1000 * boost::icontains(this_vendor, "advanced micro devices");
-      this_score += 1000 * boost::icontains(this_vendor, "amd");
-      this_score += 1000 * boost::icontains(this_vendor, "nvidia");
-      this_score += 500 * boost::icontains(this_vendor, "intel");
+//      this_score +=
+  //        1000 * boost::icontains(this_vendor, "advanced micro devices");
+//      this_score += 1000 * boost::icontains(this_vendor, "amd");
+ //     this_score += 1000 * boost::icontains(this_vendor, "nvidia");
+      this_score += 1000 * (this_vendor.find("nvidia") != std::string::npos);
+      this_score += 500 * (this_vendor.find("intel") != std::string::npos);
+   //   this_score += 500 * boost::icontains(this_vendor, "intel");
       this_score += 100 * (d.getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU);
       this_score += opencl_version * 10;
       if (verbose) {
