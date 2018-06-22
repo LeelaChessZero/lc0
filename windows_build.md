@@ -1,4 +1,4 @@
-## Windows MKL/OpenCL
+## Windows BLAS/OpenCL
 
 0. [Install Microsoft Visual Studio](https://visualstudio.microsoft.com/). For VS2017 make sure the
    option "Desktop development with C++" is installed (you can add it later if not).
@@ -13,13 +13,13 @@
 *  For [Intel MKL go here](https://software.intel.com/en-us/mkl), where you need to register. After
    installation don't forget to run `mklvars.bat intel64` to set up the paths to the dlls.
 
-3. For OpenCL you also need to install OpenCL developer libraries - For AMD the AMD APP SDK 3.0 seems to
-   be the appropriate one, to be installed after the card drivers. This is not currently available on
-   the AMD website, but links to a signed installer are available in the
-   [AMD community forum](https://community.amd.com/thread/222855). For nVIDIA cards you probably need the
-   [CUDA toolkit](https://developer.nvidia.com/cuda-downloads).
+3. For OpenCL you also need to install OpenCL developer libraries.
+*  For AMD cards the AMD APP SDK 3.0 seems to be the appropriate one, to be installed after the card drivers.
+   This is not currently available on the AMD website, but links to a signed installer are available in the
+   [AMD community forum](https://community.amd.com/thread/222855).
+*  For nVIDIA cards you probably need the [CUDA toolkit](https://developer.nvidia.com/cuda-downloads).
 
-4. [Install Python3] - be sure to check the box to add python to the path.
+4. [Install Python3](https://www.python.org/) - be sure to check the box to add python to the path.
 
 5. Install Meson: `pip3 install --upgrade meson`
 
@@ -32,13 +32,13 @@
    variables.
     - For OpenBLAS, they are `openblas_include` and `openblas_libdirs`.
     - For Intel MKL, they are `mkl_include` and `mkl_libdirs`. The `lib` directory typically ends in
-      `\lib\intel64`
+      `\lib\intel64`.
     - For OpenCL, they are `opencl_libdirs` and `opencl_include`. The include directory is the one with
       the `CL` directory containing `opencl.h`, not directly the one containing `opencl.h`.
 
 7. Run `build-cl.cmd`. It will generate MSVS project and pause.
 
-8. Hit <Enter> to build it.
+8. Hit `Enter` to build it.
 
 9. Resulting binary will be `build/lc0.exe`
 
