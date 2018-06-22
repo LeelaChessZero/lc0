@@ -91,9 +91,10 @@ class Search {
   static const char* kVirtualLossBugStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
-  static const char* kExtraVirtualLossStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kBackPropagateBetaStr;
+  static const char* kBackPropagateGammaStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -158,15 +159,16 @@ class Search {
   const float kVirtualLossBug;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
-  const float kExtraVirtualLoss;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const float kBackPropagateBeta;
+  const float kBackPropagateGamma;
 
   friend class SearchWorker;
 };
 
 // Single thread worker of the search engine.
-// That used to be just a function Search::Worker(), but to paralellize it
+// That used to be just a function Search::Worker(), but to parallelize it
 // within one thread, have to split into stages.
 class SearchWorker {
  public:

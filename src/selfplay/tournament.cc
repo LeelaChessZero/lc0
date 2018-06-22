@@ -220,7 +220,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       if (verbose_thinking) {
         info_callback_(rich_info);
       } else {
-        // In non-verbose mode, remeber the last "info" message.
+        // In non-verbose mode, remember the last "info" message.
         last_thinking_info = rich_info;
       }
     };

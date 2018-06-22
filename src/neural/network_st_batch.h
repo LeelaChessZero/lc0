@@ -60,7 +60,7 @@ class SingleThreadBatchingNetworkComputation : public NetworkComputation {
 
   // Adds a sample to the parent batch.
   void AddInput(InputPlanes&& input) override;
-  // May not actualy compute immediately. Instead computes when all computations
+  // May not actually compute immediately. Instead computes when all computations
   // of the network called this.
   void ComputeBlocking() override;
   // Returns how many times AddInput() was called.

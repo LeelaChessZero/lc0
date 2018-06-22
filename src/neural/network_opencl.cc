@@ -90,12 +90,12 @@ class OpenCLComputation : public NetworkComputation {
     opencl_net_.forward(input_data_, policy_data, value_data_);
 
     // Get the moves
-    FullyConnected::Softmax(weights_.num_output_policies, policy_data.data(),
+    FullyConnectedLayer::Softmax(weights_.num_output_policies, policy_data.data(),
                             policy_data.data());
     policy_data_.emplace_back(move(policy_data));
 
     // Now get the score
-    double winrate = FullyConnected::ToScalar(weights_.num_value_channels,
+    double winrate = FullyConnectedLayer::Forward0D(weights_.num_value_channels,
                                               weights_.ip2_val_w.data(),
                                               value_data_.data()) +
                      weights_.ip2_val_b[0];
@@ -103,7 +103,7 @@ class OpenCLComputation : public NetworkComputation {
   }
 
   // Returns how many times AddInput() was called.
-  int GetBatchSize() const override { return planes_.size(); }
+  int GetBatchSize() const override { return static_cast<int>(planes_.size()); }
 
   // Returns Q value of @sample.
   float GetQVal(int sample) const override { return q_value_[sample]; }
@@ -138,14 +138,23 @@ class OpenCLNetwork : public Network {
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
 
-    const int inputChannels = kInputPlanes;
-    const int channels = weights.input.biases.size();
-    const size_t residual_blocks = weights.residual.size();
+    const auto inputChannels = static_cast<size_t>(kInputPlanes);
+    const auto channels = weights.input.biases.size();
+    const auto residual_blocks = weights.residual.size();
 
-    int num_value_input_planes = weights.value.bn_means.size();
-    int num_policy_input_planes = weights.policy.bn_means.size();
-    int num_output_policy = weights.ip_pol_b.size();
-    int num_value_channels = weights.ip1_val_b.size();
+    const auto num_value_input_planes = weights.value.bn_means.size();
+    const auto num_policy_input_planes = weights.policy.bn_means.size();
+    const auto num_output_policy = weights.ip_pol_b.size();
+    const auto num_value_channels = weights.ip1_val_b.size();
+
+    /* Typically
+     input_channels = 112
+     output_channels = 192
+     num_value_input_planes = 32
+     num_policy_input_planes = 32
+     num_value_channels = 128
+     num_output_policy = 1858
+     */
 
     static constexpr auto kWinogradAlpha = 4;
 
