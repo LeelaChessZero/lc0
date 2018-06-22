@@ -16,8 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/factory.h"
 #include "neural/network.h"
+#include "neural/factory.h"
 
 #include <algorithm>
 #include <cassert>
@@ -135,10 +135,10 @@ class CheckNetwork : public Network {
     // For now, only checking opencl against blas.
 
     OptionsDict dict1;
-    refNet_ = NetworkFactory::Get()->Create("blas", weights, dict1);
+    refNet_ = NetworkFactory::Get()->Create("opencl", weights, dict1);
 
     OptionsDict dict;
-    checkNet_ = NetworkFactory::Get()->Create("opencl", weights, options);
+    checkNet_ = NetworkFactory::Get()->Create("blas", weights, options);
   }
 
   static constexpr int CHECK_PROBABILITY = 5;
