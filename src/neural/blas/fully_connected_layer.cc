@@ -94,7 +94,7 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
   }
 }
 
-float FullyConnected::ToScalar(const int size, const float* x, const float* y) {
+float FullyConnectedLayer::Forward0D(const size_t size, const float* x, const float* y) {
   // That a scalar product, also known as a dot-produt.
 
   // float cblas_sdot(const int __N, const float *__X, const int __incX, const
