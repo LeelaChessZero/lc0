@@ -78,7 +78,7 @@ class BlasNetwork : public Network {
 
  private:
   // A cap on the max batch size since it's consume a lot of memory
-  static constexpr auto kMaxBatchSize = 2048;
+  static constexpr auto kHardMaxBatchSize = 2048;
 
   Weights weights_;
   size_t max_batch_size_;
@@ -246,8 +246,8 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
   int blas_cores = options.GetOrDefault<int>("blas_cores", 4);
   max_batch_size_ = static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
-  if (max_batch_size_ > kMaxBatchSize) {
-    max_batch_size_ = kMaxBatchSize;
+  if (max_batch_size_ > kHardMaxBatchSize) {
+    max_batch_size_ = kHardMaxBatchSize;
     fprintf(stderr, "BLAS warning, maximum batch size set to %ld.",
             max_batch_size_);
   }
