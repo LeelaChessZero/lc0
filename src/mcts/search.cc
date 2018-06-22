@@ -227,11 +227,10 @@ void Search::SendMovesStats() const {
 
 std::string Search::GetCachedFirstPlyValue(const Node* node) const {
   assert(node->GetParent() == root_node_);
-  static PositionHistory history(played_history_); // A bit of a hack.
-  // It's not really worth making a fully fledged member variable, but also no
-  // sense recopying it for every call to this function.
   std::ostringstream oss;
   oss << std::fixed;
+  PositionHistory history(played_history_); // Is it worth it to move this
+  // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
   history.Append(node->GetMove());
   auto hash = history.HashLast(kCacheHistoryLength + 1);
   auto nneval = cache_->Lookup(hash); // "Pins" the node, but no big deal
@@ -240,7 +239,6 @@ std::string Search::GetCachedFirstPlyValue(const Node* node) const {
   } else {
     oss << std::setw(6) << std::setprecision(2) << -nneval->q * 100;
   }
-  history.Pop();
   return oss.str();
 }
 
