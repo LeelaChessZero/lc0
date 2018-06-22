@@ -104,7 +104,8 @@ void WinogradConvolution3::Forward(const size_t batch_size,
   TransformOut(batch_size, output, output_channels);
 }
 
-void WinogradConvolution3::TransformIn(const size_t batch_size, const float* input,
+void WinogradConvolution3::TransformIn(const size_t batch_size,
+                                       const float* input,
                                        const size_t channels) {
   float x[kWinogradAlpha][kWinogradAlpha];
   float T1[kWinogradAlpha][kWinogradAlpha];
@@ -262,13 +263,14 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
     cblas_sgemm(  // Format       trans W       transV
         CblasColMajor, CblasNoTrans, CblasNoTrans,
         // rows W, M     cols V, M     cols W, rows V       alpha
-        (int) output_channels, (int) (batch_size * kTiles), (int) input_channels, 1.0f,
+        (int)output_channels, (int)(batch_size * kTiles), (int)input_channels,
+        1.0f,
         // W         ldW
-        &weights[offset_u], (int) output_channels,
+        &weights[offset_u], (int)output_channels,
         // V         ldV   beta
         &V_[offset_v], (int)input_channels, 0.0f,
         // M         ldM
-        &M_[offset_m], (int) output_channels);
+        &M_[offset_m], (int)output_channels);
   }
 
 #endif

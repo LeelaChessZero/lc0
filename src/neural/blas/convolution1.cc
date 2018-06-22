@@ -21,11 +21,10 @@
 
 namespace lczero {
 
-
 void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
-                             const size_t output_channels, const float* input,
-                             const float* weights, const float* biases,
-                             float* output) {
+                           const size_t output_channels, const float* input,
+                           const float* weights, const float* biases,
+                           float* output) {
   for (size_t i = 0; i < batch_size; i++) {
     // C←αAB + βC
     // M Number of rows in matrices A and C.
@@ -40,19 +39,20 @@ void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
     //
     //           outputs             :=          weights        x      input
     //
-    //   cols:  kSquares (N)                 input_channels (K)      kSquares (N)
+    //   cols:  kSquares (N)                 input_channels (K)      kSquares
+    //   (N)
     //
     //   rows:  output_channels (M)         output_channels (M)
     //   input_channels (K)
 
-    const float* batch_input=input+i*kSquares * input_channels;
-    float* batch_output=output+i*kSquares * output_channels;
+    const float* batch_input = input + i * kSquares * input_channels;
+    float* batch_output = output + i * kSquares * output_channels;
 
     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                 // M              N         K         alpha
-                (int) output_channels, kSquares, (int) input_channels, 1.0f,
+                (int)output_channels, kSquares, (int)input_channels, 1.0f,
                 // A     lda
-                weights, (int) input_channels,
+                weights, (int)input_channels,
                 // B    ldb   beta,
                 batch_input, kSquares, 0.0f,
                 // C   ldc

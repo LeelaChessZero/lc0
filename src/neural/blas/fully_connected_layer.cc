@@ -26,9 +26,10 @@
 namespace lczero {
 
 void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
-                             const size_t output_size, const float* inputs,
-                             const float* weights, const float* biases,
-                             bool apply_relu, float* outputs) {
+                                    const size_t output_size,
+                                    const float* inputs, const float* weights,
+                                    const float* biases, bool apply_relu,
+                                    float* outputs) {
   if (batch_size == 1) {
     // Just a matrix-vector multiplication
     //
@@ -43,8 +44,8 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
 
     cblas_sgemv(CblasRowMajor, CblasNoTrans,
                 // M     K
-                (int) output_size, (int) input_size, 1.0f, weights, (int) input_size, inputs, 1,
-                0.0f, outputs, 1);
+                (int)output_size, (int)input_size, 1.0f, weights,
+                (int)input_size, inputs, 1, 0.0f, outputs, 1);
   } else {
     // more columns, matrix-matrix multiplication
     //
@@ -68,13 +69,13 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
 
     cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
                 // M              N         K         alpha
-                (int) output_size, (int)  batch_size, (int) input_size, 1.0f,
+                (int)output_size, (int)batch_size, (int)input_size, 1.0f,
                 // A     lda
-                weights, (int) input_size,
+                weights, (int)input_size,
                 // B    ldb   beta,
-                inputs, (int) input_size, 0.0f,
+                inputs, (int)input_size, 0.0f,
                 // C   ldc
-                outputs, (int)  output_size);
+                outputs, (int)output_size);
   }
   for (size_t i = 0; i < batch_size; i++) {
     if (apply_relu) {
@@ -98,11 +99,11 @@ float FullyConnected::ToScalar(const int size, const float* x, const float* y) {
 
   // float cblas_sdot(const int __N, const float *__X, const int __incX, const
   // float *__Y, const int __incY);
-  return cblas_sdot((int) size, x, 1, y, 1);
+  return cblas_sdot((int)size, x, 1, y, 1);
 }
 
 void FullyConnectedLayer::Softmax(const size_t size, const float* input,
-                             float* output) {
+                                  float* output) {
   auto alpha = *std::max_element(input, input + size);
 
   auto denom = 0.0f;

@@ -90,14 +90,14 @@ class OpenCLComputation : public NetworkComputation {
     opencl_net_.forward(input_data_, policy_data, value_data_);
 
     // Get the moves
-    FullyConnectedLayer::Softmax(weights_.num_output_policies, policy_data.data(),
-                            policy_data.data());
+    FullyConnectedLayer::Softmax(weights_.num_output_policies,
+                                 policy_data.data(), policy_data.data());
     policy_data_.emplace_back(move(policy_data));
 
     // Now get the score
     double winrate = FullyConnectedLayer::Forward0D(weights_.num_value_channels,
-                                              weights_.ip2_val_w.data(),
-                                              value_data_.data()) +
+                                                    weights_.ip2_val_w.data(),
+                                                    value_data_.data()) +
                      weights_.ip2_val_b[0];
     q_value_.emplace_back(std::tanh(winrate));
   }

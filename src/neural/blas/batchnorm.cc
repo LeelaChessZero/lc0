@@ -22,8 +22,8 @@
 
 namespace lczero {
 
-void Batchnorm::Apply(const size_t batch_size, const size_t channels, float* data,
-                      const float* means, const float* stddivs,
+void Batchnorm::Apply(const size_t batch_size, const size_t channels,
+                      float* data, const float* means, const float* stddivs,
                       const float* eltwise) {
   for (size_t i = 0; i < batch_size; i++) {
     for (size_t c = 0; c < channels; ++c) {

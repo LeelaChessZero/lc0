@@ -18,8 +18,8 @@
 
 #pragma once
 
-#include <vector>
 #include <cstddef>
+#include <vector>
 
 namespace lczero {
 
@@ -33,6 +33,5 @@ class Convolution1 {
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
-
 };
 }

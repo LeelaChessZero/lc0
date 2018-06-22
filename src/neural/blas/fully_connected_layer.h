@@ -18,8 +18,8 @@
 
 #pragma once
 
-#include <vector>
 #include <cstddef>
+#include <vector>
 
 namespace lczero {
 
@@ -27,13 +27,13 @@ class FullyConnectedLayer {
  public:
   // From input_size to output_size (batched)
   static void Forward1D(const size_t batch_size, const size_t input_size,
-                      const size_t output_size, const float* input,
-                      const float* weights, const float* biases,
-                      bool apply_relu, float* output);
+                        const size_t output_size, const float* input,
+                        const float* weights, const float* biases,
+                        bool apply_relu, float* output);
 
   // No batched, from input_size to scalar
   static float Forward0D(const size_t input_size, const float* input,
-                        const float* weights);
+                         const float* weights);
 
   // Activations
   static void Softmax(const size_t size, const float* input, float* output);

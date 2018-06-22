@@ -34,20 +34,22 @@ namespace lczero {
 
 #include <cstddef>
 
-  
 class WinogradConvolution3 {
  public:
   static std::vector<float> ZeropadU(const std::vector<float>& U,
-                                     const size_t outputs, const size_t channels,
+                                     const size_t outputs,
+                                     const size_t channels,
                                      const size_t outputs_pad,
                                      const size_t channels_pad);
 
   // Transform the weights
   static std::vector<float> TransformF(const std::vector<float>& f,
-                                       const size_t outputs, const size_t channels);
+                                       const size_t outputs,
+                                       const size_t channels);
 
   // Allocate for the largest
-  WinogradConvolution3(const size_t max_batch_size, const size_t max_input_layers,
+  WinogradConvolution3(const size_t max_batch_size,
+                       const size_t max_input_layers,
                        const size_t max_output_layers);
 
   void Forward(const size_t batch_size, const size_t input_channels,
@@ -61,7 +63,8 @@ class WinogradConvolution3 {
   void Sgemm(const size_t batch_size, const float* weights,
              const size_t input_channels, const size_t output_channels);
 
-  void TransformOut(const size_t batch_size, float* output, const size_t channels);
+  void TransformOut(const size_t batch_size, float* output,
+                    const size_t channels);
 
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
@@ -72,7 +75,6 @@ class WinogradConvolution3 {
 
   static constexpr auto kWinogradAlpha = 4;
   static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
-
 
   std::vector<float> V_;
   std::vector<float> M_;

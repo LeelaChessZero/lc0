@@ -59,7 +59,7 @@ class BlasComputation : public NetworkComputation {
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
- 
+
   const Weights& weights_;
   size_t max_batch_size_;
   std::vector<InputPlanes> planes_;
@@ -98,7 +98,7 @@ void BlasComputation::ComputeBlocking() {
   const auto num_policy_input_planes = weights_.policy.bn_means.size();
   const auto num_output_policy = weights_.ip_pol_b.size();
   const auto output_channels = weights_.input.biases.size();
-  
+
   // max_channels is the maximum number of input channels of any
   // convolution.
   // Residual blocks are identical, but the first convolution might be bigger
@@ -109,7 +109,7 @@ void BlasComputation::ComputeBlocking() {
   // Determine the largest batch for allocations
   const auto plane_count = planes_.size();
   const auto largest_batch_size = std::min(max_batch_size_, plane_count);
-  
+
   /* Typically
    input_channels = 112
    output_channels = 192
@@ -182,14 +182,13 @@ void BlasComputation::ComputeBlocking() {
                        conv2.bn_means.data(), conv2.bn_stddivs.data(), res);
     }
 
-    Convolution1::Forward(
-        batch_size, output_channels, num_policy_input_planes, conv_out,
-        weights_.policy.weights.data(), weights_.policy.biases.data(),
-        policy_buffer.data());
+    Convolution1::Forward(batch_size, output_channels, num_policy_input_planes,
+                          conv_out, weights_.policy.weights.data(),
+                          weights_.policy.biases.data(), policy_buffer.data());
 
     Convolution1::Forward(batch_size, output_channels, num_value_input_planes,
-                            conv_out, weights_.value.weights.data(),
-                            weights_.value.biases.data(), value_buffer.data());
+                          conv_out, weights_.value.weights.data(),
+                          weights_.value.biases.data(), value_buffer.data());
 
     Batchnorm::Apply(batch_size, num_policy_input_planes, &policy_buffer[0],
                      weights_.policy.bn_means.data(),
@@ -199,18 +198,19 @@ void BlasComputation::ComputeBlocking() {
                      weights_.value.bn_means.data(),
                      weights_.value.bn_stddivs.data());
 
-    FullyConnectedLayer::Forward1D(batch_size, num_policy_input_planes * kSquares,
-                            num_output_policy, policy_buffer.data(),
-                            weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
-                            false,  // Relu Off
-                            output_pol.data());
+    FullyConnectedLayer::Forward1D(
+        batch_size, num_policy_input_planes * kSquares, num_output_policy,
+        policy_buffer.data(), weights_.ip_pol_w.data(),
+        weights_.ip_pol_b.data(),
+        false,  // Relu Off
+        output_pol.data());
 
-    FullyConnectedLayer::Forward1D(batch_size, num_value_input_planes * kSquares,
-                            num_value_channels, value_buffer.data(),
-                            weights_.ip1_val_w.data(),
-                            weights_.ip1_val_b.data(),
-                            true,  // Relu On
-                            output_val.data());
+    FullyConnectedLayer::Forward1D(
+        batch_size, num_value_input_planes * kSquares, num_value_channels,
+        value_buffer.data(), weights_.ip1_val_w.data(),
+        weights_.ip1_val_b.data(),
+        true,  // Relu On
+        output_val.data());
 
     for (size_t j = 0; j < batch_size; j++) {
       std::vector<float> policy(num_output_policy);
@@ -244,7 +244,8 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
     : weights_(weights) {
   bool verbose = options.GetOrDefault<bool>("verbose", true);
   int blas_cores = options.GetOrDefault<int>("blas_cores", 4);
-  max_batch_size_ = static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
+  max_batch_size_ =
+      static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;
