@@ -33,8 +33,6 @@ namespace lczero {
 // https://ai.intel.com/winograd/
 // https://ai.intel.com/winograd-2/
 
-#include <cstddef>
-
 class WinogradConvolution3 {
  public:
   static std::vector<float> ZeropadU(const std::vector<float>& U,
