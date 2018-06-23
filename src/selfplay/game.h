@@ -65,6 +65,9 @@ class SelfPlayGame {
 
   GameResult GetGameResult() const { return game_result_; }
   std::vector<Move> GetMoves() const;
+  // Gets the eval which required the biggest swing up to get the final outcome.
+  // Eval is the expected outcome in the range 0<->1.
+  float GetWorstEvalForWinnerOrDraw() const;
 
  private:
   // options_[0] is for white player, [1] for black.
@@ -78,6 +81,9 @@ class SelfPlayGame {
   std::unique_ptr<Search> search_;
   bool abort_ = false;
   GameResult game_result_ = GameResult::UNDECIDED;
+  // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
+  // can be calculated after end of game.
+  float min_eval_[2];
   std::mutex mutex_;
 
   // Training data to send.

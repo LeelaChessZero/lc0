@@ -252,6 +252,10 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
     game_info.moves = game.GetMoves();
+    if (!enable_resign) {
+      game_info.min_false_positive_threshold =
+          game.GetWorstEvalForWinnerOrDraw();
+    }
     if (kTraining) {
       TrainingDataWriter writer(game_number);
       game.WriteTrainingData(&writer);
