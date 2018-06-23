@@ -6,10 +6,18 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Build
+          name: Build clang version
           command: CC=clang-6.0 CXX=clang++-6.0 ./build.sh
       - run:
-          command: cp build/release/lc0 /tmp/lc0
+          command: cp build/release/lc0 /tmp/lc0-clang
+      - run:
+          name: Build g++ version
+          command: ./build.sh
+      - run:
+          command: cp build/release/lc0 /tmp/lc0-g++
       - store_artifacts:
-          path: /tmp/lc0
-          destination: lc0-ubuntu-18-04
+          path: /tmp/lc0-clang
+          destination: lc0-ubuntu-18-04-clang
+      - store_artifacts:
+          path: /tmp/lc0-g++
+          destination: lc0-ubuntu-18-04-g++
