@@ -7,7 +7,7 @@ jobs:
       - checkout
       - run:
           name: Install APT dependencies
-          command: sudo apt-get install clang-6.0 ninja-build python3-pip nvidia-opencl-dev libopenblas-dev libboost-dev nvidia-cuda-dev nvidia-cuda-toolkit libgtest-dev
+          command: sudo apt-get install clang-6.0 ninja-build python3-pip nvidia-opencl-dev libopenblas-dev libboost-dev nvidia-cuda-dev nvidia-cuda-toolkit libgtest-dev libprotobuf-dev
       - run:
           name: Install Python dependencies
           command: sudo -H pip3 install meson
