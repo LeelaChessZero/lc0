@@ -77,35 +77,36 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
                 // C   ldc
                 outputs, (int)output_size);
   }
-  for (size_t i = 0; i < batch_size; i++) {
-    if (apply_relu) {
+  if (apply_relu) {
+    for (size_t i = 0; i < batch_size; i++) {
+      float* batch_outputs=outputs+i*output_size;
       for (size_t o = 0; o < output_size; o++) {
-        float val = biases[o] + outputs[o];
-        outputs[o] = val >= 0 ? val : 0;
-      }
-    } else {
-      for (size_t o = 0; o < output_size; o++) {
-        outputs[o] += biases[o];
+        float val = biases[o] + batch_outputs[o];
+        batch_outputs[o] = val >= 0 ? val : 0;
       }
     }
-
-    outputs += output_size;
-    inputs += input_size;
+  }
+  else {
+    for (size_t i = 0; i < batch_size; i++) {
+      float* batch_outputs=outputs+i*output_size;
+      for (size_t o = 0; o < output_size; o++) {
+        batch_outputs[o] += biases[o];
+      }
+    }
   }
 }
 
 float FullyConnectedLayer::Forward0D(const size_t size, const float* x, const float* y) {
-  // That a scalar product, also known as a dot-produt.
-
-  // float cblas_sdot(const int __N, const float *__X, const int __incX, const
-  // float *__Y, const int __incY);
+  // A scalar product, also known as a dot-product.
+  // float cblas_sdot(const int N, const float *X, const int incX, const float *Y,
+  // const int incY);
   return cblas_sdot((int)size, x, 1, y, 1);
 }
 
 void FullyConnectedLayer::Softmax(const size_t size, const float* input,
                                   float* output) {
   auto alpha = *std::max_element(input, input + size);
-
+  
   auto denom = 0.0f;
   for (size_t i = 0; i < size; i++) {
     auto val = std::exp(input[i] - alpha);
