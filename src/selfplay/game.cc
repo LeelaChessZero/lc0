@@ -120,7 +120,6 @@ float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
   return std::min(min_eval_[0], min_eval_[1]);
 }
 
-
 void SelfPlayGame::Abort() {
   std::lock_guard<std::mutex> lock(mutex_);
   abort_ = true;
