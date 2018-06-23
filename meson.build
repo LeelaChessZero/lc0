@@ -29,7 +29,6 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
 
   if get_option('buildtype') == 'release'
     add_project_arguments('-march=native', language : 'cpp')
-    add_project_arguments('-mtune=native', language : 'cpp')
   endif
 endif
 
