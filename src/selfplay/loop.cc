@@ -75,6 +75,7 @@ void SelfPlayLoop::CmdStart() {
 }
 
 void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
+  std::vector<std::string> responses;
   // Send separate resign report before gameready as client gameready parsing
   // will easily get confused by adding new parameters as both training file
   // and move list potentially contain spaces.
@@ -82,7 +83,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
     std::string resign_res = "resign_report";
     resign_res += 
         " fp_threshold " + std::to_string(*info.min_false_positive_threshold);
-    SendResponse(resign_res);
+    responses.push_back(resign_res);
   }
   std::string res = "gameready";
   if (!info.training_filename.empty())
@@ -101,7 +102,8 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
     res += " moves";
     for (const auto& move : info.moves) res += " " + move.as_string();
   }
-  SendResponse(res);
+  responses.push_back(res);
+  SendResponses(responses);
 }
 
 void SelfPlayLoop::CmdSetOption(const std::string& name,
