@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/buildpack-deps:bionic
+      - image: floopcz/tensorflow_cc:ubuntu-shared-cuda
     steps:
       - checkout
       - run:
