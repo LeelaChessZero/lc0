@@ -50,7 +50,6 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool enable_resign) {
   bool blacks_move = false;
-  min_eval_[0] = min_eval_[1] = 1.0f;
 
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
