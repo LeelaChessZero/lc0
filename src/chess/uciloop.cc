@@ -201,6 +201,15 @@ void UciLoop::SendResponse(const std::string& response) {
   std::cout << response << std::endl;
 }
 
+void UciLoop::SendResponses(const std::vector<std::string>& responses) {
+  static std::mutex output_mutex;
+  std::lock_guard<std::mutex> lock(output_mutex);
+  for (auto& response : responses) {
+    if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
+    std::cout << response << std::endl;
+  }
+}
+
 // TODO: remove these monstrosities
 #define LC0V_STR_INNER(a) #a
 #define LC0V_STR(a) LC0V_STR_INNER(a)
