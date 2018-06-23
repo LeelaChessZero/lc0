@@ -238,12 +238,11 @@ std::string Search::GetCachedFirstPlyValue(const Node* node) const {
   // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
   history.Append(node->GetMove());
   auto hash = history.HashLast(kCacheHistoryLength + 1);
-  auto nneval = cache_->Lookup(hash);
-  if (nneval == nullptr) {
-    oss << " --.--";
-  } else {
+  NNCacheLock nneval(cache_, hash);
+  if (nneval) {
     oss << std::setw(6) << std::setprecision(2) << -nneval->q * 100;
-    cache_->Unpin(hash, nneval);
+  } else {
+    oss << " --.--";
   }
   return oss.str();
 }
