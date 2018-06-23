@@ -16,6 +16,8 @@
  along with Leela Zero.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -28,12 +30,10 @@
 #include <string>
 #include <thread>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/format.hpp>
-
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/opencl/OpenCLTuner.h"
+
 
 static std::string cl_args =
     "-cl-mad-enable -cl-fast-relaxed-math -cl-no-signed-zeros "
@@ -524,8 +524,8 @@ static std::string opencl_dev_type_to_string(T type) {
   }
 }
 
-static std::string trim(std::string trim_me) {
-  boost::algorithm::trim(trim_me);
+static const char *trim_left(const char *trim_me) {
+  while (isspace(*trim_me)) trim_me++;
   return trim_me;
 }
 
@@ -674,27 +674,26 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
       if (verbose) {
         fprintf(stderr, "Device ID:     %d\n", id);
         fprintf(stderr, "Device name:   %s\n",
-                trim(d.getInfo<CL_DEVICE_NAME>()).c_str());
+               trim_left(d.getInfo<CL_DEVICE_NAME>().c_str()));
         fprintf(stderr, "Device type:   %s\n",
-                opencl_dev_type_to_string(d.getInfo<CL_DEVICE_TYPE>()).c_str());
-        fprintf(stderr, "Device vendor: %s\n",
-                d.getInfo<CL_DEVICE_VENDOR>().c_str());
-        fprintf(stderr, "Device driver: %s\n",
-                d.getInfo<CL_DRIVER_VERSION>().c_str());
+               opencl_dev_type_to_string(d.getInfo<CL_DEVICE_TYPE>()).c_str());
+        fprintf(stderr, "Device vendor: %s\n", d.getInfo<CL_DEVICE_VENDOR>().c_str());
+        fprintf(stderr, "Device driver: %s\n", d.getInfo<CL_DRIVER_VERSION>().c_str());
         fprintf(stderr, "Device speed:  %u MHz\n",
-                d.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>());
+               d.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>());
         fprintf(stderr, "Device cores:  %u CU\n",
-                d.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>());
+               d.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>());
       }
 
       // assign score, try to find best device
       int this_score = 0;
       std::string this_vendor = d.getInfo<CL_DEVICE_VENDOR>();
+      std::transform(this_vendor.begin(), this_vendor.end(), this_vendor.begin(), ::tolower);
       this_score +=
-          1000 * boost::icontains(this_vendor, "advanced micro devices");
-      this_score += 1000 * boost::icontains(this_vendor, "amd");
-      this_score += 1000 * boost::icontains(this_vendor, "nvidia");
-      this_score += 500 * boost::icontains(this_vendor, "intel");
+          1000 * (this_vendor.find("advanced micro devices") != std::string::npos);
+      this_score += 1000 * (this_vendor.find("amd") != std::string::npos);
+      this_score += 1000 * (this_vendor.find("nvidia") != std::string::npos);
+      this_score += 500 * (this_vendor.find("intel") != std::string::npos);
       this_score += 100 * (d.getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU);
       this_score += opencl_version * 10;
       if (verbose) {
@@ -725,9 +724,9 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
 
   if (verbose) {
     fprintf(stderr, "Selected platform: %s\n",
-            best_platform.getInfo<CL_PLATFORM_NAME>().c_str());
+           best_platform.getInfo<CL_PLATFORM_NAME>().c_str());
     fprintf(stderr, "Selected device: %s\n",
-            trim(best_device.getInfo<CL_DEVICE_NAME>()).c_str());
+           trim_left(best_device.getInfo<CL_DEVICE_NAME>().c_str()));
     fprintf(stderr, "with OpenCL %2.1f capability.\n", best_version);
   }
   cl::Context context;
@@ -764,7 +763,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
     m_program.build(args.c_str());
   } catch (const cl::Error&) {
     fprintf(stderr, "Error building kernels: %s\n",
-            m_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device).c_str());
+           m_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device).c_str());
     throw std::runtime_error("Error building OpenCL kernels.");
   }
 
