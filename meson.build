@@ -152,7 +152,25 @@ if get_option('build_backends')
 
     elif get_option('openblas') and openblas_lib.found()
       add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
-      includes += include_directories(get_option('openblas_include'))
+
+      openblas_headers_found = false
+      if cc.has_header('cblas.h')
+        openblas_headers_found = true
+      else
+        foreach d : get_option('openblas_include')
+          if not openblas_headers_found
+            if cc.has_header('cblas.h', args: '-I' + d)
+      	      includes += include_directories(d)
+              openblas_headers_found = true
+            endif
+          endif
+        endforeach
+      endif
+      
+      if not openblas_headers_found
+        error('Openblas headers are required but not found!')
+      endif
+
       deps += [ openblas_lib ]
       has_blas = true
 
