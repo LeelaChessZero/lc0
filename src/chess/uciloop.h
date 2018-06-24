@@ -46,7 +46,7 @@ class UciLoop {
   virtual void RunLoop();
 
   // Sends response to host.
-  virtual void SendResponse(const std::string& response);
+  void SendResponse(const std::string& response);
   // Sends responses to host ensuring they are received as a block.
   virtual void SendResponses(const std::vector<std::string>& responses);
   void SendBestMove(const BestMoveInfo& move);
