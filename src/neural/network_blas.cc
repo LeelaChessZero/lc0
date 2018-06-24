@@ -243,7 +243,7 @@ void BlasComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
 BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
     : weights_(weights) {
   bool verbose = options.GetOrDefault<bool>("verbose", true);
-  int blas_cores = options.GetOrDefault<int>("blas_cores", 4);
+  int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
