@@ -1310,8 +1310,6 @@ void CudnnNetworkComputation<DataType>::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
-//REGISTER_NETWORK("cudnn", CudnnNetwork, 110)
-
 REGISTER_NETWORK("cudnn", CudnnNetwork<float>, 110)
 REGISTER_NETWORK("cudnn-fp16", CudnnNetwork<half>, 105)
 
