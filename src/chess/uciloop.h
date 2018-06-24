@@ -19,7 +19,6 @@
 #pragma once
 
 #include <fstream>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -47,7 +46,7 @@ class UciLoop {
   virtual void RunLoop();
 
   // Sends response to host.
-  virtual void SendResponse(const std::string& response);
+  void SendResponse(const std::string& response);
   // Sends responses to host ensuring they are received as a block.
   virtual void SendResponses(const std::vector<std::string>& responses);
   void SendBestMove(const BestMoveInfo& move);
@@ -81,7 +80,6 @@ class UciLoop {
       const std::unordered_map<std::string, std::string>& params);
 
   std::ofstream debug_log_;
-  static std::mutex output_mutex_;
 };
 
 }  // namespace lczero

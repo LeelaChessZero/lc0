@@ -113,8 +113,6 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
 
 }  // namespace
 
-std::mutex UciLoop::output_mutex_;
-
 void UciLoop::RunLoop() {
   std::cout.setf(std::ios::unitbuf);
   std::string line;
@@ -197,13 +195,12 @@ void UciLoop::SetLogFilename(const std::string& filename) {
 }
 
 void UciLoop::SendResponse(const std::string& response) {
-  std::lock_guard<std::mutex> lock(output_mutex_);
-  if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
-  std::cout << response << std::endl;
+  SendResponses({response});
 }
 
 void UciLoop::SendResponses(const std::vector<std::string>& responses) {
-  std::lock_guard<std::mutex> lock(output_mutex_);
+  static std::mutex output_mutex;
+  std::lock_guard<std::mutex> lock(output_mutex);
   for (auto& response : responses) {
     if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
     std::cout << response << std::endl;
