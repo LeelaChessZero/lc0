@@ -19,6 +19,7 @@
 #pragma once
 
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -80,6 +81,7 @@ class UciLoop {
       const std::unordered_map<std::string, std::string>& params);
 
   std::ofstream debug_log_;
+  static std::mutex output_mutex_;
 };
 
 }  // namespace lczero
