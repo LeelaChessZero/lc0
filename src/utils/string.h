@@ -23,14 +23,14 @@
 
 namespace lczero {
 
-// Joins strings using @delim as delimeter.
+// Joins strings using @delim as delimiter.
 std::string StrJoin(const std::vector<std::string>& strings,
                     const std::string& delim = " ");
 
 // Splits strings at whitespace.
 std::vector<std::string> StrSplitAtWhitespace(const std::string& str);
 
-// Split string by delimeter.
+// Split string by delimiter.
 std::vector<std::string> StrSplit(const std::string& str,
                                   const std::string& delim);
 

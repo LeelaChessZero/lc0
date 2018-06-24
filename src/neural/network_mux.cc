@@ -79,7 +79,7 @@ class MuxingNetwork : public Network {
 
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
-      // If options are empty, or multipliexer configured in root object,
+      // If options are empty, or multiplexer configured in root object,
       // initialize on root object and default backend.
       auto backends = NetworkFactory::Get()->GetBackendsList();
       AddBackend(backends[0], weights, options);

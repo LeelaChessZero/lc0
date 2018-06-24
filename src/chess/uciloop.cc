@@ -28,6 +28,7 @@
 #include <utility>
 #include "utils/exception.h"
 #include "utils/string.h"
+#include "version.inc"
 
 namespace lczero {
 
@@ -41,7 +42,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
          {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth",
-          "nodes", "movetime"}},
+          "nodes", "movetime", "searchmoves"}},
         {{"start"}, {}},
         {{"stop"}, {}},
         {{"quit"}, {}},
@@ -155,19 +156,23 @@ bool UciLoop::DispatchCommand(
       }
       go_params.infinite = true;
     }
-#define OPTION(x)                         \
+    if (ContainsKey(params, "searchmoves")) {
+      go_params.searchmoves =
+          StrSplitAtWhitespace(GetOrEmpty(params, "searchmoves"));
+    }
+#define UCIGOOPTION(x)                    \
   if (ContainsKey(params, #x)) {          \
     go_params.x = GetNumeric(params, #x); \
   }
-    OPTION(wtime);
-    OPTION(btime);
-    OPTION(winc);
-    OPTION(binc);
-    OPTION(movestogo);
-    OPTION(depth);
-    OPTION(nodes);
-    OPTION(movetime);
-#undef OPTION
+    UCIGOOPTION(wtime);
+    UCIGOOPTION(btime);
+    UCIGOOPTION(winc);
+    UCIGOOPTION(binc);
+    UCIGOOPTION(movestogo);
+    UCIGOOPTION(depth);
+    UCIGOOPTION(nodes);
+    UCIGOOPTION(movetime);
+#undef UCIGOOPTION
     CmdGo(go_params);
   } else if (command == "stop") {
     CmdStop();
@@ -190,11 +195,33 @@ void UciLoop::SetLogFilename(const std::string& filename) {
 }
 
 void UciLoop::SendResponse(const std::string& response) {
+  SendResponses({response});
+}
+
+void UciLoop::SendResponses(const std::vector<std::string>& responses) {
   static std::mutex output_mutex;
   std::lock_guard<std::mutex> lock(output_mutex);
-  if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
-  std::cout << response << std::endl;
+  for (auto& response : responses) {
+    if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
+    std::cout << response << std::endl;
+  }
 }
+
+// TODO: remove these monstrosities
+#define LC0V_STR_INNER(a) #a
+#define LC0V_STR(a) LC0V_STR_INNER(a)
+#define LC0_VERSION_STRING     \
+    "v" LC0V_STR(LC0_VERSION_MAJOR) \
+    "." LC0V_STR(LC0_VERSION_MINOR) \
+    "." LC0V_STR(LC0_VERSION_PATCH)
+
+void UciLoop::SendId() {
+  SendResponse("id name The Lc0 chess engine. " LC0_VERSION_STRING);
+  SendResponse("id author The LCZero Authors.");
+}
+#undef LC0V_STR_INNER
+#undef LC0V_STR
+#undef LC0_VERSION_STRING
 
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
   std::string res = "bestmove " + move.bestmove.as_string();

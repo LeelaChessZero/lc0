@@ -17,6 +17,7 @@
 */
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 
 #include "engine.h"
@@ -38,8 +39,21 @@ const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
 const char* kSlowMoverStr = "Scale thinking time";
 const char* kMoveOverheadStr = "Move time overhead in milliseconds";
+const char* kTimeCurvePeak = "Time weight curve peak ply";
+const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
+const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
 
 const char* kAutoDiscover = "<autodiscover>";
+
+float ComputeMoveWeight(int ply, float peak, float left_width,
+                        float right_width) {
+  // Inflection points of the function are at ply = peak +/- width.
+  // At these points the function is at 2/3 of its max value.
+  const float width = ply > peak ? right_width : left_width;
+  constexpr float width_scaler = 1.518651485f;  // 2 / log(2 + sqrt(3))
+  return std::pow(std::cosh((ply - peak) / width / width_scaler), -2.0f);
+}
+
 }  // namespace
 
 EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
@@ -63,8 +77,14 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.2f;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.13f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
+  options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
+                            "time-curve-peak") = 22.0f;
+  options->Add<FloatOption>(kTimeCurveLeftWidth, 0.0f, 1000.0f,
+                            "time-curve-left-width") = 450.0f;
+  options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
+                            "time-curve-right-width") = 30.0f;
 
   Search::PopulateUciParams(options);
 
@@ -77,13 +97,19 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
 }
 
-SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
+SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
                                                     const GoParams& params) {
   SearchLimits limits;
   limits.visits = params.nodes;
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   limits.infinite = params.infinite;
+  if (!params.searchmoves.empty()) {
+    limits.searchmoves.reserve(params.searchmoves.size());
+    for (const auto& move : params.searchmoves) {
+      limits.searchmoves.emplace_back(move, is_black);
+    }
+  }
   if (params.infinite || time < 0) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
@@ -94,26 +120,38 @@ SearchLimits EngineController::PopulateSearchLimits(int /*ply*/, bool is_black,
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverStr);
   int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
+  float time_curve_peak = options_.Get<float>(kTimeCurvePeak);
+  float time_curve_left_width = options_.Get<float>(kTimeCurveLeftWidth);
+  float time_curve_right_width = options_.Get<float>(kTimeCurveRightWidth);
+
   // Total time till control including increments.
   auto total_moves_time =
       std::max(int64_t{0},
                time + increment * (movestogo - 1) - move_overhead * movestogo);
 
-  const int kSmartPruningToleranceMs = 200;
-
+  constexpr int kSmartPruningToleranceMs = 200;
+  float this_move_weight = ComputeMoveWeight(
+      ply, time_curve_peak, time_curve_left_width, time_curve_right_width);
+  float other_move_weights = 0.0f;
+  for (int i = 1; i < movestogo; ++i)
+    other_move_weights +=
+        ComputeMoveWeight(ply + 2 * i, time_curve_peak, time_curve_left_width,
+                          time_curve_right_width);
   // Compute the move time without slowmover.
-  int64_t this_move_time = total_moves_time / movestogo;
+  float this_move_time = total_moves_time * this_move_weight /
+                         (this_move_weight + other_move_weights);
 
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
-  if (slowmover < 1.0 || this_move_time > kSmartPruningToleranceMs) {
-    // Budget X*slowmover for current move, X*1.0 for the rest.
-    this_move_time = static_cast<int64_t>(
-        total_moves_time / (movestogo - 1 + slowmover) * slowmover);
+  if (slowmover < 1.0 ||
+      this_move_time * slowmover > kSmartPruningToleranceMs) {
+    this_move_time *= slowmover;
   }
+
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms =
-      std::max(int64_t{0}, std::min(this_move_time, time - move_overhead));
+  limits.time_ms = std::max(
+      int64_t{0},
+      std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
   return limits;
 }
 
@@ -209,8 +247,7 @@ void EngineLoop::RunLoop() {
 }
 
 void EngineLoop::CmdUci() {
-  SendResponse("id name The Lc0 chess engine.");
-  SendResponse("id author The LCZero Authors.");
+  SendId();
   for (const auto& option : options_.ListOptionsUci()) {
     SendResponse(option);
   }

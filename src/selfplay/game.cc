@@ -23,6 +23,17 @@
 
 namespace lczero {
 
+namespace{
+const char* kReuseTreeStr = "Reuse the node statistics between moves";
+const char* kResignPercentageStr = "Resign when win percentage drops below n";
+}
+
+void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
+  options->Add<BoolOption>(kReuseTreeStr, "reuse-tree") = false;
+  options->Add<FloatOption>(kResignPercentageStr, 0.0f, 100.0f,
+                            "resign-percentage", 'r')  = 0.0f;
+}
+
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree)
     : options_{player1, player2} {
@@ -37,7 +48,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
   }
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads) {
+void SelfPlayGame::Play(int white_threads, int black_threads, bool enable_resign) {
   bool blacks_move = false;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -49,6 +60,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
 
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
+    if (!options_[idx].uci_options->Get<bool>(kReuseTreeStr)) {
+      tree_[idx]->TrimTreeAtHead();
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
@@ -62,9 +76,22 @@ void SelfPlayGame::Play(int white_threads, int black_threads) {
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
     if (abort_) break;
 
-    // Append training data.
+    // Append training data. The GameResult is later overwritten.
     training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
         GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
+
+    float eval = search_->GetBestEval();
+    eval = (eval + 1) / 2;
+    if (eval < min_eval_[idx]) min_eval_[idx] = eval;
+    if (enable_resign) {
+      const float resignpct =
+              options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
+      if (eval < resignpct) { // always false when resignpct == 0
+        game_result_ = blacks_move ? GameResult::WHITE_WON
+                                   : GameResult::BLACK_WON;
+        break;
+      }
+    }
 
     // Add best move to the tree.
     Move move = search_->GetBestMove().first;
@@ -84,6 +111,12 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
   }
   std::reverse(moves.begin(), moves.end());
   return moves;
+}
+
+float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
+  if (game_result_ == GameResult::WHITE_WON) return min_eval_[0];
+  if (game_result_ == GameResult::BLACK_WON) return min_eval_[1];
+  return std::min(min_eval_[0], min_eval_[1]);
 }
 
 void SelfPlayGame::Abort() {

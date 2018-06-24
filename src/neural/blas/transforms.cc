@@ -16,8 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/BLAS/transforms.h"
-#include "neural/BLAS/blas.h"
+#include "neural/blas/transforms.h"
+#include "neural/blas/blas.h"
 
 #include <algorithm>
 #include <cassert>
@@ -282,7 +282,7 @@ void Transforms::Convolve(size_t outputs, const std::vector<float>& input,
   // M Number of rows in matrices A and C.
   // N Number of columns in matrices B and C.
   // K Number of columns in matrix A; number of rows in matrix B.
-  // lda The size of the first dimention of matrix A; if you are
+  // lda The size of the first dimension of matrix A; if you are
   // passing a matrix A[m][n], the value should be m.
   //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
   //                ldb, beta, C, N);

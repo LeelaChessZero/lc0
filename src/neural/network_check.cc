@@ -88,7 +88,7 @@ class CheckComputation : public NetworkComputation {
     // example:
     //
     // info string Check passed
-    // info string ***** error chech failed
+    // info string ***** error check failed
     //
 
     if (valueAlmostEqual && policyAlmostEqual) {
