@@ -215,7 +215,9 @@ void Search::SendMovesStats() const {
         << std::setw(2) << node->GetNInFlight() << ") ";
 
     oss << "(V: ";
+    // Handrolled optional only has a few overloads available, simple usage only
     optional<float> v = GetCachedFirstPlyValue(node);
+    if (!v && node->IsTerminal()) v = node->GetTerminalNodeValue();
     if (v) {
       oss << std::setw(6) << std::setprecision(2) << *v * 100;
     } else {
