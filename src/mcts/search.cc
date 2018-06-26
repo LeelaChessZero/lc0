@@ -187,64 +187,73 @@ void Search::SendMovesStats() const {
   const float parent_q =
       -root_node_->GetQ(0) -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
-  const float puct_u_coeff =
+  const float U_coeff =
       kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
 
   for (Node* child : root_node_->Children()) {
     nodes.emplace_back(child);
   }
   std::sort(nodes.begin(), nodes.end(),
-            [&parent_q, &puct_u_coeff](const Node* a, const Node* b) {
-              auto an = a->GetN(), bn = b->GetN();
-              return (an < bn) ||
-                     (an == bn &&
-                       a->GetQ(parent_q) + a->GetU() * puct_u_coeff
-                     < b->GetQ(parent_q) + b->GetU() * puct_u_coeff);
-            });
+           [&parent_q, &U_coeff](const Node* a, const Node* b) {
+             return
+                 std::forward_as_tuple(a->GetN(), a->GetQ(parent_q) + U_coeff * a->GetU())
+               < std::forward_as_tuple(b->GetN(), b->GetQ(parent_q) + U_coeff * b->GetU());
+           });
 
   const bool is_black_to_move = played_history_.IsBlackToMove();
   ThinkingInfo info;
   for (const Node* node : nodes) {
     std::ostringstream oss;
     oss << std::fixed;
+
     oss << std::left << std::setw(5)
         << node->GetMove(is_black_to_move).as_string();
+
     oss << " (" << std::setw(4) << node->GetMove().as_nn_index() << ")";
-    oss << " N: ";
-    oss << std::right << std::setw(7) << node->GetN() << " (+" << std::setw(2)
-        << node->GetNInFlight() << ") ";
-    oss << "(V: " << GetCachedFirstPlyValue(node) << "%) ";
+
+    oss << " N: " << std::right << std::setw(7) << node->GetN() << " (+"
+        << std::setw(2) << node->GetNInFlight() << ") ";
+
+    oss << "(V: ";
+    optional<float> v = GetCachedFirstPlyValue(node);
+    if (v) {
+      oss << std::setw(6) << std::setprecision(2) << *v * 100;
+    } else {
+      oss << " --.--";
+    }
+    oss << "%) ";
+
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
+
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
         << node->GetQ(parent_q) << ") ";
+
     oss << "(U: " << std::setw(6) << std::setprecision(5)
-        << node->GetU() * kCpuct *
-               std::sqrt(std::max(node->GetParent()->GetChildrenVisits(), 1u))
-        << ") ";
+        << U_coeff * node->GetU() << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << node->GetQ(parent_q) + puct_u_coeff * node->GetU() << ") ";
+        << node->GetQ(parent_q) + U_coeff * node->GetU() << ") ";
+
     info.comment = oss.str();
     info_callback_(info);
   }
 }
 
-std::string Search::GetCachedFirstPlyValue(const Node* node) const {
+optional<float> Search::GetCachedFirstPlyValue(const Node* node) const {
   assert(node->GetParent() == root_node_);
-  std::ostringstream oss;
-  oss << std::fixed;
+  // This function serves a specific purpose, fetching a NN value from a first
+  // ply move, but it would be relatively straightforward to generalize this
+  // to fetch a complete NN evaluation (policy+value) for an abitrary move.
+  // But, there isn't yet a usecase for that, so we leave this simple for now.
+  optional<float> retval;
   PositionHistory history(played_history_); // Is it worth it to move this
   // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
   history.Append(node->GetMove());
   auto hash = history.HashLast(kCacheHistoryLength + 1);
   NNCacheLock nneval(cache_, hash);
-  if (nneval) {
-    oss << std::setw(6) << std::setprecision(2) << -nneval->q * 100;
-  } else {
-    oss << " --.--";
-  }
-  return oss.str();
+  if (nneval) retval = -nneval->q;
+  return retval;
 }
 
 void Search::MaybeTriggerStop() {

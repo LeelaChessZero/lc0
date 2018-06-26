@@ -27,6 +27,7 @@
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "utils/mutex.h"
+#include "utils/optional.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
@@ -111,7 +112,8 @@ class Search {
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
   void SendMovesStats() const;
-  std::string GetCachedFirstPlyValue(const Node* node) const;
+  // An ugly name, but this function currently has very limited use
+  optional<float> GetCachedFirstPlyValue(const Node* node) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
