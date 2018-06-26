@@ -498,7 +498,7 @@ void SearchWorker::ExecuteOneIteration() {
   RunNNComputation();
 
   // 5. Populate computed nodes with results of the NN computation.
-  FetchNNResults();
+  FetchMinibatchResults();
 
   // 6. Update nodes.
   DoBackupUpdate();
@@ -545,20 +545,13 @@ void SearchWorker::GatherMinibatch() {
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    // Furthermore, we must pass this termination value to NodeToProcess::v,
-    // both here and after ExtendNode.
-    if (node->IsTerminal()) {
-      nodes_to_process_.back().v = node->GetTerminalNodeValue();
-      continue;
-    }
+    if (node->IsTerminal()) continue;
 
     // Node was never visited, extend it.
     ExtendNode(node);
 
     // Only send non-terminal nodes to neural network
-    if (node->IsTerminal()) {
-      nodes_to_process_.back().v = node->GetTerminalNodeValue();
-    } else {
+    if (!node->IsTerminal()) {
       nodes_to_process_.back().nn_queried = true;
       AddNodeToComputation(node);
     }
@@ -827,14 +820,16 @@ void SearchWorker::RunNNComputation() {
 
 // 5. Populate computed nodes with results of the NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::FetchNNResults() {
-  if (computation_->GetBatchSize() == 0) return;
-
-  // Copy NN results into nodes.
+void SearchWorker::FetchMinibatchResults() {
+  // Copy NN results, or cached/duplicate results, into nodes.
+  // The latter is much simpler.
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
-    if (!node_to_process.nn_queried) continue;
     Node* node = node_to_process.node;
+    if (!node_to_process.nn_queried) {
+      node_to_process.v = node->GetTerminalNodeValue();
+      continue;
+    }
     // Populate V value.
     node_to_process.v = -computation_->GetQVal(idx_in_computation);
     // Populate P values.

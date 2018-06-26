@@ -214,7 +214,7 @@ class SearchWorker {
   void RunNNComputation();
 
   // 5. Populate computed nodes with results of the NN computation.
-  void FetchNNResults();
+  void FetchMinibatchResults();
 
   // 6. Update nodes.
   void DoBackupUpdate();
