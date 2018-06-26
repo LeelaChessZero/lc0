@@ -34,8 +34,8 @@ Make sure that `~/.local/bin` is in your `PATH` environment variable. You can no
 ## Windows
 
 0. Install Microsoft Visual Studio
-1. Install CUDA (v9.2 is fine)
-2. Install cuDNN.
+1. Install [CUDA](https://developer.nvidia.com/cuda-zone) (v9.2 is fine)
+2. Install [cuDNN](https://developer.nvidia.com/cudnn).
 3. Install Python3
 4. Install Meson: `pip3 install --upgrade meson`
 5. Edit `build-cuda.cmd`:
