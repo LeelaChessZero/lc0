@@ -6,7 +6,7 @@ Building right now may be a bit rough, we are improving and finding ways to simp
 
 1. Install backend:
     - (if you want version with tensorflow) Install `tensorflow_cc` by following steps described [here](https://github.com/FloopCZ/tensorflow_cc).
-    - (if you want cuDNN version) Install CUDA and cuDNN.
+    - (if you want cuDNN version) Install [CUDA](https://developer.nvidia.com/cuda-zone) and [cuDNN](https://developer.nvidia.com/cudnn).
     - (if you want OpenBLAS version) Install OpenBLAS (`libopenblas-dev`).
 2. Install ninja build (`ninja-build`), meson, and (optionally) gtest (`libgtest-dev`).
 3. Go to `lc0/`
