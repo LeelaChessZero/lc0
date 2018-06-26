@@ -77,14 +77,14 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.13f;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 1.97f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
   options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
-                            "time-curve-peak") = 22.0f;
+                            "time-curve-peak") = 24.0f;
   options->Add<FloatOption>(kTimeCurveLeftWidth, 0.0f, 1000.0f,
-                            "time-curve-left-width") = 450.0f;
+                            "time-curve-left-width") = 52.8f;
   options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
-                            "time-curve-right-width") = 30.0f;
+                            "time-curve-right-width") = 71.7f;
 
   Search::PopulateUciParams(options);
 
