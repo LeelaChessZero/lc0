@@ -88,6 +88,7 @@ class LruCache {
   // Looks up and pins the element by key. Returns nullptr if not found.
   // If found, brings the element to the head of the queue (makes it last to
   // evict); furthermore, a call to Unpin must be made for each such element.
+  // Use of LruCacheLock is recommended to automate this pin management.
   V* LookupAndPin(K key) {
     Mutex::Lock lock(mutex_);
 
@@ -102,7 +103,8 @@ class LruCache {
     return nullptr;
   }
 
-  // Unpins the element given key and value.
+  // Unpins the element given key and value. Use of LruCacheLock is recommended
+  // to automate this pin management.
   void Unpin(K key, V* value) {
     Mutex::Lock lock(mutex_);
 
@@ -120,7 +122,7 @@ class LruCache {
       cur = &el->next_in_hash;
     }
 
-    // Now lookup in actve list.
+    // Now lookup in active list.
     auto hash = hasher_(key) % hash_.size();
     for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
       if (key == iter->key && value == iter->value.get()) {
