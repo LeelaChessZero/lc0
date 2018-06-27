@@ -153,22 +153,22 @@ if get_option('build_backends')
     elif get_option('openblas') and openblas_lib.found()
       add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
 
-      openblas_headers_found = false
-      if cc.has_header('cblas.h')
-        openblas_headers_found = true
-      else
+      if not cc.has_header('openblas_config.h')
+        openblas_headers_found = false
+        
         foreach d : get_option('openblas_include')
           if not openblas_headers_found
-            if cc.has_header('cblas.h', args: '-I' + d)
-      	      includes += include_directories(d)
+            if cc.has_header('openblas_config.h', args: '-I' + d)
+              # add the first valid include directory
+              includes += include_directories(d)
               openblas_headers_found = true
             endif
           endif
         endforeach
-      endif
-      
-      if not openblas_headers_found
-        error('Openblas headers are required but not found!')
+        
+        if not openblas_headers_found
+          error('Failed to detect OpenBLAS headers. Did you install libopenblas-dev?')
+        endif
       endif
 
       deps += [ openblas_lib ]
