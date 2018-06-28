@@ -16,8 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/blas.h"
+#include "neural/blas/fully_connected_layer.h"
 
 #include <algorithm>
 #include <cassert>
@@ -67,15 +67,20 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
     //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
     //                ldb, beta, C, N);
 
-    cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-                // M              N         K         alpha
-                (int)output_size, (int)batch_size, (int)input_size, 1.0f,
-                // A     lda
-                weights, (int)input_size,
-                // B    ldb   beta,
-                inputs, (int)input_size, 0.0f,
-                // C   ldc
-                outputs, (int)output_size);
+    cblas_sgemm(CblasColMajor,
+                CblasTrans,
+                CblasNoTrans,
+                (int)output_size, // M
+                (int)batch_size, // N
+                (int)input_size, // K
+                1.0f, // alpha
+                weights, // A
+                (int)input_size, // lda, leading rank of A
+                inputs, // B
+                (int)input_size, // ldb, leading rank of B
+                0.0f, // beta
+                outputs, // C
+                (int)output_size);  // ldc, leading rank of C
   }
   if (apply_relu) {
     for (size_t i = 0; i < batch_size; i++) {
@@ -117,4 +122,4 @@ void FullyConnectedLayer::Softmax(const size_t size, const float* input,
     output[i] = output[i] / denom;
   }
 }
-}
+} // namespace lczero
