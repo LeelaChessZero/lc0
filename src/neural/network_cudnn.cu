@@ -179,8 +179,8 @@ class BNLayer : public BaseLayer<DataType> {
  private:
   const bool use_relu_;
 
-  // always in float irrespective of DataType
-  // not much point in converting these to fp16
+  // Weights for BN layer are always in float irrespective of DataType
+  // as there is not much point in converting these to fp16.
   float *means_ = nullptr;
   float *variances_ = nullptr;
 };
@@ -244,8 +244,8 @@ __global__ void addVectors_kernel(T *c, T *a, T *b, int size, int asize,
   }
 }
 
-// adds two vectors (possibly of different sizes), also do optional relu
-// activation_
+// Adds two vectors (possibly of different sizes), also do optional relu
+// activation.
 template <typename T>
 void addVectors(T *c, T *a, T *b, int size, int asize, int bsize, bool relu,
                 bool useTanh) {
@@ -489,7 +489,7 @@ ConvLayer<DataType>::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter, i
   size_t biasSize = sizeof(DataType) * C;
   reportCUDAErrors(cudaMalloc(&biases, biasSize));
 
-  bool fp16 = std::is_same<half, DataType>::value;
+  const bool fp16 = std::is_same<half, DataType>::value;
 
   // create cudnn objects for various tensors, algorithms, etc
   cudnnCreateFilterDescriptor(&filter_desc_);
@@ -576,7 +576,7 @@ template<typename DataType>
 void ConvLayer<DataType>::Eval(int N, DataType *output, const DataType *input,
                                const DataType *input2, void *scratch, cudnnHandle_t cudnn,
                                cublasHandle_t cublas) {
-  bool fp16 = std::is_same<half, DataType>::value;
+  const bool fp16 = std::is_same<half, DataType>::value;
 
   reportCUDNNErrors(cudnnSetTensor4dDescriptor(
       out_tensor_desc_, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
@@ -952,8 +952,6 @@ class CudnnNetwork : public Network {
  public:
   CudnnNetwork(Weights weights, const OptionsDict &options) {
     gpuId_ = options.GetOrDefault<int>("gpu", 0);
-
-    //int tryFp16 = options.GetOrDefault<int>("fp16", 0);
 
     int totalGPUs;
     reportCUDAErrors(cudaGetDeviceCount(&totalGPUs));
