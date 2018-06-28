@@ -23,18 +23,18 @@
 
 namespace lczero {
 
-// Batch mormalization related methods
+// Batch normalization related methods
 class Batchnorm {
  public:
   Batchnorm() = delete;
 
-  // Apply batch mormalization, along with a Relu and add a possible skip
+  // Apply batch normalization, along with a Relu and add a possible skip
   // connection.
   static void Apply(const size_t batch_size, const size_t channels, float* data,
                     const float* means, const float* stddivs,
                     const float* eltwise = nullptr);
 
-  // Offset the means with the biases
+  // Offset means by the biases
   static void OffsetMeans(std::vector<float>& bn_means,
                           const std::vector<float>& biases);
 
