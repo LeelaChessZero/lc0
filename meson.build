@@ -163,10 +163,10 @@ if get_option('build_backends')
   if get_option('blas') and has_blas
 
     blas_files = [
-    'src/neural/blas/winograd_convolution3.cc',
-    'src/neural/blas/fully_connected_layer.cc',
-    'src/neural/blas/convolution1.cc',
     'src/neural/blas/batchnorm.cc',
+    'src/neural/blas/convolution1.cc',
+    'src/neural/blas/fully_connected_layer.cc',
+    'src/neural/blas/winograd_convolution3.cc',
     'src/neural/network_blas.cc'
     ]
 
