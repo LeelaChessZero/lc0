@@ -16,8 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/blas/blas.h"
 #include "neural/blas/winograd_convolution3.h"
+#include "neural/blas/blas.h"
 
 #include <algorithm>
 #include <cassert>
@@ -260,20 +260,19 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
     auto offset_v = b * batch_size * input_channels * kTiles;
     auto offset_m = b * batch_size * output_channels * kTiles;
 
-    cblas_sgemm(
-        CblasColMajor, // Row major format
-        CblasNoTrans, // A no trans
-        CblasNoTrans, // B no trans
-        (int)output_channels, // rows W, M
-        (int)(batch_size * kTiles), //cols V, M
-        (int)input_channels, // cols W, rows V
-        1.0f, // alpha
-        &weights[offset_u], // W
-        (int)output_channels, // ldW
-        &V_[offset_v], // V
-        (int)input_channels, 0.0f, // ldV
-        &M_[offset_m], // M
-        (int)output_channels); // ldM
+    cblas_sgemm(CblasColMajor,               // Row major format
+                CblasNoTrans,                // A no trans
+                CblasNoTrans,                // B no trans
+                (int)output_channels,        // rows W, M
+                (int)(batch_size * kTiles),  // cols V, M
+                (int)input_channels,         // cols W, rows V
+                1.0f,                        // alpha
+                &weights[offset_u],          // W
+                (int)output_channels,        // ldW
+                &V_[offset_v],               // V
+                (int)input_channels, 0.0f,   // ldV
+                &M_[offset_m],               // M
+                (int)output_channels);       // ldM
   }
 
 #endif

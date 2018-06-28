@@ -16,8 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/blas/blas.h"
 #include "neural/blas/fully_connected_layer.h"
+#include "neural/blas/blas.h"
 
 #include <algorithm>
 #include <cassert>
@@ -67,33 +67,30 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
     //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
     //                ldb, beta, C, N);
 
-    cblas_sgemm(CblasColMajor,
-                CblasTrans,
-                CblasNoTrans,
-                (int)output_size, // M
-                (int)batch_size, // N
-                (int)input_size, // K
-                1.0f, // alpha
-                weights, // A
-                (int)input_size, // lda, leading rank of A
-                inputs, // B
-                (int)input_size, // ldb, leading rank of B
-                0.0f, // beta
-                outputs, // C
+    cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
+                (int)output_size,   // M
+                (int)batch_size,    // N
+                (int)input_size,    // K
+                1.0f,               // alpha
+                weights,            // A
+                (int)input_size,    // lda, leading rank of A
+                inputs,             // B
+                (int)input_size,    // ldb, leading rank of B
+                0.0f,               // beta
+                outputs,            // C
                 (int)output_size);  // ldc, leading rank of C
   }
   if (apply_relu) {
     for (size_t i = 0; i < batch_size; i++) {
-      float* batch_outputs=outputs+i*output_size;
+      float* batch_outputs = outputs + i * output_size;
       for (size_t o = 0; o < output_size; o++) {
         float val = biases[o] + batch_outputs[o];
         batch_outputs[o] = val >= 0 ? val : 0;
       }
     }
-  }
-  else {
+  } else {
     for (size_t i = 0; i < batch_size; i++) {
-      float* batch_outputs=outputs+i*output_size;
+      float* batch_outputs = outputs + i * output_size;
       for (size_t o = 0; o < output_size; o++) {
         batch_outputs[o] += biases[o];
       }
@@ -101,9 +98,11 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
   }
 }
 
-float FullyConnectedLayer::Forward0D(const size_t size, const float* x, const float* y) {
+float FullyConnectedLayer::Forward0D(const size_t size, const float* x,
+                                     const float* y) {
   // A scalar product, also known as a dot-product.
-  // float cblas_sdot(const int N, const float *X, const int incX, const float *Y,
+  // float cblas_sdot(const int N, const float *X, const int incX, const float
+  // *Y,
   // const int incY);
   return cblas_sdot((int)size, x, 1, y, 1);
 }
@@ -111,7 +110,7 @@ float FullyConnectedLayer::Forward0D(const size_t size, const float* x, const fl
 void FullyConnectedLayer::Softmax(const size_t size, const float* input,
                                   float* output) {
   auto alpha = *std::max_element(input, input + size);
-  
+
   auto denom = 0.0f;
   for (size_t i = 0; i < size; i++) {
     auto val = std::exp(input[i] - alpha);
@@ -122,4 +121,4 @@ void FullyConnectedLayer::Softmax(const size_t size, const float* input,
     output[i] = output[i] / denom;
   }
 }
-} // namespace lczero
+}  // namespace lczero

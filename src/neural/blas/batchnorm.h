@@ -26,10 +26,10 @@ namespace lczero {
 // Batch mormalization related methods
 class Batchnorm {
  public:
-  
   Batchnorm() = delete;
-  
-  // Apply batch mormalization, along with a Relu and add a possible skip connection.
+
+  // Apply batch mormalization, along with a Relu and add a possible skip
+  // connection.
   static void Apply(const size_t batch_size, const size_t channels, float* data,
                     const float* means, const float* stddivs,
                     const float* eltwise = nullptr);
@@ -41,7 +41,6 @@ class Batchnorm {
   // Transform weights to their inverse.
   static void InvertStddev(std::vector<float>& weights);
 
-  
  private:
   static constexpr float kEpsilon = 1e-5f;
 

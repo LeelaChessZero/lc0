@@ -23,11 +23,9 @@
 
 namespace lczero {
 
-
 // Convolution 1x1
 class Convolution1 {
  public:
-  
   Convolution1() = delete;
 
   // Batched forward inference

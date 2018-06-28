@@ -23,11 +23,9 @@
 
 namespace lczero {
 
-  
 // Fully connected layer
 class FullyConnectedLayer {
  public:
-  
   // Forward inference, batched, from input_size to output_size
   static void Forward1D(const size_t batch_size, const size_t input_size,
                         const size_t output_size, const float* input,
