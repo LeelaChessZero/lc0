@@ -44,7 +44,6 @@ std::vector<float> Transforms::ZeropadU(const std::vector<float>& U,
       }
     }
   }
-
   return Upad;
 }
 
@@ -83,7 +82,6 @@ std::vector<float> Transforms::WinogradTransformF(const std::vector<float>& f,
       }
     }
   }
-
   return U;
 }
 
@@ -258,22 +256,32 @@ void Transforms::WinogradConvolve3(const int outputs,
   WinogradTransformOut(M, output, outputs);
 }
 
-template <unsigned int filter_size>
 void Transforms::Convolve(size_t outputs, const std::vector<float>& input,
                           const std::vector<float>& weights,
                           const std::vector<float>& biases,
                           std::vector<float>& output) {
+  constexpr unsigned int filter_len = 1; // filter_size * filter_size;
   // fixed for 8x8
   constexpr unsigned int width = 8;
   constexpr unsigned int height = 8;
   constexpr unsigned int board_squares = width * height;
-  constexpr unsigned int filter_len = filter_size * filter_size;
   const auto input_channels = weights.size() / (biases.size() * filter_len);
   const auto filter_dim = filter_len * input_channels;
   assert(outputs * board_squares == output.size());
 
   std::vector<float> col(filter_dim * width * height);
-  Im2Col<filter_size>(input_channels, input, col);
+  //Im2Col<filter_size>(input_channels, input, col);
+  // The Im2Col function was implemented in lczero, but was never called
+  // except for its specialization to when <filter_size> was <1>, and that
+  // specialization was nothing more than the std::copy below, and that its
+  // only use; therefore the unused general implementation and the
+  // specialization were both removed, in favor of just the one inplace
+  // copy(). In the unlikely case that the network architecture changes in the
+  // future, the old code can be found either in the lczero repository, the
+  // the original Leela Zero repository, or lc0 commit
+  // 9aff76d9e4e10bb853715b532a59175589c22e62
+  // from which this comment originates.
+  std::copy(begin(input), begin(input)+col.size(), begin(col));
 
   // Weight shape (output, input, filter_size, filter_size)
   // 96 22 3 3
@@ -320,10 +328,10 @@ void Transforms::Innerproduct(const std::vector<float>& inputs,
   }
 }
 
-template <size_t spatial_size>
 void Transforms::Batchnorm(size_t channels, std::vector<float>& data,
-                           const float* means, const float* stddivs,
+                           const std::vector<float>& means, const std::vector<float>& stddivs,
                            const float* eltwise) {
+  constexpr size_t spatial_size = 64;
   auto lambda_ReLU = [](float val) { return (val > 0.0f) ? val : 0.0f; };
 
   for (auto c = size_t{0}; c < channels; ++c) {
@@ -342,48 +350,6 @@ void Transforms::Batchnorm(size_t channels, std::vector<float>& data,
       auto res = &eltwise[c * spatial_size];
       for (auto b = size_t{0}; b < spatial_size; b++) {
         arr[b] = lambda_ReLU(res[b] + (scale_stddiv * (arr[b] - mean)));
-      }
-    }
-  }
-}
-
-template <unsigned long filter_size>
-void Transforms::Im2Col(const int channels, const std::vector<float>& input,
-                        std::vector<float>& output) {
-  constexpr unsigned int height = 8;
-  constexpr unsigned int width = 8;
-  constexpr unsigned int channel_size = height * width;
-
-  constexpr int pad = (filter_size / 2);
-  constexpr unsigned int output_h = height + 2 * pad - filter_size + 1;
-  constexpr unsigned int output_w = width + 2 * pad - filter_size + 1;
-
-  const float* data_im = input.data();
-  float* data_col = output.data();
-
-  for (int channel = channels; channel--; data_im += channel_size) {
-    for (unsigned int kernel_row = 0; kernel_row < filter_size; kernel_row++) {
-      for (unsigned int kernel_col = 0; kernel_col < filter_size;
-           kernel_col++) {
-        int input_row = -pad + kernel_row;
-        for (int output_rows = output_h; output_rows; output_rows--) {
-          if ((unsigned)input_row < height) {
-            int input_col = -pad + kernel_col;
-            for (int output_col = output_w; output_col; output_col--) {
-              if ((unsigned)input_col < width) {
-                *(data_col++) = data_im[input_row * width + input_col];
-              } else {
-                *(data_col++) = 0;
-              }
-              input_col++;
-            }
-          } else {
-            for (int output_cols = output_w; output_cols; output_cols--) {
-              *(data_col++) = 0;
-            }
-          }
-          input_row++;
-        }
       }
     }
   }
@@ -425,26 +391,4 @@ void Transforms::InvertBatchNormStddev(std::vector<float>& weights) {
   for (auto& w : weights) w = 1.0f / std::sqrt(w + EPSILON);
 }
 
-/* Template instantiations and specializations */
-
-template <>
-void Transforms::Im2Col<1>(const int channels, const std::vector<float>& input,
-                           std::vector<float>& output) {
-  constexpr unsigned int boardsize = 8;
-  auto outSize = size_t{channels * boardsize * boardsize};
-  assert(output.size() == outSize);
-  std::copy(begin(input), begin(input) + outSize, begin(output));
-}
-
-template void Transforms::Batchnorm<64>(size_t channels,
-                                        std::vector<float>& data,
-                                        const float* means,
-                                        const float* stddivs,
-                                        const float* eltwise);
-
-template void Transforms::Convolve<1>(size_t outputs,
-                                      const std::vector<float>& input,
-                                      const std::vector<float>& weights,
-                                      const std::vector<float>& biases,
-                                      std::vector<float>& output);
-}
+} // namespace lczero
