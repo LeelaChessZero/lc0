@@ -41,6 +41,7 @@ const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kSmartPruningStr = "Enable smart pruning";
+const char* Search::pEarlyExit = "Aggressive smart pruning threshold";
 const char* Search::kVirtualLossBugStr = "Virtual loss bug";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
@@ -72,6 +73,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
+  options->Add<FloatOption>(p_early_exit, 0.1f, 10.0f,
+                            "p_early_exit") = 1.0f;
   options->Add<FloatOption>(kVirtualLossBugStr, -100.0f, 100.0f,
                             "virtual-loss-bug") = 0.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
@@ -578,7 +581,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         // To ensure we have at least one node to expand, always include
         // current best node.
         if (child != search_->best_move_node_ &&
-            search_->remaining_playouts_ <
+            p_early_exit*search_->remaining_playouts_ <
                 best_node_n - static_cast<int>(child->GetN())) {
           continue;
         }
