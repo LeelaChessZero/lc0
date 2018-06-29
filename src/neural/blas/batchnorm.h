@@ -34,7 +34,7 @@ class Batchnorm {
                     const float* means, const float* stddivs,
                     const float* eltwise = nullptr);
 
-  // Offset means by the biases
+  // Offset means by the biases.
   static void OffsetMeans(std::vector<float>& bn_means,
                           const std::vector<float>& biases);
 

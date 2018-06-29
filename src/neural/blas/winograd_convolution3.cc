@@ -32,7 +32,7 @@ std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
                                                   const size_t channels,
                                                   const size_t outputs_pad,
                                                   const size_t channels_pad) {
-  // Fill with zeroes
+  // Fill with zeroes.
   auto Upad = std::vector<float>(kWinogradTile * outputs_pad * channels_pad);
 
   for (size_t o = 0; o < outputs; o++) {

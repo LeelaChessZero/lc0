@@ -43,12 +43,14 @@ class WinogradConvolution3 {
                                      const size_t outputs_pad,
                                      const size_t channels_pad);
 
-  // Transform the weights
+  // Create the filter transform matrix.
   static std::vector<float> TransformF(const std::vector<float>& f,
                                        const size_t outputs,
                                        const size_t channels);
 
-  // Allocate for the largest batch size
+  // The instance will allocate memory resources for the
+  // largest batch size, and the largest input and output
+  // layers.
   WinogradConvolution3(const size_t max_batch_size,
                        const size_t max_input_layers,
                        const size_t max_output_layers);

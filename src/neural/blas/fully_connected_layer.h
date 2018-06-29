@@ -23,7 +23,6 @@
 
 namespace lczero {
 
-// Fully connected layer
 class FullyConnectedLayer {
  public:
   // Forward inference, batched, from input_size to output_size
@@ -36,7 +35,7 @@ class FullyConnectedLayer {
   static float Forward0D(const size_t input_size, const float* input,
                          const float* weights);
 
-  // Softmax activations
+  // Softmax activation
   static void Softmax(const size_t size, const float* input, float* output);
 
  private:
