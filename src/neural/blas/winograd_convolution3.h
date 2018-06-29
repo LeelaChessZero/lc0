@@ -36,7 +36,7 @@ namespace lczero {
 // Convolution 3x3 using the Winograd algorithm
 class WinogradConvolution3 {
  public:
-  // Create the zero-padded U matrix
+  // Create the zero-padded U matrix.
   static std::vector<float> ZeropadU(const std::vector<float>& U,
                                      const size_t outputs,
                                      const size_t channels,
