@@ -804,6 +804,7 @@ void SearchWorker::FetchNNResults() {
     node->SetV(-computation_->GetQVal(idx_in_computation));
     // Populate P values.
     float total = 0.0;
+    int total_children = 0;
     for (Node* n : node->Children()) {
       float p =
           computation_->GetPVal(idx_in_computation, n->GetMove().as_nn_index());
@@ -812,14 +813,26 @@ void SearchWorker::FetchNNResults() {
       }
       total += p;
       n->SetP(p);
+      total_children++;
     }
+    bool force_noise = false;
     // Scale P values to add up to 1.0.
     if (total > 0.0f) {
       float scale = 1.0f / total;
       for (Node* n : node->Children()) n->SetP(n->GetP() * scale);
+    } else if (total_children > 0) {
+      // If sum is not greater than 0, the backend is currently not capable
+      // of returning useful results. This is common in NN backends that have
+      // just been iniitialized.
+      // Make priors uniform, then force noise so that tie breaking is not
+      // deterministicly biased towards earlier children rather than later.
+      float value = 1.0f / static_cast<float>(total_children);
+      for (Node* n : node->Children()) n->SetP(value);
+      force_noise = true;
     }
-    // Add Dirichlet noise if enabled and at root.
-    if (search_->kNoise && node == search_->root_node_) {
+    // Add Dirichlet noise if enabled and at root or forced to avoid bias
+    // from uniform priors.
+    if (search_->kNoise && node == search_->root_node_ || force_noise) {
       ApplyDirichletNoise(node, 0.25, 0.3);
     }
     ++idx_in_computation;
