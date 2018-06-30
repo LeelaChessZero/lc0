@@ -77,7 +77,7 @@ class BlasNetwork : public Network {
   }
 
  private:
-  // A cap on the max batch size since it's consume a lot of memory
+  // A cap on the max batch size since it consumes a lot of memory
   static constexpr auto kHardMaxBatchSize = 2048;
 
   Weights weights_;
@@ -92,7 +92,7 @@ BlasComputation::BlasComputation(const Weights& weights,
       q_values_(0) {}
 
 void BlasComputation::ComputeBlocking() {
-  // Retrieve network key dimensions from the weights structure
+  // Retrieve network key dimensions from the weights structure.
   const auto num_value_channels = weights_.ip1_val_b.size();
   const auto num_value_input_planes = weights_.value.bn_means.size();
   const auto num_policy_input_planes = weights_.policy.bn_means.size();
@@ -106,7 +106,7 @@ void BlasComputation::ComputeBlocking() {
   const auto input_channels = static_cast<size_t>(kInputPlanes);
   const auto max_channels = std::max(output_channels, input_channels);
 
-  // Determine the largest batch for allocations
+  // Determine the largest batch for allocations.
   const auto plane_count = planes_.size();
   const auto largest_batch_size = std::min(max_batch_size_, plane_count);
 
@@ -120,7 +120,7 @@ void BlasComputation::ComputeBlocking() {
    num_output_policy = 1858
    */
 
-  // Allocate data for the whole batch
+  // Allocate data for the whole batch.
   std::vector<float> output_val(largest_batch_size * num_value_channels);
   std::vector<float> output_pol(largest_batch_size * num_output_policy);
 
@@ -138,7 +138,7 @@ void BlasComputation::ComputeBlocking() {
   std::vector<float> value_buffer(largest_batch_size * num_value_input_planes *
                                   kSquares);
 
-  // These ones will rotate during the computation
+  // These ones will rotate during the computation.
   float* conv_in = res_buffer1.data();
   float* conv_out = res_buffer2.data();
   float* res = res_buffer3.data();
