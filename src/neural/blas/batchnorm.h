@@ -34,15 +34,7 @@ class Batchnorm {
                     const float* means, const float* stddivs,
                     const float* eltwise = nullptr);
 
-  // Offset means by the biases.
-  static void OffsetMeans(std::vector<float>& bn_means,
-                          const std::vector<float>& biases);
-
-  // Transform weights to their inverse.
-  static void InvertStddev(std::vector<float>& weights);
-
  private:
-  static constexpr float kEpsilon = 1e-5f;
 
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;

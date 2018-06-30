@@ -32,6 +32,30 @@ struct Weights {
     Vec biases;
     Vec bn_means;
     Vec bn_stddivs;
+    
+
+    // Invert the bn_stddivs elements.
+    void InvertStddev();
+    
+    // Offset bn_means by biases.
+    void OffsetMeans();
+    
+    // Returns a vector of inverted bn_stddivs.
+    Vec InvertStddev() const;
+    
+    // Returns a vector of bn_means offset by biases.
+    Vec OffsetMeans() const;
+    
+    
+  private:
+    
+    static constexpr float kEpsilon = 1e-5f;
+
+    void InvertStddev(const size_t size, float* array) const;
+
+    void OffsetMeans(const size_t size, float* means) const;
+
+    
   };
 
   struct Residual {

@@ -51,14 +51,5 @@ void Batchnorm::Apply(const size_t batch_size, const size_t channels,
     if (eltwise != nullptr) eltwise += channels * kSquares;
   }
 }
-
-void Batchnorm::OffsetMeans(std::vector<float>& bn_means,
-                            const std::vector<float>& biases) {
-  for (size_t i = 0; i < bn_means.size(); i++) bn_means[i] -= biases[i];
-}
-
-void Batchnorm::InvertStddev(std::vector<float>& weights) {
-  for (auto& w : weights) w = 1.0f / std::sqrt(w + kEpsilon);
-}
-
+  
 }  // namespace lczero

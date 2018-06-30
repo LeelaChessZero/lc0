@@ -260,10 +260,9 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
   weights_.input.weights = WinogradConvolution3::TransformF(
       weights_.input.weights, channels, inputChannels);
 
-  Batchnorm::OffsetMeans(weights_.input.bn_means, weights_.input.biases);
-
-  Batchnorm::InvertStddev(weights_.input.bn_stddivs);
-
+  weights_.input.OffsetMeans();
+  weights_.input.InvertStddev();
+      
   // residual blocks
   for (size_t i = 0; i < residual_blocks; i++) {
     auto& residual = weights_.residual[i];
@@ -275,19 +274,20 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
     conv2.weights =
         WinogradConvolution3::TransformF(conv2.weights, channels, channels);
 
-    Batchnorm::OffsetMeans(conv1.bn_means, conv1.biases);
-    Batchnorm::OffsetMeans(conv2.bn_means, conv2.biases);
+    conv1.OffsetMeans();
+    conv2.OffsetMeans();
 
-    Batchnorm::InvertStddev(conv1.bn_stddivs);
-    Batchnorm::InvertStddev(conv2.bn_stddivs);
+    conv1.InvertStddev();
+    conv2.InvertStddev();
   }
 
-  Batchnorm::OffsetMeans(weights_.policy.bn_means, weights_.policy.biases);
-  Batchnorm::InvertStddev(weights_.policy.bn_stddivs);
+  weights_.policy.OffsetMeans();
+  weights_.policy.InvertStddev();
+    
+  weights_.value.OffsetMeans();
+  weights_.value.InvertStddev();
 
-  Batchnorm::OffsetMeans(weights_.value.bn_means, weights_.value.biases);
-  Batchnorm::InvertStddev(weights_.value.bn_stddivs);
-
+      
 #ifdef USE_OPENBLAS
   int num_procs = openblas_get_num_procs();
   blas_cores = std::min(num_procs, blas_cores);

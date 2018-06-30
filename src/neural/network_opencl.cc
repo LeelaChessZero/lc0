@@ -175,12 +175,8 @@ class OpenCLNetwork : public Network {
     auto Upad = WinogradConvolution3::ZeropadU(input_conv_weights, channels,
                                                inputChannels, m_ceil, k_ceil);
 
-    std::vector<float> input_batchnorm_means =
-        weights.input.bn_means;  // copy ctor
-    Batchnorm::OffsetMeans(input_batchnorm_means, weights.input.biases);
-
-    std::vector<float> input_batchnorm_stddivs = weights.input.bn_stddivs;
-    Batchnorm::InvertStddev(input_batchnorm_stddivs);
+    std::vector<float> input_batchnorm_means =weights.input.OffsetMeans();
+    std::vector<float> input_batchnorm_stddivs = weights.input.InvertStddev();
 
     // Winograd filter transformation changes filter size to 4x4
     opencl_net_.push_input_convolution(kWinogradAlpha, inputChannels, channels,
@@ -203,17 +199,11 @@ class OpenCLNetwork : public Network {
       auto Upad2 = WinogradConvolution3::ZeropadU(conv_weights_2, channels,
                                                   channels, m_ceil, m_ceil);
 
-      std::vector<float> batchnorm_means_1 = conv1.bn_means;  // copy ctor
-      Batchnorm::OffsetMeans(batchnorm_means_1, conv1.biases);
+      std::vector<float> batchnorm_means_1 = conv1.OffsetMeans();
+      std::vector<float> batchnorm_means_2 = conv2.OffsetMeans();
 
-      std::vector<float> batchnorm_means_2 = conv2.bn_means;  // copy ctor
-      Batchnorm::OffsetMeans(batchnorm_means_2, conv2.biases);
-
-      std::vector<float> batchnorm_stddivs_1 = conv1.bn_stddivs;  // copy ctor
-      Batchnorm::InvertStddev(batchnorm_stddivs_1);
-
-      std::vector<float> batchnorm_stddivs_2 = conv2.bn_stddivs;  // copy ctor
-      Batchnorm::InvertStddev(batchnorm_stddivs_2);
+      std::vector<float> batchnorm_stddivs_1 = conv1.InvertStddev();
+      std::vector<float> batchnorm_stddivs_2 = conv2.InvertStddev();
 
       opencl_net_.push_residual(kWinogradAlpha, channels, channels, Upad1,
                                 batchnorm_means_1, batchnorm_stddivs_1, Upad2,
@@ -223,11 +213,8 @@ class OpenCLNetwork : public Network {
     constexpr unsigned int width = 8;
     constexpr unsigned int height = 8;
 
-    std::vector<float> bn_pol_means = weights.policy.bn_means;  // copy ctor
-    Batchnorm::OffsetMeans(bn_pol_means, weights.policy.biases);
-
-    std::vector<float> bn_pol_stddivs = weights.policy.bn_stddivs;
-    Batchnorm::InvertStddev(bn_pol_stddivs);
+    std::vector<float> bn_pol_means = weights.policy.OffsetMeans();
+    std::vector<float> bn_pol_stddivs = weights.policy.InvertStddev();
 
     opencl_net_.push_policy(channels, num_policy_input_planes,
                             num_policy_input_planes * width * height,
@@ -235,11 +222,8 @@ class OpenCLNetwork : public Network {
                             bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
                             weights.ip_pol_b);
 
-    std::vector<float> bn_val_means = weights.value.bn_means;
-    Batchnorm::OffsetMeans(bn_val_means, weights.value.biases);
-
-    std::vector<float> bn_val_stddivs = weights.value.bn_stddivs;
-    Batchnorm::InvertStddev(bn_val_stddivs);
+    std::vector<float> bn_val_means = weights.value.OffsetMeans();
+    std::vector<float> bn_val_stddivs = weights.value.InvertStddev();
 
     opencl_net_.push_value(channels, num_value_input_planes,
                            num_value_input_planes * width * height,
