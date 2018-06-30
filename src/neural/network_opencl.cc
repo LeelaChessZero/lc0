@@ -175,7 +175,7 @@ class OpenCLNetwork : public Network {
     auto Upad = WinogradConvolution3::ZeropadU(input_conv_weights, channels,
                                                inputChannels, m_ceil, k_ceil);
 
-    std::vector<float> input_batchnorm_means =weights.input.OffsetMeans();
+    std::vector<float> input_batchnorm_means = weights.input.OffsetMeans();
     std::vector<float> input_batchnorm_stddivs = weights.input.InvertStddev();
 
     // Winograd filter transformation changes filter size to 4x4

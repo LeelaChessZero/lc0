@@ -262,7 +262,7 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
 
   weights_.input.OffsetMeans();
   weights_.input.InvertStddev();
-      
+
   // residual blocks
   for (size_t i = 0; i < residual_blocks; i++) {
     auto& residual = weights_.residual[i];
@@ -283,11 +283,10 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
 
   weights_.policy.OffsetMeans();
   weights_.policy.InvertStddev();
-    
+
   weights_.value.OffsetMeans();
   weights_.value.InvertStddev();
 
-      
 #ifdef USE_OPENBLAS
   int num_procs = openblas_get_num_procs();
   blas_cores = std::min(num_procs, blas_cores);

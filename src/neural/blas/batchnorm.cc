@@ -51,5 +51,5 @@ void Batchnorm::Apply(const size_t batch_size, const size_t channels,
     if (eltwise != nullptr) eltwise += channels * kSquares;
   }
 }
-  
+
 }  // namespace lczero

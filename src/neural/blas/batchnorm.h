@@ -35,7 +35,6 @@ class Batchnorm {
                     const float* eltwise = nullptr);
 
  private:
-
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
