@@ -215,9 +215,12 @@ void Search::SendMovesStats() const {
         << std::setw(2) << node->GetNInFlight() << ") ";
 
     oss << "(V: ";
-    // Handrolled optional only has a few overloads available, simple usage only
-    optional<float> v = GetCachedFirstPlyValue(node);
-    if (!v && node->IsTerminal()) v = node->GetTerminalNodeValue();
+    optional<float> v;
+    if (node->IsTerminal()) {
+      v = node->GetTerminalNodeValue();
+    } else {
+      v = GetCachedFirstPlyValue(node);
+    }
     if (v) {
       oss << std::setw(6) << std::setprecision(2) << *v * 100;
     } else {
@@ -244,10 +247,8 @@ void Search::SendMovesStats() const {
 
 optional<float> Search::GetCachedFirstPlyValue(const Node* node) const {
   assert(node->GetParent() == root_node_);
-  // This function serves a specific purpose, fetching a NN value from a first
-  // ply move, but it would be relatively straightforward to generalize this
-  // to fetch a complete NN evaluation (policy+value) for an abitrary move.
-  // But, there isn't yet a usecase for that, so we leave this simple for now.
+  // It would be relatively straightforward to generalize this to fetch a
+  // complete NN evaluation (policy+value) for an abitrary move.
   optional<float> retval;
   PositionHistory history(played_history_); // Is it worth it to move this
   // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
@@ -499,13 +500,13 @@ void SearchWorker::ExecuteOneIteration() {
   // 4. Run NN computation.
   RunNNComputation();
 
-  // 5. Populate computed nodes with results of the NN computation.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
 
-  // 6. Update nodes.
+  // 6. Propogate a new node's information to all its parents in the tree.
   DoBackupUpdate();
 
-  // 7. Update status/counters.
+  // 7. Update the Search's status and progress information.
   UpdateCounters();
 }
 
@@ -820,21 +821,21 @@ void SearchWorker::RunNNComputation() {
   if (computation_->GetBatchSize() != 0) computation_->ComputeBlocking();
 }
 
-// 5. Populate computed nodes with results of the NN computation.
+// 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
-  // Copy NN results, or cached/duplicate results, into nodes.
-  // The latter is much simpler.
+  // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
     Node* node = node_to_process.node;
-    if (!node_to_process.nn_queried) {
+    if (!node_to_process.nn_queried) { // Terminal nodes are quite simple!
       node_to_process.v = node->GetTerminalNodeValue();
       continue;
     }
-    // Populate V value.
+    // For NN results, we need to populate policy as well as value.
+    // First the value...
     node_to_process.v = -computation_->GetQVal(idx_in_computation);
-    // Populate P values.
+    // ...and secondly, the policy data.
     float total = 0.0;
     for (Node* n : node->Children()) {
       float p =
@@ -845,7 +846,7 @@ void SearchWorker::FetchMinibatchResults() {
       total += p;
       n->SetP(p);
     }
-    // Scale P values to add up to 1.0.
+    // Normalize P values to add up to 1.0.
     if (total > 0.0f) {
       float scale = 1.0f / total;
       for (Node* n : node->Children()) n->SetP(n->GetP() * scale);
@@ -858,7 +859,7 @@ void SearchWorker::FetchMinibatchResults() {
   }
 }
 
-// 6. Update nodes.
+// 6. Propogate a new node's information to all its parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
   // Update nodes.
@@ -908,7 +909,7 @@ void SearchWorker::DoBackupUpdate() {
   }
 }
 
-// 7. UpdateCounters()
+// 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.

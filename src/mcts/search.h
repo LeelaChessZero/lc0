@@ -112,7 +112,7 @@ class Search {
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
   void SendMovesStats() const;
-  // An ugly name, but this function currently has very limited use
+  // This function serves only as a helper to SendMovesStats for debug output.
   optional<float> GetCachedFirstPlyValue(const Node* node) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
@@ -191,9 +191,9 @@ class SearchWorker {
   // 2. Gather minibatch.
   // 3. Prefetch into cache.
   // 4. Run NN computation.
-  // 5. Populate computed nodes with results of the NN computation.
-  // 6. Update nodes.
-  // 7. Update status/counters.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
+  // 6. Propogate a new node's information to all its parents in the tree.
+  // 7. Update the Search's status and progress information.
   void ExecuteOneIteration();
 
   // Returns whether another search iteration is needed (false means exit).
@@ -213,13 +213,13 @@ class SearchWorker {
   // 4. Run NN computation.
   void RunNNComputation();
 
-  // 5. Populate computed nodes with results of the NN computation.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
   void FetchMinibatchResults();
 
-  // 6. Update nodes.
+  // 6. Propogate a new node's information to all its parents in the tree.
   void DoBackupUpdate();
 
-  // 7. Update status/counters.
+  // 7. Update the Search's status and progress information.
   void UpdateCounters();
 
  private:
