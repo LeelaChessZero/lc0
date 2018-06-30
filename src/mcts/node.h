@@ -156,8 +156,6 @@ class Node {
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
-  uint16_t GetFullDepth() const { return full_depth_; }
-  uint16_t GetMaxDepth() const { return max_depth_; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
@@ -176,13 +174,6 @@ class Node {
   // * N (+=1)
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v);
-
-  // Updates max depth, if new depth is larger.
-  void UpdateMaxDepth(int depth);
-
-  // Calculates the full depth if new depth is larger, updates it, returns
-  // in depth parameter, and returns true if it was indeed updated.
-  bool UpdateFullDepth(uint16_t* depth);
 
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
@@ -225,16 +216,12 @@ class Node {
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
 
-  // Maximum depth any subnodes of this node were looked at.
-  uint16_t max_depth_ = 0;
-  // Complete depth all subnodes of this node were fully searched.
-  uint16_t full_depth_ = 0;
   // Does this node end game (with a winning of either sides or draw).
   bool is_terminal_ = false;
 
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
-  // Pointer to a first child. nullptr for a leaf node.
+  // Pointer to a first child. nullptr for leaf nodes.
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
@@ -432,8 +419,6 @@ class NodeTree {
   // previous search.
   void TrimTreeAtHead();
   // Sets the position in a tree, trying to reuse the tree.
-  // If @auto_garbage_collect, old tree is garbage collected immediately. (may
-  // take some milliseconds)
   void ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
   const Position& HeadPosition() const { return history_.Last(); }
@@ -443,13 +428,28 @@ class NodeTree {
   Node* GetGameBeginNode() const { return gamebegin_node_.get(); }
   const PositionHistory& GetPositionHistory() const { return history_; }
 
+  // Not thread safe!
+  void UpdateDepth(uint16_t new_node_depth);
+  uint16_t GetMaxDepth() const;
+  uint16_t GetAverageDepth() const;
+
  private:
   void DeallocateTree();
+
+  // Reinitializes the depth info for reused trees. This is necessary to
+  // ensure that depth is a function solely of the contents of the NodeTree;
+  // such consistency of output is very important to help viewers understand
+  // how tree reuse works (and avoid generating additional such confusion).
+  void RecalculateDepth();
+
   // A node which to start search from.
   Node* current_head_ = nullptr;
   // Root node of a game tree.
   std::unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
+  uint16_t max_depth_ = 0;
+  uint32_t cumulative_depth_ = 0;
+
 };
 
 }  // namespace lczero

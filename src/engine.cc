@@ -227,7 +227,7 @@ void EngineController::Go(const GoParams& params) {
                                      tree_->IsBlackToMove(), params);
 
   search_ =
-      std::make_unique<Search>(*tree_, network_.get(), best_move_callback_,
+      std::make_unique<Search>(tree_.get(), network_.get(), best_move_callback_,
                                info_callback_, limits, options_, &cache_);
 
   search_->StartThreads(options_.Get<int>(kThreadsOption));
