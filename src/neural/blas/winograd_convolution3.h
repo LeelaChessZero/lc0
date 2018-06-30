@@ -36,6 +36,13 @@ namespace lczero {
 // Convolution 3x3 using the Winograd algorithm
 class WinogradConvolution3 {
  public:
+  // The instance will allocate memory resources for the
+  // largest batch size, and the largest input and output
+  // layers.
+  WinogradConvolution3(const size_t max_batch_size,
+                       const size_t max_input_layers,
+                       const size_t max_output_layers);
+
   // Create the zero-padded U matrix.
   static std::vector<float> ZeropadU(const std::vector<float>& U,
                                      const size_t outputs,
@@ -48,14 +55,7 @@ class WinogradConvolution3 {
                                        const size_t outputs,
                                        const size_t channels);
 
-  // The instance will allocate memory resources for the
-  // largest batch size, and the largest input and output
-  // layers.
-  WinogradConvolution3(const size_t max_batch_size,
-                       const size_t max_input_layers,
-                       const size_t max_output_layers);
-
-  // Forward inference, batched
+  // Forward inference, batched.
   void Forward(const size_t batch_size, const size_t input_channels,
                const size_t output_channels, const float* input,
                const float* weights, float* output);
