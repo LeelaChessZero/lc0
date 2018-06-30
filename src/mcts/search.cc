@@ -41,7 +41,7 @@ const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kSmartPruningStr = "Enable smart pruning";
-const char* Search::pEarlyExit = "Aggressive smart pruning threshold";
+const char* Search::pEarlyExitStr = "Aggressive smart pruning threshold";
 const char* Search::kVirtualLossBugStr = "Virtual loss bug";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
@@ -73,8 +73,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
-  options->Add<FloatOption>(p_early_exit, 0.1f, 10.0f,
-                            "p_early_exit") = 1.0f;
+  options->Add<FloatOption>(pEarlyExitStr, 0.1f, 10.0f,
+                            "p-early-exit") = 1.0f;
   options->Add<FloatOption>(kVirtualLossBugStr, -100.0f, 100.0f,
                             "virtual-loss-bug") = 0.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
@@ -112,6 +112,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
       kSmartPruning(options.Get<bool>(kSmartPruningStr)),
+      pEarlyExit(options.Get<bool>(pEarlyExitStr)),
       kVirtualLossBug(options.Get<float>(kVirtualLossBugStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
@@ -274,7 +275,8 @@ void Search::UpdateRemainingMoves() {
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
-      int64_t remaining_playouts = remaining_time * nps / 1000;
+      //put early_exit scaler here so calculation doesn't have to be done on every node
+      int64_t remaining_playouts = p_early_exit * remaining_time * nps / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -581,7 +583,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         // To ensure we have at least one node to expand, always include
         // current best node.
         if (child != search_->best_move_node_ &&
-            p_early_exit*search_->remaining_playouts_ <
+            search_->remaining_playouts_ <
                 best_node_n - static_cast<int>(child->GetN())) {
           continue;
         }
