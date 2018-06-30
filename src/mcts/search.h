@@ -112,8 +112,9 @@ class Search {
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
   void SendMovesStats() const;
-  // This function serves only as a helper to SendMovesStats for debug output.
-  optional<float> GetCachedFirstPlyValue(const Node* node) const;
+
+  // We only need first ply for debug output, but could be easily generalized.
+  NNCacheLock GetCachedFirstPlyResult(const Node* node) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -192,7 +193,7 @@ class SearchWorker {
   // 3. Prefetch into cache.
   // 4. Run NN computation.
   // 5. Retrieve NN computations (and terminal values) into nodes.
-  // 6. Propogate a new node's information to all its parents in the tree.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   // 7. Update the Search's status and progress information.
   void ExecuteOneIteration();
 
@@ -216,7 +217,7 @@ class SearchWorker {
   // 5. Retrieve NN computations (and terminal values) into nodes.
   void FetchMinibatchResults();
 
-  // 6. Propogate a new node's information to all its parents in the tree.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   void DoBackupUpdate();
 
   // 7. Update the Search's status and progress information.

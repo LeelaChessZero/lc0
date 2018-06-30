@@ -84,7 +84,6 @@ class Node {
   float GetP() const { return p_; }
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
-  // Returns q_ unconditionally (unlike GetQ).
   float GetTerminalNodeValue() const { return q_; }
   uint16_t GetFullDepth() const { return full_depth_; }
   uint16_t GetMaxDepth() const { return max_depth_; }

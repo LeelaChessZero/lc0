@@ -214,20 +214,6 @@ void Search::SendMovesStats() const {
     oss << " N: " << std::right << std::setw(7) << node->GetN() << " (+"
         << std::setw(2) << node->GetNInFlight() << ") ";
 
-    oss << "(V: ";
-    optional<float> v;
-    if (node->IsTerminal()) {
-      v = node->GetTerminalNodeValue();
-    } else {
-      v = GetCachedFirstPlyValue(node);
-    }
-    if (v) {
-      oss << std::setw(6) << std::setprecision(2) << *v * 100;
-    } else {
-      oss << " --.--";
-    }
-    oss << "%) ";
-
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
 
@@ -240,23 +226,37 @@ void Search::SendMovesStats() const {
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
         << node->GetQ(parent_q) + U_coeff * node->GetU() << ") ";
 
+    oss << "(V: ";
+    optional<float> v;
+    if (node->IsTerminal()) {
+      v = node->GetTerminalNodeValue();
+    } else {
+      NNCacheLock nneval = GetCachedFirstPlyResult(node);
+      if (nneval) v = -nneval->q;
+    }
+    if (v) {
+      oss << std::setw(7) << std::setprecision(4) << *v;
+    } else {
+      oss << " -.----";
+    }
+    oss << ") ";
+
     info.comment = oss.str();
     info_callback_(info);
   }
 }
 
-optional<float> Search::GetCachedFirstPlyValue(const Node* node) const {
+NNCacheLock Search::GetCachedFirstPlyResult(const Node* node) const {
   assert(node->GetParent() == root_node_);
-  // It would be relatively straightforward to generalize this to fetch a
-  // complete NN evaluation (policy+value) for an abitrary move.
+  // It would be relatively straightforward to generalize this to fetch NN
+  // results for an abitrary move.
   optional<float> retval;
   PositionHistory history(played_history_); // Is it worth it to move this
   // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
   history.Append(node->GetMove());
   auto hash = history.HashLast(kCacheHistoryLength + 1);
   NNCacheLock nneval(cache_, hash);
-  if (nneval) retval = -nneval->q;
-  return retval;
+  return std::move(nneval);
 }
 
 void Search::MaybeTriggerStop() {
@@ -503,7 +503,7 @@ void SearchWorker::ExecuteOneIteration() {
   // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
 
-  // 6. Propogate a new node's information to all its parents in the tree.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   DoBackupUpdate();
 
   // 7. Update the Search's status and progress information.
@@ -828,7 +828,9 @@ void SearchWorker::FetchMinibatchResults() {
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
     Node* node = node_to_process.node;
-    if (!node_to_process.nn_queried) { // Terminal nodes are quite simple!
+    if (!node_to_process.nn_queried) {
+      // Terminal nodes don't involve the neural NetworkComputation, nor do
+      // they require any further processing after value retrieval.
       node_to_process.v = node->GetTerminalNodeValue();
       continue;
     }
@@ -859,7 +861,7 @@ void SearchWorker::FetchMinibatchResults() {
   }
 }
 
-// 6. Propogate a new node's information to all its parents in the tree.
+// 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
   // Update nodes.
