@@ -276,7 +276,7 @@ void Search::UpdateRemainingMoves() {
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
       //put early_exit scaler here so calculation doesn't have to be done on every node
-      int64_t remaining_playouts = search_->pEarlyExit * remaining_time * nps / 1000;
+      int64_t remaining_playouts = pEarlyExit * remaining_time * nps / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
