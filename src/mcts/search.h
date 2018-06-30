@@ -88,6 +88,7 @@ class Search {
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
   static const char* kSmartPruningStr;
+  static const char* pEarlyExitStr;
   static const char* kVirtualLossBugStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
@@ -156,6 +157,7 @@ class Search {
   const bool kNoise;
   const bool kVerboseStats;
   const bool kSmartPruning;
+  const float pEarlyExit;
   const float kVirtualLossBug;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
