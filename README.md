@@ -4,12 +4,14 @@ Building right now may be a bit rough, we are improving and finding ways to simp
 
 ## Linux (generic)
 
-1. (if you want version with tensorflow) Install `tensorflow_cc` by following steps described [here](https://github.com/FloopCZ/tensorflow_cc).
-2. (if you want cuDNN version) Install CUDA and cuDNN.
-3. Install ninja build (`ninja-build`), meson, and (optionally) gtest (`libgtest-dev`).
-4. Go to lc0/
-5. Run ./build.sh
-6. `lc0` will be in `lc0/build/release/` directory
+1. Install backend:
+    - (if you want version with tensorflow) Install `tensorflow_cc` by following steps described [here](https://github.com/FloopCZ/tensorflow_cc).
+    - (if you want cuDNN version) Install [CUDA](https://developer.nvidia.com/cuda-zone) and [cuDNN](https://developer.nvidia.com/cudnn).
+    - (if you want OpenBLAS version) Install OpenBLAS (`libopenblas-dev`).
+2. Install ninja build (`ninja-build`), meson, and (optionally) gtest (`libgtest-dev`).
+3. Go to `lc0/`
+4. Run `./build.sh`
+5. `lc0` will be in `lc0/build/release/` directory
 
 If you want to build with a different compiler, pass the `CC` and `CXX` environment variables:
 
@@ -20,6 +22,7 @@ If you want to build with a different compiler, pass the `CC` and `CXX` environm
 For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before performing the steps above:
 
     wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+    sudo apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main'
     sudo apt-get update
     sudo apt-get install clang-6.0 ninja-build
     pip3 install meson --user
@@ -31,8 +34,8 @@ Make sure that `~/.local/bin` is in your `PATH` environment variable. You can no
 ## Windows
 
 0. Install Microsoft Visual Studio
-1. Install CUDA (v9.2 is fine)
-2. Install cuDNN.
+1. Install [CUDA](https://developer.nvidia.com/cuda-zone) (v9.2 is fine)
+2. Install [cuDNN](https://developer.nvidia.com/cudnn).
 3. Install Python3
 4. Install Meson: `pip3 install --upgrade meson`
 5. Edit `build-cuda.cmd`:

@@ -88,6 +88,10 @@ struct GameInfo {
   int game_id = -1;
   // The color of the player1, if known.
   optional<bool> is_black;
+  // Minimum resign threshold which would have resulted in a false positive
+  // if resign had of been enabled.
+  // Only provided if the game wasn't played with resign enabled.
+  optional<float> min_false_positive_threshold;
 
   using Callback = std::function<void(const GameInfo&)>;
 };

@@ -70,7 +70,12 @@ class Search {
   void Wait();
 
   // Returns best move, from the point of view of white player. And also ponder.
+  // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove() const;
+  // Returns the evaluation of the best move, WITHOUT temperature. This differs
+  // from the above function; with temperature enabled, these two functions may
+  // return results from different possible moves.
+  float GetBestEval() const;
 
   // Strings for UCI params. So that others can override defaults.
   // TODO(mooskagh) There are too many options for now. Factor out that into a
@@ -86,15 +91,17 @@ class Search {
   static const char* kVirtualLossBugStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
-  static const char* kExtraVirtualLossStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kBackPropagateBetaStr;
+  static const char* kBackPropagateGammaStr;
 
  private:
+  // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
 
-  // Returns a child with most visits.
-  Node* GetBestChild(Node* parent) const;
+  // Returns a child with most visits, with or without temperature.
+  Node* GetBestChildNoTemperature(Node* parent) const;
   Node* GetBestChildWithTemperature(Node* parent, float temperature) const;
 
   int64_t GetTimeSinceStart() const;
@@ -152,15 +159,16 @@ class Search {
   const float kVirtualLossBug;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
-  const float kExtraVirtualLoss;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const float kBackPropagateBeta;
+  const float kBackPropagateGamma;
 
   friend class SearchWorker;
 };
 
 // Single thread worker of the search engine.
-// That used to be just a function Search::Worker(), but to paralellize it
+// That used to be just a function Search::Worker(), but to parallelize it
 // within one thread, have to split into stages.
 class SearchWorker {
  public:

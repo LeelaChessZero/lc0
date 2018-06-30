@@ -71,15 +71,11 @@ class Node {
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns Q if number of visits is more than 0,
-  float GetQ(float default_q, float virtual_loss) const {
+  float GetQ(float default_q) const {
     if (n_ == 0) return default_q;
-    if (virtual_loss && n_in_flight_) {
-      return (w_ - n_in_flight_ * virtual_loss) /
-             (n_ + n_in_flight_ * virtual_loss);
-    } else {
-      return q_;
-    }
+    return q_;
   }
+
   // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
   // equation. So it's really more of a "reduced U" than raw U.
   float GetU() const { return p_ / (1 + n_ + n_in_flight_); }
@@ -109,11 +105,10 @@ class Node {
   void CancelScoreUpdate();
   // Updates the node with newly computed value v.
   // Updates:
+  // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  // * W (+= v)
-  // * Q (=w/n)
-  void FinalizeScoreUpdate(float v);
+  void FinalizeScoreUpdate(float v, float gamma, float beta);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -150,16 +145,13 @@ class Node {
   // Root node contains move a1a1.
   Move move_;
 
-  // Q value fetched from neural network.
+  // Q value fetched from neural network. It's not strictly necessary to have in
+  // Node, but it's useful for debug output.
   float v_;
   // Average value (from value head of neural network) of all visited nodes in
-  // subtree. Terminal nodes (which lead to checkmate or draw) may be visited
-  // several times, those are counted several times. q = w / n
+  // subtree. For terminal nodes, eval is stored.
   float q_;
-  // Sum of values of all visited nodes in a subtree. Used to compute an
-  // average.
-  float w_;
-  // Probabality that this move will be made. From policy head of the neural
+  // Probability that this move will be made. From policy head of the neural
   // network.
   float p_;
   // How many completed visits this node had.
@@ -195,6 +187,9 @@ class NodeTree {
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
   void MakeMove(Move move);
+  // Resets the current head to ensure it doesn't carry over details from a
+  // previous search.
+  void TrimTreeAtHead();
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)

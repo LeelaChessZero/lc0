@@ -40,6 +40,9 @@ void SelfPlayLoop::RunLoop() {
   if (options_.GetOptionsDict().Get<bool>(kInteractive)) {
     UciLoop::RunLoop();
   } else {
+    // Send id before starting tournament to allow wrapping client to know
+    // who we are.
+    SendId();
     SelfPlayTournament tournament(
         options_.GetOptionsDict(),
         std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
@@ -51,8 +54,7 @@ void SelfPlayLoop::RunLoop() {
 }
 
 void SelfPlayLoop::CmdUci() {
-  SendResponse("id name The Lc0 chess engine.");
-  SendResponse("id author The LCZero Authors.");
+  SendId();
   for (const auto& option : options_.ListOptionsUci()) {
     SendResponse(option);
   }
@@ -73,6 +75,16 @@ void SelfPlayLoop::CmdStart() {
 }
 
 void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
+  std::vector<std::string> responses;
+  // Send separate resign report before gameready as client gameready parsing
+  // will easily get confused by adding new parameters as both training file
+  // and move list potentially contain spaces.
+  if (info.min_false_positive_threshold) {
+    std::string resign_res = "resign_report";
+    resign_res += 
+        " fp_threshold " + std::to_string(*info.min_false_positive_threshold);
+    responses.push_back(resign_res);
+  }
   std::string res = "gameready";
   if (!info.training_filename.empty())
     res += " trainingfile " + info.training_filename;
@@ -90,7 +102,8 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
     res += " moves";
     for (const auto& move : info.moves) res += " " + move.as_string();
   }
-  SendResponse(res);
+  responses.push_back(res);
+  SendResponses(responses);
 }
 
 void SelfPlayLoop::CmdSetOption(const std::string& name,
