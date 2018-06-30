@@ -78,7 +78,7 @@ std::vector<float> Batchnorm::OffsetMeans(const Weights::ConvBlock& conv) {
 
 void Batchnorm::InvertStddev(const size_t size, float* array) {
   for (size_t i = 0; i < size; i++) {
-    auto safe_value=std::max(array[i], (float) kEpsilon);
+    auto safe_value = std::max(array[i], (float)kEpsilon);
     array[i] = 1.0f / std::sqrt(safe_value);
   }
 }
