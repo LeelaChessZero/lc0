@@ -21,6 +21,8 @@
 #include <cstddef>
 #include <vector>
 
+#include "neural/network.h"
+
 namespace lczero {
 
 // Batch normalization related methods
@@ -34,7 +36,26 @@ class Batchnorm {
                     const float* means, const float* stddivs,
                     const float* eltwise = nullptr);
 
- private:
+  // Invert the bn_stddivs elements of a ConvBlock (in place).
+  static void InvertStddev(Weights::ConvBlock* conv);
+  
+  // Offset bn_means by biases of a ConvBlock (in place).
+  static void OffsetMeans(Weights::ConvBlock* conv);
+  
+  // Return a vector of inverted bn_stddivs of a ConvBlock.
+  static std::vector<float> InvertStddev(const Weights::ConvBlock& conv);
+  
+  // Return a vector of bn_means offset by biases of a ConvBlock.
+  static std::vector<float> OffsetMeans(const Weights::ConvBlock& conv);
+  
+private:
+  
+  static constexpr float kEpsilon = 1e-5f;
+  
+  static void InvertStddev(const size_t size, float* array);
+  
+  static void OffsetMeans(const size_t size, float* means, const float* biases);
+
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
