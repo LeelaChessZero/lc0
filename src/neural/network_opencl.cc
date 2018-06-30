@@ -175,8 +175,10 @@ class OpenCLNetwork : public Network {
     auto Upad = WinogradConvolution3::ZeropadU(input_conv_weights, channels,
                                                inputChannels, m_ceil, k_ceil);
 
-    std::vector<float> input_batchnorm_means = Batchnorm::OffsetMeans(weights.input);
-    std::vector<float> input_batchnorm_stddivs = Batchnorm::InvertStddev(weights.input);
+    std::vector<float> input_batchnorm_means =
+        Batchnorm::OffsetMeans(weights.input);
+    std::vector<float> input_batchnorm_stddivs =
+        Batchnorm::InvertStddev(weights.input);
 
     // Winograd filter transformation changes filter size to 4x4
     opencl_net_.push_input_convolution(kWinogradAlpha, inputChannels, channels,
@@ -198,39 +200,39 @@ class OpenCLNetwork : public Network {
                                                   channels, m_ceil, m_ceil);
       auto Upad2 = WinogradConvolution3::ZeropadU(conv_weights_2, channels,
                                                   channels, m_ceil, m_ceil);
-      
+
       std::vector<float> batchnorm_means_1 = Batchnorm::OffsetMeans(conv1);
       std::vector<float> batchnorm_means_2 = Batchnorm::OffsetMeans(conv2);
-      
+
       std::vector<float> batchnorm_stddivs_1 = Batchnorm::InvertStddev(conv1);
       std::vector<float> batchnorm_stddivs_2 = Batchnorm::InvertStddev(conv2);
-      
+
       opencl_net_.push_residual(kWinogradAlpha, channels, channels, Upad1,
                                 batchnorm_means_1, batchnorm_stddivs_1, Upad2,
                                 batchnorm_means_2, batchnorm_stddivs_2);
     }
-        
-        constexpr unsigned int width = 8;
-        constexpr unsigned int height = 8;
-        
-        std::vector<float> bn_pol_means = Batchnorm::OffsetMeans(weights.policy);
-        std::vector<float> bn_pol_stddivs = Batchnorm::InvertStddev(weights.policy);
-        
-        opencl_net_.push_policy(channels, num_policy_input_planes,
-                                num_policy_input_planes * width * height,
-                                num_output_policy, weights.policy.weights,
-                                bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
-                                weights.ip_pol_b);
-        
-        std::vector<float> bn_val_means = Batchnorm::OffsetMeans(weights.value);
-        std::vector<float> bn_val_stddivs = Batchnorm::InvertStddev(weights.value);
-        
-        opencl_net_.push_value(channels, num_value_input_planes,
-                               num_value_input_planes * width * height,
-                               num_value_channels, weights.value.weights,
-                               bn_val_means, bn_val_stddivs, weights.ip1_val_w,
-                               weights.ip1_val_b);
-      }
+
+    constexpr unsigned int width = 8;
+    constexpr unsigned int height = 8;
+
+    std::vector<float> bn_pol_means = Batchnorm::OffsetMeans(weights.policy);
+    std::vector<float> bn_pol_stddivs = Batchnorm::InvertStddev(weights.policy);
+
+    opencl_net_.push_policy(channels, num_policy_input_planes,
+                            num_policy_input_planes * width * height,
+                            num_output_policy, weights.policy.weights,
+                            bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
+                            weights.ip_pol_b);
+
+    std::vector<float> bn_val_means = Batchnorm::OffsetMeans(weights.value);
+    std::vector<float> bn_val_stddivs = Batchnorm::InvertStddev(weights.value);
+
+    opencl_net_.push_value(channels, num_value_input_planes,
+                           num_value_input_planes * width * height,
+                           num_value_channels, weights.value.weights,
+                           bn_val_means, bn_val_stddivs, weights.ip1_val_w,
+                           weights.ip1_val_b);
+  }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<OpenCLComputation>(opencl_net_, weights_);
