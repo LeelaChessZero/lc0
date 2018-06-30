@@ -1,0 +1,36 @@
+version: '{build}'
+configuration: Release
+platform: x64
+image:
+- Visual Studio 2017
+environment:
+  matrix:
+  - OPENCL: true
+    BLAS: false
+  - OPENCL: false
+    BLAS: true
+skip_commits:
+  files:
+    - '**/*.md'
+    - '**/.gitignore'
+    - '**/*.cmd'
+    - '**/*.sh'
+    - COPYING
+install:
+- cmd: nuget install OpenBLAS -Version 0.2.14.1 -OutputDirectory C:\cache
+- cmd: nuget install opencl-nug -Version 0.777.12 -OutputDirectory C:\cache
+- cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
+- cmd: pip3 install --upgrade meson
+cache:
+  - C:\cache -> appveyor.yml
+  - C:\Python36\scripts
+  - C:\Python36\Lib\site-packages
+before_build:
+- cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
+- cmd: set PKG_FOLDER="C:\cache"
+- cmd: meson.py build --backend vs2017 --buildtype release -Dopencl=%OPENCL% -Dblas=%BLAS% -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
+build:
+  project: build/lc0.sln
+artifacts:
+  - path: build/lc0.exe
+    name: lc0
