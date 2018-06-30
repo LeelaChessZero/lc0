@@ -80,7 +80,7 @@ class EngineController {
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
   std::unique_ptr<Search> search_;
-  std::unique_ptr<NodeTree> tree_;
+  std::shared_ptr<NodeTree> tree_; // todo?
 
   // Store current network settings to track when they change so that they
   // are reloaded.

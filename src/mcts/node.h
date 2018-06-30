@@ -86,8 +86,6 @@ class Node {
   bool IsTerminal() const { return is_terminal_; }
   // Unlike GetQ, this is works when n_ == 0
   float GetTerminalNodeValue() const { return q_; }
-  uint16_t GetFullDepth() const { return full_depth_; }
-  uint16_t GetMaxDepth() const { return max_depth_; }
 
   // Sets move probability.
   void SetP(float val) { p_ = val; }
@@ -107,13 +105,6 @@ class Node {
   // * N (+=1)
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, float gamma, float beta);
-
-  // Updates max depth, if new depth is larger.
-  void UpdateMaxDepth(int depth);
-
-  // Calculates the full depth if new depth is larger, updates it, returns
-  // in depth parameter, and returns true if it was indeed updated.
-  bool UpdateFullDepth(uint16_t* depth);
 
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
@@ -156,10 +147,6 @@ class Node {
   // to pick in MCTS, and also when selecting the best move.
   uint16_t n_in_flight_;
 
-  // Maximum depth any subnodes of this node were looked at.
-  uint16_t max_depth_;
-  // Complete depth all subnodes of this node were fully searched.
-  uint16_t full_depth_;
   // Does this node end game (with a winning of either sides or draw).
   bool is_terminal_;
 
@@ -197,11 +184,25 @@ class NodeTree {
   Node* GetGameBeginNode() const { return gamebegin_node_; }
   const PositionHistory& GetPositionHistory() const { return history_; }
 
+  // Not thread safe!
+  void UpdateDepth(uint16_t new_node_depth, bool is_new_leaf);
+  uint16_t GetMaxDepth() const;
+  float GetAverageDepth() const;
+  float GetExpAverageDepth() const;
+  float GetAverageLeafDepth() const;
+  float GetAverageBranching() const;
+  int32_t cumulative_leaf_depth_ = -1; // initial node offset vis a vis node.cc:428
+  uint32_t num_leaves_ = 1;
+
  private:
   void DeallocateTree();
   Node* current_head_ = nullptr;
   Node* gamebegin_node_ = nullptr;
   PositionHistory history_;
+  uint16_t max_depth_ = 0;
+  uint32_t cumulative_depth_ = 0;
+  float exp_moving_average_ = 0.0f;
+
 };
 
 }  // namespace lczero

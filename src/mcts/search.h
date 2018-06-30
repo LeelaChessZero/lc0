@@ -43,7 +43,7 @@ struct SearchLimits {
 
 class Search {
  public:
-  Search(const NodeTree& tree, Network* network,
+  Search(std::shared_ptr<NodeTree> tree, Network* network,
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const SearchLimits& limits,
          const OptionsDict& options, NNCache* cache);
@@ -130,10 +130,11 @@ class Search {
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
+  // The node tree is stored for depth computation purposes. root_node_ ==
+  // tree_->current_head_, but is so oft used that we store it for convenience.
+  std::shared_ptr<NodeTree> tree_;
   Node* root_node_;
   NNCache* cache_;
-  // Fixed positions which happened before the search.
-  const PositionHistory& played_history_;
 
   Network* const network_;
   const SearchLimits limits_;
@@ -177,7 +178,7 @@ class Search {
 class SearchWorker {
  public:
   SearchWorker(Search* search)
-      : search_(search), history_(search_->played_history_) {}
+      : search_(search), history_(search_->tree_->GetPositionHistory()) {}
 
   // Runs iterations while needed.
   void RunBlocking() {

@@ -252,8 +252,6 @@ void Node::ResetStats() {
   n_ = 0;
   q_ = 0.0f;
   p_ = 0.0f;
-  max_depth_ = 0;
-  full_depth_ = 0;
   is_terminal_ = false;
 }
 
@@ -293,22 +291,6 @@ void Node::FinalizeScoreUpdate(float v, float gamma, float beta) {
   ++n_;
   // Decrement virtual loss.
   --n_in_flight_;
-}
-
-void Node::UpdateMaxDepth(int depth) {
-  if (depth > max_depth_) max_depth_ = depth;
-}
-
-bool Node::UpdateFullDepth(uint16_t* depth) {
-  if (full_depth_ > *depth) return false;
-  for (Node* child : Children()) {
-    if (*depth > child->full_depth_) *depth = child->full_depth_;
-  }
-  if (*depth >= full_depth_) {
-    full_depth_ = ++*depth;
-    return true;
-  }
-  return false;
 }
 
 namespace {
@@ -428,6 +410,44 @@ void NodeTree::DeallocateTree() {
   gNodePool.ReleaseSubtree(gamebegin_node_);
   gamebegin_node_ = nullptr;
   current_head_ = nullptr;
+}
+
+// Not thread safe!
+void NodeTree::UpdateDepth(uint16_t new_node_depth, bool is_new_leaf) {
+  if (new_node_depth > max_depth_) max_depth_ = new_node_depth;
+  cumulative_depth_ += new_node_depth;
+  // Exponential moving average: EMA = alpha * \sum_{i=0}^{i=n}{(1-alpha)^i*x_i}
+  // The per term weight is alpha*(1-alpha)^i, which with infinite terms gives
+  // a total weight of 1. Alpha near 1 gives very high weight on recent data;
+  // alpha near zero spreads weight over longer history.
+  // The weights decay by (1-alpha) per term; so setting the weights' 1/e-life
+  // to 50, (1-alpha)^50=1/e, implies alpha = 0.0198013267.
+  static constexpr float alpha = 0.0198013267f; // ~ 1 - e^(-1/50)
+  // An EMA can be updated in place like so:
+  exp_moving_average_ += alpha*(new_node_depth - exp_moving_average_);
+  cumulative_leaf_depth_ += is_new_leaf ? new_node_depth : 1;
+  num_leaves_ += is_new_leaf;
+}
+
+uint16_t NodeTree::GetMaxDepth() const {
+  return max_depth_;
+}
+
+float NodeTree::GetAverageDepth() const {
+  return (float)cumulative_depth_ / ((float)current_head_->n_);
+}
+
+float NodeTree::GetExpAverageDepth() const {
+  return exp_moving_average_;
+}
+
+float NodeTree::GetAverageLeafDepth() const {
+  return (float)cumulative_leaf_depth_ / (float)num_leaves_;
+}
+
+float NodeTree::GetAverageBranching() const {
+  float n = current_head_->GetN();
+  return (n - 1) / (n - (float)num_leaves_);
 }
 
 }  // namespace lczero

@@ -245,8 +245,8 @@ void UciLoop::SendInfo(const ThinkingInfo& info) {
     res += " pv";
     for (const auto& move : info.pv) res += " " + move.as_string();
   }
-  if (!info.comment.empty()) res += " string " + info.comment;
-  SendResponse(res);
+  if (res != "info") SendResponse(res);
+  if (!info.comment.empty()) SendResponse("info string " + info.comment);
 }
 
 }  // namespace lczero
