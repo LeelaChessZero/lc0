@@ -28,7 +28,7 @@ class Convolution1 {
  public:
   Convolution1() = delete;
 
-  // Batched forward inference
+  // Batched forward inference.
   static void Forward(const size_t batch_size, const size_t input_channels,
                       const size_t output_channels, const float* input,
                       const float* weights, const float* biases, float* output);
