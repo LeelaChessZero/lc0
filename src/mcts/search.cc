@@ -256,7 +256,7 @@ NNCacheLock Search::GetCachedFirstPlyResult(const Node* node) const {
   history.Append(node->GetMove());
   auto hash = history.HashLast(kCacheHistoryLength + 1);
   NNCacheLock nneval(cache_, hash);
-  return std::move(nneval);
+  return nneval;
 }
 
 void Search::MaybeTriggerStop() {
