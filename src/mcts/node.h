@@ -84,7 +84,6 @@ class Node {
   float GetP() const { return p_; }
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
-  // Unlike GetQ, this is works when n_ == 0
   float GetTerminalNodeValue() const { return q_; }
 
   // Sets move probability.
@@ -137,7 +136,7 @@ class Node {
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored.
   float q_;
-  // Probabality that this move will be made. From policy head of the neural
+  // Probability that this move will be made. From policy head of the neural
   // network.
   float p_;
   // How many completed visits this node had.

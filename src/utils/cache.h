@@ -28,8 +28,8 @@ namespace lczero {
 
 // Generic LRU cache. Thread-safe. Takes ownership of all values, which are
 // deleted upon eviction; thus, using values stored requires pinning them, which
-// in turn requires Unpin()ing them before cache destruction. The use of
-// LruCacheLock is recommend to automate this element-memory management.
+// in turn requires Unpin()ing them after use. The use of LruCacheLock is
+// recommend to automate this element-memory management.
 template <class K, class V>
 class LruCache {
   static const double constexpr kLoadFactor = 1.33;
@@ -202,7 +202,7 @@ class LruCache {
       iter->next_in_queue->prev_in_queue = iter->prev_in_queue;
     }
 
-    // Destroy or move into evicted list dependending on whether it's pinned.
+    // Destroy or move into evicted list depending on whether it's pinned.
     Item** cur = &hash_[hasher_(iter->key) % hash_.size()];
     for (Item* el = *cur; el; el = el->next_in_hash) {
       if (el == iter) {

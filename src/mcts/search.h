@@ -112,8 +112,9 @@ class Search {
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
   void SendMovesStats() const;
-  // An ugly name, but this function currently has very limited use
-  optional<float> GetCachedFirstPlyValue(const Node* node) const;
+
+  // We only need first ply for debug output, but could be easily generalized.
+  NNCacheLock GetCachedFirstPlyResult(const Node* node) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -173,7 +174,7 @@ class Search {
 };
 
 // Single thread worker of the search engine.
-// That used to be just a function Search::Worker(), but to paralellize it
+// That used to be just a function Search::Worker(), but to parallelize it
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
@@ -192,9 +193,9 @@ class SearchWorker {
   // 2. Gather minibatch.
   // 3. Prefetch into cache.
   // 4. Run NN computation.
-  // 5. Populate computed nodes with results of the NN computation.
-  // 6. Update nodes.
-  // 7. Update status/counters.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
+  // 7. Update the Search's status and progress information.
   void ExecuteOneIteration();
 
   // Returns whether another search iteration is needed (false means exit).
@@ -214,13 +215,13 @@ class SearchWorker {
   // 4. Run NN computation.
   void RunNNComputation();
 
-  // 5. Populate computed nodes with results of the NN computation.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
   void FetchMinibatchResults();
 
-  // 6. Update nodes.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   void DoBackupUpdate();
 
-  // 7. Update status/counters.
+  // 7. Update the Search's status and progress information.
   void UpdateCounters();
 
  private:

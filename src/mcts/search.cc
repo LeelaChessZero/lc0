@@ -60,7 +60,7 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 
 void Search::PopulateUciParams(OptionsParser* options) {
   // Here the "safe defaults" are listed.
-  // Many of them are overriden with optimized defaults in engine.cc and
+  // Many of them are overridden with optimized defaults in engine.cc and
   // tournament.cc
 
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
@@ -218,17 +218,6 @@ void Search::SendMovesStats() const {
     oss << " N: " << std::right << std::setw(7) << node->GetN() << " (+"
         << std::setw(2) << node->GetNInFlight() << ") ";
 
-    oss << "(V: ";
-    // Handrolled optional only has a few overloads available, simple usage only
-    optional<float> v = GetCachedFirstPlyValue(node);
-    if (!v && node->IsTerminal()) v = node->GetTerminalNodeValue();
-    if (v) {
-      oss << std::setw(6) << std::setprecision(2) << *v * 100;
-    } else {
-      oss << " --.--";
-    }
-    oss << "%) ";
-
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
 
@@ -241,17 +230,30 @@ void Search::SendMovesStats() const {
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
         << node->GetQ(parent_q) + U_coeff * node->GetU() << ") ";
 
+    oss << "(V: ";
+    optional<float> v;
+    if (node->IsTerminal()) {
+      v = node->GetTerminalNodeValue();
+    } else {
+      NNCacheLock nneval = GetCachedFirstPlyResult(node);
+      if (nneval) v = -nneval->q;
+    }
+    if (v) {
+      oss << std::setw(7) << std::setprecision(4) << *v;
+    } else {
+      oss << " -.----";
+    }
+    oss << ") ";
+
     info.comment = oss.str();
     info_callback_(info);
   }
 }
 
-optional<float> Search::GetCachedFirstPlyValue(const Node* node) const {
+NNCacheLock Search::GetCachedFirstPlyResult(const Node* node) const {
   assert(node->GetParent() == root_node_);
-  // This function serves a specific purpose, fetching a NN value from a first
-  // ply move, but it would be relatively straightforward to generalize this
-  // to fetch a complete NN evaluation (policy+value) for an abitrary move.
-  // But, there isn't yet a usecase for that, so we leave this simple for now.
+  // It would be relatively straightforward to generalize this to fetch NN
+  // results for an abitrary move.
   optional<float> retval;
   PositionHistory history(tree_->GetPositionHistory());
   // Is it worth it to move this initialization to SendMoveStats, reducing
@@ -259,8 +261,7 @@ optional<float> Search::GetCachedFirstPlyValue(const Node* node) const {
   history.Append(node->GetMove());
   auto hash = history.HashLast(kCacheHistoryLength + 1);
   NNCacheLock nneval(cache_, hash);
-  if (nneval) retval = -nneval->q;
-  return retval;
+  return std::move(nneval);
 }
 
 void Search::MaybeTriggerStop() {
@@ -388,7 +389,7 @@ Node* Search::GetBestChildNoTemperature(Node* parent) const {
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
-  //   * If that number is larger than 0, the one wil larger eval wins.
+  //   * If that number is larger than 0, the one with larger eval wins.
   std::tuple<int, float, float> best(-1, 0.0, 0.0);
   for (Node* node : parent->Children()) {
     if (parent == root_node_ && !limits_.searchmoves.empty() &&
@@ -505,13 +506,13 @@ void SearchWorker::ExecuteOneIteration() {
   // 4. Run NN computation.
   RunNNComputation();
 
-  // 5. Populate computed nodes with results of the NN computation.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
 
-  // 6. Update nodes.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   DoBackupUpdate();
 
-  // 7. Update status/counters.
+  // 7. Update the Search's status and progress information.
   UpdateCounters();
 }
 
@@ -590,7 +591,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     {
       SharedMutex::Lock lock(search_->nodes_mutex_);
       // n_in_flight_ is incremented. If the method returns false, then there is
-      // a search collision, and this node is alredy being expanded.
+      // a search collision, and this node is already being expanded.
       if (!node->TryStartScoreUpdate()) return {node, true};
       // Unexamined leaf node. We've hit the end of this playout.
       if (!node->HasChildren()) return {node, false};
@@ -759,8 +760,10 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     return 1;
   }
 
-  // If it's a node in process of expansion or is terminal, don't prefetch it.
-  if (!node->HasChildren()) return 0;
+  // n = 0 and n_in_flight_ > 0, that means the node is being extended.
+  if (node->GetN() == 0) return 0;
+  // The node is terminal; don't prefetch it.
+  if (node->IsTerminal()) return 0;
 
   // Populate all subnodes and their scores.
   typedef std::pair<float, Node*> ScoredNode;
@@ -826,21 +829,23 @@ void SearchWorker::RunNNComputation() {
   if (computation_->GetBatchSize() != 0) computation_->ComputeBlocking();
 }
 
-// 5. Populate computed nodes with results of the NN computation.
+// 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
-  // Copy NN results, or cached/duplicate results, into nodes.
-  // The latter is much simpler.
+  // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
     Node* node = node_to_process.node;
     if (!node_to_process.nn_queried) {
+      // Terminal nodes don't involve the neural NetworkComputation, nor do
+      // they require any further processing after value retrieval.
       node_to_process.v = node->GetTerminalNodeValue();
       continue;
     }
-    // Populate V value.
+    // For NN results, we need to populate policy as well as value.
+    // First the value...
     node_to_process.v = -computation_->GetQVal(idx_in_computation);
-    // Populate P values.
+    // ...and secondly, the policy data.
     float total = 0.0;
     for (Node* n : node->Children()) {
       float p =
@@ -851,7 +856,7 @@ void SearchWorker::FetchMinibatchResults() {
       total += p;
       n->SetP(p);
     }
-    // Scale P values to add up to 1.0.
+    // Normalize P values to add up to 1.0.
     if (total > 0.0f) {
       float scale = 1.0f / total;
       for (Node* n : node->Children()) n->SetP(n->GetP() * scale);
@@ -864,7 +869,7 @@ void SearchWorker::FetchMinibatchResults() {
   }
 }
 
-// 6. Update nodes.
+// 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
   // Update nodes.
@@ -913,7 +918,7 @@ void SearchWorker::DoBackupUpdate() {
   }
 }
 
-// 7. UpdateCounters()
+// 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.

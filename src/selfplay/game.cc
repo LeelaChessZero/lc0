@@ -80,11 +80,12 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool enable_resign
     training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
         GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
 
+    float eval = search_->GetBestEval();
+    eval = (eval + 1) / 2;
+    if (eval < min_eval_[idx]) min_eval_[idx] = eval;
     if (enable_resign) {
       const float resignpct =
               options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
-      float eval = search_->GetBestEval();
-      eval = (eval + 1) / 2;
       if (eval < resignpct) { // always false when resignpct == 0
         game_result_ = blacks_move ? GameResult::WHITE_WON
                                    : GameResult::BLACK_WON;
@@ -110,6 +111,12 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
   }
   std::reverse(moves.begin(), moves.end());
   return moves;
+}
+
+float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
+  if (game_result_ == GameResult::WHITE_WON) return min_eval_[0];
+  if (game_result_ == GameResult::BLACK_WON) return min_eval_[1];
+  return std::min(min_eval_[0], min_eval_[1]);
 }
 
 void SelfPlayGame::Abort() {

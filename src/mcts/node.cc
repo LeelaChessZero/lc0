@@ -55,15 +55,15 @@ class Node::Pool {
   // Releases all children of the node, except specified. Also updates pointers
   // accordingly.
   void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
-  // Releases all children, but doesn't release the node isself.
+  // Releases all children, but doesn't release the node itself.
   void ReleaseChildren(Node*);
   // Releases all children and the node itself;
   void ReleaseSubtree(Node*);
-  // Really releases subtrees makerd for release earlier.
+  // Really releases subtrees marked for release earlier.
   void GarbageCollect();
 
  private:
-  // Runs garbabe collection every kGCIntervalMs milliseconds.
+  // Runs garbage collection every kGCIntervalMs milliseconds.
   void GarbageCollectThread();
   // Allocates a new set of nodes of size kAllocationSize and puts it into
   // reserve_list_.
@@ -91,7 +91,7 @@ class Node::Pool {
   mutable Mutex gc_mutex_;
   std::vector<Node*> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
 
-  // Should garbage colletion thread stop?
+  // Should garbage collection thread stop?
   volatile bool stop_ = false;
   std::thread gc_thread_;
 };
