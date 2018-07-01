@@ -6,7 +6,7 @@ image:
 environment:
   matrix:
   - OPENCL: true
-    BLAS: false
+    BLAS: true
   - OPENCL: false
     BLAS: true
 skip_commits:
