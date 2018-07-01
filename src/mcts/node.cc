@@ -250,7 +250,6 @@ float Node::GetVisitedPolicy() const {
 void Node::ResetStats() {
   n_in_flight_ = 0;
   n_ = 0;
-  v_ = 0.0f;
   q_ = 0.0f;
   p_ = 0.0f;
   max_depth_ = 0;
@@ -276,7 +275,7 @@ Move Node::GetMove(bool flip) const {
 
 void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
-  v_ = q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
+  q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
 }
 
 bool Node::TryStartScoreUpdate() {

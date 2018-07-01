@@ -187,43 +187,76 @@ void Search::SendMovesStats() const {
   const float parent_q =
       -root_node_->GetQ(0) -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
+  const float U_coeff =
+      kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+
   for (Node* child : root_node_->Children()) {
     nodes.emplace_back(child);
   }
   std::sort(nodes.begin(), nodes.end(),
-            [](const Node* a, const Node* b) { return a->GetN() < b->GetN(); });
+           [&parent_q, &U_coeff](const Node* a, const Node* b) {
+             return
+                 std::forward_as_tuple(a->GetN(), a->GetQ(parent_q) + U_coeff * a->GetU())
+               < std::forward_as_tuple(b->GetN(), b->GetQ(parent_q) + U_coeff * b->GetU());
+           });
 
   const bool is_black_to_move = played_history_.IsBlackToMove();
   ThinkingInfo info;
   for (const Node* node : nodes) {
     std::ostringstream oss;
     oss << std::fixed;
+
     oss << std::left << std::setw(5)
         << node->GetMove(is_black_to_move).as_string();
+
     oss << " (" << std::setw(4) << node->GetMove().as_nn_index() << ")";
-    oss << " N: ";
-    oss << std::right << std::setw(7) << node->GetN() << " (+" << std::setw(2)
-        << node->GetNInFlight() << ") ";
-    oss << "(V: " << std::setw(6) << std::setprecision(2) << node->GetV() * 100
-        << "%) ";
+
+    oss << " N: " << std::right << std::setw(7) << node->GetN() << " (+"
+        << std::setw(2) << node->GetNInFlight() << ") ";
+
     oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetP() * 100
         << "%) ";
+
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
         << node->GetQ(parent_q) << ") ";
+
     oss << "(U: " << std::setw(6) << std::setprecision(5)
-        << node->GetU() * kCpuct *
-               std::sqrt(std::max(node->GetParent()->GetChildrenVisits(), 1u))
-        << ") ";
+        << U_coeff * node->GetU() << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << node->GetQ(parent_q) +
-               node->GetU() * kCpuct *
-                   std::sqrt(
-                       std::max(node->GetParent()->GetChildrenVisits(), 1u))
-        << ") ";
+        << node->GetQ(parent_q) + U_coeff * node->GetU() << ") ";
+
+    oss << "(V: ";
+    optional<float> v;
+    if (node->IsTerminal()) {
+      v = node->GetTerminalNodeValue();
+    } else {
+      NNCacheLock nneval = GetCachedFirstPlyResult(node);
+      if (nneval) v = -nneval->q;
+    }
+    if (v) {
+      oss << std::setw(7) << std::setprecision(4) << *v;
+    } else {
+      oss << " -.----";
+    }
+    oss << ") ";
+
     info.comment = oss.str();
     info_callback_(info);
   }
+}
+
+NNCacheLock Search::GetCachedFirstPlyResult(const Node* node) const {
+  assert(node->GetParent() == root_node_);
+  // It would be relatively straightforward to generalize this to fetch NN
+  // results for an abitrary move.
+  optional<float> retval;
+  PositionHistory history(played_history_); // Is it worth it to move this
+  // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
+  history.Append(node->GetMove());
+  auto hash = history.HashLast(kCacheHistoryLength + 1);
+  NNCacheLock nneval(cache_, hash);
+  return std::move(nneval);
 }
 
 void Search::MaybeTriggerStop() {
@@ -467,13 +500,13 @@ void SearchWorker::ExecuteOneIteration() {
   // 4. Run NN computation.
   RunNNComputation();
 
-  // 5. Populate computed nodes with results of the NN computation.
-  FetchNNResults();
+  // 5. Retrieve NN computations (and terminal values) into nodes.
+  FetchMinibatchResults();
 
-  // 6. Update nodes.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   DoBackupUpdate();
 
-  // 7. Update status/counters.
+  // 7. Update the Search's status and progress information.
   UpdateCounters();
 }
 
@@ -517,7 +550,7 @@ void SearchWorker::GatherMinibatch() {
     // of the game), it means that we already visited this node before.
     if (node->IsTerminal()) continue;
 
-    // Node was never visited, extending.
+    // Node was never visited, extend it.
     ExtendNode(node);
 
     // Only send non-terminal nodes to neural network
@@ -790,19 +823,23 @@ void SearchWorker::RunNNComputation() {
   if (computation_->GetBatchSize() != 0) computation_->ComputeBlocking();
 }
 
-// 5. Populate computed nodes with results of the NN computation.
+// 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::FetchNNResults() {
-  if (computation_->GetBatchSize() == 0) return;
-
-  // Copy NN results into nodes.
+void SearchWorker::FetchMinibatchResults() {
+  // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : nodes_to_process_) {
-    if (!node_to_process.nn_queried) continue;
     Node* node = node_to_process.node;
-    // Populate V value.
-    node->SetV(-computation_->GetQVal(idx_in_computation));
-    // Populate P values.
+    if (!node_to_process.nn_queried) {
+      // Terminal nodes don't involve the neural NetworkComputation, nor do
+      // they require any further processing after value retrieval.
+      node_to_process.v = node->GetTerminalNodeValue();
+      continue;
+    }
+    // For NN results, we need to populate policy as well as value.
+    // First the value...
+    node_to_process.v = -computation_->GetQVal(idx_in_computation);
+    // ...and secondly, the policy data.
     float total = 0.0;
     for (Node* n : node->Children()) {
       float p =
@@ -813,7 +850,7 @@ void SearchWorker::FetchNNResults() {
       total += p;
       n->SetP(p);
     }
-    // Scale P values to add up to 1.0.
+    // Normalize P values to add up to 1.0.
     if (total > 0.0f) {
       float scale = 1.0f / total;
       for (Node* n : node->Children()) n->SetP(n->GetP() * scale);
@@ -826,7 +863,7 @@ void SearchWorker::FetchNNResults() {
   }
 }
 
-// 6. Update nodes.
+// 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
   // Update nodes.
@@ -843,7 +880,7 @@ void SearchWorker::DoBackupUpdate() {
     }
 
     // Backup V value up to a root. After 1 visit, V = Q.
-    float v = node->GetV();
+    float v = node_to_process.v;
     // Maximum depth the node is explored.
     uint16_t depth = 0;
     // If the node is terminal, mark it as fully explored to an "infinite"
@@ -876,7 +913,7 @@ void SearchWorker::DoBackupUpdate() {
   }
 }
 
-// 7. UpdateCounters()
+// 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.
