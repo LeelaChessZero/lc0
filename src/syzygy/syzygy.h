@@ -213,7 +213,7 @@ class SyzygyTablebase {
   // Current maximum number of pieces on board that can be probed for. Will
   // be 0 unless initialized with tablebase paths.
   // Thread safe.
-  int MaxCardinality;
+  int max_cardinality() { return tables_.max_cardinality(); }
 
   // Allows for the tablebases being used to be changed. This method is not
   // thread safe, there must be no concurrent usage while this method is
