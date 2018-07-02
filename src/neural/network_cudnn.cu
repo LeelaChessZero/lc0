@@ -126,8 +126,15 @@ class BaseLayer {
 
 template <typename DataType>
 class ConvLayer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
+  using BaseLayer<DataType>::H;
+  using BaseLayer<DataType>::W;
+  using BaseLayer<DataType>::GetC;
+  using BaseLayer<DataType>::GetH;
+  using BaseLayer<DataType>::GetW;
+
  public:
-  ConvLayer(BaseLayer *ip, int C, int H, int W, int size, int Cin,
+  ConvLayer(BaseLayer<DataType> *ip, int C, int H, int W, int size, int Cin,
             bool relu = false, bool bias = false);
   ~ConvLayer();
   void LoadWeights(float *pfilter, float *pBias, void *scratch);
@@ -156,8 +163,12 @@ class ConvLayer : public BaseLayer<DataType> {
 
 template <typename DataType>
 class SoftMaxLayer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::GetC;
+  using BaseLayer<DataType>::GetH;
+  using BaseLayer<DataType>::GetW;
+
  public:
-  SoftMaxLayer(BaseLayer *ip);
+  SoftMaxLayer(BaseLayer<DataType> *ip);
   void Eval(int N, DataType *output, const DataType *input,
             const DataType *input2, void *scratch, cudnnHandle_t cudnn,
             cublasHandle_t cublas) override;
@@ -168,8 +179,10 @@ class SoftMaxLayer : public BaseLayer<DataType> {
 
 template <typename DataType>
 class BNLayer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
+
  public:
-  BNLayer(BaseLayer *ip, bool relu);
+  BNLayer(BaseLayer<DataType> *ip, bool relu);
   ~BNLayer();
 
   void LoadWeights(float *cpuMeans, float *cpuVar);
@@ -189,7 +202,7 @@ class BNLayer : public BaseLayer<DataType> {
 template <typename DataType>
 class FCLayer : public BaseLayer<DataType> {
  public:
-  FCLayer(BaseLayer *ip, int C, int H, int W, bool relu, bool bias,
+  FCLayer(BaseLayer<DataType> *ip, int C, int H, int W, bool relu, bool bias,
           bool tanh = false);
   ~FCLayer();
 
@@ -443,8 +456,8 @@ BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer *ip)
     : C(c), H(h), W(w), input_(ip) {}
 
 template <typename DataType>
-SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer *ip)
-    : BaseLayer(ip->GetC(), ip->GetH(), ip->GetW(), ip) {
+SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType> *ip)
+    : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip) {
   cudnnCreateTensorDescriptor(&out_tensor_desc_);
 }
 
@@ -470,9 +483,9 @@ void SoftMaxLayer<DataType>::Eval(int N, DataType *output,
 }
 
 template <typename DataType>
-ConvLayer<DataType>::ConvLayer(BaseLayer *ip, int C, int H, int W, int filter,
+ConvLayer<DataType>::ConvLayer(BaseLayer<DataType> *ip, int C, int H, int W, int filter,
                                int Cin, bool relu, bool bias)
-    : BaseLayer(C, H, W, ip),
+    : BaseLayer<DataType>(C, H, W, ip),
       filter_size_(filter),
       c_input_(Cin),
       use_relu_(relu),
@@ -614,8 +627,8 @@ ConvLayer<DataType>::~ConvLayer() {
 }
 
 template <typename DataType>
-BNLayer<DataType>::BNLayer(BaseLayer *ip, bool relu)
-    : BaseLayer(ip->GetC(), ip->GetH(), ip->GetW(), ip), use_relu_(relu) {
+BNLayer<DataType>::BNLayer(BaseLayer<DataType> *ip, bool relu)
+    : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip), use_relu_(relu) {
   size_t weightSize = sizeof(float) * C;
 
   reportCUDAErrors(cudaMalloc(&means_, weightSize));
@@ -654,9 +667,9 @@ BNLayer<DataType>::~BNLayer() {
 }
 
 template <typename DataType>
-FCLayer<DataType>::FCLayer(BaseLayer *ip, int C, int H, int W, bool relu,
+FCLayer<DataType>::FCLayer(BaseLayer<DataType> *ip, int C, int H, int W, bool relu,
                            bool bias, bool tanh)
-    : BaseLayer(C, H, W, ip),
+    : BaseLayer<DataType>(C, H, W, ip),
       use_relu_(relu),
       use_bias_(bias),
       use_tanh_(tanh) {
