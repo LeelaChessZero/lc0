@@ -23,8 +23,7 @@ namespace lczero {
 
 void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
                            const size_t output_channels, const float* input,
-                           const float* weights, const float* biases,
-                           float* output) {
+                           const float* weights, float* output) {
   for (size_t i = 0; i < batch_size; i++) {
     // C←αAB + βC
     // M Number of rows in matrices A and C.
@@ -61,13 +60,6 @@ void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
                 batch_output,          // C
                 kSquares);             // ldc, leading rank of B
 
-    auto index = 0;
-    for (size_t o = 0; o < output_channels; o++) {
-      const auto bias = biases[o];
-      for (size_t b = 0; b < kSquares; b++) {
-        batch_output[index++] += bias;
-      }
-    }
   }
 }
 
