@@ -128,17 +128,35 @@ class CheckComputation : public NetworkComputation {
 class CheckNetwork : public Network {
  public:
   CheckNetwork(const Weights& weights, const OptionsDict& options) {
+    
+    
+    OptionsDict dict1;
+    std::string backend1="opencl";
+    OptionsDict& backend1_dict=dict1;
+
+    OptionsDict dict2;
+    std::string backend2="blas";
+    OptionsDict& backend2_dict=dict2;
+
+    const auto parents = options.ListSubdicts();
+    if (parents.size()>0) {
+      backend1_dict=parents[0];
+      
+    }
+    
+
+    
+    refNet_ = NetworkFactory::Get()->Create("opencl", weights, dict1);
+    
+    OptionsDict dict2;
+    checkNet_ = NetworkFactory::Get()->Create("blas", weights, options);
+    
     // TODO:
     //
     // Parse the option string and create backends on demand.
     //
     // For now, only checking opencl against blas.
 
-    OptionsDict dict1;
-    refNet_ = NetworkFactory::Get()->Create("opencl", weights, dict1);
-
-    OptionsDict dict;
-    checkNet_ = NetworkFactory::Get()->Create("blas", weights, options);
   }
 
   static constexpr int CHECK_PROBABILITY = 5;
