@@ -86,6 +86,13 @@ class BitBoard {
 
   std::uint64_t as_int() const { return board_; }
   void clear() { board_ = 0; }
+  int count() const {
+#ifdef _MSC_VER
+    return _mm_popcnt_u64(board_);
+#else
+    return __builtin_popcountll(board_);
+#endif
+  }
 
   // Sets the value for given square to 1 if cond is true.
   // Otherwise does nothing (doesn't reset!).
