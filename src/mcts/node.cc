@@ -32,211 +32,16 @@
 namespace lczero {
 
 /////////////////////////////////////////////////////////////////////////
-// Node::Pool
-/////////////////////////////////////////////////////////////////////////
-
-namespace {
-// How many nodes to allocate a once.
-const int kAllocationSize = 1024 * 64;
-// Periodicity of garbage collection, milliseconds.
-const int kGCIntervalMs = 100;
-}  // namespace
-
-class Node::Pool {
- public:
-  Pool();
-  ~Pool();
-
-  // Allocates a new node and initializes it with all zeros.
-  Node* AllocateNode();
-
-  // Release* function don't release trees immediately but rather schedule
-  // release until when GarbageCollect() is called.
-  // Releases all children of the node, except specified. Also updates pointers
-  // accordingly.
-  void ReleaseAllChildrenExceptOne(Node* root, Node* subtree);
-  // Releases all children, but doesn't release the node itself.
-  void ReleaseChildren(Node*);
-  // Releases all children and the node itself;
-  void ReleaseSubtree(Node*);
-  // Really releases subtrees marked for release earlier.
-  void GarbageCollect();
-
- private:
-  // Runs garbage collection every kGCIntervalMs milliseconds.
-  void GarbageCollectThread();
-  // Allocates a new set of nodes of size kAllocationSize and puts it into
-  // reserve_list_.
-  void AllocateNewBatch();
-
-  union FreeNode {
-    FreeNode* next;
-    Node node;
-
-    FreeNode() {}
-  };
-
-  static FreeNode* UnrollNodeTree(FreeNode* node);
-
-  mutable Mutex mutex_;
-  // Linked list of free nodes.
-  FreeNode* free_list_ GUARDED_BY(mutex_) = nullptr;
-
-  // Mutex for slow but rare operations.
-  mutable Mutex allocations_mutex_ ACQUIRED_AFTER(mutex_);
-  FreeNode* reserve_list_ GUARDED_BY(allocations_mutex_) = nullptr;
-  std::vector<std::unique_ptr<FreeNode[]>> allocations_
-      GUARDED_BY(allocations_mutex_);
-
-  mutable Mutex gc_mutex_;
-  std::vector<Node*> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
-
-  // Should garbage collection thread stop?
-  volatile bool stop_ = false;
-  std::thread gc_thread_;
-};
-
-Node::Pool::Pool() : gc_thread_([this]() { GarbageCollectThread(); }) {}
-Node::Pool::~Pool() {
-  stop_ = true;
-  gc_thread_.join();
-}
-
-void Node::Pool::GarbageCollectThread() {
-  while (!stop_) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
-    GarbageCollect();
-  };
-}
-
-Node::Pool::FreeNode* Node::Pool::UnrollNodeTree(FreeNode* node) {
-  if (!node->node.child_) return node;
-  FreeNode* prev = node;
-  for (Node* child = node->node.child_; child; child = child->sibling_) {
-    FreeNode* next = reinterpret_cast<FreeNode*>(child);
-    prev->next = next;
-    prev = UnrollNodeTree(next);
-  }
-  return prev;
-}
-
-void Node::Pool::GarbageCollect() {
-  while (true) {
-    Node* node_to_gc = nullptr;
-    {
-      Mutex::Lock lock(gc_mutex_);
-      if (subtrees_to_gc_.empty()) return;
-      node_to_gc = subtrees_to_gc_.back();
-      subtrees_to_gc_.pop_back();
-    }
-    FreeNode* head = reinterpret_cast<FreeNode*>(node_to_gc);
-    FreeNode* tail = UnrollNodeTree(head);
-    {
-      Mutex::Lock lock(mutex_);
-      tail->next = free_list_;
-      free_list_ = head;
-    }
-  }
-}
-
-Node* Node::Pool::AllocateNode() {
-  while (true) {
-    Node* result = nullptr;
-    {
-      Mutex::Lock lock(mutex_);
-      // Try to pick from a head of the freelist.
-      if (free_list_) {
-        result = &free_list_->node;
-        free_list_ = free_list_->next;
-      } else {
-        // Free list empty. Trying to make reserve list free list.
-        Mutex::Lock lock(allocations_mutex_);
-        if (reserve_list_) {
-          free_list_ = reserve_list_;
-          reserve_list_ = nullptr;
-        }
-      }
-    }
-
-    // Have node! Return.
-    if (result) {
-      std::memset(reinterpret_cast<void*>(result), 0, sizeof(Node));
-      return result;
-    }
-
-    {
-      Mutex::Lock lock(allocations_mutex_);
-      // Reserve is empty now, so unless another thread did that, we have to
-      // rebuild a new reserve.
-      if (!reserve_list_) AllocateNewBatch();
-    }
-    // Repeat again, now as we have reserve list and (possibly) free list.
-  }
-}
-
-void Node::Pool::AllocateNewBatch() REQUIRES(allocations_mutex_) {
-  allocations_.emplace_back(std::make_unique<FreeNode[]>(kAllocationSize));
-
-  FreeNode* new_nodes = allocations_.back().get();
-  for (int i = 0; i < kAllocationSize; ++i) {
-    FreeNode* n = new_nodes + i;
-    n->next = reserve_list_;
-    reserve_list_ = n;
-  }
-}
-
-void Node::Pool::ReleaseChildren(Node* node) {
-  Node* next = node->child_;
-  // Iterating manually rather than with iterator, as node is released in the
-  // middle and can be taken by other threads, so we have to be careful.
-  while (next) {
-    Node* iter = next;
-    // Getting next after releasing node, as otherwise it can be reallocated
-    // and overwritten.
-    next = next->sibling_;
-    ReleaseSubtree(iter);
-  }
-  node->child_ = nullptr;
-}
-
-void Node::Pool::ReleaseAllChildrenExceptOne(Node* root, Node* subtree) {
-  Node* child = nullptr;
-  Node* next = root->child_;
-  while (next) {
-    Node* iter = next;
-    // Getting next after releasing node, as otherwise it can be reallocated
-    // and overwritten.
-    next = next->sibling_;
-    if (iter == subtree) {
-      child = iter;
-    } else {
-      ReleaseSubtree(iter);
-    }
-  }
-  root->child_ = child;
-  if (child) {
-    child->sibling_ = nullptr;
-  }
-}
-
-void Node::Pool::ReleaseSubtree(Node* node) {
-  Mutex::Lock lock(gc_mutex_);
-  subtrees_to_gc_.push_back(node);
-}
-
-Node::Pool gNodePool;
-
-/////////////////////////////////////////////////////////////////////////
 // Node
 /////////////////////////////////////////////////////////////////////////
 
 Node* Node::CreateChild(Move m) {
-  Node* new_node = gNodePool.AllocateNode();
+  auto new_node = std::make_unique<Node>();
   new_node->parent_ = this;
-  new_node->sibling_ = child_;
+  new_node->sibling_ = std::move(child_);
   new_node->move_ = m;
-  child_ = new_node;
-  return new_node;
+  child_ = std::move(new_node);
+  return child_.get();
 }
 
 float Node::GetVisitedPolicy() const {
@@ -247,22 +52,12 @@ float Node::GetVisitedPolicy() const {
   return res;
 }
 
-void Node::ResetStats() {
-  n_in_flight_ = 0;
-  n_ = 0;
-  q_ = 0.0f;
-  p_ = 0.0f;
-  max_depth_ = 0;
-  full_depth_ = 0;
-  is_terminal_ = false;
-}
-
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.as_string() << " Term:" << is_terminal_
-      << " This:" << this << " Parent:" << parent_ << " child:" << child_
-      << " sibling:" << sibling_ << " P:" << p_ << " Q:" << q_ << " N:" << n_
-      << " N_:" << n_in_flight_;
+      << " This:" << this << " Parent:" << parent_ << " child:" << child_.get()
+      << " sibling:" << sibling_.get() << " P:" << p_ << " Q:" << q_
+      << " N:" << n_ << " N_:" << n_in_flight_;
   return oss.str();
 }
 
@@ -309,6 +104,25 @@ bool Node::UpdateFullDepth(uint16_t* depth) {
     return true;
   }
   return false;
+}
+
+void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
+  // Stores node which will have to survive (or nullptr if it's not found).
+  std::unique_ptr<Node> saved_node;
+  // Pointer to unique_ptr, so that we could move from it.
+  for (std::unique_ptr<Node>* node = &child_; *node;
+       node = &(*node)->sibling_) {
+    // If current node is the one that we have to save.
+    if (node->get() == node_to_save) {
+      // Kill all remaining siblings.
+      (*node)->sibling_.reset();
+      // Save the node, and take the ownership from the unique_ptr.
+      saved_node = std::move(*node);
+      break;
+    }
+  }
+  // Make saved node the only child. (kills previous siblings).
+  child_ = std::move(saved_node);
 }
 
 namespace {
@@ -377,15 +191,12 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
-  gNodePool.ReleaseAllChildrenExceptOne(current_head_, new_head);
+  current_head_->ReleaseChildrenExceptOne(new_head);
   current_head_ = new_head ? new_head : current_head_->CreateChild(move);
   history_.Append(move);
 }
 
-void NodeTree::TrimTreeAtHead() {
-  gNodePool.ReleaseChildren(current_head_);
-  current_head_->ResetStats();
-}
+void NodeTree::TrimTreeAtHead() { *current_head_ = Node(); }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
                                const std::vector<Move>& moves) {
@@ -401,15 +212,15 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = gNodePool.AllocateNode();
+    gamebegin_node_ = std::make_unique<Node>();
   }
 
   history_.Reset(starting_board, no_capture_ply,
                  full_moves * 2 - (starting_board.flipped() ? 1 : 2));
 
   Node* old_head = current_head_;
-  current_head_ = gamebegin_node_;
-  bool seen_old_head = (gamebegin_node_ == old_head);
+  current_head_ = gamebegin_node_.get();
+  bool seen_old_head = (gamebegin_node_.get() == old_head);
   for (const auto& move : moves) {
     MakeMove(move);
     if (old_head == current_head_) seen_old_head = true;
@@ -419,14 +230,12 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // As we killed the search tree already, trim it to redo the search.
   if (!seen_old_head) {
     assert(!current_head_->sibling_);
-    gNodePool.ReleaseChildren(current_head_);
-    current_head_->ResetStats();
+    TrimTreeAtHead();
   }
 }
 
 void NodeTree::DeallocateTree() {
-  gNodePool.ReleaseSubtree(gamebegin_node_);
-  gamebegin_node_ = nullptr;
+  gamebegin_node_.reset();
   current_head_ = nullptr;
 }
 

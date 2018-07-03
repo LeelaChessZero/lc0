@@ -129,7 +129,13 @@ class Node {
   };
 
   // Returns range for iterating over children.
-  NodeRange Children() const { return child_; }
+  NodeRange Children() const { return child_.get(); }
+
+  // Deletes all children.
+  void ReleaseChildren() { child_.reset(); }
+
+  // Deletes all children except one.
+  void ReleaseChildrenExceptOne(Node* node);
 
   // Debug information about the node.
   std::string DebugString() const;
@@ -144,37 +150,37 @@ class Node {
 
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored.
-  float q_;
+  float q_ = 0.0f;
   // Probability that this move will be made. From policy head of the neural
   // network.
-  float p_;
+  float p_ = 0.0f;
   // How many completed visits this node had.
-  uint32_t n_;
+  uint32_t n_ = 0;
   // (aka virtual loss). How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
-  uint16_t n_in_flight_;
+  uint16_t n_in_flight_ = 0;
 
   // Maximum depth any subnodes of this node were looked at.
-  uint16_t max_depth_;
+  uint16_t max_depth_ = 0;
   // Complete depth all subnodes of this node were fully searched.
-  uint16_t full_depth_;
+  uint16_t full_depth_ = 0;
   // Does this node end game (with a winning of either sides or draw).
-  bool is_terminal_;
+  bool is_terminal_ = false;
 
   // Pointer to a parent node. nullptr for the root.
-  Node* parent_;
+  Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for leave node.
-  Node* child_;
+  std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
-  Node* sibling_;
+  std::unique_ptr<Node> sibling_;
 
   // TODO(mooskagh) Unfriend both NodeTree and Node::Pool.
   friend class NodeTree;
   friend class Node_Iterator;
 };
 
-inline void Node_Iterator::operator++() { node_ = node_->sibling_; }
+inline void Node_Iterator::operator++() { node_ = node_->sibling_.get(); }
 
 class NodeTree {
  public:
@@ -193,13 +199,15 @@ class NodeTree {
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
   bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }
   Node* GetCurrentHead() const { return current_head_; }
-  Node* GetGameBeginNode() const { return gamebegin_node_; }
+  Node* GetGameBeginNode() const { return gamebegin_node_.get(); }
   const PositionHistory& GetPositionHistory() const { return history_; }
 
  private:
   void DeallocateTree();
+  // A node which to start search from.
   Node* current_head_ = nullptr;
-  Node* gamebegin_node_ = nullptr;
+  // Root node of a game tree.
+  std::unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
 };
 
