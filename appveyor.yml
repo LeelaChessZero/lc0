@@ -29,7 +29,7 @@ install:
 - cmd: IF %CUDA%==false nuget install opencl-nug -Version 0.777.12 -OutputDirectory C:\cache
 - cmd: set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2"
 - cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" appveyor DownloadFile https://developer.nvidia.com/compute/cuda/9.2/Prod/network_installers/cuda_9.2.88_win10_network
-- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" cuda_9.2.88_win10_network -s nvcc_9.2 cublas_dev_9.2 curand_dev_9.2
+- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" cuda_9.2.88_win10_network -s nvcc_9.2 cublas_dev_9.2 cublas_9.2 cudart_9.2
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.1.4/cudnn-9.2-windows10-x64-v7.1.zip
 - cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-9.2-windows10-x64-v7.1.zip -oC:\cache
@@ -38,7 +38,7 @@ install:
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: set PKG_FOLDER="C:\cache"
 cache:
-  - C:\cache -> appveyor.yml
+  - C:\cache
   - C:\Python36\scripts
   - C:\Python36\Lib\site-packages
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2'
@@ -47,9 +47,11 @@ before_build:
 build:
   project: build/lc0.sln
 after_build:
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
+- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false IF %OPENCL%==true 7z a lc0-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%NAME%.zip "%CUDA_PATH%\bin\cudart64_92.dll" "%CUDA_PATH%\bin\cublas64_92.dll"
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%NAME%.zip "%PKG_FOLDER%\cuda\bin\cudnn64_7.dll"
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
