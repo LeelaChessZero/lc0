@@ -47,9 +47,9 @@ before_build:
 build:
   project: build/lc0.sln
 after_build:
-- cmd: IF %CUDA%==false 7z a lc0-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
-- cmd: IF %CUDA%==false 7z a lc0-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
-- cmd: IF %CUDA%==false IF %OPENCL%==true 7z a lc0-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false IF %OPENCL%==true 7z a lc0-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
