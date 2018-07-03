@@ -190,17 +190,29 @@ class Move {
  public:
   enum class Promotion : std::uint8_t { None, Queen, Rook, Bishop, Knight };
   Move() = default;
-  Move(BoardSquare from, BoardSquare to) : from_(from), to_(to) {}
-  Move(BoardSquare from, BoardSquare to, Promotion promotion)
-      : from_(from), to_(to), promotion_(promotion) {}
+  Move(BoardSquare from, BoardSquare to) {
+    data_ = 0;
+    data_ |= to.as_int();
+    data_ |= from.as_int() << 6;
+  }
+  Move(BoardSquare from, BoardSquare to, Promotion promotion){
+    data_ = 0;
+    data_ |= to.as_int();
+    data_ |= from.as_int() << 6;
+    data_ |= (uint8_t)promotion << 12;
+  }
   Move(const std::string& str, bool black = false);
   Move(const char* str, bool black = false) : Move(std::string(str), black) {}
 
-  BoardSquare from() const { return from_; }
-  BoardSquare to() const { return to_; }
-  Promotion promotion() const { return promotion_; }
-  bool IsCastling() const { return castling_; }
-  void SetCastling() { castling_ = true; }
+  BoardSquare to() const      { return (BoardSquare)((data_ & 0b0000000000111111)); }
+  BoardSquare from() const    { return (BoardSquare)((data_ & 0b0000111111000000) >> 6); }
+  Promotion promotion() const { return (Promotion)  ((data_ & 0b0111000000000000) >> 12); }
+  bool IsCastling() const     { return (bool)       ((data_ & 0b1000000000000000) >> 15); }
+  void SetCastling() { data_ |= 0b1000000000000000; }
+
+  void SetTo(BoardSquare to){ data_ =             (data_ & 0b1111111111000000) | to.as_int(); }
+  void SetFrom(BoardSquare from){ data_ =         (data_ & 0b11110000001111111) | (from.as_int() << 6); }
+  void SetPromotion(Promotion promotion){ data_ =(data_ & 0b1000111111111111) | ((uint8_t)promotion << 12); }
 
   // 0 .. 16384, knight promotion and no promotion is the same.
   uint16_t as_packed_int() const;
@@ -209,21 +221,25 @@ class Move {
   uint16_t as_nn_index() const;
 
   bool operator==(const Move& other) const {
-    return from_ == other.from_ && to_ == other.to_ &&
-           promotion_ == other.promotion_;
+    return from() == other.from() && to() == other.to() &&
+           promotion() == other.promotion();
   }
 
   bool operator!=(const Move& other) const { return !operator==(other); }
-  operator bool() const { return from_.as_int() != 0 || to_.as_int() != 0; }
+  operator bool() const { return from().as_int() != 0 || to().as_int() != 0; }
 
   void Mirror() {
-    from_.Mirror();
-    to_.Mirror();
+    BoardSquare tmpfrom = from();
+    BoardSquare tmpto = to();
+    tmpfrom.Mirror();
+    tmpto.Mirror();
+    SetFrom(tmpfrom);
+    SetTo(tmpto);
   }
 
   std::string as_string() const {
-    std::string res = from_.as_string() + to_.as_string();
-    switch (promotion_) {
+    std::string res = from().as_string() + to().as_string();
+    switch (promotion()) {
       case Promotion::None:
         return res;
       case Promotion::Queen:
@@ -240,10 +256,7 @@ class Move {
   }
 
  private:
-  BoardSquare from_;
-  BoardSquare to_;
-  Promotion promotion_ = Promotion::None;
-  bool castling_ = false;
+   uint16_t data_; //first bit castling, next 3 promotion, next 6 fromsquare, next 6 tosquare
 };
 
 using MoveList = std::vector<Move>;
