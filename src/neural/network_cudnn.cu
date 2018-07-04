@@ -26,6 +26,7 @@
 
 #include <cublas_v2.h>
 #include <cudnn.h>
+#include <algorithm>
 
 //#define DEBUG_RAW_NPS
 
