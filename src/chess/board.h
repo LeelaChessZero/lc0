@@ -44,6 +44,9 @@ class ChessBoard {
   // middle of the board. (what was on file 1 appears on file 8, what was
   // on rank b remains on b).
   void Mirror();
+  // Mirrors the board horizontally about the center files.
+  // File 'a' is mapped to file 'h' and vice versa.
+  void HorizontallyMirror();
 
   // Generates list of possible moves for "ours" (white), but may leave king
   // under check.

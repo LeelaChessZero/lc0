@@ -236,6 +236,21 @@ TEST(ChessBoard, HasMatingMaterialMultipleBishopsNotSameColor) {
   EXPECT_TRUE(board.HasMatingMaterial());
 }
 
+TEST(ChessBoard, HorizontalMirrorPreservesPerftValue) {
+  std::vector<std::string> fens {
+    "k7/8/NK2B3/8/8/8/8/8 w - - 0 1",
+    "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w - - 1 1",
+    "r2k4/2qnn3/4p3/1p1p1p2/1Pp3P1/5P1P/PBP2NB1/1N4K1 b - b3 0 1"
+  };
+  for (auto fen : fens) {
+    ChessBoard board;
+    board.SetFromFen(fen);
+    auto perft = Perft(board, 4);
+    board.HorizontallyMirror();
+    EXPECT_EQ(perft, Perft(board, 4));
+  }
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
