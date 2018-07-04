@@ -32,6 +32,65 @@
 namespace lczero {
 
 /////////////////////////////////////////////////////////////////////////
+// Node garbage collector
+/////////////////////////////////////////////////////////////////////////
+
+namespace {
+
+namespace {
+// Periodicity of garbage collection, milliseconds.
+const int kGCIntervalMs = 100;
+}  // namespace
+
+// Every kGCIntervalMs milliseconds release nodes in a separate GC thread.
+class NodeGarbageCollector {
+ public:
+  NodeGarbageCollector() : gc_thread_([this]() { Worker(); }) {}
+  void AddToGcQueue(std::unique_ptr<Node> node) {
+    if (!node) return;
+    Mutex::Lock lock(gc_mutex_);
+    subtrees_to_gc_.emplace_back(std::move(node));
+  }
+
+  ~NodeGarbageCollector() {
+    stop_ = true;
+    gc_thread_.join();
+  }
+
+ private:
+  void GarbageCollect() {
+    while (!stop_) {
+      // Node will be released in destructor when mutex is not locked.
+      std::unique_ptr<Node> node_to_gc;
+      {
+        Mutex::Lock lock(gc_mutex_);
+        if (subtrees_to_gc_.empty()) return;
+        node_to_gc = std::move(subtrees_to_gc_.back());
+        subtrees_to_gc_.pop_back();
+      }
+    }
+  }
+
+  void Worker() {
+    while (!stop_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
+      GarbageCollect();
+    };
+  }
+
+  mutable Mutex gc_mutex_;
+  std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
+
+  // When true, Worker() should stop and exit.
+  volatile bool stop_ = false;
+  std::thread gc_thread_;
+};  // namespace
+
+NodeGarbageCollector gNodeGc;
+
+}  // namespace
+
+/////////////////////////////////////////////////////////////////////////
 // Node
 /////////////////////////////////////////////////////////////////////////
 
@@ -115,13 +174,14 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      (*node)->sibling_.reset();
+      gNodeGc.AddToGcQueue(std::move((*node)->sibling_));
       // Save the node, and take the ownership from the unique_ptr.
       saved_node = std::move(*node);
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
+  gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
 }
 
@@ -196,7 +256,12 @@ void NodeTree::MakeMove(Move move) {
   history_.Append(move);
 }
 
-void NodeTree::TrimTreeAtHead() { *current_head_ = Node(); }
+void NodeTree::TrimTreeAtHead() {
+  // Sending dependent nodes for GC instead of destroying them immediately.
+  gNodeGc.AddToGcQueue(std::move(current_head_->child_));
+  gNodeGc.AddToGcQueue(std::move(current_head_->sibling_));
+  *current_head_ = Node();
+}
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
                                const std::vector<Move>& moves) {
@@ -235,7 +300,9 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
 }
 
 void NodeTree::DeallocateTree() {
-  gamebegin_node_.reset();
+  // Same as gamebegin_node_.reset(), but actual deallocation will happen in
+  // GC thread.
+  gNodeGc.AddToGcQueue(std::move(gamebegin_node_));
   current_head_ = nullptr;
 }
 

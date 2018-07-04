@@ -140,8 +140,6 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
-  class Pool;
-
  private:
   // Move corresponding to this node. From the point of view of a player,
   // i.e. black's e7e5 is stored as e2e4.
