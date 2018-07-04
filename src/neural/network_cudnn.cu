@@ -27,7 +27,7 @@
 #include <cublas_v2.h>
 #include <cudnn.h>
 
-#define DEBUG_RAW_NPS 0
+//#define DEBUG_RAW_NPS
 
 namespace lczero {
 namespace {
@@ -998,8 +998,8 @@ class CudnnNetwork : public Network {
     processConvBlock(weights.policy);
     processConvBlock(weights.value);
 
-    // 1. allocate scratch space (used internally by cudnn to run convolutions,
-    //     and also for format/layout conversion for weights)
+    // 1. Allocate scratch space (used internally by cudnn to run convolutions,
+    //     and also for format/layout conversion for weights).
     cudnnFilterDescriptor_t wDesc;
     cudnnConvolutionDescriptor_t convDesc;
     cudnnTensorDescriptor_t xDesc;
@@ -1008,8 +1008,7 @@ class CudnnNetwork : public Network {
     cudnnCreateTensorDescriptor(&xDesc);
     cudnnConvolutionFwdAlgo_t convAlgo;
 
-    const int maxChannels =
-        kInputPlanes > numFilters ? kInputPlanes : numFilters;
+    const int maxChannels = std::max(kInputPlanes, numFilters);
 
     const bool fp16 = std::is_same<half, DataType>::value;
     reportCUDNNErrors(cudnnSetFilter4dDescriptor(
@@ -1027,15 +1026,17 @@ class CudnnNetwork : public Network {
         fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT));
 
     if (fp16)
+    {
       reportCUDNNErrors(
-          cudnnSetConvolutionMathType(convDesc, CUDNN_TENSOR_OP_MATH));
-
-    if (!fp16)
-      convAlgo = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
-    else
+        cudnnSetConvolutionMathType(convDesc, CUDNN_TENSOR_OP_MATH));
       convAlgo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
+    }
+    else
+    {
+      convAlgo = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
+    }
 
-    // query expected scratch space from cudnn
+    // Query expected scratch space from cudnn.
     reportCUDNNErrors(cudnnGetConvolutionForwardWorkspaceSize(
         cudnn_, xDesc, wDesc, convDesc, xDesc, convAlgo, &scratch_size_));
 
@@ -1044,11 +1045,12 @@ class CudnnNetwork : public Network {
     if (scratch_size_ < maxWeightSize) scratch_size_ = maxWeightSize;
 
     reportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
-#if DEBUG_RAW_NPS == 1
+#ifdef DEBUG_RAW_NPS
     printf("\nallocated %d bytes for scratch memory\n", (int)scratch_size_);
 #endif
 
-    // 2. build the network, and copy the weights to GPU memory
+    // 2. Build the network, and copy the weights to GPU memory.
+
     // input
     {
       auto inputConv = std::make_unique<ConvLayer<DataType>>(
@@ -1143,7 +1145,7 @@ class CudnnNetwork : public Network {
   void forwardEval(InputsOutputs *io, int batchSize) {
     std::lock_guard<std::mutex> lock(lock_);
 
-#if DEBUG_RAW_NPS == 1
+#ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
 #endif
 
@@ -1226,7 +1228,7 @@ class CudnnNetwork : public Network {
     }
     reportCUDAErrors(cudaDeviceSynchronize());
 
-#if DEBUG_RAW_NPS == 1
+#ifdef DEBUG_RAW_NPS
     const int reportingCalls = 100;
     static int numCalls = 0;
     static int sumBatchSize = 0;
