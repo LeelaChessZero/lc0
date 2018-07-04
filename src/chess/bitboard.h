@@ -194,7 +194,7 @@ class Move {
     SetTo(to);
     SetFrom(from);
   }
-  Move(BoardSquare from, BoardSquare to, Promotion promotion){
+  Move(BoardSquare from, BoardSquare to, Promotion promotion) {
     SetTo(to);
     SetFrom(from);
     SetPromotion(promotion);
@@ -205,7 +205,7 @@ class Move {
   BoardSquare GetTo() const      { return (BoardSquare)((data_ & TO_MASK_)); }
   BoardSquare GetFrom() const    { return (BoardSquare)((data_ & FROM_MASK_) >> 6); }
   Promotion GetPromotion() const { return (Promotion)  ((data_ & PROMO_MASK_) >> 12); }
-  bool IsCastling() const     { return (bool)       ((data_ & CASTLE_MASK_) >> 15); }
+  bool IsCastling() const { return (bool) ((data_ & CASTLE_MASK_) >> 15); }
   void SetCastling() { data_ |= CASTLE_MASK_; }
 
   void SetTo(BoardSquare to) { data_ = (data_ & ~TO_MASK_) | to.as_int(); }
