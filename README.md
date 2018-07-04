@@ -1,3 +1,5 @@
+[![CircleCI](https://circleci.com/gh/LeelaChessZero/lc0.svg?style=shield)](https://circleci.com/gh/LeelaChessZero/lc0)
+
 # Building and running Lc0
 
 Building right now may be a bit rough, we are improving and finding ways to simplifying the build process.
