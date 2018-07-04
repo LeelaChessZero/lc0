@@ -271,16 +271,14 @@ namespace lczero {
                 kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("h1").as_int()];
         const int kQueenCastleIndex =
                 kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("a1").as_int()];
-    } // namespace
+    }  // namespace
 
     Move::Move(const std::string &str, bool black) {
-      if (str.size() < 4)
-        throw Exception("Bad move: " + str);
+      if (str.size() < 4) throw Exception("Bad move: " + str);
       SetFrom(BoardSquare(str.substr(0, 2), black));
       SetTo(BoardSquare(str.substr(2, 2), black));
       if (str.size() != 4) {
-        if (str.size() != 5)
-          throw Exception("Bad move: " + str);
+        if (str.size() != 5) throw Exception("Bad move: " + str);
         switch (str[4]) {
           case 'q':
           case 'Q':
@@ -314,11 +312,9 @@ namespace lczero {
     }
 
     uint16_t Move::as_nn_index() const {
-      if (!IsCastling())
-        return kMoveToIdx[as_packed_int()];
-      if (GetFrom().col() < GetTo().col())
-        return kKingCastleIndex;
+      if (!IsCastling()) return kMoveToIdx[as_packed_int()];
+      if (GetFrom().col() < GetTo().col()) return kKingCastleIndex;
       return kQueenCastleIndex;
     }
 
-} // namespace lczero
+}  // namespace lczero

@@ -72,7 +72,7 @@ namespace lczero {
         }
 
     private:
-        std::uint8_t square_ = 0; // Only lower six bits should be set.
+        std::uint8_t square_ = 0;  // Only lower six bits should be set.
     };
 
 // Represents a board as an array of 64 bits.
@@ -264,7 +264,7 @@ namespace lczero {
         }
 
     private:
-        uint16_t data_ = 0; // First bit castling, next 3 promotion, next 6
+        uint16_t data_ = 0;  // First bit castling, next 3 promotion, next 6
         // fromsquare, next 6 tosquare.
 
         enum MASKS_ : uint16_t {
@@ -277,4 +277,4 @@ namespace lczero {
 
     using MoveList = std::vector<Move>;
 
-} // namespace lczero
+}  // namespace lczero
