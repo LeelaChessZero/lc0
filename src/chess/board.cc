@@ -337,8 +337,8 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
 }
 
 bool ChessBoard::ApplyMove(Move move) {
-  const auto& from = move.GetFrom();
-  const auto& to = move.GetTo();
+  const auto from = move.GetFrom();
+  const auto to = move.GetTo();
   const auto from_row = from.row();
   const auto from_col = from.col();
   const auto to_row = to.row();
@@ -502,8 +502,8 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
 }
 
 bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
-  const auto& from = move.GetFrom();
-  const auto& to = move.GetTo();
+  const auto from = move.GetFrom();
+  const auto to = move.GetTo();
 
   // If we are already under check, also apply move and check if valid.
   // TODO(mooskagh) Optimize this case
