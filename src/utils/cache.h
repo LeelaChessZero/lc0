@@ -284,6 +284,8 @@ class LruCacheLock {
     if (value_) cache_->Unpin(key_, value_);
   }
 
+  LruCacheLock(const LruCacheLock&) = delete;
+
   // Returns whether lock holds any value.
   operator bool() const { return value_; }
 
