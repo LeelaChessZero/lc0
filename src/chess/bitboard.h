@@ -72,7 +72,7 @@ class BoardSquare {
   }
 
  private:
-  std::uint8_t square_ = 0; //only lower six bits should be set
+  std::uint8_t square_ = 0; // Only lower six bits should be set.
 };
 
 // Represents a board as an array of 64 bits.
@@ -191,12 +191,10 @@ class Move {
   enum class Promotion : std::uint8_t { None, Queen, Rook, Bishop, Knight };
   Move() = default;
   Move(BoardSquare from, BoardSquare to) {
-    data_ = 0;
     SetTo(to);
     SetFrom(from);
   }
   Move(BoardSquare from, BoardSquare to, Promotion promotion){
-    data_ = 0;
     SetTo(to);
     SetFrom(from);
     SetPromotion(promotion);
@@ -256,7 +254,7 @@ class Move {
   }
 
  private:
-   uint16_t data_; //first bit castling, next 3 promotion, next 6 fromsquare, next 6 tosquare
+   uint16_t data_ = 0; // First bit castling, next 3 promotion, next 6 fromsquare, next 6 tosquare.
 
     enum MASKS_ : uint16_t {
         TO_MASK_     = 0b0000000000111111,
