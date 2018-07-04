@@ -24,6 +24,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <stack>
 #include <thread>
 #include "neural/encoder.h"
 #include "neural/network.h"
@@ -364,9 +365,51 @@ void NodeTree::MakeMove(Move move) {
   history_.Append(move);
 }
 
+// Major problem: *all* leaf nodes are processed. Can this be improved somehow?
+void NodeTree::RecalculateDepth() {
+  /*
+  This is the iterative translation of the most obvious and simple recursive
+  implementation of a brute force traversal of the entire tree. Basically the
+  two choices for this are depth first and breadth first; the former is far more
+  obvious from a recursive standpoint, and also has the advantage that the
+  intermediate storage need only be logarithmically long relative to the number
+  of nodes. (The latter, using a queue rather than a stack, would have an
+  intermediate length much closer to linear in number of nodes than logarithmic.)
+
+  The recursive implementation looks like this:
+  RecalculateDepth(node, depth) {
+    process node at depth
+    for each child of node:
+      RecalculateDepth(child, depth+1)
+  }
+  This iterative translation has some simplifications that can be wrung from the
+  most direct translation.
+  */
+  std::stack<Node*> stack;
+  cumulative_depth_ = max_depth_ = 0;
+
+  stack.push(current_head_);
+
+  while (!stack.empty()) {
+    auto& node = stack.top(); // stack::top returns a reference!
+    if (node) {
+      if (node->n_ > 0) {
+        auto depth = stack.size() - 1;
+        cumulative_depth_ += depth;
+        if (max_depth_ < depth) max_depth_ = depth;
+        stack.push(node->child_);
+      }
+      node = node->sibling_; // Modifies the stack entry inplace!
+    } else {
+      stack.pop();
+    }
+  }
+}
+
 void NodeTree::TrimTreeAtHead() {
   gNodePool.ReleaseChildren(current_head_);
   current_head_->ResetStats();
+  cumulative_depth_ = max_depth_ = 0;
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -378,8 +421,6 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
     // Completely different position.
     DeallocateTree();
-    current_head_ = nullptr;
-    gamebegin_node_ = nullptr;
   }
 
   if (!gamebegin_node_) {
@@ -401,8 +442,9 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // As we killed the search tree already, trim it to redo the search.
   if (!seen_old_head) {
     assert(!current_head_->sibling_);
-    gNodePool.ReleaseChildren(current_head_);
-    current_head_->ResetStats();
+    TrimTreeAtHead();
+  } else {
+    RecalculateDepth();
   }
 }
 
@@ -410,23 +452,13 @@ void NodeTree::DeallocateTree() {
   gNodePool.ReleaseSubtree(gamebegin_node_);
   gamebegin_node_ = nullptr;
   current_head_ = nullptr;
+  cumulative_depth_ = max_depth_ = 0;
 }
 
 // Not thread safe!
-void NodeTree::UpdateDepth(uint16_t new_node_depth, bool is_new_leaf) {
+void NodeTree::UpdateDepth(uint16_t new_node_depth) {
   if (new_node_depth > max_depth_) max_depth_ = new_node_depth;
   cumulative_depth_ += new_node_depth;
-  // Exponential moving average: EMA = alpha * \sum_{i=0}^{i=n}{(1-alpha)^i*x_i}
-  // The per term weight is alpha*(1-alpha)^i, which with infinite terms gives
-  // a total weight of 1. Alpha near 1 gives very high weight on recent data;
-  // alpha near zero spreads weight over longer history.
-  // The weights decay by (1-alpha) per term; so setting the weights' 1/e-life
-  // to 50, (1-alpha)^50=1/e, implies alpha = 0.0198013267.
-  static constexpr float alpha = 0.0198013267f; // ~ 1 - e^(-1/50)
-  // An EMA can be updated in place like so:
-  exp_moving_average_ += alpha*(new_node_depth - exp_moving_average_);
-  cumulative_leaf_depth_ += is_new_leaf ? new_node_depth : 1;
-  num_leaves_ += is_new_leaf;
 }
 
 uint16_t NodeTree::GetMaxDepth() const {
@@ -435,19 +467,6 @@ uint16_t NodeTree::GetMaxDepth() const {
 
 float NodeTree::GetAverageDepth() const {
   return (float)cumulative_depth_ / ((float)current_head_->n_);
-}
-
-float NodeTree::GetExpAverageDepth() const {
-  return exp_moving_average_;
-}
-
-float NodeTree::GetAverageLeafDepth() const {
-  return (float)cumulative_leaf_depth_ / (float)num_leaves_;
-}
-
-float NodeTree::GetAverageBranching() const {
-  float n = current_head_->GetN();
-  return (n - 1) / (n - (float)num_leaves_);
 }
 
 }  // namespace lczero

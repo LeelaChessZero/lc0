@@ -142,8 +142,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_node_) return;
   last_outputted_best_move_node_ = best_move_node_;
-  float avgdepth = tree_->GetAverageDepth(), expavgdepth = tree_->GetExpAverageDepth(), avgleafdepth = tree_->GetAverageLeafDepth();
-  uci_info_.depth = (int)std::round(avgdepth);
+  uci_info_.depth = (int)std::round(tree_->GetAverageDepth());
   uci_info_.seldepth = tree_->GetMaxDepth();
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_playouts_ + initial_visits_;
@@ -160,9 +159,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     uci_info_.pv.push_back(iter->GetMove(flip));
   }
   uci_info_.comment.clear();
-  std::ostringstream oss;
-  oss << "avgdepth " << avgdepth << " expavgdepth " << expavgdepth << " avgleafdepth " << avgleafdepth << " branching " << tree_->GetAverageBranching();
-  uci_info_.comment = oss.str();
   info_callback_(uci_info_);
 }
 
@@ -889,9 +885,6 @@ void SearchWorker::DoBackupUpdate() {
     float v = node_to_process.v;
     // This node's depth in the tree relative to root_node_
     uint16_t depth = 0;
-    //std::cout << "updating node " << node->GetMove().as_string();
-    //if (node->GetParent()) std::cout << " with parent " << node->GetParent()->GetMove().as_string();
-    bool is_new_leaf = node->GetParent() && node->GetParent()->GetN() > 1;
 
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
@@ -910,10 +903,7 @@ void SearchWorker::DoBackupUpdate() {
       }
     }
     --depth; // Loop counts relative to root_node_->GetParent()
-    //std::cout << " with depth " << depth;
-    search_->tree_->UpdateDepth(depth, is_new_leaf);
-    //float avgdepth = search_->tree_->GetAverageDepth();
-    //std::cout << " avgdepth " << avgdepth << " isnewleaf " << is_new_leaf << " num_leaves " << search_->tree_->num_leaves_ << " cumulative_leaf_depth_ " << search_->tree_->cumulative_leaf_depth_ << std::endl;
+    search_->tree_->UpdateDepth(depth);
     ++search_->total_playouts_;
   }
 }

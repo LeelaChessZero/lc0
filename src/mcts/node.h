@@ -151,7 +151,7 @@ class Node {
 
   // Pointer to a parent node. nullptr for the root.
   Node* parent_;
-  // Pointer to a first child. nullptr for leave node.
+  // Pointer to a first child. nullptr for leaf node.
   Node* child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   Node* sibling_;
@@ -172,8 +172,6 @@ class NodeTree {
   // previous search.
   void TrimTreeAtHead();
   // Sets the position in a tree, trying to reuse the tree.
-  // If @auto_garbage_collect, old tree is garbage collected immediately. (may
-  // take some milliseconds)
   void ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
   const Position& HeadPosition() const { return history_.Last(); }
@@ -184,23 +182,18 @@ class NodeTree {
   const PositionHistory& GetPositionHistory() const { return history_; }
 
   // Not thread safe!
-  void UpdateDepth(uint16_t new_node_depth, bool is_new_leaf);
+  void UpdateDepth(uint16_t new_node_depth);
   uint16_t GetMaxDepth() const;
   float GetAverageDepth() const;
-  float GetExpAverageDepth() const;
-  float GetAverageLeafDepth() const;
-  float GetAverageBranching() const;
-  int32_t cumulative_leaf_depth_ = -1; // initial node offset vis a vis node.cc:428
-  uint32_t num_leaves_ = 1;
 
  private:
   void DeallocateTree();
+  void RecalculateDepth(); // Brute force re-examines the entire tree
   Node* current_head_ = nullptr;
   Node* gamebegin_node_ = nullptr;
   PositionHistory history_;
   uint16_t max_depth_ = 0;
   uint32_t cumulative_depth_ = 0;
-  float exp_moving_average_ = 0.0f;
 
 };
 
