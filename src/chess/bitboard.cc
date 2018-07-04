@@ -303,17 +303,17 @@ Move::Move(const std::string& str, bool black) {
 }
 
     uint16_t Move::as_packed_int() const {
-      if (promotion() == Promotion::Knight) {
-        return from().as_int() * 64 + to().as_int();
+      if (GetPromotion() == Promotion::Knight) {
+        return GetFrom().as_int() * 64 + GetTo().as_int();
       } else {
-        return static_cast<int>(promotion()) * 64 * 64 + from().as_int() * 64 +
-               to().as_int();
+        return static_cast<int>(GetPromotion()) * 64 * 64 + GetFrom().as_int() * 64 +
+               GetTo().as_int();
       }
     }
 
     uint16_t Move::as_nn_index() const {
       if (!IsCastling()) return kMoveToIdx[as_packed_int()];
-      if (from().col() < to().col()) return kKingCastleIndex;
+      if (GetFrom().col() < GetTo().col()) return kKingCastleIndex;
       return kQueenCastleIndex;
     }
 
