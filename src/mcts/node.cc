@@ -91,40 +91,84 @@ NodeGarbageCollector gNodeGc;
 }  // namespace
 
 /////////////////////////////////////////////////////////////////////////
-// Node
+// Edge
 /////////////////////////////////////////////////////////////////////////
 
-Node* Node::CreateChild(Move m) {
-  auto new_node = std::make_unique<Node>();
-  new_node->parent_ = this;
-  new_node->sibling_ = std::move(child_);
-  new_node->move_ = m;
-  child_ = std::move(new_node);
-  return child_.get();
-}
-
-float Node::GetVisitedPolicy() const {
-  float res = 0.0f;
-  for (const Node* node : Children()) {
-    if (node->GetNStarted() > 0) res += node->GetP();
-  }
-  return res;
-}
-
-std::string Node::DebugString() const {
-  std::ostringstream oss;
-  oss << "Move: " << move_.as_string() << " Term:" << is_terminal_
-      << " This:" << this << " Parent:" << parent_ << " child:" << child_.get()
-      << " sibling:" << sibling_.get() << " P:" << p_ << " Q:" << q_
-      << " N:" << n_ << " N_:" << n_in_flight_;
-  return oss.str();
-}
-
-Move Node::GetMove(bool flip) const {
+Move Edge::GetMove(bool flip) const {
   if (!flip) return move_;
   Move m = move_;
   m.Mirror();
   return m;
+}
+
+std::string Edge::DebugString() const {
+  std::ostringstream oss;
+  oss << "Move: " << move_.as_string() << " P:" << p_;
+  return oss.str();
+}
+
+Node* Edge::SpawnNode(Node* parent, std::unique_ptr<Node>* ptr) {
+  assert(!has_node_);
+  std::unique_ptr<Node> tmp = std::move(*ptr);
+  *ptr = std::make_unique<Node>(parent);
+  has_node_ = true;
+  (*ptr)->sibling_ = std::move(tmp);
+  return (*ptr).get();
+}
+
+EdgeList::EdgeList(MoveList moves)
+    : edges_(new Edge[moves.size()]), size_(moves.size()) {
+  auto* edge = edges_;
+  for (auto move : moves) {
+    edge->SetMove(move);
+    ++edge;
+  }
+}
+
+void EdgeList::operator=(EdgeList&& other) {
+  delete[] edges_;
+  edges_ = other.edges_;
+  size_ = other.size_;
+  other.edges_ = nullptr;
+}
+
+/////////////////////////////////////////////////////////////////////////
+// Node
+/////////////////////////////////////////////////////////////////////////
+
+Node* Node::CreateSingleChildNode(Move move) {
+  assert(!edges_);
+  edges_ = EdgeList({move});
+  return edges_[0].SpawnNode(this, &child_);
+}
+
+Node::EdgeRange Node::Edges() const { return EdgeRange(this); }
+Node::SpawnableEdgeRange Node::SpawnableEdges() {
+  return SpawnableEdgeRange(this);
+}
+
+float Node::GetVisitedPolicy() const {
+  float res = 0.0f;
+  for (const auto& edge : Edges()) {
+    if (edge.GetNStarted() > 0) res += edge.GetP();
+  }
+  return res;
+}
+
+EdgeAndNode Node::GetEdgeToNode(const Node* node) const {
+  for (auto edge : Edges()) {
+    if (edge.node() == node) return edge;
+  }
+  return {};
+}
+
+std::string Node::DebugString() const {
+  std::ostringstream oss;
+  oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
+      << " child:" << child_.get() << " sibling:" << sibling_.get()
+      << " Q:" << q_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " Edges:" << edges_.size();
+  return oss.str();
 }
 
 void Node::MakeTerminal(GameResult result) {
@@ -155,7 +199,7 @@ void Node::UpdateMaxDepth(int depth) {
 
 bool Node::UpdateFullDepth(uint16_t* depth) {
   if (full_depth_ > *depth) return false;
-  for (Node* child : Children()) {
+  for (Node* child : ChildNodes()) {
     if (*depth > child->full_depth_) *depth = child->full_depth_;
   }
   if (*depth >= full_depth_) {
@@ -165,7 +209,17 @@ bool Node::UpdateFullDepth(uint16_t* depth) {
   return false;
 }
 
+Node::NodeRange Node::ChildNodes() const { return child_.get(); }
+
+void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
+
 void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
+  // First go through edges and mark them as not having Node anymore.
+  for (auto edge : Edges()) {
+    if (!node_to_save || edge.node() != node_to_save)
+      edge.edge()->has_node_ = false;
+  }
+
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to unique_ptr, so that we could move from it.
@@ -203,11 +257,12 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   result.version = 3;
 
   // Populate probabilities.
-  float total_n =
-      static_cast<float>(n_ - 1);  // First visit was expansion of it inself.
+  float total_n = static_cast<float>(
+      GetN() - 1);  // First visit was expansion of it inself.
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
-  for (Node* child : Children()) {
-    result.probabilities[child->move_.as_nn_index()] = child->n_ / total_n;
+  for (const auto& child : Edges()) {
+    result.probabilities[child.edge()->GetMove().as_nn_index()] =
+        child.GetN() / total_n;
   }
 
   // Populate planes.
@@ -241,18 +296,23 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   return result;
 }
 
+/////////////////////////////////////////////////////////////////////////
+// NodeTree
+/////////////////////////////////////////////////////////////////////////
+
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
   Node* new_head = nullptr;
-  for (Node* n : current_head_->Children()) {
-    if (n->GetMove() == move) {
-      new_head = n;
+  for (const auto& n : current_head_->Edges()) {
+    if (n.GetMove() == move) {
+      new_head = n.node();
       break;
     }
   }
   current_head_->ReleaseChildrenExceptOne(new_head);
-  current_head_ = new_head ? new_head : current_head_->CreateChild(move);
+  current_head_ =
+      new_head ? new_head : current_head_->CreateSingleChildNode(move);
   history_.Append(move);
 }
 
@@ -260,7 +320,7 @@ void NodeTree::TrimTreeAtHead() {
   // Sending dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
   gNodeGc.AddToGcQueue(std::move(current_head_->sibling_));
-  *current_head_ = Node();
+  *current_head_ = Node(current_head_->GetParent());
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -277,7 +337,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node>();
+    gamebegin_node_ = std::make_unique<Node>(nullptr);
   }
 
   history_.Reset(starting_board, no_capture_ply,

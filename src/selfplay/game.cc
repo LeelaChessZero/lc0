@@ -23,15 +23,15 @@
 
 namespace lczero {
 
-namespace{
+namespace {
 const char* kReuseTreeStr = "Reuse the node statistics between moves";
 const char* kResignPercentageStr = "Resign when win percentage drops below n";
-}
+}  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeStr, "reuse-tree") = false;
   options->Add<FloatOption>(kResignPercentageStr, 0.0f, 100.0f,
-                            "resign-percentage", 'r')  = 0.0f;
+                            "resign-percentage", 'r') = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
@@ -48,7 +48,8 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
   }
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads, bool enable_resign) {
+void SelfPlayGame::Play(int white_threads, int black_threads,
+                        bool enable_resign) {
   bool blacks_move = false;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -85,10 +86,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool enable_resign
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
     if (enable_resign) {
       const float resignpct =
-              options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
-      if (eval < resignpct) { // always false when resignpct == 0
-        game_result_ = blacks_move ? GameResult::WHITE_WON
-                                   : GameResult::BLACK_WON;
+          options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
+      if (eval < resignpct) {  // always false when resignpct == 0
+        game_result_ =
+            blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
         break;
       }
     }
@@ -106,7 +107,7 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
   bool flip = !tree_[0]->IsBlackToMove();
   for (Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
-    moves.push_back(node->GetMove(flip));
+    moves.push_back(node->GetParent()->GetEdgeToNode(node).GetMove(flip));
     flip = !flip;
   }
   std::reverse(moves.begin(), moves.end());
