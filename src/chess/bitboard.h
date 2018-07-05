@@ -198,8 +198,8 @@ class Move {
   Move(const std::string &str, bool black = false);
   Move(const char *str, bool black = false) : Move(std::string(str), black) {}
 
-  BoardSquare GetTo() const { return {data_ & kToMask}; }
-  BoardSquare GetFrom() const { return {(data_ & kFromMask) >> 6}; }
+  BoardSquare GetTo() const { return BoardSquare(data_ & kToMask); }
+  BoardSquare GetFrom() const { return BoardSquare((data_ & kFromMask) >> 6); }
   Promotion GetPromotion() const {
     return Promotion((data_ & kPromoMask) >> 12);
   }
