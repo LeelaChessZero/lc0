@@ -201,7 +201,7 @@ class Move {
   BoardSquare GetTo() const { return {data_ & kToMask}; }
   BoardSquare GetFrom() const { return {(data_ & kFromMask) >> 6}; }
   Promotion GetPromotion() const {
-    return (Promotion)((data_ & kPromoMask) >> 12);
+    return Promotion((data_ & kPromoMask) >> 12);
   }
   bool IsCastling() const { return (data_ & kCastleMask) != 0; }
   void SetCastling() { data_ |= kCastleMask; }
