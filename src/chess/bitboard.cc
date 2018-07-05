@@ -273,28 +273,28 @@ const int kQueenCastleIndex =
     kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("a1").as_int()];
 }  // namespace
 
-Move::Move(const std::string &str, bool black) {
+Move::Move(const std::string& str, bool black) {
   if (str.size() < 4) throw Exception("Bad move: " + str);
-  SetFrom(BoardSquare(str.substr(0, 2), black));
-  SetTo(BoardSquare(str.substr(2, 2), black));
+  from_ = BoardSquare(str.substr(0, 2), black);
+  to_ = BoardSquare(str.substr(2, 2), black);
   if (str.size() != 4) {
     if (str.size() != 5) throw Exception("Bad move: " + str);
     switch (str[4]) {
       case 'q':
       case 'Q':
-        SetPromotion(Promotion::Queen);
+        promotion_ = Promotion::Queen;
         break;
       case 'r':
       case 'R':
-        SetPromotion(Promotion::Rook);
+        promotion_ = Promotion::Rook;
         break;
       case 'b':
       case 'B':
-        SetPromotion(Promotion::Bishop);
+        promotion_ = Promotion::Bishop;
         break;
       case 'n':
       case 'N':
-        SetPromotion(Promotion::Knight);
+        promotion_ = Promotion::Knight;
         break;
       default:
         throw Exception("Bad move: " + str);
@@ -303,17 +303,17 @@ Move::Move(const std::string &str, bool black) {
 }
 
 uint16_t Move::as_packed_int() const {
-  if (GetPromotion() == Promotion::Knight) {
-    return GetFrom().as_int() * 64 + GetTo().as_int();
+  if (promotion_ == Promotion::Knight) {
+    return from_.as_int() * 64 + to_.as_int();
   } else {
-    return static_cast<int>(GetPromotion()) * 64 * 64 +
-           GetFrom().as_int() * 64 + GetTo().as_int();
+    return static_cast<int>(promotion_) * 64 * 64 + from_.as_int() * 64 +
+           to_.as_int();
   }
 }
 
 uint16_t Move::as_nn_index() const {
-  if (!IsCastling()) return kMoveToIdx[as_packed_int()];
-  if (GetFrom().col() < GetTo().col()) return kKingCastleIndex;
+  if (!castling_) return kMoveToIdx[as_packed_int()];
+  if (from_.col() < to_.col()) return kKingCastleIndex;
   return kQueenCastleIndex;
 }
 

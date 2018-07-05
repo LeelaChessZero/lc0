@@ -337,8 +337,8 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
 }
 
 bool ChessBoard::ApplyMove(Move move) {
-  const auto from = move.GetFrom();
-  const auto to = move.GetTo();
+  const auto& from = move.from();
+  const auto& to = move.to();
   const auto from_row = from.row();
   const auto from_col = from.col();
   const auto to_row = to.row();
@@ -400,8 +400,8 @@ bool ChessBoard::ApplyMove(Move move) {
   our_pieces_.set(to);
 
   // Promotion
-  if (move.GetPromotion() != Move::Promotion::None) {
-    switch (move.GetPromotion()) {
+  if (move.promotion() != Move::Promotion::None) {
+    switch (move.promotion()) {
       case Move::Promotion::Rook:
         rooks_.set(to);
         break;
@@ -502,8 +502,8 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
 }
 
 bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
-  const auto from = move.GetFrom();
-  const auto to = move.GetTo();
+  const auto& from = move.from();
+  const auto& to = move.to();
 
   // If we are already under check, also apply move and check if valid.
   // TODO(mooskagh) Optimize this case
