@@ -184,11 +184,11 @@ void BlasComputation::ComputeBlocking() {
 
     Convolution1::Forward(batch_size, output_channels, num_policy_input_planes,
                           conv_out, weights_.policy.weights.data(),
-                          weights_.policy.biases.data(), policy_buffer.data());
+                          policy_buffer.data());
 
     Convolution1::Forward(batch_size, output_channels, num_value_input_planes,
                           conv_out, weights_.value.weights.data(),
-                          weights_.value.biases.data(), value_buffer.data());
+                          value_buffer.data());
 
     Batchnorm::Apply(batch_size, num_policy_input_planes, &policy_buffer[0],
                      weights_.policy.bn_means.data(),
