@@ -40,7 +40,7 @@ const char* kTrainingStr = "Write training data";
 const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
 const char* kVerboseThinkingStr = "Show verbose thinking messages";
-const char* kResignPlaythroughStr =
+const char* kResignPlaythruStr =
               "The percentage of games which ignore resign";
 
 // Value for network autodiscover.
@@ -67,8 +67,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
       "multiplexing";
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
   options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
-  options->Add<FloatOption>(kResignPlaythroughStr, 0.0f, 100.0f,
-                            "resign-playthrough") = 0.0f;
+  options->Add<FloatOption>(kResignPlaythruStr, 0.0f, 100.0f,
+                            "resign-playthru") = 0.0f;
 
   Search::PopulateUciParams(options);
   SelfPlayGame::PopulateUciParams(options);
@@ -99,7 +99,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kShareTree(options.Get<bool>(kShareTreesStr)),
       kParallelism(options.Get<int>(kParallelGamesStr)),
       kTraining(options.Get<bool>(kTrainingStr)),
-      kResignPlaythrough(options.Get<float>(kResignPlaythroughStr)) {
+      kResignPlaythru(options.Get<float>(kResignPlaythruStr)) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     next_game_black_ = Random::Get().GetBool();
@@ -238,8 +238,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
   auto& game = **game_iter;
 
-  // If kResignPlaythrough == 0, then this comparison is unconditionally true
-  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
+  // If kResignPlaythru == 0, then this comparison is unconditionally true
+  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythru;
 
   // PLAY GAME!
   game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], enable_resign);
