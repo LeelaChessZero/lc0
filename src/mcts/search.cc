@@ -185,8 +185,9 @@ void Search::SendMovesStats() const {
   const float U_coeff =
       kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
 
-  std::vector<EdgeAndNode> edges(root_node_->Edges().begin(),
-                                 root_node_->Edges().end());
+  std::vector<EdgeAndNode> edges;
+  for (const auto& edge : root_node_->Edges()) edges.push_back(edge);
+
   std::sort(edges.begin(), edges.end(),
             [&parent_q, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
               return std::forward_as_tuple(a.GetN(),

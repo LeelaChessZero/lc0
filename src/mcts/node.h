@@ -19,7 +19,6 @@
 #pragma once
 
 #include <iostream>
-#include <iterator>
 #include <memory>
 #include <mutex>
 #include "chess/board.h"
@@ -248,8 +247,7 @@ class EdgeAndNode {
 };
 
 template <bool is_const>
-class Edge_Iterator : public EdgeAndNode,
-                      std::iterator<std::forward_iterator_tag, EdgeAndNode> {
+class Edge_Iterator : public EdgeAndNode {
  public:
   using Ptr = std::conditional_t<is_const, const std::unique_ptr<Node>*,
                                  std::unique_ptr<Node>*>;
