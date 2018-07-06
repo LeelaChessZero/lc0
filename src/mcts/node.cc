@@ -107,14 +107,14 @@ std::string Edge::DebugString() const {
   return oss.str();
 }
 
-Node* Edge::SpawnNode(Node* parent, std::unique_ptr<Node>* ptr) {
+/* Node* Edge::SpawnNode(Node* parent, std::unique_ptr<Node>* ptr) {
   assert(!has_node_);
   std::unique_ptr<Node> tmp = std::move(*ptr);
   *ptr = std::make_unique<Node>(parent);
   has_node_ = true;
   (*ptr)->sibling_ = std::move(tmp);
   return (*ptr).get();
-}
+} */
 
 EdgeList::EdgeList(MoveList moves)
     : edges_(new Edge[moves.size()]), size_(moves.size()) {
@@ -139,13 +139,15 @@ void EdgeList::operator=(EdgeList&& other) {
 Node* Node::CreateSingleChildNode(Move move) {
   assert(!edges_);
   edges_ = EdgeList({move});
-  return edges_[0].SpawnNode(this, &child_);
+  child_ = std::make_unique<Node>(0, this);
+  return child_.get();
 }
 
-Node::EdgeRange Node::Edges() const { return EdgeRange(this); }
-Node::SpawnableEdgeRange Node::SpawnableEdges() {
-  return SpawnableEdgeRange(this);
+IterToRange<Edge_Iterator<true>> Node::Edges() const {
+  return {edges_, &child_};
 }
+
+IterToRange<Edge_Iterator<false>> Node::Edges() { return {edges_, &child_}; }
 
 float Node::GetVisitedPolicy() const {
   float res = 0.0f;
@@ -214,12 +216,6 @@ Node::NodeRange Node::ChildNodes() const { return child_.get(); }
 void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
 
 void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
-  // First go through edges and mark them as not having Node anymore.
-  for (auto edge : Edges()) {
-    if (!node_to_save || edge.node() != node_to_save)
-      edge.edge()->has_node_ = false;
-  }
-
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to unique_ptr, so that we could move from it.
@@ -320,7 +316,7 @@ void NodeTree::TrimTreeAtHead() {
   // Sending dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
   gNodeGc.AddToGcQueue(std::move(current_head_->sibling_));
-  *current_head_ = Node(current_head_->GetParent());
+  *current_head_ = Node(current_head_->index_, current_head_->GetParent());
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -337,7 +333,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node>(nullptr);
+    gamebegin_node_ = std::make_unique<Node>(0, nullptr);
   }
 
   history_.Reset(starting_board, no_capture_ply,

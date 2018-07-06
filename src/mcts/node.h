@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <iostream>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -25,6 +26,7 @@
 #include "chess/callbacks.h"
 #include "chess/position.h"
 #include "neural/writer.h"
+#include "utils/iterator.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -47,13 +49,8 @@ class Edge {
   // Sets move probability.
   void SetP(float val) { p_ = val; }
 
-  // Returns whether the edge is extended, i.e. it has corresponding node.
-  bool HasNode() const { return has_node_; }
-
   // Debug information about the edge.
   std::string DebugString() const;
-
-  Node* SpawnNode(Node* parent, std::unique_ptr<Node>* ptr);
 
  private:
   // Move corresponding to this node. From the point of view of a player,
@@ -64,12 +61,6 @@ class Edge {
   // Probability that this move will be made. From policy head of the neural
   // network.
   float p_ = 0.0;
-
-  // If true, there is a Node instance somewhere which this edge leads to.
-  // If false, this edge is dangling.
-  bool has_node_ = false;
-
-  friend class Node;
 };
 
 class EdgeList {
@@ -89,9 +80,14 @@ class EdgeList {
 };
 
 class EdgeAndNode;
+template <bool is_const>
+class Edge_Iterator;
 class Node {
  public:
-  Node(Node* parent) : parent_(parent) {}
+  using Iterator = Edge_Iterator<false>;
+  using ConstIterator = Edge_Iterator<true>;
+
+  Node(uint16_t index, Node* parent) : index_(index), parent_(parent) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that. Not thread-friendly.
@@ -157,13 +153,13 @@ class Node {
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
 
-  class EdgeRange;
   class NodeRange;
   class SpawnableEdgeRange;
 
   // Returns range for iterating over edges.
-  EdgeRange Edges() const;
-  SpawnableEdgeRange SpawnableEdges();
+  IterToRange<ConstIterator> Edges() const;
+  IterToRange<Iterator> Edges();
+
   uint16_t NumEdges() const { return edges_.size(); }
 
   // Returns range for iterating over edges.
@@ -183,6 +179,8 @@ class Node {
  private:
   // Edges.
   EdgeList edges_;
+
+  uint16_t index_;
 
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored.
@@ -210,7 +208,8 @@ class Node {
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
-  friend class Edge_Iterator;
+  friend class Edge_Iterator<true>;
+  friend class Edge_Iterator<false>;
   friend class Node_Iterator;
   friend class Edge_SpawnableIterator;
   friend class Edge;
@@ -221,8 +220,7 @@ class EdgeAndNode {
   EdgeAndNode() = default;
   EdgeAndNode(Edge* edge, Node* node) : node_(node), edge_(edge) {}
   operator bool() const { return edge_ != nullptr; }
-
-  bool HasNode() const { return edge_->HasNode(); }
+  bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }
 
@@ -246,101 +244,60 @@ class EdgeAndNode {
 
  protected:
   Node* node_ = nullptr;
-
- private:
   Edge* edge_ = nullptr;
 };
 
-class Edge_Iterator
-    : public std::iterator<std::forward_iterator_tag, EdgeAndNode> {
+template <bool is_const>
+class Edge_Iterator : public EdgeAndNode,
+                      std::iterator<std::forward_iterator_tag, EdgeAndNode> {
  public:
-  Edge_Iterator(Edge* edge, Node* node) : edge_(edge), node_(node) {}
+  using Ptr = std::conditional_t<is_const, const std::unique_ptr<Node>*,
+                                 std::unique_ptr<Node>*>;
+
+  Edge_Iterator() {}
+  Edge_Iterator(const EdgeList& edges, Ptr node_ptr)
+      : EdgeAndNode(edges.size() ? edges.get() : nullptr, nullptr),
+        node_ptr_(node_ptr),
+        total_count_(edges.size()) {
+    if (edge_) Actualize();
+  }
   bool operator==(Edge_Iterator& other) { return edge_ == other.edge_; }
   bool operator!=(Edge_Iterator& other) { return edge_ != other.edge_; }
   void operator++() {
-    if (edge_->HasNode()) node_ = node_->sibling_.get();
-    ++edge_;
+    if (++current_idx_ == total_count_) {
+      edge_ = nullptr;
+    } else {
+      ++edge_;
+      Actualize();
+    }
   }
-  EdgeAndNode operator*() {
-    return {edge_, edge_->HasNode() ? node_ : nullptr};
+  Edge_Iterator& operator*() { return *this; }
+
+  void Actualize() {
+    while (*node_ptr_ && (*node_ptr_)->index_ < current_idx_) {
+      node_ptr_ = &(*node_ptr_)->sibling_;
+    }
+    if (*node_ptr_ && (*node_ptr_)->index_ == current_idx_) {
+      node_ = (*node_ptr_).get();
+      node_ptr_ = &node_->sibling_;
+    } else {
+      node_ = nullptr;
+    }
   }
-  EdgeAndNode operator->() {
-    return {edge_, edge_->HasNode() ? node_ : nullptr};
+
+  void SpawnNode(Node* parent) {
+    assert(!node_);
+    Actualize();
+    std::unique_ptr<Node> tmp = std::move(*node_ptr_);
+    *node_ptr_ = std::make_unique<Node>(current_idx_, parent);
+    (*node_ptr_)->sibling_ = std::move(tmp);
+    Actualize();
   }
 
  private:
-  Edge* edge_;
-  Node* node_;
-};
-
-class Node::EdgeRange {
- public:
-  Edge_Iterator begin() { return {node_->edges_.get(), node_->child_.get()}; }
-  Edge_Iterator end() {
-    return {node_->edges_.get() + node_->NumEdges(), nullptr};
-  }
-
- private:
-  const Node* node_;
-  EdgeRange(const Node* node) : node_(node) {}
-  friend class Node;
-};
-
-class SpawnableEdgeAndNode : public EdgeAndNode {
- public:
-  SpawnableEdgeAndNode() = default;
-  SpawnableEdgeAndNode(Edge* edge, Node* node, std::unique_ptr<Node>* node_ptr)
-      : EdgeAndNode(edge, node), node_ptr_(node_ptr) {}
-
-  Node* SpawnNode(Node* parent) {
-    node_ = edge()->SpawnNode(parent, node_ptr_);
-    return node_;
-  }
-
- private:
-  std::unique_ptr<Node>* node_ptr_ = nullptr;
-};
-
-class Edge_SpawnableIterator
-    : public std::iterator<std::forward_iterator_tag, EdgeAndNode> {
- public:
-  Edge_SpawnableIterator(Edge* edge, std::unique_ptr<Node>* node_ptr)
-      : edge_(edge), node_ptr_(node_ptr) {}
-  bool operator==(Edge_SpawnableIterator& other) {
-    return edge_ == other.edge_;
-  }
-  bool operator!=(Edge_SpawnableIterator& other) {
-    return edge_ != other.edge_;
-  }
-  void operator++() {
-    if (edge_->HasNode()) node_ptr_ = &(*node_ptr_)->sibling_;
-    ++edge_;
-  }
-  SpawnableEdgeAndNode operator*() {
-    return {edge_, edge_->HasNode() ? (*node_ptr_).get() : nullptr, node_ptr_};
-  }
-  SpawnableEdgeAndNode operator->() {
-    return {edge_, edge_->HasNode() ? (*node_ptr_).get() : nullptr, node_ptr_};
-  }
-
- private:
-  Edge* edge_;
-  std::unique_ptr<Node>* node_ptr_;
-};
-
-class Node::SpawnableEdgeRange {
- public:
-  Edge_SpawnableIterator begin() {
-    return {node_->edges_.get(), &node_->child_};
-  }
-  Edge_SpawnableIterator end() {
-    return {node_->edges_.get() + node_->NumEdges(), nullptr};
-  }
-
- private:
-  SpawnableEdgeRange(Node* node) : node_(node) {}
-  Node* node_;
-  friend class Node;
+  Ptr node_ptr_;
+  uint16_t current_idx_ = 0;
+  uint16_t total_count_ = 0;
 };
 
 class Node_Iterator {

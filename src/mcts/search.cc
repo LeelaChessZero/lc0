@@ -565,7 +565,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   // incremented for each node in the playout (via TryStartScoreUpdate()).
 
   Node* node = search_->root_node_;
-  SpawnableEdgeAndNode best_edge;
+  Node::Iterator best_edge;
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
   // Fetch the current best root node visits for possible smart pruning.
@@ -605,7 +605,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
             ? -node->GetQ(0)
             : -node->GetQ(0) -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
-    for (auto child : node->SpawnableEdges()) {
+    for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
         // remaining playouts, don't consider it.
