@@ -252,10 +252,12 @@ class CheckNetwork : public Network {
     if (parents.size() > 0) {
       backendName1 = parents[0];
       backend1_dict = options.GetSubdict(backendName1);
-    }
+      backendName1 = backend1_dict.GetOrDefault<std::string>("backend", backendName1);
+   }
     if (parents.size() > 1) {
       backendName2 = parents[1];
       backend2_dict = options.GetSubdict(backendName2);
+      backendName2 = backend2_dict.GetOrDefault<std::string>("backend", backendName2);
     }
     if (parents.size() > 2) {
       fprintf(stderr, "Warning, cannot check more than two backends\n");
