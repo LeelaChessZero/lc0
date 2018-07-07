@@ -19,8 +19,9 @@
 #include "utils/histogram.h"
 
 #include <stdio.h>
+#include <string.h>
+#include <algorithm>
 #include <cmath>
-#include <string>
 
 Histogram::Histogram()
     : Histogram(kDefaultMinExp, kDefaultMaxExp, kDefaultMinorScales) {}
@@ -108,16 +109,21 @@ int Histogram::GetIndex(double val) {
   return index + 2;
 }
 
-void Histogram::Print(const char* what) { fprintf(stderr, what); }
+void Histogram::Print(const char* what) {
+  // fprintf(stderr, what); is disallowed
+  fprintf(stderr, "%s", what);
+}
 
-void Histogram::Print(const char* what, int aligned) {
+void Histogram::Print(const char* what, size_t aligned) {
   int remain = aligned - (int)strlen(what);
   for (int i = 0; i < remain; i++) Print(" ");
   Print(what);
 }
 
-void Histogram::Print(const char* format, double value, int aligned) {
-  char buffer[aligned];
+void Histogram::Print(const char* format, double value, size_t aligned) {
+  static const size_t kMaxBufferSize = 32;
+  aligned = std::min(aligned, kMaxBufferSize);
+  char buffer[kMaxBufferSize];
   snprintf(buffer, aligned, format, value);
   Print(buffer, aligned);
 }

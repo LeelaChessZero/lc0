@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 /* Histogram with a logarithmic x-axis
  *
  *    0.50   +
@@ -60,8 +62,8 @@ class Histogram {
   int GetIndex(double val);
 
   void Print(const char* what);
-  void Print(const char* what, int aligned);
-  void Print(const char* format, double value, int aligned);
+  void Print(const char* what, size_t aligned);
+  void Print(const char* format, double value, size_t aligned);
 
   static constexpr int kDefaultMinExp = -15;
   static constexpr int kDefaultMaxExp = 5;
@@ -69,11 +71,10 @@ class Histogram {
 
   const int minExp_;
   const int maxExp_;
-  const int majorScales_;
   const int minorScales_;
+  const int majorScales_;
   const int totalScales_;
   const int fullScales_;
-
   double* const buckets_;
   double total_;
   double max_;

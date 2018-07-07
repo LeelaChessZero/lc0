@@ -142,7 +142,7 @@ class CheckComputation : public NetworkComputation {
   void DisplayHistogram() {
     Histogram histogram(-15, 1, 5);
 
-    size_t size = GetBatchSize();
+    int size = GetBatchSize();
     for (int i = 0; i < size; i++) {
       float qv1 = refComp_->GetQVal(i);
       float qv2 = checkComp_->GetQVal(i);
@@ -153,6 +153,7 @@ class CheckComputation : public NetworkComputation {
         histogram.Add(pv2 - pv1);
       }
     }
+    fprintf(stderr, "Absolute error histogram for a batch of %d:\n", size);
     histogram.Dump();
   }
 
@@ -170,7 +171,7 @@ class CheckComputation : public NetworkComputation {
         max_relative_error = relative_error;
     }
 
-    void dump(const char* name) {
+    void Dump(const char* name) {
       fprintf(stderr, "%s: absolute: %.1e, relative: %.1e\n", name,
               max_absolute_error, max_relative_error);
     }
@@ -204,8 +205,8 @@ class CheckComputation : public NetworkComputation {
     }
 
     fprintf(stderr, "maximum error for a batch of %d:\n", size);
-    value_error.dump("  value");
-    policy_error.dump("  policy");
+    value_error.Dump("  value");
+    policy_error.Dump("  policy");
   }
 
   std::unique_ptr<NetworkComputation> refComp_;
@@ -251,16 +252,17 @@ class CheckNetwork : public Network {
     if (parents.size() > 0) {
       backendName1 = parents[0];
       backend1_dict = options.GetSubdict(backendName1);
-      fprintf(stderr, "Working backend set to %s.\n", backendName1.c_str());
     }
     if (parents.size() > 1) {
       backendName2 = parents[1];
       backend2_dict = options.GetSubdict(backendName2);
-      fprintf(stderr, "Checking backend set to %s.\n", backendName2.c_str());
     }
     if (parents.size() > 2) {
       fprintf(stderr, "Warning, cannot check more than two backends\n");
     }
+
+    fprintf(stderr, "Working backend set to %s.\n", backendName1.c_str());
+    fprintf(stderr, "Reference backend set to %s.\n", backendName2.c_str());
 
     workNet_ =
         NetworkFactory::Get()->Create(backendName1, weights, backend1_dict);

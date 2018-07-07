@@ -64,6 +64,7 @@ files += [
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
   'src/utils/commandline.cc',
+  'src/utils/histogram.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
