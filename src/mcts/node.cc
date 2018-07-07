@@ -24,6 +24,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <stack>
 #include <thread>
 #include "neural/encoder.h"
 #include "neural/network.h"
@@ -252,8 +253,6 @@ void Node::ResetStats() {
   n_ = 0;
   q_ = 0.0f;
   p_ = 0.0f;
-  max_depth_ = 0;
-  full_depth_ = 0;
   is_terminal_ = false;
 }
 
@@ -293,22 +292,6 @@ void Node::FinalizeScoreUpdate(float v, float gamma, float beta) {
   ++n_;
   // Decrement virtual loss.
   --n_in_flight_;
-}
-
-void Node::UpdateMaxDepth(int depth) {
-  if (depth > max_depth_) max_depth_ = depth;
-}
-
-bool Node::UpdateFullDepth(uint16_t* depth) {
-  if (full_depth_ > *depth) return false;
-  for (Node* child : Children()) {
-    if (*depth > child->full_depth_) *depth = child->full_depth_;
-  }
-  if (*depth >= full_depth_) {
-    full_depth_ = ++*depth;
-    return true;
-  }
-  return false;
 }
 
 namespace {
@@ -382,9 +365,51 @@ void NodeTree::MakeMove(Move move) {
   history_.Append(move);
 }
 
+// Major problem: *all* leaf nodes are processed. Can this be improved somehow?
+void NodeTree::RecalculateDepth() {
+  /*
+  This is the iterative translation of the most obvious and simple recursive
+  implementation of a brute force traversal of the entire tree. Basically the
+  two choices for this are depth first and breadth first; the former is far more
+  obvious from a recursive standpoint, and also has the advantage that the
+  intermediate storage need only be logarithmically long relative to the number
+  of nodes. (The latter, using a queue rather than a stack, would have an
+  intermediate length much closer to linear in number of nodes than logarithmic.)
+
+  The recursive implementation looks like this:
+  RecalculateDepth(node, depth) {
+    process node at depth
+    for each child of node:
+      RecalculateDepth(child, depth+1)
+  }
+  This iterative translation has some simplifications that can be wrung from the
+  most direct translation.
+  */
+  std::stack<Node*> stack;
+  cumulative_depth_ = max_depth_ = 0;
+
+  stack.push(current_head_);
+
+  while (!stack.empty()) {
+    auto& node = stack.top(); // stack::top returns a reference!
+    if (node) {
+      if (node->n_ > 0) {
+        auto depth = stack.size() - 1;
+        cumulative_depth_ += depth;
+        if (max_depth_ < depth) max_depth_ = depth;
+        stack.push(node->child_);
+      }
+      node = node->sibling_; // Modifies the stack entry inplace!
+    } else {
+      stack.pop();
+    }
+  }
+}
+
 void NodeTree::TrimTreeAtHead() {
   gNodePool.ReleaseChildren(current_head_);
   current_head_->ResetStats();
+  cumulative_depth_ = max_depth_ = 0;
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -396,8 +421,6 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
     // Completely different position.
     DeallocateTree();
-    current_head_ = nullptr;
-    gamebegin_node_ = nullptr;
   }
 
   if (!gamebegin_node_) {
@@ -419,8 +442,9 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // As we killed the search tree already, trim it to redo the search.
   if (!seen_old_head) {
     assert(!current_head_->sibling_);
-    gNodePool.ReleaseChildren(current_head_);
-    current_head_->ResetStats();
+    TrimTreeAtHead();
+  } else {
+    RecalculateDepth();
   }
 }
 
@@ -428,6 +452,21 @@ void NodeTree::DeallocateTree() {
   gNodePool.ReleaseSubtree(gamebegin_node_);
   gamebegin_node_ = nullptr;
   current_head_ = nullptr;
+  cumulative_depth_ = max_depth_ = 0;
+}
+
+// Not thread safe!
+void NodeTree::UpdateDepth(uint16_t new_node_depth) {
+  if (new_node_depth > max_depth_) max_depth_ = new_node_depth;
+  cumulative_depth_ += new_node_depth;
+}
+
+uint16_t NodeTree::GetMaxDepth() const {
+  return max_depth_;
+}
+
+float NodeTree::GetAverageDepth() const {
+  return (float)cumulative_depth_ / ((float)current_head_->n_);
 }
 
 }  // namespace lczero
