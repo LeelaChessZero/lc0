@@ -107,15 +107,6 @@ std::string Edge::DebugString() const {
   return oss.str();
 }
 
-/* Node* Edge::SpawnNode(Node* parent, std::unique_ptr<Node>* ptr) {
-  assert(!has_node_);
-  std::unique_ptr<Node> tmp = std::move(*ptr);
-  *ptr = std::make_unique<Node>(parent);
-  has_node_ = true;
-  (*ptr)->sibling_ = std::move(tmp);
-  return (*ptr).get();
-} */
-
 EdgeList::EdgeList(MoveList moves)
     : edges_(new Edge[moves.size()]), size_(moves.size()) {
   auto* edge = edges_;
@@ -143,11 +134,8 @@ Node* Node::CreateSingleChildNode(Move move) {
   return child_.get();
 }
 
-IterToRange<Edge_Iterator<true>> Node::Edges() const {
-  return {edges_, &child_};
-}
-
-IterToRange<Edge_Iterator<false>> Node::Edges() { return {edges_, &child_}; }
+Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
+Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
 float Node::GetVisitedPolicy() const {
   float res = 0.0f;

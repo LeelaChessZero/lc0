@@ -25,7 +25,6 @@
 #include "chess/callbacks.h"
 #include "chess/position.h"
 #include "neural/writer.h"
-#include "utils/iterator.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -156,8 +155,8 @@ class Node {
   class SpawnableEdgeRange;
 
   // Returns range for iterating over edges.
-  IterToRange<ConstIterator> Edges() const;
-  IterToRange<Iterator> Edges();
+  ConstIterator Edges() const;
+  Iterator Edges();
 
   uint16_t NumEdges() const { return edges_.size(); }
 
@@ -259,6 +258,10 @@ class Edge_Iterator : public EdgeAndNode {
         total_count_(edges.size()) {
     if (edge_) Actualize();
   }
+
+  Edge_Iterator<is_const> begin() { return *this; }
+  Edge_Iterator<is_const> end() { return {}; }
+
   bool operator==(Edge_Iterator& other) { return edge_ == other.edge_; }
   bool operator!=(Edge_Iterator& other) { return edge_ != other.edge_; }
   void operator++() {
