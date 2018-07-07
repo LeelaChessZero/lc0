@@ -152,7 +152,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   for (auto iter = best_move_edge_; iter;
        iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
     uci_info_.pv.push_back(iter.GetMove(flip));
-    if (!iter.node()) break;
+    if (!iter.node()) break;  // Last edge was dangling, cannot continue.
   }
   uci_info_.comment.clear();
   info_callback_(uci_info_);
@@ -180,7 +180,7 @@ int64_t Search::GetTimeSinceStart() const {
 
 void Search::SendMovesStats() const {
   const float parent_q =
-      -root_node_->GetQ(0) -
+      -root_node_->GetQ() -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
   const float U_coeff =
       kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
@@ -225,7 +225,7 @@ void Search::SendMovesStats() const {
     oss << "(V: ";
     optional<float> v;
     if (edge.IsTerminal()) {
-      v = edge.node()->GetTerminalNodeValue();
+      v = edge.node()->GetQ();
     } else {
       NNCacheLock nneval = GetCachedFirstPlyResult(edge);
       if (nneval) v = -nneval->q;
@@ -335,7 +335,7 @@ void Search::UpdateRemainingMoves() {
 float Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  float parent_q = -root_node_->GetQ(0);
+  float parent_q = -root_node_->GetQ();
   if (!root_node_->HasChildren()) return parent_q;
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
   return best_edge.GetQ(parent_q);
@@ -582,11 +582,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     // First, terminate if we find collisions or leaf nodes.
     {
       SharedMutex::Lock lock(search_->nodes_mutex_);
-      if (best_edge) {
-        if (!best_edge.HasNode()) best_edge.SpawnNode(node);
-        node = best_edge.node();
-      }
-
+      // Set 'node' to point to the node that was picked on previous iteration,
+      // possibly spawning it.
+      // TODO(crem) This statement has to be in the end of the loop rather than
+      //            in the beginning (and there would be no need for "if
+      //            (!is_root_node)"), but that would mean extra mutex lock.
+      //            Will revisit that after rethinking locking strategy.
+      if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
       // n_in_flight_ is incremented. If the method returns false, then there is
       // a search collision, and this node is already being expanded.
       if (!node->TryStartScoreUpdate()) return {node, true};
@@ -603,8 +605,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     int possible_moves = 0;
     float parent_q =
         (is_root_node && search_->kNoise)
-            ? -node->GetQ(0)
-            : -node->GetQ(0) -
+            ? -node->GetQ()
+            : -node->GetQ() -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -764,7 +766,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   float puct_mult =
       search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
-  const float parent_q = -node->GetQ(0);
+  const float parent_q = -node->GetQ();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
@@ -831,7 +833,7 @@ void SearchWorker::FetchMinibatchResults() {
     if (!node_to_process.nn_queried) {
       // Terminal nodes don't involve the neural NetworkComputation, nor do
       // they require any further processing after value retrieval.
-      node_to_process.v = node->GetTerminalNodeValue();
+      node_to_process.v = node->GetQ();
       continue;
     }
     // For NN results, we need to populate policy as well as value.
@@ -903,7 +905,8 @@ void SearchWorker::DoBackupUpdate() {
       if (n->GetParent() == search_->root_node_) {
         if (!search_->best_move_edge_ ||
             search_->best_move_edge_.GetN() < n->GetN()) {
-          search_->best_move_edge_ = search_->root_node_->GetEdgeToNode(n);
+          search_->best_move_edge_ =
+              EdgeAndNode(search_->root_node_->GetEdgeToNode(n), n);
         }
       }
     }

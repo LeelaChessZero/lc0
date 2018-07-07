@@ -36,16 +36,16 @@ namespace lczero {
 /////////////////////////////////////////////////////////////////////////
 
 namespace {
-
-namespace {
 // Periodicity of garbage collection, milliseconds.
 const int kGCIntervalMs = 100;
-}  // namespace
 
 // Every kGCIntervalMs milliseconds release nodes in a separate GC thread.
 class NodeGarbageCollector {
  public:
   NodeGarbageCollector() : gc_thread_([this]() { Worker(); }) {}
+
+  // Takes ownership of a subtree, to dispose it in a separate thread when
+  // it has time.
   void AddToGcQueue(std::unique_ptr<Node> node) {
     if (!node) return;
     Mutex::Lock lock(gc_mutex_);
@@ -53,6 +53,7 @@ class NodeGarbageCollector {
   }
 
   ~NodeGarbageCollector() {
+    // Flips stop flag and waits for a worker thread to stop.
     stop_ = true;
     gc_thread_.join();
   }
@@ -63,6 +64,8 @@ class NodeGarbageCollector {
       // Node will be released in destructor when mutex is not locked.
       std::unique_ptr<Node> node_to_gc;
       {
+        // Lock the mutex and move last subtree from subtrees_to_gc_ into
+        // node_to_gc.
         Mutex::Lock lock(gc_mutex_);
         if (subtrees_to_gc_.empty()) return;
         node_to_gc = std::move(subtrees_to_gc_.back());
@@ -87,15 +90,14 @@ class NodeGarbageCollector {
 };  // namespace
 
 NodeGarbageCollector gNodeGc;
-
 }  // namespace
 
 /////////////////////////////////////////////////////////////////////////
 // Edge
 /////////////////////////////////////////////////////////////////////////
 
-Move Edge::GetMove(bool flip) const {
-  if (!flip) return move_;
+Move Edge::GetMove(bool as_opponent) const {
+  if (!as_opponent) return move_;
   Move m = move_;
   m.Mirror();
   return m;
@@ -107,20 +109,30 @@ std::string Edge::DebugString() const {
   return oss.str();
 }
 
+/////////////////////////////////////////////////////////////////////////
+// EdgeList
+/////////////////////////////////////////////////////////////////////////
+
 EdgeList::EdgeList(MoveList moves)
-    : edges_(new Edge[moves.size()]), size_(moves.size()) {
+    : edges_(static_cast<Edge*>(operator new(sizeof(Edge) * moves.size()))),
+      size_(moves.size()) {
   auto* edge = edges_;
-  for (auto move : moves) {
-    edge->SetMove(move);
-    ++edge;
-  }
+  for (auto move : moves) new (edge++) Edge(move);
 }
 
-void EdgeList::operator=(EdgeList&& other) {
-  delete[] edges_;
+void EdgeList::DestroyList() {
+  if (!edges_) return;
+  for (int i = 0; i < size_; ++i) edges_[i].~Edge();
+  operator delete(static_cast<void*>(edges_));
+  edges_ = nullptr;
+}
+
+void EdgeList::operator=(EdgeList&& other) noexcept {
+  DestroyList();
   edges_ = other.edges_;
   size_ = other.size_;
   other.edges_ = nullptr;
+  other.size_ = 0;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -130,8 +142,14 @@ void EdgeList::operator=(EdgeList&& other) {
 Node* Node::CreateSingleChildNode(Move move) {
   assert(!edges_);
   edges_ = EdgeList({move});
-  child_ = std::make_unique<Node>(0, this);
+  child_ = std::make_unique<Node>(this, 0);
   return child_.get();
+}
+
+void Node::CreateEdges(const MoveList& moves) {
+  assert(!edges_);
+  assert(!child_);
+  edges_ = EdgeList(moves);
 }
 
 Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
@@ -140,24 +158,22 @@ Node::Iterator Node::Edges() { return {edges_, &child_}; }
 float Node::GetVisitedPolicy() const {
   float res = 0.0f;
   for (const auto& edge : Edges()) {
-    if (edge.GetNStarted() > 0) res += edge.GetP();
+    if (edge.HasNode()) res += edge.GetP();
   }
   return res;
 }
 
-EdgeAndNode Node::GetEdgeToNode(const Node* node) const {
-  for (auto edge : Edges()) {
-    if (edge.node() == node) return edge;
-  }
-  return {};
+Edge* Node::GetEdgeToNode(const Node* node) const {
+  assert(node->parent_ == this);
+  return &edges_[node->index_];
 }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
-      << " child:" << child_.get() << " sibling:" << sibling_.get()
-      << " Q:" << q_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " Edges:" << edges_.size();
+      << " Index:" << index_ << " Child:" << child_.get()
+      << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
+      << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
   return oss.str();
 }
 
@@ -188,6 +204,8 @@ void Node::UpdateMaxDepth(int depth) {
 }
 
 bool Node::UpdateFullDepth(uint16_t* depth) {
+  // TODO(crem) If this function won't be needed, consider also killing
+  //            ChildNodes/NodeRange/Nodes_Iterator.
   if (full_depth_ > *depth) return false;
   for (Node* child : ChildNodes()) {
     if (*depth > child->full_depth_) *depth = child->full_depth_;
@@ -281,6 +299,16 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
 }
 
 /////////////////////////////////////////////////////////////////////////
+// EdgeAndNode
+/////////////////////////////////////////////////////////////////////////
+
+std::string EdgeAndNode::DebugString() const {
+  if (!edge_) return "(no edge)";
+  return edge_->DebugString() + " " +
+         (node_ ? node_->DebugString() : "(no node)");
+}
+
+/////////////////////////////////////////////////////////////////////////
 // NodeTree
 /////////////////////////////////////////////////////////////////////////
 
@@ -304,7 +332,7 @@ void NodeTree::TrimTreeAtHead() {
   // Sending dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
   gNodeGc.AddToGcQueue(std::move(current_head_->sibling_));
-  *current_head_ = Node(current_head_->index_, current_head_->GetParent());
+  *current_head_ = Node(current_head_->GetParent(), current_head_->index_);
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -321,7 +349,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node>(0, nullptr);
+    gamebegin_node_ = std::make_unique<Node>(nullptr, 0);
   }
 
   history_.Reset(starting_board, no_capture_ply,

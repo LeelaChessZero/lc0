@@ -29,16 +29,47 @@
 
 namespace lczero {
 
+// Children of a node are stored the following way:
+// * Edges and Nodes edges point to are stored separately.
+// * There may be dangling edges (which don't yet point to any Node object yet)
+// * Edges are stored are a simple array on heap.
+// * Nodes are stored as a linked list, and contain index_ field which shows
+//   which edge of a parent that node points to.
+//
+// Example:
+//                                Parent Node
+//                                    |
+//        +-------------+-------------+----------------+--------------+
+//        |              |            |                |              |
+//   Edge 0(Nf3)    Edge 1(Bc5)     Edge 2(a4)     Edge 3(Qxf7)    Edge 4(a3)
+//    (dangling)         |           (dangling)        |           (dangling)
+//                   Node, Q=0.5                    Node, Q=-0.2
+//
+//  Is represented as:
+// +--------------+
+// | Parent Node  |
+// +--------------+                                        +--------+
+// | edges_       | -------------------------------------> | Edge[] |
+// |              |    +------------+                      +--------+
+// | child_       | -> | Node       |                      | Nf3    |
+// +--------------+    +------------+                      | Bc5    |
+//                     | index_ = 1 |                      | a4     |
+//                     | q_ = 0.5   |    +------------+    | Qxf7   |
+//                     | sibling_   | -> | Node       |    | a3     |
+//                     +------------+    +------------+    +--------+
+//                                       | index_ = 3 |
+//                                       | q_ = -0.2  |
+//                                       | sibling_   | -> nullptr
+//                                       +------------+
+
 class Node;
 class Edge {
  public:
-  // Returns move from the point of view of player BEFORE the position.
-  Move GetMove() const { return move_; }
+  Edge(Move move) : move_(move) {}
 
-  // Returns move, with optional flip (false == player BEFORE the position).
-  Move GetMove(bool flip) const;
-
-  void SetMove(Move move) { move_ = move; }
+  // Returns move from the point of view of the player making it (if as_opponent
+  // is false) or as opponent (if as_opponent is true).
+  Move GetMove(bool as_opponent = false) const;
 
   // Returns value of Move probability returned from the neural net
   // (but can be changed by adding Dirichlet noise).
@@ -61,18 +92,25 @@ class Edge {
   float p_ = 0.0;
 };
 
+// Array of Edges.
+// * Cannot be resized.
+// * Supports construction from move list.
+// * Supports move.
+// * Stores size in uint16_t.
 class EdgeList {
  public:
   EdgeList() {}
   EdgeList(MoveList moves);
-  void operator=(EdgeList&& other);
-  ~EdgeList() { delete[] edges_; }
+  void operator=(EdgeList&& other) noexcept;
+  ~EdgeList() { DestroyList(); }
   Edge* get() const { return edges_; }
-  Edge& operator[](size_t idx) { return edges_[idx]; }
+  Edge& operator[](size_t idx) const { return edges_[idx]; }
   operator bool() const { return edges_ != nullptr; }
   uint16_t size() const { return size_; }
 
  private:
+  void DestroyList();
+
   Edge* edges_ = nullptr;
   uint16_t size_ = 0;
 };
@@ -80,21 +118,21 @@ class EdgeList {
 class EdgeAndNode;
 template <bool is_const>
 class Edge_Iterator;
+
 class Node {
  public:
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
-  Node(uint16_t index, Node* parent) : index_(index), parent_(parent) {}
+  // Takes pointer to a parent node and own index in a parent.
+  Node(Node* parent, uint16_t index) : index_(index), parent_(parent) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
-  // that. Not thread-friendly.
+  // that.
   Node* CreateSingleChildNode(Move m);
 
-  void CreateEdges(const MoveList& moves) {
-    assert(!edges_);
-    edges_ = EdgeList(moves);
-  }
+  // Creates edges from a movelist. There has to be no edges before that.
+  void CreateEdges(const MoveList& moves);
 
   // Gets parent node.
   Node* GetParent() const { return parent_; }
@@ -109,17 +147,12 @@ class Node {
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 1; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
-  // Returns Q if number of visits is more than 0.
-  // TODO(crem) When node exists, n_ always > 0 (I guess?) so remove that
-  //            parameter default_q.
-  float GetQ(float default_q) const {
-    if (n_ == 0) return default_q;
-    return q_;
-  }
+  // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
+  // for terminal nodes.
+  float GetQ() const { return q_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
-  float GetTerminalNodeValue() const { return q_; }
   uint16_t GetFullDepth() const { return full_depth_; }
   uint16_t GetMaxDepth() const { return max_depth_; }
   uint16_t GetNumEdges() const { return edges_.size(); }
@@ -151,16 +184,13 @@ class Node {
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
 
-  class NodeRange;
-  class SpawnableEdgeRange;
-
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
 
-  uint16_t NumEdges() const { return edges_.size(); }
-
-  // Returns range for iterating over edges.
+  class NodeRange;
+  // Returns range for iterating over nodes. Node that there may be edges
+  // without nodes, which will be skipped by this iteration.
   NodeRange ChildNodes() const;
 
   // Deletes all children.
@@ -169,17 +199,17 @@ class Node {
   // Deletes all children except one.
   void ReleaseChildrenExceptOne(Node* node);
 
-  EdgeAndNode GetEdgeToNode(const Node* node) const;
+  // For a child node, returns corresponding edge.
+  Edge* GetEdgeToNode(const Node* node) const;
 
   // Debug information about the node.
   std::string DebugString() const;
 
  private:
-  // Edges.
+  // List of edges.
   EdgeList edges_;
-
+  // Index of this node is parent's edge list.
   uint16_t index_;
-
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored.
   float q_ = 0.0f;
@@ -199,7 +229,7 @@ class Node {
 
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
-  // Pointer to a first child. nullptr for leave node.
+  // Pointer to a first child. nullptr for a leaf node.
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
@@ -209,14 +239,15 @@ class Node {
   friend class Edge_Iterator<true>;
   friend class Edge_Iterator<false>;
   friend class Node_Iterator;
-  friend class Edge_SpawnableIterator;
   friend class Edge;
 };
 
+// Contains Edge and Node pair and set of proxy functions to simplify access
+// to them.
 class EdgeAndNode {
  public:
   EdgeAndNode() = default;
-  EdgeAndNode(Edge* edge, Node* node) : node_(node), edge_(edge) {}
+  EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
   operator bool() const { return edge_ != nullptr; }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
@@ -224,34 +255,60 @@ class EdgeAndNode {
 
   // Proxy functions for easier access to node/edge.
   float GetQ(float default_q) const {
-    return node_ ? node_->GetQ(default_q) : default_q;
+    return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
   }
-  int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
+  // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
+  int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
+  uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
+
+  // Whether the node is known to be terminal.
+  bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
+
+  // Edge related getters.
   float GetP() const { return edge_->GetP(); }
   Move GetMove() const { return edge_->GetMove(); }
   Move GetMove(bool flip) const { return edge_->GetMove(flip); }
-  uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
-  bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
 
-  // Returns p / N, which is equal to U / (cpuct * sqrt(N[parent])) by the MCTS
-  // equation. So it's really more of a "reduced U" than raw U.
+  // Returns U = numerator * p / N.
+  // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
     return numerator * GetP() / (1 + GetNStarted());
   }
 
+  std::string DebugString() const;
+
  protected:
-  Node* node_ = nullptr;
+  // nullptr means that the whole pair is "null". (E.g. when search for a node
+  // didn't find anything, or as end iterator signal).
   Edge* edge_ = nullptr;
+  // nullptr means that the edge doesn't yet have node extended.
+  Node* node_ = nullptr;
 };
 
+// TODO(crem) Replace this with less hacky iterator once we support C++17.
+// This class has multiple hypostases within one class:
+// * Range (begin() and end() functions)
+// * Iterator (operator++() and operator*())
+// * Element, pointed by iterator (EdgeAndNode class mainly, but Edge_Iterator
+//   is useful too when client want to call GetOrSpawnNode).
+//   It's safe to slice EdgeAndNode off Edge_Iterator.
+// It's more customary to have those as three classes, but
+// creating zoo of classes and copying them around while iterating seems
+// excessive.
+//
+// All functions are not thread safe (must be externally synchromized), but
+// it's fine if Node/Edges state change between node call.
 template <bool is_const>
 class Edge_Iterator : public EdgeAndNode {
  public:
   using Ptr = std::conditional_t<is_const, const std::unique_ptr<Node>*,
                                  std::unique_ptr<Node>*>;
 
+  // Creates "end()" iterator.
   Edge_Iterator() {}
+
+  // Creates "begin()" iterator. Also happens to be a range constructor.
   Edge_Iterator(const EdgeList& edges, Ptr node_ptr)
       : EdgeAndNode(edges.size() ? edges.get() : nullptr, nullptr),
         node_ptr_(node_ptr),
@@ -259,12 +316,15 @@ class Edge_Iterator : public EdgeAndNode {
     if (edge_) Actualize();
   }
 
+  // Function to support range interface.
   Edge_Iterator<is_const> begin() { return *this; }
   Edge_Iterator<is_const> end() { return {}; }
 
+  // Functions to support iterator interface.
   bool operator==(Edge_Iterator& other) { return edge_ == other.edge_; }
   bool operator!=(Edge_Iterator& other) { return edge_ != other.edge_; }
   void operator++() {
+    // If it was the last edge in array, become end(), otherwise advance.
     if (++current_idx_ == total_count_) {
       edge_ = nullptr;
     } else {
@@ -274,10 +334,46 @@ class Edge_Iterator : public EdgeAndNode {
   }
   Edge_Iterator& operator*() { return *this; }
 
+  // If there is node, return it. Otherwise spawn a new one and return it.
+  Node* GetOrSpawnNode(Node* parent) {
+    if (node_) return node_;  // If there is already a node, return it.
+    Actualize();              // But maybe other thread already did that.
+    if (node_) return node_;  // If it did, return.
+    // Now we are sure we have to create a new node.
+    // Suppose there are nodes with idx 3 and 7, and we want to insert one with
+    // idx 5. Here is how it looks like:
+    //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.7)
+    // Here is how we do that:
+    // 1. Store pointer to a node idx_.7:
+    //    node_ptr_ -> &Node(idx_.3).sibling_  ->  nullptr
+    //    tmp -> Node(idx_.7)
+    std::unique_ptr<Node> tmp = std::move(*node_ptr_);
+    // 2. Create fresh Node(idx_.5):
+    //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
+    //    tmp -> Node(idx_.7)
+    *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+    // 3. Attach stored pointer back to a list:
+    //    node_ptr_ ->
+    //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
+    (*node_ptr_)->sibling_ = std::move(tmp);
+    // 4. Actualize:
+    //    node_ -> &Node(idx_.5)
+    //    node_ptr_ -> &Node(idx_.5).sibling_ -> Node(idx_.7)
+    Actualize();
+    return node_;
+  }
+
+ private:
   void Actualize() {
+    // If node_ptr_ is behind, advance it.
+    // This is needed (and has to be 'while' rather than 'if') as other threads
+    // could spawn new nodes between &node_ptr_ and *node_ptr_ while we didn't
+    // see.
     while (*node_ptr_ && (*node_ptr_)->index_ < current_idx_) {
       node_ptr_ = &(*node_ptr_)->sibling_;
     }
+    // If in the end node_ptr_ points to the node that we need, populate node_
+    // and advance node_ptr_.
     if (*node_ptr_ && (*node_ptr_)->index_ == current_idx_) {
       node_ = (*node_ptr_).get();
       node_ptr_ = &node_->sibling_;
@@ -286,16 +382,8 @@ class Edge_Iterator : public EdgeAndNode {
     }
   }
 
-  void SpawnNode(Node* parent) {
-    assert(!node_);
-    Actualize();
-    std::unique_ptr<Node> tmp = std::move(*node_ptr_);
-    *node_ptr_ = std::make_unique<Node>(current_idx_, parent);
-    (*node_ptr_)->sibling_ = std::move(tmp);
-    Actualize();
-  }
-
- private:
+  // Pointer to a pointer to the next node. Has to be a pointer to pointer
+  // as we'd like to update it when spawning a new node.
   Ptr node_ptr_;
   uint16_t current_idx_ = 0;
   uint16_t total_count_ = 0;
