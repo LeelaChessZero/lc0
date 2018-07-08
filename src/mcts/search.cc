@@ -575,24 +575,21 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
 
   // Fetch the current best root node visits for possible smart pruning.
   int best_node_n = 0;
-  {
-    if (search_->best_move_node_)
-      best_node_n = search_->best_move_node_->GetN();
-  }
+  if (search_->best_move_node_)
+    best_node_n = search_->best_move_node_->GetN();
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
-    {
-      // n_in_flight_ is incremented. If the method returns false, then there is
-      // a search collision, and this node is already being expanded.
-      if (!node->TryStartScoreUpdate()) return {node, true};
-      // Unexamined leaf node. We've hit the end of this playout.
-      if (!node->HasChildren()) return {node, false};
-      // If we fall through, then n_in_flight_ has been incremented but this
-      // playout remains incomplete; we must go deeper.
-    }
+    // n_in_flight_ is incremented. If the method returns false, then there is
+    // a search collision, and this node is already being expanded.
+    if (!node->TryStartScoreUpdate()) return {node, true};
+    // Unexamined leaf node. We've hit the end of this playout.
+    if (!node->HasChildren()) return {node, false};
+    // If we fall through, then n_in_flight_ has been incremented but this
+    // playout remains incomplete; we must go deeper.
+
     float puct_mult =
         search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = -100.0f;
