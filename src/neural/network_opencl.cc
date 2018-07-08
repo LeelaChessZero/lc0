@@ -61,10 +61,8 @@ class OpenCLComputation : public NetworkComputation {
                     const OpenCLWeights& weights)
       : opencl_net_(opencl_net),
         weights_(weights),
-        input_data_(kInputPlanes * 64),
-        value_data_(weights_.num_value_channels),
-        policy_data_(),
-        q_value_(0) {}
+        policies_(),
+        q_values_() {}
 
   virtual ~OpenCLComputation() {}
 
@@ -78,53 +76,92 @@ class OpenCLComputation : public NetworkComputation {
   }
 
   void ComputeBlocking(const InputPlanes& sample) {
-    int index = 0;
-    for (const InputPlane& plane : sample) {
-      float value = plane.value;
-      const uint64_t one = 1;
-      for (int i = 0; i < 64; i++)
-        input_data_[index++] = (plane.mask & (one << i)) != 0 ? value : 0;
+    
+    // Determine the largest batch for allocations.
+    const auto plane_count = planes_.size();
+    const auto largest_batch_size = std::min(size_t(kMaxOpenCLBatchSize), plane_count);
+    
+    const auto num_output_policies=weights_.num_output_policies;
+    const auto num_value_channels=weights_.num_value_channels;
+  
+    /* Typically
+     input_channels = 112
+     num_value_channels = 128
+     num_output_policy = 1858
+     */
+
+    std::vector<float> output_pol(largest_batch_size* weights_.num_output_policies);
+    std::vector<float> output_val(largest_batch_size* weights_.num_value_channels);
+    std::vector<float> input_data(largest_batch_size * kInputPlanes * kSquares);
+    
+    for (size_t i = 0; i < plane_count; i += largest_batch_size) {
+      const auto batch_size = std::min(plane_count - i, largest_batch_size);
+      for (size_t j = 0; j < batch_size; j++) {
+        EncodePlanes(planes_[i + j], &input_data[j * kSquares * kInputPlanes]);
+      }
+      
+      opencl_net_.forward(input_data, output_pol, output_val, batch_size);
+      
+      for (size_t j = 0; j < batch_size; j++) {
+        std::vector<float> policy(weights_.num_output_policies);
+        
+        // Get the moves
+        FullyConnectedLayer::Softmax(num_output_policies,
+                                     &output_pol[j * num_output_policies],
+                                     policy.data());
+
+        
+        policies_.emplace_back(std::move(policy));
+        
+        // Now get the score
+        double winrate = FullyConnectedLayer::Forward0D(
+                                                        num_value_channels,
+                                                        weights_.ip2_val_w.data(),
+                                                        &output_val[j * num_value_channels]) +
+        weights_.ip2_val_b[0];
+        
+        q_values_.emplace_back(std::tanh(winrate));
+      }
     }
-
-    std::vector<float> policy_data(weights_.num_output_policies);
-    opencl_net_.forward(input_data_, policy_data, value_data_);
-
-    // Get the moves
-    FullyConnectedLayer::Softmax(weights_.num_output_policies,
-                                 policy_data.data(), policy_data.data());
-    policy_data_.emplace_back(move(policy_data));
-
-    // Now get the score
-    double winrate = FullyConnectedLayer::Forward0D(weights_.num_value_channels,
-                                                    weights_.ip2_val_w.data(),
-                                                    value_data_.data()) +
-                     weights_.ip2_val_b[0];
-    q_value_.emplace_back(std::tanh(winrate));
   }
 
   // Returns how many times AddInput() was called.
   int GetBatchSize() const override { return static_cast<int>(planes_.size()); }
 
   // Returns Q value of @sample.
-  float GetQVal(int sample) const override { return q_value_[sample]; }
+  float GetQVal(int sample) const override { return q_values_[sample]; }
 
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
-    return policy_data_[sample][move_id];
+    return policies_[sample][move_id];
   }
 
  private:
+  
+  static constexpr auto kWidth = 8;
+  static constexpr auto kHeight = 8;
+  static constexpr auto kSquares = kWidth * kHeight;
+
+  void EncodePlanes(const InputPlanes& sample, float* buffer);
+  
   const OpenCL_Network& opencl_net_;
   const OpenCLWeights& weights_;
 
   std::vector<InputPlanes> planes_;
-  std::vector<float> input_data_;
-  std::vector<float> value_data_;
 
-  std::vector<std::vector<float>> policy_data_;
-  std::vector<float> q_value_;
+  std::vector<std::vector<float>> policies_;
+  std::vector<float> q_values_;
 };
 
+  
+  void OpenCLComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
+    for (const InputPlane& plane : sample) {
+      const float value = plane.value;
+      for (auto i = 0; i < kSquares; i++)
+        *(buffer++) = (plane.mask & (((uint64_t)1) << i)) != 0 ? value : 0;
+    }
+  }
+  
 class OpenCLNetwork : public Network {
  public:
   virtual ~OpenCLNetwork(){};
@@ -137,6 +174,14 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
+    
+    auto max_batch_size_ =
+        static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
+        if (max_batch_size_ > kHardMaxBatchSize) {
+          max_batch_size_ = kHardMaxBatchSize;
+          fprintf(stderr, "BLAS warning, maximum batch size set to %ld.",
+                  max_batch_size_);
+        }
 
     const auto inputChannels = static_cast<size_t>(kInputPlanes);
     const auto channels = weights.input.biases.size();
@@ -239,6 +284,9 @@ class OpenCLNetwork : public Network {
   }
 
  private:
+  
+  static constexpr auto kHardMaxBatchSize = 16;
+
   OpenCLWeights weights_;
   OpenCLParams params_;
   OpenCL opencl_;

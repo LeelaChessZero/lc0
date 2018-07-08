@@ -111,7 +111,7 @@ void Xgemv(const int m, const int n,
       }
 
       // Stores the final result
-	  real out = acc1[_w] + bias[gid + y_offset];
+	  real out = acc1[_w] + bias[gid];
 	  if (relu) {
 	    out = out > 0.0f ? out : 0.0f;
 	  }
