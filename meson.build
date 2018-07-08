@@ -317,10 +317,10 @@ executable('lc0', 'src/main.cc',
 
 
 ### Tests
-gtest = dependency('gtest', required: false)
+gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
 test_deps = deps
-if gtest.found()
+if get_option('gtest') and gtest.found()
   test_deps += gtest
 
   test('ChessBoard',
