@@ -153,16 +153,15 @@ if get_option('build_backends')
     elif get_option('openblas') and openblas_lib.found()
       add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
 
-      if not cc.has_header('openblas_config.h')
+      required_openblas_header = 'openblas_config.h'
+      if not cc.has_header(required_openblas_header)
         openblas_headers_found = false
         
+        # add the first valid include directory
         foreach d : get_option('openblas_include')
-          if not openblas_headers_found
-            if cc.has_header('openblas_config.h', args: '-I' + d)
-              # add the first valid include directory
-              includes += include_directories(d)
-              openblas_headers_found = true
-            endif
+          if not openblas_headers_found and cc.has_header(required_openblas_header, args: '-I' + d)
+            includes += include_directories(d)
+            openblas_headers_found = true
           endif
         endforeach
         
