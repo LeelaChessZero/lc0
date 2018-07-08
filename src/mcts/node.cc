@@ -114,25 +114,9 @@ std::string Edge::DebugString() const {
 /////////////////////////////////////////////////////////////////////////
 
 EdgeList::EdgeList(MoveList moves)
-    : edges_(static_cast<Edge*>(operator new(sizeof(Edge) * moves.size()))),
-      size_(moves.size()) {
-  auto* edge = edges_;
-  for (auto move : moves) new (edge++) Edge(move);
-}
-
-void EdgeList::DestroyList() {
-  if (!edges_) return;
-  for (int i = 0; i < size_; ++i) edges_[i].~Edge();
-  operator delete(static_cast<void*>(edges_));
-  edges_ = nullptr;
-}
-
-void EdgeList::operator=(EdgeList&& other) noexcept {
-  DestroyList();
-  edges_ = other.edges_;
-  size_ = other.size_;
-  other.edges_ = nullptr;
-  other.size_ = 0;
+    : edges_(std::make_unique<Edge[]>(moves.size())), size_(moves.size()) {
+  auto* edge = edges_.get();
+  for (auto move : moves) edge++->SetMove(move);
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -157,14 +141,15 @@ Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
 float Node::GetVisitedPolicy() const {
   float res = 0.0f;
-  for (const auto& edge : Edges()) {
-    if (edge.HasNode()) res += edge.GetP();
+  for (const auto* node = child_.get(); node; node = node->sibling_.get()) {
+    if (node->n_ > 0) res += edges_[node->index_].GetP();
   }
   return res;
 }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
+  assert(node->index_ < edges_.size());
   return &edges_[node->index_];
 }
 
@@ -329,10 +314,11 @@ void NodeTree::MakeMove(Move move) {
 }
 
 void NodeTree::TrimTreeAtHead() {
-  // Sending dependent nodes for GC instead of destroying them immediately.
+  auto tmp = std::move(current_head_->sibling_);
+  // Send dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
-  gNodeGc.AddToGcQueue(std::move(current_head_->sibling_));
   *current_head_ = Node(current_head_->GetParent(), current_head_->index_);
+  current_head_->sibling_ = std::move(tmp);
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,

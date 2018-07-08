@@ -600,7 +600,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     float best = -100.0f;
     int possible_moves = 0;
     float parent_q =
-        (is_root_node && search_->kNoise)
+        ((is_root_node && search_->kNoise) || !search_->kFpuReduction)
             ? -node->GetQ()
             : -node->GetQ() -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());

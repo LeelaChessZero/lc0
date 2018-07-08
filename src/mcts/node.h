@@ -65,8 +65,6 @@ namespace lczero {
 class Node;
 class Edge {
  public:
-  Edge(Move move) : move_(move) {}
-
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
   Move GetMove(bool as_opponent = false) const;
@@ -82,6 +80,8 @@ class Edge {
   std::string DebugString() const;
 
  private:
+  void SetMove(Move move) { move_ = move; }
+
   // Move corresponding to this node. From the point of view of a player,
   // i.e. black's e7e5 is stored as e2e4.
   // Root node contains move a1a1.
@@ -90,28 +90,22 @@ class Edge {
   // Probability that this move will be made. From policy head of the neural
   // network.
   float p_ = 0.0;
+
+  friend class EdgeList;
 };
 
 // Array of Edges.
-// * Cannot be resized.
-// * Supports construction from move list.
-// * Supports move.
-// * Stores size in uint16_t.
 class EdgeList {
  public:
   EdgeList() {}
   EdgeList(MoveList moves);
-  void operator=(EdgeList&& other) noexcept;
-  ~EdgeList() { DestroyList(); }
-  Edge* get() const { return edges_; }
+  Edge* get() const { return edges_.get(); }
   Edge& operator[](size_t idx) const { return edges_[idx]; }
-  operator bool() const { return edges_ != nullptr; }
+  operator bool() const { return static_cast<bool>(edges_); }
   uint16_t size() const { return size_; }
 
  private:
-  void DestroyList();
-
-  Edge* edges_ = nullptr;
+  std::unique_ptr<Edge[]> edges_;
   uint16_t size_ = 0;
 };
 
@@ -189,7 +183,7 @@ class Node {
   Iterator Edges();
 
   class NodeRange;
-  // Returns range for iterating over nodes. Node that there may be edges
+  // Returns range for iterating over nodes. Note that there may be edges
   // without nodes, which will be skipped by this iteration.
   NodeRange ChildNodes() const;
 
@@ -267,8 +261,7 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
-  Move GetMove() const { return edge_->GetMove(); }
-  Move GetMove(bool flip) const { return edge_->GetMove(flip); }
+  Move GetMove(bool flip = false) const { return edge_->GetMove(flip); }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
@@ -291,14 +284,15 @@ class EdgeAndNode {
 // * Range (begin() and end() functions)
 // * Iterator (operator++() and operator*())
 // * Element, pointed by iterator (EdgeAndNode class mainly, but Edge_Iterator
-//   is useful too when client want to call GetOrSpawnNode).
+//   is useful too when client wants to call GetOrSpawnNode).
 //   It's safe to slice EdgeAndNode off Edge_Iterator.
 // It's more customary to have those as three classes, but
 // creating zoo of classes and copying them around while iterating seems
 // excessive.
 //
-// All functions are not thread safe (must be externally synchromized), but
-// it's fine if Node/Edges state change between node call.
+// All functions are not thread safe (must be externally synchronized), but
+// it's fine if Node/Edges state change between calls to functions of the
+// iterator (e.g. advancing the iterator).
 template <bool is_const>
 class Edge_Iterator : public EdgeAndNode {
  public:
