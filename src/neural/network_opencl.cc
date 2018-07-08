@@ -176,10 +176,10 @@ class OpenCLNetwork : public Network {
         options.GetOrDefault<bool>("tune_exhaustive", false);
     
     auto max_batch_size_ =
-        static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
+        static_cast<size_t>(options.GetOrDefault<int>("batch_size", 8));
         if (max_batch_size_ > kHardMaxBatchSize) {
           max_batch_size_ = kHardMaxBatchSize;
-          fprintf(stderr, "BLAS warning, maximum batch size set to %ld.",
+          fprintf(stderr, "BLAS warning, maximum batch size set to %ld\n.",
                   max_batch_size_);
         }
 
