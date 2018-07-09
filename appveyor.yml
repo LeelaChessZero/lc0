@@ -55,3 +55,10 @@ artifacts:
     name: lc0-$(NAME)
   - path: lc0-$(NAME).zip
     name: lc0-$(NAME)-zip
+deploy:
+  - provider: GitHub
+    artifact: lc0-$(NAME).zip
+    auth_token:
+      secure: xlw/7zqX2zEfNwrEr3/oaZ4FIREcdYgvMbWolZz4sUtzUfxrlyFoAvVj/I4FNlIN
+    on:
+      appveyor_repo_tag: true
