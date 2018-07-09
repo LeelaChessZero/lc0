@@ -124,8 +124,7 @@ EdgeList::EdgeList(MoveList moves)
 /////////////////////////////////////////////////////////////////////////
 
 Node* Node::CreateSingleChildNode(Move move) {
-  // There may be edges in this node as it could participate in search before,
-  // but all nodes should be trimmed.
+  assert(!edges_);
   assert(!child_);
   edges_ = EdgeList({move});
   child_ = std::make_unique<Node>(this, 0);
@@ -303,9 +302,9 @@ void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
   Node* new_head = nullptr;
-  for (const auto& n : current_head_->Edges()) {
+  for (auto& n : current_head_->Edges()) {
     if (n.GetMove() == move) {
-      new_head = n.node();
+      new_head = n.GetOrSpawnNode(current_head_);
       break;
     }
   }
