@@ -25,6 +25,8 @@
 
 #include <array>
 
+#include "ispc/winograd_ispc.h"
+
 namespace lczero {
 
 std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
@@ -104,6 +106,8 @@ void WinogradConvolution3::Forward(const size_t batch_size,
   TransformOut(batch_size, output, output_channels);
 }
 
+
+#ifndef USE_ISPC_OBJ
 void WinogradConvolution3::TransformIn(const size_t batch_size,
                                        const float* input,
                                        const size_t channels) {
@@ -200,6 +204,15 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
     }
   }
 }
+
+#else // USE_ISPC_OBJ
+void WinogradConvolution3::TransformIn(const size_t batch_size,
+                                       const float* input,
+                                       const size_t channels) {
+  ispc::winograd_TransformIn_ispc( batch_size, input,channels,&V_[0]);
+}
+
+#endif // USE_ISPC_OBJ
 
 void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                                  const size_t input_channels,

@@ -37,6 +37,7 @@ endif
 deps = []
 files = []
 includes = []
+objects = []
 has_backends = false
 
 
@@ -152,13 +153,35 @@ if get_option('build_backends')
 
     elif get_option('openblas') and openblas_lib.found()
       add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
-      includes += include_directories(get_option('openblas_include'))
+      ob = get_option('openblas_include')
+      message(ob)
+      includes += include_directories(ob)
       deps += [ openblas_lib ]
       has_blas = true
 
     endif
+
+    if has_blas and get_option('ispc')
+      # TODO fix later
+      ispc_dir_path = meson.source_root() + '/src/neural/blas/ispc/'
+      wino_name = 'winograd'
+      wino_name_full = ispc_dir_path + wino_name
+      message('running ispc')
+      # typical ispc command
+      # ispc -O2 --arch=x86-64 --target=host mandelbrot.ispc -o objs/mandelbrot_ispc.o -h objs/mandelbrot_ispc.h
+      r = run_command('ispc', '-O2', '--arch=x86-64', '--target=host',wino_name_full + '.ispc','-o',wino_name_full + '_ispc.o','-h', wino_name_full + '_ispc.h')
+      if r.returncode() != 0
+        output = r.stdout()
+        errortxt = r.stderr()
+	error('ispc failed ' + output +  errortxt)
+      endif
+      objects += [wino_name_full + '_ispc.o']
+      add_project_arguments('-DUSE_ISPC_OBJ', language : 'cpp')
+    endif
+    
   endif
 
+  
   if get_option('blas') and has_blas
 
     blas_files = [
@@ -296,7 +319,7 @@ endif
 #############################################################################
 
 executable('lc0', 'src/main.cc',
-  files, include_directories: includes, dependencies: deps, install: true)
+  files, include_directories: includes, dependencies: deps, objects: objects, install: true)
 
 
 ### Tests
