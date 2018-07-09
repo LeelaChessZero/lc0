@@ -9,14 +9,17 @@ environment:
     OPENCL: false
     BLAS: false
     CUDA: true
+    GTEST: false
   - NAME: opencl
     OPENCL: true
     BLAS: true
     CUDA: false
+    GTEST: false
   - NAME: blas
     OPENCL: false
     BLAS: true
     CUDA: false
+    GTEST: true
 skip_commits:
   files:
     - '**/*.md'
@@ -43,7 +46,7 @@ cache:
   - C:\Python36\Lib\site-packages
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2'
 before_build:
-- cmd: meson.py build --backend vs2017 --buildtype release -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
+- cmd: meson.py build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
 build:
   project: build/lc0.sln
 after_build:
@@ -62,3 +65,8 @@ deploy:
       secure: xlw/7zqX2zEfNwrEr3/oaZ4FIREcdYgvMbWolZz4sUtzUfxrlyFoAvVj/I4FNlIN
     on:
       appveyor_repo_tag: true
+test_script:
+- cmd: cd build
+- cmd: IF %GTEST%==true copy C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
+- cmd: IF %GTEST%==true meson.py test --print-errorlogs
+- cmd: cd ..
