@@ -326,10 +326,10 @@ if get_option('gtest') and gtest.found()
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ))
+  ), timeout: 90)
 
   test('HashCat',
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ))
+  ), timeout: 90)
 endif
