@@ -152,7 +152,24 @@ if get_option('build_backends')
 
     elif get_option('openblas') and openblas_lib.found()
       add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
-      includes += include_directories(get_option('openblas_include'))
+
+      required_openblas_header = 'openblas_config.h'
+      if not cc.has_header(required_openblas_header)
+        openblas_headers_found = false
+        
+        # add the first valid include directory
+        foreach d : get_option('openblas_include')
+          if not openblas_headers_found and cc.has_header(required_openblas_header, args: '-I' + d)
+            includes += include_directories(d)
+            openblas_headers_found = true
+          endif
+        endforeach
+        
+        if not openblas_headers_found
+          error('Failed to detect OpenBLAS headers. Did you install libopenblas-dev?')
+        endif
+      endif
+
       deps += [ openblas_lib ]
       has_blas = true
 
@@ -300,19 +317,19 @@ executable('lc0', 'src/main.cc',
 
 
 ### Tests
-gtest = dependency('gtest', required: false)
+gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
 test_deps = deps
-if gtest.found()
+if get_option('gtest') and gtest.found()
   test_deps += gtest
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ))
+  ), timeout: 90)
 
   test('HashCat',
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ))
+  ), timeout: 90)
 endif
