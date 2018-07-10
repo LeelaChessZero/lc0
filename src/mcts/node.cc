@@ -335,8 +335,6 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
     // Completely different position.
     DeallocateTree();
-    current_head_ = nullptr;
-    gamebegin_node_ = nullptr;
   }
 
   if (!gamebegin_node_) {
@@ -366,6 +364,7 @@ void NodeTree::DeallocateTree() {
   // Same as gamebegin_node_.reset(), but actual deallocation will happen in
   // GC thread.
   gNodeGc.AddToGcQueue(std::move(gamebegin_node_));
+  gamebegin_node_ = nullptr;
   current_head_ = nullptr;
 }
 
