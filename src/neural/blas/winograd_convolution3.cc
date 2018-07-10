@@ -25,7 +25,9 @@
 
 #include <array>
 
-#include "ispc/winograd_ispc.h"
+#ifdef USE_ISPC
+#include "winograd_ispc.h"
+#endif
 
 namespace lczero {
 
@@ -107,7 +109,7 @@ void WinogradConvolution3::Forward(const size_t batch_size,
 }
 
 
-#ifndef USE_ISPC_OBJ
+#ifndef USE_ISPC
 void WinogradConvolution3::TransformIn(const size_t batch_size,
                                        const float* input,
                                        const size_t channels) {
@@ -205,14 +207,14 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
   }
 }
 
-#else // USE_ISPC_OBJ
+#else // USE_ISPC
 void WinogradConvolution3::TransformIn(const size_t batch_size,
                                        const float* input,
                                        const size_t channels) {
   ispc::winograd_TransformIn_ispc( batch_size, input,channels,&V_[0]);
 }
 
-#endif // USE_ISPC_OBJ
+#endif // USE_ISPC
 
 void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                                  const size_t input_channels,

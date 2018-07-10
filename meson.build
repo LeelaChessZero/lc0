@@ -37,7 +37,6 @@ endif
 deps = []
 files = []
 includes = []
-objects = []
 has_backends = false
 
 
@@ -153,35 +152,28 @@ if get_option('build_backends')
 
     elif get_option('openblas') and openblas_lib.found()
       add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
-      ob = get_option('openblas_include')
-      message(ob)
-      includes += include_directories(ob)
+      includes += include_directories(get_option('openblas_include'))
       deps += [ openblas_lib ]
       has_blas = true
 
     endif
 
-    if has_blas and get_option('ispc')
-      # TODO fix later
-      ispc_dir_path = meson.source_root() + '/src/neural/blas/ispc/'
-      wino_name = 'winograd'
-      wino_name_full = ispc_dir_path + wino_name
-      message('running ispc')
-      # typical ispc command
-      # ispc -O2 --arch=x86-64 --target=host mandelbrot.ispc -o objs/mandelbrot_ispc.o -h objs/mandelbrot_ispc.h
-      r = run_command('ispc', '-O2', '--arch=x86-64', '--target=host',wino_name_full + '.ispc','-o',wino_name_full + '_ispc.o','-h', wino_name_full + '_ispc.h')
-      if r.returncode() != 0
-        output = r.stdout()
-        errortxt = r.stderr()
-	error('ispc failed ' + output +  errortxt)
+    ispc = find_program('ispc', required: false)
+
+    if has_blas and get_option('ispc') and ispc.found()
+      if host_machine.system() == 'windows'
+        outputname = '@BASENAME@.obj'
+      else
+        outputname = '@BASENAME@.o'
       endif
-      objects += [wino_name_full + '_ispc.o']
-      add_project_arguments('-DUSE_ISPC_OBJ', language : 'cpp')
+      iscp_gen = generator(ispc,
+        output: [ outputname, '@BASENAME@_ispc.h'],
+        arguments: ['-O2', '--arch=x86-64', '--target=sse4-i32x8' , '@INPUT@', '-o', '@OUTPUT0@' ,'-h', '@OUTPUT1@'],
+      )
     endif
-    
+
   endif
 
-  
   if get_option('blas') and has_blas
 
     blas_files = [
@@ -194,6 +186,11 @@ if get_option('build_backends')
 
     files += blas_files
     has_backends = true
+
+    if get_option('ispc') and ispc.found()
+      files += iscp_gen.process('src/neural/blas/ispc/winograd.ispc')
+      add_project_arguments('-DUSE_ISPC', language : 'cpp')
+    endif
 
   endif
 
@@ -253,7 +250,6 @@ if get_option('build_backends')
   nvcc = find_program('/usr/local/cuda-9.2/bin/nvcc',
                       '/usr/local/cuda-9.1/bin/nvcc',
                       'nvcc', required: false)
-
   cuda_files = [
     'src/neural/network_cudnn.cu',
   ]
@@ -319,7 +315,7 @@ endif
 #############################################################################
 
 executable('lc0', 'src/main.cc',
-  files, include_directories: includes, dependencies: deps, objects: objects, install: true)
+  files, include_directories: includes, dependencies: deps, install: true)
 
 
 ### Tests
