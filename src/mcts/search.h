@@ -84,8 +84,10 @@ class Search {
   static const char* kMiniBatchSizeStr;
   static const char* kMaxPrefetchBatchStr;
   static const char* kCpuctStr;
-  static const char* kTemperatureStr;
-  static const char* kTempDecayMovesStr;
+  static const char* kMoveTempStr;
+  static const char* kMoveTempDecayStr;
+  static const char* kEvalTempStr;
+  static const char* kEvalTempDecayStr;
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
   static const char* kSmartPruningStr;
@@ -104,6 +106,12 @@ class Search {
   // Returns a child with most visits, with or without temperature.
   Node* GetBestChildNoTemperature(Node* parent) const;
   Node* GetBestChildWithTemperature(Node* parent, float temperature) const;
+  // Calculates current temperature based on ply, eval, and options passed.
+  float CalculateTemperature() const;
+
+  // Returns true if we are running a "go searchmoves" *and* the node is *not*
+  // in the given searchmoves
+  bool IsSearchmovesAndNodeNotInSearchmoves(Node* node) const;
 
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
@@ -156,8 +164,10 @@ class Search {
   const int kMiniBatchSize;
   const int kMaxPrefetchBatch;
   const float kCpuct;
-  const float kTemperature;
-  const int kTempDecayMoves;
+  const float kMoveTemp;
+  const float kMoveTempDecay;
+  const float kEvalTemp;
+  const float kEvalTempDecay;
   const bool kNoise;
   const bool kVerboseStats;
   const bool kSmartPruning;
