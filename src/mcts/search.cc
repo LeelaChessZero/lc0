@@ -783,7 +783,10 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
           std::min(scores.size(), budget < 2 ? first_unsorted_index + 2
                                              : first_unsorted_index + 3);
       std::partial_sort(scores.begin() + first_unsorted_index,
-                        scores.begin() + new_unsorted_index, scores.end());
+                        scores.begin() + new_unsorted_index, scores.end(),
+                        [](const ScoredEdge& a, const ScoredEdge& b) {
+                          return a.first < b.first;
+                        });
       first_unsorted_index = new_unsorted_index;
     }
 
