@@ -5,11 +5,11 @@ image:
 - Previous Visual Studio 2017
 environment:
   matrix:
-  - NAME: cuda
-    OPENCL: false
-    BLAS: false
-    CUDA: true
-    GTEST: false
+#  - NAME: cuda
+#    OPENCL: false
+#    BLAS: false
+#    CUDA: true
+#    GTEST: false
   - NAME: opencl
     OPENCL: true
     BLAS: true
