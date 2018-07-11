@@ -242,7 +242,9 @@ class EdgeAndNode {
  public:
   EdgeAndNode() = default;
   EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
-  operator bool() const { return edge_ != nullptr; }
+  explicit operator bool() const { return edge_ != nullptr; }
+  bool operator==(const EdgeAndNode& other) const { return edge_ == other.edge_; }
+  bool operator!=(const EdgeAndNode& other) const { return edge_ != other.edge_; }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }
@@ -315,8 +317,7 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator<is_const> end() { return {}; }
 
   // Functions to support iterator interface.
-  bool operator==(Edge_Iterator& other) { return edge_ == other.edge_; }
-  bool operator!=(Edge_Iterator& other) { return edge_ != other.edge_; }
+  // Equality comparison operators are inherited from EdgeAndNode.
   void operator++() {
     // If it was the last edge in array, become end(), otherwise advance.
     if (++current_idx_ == total_count_) {
