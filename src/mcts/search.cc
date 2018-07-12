@@ -920,8 +920,17 @@ void SearchWorker::UpdateCounters() {
   search_->MaybeOutputInfo();
   search_->MaybeTriggerStop();
 
-  if (nodes_to_process_.empty()) {
-    // If this thread had no work, sleep for some milliseconds.
+  // If this thread had no work, sleep for some milliseconds.
+  // Collisions don't count as work, so have to enumerate to find out if there
+  // was anything done.
+  bool work_done = false;
+  for (NodeToProcess& node_to_process : nodes_to_process_) {
+    if (!node_to_process.is_collision) {
+      work_done = true;
+      break;
+    }
+  }
+  if (!work_done) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 }
