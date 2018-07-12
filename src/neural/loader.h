@@ -23,8 +23,7 @@
 
 #include "neural/network.h"
 
-namespace lczero
-{
+namespace lczero {
 
 using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
@@ -43,4 +42,4 @@ std::string DecompressGzip(const std::string &filename);
 // files, returns one which has the latest modification date.
 std::string DiscoveryWeightsFile();
 
-} // namespace lczero
+}  // namespace lczero
