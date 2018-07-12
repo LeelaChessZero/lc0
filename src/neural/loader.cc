@@ -17,6 +17,8 @@
 */
 
 #include "neural/loader.h"
+#include "lc0net.pb.h"
+#include "version.inc"
 #include <zlib.h>
 #include <algorithm>
 #include <cctype>
@@ -24,15 +26,17 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
 
 namespace lczero {
 
-FloatVectors LoadFloatsFromFile(const std::string& filename) {
+std::string DecompressGzip(const std::string &filename) {
   const int kStartingSize = 8 * 1024 * 1024;  // 8M
-  std::vector<char> buffer(kStartingSize);
+  std::string buffer;
+  buffer.resize(kStartingSize);
   int bytes_read = 0;
 
   // Read whole file into a buffer.
@@ -46,17 +50,82 @@ FloatVectors LoadFloatsFromFile(const std::string& filename) {
     } else {
       bytes_read += sz;
       buffer.resize(bytes_read);
-      // Add newline in the end for the case it was not there.
-      buffer.push_back('\n');
       break;
     }
   }
   gzclose(file);
 
+  return buffer;
+}
+
+void DenormLayer(const lc0::Weights_Layer& layer, FloatVectors& vecs) {
+  FloatVector v;
+  auto &buffer = layer.params();
+  auto data = reinterpret_cast<const std::uint16_t*>(buffer.data());
+  int n = buffer.length() / 2;
+  v.resize(n);
+  for (int i = 0; i < n; i++) {
+    v[i] = data[i] / float(0xffff);
+    v[i] *= layer.max_val() - layer.min_val();
+    v[i] += layer.min_val();
+  }
+  vecs.emplace_back(v);
+}
+
+void DenormConvBlock(const lc0::Weights_ConvBlock& conv, FloatVectors& vecs) {
+  DenormLayer(conv.bn_stddivs(), vecs);
+  DenormLayer(conv.bn_means(), vecs);
+  DenormLayer(conv.biases(), vecs);
+  DenormLayer(conv.weights(), vecs);
+}
+
+FloatVectors LoadFloatsFromPbFile(const std::string& filename) {
+  auto buffer = DecompressGzip(filename);
+  std::cout << "pb size: " << buffer.size() << std::endl;
+  auto net = lc0::Net();
+	FloatVectors vecs;
+  net.ParseFromString(buffer);
+
+	std::string min_version(std::to_string(net.min_version().major()) + ".");
+	min_version += std::to_string(net.min_version().minor()) + ".";
+	min_version += std::to_string(net.min_version().patch());
+
+	if (net.min_version().major() > LC0_VERSION_MAJOR)
+		throw Exception(filename + " requires lc0 version: " + min_version);
+	if (net.min_version().minor() > LC0_VERSION_MINOR)
+		throw Exception(filename + " requires lc0 version: " + min_version);
+	if (net.min_version().patch() > LC0_VERSION_PATCH)
+		throw Exception(filename + " requires lc0 version: " + min_version);
+
+	auto &w = net.weights();
+  
+  DenormConvBlock(w.input(), vecs);
+
+	for (int i = 0, n = w.residual_size(); i < n; i++) {
+    DenormConvBlock(w.residual(i).conv1(), vecs);
+    DenormConvBlock(w.residual(i).conv2(), vecs);
+	}
+
+	DenormConvBlock(w.policy(), vecs);
+	DenormLayer(w.ip_pol_w(), vecs);
+	DenormLayer(w.ip_pol_b(), vecs);
+	DenormConvBlock(w.value(), vecs);
+	DenormLayer(w.ip1_val_w(), vecs);
+	DenormLayer(w.ip1_val_b(), vecs);
+	DenormLayer(w.ip2_val_w(), vecs);
+	DenormLayer(w.ip2_val_b(), vecs);
+
+	return vecs;
+}
+
+FloatVectors LoadFloatsFromFile(const std::string& filename) {
+  auto buffer = DecompressGzip(filename);
   // Parse buffer.
   FloatVectors result;
   FloatVector line;
   size_t start = 0;
+  // Add newline in the end for the case it was not there.
+  buffer.push_back('\n');
   for (size_t i = 0; i < buffer.size(); ++i) {
     char& c = buffer[i];
     const bool is_newline = (c == '\n' || c == '\r');
@@ -91,7 +160,19 @@ void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
 }  // namespace
 
 Weights LoadWeightsFromFile(const std::string& filename) {
-  FloatVectors vecs = LoadFloatsFromFile(filename);
+  FloatVectors vecs;
+  
+  if (filename.substr(filename.size() - 6) == ".pb.gz") {
+    vecs = LoadFloatsFromPbFile(filename);
+    vecs.insert(vecs.begin(), FloatVector{2});
+  }
+  else {
+    vecs = LoadFloatsFromFile(filename);
+  }
+
+  for (auto &v : vecs) {
+    std::cout << v.size() << std::endl;
+  }
 
   if (vecs.size() <= 19)
     throw Exception("Weights file " + filename +

@@ -39,6 +39,14 @@ files = []
 includes = []
 has_backends = false
 
+protoc = find_program('protoc', required : true)
+deps += dependency('protobuf', required : true)
+
+gen = generator(protoc, \
+  output    : ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
+  arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+
+files += gen.process('libs/lczero-common/lc0net.proto')
 
 #############################################################################
 ## Main files
