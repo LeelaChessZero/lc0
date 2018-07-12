@@ -81,7 +81,6 @@ void DenormConvBlock(const lc0::Weights_ConvBlock& conv, FloatVectors& vecs) {
 
 FloatVectors LoadFloatsFromPbFile(const std::string& filename) {
   auto buffer = DecompressGzip(filename);
-  std::cout << "pb size: " << buffer.size() << std::endl;
   auto net = lc0::Net();
 	FloatVectors vecs;
   net.ParseFromString(buffer);
@@ -168,10 +167,6 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   }
   else {
     vecs = LoadFloatsFromFile(filename);
-  }
-
-  for (auto &v : vecs) {
-    std::cout << v.size() << std::endl;
   }
 
   if (vecs.size() <= 19)
