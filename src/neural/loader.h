@@ -23,16 +23,17 @@
 
 #include "neural/network.h"
 
-namespace lczero {
+namespace lczero
+{
 
 using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
 
 // Read space separated file of floats and return it as a vector of vectors.
-FloatVectors LoadFloatsFromFile(const std::string& filename);
+FloatVectors LoadFloatsFromFile(const std::string &filename);
 
 // Read v2 weights file and fill the weights structure.
-Weights LoadWeightsFromFile(const std::string& filename);
+Weights LoadWeightsFromFile(const std::string &filename);
 
 // Read gzip compressed data into buffer.
 std::string DecompressGzip(const std::string &filename);
@@ -42,4 +43,4 @@ std::string DecompressGzip(const std::string &filename);
 // files, returns one which has the latest modification date.
 std::string DiscoveryWeightsFile();
 
-}  // namespace lczero
+} // namespace lczero
