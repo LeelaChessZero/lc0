@@ -49,6 +49,7 @@ before_build:
 - cmd: git submodule update --init --recursive
 - cmd: meson.py build --backend vs2015 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
 build:
+  parallel: true
   project: build/lc0.sln
 after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
