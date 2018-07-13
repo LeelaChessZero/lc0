@@ -198,8 +198,8 @@ class Move {
   Move(const std::string& str, bool black = false);
   Move(const char* str, bool black = false) : Move(std::string(str), black) {}
 
-  BoardSquare to() const { return {data_ & kToMask}; }
-  BoardSquare from() const { return {(data_ & kFromMask) >> 6}; }
+  BoardSquare to() const { return BoardSquare(data_ & kToMask); }
+  BoardSquare from() const { return BoardSquare((data_ & kFromMask) >> 6); }
   Promotion promotion() const { return Promotion((data_ & kPromoMask) >> 12); }
   bool castling() const { return (data_ & kCastleMask) != 0; }
   void SetCastling() { data_ |= kCastleMask; }
