@@ -33,7 +33,7 @@
 
 namespace lczero {
 
-std::string DecompressGzip(const std::string &filename) {
+std::string DecompressGzip(const std::string& filename) {
   const int kStartingSize = 8 * 1024 * 1024;  // 8M
   std::string buffer;
   buffer.resize(kStartingSize);
@@ -58,10 +58,10 @@ std::string DecompressGzip(const std::string &filename) {
   return buffer;
 }
 
-void DenormLayer(const lc0::Weights_Layer &layer, FloatVectors &vecs) {
+void DenormLayer(const lc0::Weights_Layer& layer, FloatVectors& vecs) {
   FloatVector v;
-  auto &buffer = layer.params();
-  auto data = reinterpret_cast<const std::uint16_t *>(buffer.data());
+  auto& buffer = layer.params();
+  auto data = reinterpret_cast<const std::uint16_t*>(buffer.data());
   int n = buffer.length() / 2;
   v.resize(n);
   for (int i = 0; i < n; i++) {
@@ -72,14 +72,14 @@ void DenormLayer(const lc0::Weights_Layer &layer, FloatVectors &vecs) {
   vecs.emplace_back(v);
 }
 
-void DenormConvBlock(const lc0::Weights_ConvBlock &conv, FloatVectors &vecs) {
+void DenormConvBlock(const lc0::Weights_ConvBlock& conv, FloatVectors& vecs) {
   DenormLayer(conv.bn_stddivs(), vecs);
   DenormLayer(conv.bn_means(), vecs);
   DenormLayer(conv.biases(), vecs);
   DenormLayer(conv.weights(), vecs);
 }
 
-FloatVectors LoadFloatsFromPbFile(const std::string &filename) {
+FloatVectors LoadFloatsFromPbFile(const std::string& filename) {
   auto buffer = DecompressGzip(filename);
   auto net = lc0::Net();
   FloatVectors vecs;
@@ -96,7 +96,7 @@ FloatVectors LoadFloatsFromPbFile(const std::string &filename) {
   if (net.min_version().patch() > LC0_VERSION_PATCH)
     throw Exception(filename + " requires lc0 version: " + min_version);
 
-  auto &w = net.weights();
+  auto& w = net.weights();
 
   DenormConvBlock(w.input(), vecs);
 
@@ -117,7 +117,7 @@ FloatVectors LoadFloatsFromPbFile(const std::string &filename) {
   return vecs;
 }
 
-FloatVectors LoadFloatsFromFile(const std::string &filename) {
+FloatVectors LoadFloatsFromFile(const std::string& filename) {
   auto buffer = DecompressGzip(filename);
   // Parse buffer.
   FloatVectors result;
@@ -126,7 +126,7 @@ FloatVectors LoadFloatsFromFile(const std::string &filename) {
   // Add newline in the end for the case it was not there.
   buffer.push_back('\n');
   for (size_t i = 0; i < buffer.size(); ++i) {
-    char &c = buffer[i];
+    char& c = buffer[i];
     const bool is_newline = (c == '\n' || c == '\r');
     if (!std::isspace(c)) continue;
     if (start < i) {
@@ -145,12 +145,12 @@ FloatVectors LoadFloatsFromFile(const std::string &filename) {
 }
 
 namespace {
-void PopulateLastIntoVector(FloatVectors *vecs, Weights::Vec *out) {
+void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
   *out = std::move(vecs->back());
   vecs->pop_back();
 }
 
-void PopulateConvBlockWeights(FloatVectors *vecs, Weights::ConvBlock *block) {
+void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
   PopulateLastIntoVector(vecs, &block->bn_stddivs);
   PopulateLastIntoVector(vecs, &block->bn_means);
   PopulateLastIntoVector(vecs, &block->biases);
@@ -158,7 +158,7 @@ void PopulateConvBlockWeights(FloatVectors *vecs, Weights::ConvBlock *block) {
 }
 }  // namespace
 
-Weights LoadWeightsFromFile(const std::string &filename) {
+Weights LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
 
   if (filename.substr(filename.size() - 6) == ".pb.gz") {
@@ -208,8 +208,8 @@ std::string DiscoveryWeightsFile() {
   // Open all files in <binary dir> amd <binary dir>/networks,
   // ones which are >= kMinFileSize are candidates.
   std::vector<std::pair<time_t, std::string> > time_and_filename;
-  for (const auto &path : {"", "/networks"}) {
-    for (const auto &file : GetFileList(root_path + path)) {
+  for (const auto& path : {"", "/networks"}) {
+    for (const auto& file : GetFileList(root_path + path)) {
       const std::string filename = root_path + path + "/" + file;
       if (GetFileSize(filename) < kMinFileSize) continue;
       time_and_filename.emplace_back(GetFileTime(filename), filename);
@@ -220,7 +220,7 @@ std::string DiscoveryWeightsFile() {
 
   // Open all candidates, from newest to oldest, possibly gzipped, and try to
   // read version for it. If version is 2, return it.
-  for (const auto &candidate : time_and_filename) {
+  for (const auto& candidate : time_and_filename) {
     gzFile file = gzopen(candidate.second.c_str(), "rb");
 
     if (!file) continue;

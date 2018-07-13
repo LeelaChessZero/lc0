@@ -29,13 +29,13 @@ using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
 
 // Read space separated file of floats and return it as a vector of vectors.
-FloatVectors LoadFloatsFromFile(const std::string &filename);
+FloatVectors LoadFloatsFromFile(const std::string& filename);
 
 // Read v2 weights file and fill the weights structure.
-Weights LoadWeightsFromFile(const std::string &filename);
+Weights LoadWeightsFromFile(const std::string& filename);
 
 // Read gzip compressed data into buffer.
-std::string DecompressGzip(const std::string &filename);
+std::string DecompressGzip(const std::string& filename);
 
 // Tries to find a file which looks like a weights file, and located in
 // directory of binary_name or one of subdirectories. If there are several such
