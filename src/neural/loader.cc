@@ -73,14 +73,13 @@ void DenormLayer(const lc0::Weights_Layer& layer, FloatVectors& vecs) {
 }
 
 void DenormConvBlock(const lc0::Weights_ConvBlock& conv, FloatVectors& vecs) {
-  DenormLayer(conv.bn_stddivs(), vecs);
-  DenormLayer(conv.bn_means(), vecs);
-  DenormLayer(conv.biases(), vecs);
   DenormLayer(conv.weights(), vecs);
+  DenormLayer(conv.biases(), vecs);
+  DenormLayer(conv.bn_means(), vecs);
+  DenormLayer(conv.bn_stddivs(), vecs);
 }
 
-FloatVectors LoadFloatsFromPbFile(const std::string& filename) {
-  auto buffer = DecompressGzip(filename);
+FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = lc0::Net();
   FloatVectors vecs;
   net.ParseFromString(buffer);
@@ -90,11 +89,14 @@ FloatVectors LoadFloatsFromPbFile(const std::string& filename) {
   min_version += std::to_string(net.min_version().patch());
 
   if (net.min_version().major() > LC0_VERSION_MAJOR)
-    throw Exception(filename + " requires lc0 version: " + min_version);
+    throw Exception("Weights require at least lc0 version: " + min_version);
   if (net.min_version().minor() > LC0_VERSION_MINOR)
-    throw Exception(filename + " requires lc0 version: " + min_version);
+    throw Exception("Weights require at least lc0 version: " + min_version);
   if (net.min_version().patch() > LC0_VERSION_PATCH)
-    throw Exception(filename + " requires lc0 version: " + min_version);
+    throw Exception("Weights require at least lc0 version: " + min_version);
+
+  if (net.format().weights_encoding() != lc0::Format::LINEAR16)
+    throw Exception("Invalid weight encoding");
 
   auto& w = net.weights();
 
@@ -117,14 +119,12 @@ FloatVectors LoadFloatsFromPbFile(const std::string& filename) {
   return vecs;
 }
 
-FloatVectors LoadFloatsFromFile(const std::string& filename) {
-  auto buffer = DecompressGzip(filename);
+FloatVectors LoadFloatsFromFile(std::string& buffer) {
   // Parse buffer.
   FloatVectors result;
   FloatVector line;
+  buffer += "\n";
   size_t start = 0;
-  // Add newline in the end for the case it was not there.
-  buffer.push_back('\n');
   for (size_t i = 0; i < buffer.size(); ++i) {
     char& c = buffer[i];
     const bool is_newline = (c == '\n' || c == '\r');
@@ -141,6 +141,7 @@ FloatVectors LoadFloatsFromFile(const std::string& filename) {
     start = i + 1;
   }
 
+  result.erase(result.begin());
   return result;
 }
 
@@ -160,18 +161,12 @@ void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
 
 Weights LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
+  auto buffer = DecompressGzip(filename);
 
-  if (filename.substr(filename.size() - 6) == ".pb.gz") {
-    vecs = LoadFloatsFromPbFile(filename);
-    vecs.insert(vecs.begin(), FloatVector{2});
-  } else {
-    vecs = LoadFloatsFromFile(filename);
-  }
-
-  if (vecs.size() <= 19)
-    throw Exception("Weights file " + filename +
-                    " should have at least 19 lines");
-  if (vecs[0][0] != 2) throw Exception("Weights version 2 expected");
+  if (buffer[0] == '2' && buffer[1] == '\n')
+    vecs = LoadFloatsFromFile(buffer);
+  else
+    vecs = LoadFloatsFromPbFile(buffer);
 
   Weights result;
   // Populating backwards.
@@ -186,10 +181,10 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   PopulateConvBlockWeights(&vecs, &result.policy);
 
   // Version, Input + all the residual should be left.
-  if ((vecs.size() - 5) % 8 != 0)
+  if ((vecs.size() - 4) % 8 != 0)
     throw Exception("Bad number of lines in weights file");
 
-  const int num_residual = (vecs.size() - 5) / 8;
+  const int num_residual = (vecs.size() - 4) / 8;
   result.residual.resize(num_residual);
   for (int i = num_residual - 1; i >= 0; --i) {
     PopulateConvBlockWeights(&vecs, &result.residual[i].conv2);
@@ -201,7 +196,7 @@ Weights LoadWeightsFromFile(const std::string& filename) {
 }
 
 std::string DiscoveryWeightsFile() {
-  const int kMinFileSize = 10000000;  // 10 MB
+  const int kMinFileSize = 5000000;  // 5 MB
 
   std::string root_path = CommandLine::BinaryDirectory();
 
