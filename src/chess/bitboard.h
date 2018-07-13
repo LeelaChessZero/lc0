@@ -72,7 +72,7 @@ class BoardSquare {
   }
 
  private:
-  std::uint8_t square_ = 0;
+  std::uint8_t square_ = 0; // Only lower six bits should be set.
 };
 
 // Represents a board as an array of 64 bits.
@@ -190,40 +190,43 @@ class Move {
  public:
   enum class Promotion : std::uint8_t { None, Queen, Rook, Bishop, Knight };
   Move() = default;
-  Move(BoardSquare from, BoardSquare to) : from_(from), to_(to) {}
+  Move(BoardSquare from, BoardSquare to)
+          : data_(to.as_int() + (from.as_int() << 6)) {}
   Move(BoardSquare from, BoardSquare to, Promotion promotion)
-      : from_(from), to_(to), promotion_(promotion) {}
-  Move(const std::string& str, bool black = false);
-  Move(const char* str, bool black = false) : Move(std::string(str), black) {}
+          : data_(to.as_int() + (from.as_int() << 6) +
+                  (static_cast<uint8_t>(promotion) << 12)) {}
+  Move(const std::string &str, bool black = false);
+  Move(const char *str, bool black = false) : Move(std::string(str), black) {}
 
-  BoardSquare from() const { return from_; }
-  BoardSquare to() const { return to_; }
-  Promotion promotion() const { return promotion_; }
-  bool IsCastling() const { return castling_; }
-  void SetCastling() { castling_ = true; }
+  BoardSquare to() const { return {data_ & kToMask}; }
+  BoardSquare from() const { return {(data_ & kFromMask) >> 6}; }
+  Promotion promotion() const { return Promotion((data_ & kPromoMask) >> 12); }
+  bool castling() const { return (data_ & kCastleMask) != 0; }
+  void SetCastling() { data_ |= kCastleMask; }
 
+  void SetTo(BoardSquare to) { data_ = (data_ & ~kToMask) | to.as_int(); }
+  void SetFrom(BoardSquare from) {
+    data_ = (data_ & ~kFromMask) | (from.as_int() << 6);
+  }
+  void SetPromotion(Promotion promotion) {
+    data_ = (data_ & ~kPromoMask) | (static_cast<uint8_t>(promotion) << 12);
+  }
   // 0 .. 16384, knight promotion and no promotion is the same.
   uint16_t as_packed_int() const;
 
   // 0 .. 1857, to use in neural networks.
   uint16_t as_nn_index() const;
 
-  bool operator==(const Move& other) const {
-    return from_ == other.from_ && to_ == other.to_ &&
-           promotion_ == other.promotion_;
-  }
+  bool operator==(const Move& other) const { return data_ == other.data_; }
 
   bool operator!=(const Move& other) const { return !operator==(other); }
-  operator bool() const { return from_.as_int() != 0 || to_.as_int() != 0; }
+  operator bool() const { return data_ != 0; }
 
-  void Mirror() {
-    from_.Mirror();
-    to_.Mirror();
-  }
+  void Mirror() { data_ ^= 0b111000111000; }
 
   std::string as_string() const {
-    std::string res = from_.as_string() + to_.as_string();
-    switch (promotion_) {
+    std::string res = from().as_string() + to().as_string();
+    switch (promotion()) {
       case Promotion::None:
         return res;
       case Promotion::Queen:
@@ -240,10 +243,19 @@ class Move {
   }
 
  private:
-  BoardSquare from_;
-  BoardSquare to_;
-  Promotion promotion_ = Promotion::None;
-  bool castling_ = false;
+    uint16_t data_ = 0;
+    // Move, using the following encoding:
+    // bits 0..5 "to"-square
+    // bits 6..11 "from"-square
+    // bits 12..14 promotion value
+    // bit 15 whether move is a castling
+
+    enum Masks : uint16_t {
+        kToMask = 0b0000000000111111,
+        kFromMask = 0b0000111111000000,
+        kPromoMask = 0b0111000000000000,
+        kCastleMask = 0b1000000000000000,
+    };
 };
 
 using MoveList = std::vector<Move>;
