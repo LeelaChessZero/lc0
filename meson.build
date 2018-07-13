@@ -39,8 +39,8 @@ files = []
 includes = []
 has_backends = false
 
-protoc = find_program('protoc', required : true)
-deps += dependency('protobuf', required : true)
+protoc = find_program('protoc', fallback: ['protobuf', 'protoc'])
+deps += dependency('protobuf', fallback : ['protobuf', 'protobuf_dep'])
 
 gen = generator(protoc, \
   output    : ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
