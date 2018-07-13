@@ -72,7 +72,7 @@ class BoardSquare {
   }
 
  private:
-  std::uint8_t square_ = 0; // Only lower six bits should be set.
+  std::uint8_t square_ = 0;  // Only lower six bits should be set.
 };
 
 // Represents a board as an array of 64 bits.
@@ -104,7 +104,7 @@ class BitBoard {
 
   // Sets value of given square to 0.
   void reset(BoardSquare square) { reset(square.as_int()); }
-  void reset(std ::uint8_t pos) { board_ &= ~(std::uint64_t(1) << pos); }
+  void reset(std::uint8_t pos) { board_ &= ~(std::uint64_t(1) << pos); }
   void reset(int row, int col) { reset(BoardSquare(row, col)); }
 
   // Gets value of a square.
@@ -191,12 +191,12 @@ class Move {
   enum class Promotion : std::uint8_t { None, Queen, Rook, Bishop, Knight };
   Move() = default;
   Move(BoardSquare from, BoardSquare to)
-          : data_(to.as_int() + (from.as_int() << 6)) {}
+      : data_(to.as_int() + (from.as_int() << 6)) {}
   Move(BoardSquare from, BoardSquare to, Promotion promotion)
-          : data_(to.as_int() + (from.as_int() << 6) +
-                  (static_cast<uint8_t>(promotion) << 12)) {}
-  Move(const std::string &str, bool black = false);
-  Move(const char *str, bool black = false) : Move(std::string(str), black) {}
+      : data_(to.as_int() + (from.as_int() << 6) +
+              (static_cast<uint8_t>(promotion) << 12)) {}
+  Move(const std::string& str, bool black = false);
+  Move(const char* str, bool black = false) : Move(std::string(str), black) {}
 
   BoardSquare to() const { return {data_ & kToMask}; }
   BoardSquare from() const { return {(data_ & kFromMask) >> 6}; }
@@ -243,19 +243,19 @@ class Move {
   }
 
  private:
-    uint16_t data_ = 0;
-    // Move, using the following encoding:
-    // bits 0..5 "to"-square
-    // bits 6..11 "from"-square
-    // bits 12..14 promotion value
-    // bit 15 whether move is a castling
+  uint16_t data_ = 0;
+  // Move, using the following encoding:
+  // bits 0..5 "to"-square
+  // bits 6..11 "from"-square
+  // bits 12..14 promotion value
+  // bit 15 whether move is a castling
 
-    enum Masks : uint16_t {
-        kToMask = 0b0000000000111111,
-        kFromMask = 0b0000111111000000,
-        kPromoMask = 0b0111000000000000,
-        kCastleMask = 0b1000000000000000,
-    };
+  enum Masks : uint16_t {
+    kToMask = 0b0000000000111111,
+    kFromMask = 0b0000111111000000,
+    kPromoMask = 0b0111000000000000,
+    kCastleMask = 0b1000000000000000,
+  };
 };
 
 using MoveList = std::vector<Move>;
