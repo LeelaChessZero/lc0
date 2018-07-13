@@ -33,7 +33,7 @@
 namespace lczero {
 namespace {
 
-void cudnnError(cudnnStatus_t status, const char *file, const int &line) {
+void CudnnError(cudnnStatus_t status, const char *file, const int &line) {
   if (status != CUDNN_STATUS_SUCCESS) {
     char message[128];
     sprintf(message, "CUDNN error: %s (%s:%d) ", cudnnGetErrorString(status),
@@ -42,7 +42,7 @@ void cudnnError(cudnnStatus_t status, const char *file, const int &line) {
   }
 }
 
-const char *cublasGetErrorString(cublasStatus_t status) {
+const char *CublasGetErrorString(cublasStatus_t status) {
   switch (status) {
     case CUBLAS_STATUS_SUCCESS:
       return "CUBLAS_STATUS_SUCCESS";
@@ -68,16 +68,16 @@ const char *cublasGetErrorString(cublasStatus_t status) {
   return "unknown cublas error";
 }
 
-void cublasError(cublasStatus_t status, const char *file, const int &line) {
+void CublasError(cublasStatus_t status, const char *file, const int &line) {
   if (status != CUBLAS_STATUS_SUCCESS) {
     char message[128];
-    sprintf(message, "CUDNN error: %s (%s:%d) ", cublasGetErrorString(status),
+    sprintf(message, "CUDNN error: %s (%s:%d) ", CublasGetErrorString(status),
             file, line);
     throw Exception(message);
   }
 }
 
-void cudaError(cudaError_t status, const char *file, const int &line) {
+void CudaError(cudaError_t status, const char *file, const int &line) {
   if (status != cudaSuccess) {
     char message[128];
     sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
@@ -86,18 +86,17 @@ void cudaError(cudaError_t status, const char *file, const int &line) {
   }
 }
 
-#define reportCUDNNErrors(status) cudnnError(status, __FILE__, __LINE__)
-#define reportCUBLASErrors(status) cublasError(status, __FILE__, __LINE__)
-#define reportCUDAErrors(status) cudaError(status, __FILE__, __LINE__)
+#define ReportCUDNNErrors(status) CudnnError(status, __FILE__, __LINE__)
+#define ReportCUBLASErrors(status) CublasError(status, __FILE__, __LINE__)
+#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
 
-// hard-coded for now, no point in going above this anyway (can possibly save
-// memory by reducing this)
+// Hard-coded for now, no point in going above this anyway (can possibly save
+// memory by reducing this).
 static constexpr int kMaxBatchSize = 1024;
-
 static constexpr int kNumOutputPolicy = 1858;
 
-// the Layer objects only hold memory for weights, biases, etc
-// memory for input and output tensors is provided by caller of Eval
+// The Layer objects only hold memory for weights, biases, etc
+// memory for input and output tensors is provided by caller of Eval.
 
 template <typename DataType>
 class BaseLayer {
@@ -109,15 +108,15 @@ class BaseLayer {
   BaseLayer(int c, int h, int w, BaseLayer *ip);
   size_t GetOutputSize(int N) const { return sizeof(DataType) * N * C * H * W; }
 
-  // input2 is optional (skip connection)
+  // input2 is optional (skip connection).
   virtual void Eval(int N, DataType *output, const DataType *input,
-                    const DataType *input2, void *scratch, size_t scratchSize,
+                    const DataType *input2, void *scratch, size_t scratch_size,
                     cudnnHandle_t cudnn, cublasHandle_t cublas) = 0;
 
  protected:
   BaseLayer *input_;
 
-  int C;  // output tensor dimensions
+  int C;  // Output tensor dimensions.
   int H;
   int W;
 };
@@ -137,7 +136,7 @@ class ConvLayer : public BaseLayer<DataType> {
   ~ConvLayer();
   void LoadWeights(float *pfilter, float *pBias, void *scratch);
   void Eval(int N, DataType *output, const DataType *input,
-            const DataType *input2, void *scratch, size_t scratchSize,
+            const DataType *input2, void *scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 
  private:
@@ -151,7 +150,7 @@ class ConvLayer : public BaseLayer<DataType> {
 
   cudnnFilterDescriptor_t filter_desc_;
   cudnnConvolutionDescriptor_t conv_desc_;
-  cudnnConvolutionFwdAlgo_t convAlgo;
+  cudnnConvolutionFwdAlgo_t conv_algo_;
 
   cudnnTensorDescriptor_t bias_desc_;
   cudnnTensorDescriptor_t in_tensor_desc_;
@@ -168,7 +167,7 @@ class SoftMaxLayer : public BaseLayer<DataType> {
  public:
   SoftMaxLayer(BaseLayer<DataType> *ip);
   void Eval(int N, DataType *output, const DataType *input,
-            const DataType *input2, void *scratch, size_t scratchSize,
+            const DataType *input2, void *scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 
  private:
@@ -185,7 +184,7 @@ class BNLayer : public BaseLayer<DataType> {
 
   void LoadWeights(float *cpuMeans, float *cpuVar);
   void Eval(int N, DataType *output, const DataType *input,
-            const DataType *input2, void *scratch, size_t scratchSize,
+            const DataType *input2, void *scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 
  private:
@@ -206,7 +205,7 @@ class FCLayer : public BaseLayer<DataType> {
 
   void LoadWeights(float *cpuWeight, float *cpuBias, void *scratch);
   void Eval(int N, DataType *output, const DataType *input,
-            const DataType *input2, void *scratch, size_t scratchSize,
+            const DataType *input2, void *scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 
  private:
@@ -222,7 +221,7 @@ class FCLayer : public BaseLayer<DataType> {
 //  2. output of the layer
 //  3. data from old layer for skip connection
 
-int divUp(int a, int b) { return (a + b - 1) / b; }
+int DivUp(int a, int b) { return (a + b - 1) / b; }
 
 /////////////////////////////////////////////////////////////////////////////
 //          Simple CUDA kernels used by certain layers                     //
@@ -259,16 +258,16 @@ __global__ void addVectors_kernel(T *c, T *a, T *b, int size, int asize,
 // activation.
 template <typename T>
 void addVectors(T *c, T *a, T *b, int size, int asize, int bsize, bool relu,
-                bool useTanh) {
-  const int blockSize = 256;
-  int blocks = divUp(size, blockSize);
+                bool use_tanh) {
+  const int kBlockSize = 256;
+  int blocks = DivUp(size, kBlockSize);
 
-  addVectors_kernel<<<blocks, blockSize>>>(c, a, b, size, asize, bsize, relu,
-                                           useTanh);
-  reportCUDAErrors(cudaGetLastError());
+  addVectors_kernel<<<blocks, kBlockSize>>>(c, a, b, size, asize, bsize, relu,
+                                            use_tanh);
+  ReportCUDAErrors(cudaGetLastError());
 }
 
-__device__ half readNCHW(float *inputTensor, int n, int c, int h, int w,
+__device__ half readNCHW(float *input_tensor, int n, int c, int h, int w,
                          int Nin, int Cin, int H, int W) {
   if (n >= Nin || c >= Cin) return 0;
 
@@ -281,11 +280,11 @@ __device__ half readNCHW(float *inputTensor, int n, int c, int h, int w,
   index *= W;
   index += w;
 
-  return (half)(inputTensor[index]);
+  return (half)(input_tensor[index]);
 }
 
-__global__ void fp32NCHWtofp16NHWC_kernel(half *outputTensor,
-                                          float *inputTensor, int Nin, int Cin,
+__global__ void fp32NCHWtofp16NHWC_kernel(half *output_tensor,
+                                          float *input_tensor, int Nin, int Cin,
                                           int Nout, int Cout, int H, int W) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -301,15 +300,15 @@ __global__ void fp32NCHWtofp16NHWC_kernel(half *outputTensor,
   index /= H;
   int n = index;
 
-  outputTensor[tid] = readNCHW(inputTensor, n, c, h, w, Nin, Cin, H, W);
+  output_tensor[tid] = readNCHW(input_tensor, n, c, h, w, Nin, Cin, H, W);
 }
 
-void fp32NCHWtofp16NHWC(half *outputTensor, float *inputTensor, int Nin,
+void fp32NCHWtofp16NHWC(half *output_tensor, float *input_tensor, int Nin,
                         int Cin, int Nout, int Cout, int H, int W) {
   size_t numElements = Nout * Cout * H * W;
   const int blockSize = 256;
-  int blocks = divUp(numElements, blockSize);
-  fp32NCHWtofp16NHWC_kernel<<<blocks, blockSize>>>(outputTensor, inputTensor,
+  int blocks = DivUp(numElements, blockSize);
+  fp32NCHWtofp16NHWC_kernel<<<blocks, blockSize>>>(output_tensor, input_tensor,
                                                    Nin, Cin, Nout, Cout, H, W);
 }
 
@@ -325,9 +324,9 @@ __global__ void copyTypeConverted_kernel(DstType *op, SrcType *ip, int N) {
 
 template <typename DstType, typename SrcType>
 void copyTypeConverted(DstType *op, SrcType *ip, int N) {
-  const int blockSize = 256;
-  int blocks = divUp(N, blockSize);
-  copyTypeConverted_kernel<<<blocks, blockSize>>>(op, ip, N);
+  const int kBlockSize = 256;
+  int blocks = DivUp(N, kBlockSize);
+  copyTypeConverted_kernel<<<blocks, kBlockSize>>>(op, ip, N);
 }
 
 template <typename T>
@@ -358,25 +357,25 @@ __global__ void batchNormForward_kernel(T *output, const T *input,
   output[index] = (T)el;
 }
 
-// each thread processes single element
+// Every thread processes single element.
 template <typename T>
 void batchNormForward(T *output, const T *input, const T *skipInput, int N,
-                      int C, int H, int W, float *means, float *varMultipliers,
+                      int C, int H, int W, float *means, float *var_multipliers,
                       bool relu) {
-  int totalElements = N * C * H * W;
-  const int blockSize = 256;
-  int blocks = divUp(totalElements, blockSize);
+  const int total_elements = N * C * H * W;
+  const int kBlockSize = 256;
+  int blocks = DivUp(total_elements, kBlockSize);
 
-  batchNormForward_kernel<<<blocks, blockSize>>>(
-      output, input, skipInput, N, C, H, W, means, varMultipliers, relu);
+  batchNormForward_kernel<<<blocks, kBlockSize>>>(
+      output, input, skipInput, N, C, H, W, means, var_multipliers, relu);
 
-  reportCUDAErrors(cudaGetLastError());
+  ReportCUDAErrors(cudaGetLastError());
 }
 
 __global__ void expandPlanes_kernel_Fp32_NCHW(float *output,
                                               const uint64_t *masks,
                                               const float *values, int n) {
-  // block size of 256, same mask/val for 64 consecutive threads
+  // Block size of 256, same mask/val for 64 consecutive threads.
   constexpr int kNumShmemElments = 256 / 64;
 
   __shared__ uint64_t shMasks[kNumShmemElments];
@@ -388,7 +387,7 @@ __global__ void expandPlanes_kernel_Fp32_NCHW(float *output,
 
   if (planeIndex >= n) return;
 
-  // load inputs to shared memory
+  // load inputs to shared memory.
   if (threadIdx.x < kNumShmemElments) {
     shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
     shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
@@ -409,15 +408,15 @@ __global__ void expandPlanes_kernel_Fp32_NCHW(float *output,
 
 void expandPlanes_Fp32_NCHW(float *output, const uint64_t *masks,
                             const float *values, int n) {
-  int threads = n * 8 * 8;  // each thread writes a single element
+  int threads = n * 8 * 8;  // Each thread writes a single element.
   const int blockSize = 256;
-  int blocks = divUp(threads, blockSize);
+  int blocks = DivUp(threads, blockSize);
   expandPlanes_kernel_Fp32_NCHW<<<blocks, blockSize>>>(output, masks, values,
                                                        n);
-  reportCUDAErrors(cudaGetLastError());
+  ReportCUDAErrors(cudaGetLastError());
 }
 
-// TODO: can optimize using shared memory if this becomes a bottleneck
+// TODO: Can optimize using shared memory if this becomes a bottleneck.
 __global__ void expandPlanes_kernel_Fp16_NHWC(half *output,
                                               const uint64_t *masks,
                                               const float *values, int n) {
@@ -441,12 +440,12 @@ __global__ void expandPlanes_kernel_Fp16_NHWC(half *output,
 
 void expandPlanes_Fp16_NHWC(half *output, const uint64_t *masks,
                             const float *values, int n) {
-  int threads = n * 8 * 8;  // each thread writes a single element
-  const int blockSize = 256;
-  int blocks = divUp(threads, blockSize);
-  expandPlanes_kernel_Fp16_NHWC<<<blocks, blockSize>>>(output, masks, values,
-                                                       n);
-  reportCUDAErrors(cudaGetLastError());
+  int threads = n * 8 * 8;  // Each thread writes a single element.
+  const int kBlockSize = 256;
+  int blocks = DivUp(threads, kBlockSize);
+  expandPlanes_kernel_Fp16_NHWC<<<blocks, kBlockSize>>>(output, masks, values,
+                                                        n);
+  ReportCUDAErrors(cudaGetLastError());
 }
 
 template <typename DataType>
@@ -462,11 +461,11 @@ SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType> *ip)
 template <typename DataType>
 void SoftMaxLayer<DataType>::Eval(int N, DataType *output,
                                   const DataType *input, const DataType *input2,
-                                  void *scratch, size_t scratchSize,
+                                  void *scratch, size_t scratch_size,
                                   cudnnHandle_t cudnn, cublasHandle_t cublas) {
   float alpha = 1.0f, beta = 0.0f;
 
-  // need to call this at Eval as 'N' changes :-/
+  // Need to call this at Eval as 'N' changes :-/
   if (std::is_same<half, DataType>::value) {
     cudnnSetTensor4dDescriptor(out_tensor_desc_, CUDNN_TENSOR_NHWC,
                                CUDNN_DATA_HALF, N, GetC(), GetH(), GetW());
@@ -488,16 +487,16 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType> *ip, int C, int H, int W,
       c_input_(Cin),
       use_relu_(relu),
       use_bias_(bias) {
-  // allocate memory for weights (filter tensor) and biases
-  size_t weightSize = sizeof(DataType) * Cin * C * filter_size_ * filter_size_;
-  reportCUDAErrors(cudaMalloc(&weights, weightSize));
+  // Allocate memory for weights (filter tensor) and biases.
+  size_t weight_size = sizeof(DataType) * Cin * C * filter_size_ * filter_size_;
+  ReportCUDAErrors(cudaMalloc(&weights, weight_size));
 
-  size_t biasSize = sizeof(DataType) * C;
-  reportCUDAErrors(cudaMalloc(&biases, biasSize));
+  size_t blas_size = sizeof(DataType) * C;
+  ReportCUDAErrors(cudaMalloc(&biases, blas_size));
 
   const bool fp16 = std::is_same<half, DataType>::value;
 
-  // create cudnn objects for various tensors, algorithms, etc
+  // Create cudnn objects for various tensors, algorithms, etc.
   cudnnCreateFilterDescriptor(&filter_desc_);
   cudnnCreateConvolutionDescriptor(&conv_desc_);
   cudnnCreateTensorDescriptor(&out_tensor_desc_);
@@ -510,27 +509,27 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType> *ip, int C, int H, int W,
                              fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
                              GetC(), Cin, filter_size_, filter_size_);
 
-  reportCUDNNErrors(cudnnSetTensor4dDescriptor(
+  ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
       bias_desc_, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
       fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, 1, C, 1, 1));
 
   int padding = filter_size_ / 2;
   const bool crossCorr = 1;
 
-  reportCUDNNErrors(cudnnSetConvolution2dDescriptor(
+  ReportCUDNNErrors(cudnnSetConvolution2dDescriptor(
       conv_desc_, padding, padding, 1, 1, 1, 1,
       crossCorr ? CUDNN_CROSS_CORRELATION : CUDNN_CONVOLUTION,
       fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT));
 
   if (fp16)
-    reportCUDNNErrors(
+    ReportCUDNNErrors(
         cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH));
 
   // TODO: dynamic selection of algorithm!
   if ((C > 32) && (!fp16)) {
-    convAlgo = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
+    conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
   } else {
-    convAlgo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
+    conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
   }
 
   if (use_relu_) {
@@ -544,21 +543,21 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType> *ip, int C, int H, int W,
 
 template <>
 void ConvLayer<half>::LoadWeights(float *pfilter, float *pBias, void *scratch) {
-  size_t weightSize =
+  size_t weight_size =
       sizeof(float) * c_input_ * C * filter_size_ * filter_size_;
-  size_t biasSize = sizeof(float) * C;
-  // also need to convert from fp32 NCHW to fp16 NHWC
+  size_t blas_size = sizeof(float) * C;
+  // Also need to convert from fp32 NCHW to fp16 NHWC
   // first copy from CPU memory to scratch space in GPU memory
-  // and then do the type / layout conversion using a kernel
+  // and then do the type / layout conversion using a kernel.
   assert(scratch);
-  reportCUDAErrors(
-      cudaMemcpyAsync(scratch, pfilter, weightSize, cudaMemcpyHostToDevice));
+  ReportCUDAErrors(
+      cudaMemcpyAsync(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
   fp32NCHWtofp16NHWC((half *)weights, (float *)scratch, C, c_input_, C,
                      c_input_, filter_size_, filter_size_);
 
   if (pBias) {
-    reportCUDAErrors(
-        cudaMemcpyAsync(scratch, pBias, biasSize, cudaMemcpyHostToDevice));
+    ReportCUDAErrors(
+        cudaMemcpyAsync(scratch, pBias, blas_size, cudaMemcpyHostToDevice));
 
     copyTypeConverted((half *)biases, (float *)scratch, C);
   }
@@ -567,84 +566,84 @@ void ConvLayer<half>::LoadWeights(float *pfilter, float *pBias, void *scratch) {
 template <>
 void ConvLayer<float>::LoadWeights(float *pfilter, float *pBias,
                                    void *scratch) {
-  size_t weightSize =
+  size_t weight_size =
       sizeof(float) * c_input_ * C * filter_size_ * filter_size_;
-  size_t biasSize = sizeof(float) * C;
-  reportCUDAErrors(
-      cudaMemcpyAsync(weights, pfilter, weightSize, cudaMemcpyHostToDevice));
+  size_t blas_size = sizeof(float) * C;
+  ReportCUDAErrors(
+      cudaMemcpyAsync(weights, pfilter, weight_size, cudaMemcpyHostToDevice));
 
   if (pBias) {
-    reportCUDAErrors(
-        cudaMemcpyAsync(biases, pBias, biasSize, cudaMemcpyHostToDevice));
+    ReportCUDAErrors(
+        cudaMemcpyAsync(biases, pBias, blas_size, cudaMemcpyHostToDevice));
   } else {
-    reportCUDAErrors(cudaMemset(biases, biasSize, 0));
+    ReportCUDAErrors(cudaMemset(biases, blas_size, 0));
   }
 }
 
 template <typename DataType>
 void ConvLayer<DataType>::Eval(int N, DataType *output, const DataType *input,
                                const DataType *input2, void *scratch,
-                               size_t scratchSize, cudnnHandle_t cudnn,
+                               size_t scratch_size, cudnnHandle_t cudnn,
                                cublasHandle_t cublas) {
   const bool fp16 = std::is_same<half, DataType>::value;
 
-  reportCUDNNErrors(cudnnSetTensor4dDescriptor(
+  ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
       out_tensor_desc_, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
       fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, N, C, H, W));
 
-  reportCUDNNErrors(cudnnSetTensor4dDescriptor(
+  ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
       in_tensor_desc_, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
       fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, N, c_input_, H, W));
 
   float alpha = 1.0f, beta = 0.0f;
 
   if (!(use_relu_ || use_bias_)) {
-    reportCUDNNErrors(cudnnConvolutionForward(
+    ReportCUDNNErrors(cudnnConvolutionForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
-        conv_desc_, convAlgo, scratch, scratchSize, &beta, out_tensor_desc_,
+        conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
         output));
   } else if (input2) {
     // fused bias + sum + relu!
-    reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
+    ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
-        conv_desc_, convAlgo, scratch, scratchSize, &alpha, out_tensor_desc_,
+        conv_desc_, conv_algo_, scratch, scratch_size, &alpha, out_tensor_desc_,
         input2, bias_desc_, biases, activation_, out_tensor_desc_, output));
   } else {
-    reportCUDNNErrors(cudnnConvolutionBiasActivationForward(
+    ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
-        conv_desc_, convAlgo, scratch, scratchSize, &beta, out_tensor_desc_,
+        conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
         output, bias_desc_, biases, activation_, out_tensor_desc_, output));
   }
 }
 
 template <typename DataType>
 ConvLayer<DataType>::~ConvLayer() {
-  reportCUDAErrors(cudaFree(weights));
-  reportCUDAErrors(cudaFree(biases));
+  ReportCUDAErrors(cudaFree(weights));
+  ReportCUDAErrors(cudaFree(biases));
 }
 
 template <typename DataType>
 BNLayer<DataType>::BNLayer(BaseLayer<DataType> *ip, bool relu)
     : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip),
       use_relu_(relu) {
-  size_t weightSize = sizeof(float) * C;
+  size_t weight_size = sizeof(float) * C;
 
-  reportCUDAErrors(cudaMalloc(&means_, weightSize));
-  reportCUDAErrors(cudaMalloc(&variances_, weightSize));
+  ReportCUDAErrors(cudaMalloc(&means_, weight_size));
+  ReportCUDAErrors(cudaMalloc(&variances_, weight_size));
 }
 
 template <typename DataType>
 void BNLayer<DataType>::LoadWeights(float *cpuMeans, float *cpuVar) {
-  size_t weightSize = sizeof(float) * C;
-  reportCUDAErrors(
-      cudaMemcpyAsync(means_, cpuMeans, weightSize, cudaMemcpyHostToDevice));
-  reportCUDAErrors(
-      cudaMemcpyAsync(variances_, cpuVar, weightSize, cudaMemcpyHostToDevice));
+  size_t weight_size = sizeof(float) * C;
+  ReportCUDAErrors(
+      cudaMemcpyAsync(means_, cpuMeans, weight_size, cudaMemcpyHostToDevice));
+  ReportCUDAErrors(
+      cudaMemcpyAsync(variances_, cpuVar, weight_size, cudaMemcpyHostToDevice));
 }
 
 template <>
 void BNLayer<half>::Eval(int N, half *output, const half *input,
-                         const half *input2, void *scratch, size_t scratchSize,
+                         const half *input2, void *scratch, size_t scratch_size,
                          cudnnHandle_t cudnn, cublasHandle_t cublas) {
   batchNormForward(output, input, input2, N, C, H, W, means_, variances_,
                    use_relu_);
@@ -653,7 +652,7 @@ void BNLayer<half>::Eval(int N, half *output, const half *input,
 template <>
 void BNLayer<float>::Eval(int N, float *output, const float *input,
                           const float *input2, void *scratch,
-                          size_t scratchSize, cudnnHandle_t cudnn,
+                          size_t scratch_size, cudnnHandle_t cudnn,
                           cublasHandle_t cublas) {
   batchNormForward(output, input, input2, N, C, H, W, means_, variances_,
                    use_relu_);
@@ -661,8 +660,8 @@ void BNLayer<float>::Eval(int N, float *output, const float *input,
 
 template <typename DataType>
 BNLayer<DataType>::~BNLayer() {
-  reportCUDAErrors(cudaFree(means_));
-  reportCUDAErrors(cudaFree(variances_));
+  ReportCUDAErrors(cudaFree(means_));
+  ReportCUDAErrors(cudaFree(variances_));
 }
 
 template <typename DataType>
@@ -672,12 +671,12 @@ FCLayer<DataType>::FCLayer(BaseLayer<DataType> *ip, int C, int H, int W,
       use_relu_(relu),
       use_bias_(bias),
       use_tanh_(tanh) {
-  size_t weightSize =
+  size_t weight_size =
       sizeof(DataType) * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
-  size_t biasSize = sizeof(DataType) * C * H * W;
-  reportCUDAErrors(cudaMalloc(&weights_, weightSize));
+  size_t blas_size = sizeof(DataType) * C * H * W;
+  ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
   if (use_bias_) {
-    reportCUDAErrors(cudaMalloc(&biases_, biasSize));
+    ReportCUDAErrors(cudaMalloc(&biases_, blas_size));
   } else {
     biases_ = nullptr;
   }
@@ -686,45 +685,46 @@ FCLayer<DataType>::FCLayer(BaseLayer<DataType> *ip, int C, int H, int W,
 template <>
 void FCLayer<half>::LoadWeights(float *cpuWeight, float *cpuBias,
                                 void *scratch) {
-  size_t numWeights =
+  size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
-  size_t weightSize = sizeof(float) * numWeights;
-  size_t numBiases = C * H * W;
-  size_t biasSize = sizeof(float) * numBiases;
+  size_t weight_size = sizeof(float) * num_weights;
+  size_t num_biases = C * H * W;
+  size_t blas_size = sizeof(float) * num_biases;
 
   // also need to convert from fp32 to fp16
   assert(scratch);
-  reportCUDAErrors(
-      cudaMemcpyAsync(scratch, cpuWeight, weightSize, cudaMemcpyHostToDevice));
+  ReportCUDAErrors(
+      cudaMemcpyAsync(scratch, cpuWeight, weight_size, cudaMemcpyHostToDevice));
 
-  fp32NCHWtofp16NHWC((half *)weights_, (float *)scratch, numBiases,
-                     input_->GetC(), numBiases, input_->GetC(), input_->GetH(),
+  fp32NCHWtofp16NHWC((half *)weights_, (float *)scratch, num_biases,
+                     input_->GetC(), num_biases, input_->GetC(), input_->GetH(),
                      input_->GetW());
 
   if (cpuBias) {
-    reportCUDAErrors(
-        cudaMemcpyAsync(scratch, cpuBias, biasSize, cudaMemcpyHostToDevice));
-    copyTypeConverted((half *)biases_, (float *)scratch, numBiases);
+    ReportCUDAErrors(
+        cudaMemcpyAsync(scratch, cpuBias, blas_size, cudaMemcpyHostToDevice));
+    copyTypeConverted((half *)biases_, (float *)scratch, num_biases);
   }
 }
 
 template <>
 void FCLayer<float>::LoadWeights(float *cpuWeight, float *cpuBias,
                                  void *scratch) {
-  size_t numWeights =
+  size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
-  size_t weightSize = sizeof(float) * numWeights;
-  size_t numBiases = C * H * W;
-  size_t biasSize = sizeof(float) * numBiases;
+  size_t weight_size = sizeof(float) * num_weights;
+  size_t num_biases = C * H * W;
+  size_t blas_size = sizeof(float) * num_biases;
 
-  reportCUDAErrors(
-      cudaMemcpyAsync(weights_, cpuWeight, weightSize, cudaMemcpyHostToDevice));
+  ReportCUDAErrors(cudaMemcpyAsync(weights_, cpuWeight, weight_size,
+                                   cudaMemcpyHostToDevice));
   if (use_bias_) {
-    reportCUDAErrors(
-        cudaMemcpyAsync(biases_, cpuBias, biasSize, cudaMemcpyHostToDevice));
+    ReportCUDAErrors(
+        cudaMemcpyAsync(biases_, cpuBias, blas_size, cudaMemcpyHostToDevice));
   }
 }
 
+// === begin ===
 // taken from:
 // https://devtalk.nvidia.com/default/topic/883897/error-when-trying-to-use-half-fp16-/
 /*
@@ -820,81 +820,83 @@ half float2half_rn(float a) {
   return uint16_as_fp16(ir);
 }
 
+// === end ===
+
 template <>
-void FCLayer<half>::Eval(int N, half *outputTensor, const half *inputTensor,
-                         const half *input2, void *scratch, size_t scratchSize,
+void FCLayer<half>::Eval(int N, half *output_tensor, const half *input_tensor,
+                         const half *input2, void *scratch, size_t scratch_size,
                          cudnnHandle_t cudnn, cublasHandle_t cublas) {
-  int numOutputs = C * H * W;
-  int numInputs = input_->GetC() * input_->GetH() * input_->GetW();
+  int num_outputs = C * H * W;
+  int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   half alpha = float2half_rn(1.0f), beta = float2half_rn(0.0f);
-  reportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numOutputs,
-                                 N, numInputs, &alpha, weights_, numInputs,
-                                 inputTensor, numInputs, &beta, outputTensor,
-                                 numOutputs));
+  ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                                 N, num_inputs, &alpha, weights_, num_inputs,
+                                 input_tensor, num_inputs, &beta, output_tensor,
+                                 num_outputs));
 
   if (use_bias_ || use_relu_ || use_tanh_) {
-    addVectors(outputTensor, biases_, outputTensor, numOutputs * N, numOutputs,
-               numOutputs * N, use_relu_, use_tanh_);
+    addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
+               num_outputs, num_outputs * N, use_relu_, use_tanh_);
   }
 }
 
 template <>
-void FCLayer<float>::Eval(int N, float *outputTensor, const float *inputTensor,
-                          const float *input2, void *scratch,
-                          size_t scratchSize, cudnnHandle_t cudnn,
-                          cublasHandle_t cublas) {
-  int numOutputs = C * H * W;
-  int numInputs = input_->GetC() * input_->GetH() * input_->GetW();
+void FCLayer<float>::Eval(int N, float *output_tensor,
+                          const float *input_tensor, const float *input2,
+                          void *scratch, size_t scratch_size,
+                          cudnnHandle_t cudnn, cublasHandle_t cublas) {
+  int num_outputs = C * H * W;
+  int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   float alpha = 1.0f, beta = 0.0f;
-  reportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numOutputs,
-                                 N, numInputs, &alpha, weights_, numInputs,
-                                 inputTensor, numInputs, &beta, outputTensor,
-                                 numOutputs));
+  ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                                 N, num_inputs, &alpha, weights_, num_inputs,
+                                 input_tensor, num_inputs, &beta, output_tensor,
+                                 num_outputs));
 
   if (use_bias_ || use_relu_ || use_tanh_) {
-    addVectors(outputTensor, biases_, outputTensor, numOutputs * N, numOutputs,
-               numOutputs * N, use_relu_, use_tanh_);
+    addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
+               num_outputs, num_outputs * N, use_relu_, use_tanh_);
   }
 }
 
 template <typename DataType>
 FCLayer<DataType>::~FCLayer() {
-  reportCUDAErrors(cudaFree(weights_));
-  reportCUDAErrors(cudaFree(biases_));
+  ReportCUDAErrors(cudaFree(weights_));
+  ReportCUDAErrors(cudaFree(biases_));
 }
 
 struct InputsOutputs {
   InputsOutputs() {
-    reportCUDAErrors(cudaHostAlloc(
+    ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, kMaxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
-    reportCUDAErrors(
+    ReportCUDAErrors(
         cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
 
-    reportCUDAErrors(cudaHostAlloc(&input_val_mem_,
+    ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
                                    kMaxBatchSize * kInputPlanes * sizeof(float),
                                    cudaHostAllocMapped));
-    reportCUDAErrors(
+    ReportCUDAErrors(
         cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
 
-    reportCUDAErrors(cudaHostAlloc(
+    ReportCUDAErrors(cudaHostAlloc(
         &op_policy_mem_, kMaxBatchSize * kNumOutputPolicy * sizeof(float),
         cudaHostAllocMapped));
-    reportCUDAErrors(
+    ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_policy_mem_gpu_, op_policy_mem_, 0));
 
-    reportCUDAErrors(cudaHostAlloc(
+    ReportCUDAErrors(cudaHostAlloc(
         &op_value_mem_, kMaxBatchSize * sizeof(float), cudaHostAllocMapped));
-    reportCUDAErrors(
+    ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
   }
   ~InputsOutputs() {
-    reportCUDAErrors(cudaFreeHost(input_masks_mem_));
-    reportCUDAErrors(cudaFreeHost(input_val_mem_));
-    reportCUDAErrors(cudaFreeHost(op_policy_mem_));
-    reportCUDAErrors(cudaFreeHost(op_value_mem_));
+    ReportCUDAErrors(cudaFreeHost(input_masks_mem_));
+    ReportCUDAErrors(cudaFreeHost(input_val_mem_));
+    ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
+    ReportCUDAErrors(cudaFreeHost(op_value_mem_));
   }
   uint64_t *input_masks_mem_;
   float *input_val_mem_;
@@ -922,14 +924,15 @@ class CudnnNetworkComputation : public NetworkComputation {
   ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes &&input) override {
-    auto iterMask =
+    auto iter_mask =
         &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
-    auto iterVal = &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
+    auto iter_val =
+        &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
 
     int i = 0;
     for (const auto &plane : input) {
-      iterMask[i] = plane.mask;
-      iterVal[i] = plane.value;
+      iter_mask[i] = plane.mask;
+      iter_val[i] = plane.value;
       i++;
     }
 
@@ -948,7 +951,7 @@ class CudnnNetworkComputation : public NetworkComputation {
   }
 
  private:
-  // memory holding inputs, outputs
+  // Memory holding inputs, outputs.
   std::unique_ptr<InputsOutputs> inputs_outputs_;
   int batch_size_;
 
@@ -959,38 +962,38 @@ template <typename DataType>
 class CudnnNetwork : public Network {
  public:
   CudnnNetwork(Weights weights, const OptionsDict &options) {
-    gpuId_ = options.GetOrDefault<int>("gpu", 0);
+    gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
-    int totalGPUs;
-    reportCUDAErrors(cudaGetDeviceCount(&totalGPUs));
+    int total_gpus;
+    ReportCUDAErrors(cudaGetDeviceCount(&total_gpus));
 
-    if (gpuId_ >= totalGPUs)
-      throw Exception("Invalid GPU Id: " + std::to_string(gpuId_));
+    if (gpu_id_ >= total_gpus)
+      throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
 
-    // select GPU to run on (for *the current* thread)
-    reportCUDAErrors(cudaSetDevice(gpuId_));
+    // Select GPU to run on (for *the current* thread).
+    ReportCUDAErrors(cudaSetDevice(gpu_id_));
 
-    reportCUDNNErrors(cudnnCreate(&cudnn_));
-    reportCUBLASErrors(cublasCreate(&cublas_));
+    ReportCUDNNErrors(cudnnCreate(&cudnn_));
+    ReportCUBLASErrors(cublasCreate(&cublas_));
 
     if (std::is_same<half, DataType>::value) {
-      // check if the GPU support fp16 (Volta+)
+      // Check if the GPU support fp16 (Volta+).
       cudaDeviceProp deviceProp = {};
-      cudaGetDeviceProperties(&deviceProp, gpuId_);
+      cudaGetDeviceProperties(&deviceProp, gpu_id_);
       if (deviceProp.major >= 7) {
-        // enable Tensor cores!
-        reportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+        // Enable Tensor cores!
+        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
       } else {
         throw Exception("Your GPU doesn't support FP16");
       }
     }
 
-    const int numInputPlanes = kInputPlanes;
-    const int numFilters = weights.input.biases.size();
+    const int kNumInputPlanes = kInputPlanes;
+    const int kNumFilters = weights.input.biases.size();
 
     numBlocks_ = weights.residual.size();
 
-    // 0. process weights
+    // 0. Process weights.
     processConvBlock(weights.input, true);
     for (auto i = size_t{0}; i < numBlocks_; i++) {
       processConvBlock(weights.residual[i].conv1, true);
@@ -1007,45 +1010,42 @@ class CudnnNetwork : public Network {
     cudnnCreateFilterDescriptor(&wDesc);
     cudnnCreateConvolutionDescriptor(&convDesc);
     cudnnCreateTensorDescriptor(&xDesc);
-    cudnnConvolutionFwdAlgo_t convAlgo;
+    cudnnConvolutionFwdAlgo_t conv_algo;
 
-    const int maxChannels = std::max(kInputPlanes, numFilters);
+    const int maxChannels = std::max(kInputPlanes, kNumFilters);
 
     const bool fp16 = std::is_same<half, DataType>::value;
-    reportCUDNNErrors(cudnnSetFilter4dDescriptor(
+    ReportCUDNNErrors(cudnnSetFilter4dDescriptor(
         wDesc, fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT,
         fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW, maxChannels, maxChannels,
         3, 3));
 
-    reportCUDNNErrors(cudnnSetTensor4dDescriptor(
+    ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
         xDesc, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
         fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, kMaxBatchSize, maxChannels,
         8, 8));
 
-    reportCUDNNErrors(cudnnSetConvolution2dDescriptor(
+    ReportCUDNNErrors(cudnnSetConvolution2dDescriptor(
         convDesc, 1, 1, 1, 1, 1, 1, CUDNN_CROSS_CORRELATION,
         fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT));
 
-    if (fp16)
-    {
-      reportCUDNNErrors(
-        cudnnSetConvolutionMathType(convDesc, CUDNN_TENSOR_OP_MATH));
-      convAlgo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
-    }
-    else
-    {
-      convAlgo = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
+    if (fp16) {
+      ReportCUDNNErrors(
+          cudnnSetConvolutionMathType(convDesc, CUDNN_TENSOR_OP_MATH));
+      conv_algo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
+    } else {
+      conv_algo = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
     }
 
     // Query expected scratch space from cudnn.
-    reportCUDNNErrors(cudnnGetConvolutionForwardWorkspaceSize(
-        cudnn_, xDesc, wDesc, convDesc, xDesc, convAlgo, &scratch_size_));
+    ReportCUDNNErrors(cudnnGetConvolutionForwardWorkspaceSize(
+        cudnn_, xDesc, wDesc, convDesc, xDesc, conv_algo, &scratch_size_));
 
-    // have some minumum as we also use this for transforming weights
+    // Have some minumum as we also use this for transforming weights.
     const int maxWeightSize = 128 * 1024 * 1024;
     if (scratch_size_ < maxWeightSize) scratch_size_ = maxWeightSize;
 
-    reportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
+    ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 #ifdef DEBUG_RAW_NPS
     printf("\nallocated %d bytes for scratch memory\n", (int)scratch_size_);
 #endif
@@ -1055,7 +1055,7 @@ class CudnnNetwork : public Network {
     // input
     {
       auto inputConv = std::make_unique<ConvLayer<DataType>>(
-          nullptr, numFilters, 8, 8, 3, numInputPlanes, true, true);
+          nullptr, kNumFilters, 8, 8, 3, kNumInputPlanes, true, true);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));
@@ -1064,14 +1064,14 @@ class CudnnNetwork : public Network {
     // residual block
     for (int block = 0; block < weights.residual.size(); block++) {
       auto conv1 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), numFilters, 8, 8, 3, numFilters, true, true);
+          getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
       conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                          &weights.residual[block].conv1.biases[0],
                          scratch_mem_);
       network_.emplace_back(std::move(conv1));
 
       auto conv2 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), numFilters, 8, 8, 3, numFilters, true, true);
+          getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
       conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                          &weights.residual[block].conv2.biases[0],
                          scratch_mem_);
@@ -1083,7 +1083,7 @@ class CudnnNetwork : public Network {
     // policy head
     {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.policy.bn_means.size(), 8, 8, 1, numFilters);
+          resi_last_, weights.policy.bn_means.size(), 8, 8, 1, kNumFilters);
       convPol->LoadWeights(&weights.policy.weights[0], nullptr, scratch_mem_);
       network_.emplace_back(std::move(convPol));
 
@@ -1104,10 +1104,10 @@ class CudnnNetwork : public Network {
     }
     policy_out_ = getLastLayer();
 
-    // Value head
+    // value head
     {
       auto convVal = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.value.bn_means.size(), 8, 8, 1, numFilters);
+          resi_last_, weights.value.bn_means.size(), 8, 8, 1, kNumFilters);
       convVal->LoadWeights(&weights.value.weights[0], nullptr, scratch_mem_);
       network_.emplace_back(std::move(convVal));
 
@@ -1132,11 +1132,11 @@ class CudnnNetwork : public Network {
 
     // 3. allocate GPU memory for running the network
     //    - three buffers of max size are enough (one to hold input, second to
-    //    hold output and third to hold skip connection's input)
+    //    hold output and third to hold skip connection's input).
     size_t maxSize = resi_last_->GetOutputSize(kMaxBatchSize);
     for (auto &mem : tensor_mem_) {
-      reportCUDAErrors(cudaMalloc(&mem, maxSize));
-      reportCUDAErrors(cudaMemset(mem, 0, maxSize));
+      ReportCUDAErrors(cudaMalloc(&mem, maxSize));
+      ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
     }
 
     // printf("Allocated %d bytes of GPU memory to run the network\n", 3 *
@@ -1227,7 +1227,7 @@ class CudnnNetwork : public Network {
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // value FC2    // VALUE
     }
-    reportCUDAErrors(cudaDeviceSynchronize());
+    ReportCUDAErrors(cudaDeviceSynchronize());
 
 #ifdef DEBUG_RAW_NPS
     const int reportingCalls = 100;
@@ -1255,9 +1255,9 @@ class CudnnNetwork : public Network {
 
   ~CudnnNetwork() {
     for (auto mem : tensor_mem_) {
-      if (mem) reportCUDAErrors(cudaFree(mem));
+      if (mem) ReportCUDAErrors(cudaFree(mem));
     }
-    if (scratch_mem_) reportCUDAErrors(cudaFree(scratch_mem_));
+    if (scratch_mem_) ReportCUDAErrors(cudaFree(scratch_mem_));
     cudnnDestroy(cudnn_);
     cublasDestroy(cublas_);
   }
@@ -1265,7 +1265,7 @@ class CudnnNetwork : public Network {
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // set correct gpu id for this computation (as it might have been called
     // from a different thread)
-    reportCUDAErrors(cudaSetDevice(gpuId_));
+    ReportCUDAErrors(cudaSetDevice(gpu_id_));
     return std::make_unique<CudnnNetworkComputation<DataType>>(this);
   }
 
@@ -1294,7 +1294,7 @@ class CudnnNetwork : public Network {
  private:
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
-  int gpuId_;
+  int gpu_id_;
 
   // currently only one NN Eval can happen a time (we can fix this if needed by
   // allocating more memory)
@@ -1318,8 +1318,8 @@ class CudnnNetwork : public Network {
   void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false) {
     const float epsilon = 1e-5f;
 
-    // compute reciprocal of std-dev from the variances (so that it can be just
-    // multiplied)
+    // Compute reciprocal of std-dev from the variances (so that it can be just
+    // multiplied).
     std::vector<float> &stddev = block.bn_stddivs;
     for (auto &&w : stddev) {
       w = 1.0f / std::sqrt(w + epsilon);
@@ -1334,9 +1334,9 @@ class CudnnNetwork : public Network {
       block.biases[j] = 0.0f;
     }
 
-    // get rid of the BN layer by adjusting weights and biases of the
+    // Get rid of the BN layer by adjusting weights and biases of the
     // convolution idea proposed by Henrik Forstén and first implemented in
-    // leela go zero
+    // leela go zero.
     if (foldBNLayer) {
       const int outputs = block.biases.size();
       const int channels = block.weights.size() / (outputs * 3 * 3);
@@ -1351,7 +1351,7 @@ class CudnnNetwork : public Network {
         block.bn_means[o] *= block.bn_stddivs[o];
         block.bn_stddivs[o] = 1.0f;
 
-        // Move means to convolution biases
+        // Move means to convolution biases.
         block.biases[o] = -block.bn_means[o];
         block.bn_means[o] = 0.0f;
       }
