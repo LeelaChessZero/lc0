@@ -119,20 +119,20 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   return vecs;
 }
 
-FloatVectors LoadFloatsFromFile(std::string& buffer) {
+FloatVectors LoadFloatsFromFile(std::string* buffer) {
   // Parse buffer.
   FloatVectors result;
   FloatVector line;
-  buffer += "\n";
+  (*buffer) += "\n";
   size_t start = 0;
-  for (size_t i = 0; i < buffer.size(); ++i) {
-    char& c = buffer[i];
+  for (size_t i = 0; i < buffer->size(); ++i) {
+    char& c = (*buffer)[i];
     const bool is_newline = (c == '\n' || c == '\r');
     if (!std::isspace(c)) continue;
     if (start < i) {
       // If previous character was not space too.
       c = '\0';
-      line.push_back(std::atof(&buffer[start]));
+      line.push_back(std::atof(&(*buffer)[start]));
     }
     if (is_newline && !line.empty()) {
       result.emplace_back();
@@ -163,8 +163,10 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
 
-  if (buffer[0] == '2' && buffer[1] == '\n')
-    vecs = LoadFloatsFromFile(buffer);
+  if (buffer[0] == '1' && buffer[1] == '\n')
+    throw Exception("Weight file no longer supported");
+  else if (buffer[0] == '2' && buffer[1] == '\n')
+    vecs = LoadFloatsFromFile(&buffer);
   else
     vecs = LoadFloatsFromPbFile(buffer);
 

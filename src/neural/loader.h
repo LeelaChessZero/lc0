@@ -32,7 +32,7 @@ using FloatVectors = std::vector<FloatVector>;
 FloatVectors LoadFloatsFromPbFile(const std::string& buffer);
 
 // Read space separated file of floats and return it as a vector of vectors.
-FloatVectors LoadFloatsFromFile(std::string& buffer);
+FloatVectors LoadFloatsFromFile(std::string* buffer);
 
 // Read v2 weights file and fill the weights structure.
 Weights LoadWeightsFromFile(const std::string& filename);
