@@ -39,13 +39,11 @@ files = []
 includes = []
 has_backends = false
 
-protobuf_dep = dependency('protobuf', required : false)
-if not protobuf_dep.found()
-  deps += subproject('protobuf').get_variable('protobuf_dep')
+deps += dependency('protobuf', fallback: ['protobuf', 'protobuf_dep'], required: true)
+protoc = find_program('protoc', required: false)
+if not protoc.found()
+  message('protoc will be built from the subproject')
   protoc = subproject('protobuf').get_variable('protoc')
-else
-  deps += protobuf_dep
-  protoc = find_program('protoc', required : true)
 endif
 
 gen = generator(protoc, \
