@@ -25,6 +25,7 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include <atomic>
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/hashcat.h"
@@ -48,8 +49,12 @@ class NodeGarbageCollector {
   // it has time.
   void AddToGcQueue(std::unique_ptr<Node> node) {
     if (!node) return;
-    Mutex::Lock lock(gc_mutex_);
+    //Mutex::Lock lock(gc_mutex_);
+    //spin lock
+    while(gc_atomic_flag_.test_and_set())
+      std::this_thread::yield();
     subtrees_to_gc_.emplace_back(std::move(node));
+    gc_atomic_flag_.clear();
   }
 
   ~NodeGarbageCollector() {
@@ -60,16 +65,27 @@ class NodeGarbageCollector {
 
  private:
   void GarbageCollect() {
-    while (!stop_) {
+    bool is_empty = false;
+    while (!stop_ && !is_empty) {
       // Node will be released in destructor when mutex is not locked.
       std::unique_ptr<Node> node_to_gc;
       {
         // Lock the mutex and move last subtree from subtrees_to_gc_ into
         // node_to_gc.
-        Mutex::Lock lock(gc_mutex_);
-        if (subtrees_to_gc_.empty()) return;
-        node_to_gc = std::move(subtrees_to_gc_.back());
-        subtrees_to_gc_.pop_back();
+        //Mutex::Lock lock(gc_mutex_);
+        //spin lock
+        if(!gc_atomic_flag_.test_and_set())
+        {
+          if (subtrees_to_gc_.empty()) {
+            is_empty=true;
+          } else {
+            node_to_gc = std::move(subtrees_to_gc_.back());
+            subtrees_to_gc_.pop_back();
+          }
+          gc_atomic_flag_.clear();
+        } else {
+          std::this_thread::yield();
+        }
       }
     }
   }
@@ -81,8 +97,9 @@ class NodeGarbageCollector {
     };
   }
 
-  mutable Mutex gc_mutex_;
-  std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
+  //mutable Mutex gc_mutex_;
+  std::atomic_flag gc_atomic_flag_ = ATOMIC_FLAG_INIT;
+  std::vector<std::unique_ptr<Node>> subtrees_to_gc_;// GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
   volatile bool stop_ = false;
