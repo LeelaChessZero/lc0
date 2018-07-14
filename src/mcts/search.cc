@@ -364,7 +364,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
     }
   }
 
-  auto best_node = temperature && root_node_->GetN() > 1
+  auto best_node = temperature && root_node_->GetChildrenVisits() > 0
                        ? GetBestChildWithTemperature(root_node_, temperature)
                        : GetBestChildNoTemperature(root_node_);
 
@@ -401,7 +401,7 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
 // Returns a child chosen according to weighted-by-temperature visit count.
 EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
                                                 float temperature) const {
-  assert(parent->GetN() > 1);
+  assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   const float n_parent = parent->GetN();

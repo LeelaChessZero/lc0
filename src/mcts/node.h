@@ -138,7 +138,7 @@ class Node {
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
-  uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 1; }
+  uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
