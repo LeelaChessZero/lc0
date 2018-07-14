@@ -115,7 +115,7 @@ Move Edge::GetMove(bool as_opponent) const {
 
 std::string Edge::DebugString() const {
   std::ostringstream oss;
-  oss << "Move: " << move_.as_string() << " P:" << p_;
+  oss << "Move: " << move_.as_string() << " P: " << GetP();
   return oss.str();
 }
 

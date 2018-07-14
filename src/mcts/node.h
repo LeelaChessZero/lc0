@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -78,12 +79,14 @@ class Edge {
   // is false) or as opponent (if as_opponent is true).
   Move GetMove(bool as_opponent = false) const;
 
-  // Returns value of Move probability returned from the neural net
-  // (but can be changed by adding Dirichlet noise).
-  float GetP() const { return p_; }
-
-  // Sets move probability.
-  void SetP(float val) { p_ = val; }
+  // Returns or sets value of Move policy prior returned from the neural net
+  // (but can be changed by adding Dirichlet noise). We use a 16 bit significand
+  // for storage savings in memory-critical Edges. Priors are floored at
+  // 1/0xFFFF, since we use priors multiplicatively to calculate U.
+  float GetP() const { return   static_cast<float>(p_)
+                              / static_cast<float>(0xFFFF); }
+  void SetP(float val) { p_ = std::max(static_cast<uint16_t>(1),
+                                       static_cast<uint16_t>(val * 0xFFFF)); }
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -97,8 +100,8 @@ class Edge {
   Move move_;
 
   // Probability that this move will be made. From policy head of the neural
-  // network.
-  float p_ = 0.0;
+  // network. Stored with a 16 bit significand in the form of a uint16_t.
+  uint16_t p_ = 0;
 
   friend class EdgeList;
 };
