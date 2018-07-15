@@ -31,13 +31,17 @@
 #include "proto/net.pb.h"
 #include "version.inc"
 
+
+
+namespace lczero {
+
 namespace {
-void PopulateLastIntoVector(lczero::FloatVectors* vecs, lczero::Weights::Vec* out) {
+void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
   *out = std::move(vecs->back());
   vecs->pop_back();
 }
 
-void PopulateConvBlockWeights(lczero::FloatVectors* vecs, lczero::Weights::ConvBlock* block) {
+void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
   PopulateLastIntoVector(vecs, &block->bn_stddivs);
   PopulateLastIntoVector(vecs, &block->bn_means);
   PopulateLastIntoVector(vecs, &block->biases);
@@ -69,8 +73,8 @@ std::string DecompressGzip(const std::string& filename) {
   return buffer;
 }
 
-lczero::FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
-  lczero::FloatVector vec;
+FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
+  FloatVector vec;
   auto& buffer = layer.params();
   auto data = reinterpret_cast<const std::uint16_t*>(buffer.data());
   int n = buffer.length() / 2;
@@ -83,16 +87,15 @@ lczero::FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
   return vec;
 }
 
-void DenormConvBlock(const pblczero::Weights_ConvBlock& conv, lczero::FloatVectors* vecs) {
+void DenormConvBlock(const pblczero::Weights_ConvBlock& conv, FloatVectors* vecs) {
   vecs->emplace_back(DenormLayer(conv.weights()));
   vecs->emplace_back(DenormLayer(conv.biases()));
   vecs->emplace_back(DenormLayer(conv.bn_means()));
   vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
 }
+
 } // namespace 
 
-
-namespace lczero {
 
 FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
@@ -165,7 +168,7 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   auto buffer = DecompressGzip(filename);
 
   if (buffer.size() < 2)
-    throw Exception("Invalid weights file");
+    throw Exception("Weight file invalid");
   else if (buffer[0] == '1' && buffer[1] == '\n')
     throw Exception("Weight file no longer supported");
   else if (buffer[0] == '2' && buffer[1] == '\n')
@@ -201,7 +204,7 @@ Weights LoadWeightsFromFile(const std::string& filename) {
 }
 
 std::string DiscoveryWeightsFile() {
-  const int kMinFileSize = 5000000;  // 5 MB
+  const int kMinFileSize = 500000;  // 500 KB
 
   std::string root_path = CommandLine::BinaryDirectory();
 
