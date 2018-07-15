@@ -25,13 +25,24 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include "lc0net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "proto/net.pb.h"
 #include "version.inc"
 
-namespace lczero {
+namespace {
+void PopulateLastIntoVector(lczero::FloatVectors* vecs, lczero::Weights::Vec* out) {
+  *out = std::move(vecs->back());
+  vecs->pop_back();
+}
+
+void PopulateConvBlockWeights(lczero::FloatVectors* vecs, lczero::Weights::ConvBlock* block) {
+  PopulateLastIntoVector(vecs, &block->bn_stddivs);
+  PopulateLastIntoVector(vecs, &block->bn_means);
+  PopulateLastIntoVector(vecs, &block->biases);
+  PopulateLastIntoVector(vecs, &block->weights);
+}
 
 std::string DecompressGzip(const std::string& filename) {
   const int kStartingSize = 8 * 1024 * 1024;  // 8M
@@ -41,7 +52,7 @@ std::string DecompressGzip(const std::string& filename) {
 
   // Read whole file into a buffer.
   gzFile file = gzopen(filename.c_str(), "rb");
-  if (!file) throw Exception("Cannot read weights from " + filename);
+  if (!file) throw lczero::Exception("Cannot read weights from " + filename);
   while (true) {
     int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
     if (sz == static_cast<int>(buffer.size()) - bytes_read) {
@@ -58,29 +69,33 @@ std::string DecompressGzip(const std::string& filename) {
   return buffer;
 }
 
-void DenormLayer(const lc0::Weights_Layer& layer, FloatVectors& vecs) {
-  FloatVector v;
+lczero::FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
+  lczero::FloatVector vec;
   auto& buffer = layer.params();
   auto data = reinterpret_cast<const std::uint16_t*>(buffer.data());
   int n = buffer.length() / 2;
-  v.resize(n);
+  vec.resize(n);
   for (int i = 0; i < n; i++) {
-    v[i] = data[i] / float(0xffff);
-    v[i] *= layer.max_val() - layer.min_val();
-    v[i] += layer.min_val();
+    vec[i] = data[i] / float(0xffff);
+    vec[i] *= layer.max_val() - layer.min_val();
+    vec[i] += layer.min_val();
   }
-  vecs.emplace_back(v);
+  return vec;
 }
 
-void DenormConvBlock(const lc0::Weights_ConvBlock& conv, FloatVectors& vecs) {
-  DenormLayer(conv.weights(), vecs);
-  DenormLayer(conv.biases(), vecs);
-  DenormLayer(conv.bn_means(), vecs);
-  DenormLayer(conv.bn_stddivs(), vecs);
+void DenormConvBlock(const pblczero::Weights_ConvBlock& conv, lczero::FloatVectors* vecs) {
+  vecs->emplace_back(DenormLayer(conv.weights()));
+  vecs->emplace_back(DenormLayer(conv.biases()));
+  vecs->emplace_back(DenormLayer(conv.bn_means()));
+  vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
 }
+} // namespace 
+
+
+namespace lczero {
 
 FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
-  auto net = lc0::Net();
+  auto net = pblczero::Net();
   FloatVectors vecs;
   net.ParseFromString(buffer);
 
@@ -95,26 +110,26 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   if (net.min_version().patch() > LC0_VERSION_PATCH)
     throw Exception("Weights require at least lc0 version: " + min_version);
 
-  if (net.format().weights_encoding() != lc0::Format::LINEAR16)
+  if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
     throw Exception("Invalid weight encoding");
 
-  auto& w = net.weights();
+  const auto& w = net.weights();
 
-  DenormConvBlock(w.input(), vecs);
+  DenormConvBlock(w.input(), &vecs);
 
   for (int i = 0, n = w.residual_size(); i < n; i++) {
-    DenormConvBlock(w.residual(i).conv1(), vecs);
-    DenormConvBlock(w.residual(i).conv2(), vecs);
+    DenormConvBlock(w.residual(i).conv1(), &vecs);
+    DenormConvBlock(w.residual(i).conv2(), &vecs);
   }
 
-  DenormConvBlock(w.policy(), vecs);
-  DenormLayer(w.ip_pol_w(), vecs);
-  DenormLayer(w.ip_pol_b(), vecs);
-  DenormConvBlock(w.value(), vecs);
-  DenormLayer(w.ip1_val_w(), vecs);
-  DenormLayer(w.ip1_val_b(), vecs);
-  DenormLayer(w.ip2_val_w(), vecs);
-  DenormLayer(w.ip2_val_b(), vecs);
+  DenormConvBlock(w.policy(), &vecs);
+  vecs.emplace_back(DenormLayer(w.ip_pol_w()));
+  vecs.emplace_back(DenormLayer(w.ip_pol_b()));
+  DenormConvBlock(w.value(), &vecs);
+  vecs.emplace_back(DenormLayer(w.ip1_val_w()));
+  vecs.emplace_back(DenormLayer(w.ip1_val_b()));
+  vecs.emplace_back(DenormLayer(w.ip2_val_w()));
+  vecs.emplace_back(DenormLayer(w.ip2_val_b()));
 
   return vecs;
 }
@@ -144,20 +159,6 @@ FloatVectors LoadFloatsFromFile(std::string* buffer) {
   result.erase(result.begin());
   return result;
 }
-
-namespace {
-void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
-  *out = std::move(vecs->back());
-  vecs->pop_back();
-}
-
-void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
-  PopulateLastIntoVector(vecs, &block->bn_stddivs);
-  PopulateLastIntoVector(vecs, &block->bn_means);
-  PopulateLastIntoVector(vecs, &block->biases);
-  PopulateLastIntoVector(vecs, &block->weights);
-}
-}  // namespace
 
 Weights LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
