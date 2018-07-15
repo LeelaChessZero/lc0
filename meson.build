@@ -309,7 +309,7 @@ endif
   ## ~~~~
   # Pick latest from https://wrapdb.mesonbuild.com/zlib and put into
   # subprojects/zlib.wrap
-  deps += subproject('zlib').get_variable('zlib_dep')
+  deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
 
   ## ~~~~~~~~
   ## Profiler

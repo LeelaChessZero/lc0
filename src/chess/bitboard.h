@@ -217,7 +217,12 @@ class Move {
   // 0 .. 1857, to use in neural networks.
   uint16_t as_nn_index() const;
 
-  bool operator==(const Move& other) const { return data_ == other.data_; }
+  // We ignore the castling bit, because UCI's `position moves ...` commands
+  // specify squares and promotions, but NOT whether or not a move is castling.
+  // NodeTree::MakeMove and all Move::Move constructors are thus so ignorant.
+  bool operator==(const Move& other) const {
+    return (data_ | kCastleMask) == (other.data_ | kCastleMask);
+  }
 
   bool operator!=(const Move& other) const { return !operator==(other); }
   operator bool() const { return data_ != 0; }
