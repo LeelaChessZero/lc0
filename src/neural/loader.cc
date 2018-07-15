@@ -24,57 +24,16 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "proto/net.pb.h"
+#include "version.inc"
+
+
 
 namespace lczero {
-
-FloatVectors LoadFloatsFromFile(const std::string& filename) {
-  const int kStartingSize = 8 * 1024 * 1024;  // 8M
-  std::vector<char> buffer(kStartingSize);
-  int bytes_read = 0;
-
-  // Read whole file into a buffer.
-  gzFile file = gzopen(filename.c_str(), "rb");
-  if (!file) throw Exception("Cannot read weights from " + filename);
-  while (true) {
-    int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
-    if (sz == static_cast<int>(buffer.size()) - bytes_read) {
-      bytes_read = buffer.size();
-      buffer.resize(buffer.size() * 2);
-    } else {
-      bytes_read += sz;
-      buffer.resize(bytes_read);
-      // Add newline in the end for the case it was not there.
-      buffer.push_back('\n');
-      break;
-    }
-  }
-  gzclose(file);
-
-  // Parse buffer.
-  FloatVectors result;
-  FloatVector line;
-  size_t start = 0;
-  for (size_t i = 0; i < buffer.size(); ++i) {
-    char& c = buffer[i];
-    const bool is_newline = (c == '\n' || c == '\r');
-    if (!std::isspace(c)) continue;
-    if (start < i) {
-      // If previous character was not space too.
-      c = '\0';
-      line.push_back(std::atof(&buffer[start]));
-    }
-    if (is_newline && !line.empty()) {
-      result.emplace_back();
-      result.back().swap(line);
-    }
-    start = i + 1;
-  }
-
-  return result;
-}
 
 namespace {
 void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
@@ -88,15 +47,134 @@ void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
   PopulateLastIntoVector(vecs, &block->biases);
   PopulateLastIntoVector(vecs, &block->weights);
 }
-}  // namespace
+
+std::string DecompressGzip(const std::string& filename) {
+  const int kStartingSize = 8 * 1024 * 1024;  // 8M
+  std::string buffer;
+  buffer.resize(kStartingSize);
+  int bytes_read = 0;
+
+  // Read whole file into a buffer.
+  gzFile file = gzopen(filename.c_str(), "rb");
+  if (!file) throw lczero::Exception("Cannot read weights from " + filename);
+  while (true) {
+    int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
+    if (sz == static_cast<int>(buffer.size()) - bytes_read) {
+      bytes_read = buffer.size();
+      buffer.resize(buffer.size() * 2);
+    } else {
+      bytes_read += sz;
+      buffer.resize(bytes_read);
+      break;
+    }
+  }
+  gzclose(file);
+
+  return buffer;
+}
+
+FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
+  FloatVector vec;
+  auto& buffer = layer.params();
+  auto data = reinterpret_cast<const std::uint16_t*>(buffer.data());
+  int n = buffer.length() / 2;
+  vec.resize(n);
+  for (int i = 0; i < n; i++) {
+    vec[i] = data[i] / float(0xffff);
+    vec[i] *= layer.max_val() - layer.min_val();
+    vec[i] += layer.min_val();
+  }
+  return vec;
+}
+
+void DenormConvBlock(const pblczero::Weights_ConvBlock& conv, FloatVectors* vecs) {
+  vecs->emplace_back(DenormLayer(conv.weights()));
+  vecs->emplace_back(DenormLayer(conv.biases()));
+  vecs->emplace_back(DenormLayer(conv.bn_means()));
+  vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
+}
+
+} // namespace 
+
+
+FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
+  auto net = pblczero::Net();
+  FloatVectors vecs;
+  net.ParseFromString(buffer);
+
+  std::string min_version(std::to_string(net.min_version().major()) + ".");
+  min_version += std::to_string(net.min_version().minor()) + ".";
+  min_version += std::to_string(net.min_version().patch());
+
+  if (net.min_version().major() > LC0_VERSION_MAJOR)
+    throw Exception("Weights require at least lc0 version: " + min_version);
+  if (net.min_version().minor() > LC0_VERSION_MINOR)
+    throw Exception("Weights require at least lc0 version: " + min_version);
+  if (net.min_version().patch() > LC0_VERSION_PATCH)
+    throw Exception("Weights require at least lc0 version: " + min_version);
+
+  if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
+    throw Exception("Invalid weight encoding");
+
+  const auto& w = net.weights();
+
+  DenormConvBlock(w.input(), &vecs);
+
+  for (int i = 0, n = w.residual_size(); i < n; i++) {
+    DenormConvBlock(w.residual(i).conv1(), &vecs);
+    DenormConvBlock(w.residual(i).conv2(), &vecs);
+  }
+
+  DenormConvBlock(w.policy(), &vecs);
+  vecs.emplace_back(DenormLayer(w.ip_pol_w()));
+  vecs.emplace_back(DenormLayer(w.ip_pol_b()));
+  DenormConvBlock(w.value(), &vecs);
+  vecs.emplace_back(DenormLayer(w.ip1_val_w()));
+  vecs.emplace_back(DenormLayer(w.ip1_val_b()));
+  vecs.emplace_back(DenormLayer(w.ip2_val_w()));
+  vecs.emplace_back(DenormLayer(w.ip2_val_b()));
+
+  return vecs;
+}
+
+FloatVectors LoadFloatsFromFile(std::string* buffer) {
+  // Parse buffer.
+  FloatVectors result;
+  FloatVector line;
+  (*buffer) += "\n";
+  size_t start = 0;
+  for (size_t i = 0; i < buffer->size(); ++i) {
+    char& c = (*buffer)[i];
+    const bool is_newline = (c == '\n' || c == '\r');
+    if (!std::isspace(c)) continue;
+    if (start < i) {
+      // If previous character was not space too.
+      c = '\0';
+      line.push_back(std::atof(&(*buffer)[start]));
+    }
+    if (is_newline && !line.empty()) {
+      result.emplace_back();
+      result.back().swap(line);
+    }
+    start = i + 1;
+  }
+
+  result.erase(result.begin());
+  return result;
+}
 
 Weights LoadWeightsFromFile(const std::string& filename) {
-  FloatVectors vecs = LoadFloatsFromFile(filename);
+  FloatVectors vecs;
+  auto buffer = DecompressGzip(filename);
 
-  if (vecs.size() <= 19)
-    throw Exception("Weights file " + filename +
-                    " should have at least 19 lines");
-  if (vecs[0][0] != 2) throw Exception("Weights version 2 expected");
+  if (buffer.size() < 2)
+    throw Exception("Weight file invalid");
+  else if (buffer[0] == '1' && buffer[1] == '\n')
+    throw Exception("Weight file no longer supported");
+  else if (buffer[0] == '2' && buffer[1] == '\n')
+    vecs = LoadFloatsFromFile(&buffer);
+  else
+    vecs = LoadFloatsFromPbFile(buffer);
 
   Weights result;
   // Populating backwards.
@@ -111,10 +189,10 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   PopulateConvBlockWeights(&vecs, &result.policy);
 
   // Version, Input + all the residual should be left.
-  if ((vecs.size() - 5) % 8 != 0)
+  if ((vecs.size() - 4) % 8 != 0)
     throw Exception("Bad number of lines in weights file");
 
-  const int num_residual = (vecs.size() - 5) / 8;
+  const int num_residual = (vecs.size() - 4) / 8;
   result.residual.resize(num_residual);
   for (int i = num_residual - 1; i >= 0; --i) {
     PopulateConvBlockWeights(&vecs, &result.residual[i].conv2);
@@ -126,13 +204,13 @@ Weights LoadWeightsFromFile(const std::string& filename) {
 }
 
 std::string DiscoveryWeightsFile() {
-  const int kMinFileSize = 10000000;  // 10 MB
+  const int kMinFileSize = 500000;  // 500 KB
 
   std::string root_path = CommandLine::BinaryDirectory();
 
   // Open all files in <binary dir> amd <binary dir>/networks,
   // ones which are >= kMinFileSize are candidates.
-  std::vector<std::pair<time_t, std::string>> time_and_filename;
+  std::vector<std::pair<time_t, std::string> > time_and_filename;
   for (const auto& path : {"", "/networks"}) {
     for (const auto& file : GetFileList(root_path + path)) {
       const std::string filename = root_path + path + "/" + file;

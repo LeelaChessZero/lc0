@@ -39,6 +39,18 @@ files = []
 includes = []
 has_backends = false
 
+deps += dependency('protobuf', fallback : ['protobuf', 'protobuf_dep'], required: true)
+protoc = find_program('protoc', required : false)
+if not protoc.found()
+  message('protoc will be built from the subproject')
+  protoc = subproject('protobuf').get_variable('protoc')
+endif
+
+gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
+  arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+
+files += gen.process('libs/lczero-common/proto/net.proto', 
+  preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 
 #############################################################################
 ## Main files
