@@ -164,7 +164,9 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
 
-  if (buffer[0] == '1' && buffer[1] == '\n')
+  if (buffer.size() < 2)
+    throw Exception("Invalid weights file");
+  else if (buffer[0] == '1' && buffer[1] == '\n')
     throw Exception("Weight file no longer supported");
   else if (buffer[0] == '2' && buffer[1] == '\n')
     vecs = LoadFloatsFromFile(&buffer);
