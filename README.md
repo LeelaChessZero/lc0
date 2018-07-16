@@ -68,6 +68,6 @@ Or.
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
-5. git submodule update --init --recursive
+5. Update submodules: `git submodule update --init --recursive`
 6. Run `./build.sh`
 7. The resulting binary will be in build/release
