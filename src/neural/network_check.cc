@@ -30,7 +30,6 @@ namespace {
 class CheckNetwork;
 
 enum CheckMode {
-
   kCheckOnly,
   kErrorDisplay,
   kHistogram,
@@ -88,7 +87,7 @@ class CheckComputation : public NetworkComputation {
   static constexpr int kNumOutputPolicies = 1858;
   const CheckParams& params_;
 
-  void CheckOnly() {
+  void CheckOnly() const {
     bool valueAlmostEqual = true;
     int size = GetBatchSize();
     for (int i = 0; i < size && valueAlmostEqual; i++) {
@@ -133,7 +132,7 @@ class CheckComputation : public NetworkComputation {
             size);
   }
 
-  bool IsAlmostEqual(double a, double b) {
+  bool IsAlmostEqual(double a, double b) const {
     return std::abs(a - b) <= std::max(params_.relative_tolerance *
                                            std::max(std::abs(a), std::abs(b)),
                                        params_.absolute_tolerance);
