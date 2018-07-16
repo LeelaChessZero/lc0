@@ -30,6 +30,7 @@ For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before perfo
     sudo apt-get update
     sudo apt-get install clang-6.0 ninja-build
     pip3 install meson --user
+    git submodule update --init --recursive
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
@@ -67,5 +68,6 @@ Or.
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
-5. Run `./build.sh`
-6. The resulting binary will be in build/release
+5. git submodule update --init --recursive
+6. Run `./build.sh`
+7. The resulting binary will be in build/release
