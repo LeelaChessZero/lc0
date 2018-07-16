@@ -9,7 +9,12 @@ def extract(git_version):
     major = int(version_array[0][1:])
     minor = int(version_array[1])
     patch = int(patch_array[0])
-    return major, minor, patch
+    postfix = ""
+
+    if len(patch_array) == 3:
+        postfix = patch_array[2]
+
+    return major, minor, patch, postfix
 
 
 def tag(major, minor, patch):
@@ -19,7 +24,7 @@ def tag(major, minor, patch):
 
 def main(argv):
     git_version = subprocess.getoutput("git describe --always")
-    major, minor, patch = extract(git_version)
+    major, minor, patch, postfix = extract(git_version)
 
     if argv.major:
         major += 1
@@ -34,7 +39,10 @@ def main(argv):
         patch += 1
         tag(major, minor, patch)
 
-    print('v{}.{}.{}'.format(major, minor, patch))
+    if postfix == "":
+        print('{} {} {}'.format(major, minor, patch))
+    else:
+        print('{} {} {} {}'.format(major, minor, patch, postfix))
 
 
 if __name__ == "__main__":
