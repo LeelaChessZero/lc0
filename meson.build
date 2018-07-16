@@ -32,6 +32,31 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   endif
 endif
 
+# Extract git version
+git_version = run_command('git', 'describe', '--always')
+if git_version.returncode() != 0
+  error('Unable to extract version') 
+else
+  version_str = git_version.stdout().strip()
+  version_array = version_str.split('.')
+  postfix_array = version_array[2].split('-')
+  major = version_array[0].split('v')[1]
+  minor = version_array[1]
+  patch = postfix_array[0]
+  postfix = ''
+  if postfix_array.length() > 1
+    postfix = postfix_array[-1]
+  endif
+endif
+
+conf_data = configuration_data()
+conf_data.set('major', major)
+conf_data.set('minor', minor)
+conf_data.set('patch', patch)
+conf_data.set('postfix', postfix)
+configure_file(input : meson.current_source_dir() + '/version.in',
+               output : 'version.inc',
+               configuration : conf_data)
 
 # Files to compile.
 deps = []
