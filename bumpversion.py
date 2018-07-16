@@ -39,10 +39,7 @@ def main(argv):
         patch += 1
         tag(major, minor, patch)
 
-    if postfix == "":
-        print('{} {} {}'.format(major, minor, patch))
-    else:
-        print('{} {} {} {}'.format(major, minor, patch, postfix))
+    print('{} {} {} {}'.format(major, minor, patch, postfix))
 
 
 if __name__ == "__main__":

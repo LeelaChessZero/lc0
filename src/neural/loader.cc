@@ -102,7 +102,7 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
 
   auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
-                    net.min_version().patch());
+                    net.min_version().patch(), "");
   auto lc0_ver = GetVersionInt();
   auto net_ver =
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
