@@ -100,10 +100,9 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   FloatVectors vecs;
   net.ParseFromString(buffer);
 
-  std::string min_version(std::to_string(net.min_version().major()) + ".");
-  min_version += std::to_string(net.min_version().minor()) + ".";
-  min_version += std::to_string(net.min_version().patch());
-
+  auto min_version =
+      GetVersionStr(net.min_version().major(), net.min_version().minor(),
+                    net.min_version().patch());
   auto lc0_ver = GetVersionInt();
   auto net_ver =
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
