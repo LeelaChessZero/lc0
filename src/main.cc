@@ -20,11 +20,12 @@
 #include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
+#include "version.h"
 
 int main(int argc, const char** argv) {
   std::cerr << "       _" << std::endl;
   std::cerr << "|   _ | |" << std::endl;
-  std::cerr << "|_ |_ |_| built " << __DATE__ << std::endl;
+  std::cerr << "|_ |_ |_| built " << __DATE__ << " v" << GetVersionStr() << std::endl;
   using namespace lczero;
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
