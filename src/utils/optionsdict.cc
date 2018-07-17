@@ -159,8 +159,12 @@ class Lexer {
   void ReadIdentifier() {
     string_val_ = "";
     type_ = L_IDENTIFIER;
+    static const std::string kAllowedPunctuation = "_-./";
     for (; idx_ < str_.size(); ++idx_) {
-      if (!std::isalnum(str_[idx_]) && str_[idx_] != '_') break;
+      if (!std::isalnum(str_[idx_]) &&
+          kAllowedPunctuation.find(str_[idx_]) == std::string::npos) {
+        break;
+      }
       string_val_ += str_[idx_];
     }
   }
@@ -233,7 +237,8 @@ class Parser {
         // List entry starts with "(", that's a special case of subdict without
         // name, we have to come up with the name ourselves.
         identifier = GetFreeSubdictName(dict);
-      } else if (lexer_.GetToken() == Lexer::L_IDENTIFIER) {
+      } else if (lexer_.GetToken() == Lexer::L_IDENTIFIER ||
+                 lexer_.GetToken() == Lexer::L_STRING) {
         // Read identifier.
         identifier = lexer_.GetStringVal();
         lexer_.Next();
