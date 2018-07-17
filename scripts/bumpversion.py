@@ -19,11 +19,11 @@ def extract(git_version):
 
 def tag(major, minor, patch):
     version = "v{}.{}.{}".format(major, minor, patch)
-    subprocess.getoutput("git tag {}".format(version))
+    subprocess.getoutput("git tag -a {}".format(version))
 
 
 def main(argv):
-    git_version = subprocess.getoutput("git describe --tags --always")
+    git_version = subprocess.getoutput("git describe --always")
     major, minor, patch, postfix = extract(git_version)
 
     if argv.major:
@@ -41,6 +41,8 @@ def main(argv):
         patch += 1
         postfix = ""
         tag(major, minor, patch)
+    elif postfix != "":
+        patch += 1
 
     print('{} {} {} {}'.format(major, minor, patch, postfix))
 
