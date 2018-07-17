@@ -23,20 +23,23 @@ def tag(major, minor, patch):
 
 
 def main(argv):
-    git_version = subprocess.getoutput("git describe --always")
+    git_version = subprocess.getoutput("git describe --tags --always")
     major, minor, patch, postfix = extract(git_version)
 
     if argv.major:
         major += 1
         minor = 0
         patch = 0
+        postfix = ""
         tag(major, minor, patch)
     elif argv.minor:
         minor += 1
         patch = 0
+        postfix = ""
         tag(major, minor, patch)
     elif argv.patch:
         patch += 1
+        postfix = ""
         tag(major, minor, patch)
 
     print('{} {} {} {}'.format(major, minor, patch, postfix))
