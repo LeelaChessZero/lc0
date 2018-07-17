@@ -20,13 +20,6 @@ environment:
     BLAS: true
     CUDA: false
     GTEST: true
-skip_commits:
-  files:
-    - '**/*.md'
-    - '**/.gitignore'
-    - '**/*.cmd'
-    - '**/*.sh'
-    - COPYING
 install:
 - cmd: IF %CUDA%==false nuget install OpenBLAS -Version 0.2.14.1 -OutputDirectory C:\cache
 - cmd: IF %CUDA%==false nuget install opencl-nug -Version 0.777.12 -OutputDirectory C:\cache
