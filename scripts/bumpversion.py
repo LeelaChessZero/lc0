@@ -19,7 +19,7 @@ def extract(git_version):
 
 def tag(major, minor, patch):
     version = "v{}.{}.{}".format(major, minor, patch)
-    subprocess.getoutput("git tag -a {}".format(version))
+    subprocess.getoutput("git tag -m {} {}".format(version, version))
 
 
 def main(argv):
