@@ -72,10 +72,6 @@ class OpenCLComputation : public NetworkComputation {
  public:
   // Do the computation.
   void ComputeBlocking() override {
-    for (auto& sample : planes_) ComputeBlocking(sample);
-  }
-
-  void ComputeBlocking(const InputPlanes& sample) {
     
     // Determine the largest batch for allocations.
     const auto plane_count = planes_.size();
@@ -179,10 +175,11 @@ class OpenCLNetwork : public Network {
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 8));
         if (max_batch_size_ > kHardMaxBatchSize) {
           max_batch_size_ = kHardMaxBatchSize;
-          fprintf(stderr, "BLAS warning, maximum batch size set to %ld\n.",
-                  max_batch_size_);
-        }
 
+        }
+        fprintf(stderr, "OpenCL, maximum batch size set to %ld.\n",
+                max_batch_size_);
+        
     const auto inputChannels = static_cast<size_t>(kInputPlanes);
     const auto channels = weights.input.biases.size();
     const auto residual_blocks = weights.residual.size();

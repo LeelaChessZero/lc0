@@ -123,6 +123,7 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
                              std::vector<net_t>& output_val,
                              const int batch_size) const {
   
+
   constexpr auto tiles = WINOGRAD_P;
 
   auto finalSize_pol =
@@ -264,6 +265,9 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
                               pinnedOutBufferHost_pol);
   queue.enqueueUnmapMemObject(opencl_thread_data.m_pinnedOutBuffer_val,
                               pinnedOutBufferHost_val);
+  
+
+
 }
 
 void OpenCL_Network::convolve3(int channels, int outputs, cl::Buffer& bufferIn,
