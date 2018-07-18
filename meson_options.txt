@@ -87,3 +87,8 @@ option('accelerate',
        type: 'boolean',
        value: true,
        description: 'Enable Accelerate BLAS support')
+
+option('gtest',
+       type: 'boolean',
+       value: true,
+       description: 'Build gtest tests')

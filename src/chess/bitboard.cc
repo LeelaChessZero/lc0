@@ -275,26 +275,26 @@ const int kQueenCastleIndex =
 
 Move::Move(const std::string& str, bool black) {
   if (str.size() < 4) throw Exception("Bad move: " + str);
-  from_ = BoardSquare(str.substr(0, 2), black);
-  to_ = BoardSquare(str.substr(2, 2), black);
+  SetFrom(BoardSquare(str.substr(0, 2), black));
+  SetTo(BoardSquare(str.substr(2, 2), black));
   if (str.size() != 4) {
     if (str.size() != 5) throw Exception("Bad move: " + str);
     switch (str[4]) {
       case 'q':
       case 'Q':
-        promotion_ = Promotion::Queen;
+        SetPromotion(Promotion::Queen);
         break;
       case 'r':
       case 'R':
-        promotion_ = Promotion::Rook;
+        SetPromotion(Promotion::Rook);
         break;
       case 'b':
       case 'B':
-        promotion_ = Promotion::Bishop;
+        SetPromotion(Promotion::Bishop);
         break;
       case 'n':
       case 'N':
-        promotion_ = Promotion::Knight;
+        SetPromotion(Promotion::Knight);
         break;
       default:
         throw Exception("Bad move: " + str);
@@ -303,17 +303,17 @@ Move::Move(const std::string& str, bool black) {
 }
 
 uint16_t Move::as_packed_int() const {
-  if (promotion_ == Promotion::Knight) {
-    return from_.as_int() * 64 + to_.as_int();
+  if (promotion() == Promotion::Knight) {
+    return from().as_int() * 64 + to().as_int();
   } else {
-    return static_cast<int>(promotion_) * 64 * 64 + from_.as_int() * 64 +
-           to_.as_int();
+    return static_cast<int>(promotion()) * 64 * 64 + from().as_int() * 64 +
+           to().as_int();
   }
 }
 
 uint16_t Move::as_nn_index() const {
-  if (!castling_) return kMoveToIdx[as_packed_int()];
-  if (from_.col() < to_.col()) return kKingCastleIndex;
+  if (!castling()) return kMoveToIdx[as_packed_int()];
+  if (from().col() < to().col()) return kKingCastleIndex;
   return kQueenCastleIndex;
 }
 
