@@ -101,7 +101,8 @@ void DenormConvBlock(const pblczero::Weights_ConvBlock& conv,
 FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
   FloatVectors vecs;
-  net.ParseFromString(buffer);
+  if (!net.ParseFromString(buffer))
+    throw Exception("Invalid weight file: parse error.");
 
   if (net.magic() != kWeightMagic)
     throw Exception("Invalid weight file: bad header.");
@@ -192,7 +193,7 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   PopulateLastIntoVector(&vecs, &result.ip_pol_w);
   PopulateConvBlockWeights(&vecs, &result.policy);
 
-  // Version, Input + all the residual should be left.
+  // Input + all the residual should be left.
   if ((vecs.size() - 4) % 8 != 0)
     throw Exception("Invalid weight file: parse error.");
 
@@ -246,7 +247,7 @@ std::string DiscoverWeightsFile() {
       return candidate.second;
     }
 
-    // first byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
+    // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
     // our own magic should suffice.
     auto magic = reinterpret_cast<std::uint32_t*>(buf+1);
     if (*magic == kWeightMagic) {
