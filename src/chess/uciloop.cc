@@ -28,7 +28,7 @@
 #include <utility>
 #include "utils/exception.h"
 #include "utils/string.h"
-#include "version.inc"
+#include "version.h"
 
 namespace lczero {
 
@@ -207,21 +207,10 @@ void UciLoop::SendResponses(const std::vector<std::string>& responses) {
   }
 }
 
-// TODO: remove these monstrosities
-#define LC0V_STR_INNER(a) #a
-#define LC0V_STR(a) LC0V_STR_INNER(a)
-#define LC0_VERSION_STRING     \
-    "v" LC0V_STR(LC0_VERSION_MAJOR) \
-    "." LC0V_STR(LC0_VERSION_MINOR) \
-    "." LC0V_STR(LC0_VERSION_PATCH)
-
 void UciLoop::SendId() {
-  SendResponse("id name The Lc0 chess engine. " LC0_VERSION_STRING);
+  SendResponse("id name The Lc0 chess engine. v" + GetVersionStr());
   SendResponse("id author The LCZero Authors.");
 }
-#undef LC0V_STR_INNER
-#undef LC0V_STR
-#undef LC0_VERSION_STRING
 
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
   std::string res = "bestmove " + move.bestmove.as_string();

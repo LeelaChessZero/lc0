@@ -1,0 +1,4 @@
+#define LC0_VERSION_MAJOR @major@
+#define LC0_VERSION_MINOR @minor@
+#define LC0_VERSION_PATCH @patch@
+#define LC0_VERSION_POSTFIX "@postfix@"

@@ -25,13 +25,11 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
-#include "proto/net.pb.h"
-#include "version.inc"
-
-
+#include "version.h"
 
 namespace lczero {
 
@@ -56,7 +54,7 @@ std::string DecompressGzip(const std::string& filename) {
 
   // Read whole file into a buffer.
   gzFile file = gzopen(filename.c_str(), "rb");
-  if (!file) throw lczero::Exception("Cannot read weights from " + filename);
+  if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
     int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
     if (sz == static_cast<int>(buffer.size()) - bytes_read) {
@@ -87,30 +85,30 @@ FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
   return vec;
 }
 
-void DenormConvBlock(const pblczero::Weights_ConvBlock& conv, FloatVectors* vecs) {
+void DenormConvBlock(const pblczero::Weights_ConvBlock& conv,
+                     FloatVectors* vecs) {
   vecs->emplace_back(DenormLayer(conv.weights()));
   vecs->emplace_back(DenormLayer(conv.biases()));
   vecs->emplace_back(DenormLayer(conv.bn_means()));
   vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
 }
 
-} // namespace 
-
+}  // namespace
 
 FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
   FloatVectors vecs;
   net.ParseFromString(buffer);
 
-  std::string min_version(std::to_string(net.min_version().major()) + ".");
-  min_version += std::to_string(net.min_version().minor()) + ".";
-  min_version += std::to_string(net.min_version().patch());
+  auto min_version =
+      GetVersionStr(net.min_version().major(), net.min_version().minor(),
+                    net.min_version().patch(), "");
+  auto lc0_ver = GetVersionInt();
+  auto net_ver =
+      GetVersionInt(net.min_version().major(), net.min_version().minor(),
+                    net.min_version().patch());
 
-  if (net.min_version().major() > LC0_VERSION_MAJOR)
-    throw Exception("Weights require at least lc0 version: " + min_version);
-  if (net.min_version().minor() > LC0_VERSION_MINOR)
-    throw Exception("Weights require at least lc0 version: " + min_version);
-  if (net.min_version().patch() > LC0_VERSION_PATCH)
+  if (net_ver > lc0_ver)
     throw Exception("Weights require at least lc0 version: " + min_version);
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
