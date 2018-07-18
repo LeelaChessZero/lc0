@@ -101,6 +101,8 @@ class Search {
   std::pair<Move, Move> GetBestMoveInternal() const;
 
   // Returns a child with most visits, with or without temperature.
+  // NoTemperature is safe to use on non-extended nodes, while WithTemperature
+  // accepts only nodes with at least 1 visited child.
   EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
   EdgeAndNode GetBestChildWithTemperature(Node* parent,
                                           float temperature) const;

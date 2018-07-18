@@ -364,7 +364,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
     }
   }
 
-  auto best_node = temperature && root_node_->GetN() > 1
+  auto best_node = temperature && root_node_->GetChildrenVisits() > 0
                        ? GetBestChildWithTemperature(root_node_, temperature)
                        : GetBestChildNoTemperature(root_node_);
 
@@ -401,6 +401,7 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
 // Returns a child chosen according to weighted-by-temperature visit count.
 EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
                                                 float temperature) const {
+  assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   const float n_parent = parent->GetN();
@@ -573,8 +574,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
-  int best_node_n = 0;
-  if (search_->best_move_edge_) best_node_n = search_->best_move_edge_.GetN();
+  int best_node_n = search_->best_move_edge_.GetN();
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
@@ -901,12 +901,10 @@ void SearchWorker::DoBackupUpdate() {
       if (full_depth_updated)
         full_depth_updated = n->UpdateFullDepth(&cur_full_depth);
       // Best move.
-      if (n->GetParent() == search_->root_node_) {
-        if (!search_->best_move_edge_ ||
-            search_->best_move_edge_.GetN() < n->GetN()) {
-          search_->best_move_edge_ =
-              EdgeAndNode(search_->root_node_->GetEdgeToNode(n), n);
-        }
+      if (n->GetParent() == search_->root_node_ &&
+          search_->best_move_edge_.GetN() <= n->GetN()) {
+            search_->best_move_edge_ =
+                search_->GetBestChildNoTemperature(search_->root_node_);
       }
     }
     ++search_->total_playouts_;
