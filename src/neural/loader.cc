@@ -244,6 +244,8 @@ std::string DiscoverWeightsFile() {
       return candidate.second;
     }
 
+    // first byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
+    // our own magic should suffice.
     auto magic = reinterpret_cast<std::uint32_t*>(buf+1);
     if (*magic == kWeightMagic) {
       std::cerr << "Found pb network file: " << candidate.second << std::endl;
