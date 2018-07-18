@@ -70,6 +70,10 @@ class WinogradConvolution3 {
   void TransformOut(const size_t batch_size, float* output,
                     const size_t channels);
 
+  std::vector<float> V_;
+  std::vector<float> M_;
+
+public: //used also in test
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
@@ -79,8 +83,12 @@ class WinogradConvolution3 {
 
   static constexpr auto kWinogradAlpha = 4;
   static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
+  
+  static void TransformInOrig(const size_t batch_size, const float *input,
+                              const size_t channels, float *output);
 
-  std::vector<float> V_;
-  std::vector<float> M_;
+  static void TransformInCo(const size_t batch_size, const float *input,
+                            const size_t channels, float *output);
+
 };
 }

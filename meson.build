@@ -355,4 +355,11 @@ if get_option('gtest') and gtest.found()
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
     files, include_directories: includes, dependencies: test_deps
   ), timeout: 90)
-endif
+
+  if has_blas
+    test('Winograd',
+      executable('test_winograd', 'src/neural/blas/test_winograd.cc',
+      files, include_directories: includes, dependencies: test_deps
+    ), timeout: 90) 
+  endif
+endif 
