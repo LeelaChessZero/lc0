@@ -151,8 +151,9 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
     const auto m_ceil = ceilMultiple(ceilMultiple(max_channels, mwg), vwm);
     const auto n_ceil = ceilMultiple(ceilMultiple(tiles, nwg), vwn);
 
-    const auto alloc_inSize = kMaxOpenCLBatchSize * m_ceil * m_ceil * max_channels * sizeof(net_t);
-    const auto alloc_vm_size = kMaxOpenCLBatchSize * WINOGRAD_TILE * m_ceil * n_ceil * sizeof(net_t);
+    const auto max_batch_size=getMaxMatchSize();
+    const auto alloc_inSize = max_batch_size * m_ceil * m_ceil * max_channels * sizeof(net_t);
+    const auto alloc_vm_size = max_batch_size * WINOGRAD_TILE * m_ceil * n_ceil * sizeof(net_t);
 
     auto v_zeros = std::vector<float>(alloc_vm_size);
 
@@ -170,10 +171,10 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
 
     opencl_thread_data.m_pinnedOutBuffer_pol =
         cl::Buffer(m_opencl.m_context,
-                   CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR, kMaxOpenCLBatchSize * finalSize_pol);
+                   CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR, max_batch_size * finalSize_pol);
     opencl_thread_data.m_pinnedOutBuffer_val =
         cl::Buffer(m_opencl.m_context,
-                   CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR, kMaxOpenCLBatchSize * finalSize_val);
+                   CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR, max_batch_size * finalSize_val);
 
     opencl_thread_data.m_buffers_allocated = true;
   }

@@ -75,7 +75,8 @@ class OpenCLComputation : public NetworkComputation {
     
     // Determine the largest batch for allocations.
     const auto plane_count = planes_.size();
-    const auto largest_batch_size = std::min(size_t(kMaxOpenCLBatchSize), plane_count);
+    const auto max_batch_size=opencl_net_.getMaxMatchSize();
+    const auto largest_batch_size = std::min(max_batch_size, plane_count);
     
     const auto num_output_policies=weights_.num_output_policies;
     const auto num_value_channels=weights_.num_value_channels;
@@ -86,8 +87,8 @@ class OpenCLComputation : public NetworkComputation {
      num_output_policy = 1858
      */
 
-    std::vector<float> output_pol(largest_batch_size* weights_.num_output_policies);
-    std::vector<float> output_val(largest_batch_size* weights_.num_value_channels);
+    std::vector<float> output_pol(largest_batch_size* num_output_policies);
+    std::vector<float> output_val(largest_batch_size* num_value_channels);
     std::vector<float> input_data(largest_batch_size * kInputPlanes * kSquares);
     
     for (size_t i = 0; i < plane_count; i += largest_batch_size) {
@@ -170,15 +171,15 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-    
+        
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 8));
-        if (max_batch_size_ > kHardMaxBatchSize) {
-          max_batch_size_ = kHardMaxBatchSize;
-
-        }
-        fprintf(stderr, "OpenCL, maximum batch size set to %ld.\n",
-                max_batch_size_);
+    if (max_batch_size_ > kHardMaxBatchSize) {
+        max_batch_size_ = kHardMaxBatchSize;
+          
+    }
+    fprintf(stderr, "OpenCL, maximum batch size set to %ld.\n",
+       max_batch_size_);
         
     const auto inputChannels = static_cast<size_t>(kInputPlanes);
     const auto channels = weights.input.biases.size();
@@ -274,6 +275,8 @@ class OpenCLNetwork : public Network {
                            num_value_channels, weights.value.weights,
                            bn_val_means, bn_val_stddivs, weights.ip1_val_w,
                            weights.ip1_val_b);
+        
+    opencl_net_.setMaxMatchSize(max_batch_size_);
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -282,7 +285,7 @@ class OpenCLNetwork : public Network {
 
  private:
   
-  static constexpr auto kHardMaxBatchSize = 16;
+  static constexpr auto kHardMaxBatchSize = 256;
 
   OpenCLWeights weights_;
   OpenCLParams params_;

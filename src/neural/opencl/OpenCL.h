@@ -40,9 +40,6 @@ inline size_t ceilMultiple(size_t a, size_t b) {
 static constexpr auto WINOGRAD_P = 8 * 8 / 4;
 static constexpr auto WINOGRAD_TILE = 4 * 4;
 
-/* Maximum supported batch size for OpenCL.
-*/
-static constexpr auto kMaxOpenCLBatchSize = 8;
 
 class OpenCL;
 
@@ -87,8 +84,16 @@ class ThreadData {
 
 class OpenCL_Network {
  public:
-  OpenCL_Network(OpenCL& opencl) : m_opencl(opencl) {}
+  OpenCL_Network(OpenCL& opencl):
+  m_opencl(opencl),
+  m_max_batch_size(8)
+  {}
+  
   OpenCL& getOpenCL() { return m_opencl; }
+  
+  size_t getMaxMatchSize() const { return m_max_batch_size; }
+  
+  void setMaxMatchSize(size_t new_value) { m_max_batch_size=new_value; }
 
   void push_input_convolution(unsigned int filter_size, unsigned int channels,
                               unsigned int outputs,
@@ -211,6 +216,7 @@ private:
                     const int relu,
                    int batch_size) const;
 
+  size_t m_max_batch_size;
   OpenCL& m_opencl;
 
   // this mutex is not required for correctness, but this exists simply
