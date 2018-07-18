@@ -33,9 +33,10 @@
 
 namespace lczero {
 
-static const std::uint32_t kWeightMagic = 0x1c0;
 
 namespace {
+const std::uint32_t kWeightMagic = 0x1c0;
+
 void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
   *out = std::move(vecs->back());
   vecs->pop_back();
@@ -103,7 +104,7 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   net.ParseFromString(buffer);
 
   if (net.magic() != kWeightMagic)
-    throw Exception("Invalid weight file");
+    throw Exception("Invalid weight file: bad header.");
 
   auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
@@ -114,10 +115,10 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
                     net.min_version().patch());
 
   if (net_ver > lc0_ver)
-    throw Exception("Weights require at least lc0 version: " + min_version);
+    throw Exception("Invalid weight file: lc0 version >= " + min_version + " required.");
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
-    throw Exception("Invalid weight encoding");
+    throw Exception("Invalid weight file: wrong encoding.");
 
   const auto& w = net.weights();
 
@@ -171,9 +172,9 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   auto buffer = DecompressGzip(filename);
 
   if (buffer.size() < 2)
-    throw Exception("Weight file invalid");
+    throw Exception("Invalid weight file: too small.");
   else if (buffer[0] == '1' && buffer[1] == '\n')
-    throw Exception("Weight file no longer supported");
+    throw Exception("Invalid weight file: no longer supported.");
   else if (buffer[0] == '2' && buffer[1] == '\n')
     vecs = LoadFloatsFromFile(&buffer);
   else
@@ -193,7 +194,7 @@ Weights LoadWeightsFromFile(const std::string& filename) {
 
   // Version, Input + all the residual should be left.
   if ((vecs.size() - 4) % 8 != 0)
-    throw Exception("Bad number of lines in weights file");
+    throw Exception("Invalid weight file: parse error.");
 
   const int num_residual = (vecs.size() - 4) / 8;
   result.residual.resize(num_residual);
@@ -224,8 +225,9 @@ std::string DiscoverWeightsFile() {
 
   std::sort(time_and_filename.rbegin(), time_and_filename.rend());
 
-  // Open all candidates, from newest to oldest, possibly gzipped, and try to 
-  // read version for it. If version is 2 or if the file is gzipped, return it.
+  // Open all candidates, from newest to oldest, possibly gzipped, and try to
+  // read version for it. If version is 2 or if the file is our protobuf,
+  // return it.
   for (const auto& candidate : time_and_filename) {
     gzFile file = gzopen(candidate.second.c_str(), "rb");
 
