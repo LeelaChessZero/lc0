@@ -33,6 +33,8 @@
 
 namespace lczero {
 
+static const std::uint32_t kWeightMagic = 0x1c0;
+
 namespace {
 void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
   *out = std::move(vecs->back());
@@ -99,6 +101,9 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
   FloatVectors vecs;
   net.ParseFromString(buffer);
+
+  if (net.magic() != kWeightMagic)
+    throw Exception("Invalid weight file");
 
   auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
@@ -201,8 +206,7 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   return result;
 }
 
-std::string DiscoveryWeightsFile() {
-  const int kGzipIdentifier = 0x8b1f;
+std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
   std::string root_path = CommandLine::BinaryDirectory();
@@ -222,8 +226,6 @@ std::string DiscoveryWeightsFile() {
 
   // Open all candidates, from newest to oldest, possibly gzipped, and try to 
   // read version for it. If version is 2 or if the file is gzipped, return it.
-  std::ifstream compressed_file;
-  std::uint16_t header;
   for (const auto& candidate : time_and_filename) {
     gzFile file = gzopen(candidate.second.c_str(), "rb");
 
@@ -238,16 +240,13 @@ std::string DiscoveryWeightsFile() {
     int val = 0;
     data >> val;
     if (!data.fail() && val == 2) {
-      std::cerr << "Found network file: " << candidate.second << std::endl;
+      std::cerr << "Found txt network file: " << candidate.second << std::endl;
       return candidate.second;
     }
 
-    compressed_file.open(candidate.second, std::ios::binary);
-    compressed_file.read(reinterpret_cast<char*>(&header), sizeof(std::uint16_t));
-    compressed_file.close();
-
-    if (header == kGzipIdentifier) {
-      std::cerr << "Found network file: " << candidate.second << std::endl;
+    auto magic = reinterpret_cast<std::uint32_t*>(buf+1);
+    if (*magic == kWeightMagic) {
+      std::cerr << "Found pb network file: " << candidate.second << std::endl;
       return candidate.second;
     }
   }
