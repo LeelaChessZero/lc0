@@ -16,7 +16,6 @@
  along with Leela Zero.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -33,7 +32,6 @@
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/opencl/OpenCLTuner.h"
-
 
 static std::string cl_args =
     "-cl-mad-enable -cl-fast-relaxed-math -cl-no-signed-zeros "
@@ -122,8 +120,6 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
                              std::vector<net_t>& output_pol,
                              std::vector<net_t>& output_val,
                              const int batch_size) const {
-  
-
   constexpr auto tiles = WINOGRAD_P;
 
   auto finalSize_pol =
@@ -151,9 +147,11 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
     const auto m_ceil = ceilMultiple(ceilMultiple(max_channels, mwg), vwm);
     const auto n_ceil = ceilMultiple(ceilMultiple(tiles, nwg), vwn);
 
-    const auto max_batch_size=getMaxMatchSize();
-    const auto alloc_inSize = max_batch_size * m_ceil * m_ceil * max_channels * sizeof(net_t);
-    const auto alloc_vm_size = max_batch_size * WINOGRAD_TILE * m_ceil * n_ceil * sizeof(net_t);
+    const auto max_batch_size = getMaxMatchSize();
+    const auto alloc_inSize =
+        max_batch_size * m_ceil * m_ceil * max_channels * sizeof(net_t);
+    const auto alloc_vm_size =
+        max_batch_size * WINOGRAD_TILE * m_ceil * n_ceil * sizeof(net_t);
 
     auto v_zeros = std::vector<float>(alloc_vm_size);
 
@@ -169,12 +167,12 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
         cl::Buffer(m_opencl.m_context,
                    CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, alloc_vm_size);
 
-    opencl_thread_data.m_pinnedOutBuffer_pol =
-        cl::Buffer(m_opencl.m_context,
-                   CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR, max_batch_size * finalSize_pol);
-    opencl_thread_data.m_pinnedOutBuffer_val =
-        cl::Buffer(m_opencl.m_context,
-                   CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR, max_batch_size * finalSize_val);
+    opencl_thread_data.m_pinnedOutBuffer_pol = cl::Buffer(
+        m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
+        max_batch_size * finalSize_pol);
+    opencl_thread_data.m_pinnedOutBuffer_val = cl::Buffer(
+        m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
+        max_batch_size * finalSize_val);
 
     opencl_thread_data.m_buffers_allocated = true;
   }
@@ -259,16 +257,15 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
     queue.finish();
   }
 
-  std::memcpy(output_pol.data(), pinnedOutBufferHost_pol, batch_size * finalSize_pol);
-  std::memcpy(output_val.data(), pinnedOutBufferHost_val, batch_size * finalSize_val);
+  std::memcpy(output_pol.data(), pinnedOutBufferHost_pol,
+              batch_size * finalSize_pol);
+  std::memcpy(output_val.data(), pinnedOutBufferHost_val,
+              batch_size * finalSize_val);
 
   queue.enqueueUnmapMemObject(opencl_thread_data.m_pinnedOutBuffer_pol,
                               pinnedOutBufferHost_pol);
   queue.enqueueUnmapMemObject(opencl_thread_data.m_pinnedOutBuffer_val,
                               pinnedOutBufferHost_val);
-  
-
-
 }
 
 void OpenCL_Network::convolve3(int channels, int outputs, cl::Buffer& bufferIn,
@@ -277,8 +274,7 @@ void OpenCL_Network::convolve3(int channels, int outputs, cl::Buffer& bufferIn,
                                cl::Buffer* bufferResidual,
                                weight_slice_t bn_weights,
                                bool skip_in_transform, bool fuse_in_transform,
-                               bool store_inout,
-                               int batch_size) const {
+                               bool store_inout, int batch_size) const {
   cl::Kernel& in_transform_kernel = opencl_thread_data.m_in_transform_kernel;
   cl::Kernel& sgemm_kernel = opencl_thread_data.m_sgemm_kernel;
   cl::Kernel& out_transform_bn_kernel =
@@ -410,8 +406,7 @@ void OpenCL_Network::convolve3(int channels, int outputs, cl::Buffer& bufferIn,
 void OpenCL_Network::convolve1(int channels, int outputs,
                                cl::Buffer& bufferInput,
                                cl::Buffer& bufferOutput,
-                               cl::Buffer& bufferMerge,
-                               weight_slice_t weights,
+                               cl::Buffer& bufferMerge, weight_slice_t weights,
                                int batch_size) const {
   // fixed for 8x8
   constexpr int width = 8;
@@ -487,16 +482,16 @@ void OpenCL_Network::innerproduct(cl::Buffer& input, weight_slice_t weights,
                                   const int relu, int batch_size) const {
   auto sgemv_kernel = opencl_thread_data.m_sgemv_kernel;
   cl::CommandQueue& queue = opencl_thread_data.m_commandqueue;
-  
+
   // TODO: Tune these
   size_t wgs1 = 64;
   size_t wpt1 = 1;
-  
+
   auto m_ceil = int(ceilMultiple(outputs, wgs1 * wpt1));
   auto global_size = m_ceil / wpt1;
   auto local_size = wgs1;
-  
-  for (int i=0; i<batch_size; i++) {
+
+  for (int i = 0; i < batch_size; i++) {
     try {
       // Sets the kernel arguments
       sgemv_kernel.setArg(0, static_cast<int>(outputs));
@@ -505,18 +500,18 @@ void OpenCL_Network::innerproduct(cl::Buffer& input, weight_slice_t weights,
       sgemv_kernel.setArg(3, static_cast<int>(0));
       sgemv_kernel.setArg(4, static_cast<int>(inputs));
       sgemv_kernel.setArg(5, input);
-      sgemv_kernel.setArg(6, static_cast<int>(i*inputs));
+      sgemv_kernel.setArg(6, static_cast<int>(i * inputs));
       sgemv_kernel.setArg(7, output);
-      sgemv_kernel.setArg(8, static_cast<int>(i*outputs));
+      sgemv_kernel.setArg(8, static_cast<int>(i * outputs));
       sgemv_kernel.setArg(9, biases[0]);
       sgemv_kernel.setArg(10, static_cast<int>(relu));
-      
+
       queue.enqueueNDRangeKernel(sgemv_kernel, cl::NullRange,
                                  cl::NDRange(global_size),
                                  cl::NDRange(local_size));
     } catch (const cl::Error& e) {
       std::cerr << "Error in innerproduct: " << e.what() << ": " << e.err()
-      << std::endl;
+                << std::endl;
       throw;
     }
   }
@@ -535,7 +530,7 @@ static std::string opencl_dev_type_to_string(T type) {
   }
 }
 
-static const char *trim_left(const char *trim_me) {
+static const char* trim_left(const char* trim_me) {
   while (isspace(*trim_me)) trim_me++;
   return trim_me;
 }
@@ -685,23 +680,26 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
       if (verbose) {
         fprintf(stderr, "Device ID:     %d\n", id);
         fprintf(stderr, "Device name:   %s\n",
-               trim_left(d.getInfo<CL_DEVICE_NAME>().c_str()));
+                trim_left(d.getInfo<CL_DEVICE_NAME>().c_str()));
         fprintf(stderr, "Device type:   %s\n",
-               opencl_dev_type_to_string(d.getInfo<CL_DEVICE_TYPE>()).c_str());
-        fprintf(stderr, "Device vendor: %s\n", d.getInfo<CL_DEVICE_VENDOR>().c_str());
-        fprintf(stderr, "Device driver: %s\n", d.getInfo<CL_DRIVER_VERSION>().c_str());
+                opencl_dev_type_to_string(d.getInfo<CL_DEVICE_TYPE>()).c_str());
+        fprintf(stderr, "Device vendor: %s\n",
+                d.getInfo<CL_DEVICE_VENDOR>().c_str());
+        fprintf(stderr, "Device driver: %s\n",
+                d.getInfo<CL_DRIVER_VERSION>().c_str());
         fprintf(stderr, "Device speed:  %u MHz\n",
-               d.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>());
+                d.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>());
         fprintf(stderr, "Device cores:  %u CU\n",
-               d.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>());
+                d.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>());
       }
 
       // assign score, try to find best device
       int this_score = 0;
       std::string this_vendor = d.getInfo<CL_DEVICE_VENDOR>();
-      std::transform(this_vendor.begin(), this_vendor.end(), this_vendor.begin(), ::tolower);
-      this_score +=
-          1000 * (this_vendor.find("advanced micro devices") != std::string::npos);
+      std::transform(this_vendor.begin(), this_vendor.end(),
+                     this_vendor.begin(), ::tolower);
+      this_score += 1000 * (this_vendor.find("advanced micro devices") !=
+                            std::string::npos);
       this_score += 1000 * (this_vendor.find("amd") != std::string::npos);
       this_score += 1000 * (this_vendor.find("nvidia") != std::string::npos);
       this_score += 500 * (this_vendor.find("intel") != std::string::npos);
@@ -735,9 +733,9 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
 
   if (verbose) {
     fprintf(stderr, "Selected platform: %s\n",
-           best_platform.getInfo<CL_PLATFORM_NAME>().c_str());
+            best_platform.getInfo<CL_PLATFORM_NAME>().c_str());
     fprintf(stderr, "Selected device: %s\n",
-           trim_left(best_device.getInfo<CL_DEVICE_NAME>().c_str()));
+            trim_left(best_device.getInfo<CL_DEVICE_NAME>().c_str()));
     fprintf(stderr, "with OpenCL %2.1f capability.\n", best_version);
   }
   cl::Context context;
@@ -774,7 +772,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
     m_program.build(args.c_str());
   } catch (const cl::Error&) {
     fprintf(stderr, "Error building kernels: %s\n",
-           m_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device).c_str());
+            m_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device).c_str());
     throw std::runtime_error("Error building OpenCL kernels.");
   }
 

@@ -338,15 +338,15 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
       // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out
       auto kernel_gflops = total_flops / (sum / runs);
       fprintf(stderr, "(%zu/%zu) %s %.4f ms (%.1f GFLOPS)\n", param_counter,
-             valid_params.size(), param_str.c_str(), kernel_ms, kernel_gflops);
+              valid_params.size(), param_str.c_str(), kernel_ms, kernel_gflops);
       best_time = sum;
       best_params = defines;
     }
   }
   if (best_time == 0) {
-    fprintf(stderr, 
-        "Failed to find a working configuration.\nCheck your OpenCL "
-        "drivers.\n");
+    fprintf(stderr,
+            "Failed to find a working configuration.\nCheck your OpenCL "
+            "drivers.\n");
     throw std::runtime_error("Tuner failed to find working configuration.");
   }
   return best_params;
@@ -389,7 +389,8 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
 
   if (file.fail()) {
     fprintf(stderr, "Could not save the tuning result.\n");
-    fprintf(stderr, "Do I have write permissions on %s?\n", TUNER_FILE_LOCAL.c_str());
+    fprintf(stderr, "Do I have write permissions on %s?\n",
+            TUNER_FILE_LOCAL.c_str());
   }
 }
 

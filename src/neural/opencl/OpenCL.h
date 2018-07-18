@@ -40,7 +40,6 @@ inline size_t ceilMultiple(size_t a, size_t b) {
 static constexpr auto WINOGRAD_P = 8 * 8 / 4;
 static constexpr auto WINOGRAD_TILE = 4 * 4;
 
-
 class OpenCL;
 
 class Layer {
@@ -84,16 +83,13 @@ class ThreadData {
 
 class OpenCL_Network {
  public:
-  OpenCL_Network(OpenCL& opencl):
-  m_opencl(opencl),
-  m_max_batch_size(8)
-  {}
-  
+  OpenCL_Network(OpenCL& opencl) : m_opencl(opencl), m_max_batch_size(8) {}
+
   OpenCL& getOpenCL() { return m_opencl; }
-  
+
   size_t getMaxMatchSize() const { return m_max_batch_size; }
-  
-  void setMaxMatchSize(size_t new_value) { m_max_batch_size=new_value; }
+
+  void setMaxMatchSize(size_t new_value) { m_max_batch_size = new_value; }
 
   void push_input_convolution(unsigned int filter_size, unsigned int channels,
                               unsigned int outputs,
@@ -172,12 +168,10 @@ class OpenCL_Network {
 
   size_t get_layer_count() const { return m_layers.size(); }
 
-  void forward(const std::vector<net_t>& input,
-               std::vector<net_t>& output_pol,
-               std::vector<net_t>& output_val,
-               const int batch_size) const;
+  void forward(const std::vector<net_t>& input, std::vector<net_t>& output_pol,
+               std::vector<net_t>& output_val, const int batch_size) const;
 
-private:
+ private:
   using weight_slice_t = std::vector<cl::Buffer>::const_iterator;
 
   void push_weights(size_t layer, const std::vector<float>& weights) {
@@ -185,36 +179,20 @@ private:
   }
   void add_weights(size_t layer, size_t size, const float* weights);
 
-  void convolve3(int channels,
-                 int outputs,
-                 cl::Buffer& bufferIn,
-                 cl::Buffer& bufferOut,
-                 cl::Buffer& bufferV,
-                 cl::Buffer& bufferM,
-                 weight_slice_t weights,
-                 cl::Buffer* bufferResidual,
-                 weight_slice_t bn_weights,
-                 bool skip_in_transform,
-                 bool fuse_in_transform,
-                 bool store_inout,
-                 int batch_size) const;
+  void convolve3(int channels, int outputs, cl::Buffer& bufferIn,
+                 cl::Buffer& bufferOut, cl::Buffer& bufferV,
+                 cl::Buffer& bufferM, weight_slice_t weights,
+                 cl::Buffer* bufferResidual, weight_slice_t bn_weights,
+                 bool skip_in_transform, bool fuse_in_transform,
+                 bool store_inout, int batch_size) const;
 
-  void convolve1(int channels,
-                 int outputs,
-                 cl::Buffer& bufferInput,
-                 cl::Buffer& bufferOutput,
-                 cl::Buffer& bufferMerge,
-                 weight_slice_t weights,
-                 int batch_size) const;
+  void convolve1(int channels, int outputs, cl::Buffer& bufferInput,
+                 cl::Buffer& bufferOutput, cl::Buffer& bufferMerge,
+                 weight_slice_t weights, int batch_size) const;
 
-  void innerproduct(cl::Buffer& input,
-                    weight_slice_t weights,
-                    weight_slice_t biases,
-                    cl::Buffer& output,
-                    const int inputs,
-                    const int outputs,
-                    const int relu,
-                   int batch_size) const;
+  void innerproduct(cl::Buffer& input, weight_slice_t weights,
+                    weight_slice_t biases, cl::Buffer& output, const int inputs,
+                    const int outputs, const int relu, int batch_size) const;
 
   size_t m_max_batch_size;
   OpenCL& m_opencl;
