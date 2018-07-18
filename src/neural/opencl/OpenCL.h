@@ -83,7 +83,7 @@ class ThreadData {
 
 class OpenCL_Network {
  public:
-  OpenCL_Network(OpenCL& opencl) : m_opencl(opencl), m_max_batch_size(8) {}
+  OpenCL_Network(OpenCL& opencl) : m_opencl(opencl), m_max_batch_size(1) {}
 
   OpenCL& getOpenCL() { return m_opencl; }
 
@@ -194,8 +194,8 @@ class OpenCL_Network {
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
                     const int outputs, const int relu, int batch_size) const;
 
-  size_t m_max_batch_size;
   OpenCL& m_opencl;
+  size_t m_max_batch_size;
 
   // this mutex is not required for correctness, but this exists simply
   // because queue.finish() is a busy wait and having a lot of threads
