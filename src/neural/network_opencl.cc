@@ -173,7 +173,7 @@ class OpenCLNetwork : public Network {
         options.GetOrDefault<bool>("tune_exhaustive", false);
         
     auto max_batch_size_ =
-        static_cast<size_t>(options.GetOrDefault<int>("batch_size", 8));
+        static_cast<size_t>(options.GetOrDefault<int>("batch_size", 2));
     if (max_batch_size_ > kHardMaxBatchSize) {
         max_batch_size_ = kHardMaxBatchSize;
           
@@ -285,7 +285,7 @@ class OpenCLNetwork : public Network {
 
  private:
   
-  static constexpr auto kHardMaxBatchSize = 256;
+  static constexpr auto kHardMaxBatchSize = 16;
 
   OpenCLWeights weights_;
   OpenCLParams params_;
