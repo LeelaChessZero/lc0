@@ -220,7 +220,7 @@ std::string DiscoveryWeightsFile() {
 
   std::sort(time_and_filename.rbegin(), time_and_filename.rend());
 
-  // Open all candidates, from newest to oldest, possibly gzipped, and try to
+  // Open all candidates, from newest to oldest, possibly gzipped, and try to 
   // read version for it. If version is 2 or if the file is gzipped, return it.
   std::ifstream compressed_file;
   std::uint16_t header;
