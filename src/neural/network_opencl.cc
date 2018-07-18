@@ -66,7 +66,6 @@ class OpenCLComputation : public NetworkComputation {
   // Adds a sample to the batch.
   void AddInput(InputPlanes&& input) override { planes_.emplace_back(input); }
 
- public:
   // Do the computation.
   void ComputeBlocking() override {
     // Determine the largest batch for allocations.
