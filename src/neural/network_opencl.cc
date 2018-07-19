@@ -163,7 +163,7 @@ class OpenCLNetwork : public Network {
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
     params_.tune_batch_size =
-        options.GetOrDefault<bool>("tune_batch_size", 2);
+        options.GetOrDefault<int>("tune_batch_size", 2);
 
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 1));
