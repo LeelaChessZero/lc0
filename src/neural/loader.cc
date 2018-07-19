@@ -33,7 +33,10 @@
 
 namespace lczero {
 
+
 namespace {
+const std::uint32_t kWeightMagic = 0x1c0;
+
 void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
   *out = std::move(vecs->back());
   vecs->pop_back();
@@ -98,7 +101,11 @@ void DenormConvBlock(const pblczero::Weights_ConvBlock& conv,
 FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
   FloatVectors vecs;
-  net.ParseFromString(buffer);
+  if (!net.ParseFromString(buffer))
+    throw Exception("Invalid weight file: parse error.");
+
+  if (net.magic() != kWeightMagic)
+    throw Exception("Invalid weight file: bad header.");
 
   auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
@@ -109,10 +116,10 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
                     net.min_version().patch());
 
   if (net_ver > lc0_ver)
-    throw Exception("Weights require at least lc0 version: " + min_version);
+    throw Exception("Invalid weight file: lc0 version >= " + min_version + " required.");
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
-    throw Exception("Invalid weight encoding");
+    throw Exception("Invalid weight file: wrong encoding.");
 
   const auto& w = net.weights();
 
@@ -166,9 +173,9 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   auto buffer = DecompressGzip(filename);
 
   if (buffer.size() < 2)
-    throw Exception("Weight file invalid");
+    throw Exception("Invalid weight file: too small.");
   else if (buffer[0] == '1' && buffer[1] == '\n')
-    throw Exception("Weight file no longer supported");
+    throw Exception("Invalid weight file: no longer supported.");
   else if (buffer[0] == '2' && buffer[1] == '\n')
     vecs = LoadFloatsFromFile(&buffer);
   else
@@ -186,9 +193,9 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   PopulateLastIntoVector(&vecs, &result.ip_pol_w);
   PopulateConvBlockWeights(&vecs, &result.policy);
 
-  // Version, Input + all the residual should be left.
+  // Input + all the residual should be left.
   if ((vecs.size() - 4) % 8 != 0)
-    throw Exception("Bad number of lines in weights file");
+    throw Exception("Invalid weight file: parse error.");
 
   const int num_residual = (vecs.size() - 4) / 8;
   result.residual.resize(num_residual);
@@ -201,7 +208,7 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   return result;
 }
 
-std::string DiscoveryWeightsFile() {
+std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
   std::string root_path = CommandLine::BinaryDirectory();
@@ -220,7 +227,8 @@ std::string DiscoveryWeightsFile() {
   std::sort(time_and_filename.rbegin(), time_and_filename.rend());
 
   // Open all candidates, from newest to oldest, possibly gzipped, and try to
-  // read version for it. If version is 2, return it.
+  // read version for it. If version is 2 or if the file is our protobuf,
+  // return it.
   for (const auto& candidate : time_and_filename) {
     gzFile file = gzopen(candidate.second.c_str(), "rb");
 
@@ -235,7 +243,15 @@ std::string DiscoveryWeightsFile() {
     int val = 0;
     data >> val;
     if (!data.fail() && val == 2) {
-      std::cerr << "Found network file: " << candidate.second << std::endl;
+      std::cerr << "Found txt network file: " << candidate.second << std::endl;
+      return candidate.second;
+    }
+
+    // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
+    // our own magic should suffice.
+    auto magic = reinterpret_cast<std::uint32_t*>(buf+1);
+    if (*magic == kWeightMagic) {
+      std::cerr << "Found pb network file: " << candidate.second << std::endl;
       return candidate.second;
     }
   }
