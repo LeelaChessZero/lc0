@@ -761,7 +761,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
 
   auto t = Tuner(*this, params, m_context, m_device);
   auto sgemm_tuners =
-      t.load_sgemm_tuners(channels, WINOGRAD_P, channels, WINOGRAD_TILE);
+      t.load_sgemm_tuners(channels, WINOGRAD_P, channels, params.tune_batch_size*WINOGRAD_TILE);
 
   // Build program for these specific devices
   try {

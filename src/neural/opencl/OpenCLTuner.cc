@@ -222,7 +222,8 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
   auto cBuffer = cl::Buffer(m_context, CL_MEM_READ_WRITE,
                             sizeof(float) * c_size, nullptr, nullptr);
 
-  fprintf(stderr, "\nStarted OpenCL SGEMM tuner.\n");
+  fprintf(stderr, "\nStarted OpenCL SGEMM tuner with batch size %lu.\n",
+          batch_size);
 
   auto valid_params = std::vector<int>{};
   auto cfgs = 1;
