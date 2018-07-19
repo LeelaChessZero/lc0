@@ -482,37 +482,37 @@ void OpenCL_Network::innerproduct(cl::Buffer& input, weight_slice_t weights,
                                   const int relu, int batch_size) const {
   auto sgemv_kernel = opencl_thread_data.m_sgemv_kernel;
   cl::CommandQueue& queue = opencl_thread_data.m_commandqueue;
-  
+
   // TODO: Tune these
   size_t wgs1 = 64;
   size_t wpt1 = 1;
-  
+
   auto m_ceil = int(ceilMultiple(outputs, wgs1 * wpt1));
   auto global_size = m_ceil / wpt1;
   auto local_size = wgs1;
-  
-    try {
-      // Sets the kernel arguments
-      sgemv_kernel.setArg(0, static_cast<int>(outputs));
-      sgemv_kernel.setArg(1, static_cast<int>(inputs));
-      sgemv_kernel.setArg(2, weights[0]);
-      sgemv_kernel.setArg(3, static_cast<int>(0));
-      sgemv_kernel.setArg(4, static_cast<int>(inputs));
-      sgemv_kernel.setArg(5, input);
-      sgemv_kernel.setArg(6, static_cast<int>(0));
-      sgemv_kernel.setArg(7, output);
-      sgemv_kernel.setArg(8, static_cast<int>(0));
-      sgemv_kernel.setArg(9, biases[0]);
-      sgemv_kernel.setArg(10, static_cast<int>(relu));
-      
-      queue.enqueueNDRangeKernel(sgemv_kernel, cl::NullRange,
-                                 cl::NDRange(global_size, batch_size),
-                                 cl::NDRange(local_size, 1));
-    } catch (const cl::Error& e) {
-      std::cerr << "Error in innerproduct: " << e.what() << ": " << e.err()
-      << std::endl;
-      throw;
-    }
+
+  try {
+    // Sets the kernel arguments
+    sgemv_kernel.setArg(0, static_cast<int>(outputs));
+    sgemv_kernel.setArg(1, static_cast<int>(inputs));
+    sgemv_kernel.setArg(2, weights[0]);
+    sgemv_kernel.setArg(3, static_cast<int>(0));
+    sgemv_kernel.setArg(4, static_cast<int>(inputs));
+    sgemv_kernel.setArg(5, input);
+    sgemv_kernel.setArg(6, static_cast<int>(0));
+    sgemv_kernel.setArg(7, output);
+    sgemv_kernel.setArg(8, static_cast<int>(0));
+    sgemv_kernel.setArg(9, biases[0]);
+    sgemv_kernel.setArg(10, static_cast<int>(relu));
+
+    queue.enqueueNDRangeKernel(sgemv_kernel, cl::NullRange,
+                               cl::NDRange(global_size, batch_size),
+                               cl::NDRange(local_size, 1));
+  } catch (const cl::Error& e) {
+    std::cerr << "Error in innerproduct: " << e.what() << ": " << e.err()
+              << std::endl;
+    throw;
+  }
 }
 
 template <class T>
