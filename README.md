@@ -28,7 +28,7 @@ For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before perfo
     wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
     sudo apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main'
     sudo apt-get update
-    sudo apt-get install clang-6.0 ninja-build
+    sudo apt-get install clang-6.0 ninja-build protobuf-compiler libprotobuf-dev
     pip3 install meson --user
     git submodule update --init --recursive
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
