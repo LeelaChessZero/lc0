@@ -24,8 +24,8 @@ install:
 - cmd: IF %CUDA%==false nuget install OpenBLAS -Version 0.2.14.1 -OutputDirectory C:\cache
 - cmd: IF %CUDA%==false nuget install opencl-nug -Version 0.777.12 -OutputDirectory C:\cache
 - cmd: set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2"
-- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" appveyor DownloadFile https://developer.nvidia.com/compute/cuda/9.2/Prod2/network_installers/cuda_9.2.148_win10_network
-- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" cuda_9.2.148_win10_network -s nvcc_9.2 cublas_dev_9.2 cublas_9.2 cudart_9.2
+- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" appveyor DownloadFile https://developer.nvidia.com/compute/cuda/9.2/Prod2/local_installers/cuda_9.2.148_win10
+- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" cuda_9.2.148_win10 -s nvcc_9.2 cublas_dev_9.2 cublas_9.2 cudart_9.2
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.1.4/cudnn-9.2-windows10-x64-v7.1.zip
 - cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-9.2-windows10-x64-v7.1.zip -oC:\cache
@@ -41,9 +41,9 @@ install:
 - cmd: set PATH=c:\cache\protobuf\bin;%PATH%
 - cmd: cd C:\projects\lc0
 cache:
-  - C:\cache -> appveyor.yml
-  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2 -> appveyor.yml'
-  - C:\projects\lc0\subprojects\packagecache -> appveyor.yml
+  - C:\cache
+  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2'
+  - C:\projects\lc0\subprojects\packagecache
 before_build:
 - cmd: git submodule update --init --recursive
 - cmd: meson.py build --backend vs2015 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
