@@ -33,15 +33,20 @@ install:
 - cmd: pip3 install --upgrade meson
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" amd64
 - cmd: set PKG_FOLDER="C:\cache"
+- cmd: IF NOT EXIST c:\cache\protobuf\ git clone -b v3.5.1 --single-branch --depth 1 https://github.com/google/protobuf.git
+- cmd: IF NOT EXIST c:\cache\protobuf\ mkdir protobuf\build_msvc
+- cmd: IF NOT EXIST c:\cache\protobuf\ cd protobuf\build_msvc
+- cmd: IF NOT EXIST c:\cache\protobuf\ cmake -G "Visual Studio 14 2015 Win64" -Dprotobuf_BUILD_SHARED_LIBS=NO -Dprotobuf_MSVC_STATIC_RUNTIME=NO -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=c:/cache/protobuf ../cmake
+- cmd: IF NOT EXIST c:\cache\protobuf\ msbuild INSTALL.vcxproj /p:Configuration=Release /p:Platform=x64 /m
+- cmd: set PATH=c:\cache\protobuf\bin;%PATH%
+- cmd: cd C:\projects\lc0
 cache:
-  - C:\cache
-  - C:\Python36\scripts
-  - C:\Python36\Lib\site-packages
-  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2'
-  - C:\projects\lc0\subprojects\packagecache
+  - C:\cache -> appveyor.yml
+  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2 -> appveyor.yml'
+  - C:\projects\lc0\subprojects\packagecache -> appveyor.yml
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: meson.py build --backend vs2015 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
+- cmd: meson.py build --backend vs2015 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
 build:
   parallel: true
   project: build/lc0.sln
