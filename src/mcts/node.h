@@ -166,7 +166,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, float gamma, float beta);
+  void FinalizeScoreUpdate(float v);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -243,8 +243,12 @@ class EdgeAndNode {
   EdgeAndNode() = default;
   EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
   explicit operator bool() const { return edge_ != nullptr; }
-  bool operator==(const EdgeAndNode& other) const { return edge_ == other.edge_; }
-  bool operator!=(const EdgeAndNode& other) const { return edge_ != other.edge_; }
+  bool operator==(const EdgeAndNode& other) const {
+    return edge_ == other.edge_;
+  }
+  bool operator!=(const EdgeAndNode& other) const {
+    return edge_ != other.edge_;
+  }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }
