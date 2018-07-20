@@ -77,7 +77,7 @@ if __name__ == "__main__":
     argparser.add_argument('--patch', action='store_true',
             help='bumps patch')
     argparser.add_argument('--postfix', type=str,
-            help='set postfix and bumps patch')
+            help='set postfix')
     argv = argparser.parse_args()
     main(argv)
 
