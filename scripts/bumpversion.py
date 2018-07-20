@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 
 import argparse
-import textwrap
 import os
-from string import Template
 
 
 VERSION_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../src/version.inc")
 VERSION_CONTENT = """
-#define LC0_VERSION_MAJOR $major
-#define LC0_VERSION_MINOR $minor
-#define LC0_VERSION_PATCH $patch
-#define LC0_VERSION_POSTFIX "$postfix"
+#define LC0_VERSION_MAJOR {}
+#define LC0_VERSION_MINOR {}
+#define LC0_VERSION_PATCH {}
+#define LC0_VERSION_POSTFIX "{}"
 """
-VERSION_CONTENT = textwrap.dedent(VERSION_CONTENT).strip()
+VERSION_CONTENT = VERSION_CONTENT.strip()
 
 
 def get_version():
@@ -28,8 +26,7 @@ def get_version():
 
 
 def set_version(major, minor, patch, postfix=""):
-    tmp = Template(VERSION_CONTENT)
-    version_inc = tmp.substitute(major=major, minor=minor, patch=patch, postfix=postfix)
+    version_inc = VERSION_CONTENT.format(major, minor, patch, postfix)
 
     with open(VERSION_FILE, 'w') as f:
         f.write(version_inc)
