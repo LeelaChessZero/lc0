@@ -73,7 +73,7 @@ if not protobuf_dep.found() or not protoc.found()
   protoc = subproject('protobuf').get_variable('protoc')
 else
   deps += protobuf_dep
-  if not protobuf_lib.found()
+  if protobuf_lib.found()
     includes += include_directories(get_option('protobuf_include'))
   endif
 endif
