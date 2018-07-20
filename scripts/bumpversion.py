@@ -48,17 +48,16 @@ def main(argv):
         patch = 0
         postfix = ""
         update(major, minor, patch)
-    elif argv.minor:
+    if argv.minor:
         minor += 1
         patch = 0
         postfix = ""
         update(major, minor, patch)
-    elif argv.patch:
+    if argv.patch:
         patch += 1
         postfix = ""
         update(major, minor, patch)
-    elif argv.postfix and len(argv.postfix) > 0:
-        patch += 1
+    if argv.postfix and len(argv.postfix) > 0:
         postfix = argv.postfix
         update(major, minor, patch, postfix)
 
