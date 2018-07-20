@@ -80,13 +80,9 @@ class Edge {
   Move GetMove(bool as_opponent = false) const;
 
   // Returns or sets value of Move policy prior returned from the neural net
-  // (but can be changed by adding Dirichlet noise). We use a 16 bit significand
-  // for storage savings in memory-critical Edges. Priors are floored at
-  // 1/0xFFFF, since we use priors multiplicatively to calculate U.
-  float GetP() const { return   static_cast<float>(p_)
-                              / static_cast<float>(0xFFFF); }
-  void SetP(float val) { p_ = std::max(static_cast<uint16_t>(1),
-                                       static_cast<uint16_t>(val * 0xFFFF)); }
+  // (but can be changed by adding Dirichlet noise).
+  float GetP() const;
+  void SetP(float val);
 
   // Debug information about the edge.
   std::string DebugString() const;

@@ -113,6 +113,31 @@ Move Edge::GetMove(bool as_opponent) const {
   return m;
 }
 
+// We use a 16 bit significand for storage savings in memory-critical Edges.
+// Non-zero priors are not allowed, as we use them multiplicatively to
+// calculate U. We have 16 bits, so 2^16 unique values available (we don't
+// reserve a value for "uninitialized"); we want them to be evenly
+// balanced around 1/2 (so that converting floats to ints preserves normality),
+// so we have to adjust the conversion slightly. For example, with 2 bits:
+// 0       0.25       0.5       0.75       1
+// |---------|---------|---------|---------|
+// A    B    C    D    E    F    G    H    I
+// In order to evenly balance the 4 available values, we need to actually put
+// them at 0.125, 0.375, 0.625, and 0.875, i.e. B, D, F, and H.
+// For converting floats to ints: just multiply by 2^(n=2) and truncate, which
+// maps [A,C) -> 0, [C,E) -> 1, [E,G) -> 2, [G,I) -> 3.
+// To convert these integers back to floats, divide by 2^(n=2), mapping 0 -> A,
+// 1 -> C, 2 -> E, 3 -> G. Recover the *balanced around 1/2* floats by adding
+// 0.125, i.e. 1/2^(n+1).
+float Edge::GetP() const {
+  return   static_cast<float>(p_) / static_cast<float>(1 << 16)
+         + static_cast<float>(1) / static_cast<float>(1 << 17);
+}
+
+void Edge::SetP(float val) {
+  p_ = static_cast<uint16_t>(val * (1 << 16));
+}
+
 std::string Edge::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
