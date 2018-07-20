@@ -55,10 +55,14 @@ def editor(init_msg):
 
 
 def update(major, minor, patch):
+    # this is a workflow suggestion:
+
     # edit changelog
-    set_current_version(major, minor, patch)
+    set_version(major, minor, patch)
     # git commit
     # git tag
+    # set_version(major, minor, patch, "dev")
+    # git commit
 
 
 def main(argv):
