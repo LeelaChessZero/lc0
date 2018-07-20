@@ -128,7 +128,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     std::string path =
         options.GetSubdict(kPlayerNames[idx]).Get<std::string>(kNetFileStr);
     if (path == kAutoDiscover) {
-      path = DiscoveryWeightsFile();
+      path = DiscoverWeightsFile();
     }
     Weights weights = LoadWeightsFromFile(path);
     std::string backend =

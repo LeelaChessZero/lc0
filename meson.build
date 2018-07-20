@@ -32,19 +32,42 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   endif
 endif
 
-
 # Files to compile.
 deps = []
 files = []
 includes = []
 has_backends = false
 
+# Both protobuf and protoc must be the same version, so couple them together.
+protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
+if not protobuf_lib.found()
+  protobuf_dep = dependency('protobuf', required : false)
+else
+  protobuf_dep = protobuf_lib
+endif
+protoc = find_program('protoc', required : false)
+if not protobuf_dep.found() or not protoc.found()
+  deps += subproject('protobuf').get_variable('protobuf_dep')
+  protoc = subproject('protobuf').get_variable('protoc')
+else
+  deps += protobuf_dep
+  if protobuf_lib.found()
+    includes += include_directories(get_option('protobuf_include'))
+  endif
+endif
+
+gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
+  arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+
+files += gen.process('libs/lczero-common/proto/net.proto', 
+  preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 
 #############################################################################
 ## Main files
 #############################################################################
 files += [
   'src/engine.cc',
+  'src/version.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
@@ -152,7 +175,24 @@ if get_option('build_backends')
 
     elif get_option('openblas') and openblas_lib.found()
       add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
-      includes += include_directories(get_option('openblas_include'))
+
+      required_openblas_header = 'openblas_config.h'
+      if not cc.has_header(required_openblas_header)
+        openblas_headers_found = false
+        
+        # add the first valid include directory
+        foreach d : get_option('openblas_include')
+          if not openblas_headers_found and cc.has_header(required_openblas_header, args: '-I' + d)
+            includes += include_directories(d)
+            openblas_headers_found = true
+          endif
+        endforeach
+        
+        if not openblas_headers_found
+          error('Failed to detect OpenBLAS headers. Did you install libopenblas-dev?')
+        endif
+      endif
+
       deps += [ openblas_lib ]
       has_blas = true
 
@@ -299,7 +339,7 @@ endif
   ## ~~~~
   # Pick latest from https://wrapdb.mesonbuild.com/zlib and put into
   # subprojects/zlib.wrap
-  deps += subproject('zlib').get_variable('zlib_dep')
+  deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
 
   ## ~~~~~~~~
   ## Profiler
@@ -319,19 +359,19 @@ executable('lc0', 'src/main.cc',
 
 
 ### Tests
-gtest = dependency('gtest', required: false)
+gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
 test_deps = deps
-if gtest.found()
+if get_option('gtest') and gtest.found()
   test_deps += gtest
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ))
+  ), timeout: 90)
 
   test('HashCat',
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ))
+  ), timeout: 90)
 endif

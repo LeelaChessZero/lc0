@@ -171,7 +171,7 @@ void EngineController::UpdateNetwork() {
 
   std::string net_path = network_path;
   if (net_path == kAutoDiscover) {
-    net_path = DiscoveryWeightsFile();
+    net_path = DiscoverWeightsFile();
   }
   Weights weights = LoadWeightsFromFile(net_path);
 

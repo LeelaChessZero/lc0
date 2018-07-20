@@ -89,21 +89,21 @@ class Search {
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
   static const char* kSmartPruningStr;
-  static const char* kVirtualLossBugStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
-  static const char* kBackPropagateBetaStr;
-  static const char* kBackPropagateGammaStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
 
   // Returns a child with most visits, with or without temperature.
-  Node* GetBestChildNoTemperature(Node* parent) const;
-  Node* GetBestChildWithTemperature(Node* parent, float temperature) const;
+  // NoTemperature is safe to use on non-extended nodes, while WithTemperature
+  // accepts only nodes with at least 1 visited child.
+  EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
+  EdgeAndNode GetBestChildWithTemperature(Node* parent,
+                                          float temperature) const;
 
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
@@ -114,7 +114,7 @@ class Search {
   void SendMovesStats() const;
 
   // We only need first ply for debug output, but could be easily generalized.
-  NNCacheLock GetCachedFirstPlyResult(const Node* node) const;
+  NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -142,8 +142,8 @@ class Search {
   const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
-  Node* best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
-  Node* last_outputted_best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
+  EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
+  Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
@@ -161,13 +161,10 @@ class Search {
   const bool kNoise;
   const bool kVerboseStats;
   const bool kSmartPruning;
-  const float kVirtualLossBug;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
-  const float kBackPropagateBeta;
-  const float kBackPropagateGamma;
 
   friend class SearchWorker;
 };
