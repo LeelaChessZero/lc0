@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
-import tempfile
 import textwrap
 import os
 from string import Template
-from subprocess import call
+
 
 VERSION_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../src/version.inc")
 VERSION_CONTENT = """
@@ -15,7 +14,6 @@ VERSION_CONTENT = """
 #define LC0_VERSION_POSTFIX $postfix
 """
 VERSION_CONTENT = textwrap.dedent(VERSION_CONTENT).strip()
-EDITOR = os.environ.get("EDITOR", "nano")
 
 
 def get_version():
@@ -36,33 +34,8 @@ def set_version(major, minor, patch, postfix="\"\""):
         f.write(version_inc)
 
 
-def commit(msg):
-    call(["git", "commit", "-am", msg])
-
-
-def tag(major, minor, patch):
-    version = "v{}.{}.{}".format(major, minor, patch)
-    call(["git", "-m", version, version])
-
-
-def editor(init_msg):
-    with tempfile.NamedTemporaryFile(suffix='.md') as f:
-        f.write(init_msg.encode('utf-8'))
-        f.flush()
-        call([EDITOR, f.name])
-        f.seek(0)
-        return f.read().decode('utf-8')
-
-
 def update(major, minor, patch):
-    # this is a workflow suggestion:
-
-    # edit changelog
     set_version(major, minor, patch)
-    # commit("version bump")
-    # tag(major, minor, patch)
-    # set_version(major, minor, patch + 1, "dev")
-    # commit("dev")
 
 
 def main(argv):
@@ -84,7 +57,11 @@ def main(argv):
         postfix = ""
         update(major, minor, patch)
 
-    print('{} {} {} {}'.format(major, minor, patch, postfix))
+    postfix = postfix.replace('"', '')
+    if len(postfix) == 0:
+        print('v{}.{}.{}'.format(major, minor, patch))
+    else:
+        print('v{}.{}.{}-{}'.format(major, minor, patch, postfix))
 
 
 if __name__ == "__main__":
