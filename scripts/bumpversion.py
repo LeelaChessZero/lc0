@@ -57,7 +57,7 @@ def main(argv):
         patch += 1
         postfix = ""
         update(major, minor, patch)
-    elif len(argv.postfix) > 0:
+    elif argv.postfix and len(argv.postfix) > 0:
         patch += 1
         postfix = argv.postfix
         update(major, minor, patch, postfix)
