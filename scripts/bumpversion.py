@@ -11,7 +11,7 @@ VERSION_CONTENT = """
 #define LC0_VERSION_MAJOR $major
 #define LC0_VERSION_MINOR $minor
 #define LC0_VERSION_PATCH $patch
-#define LC0_VERSION_POSTFIX $postfix
+#define LC0_VERSION_POSTFIX "$postfix"
 """
 VERSION_CONTENT = textwrap.dedent(VERSION_CONTENT).strip()
 
@@ -23,10 +23,11 @@ def get_version():
         patch = int(f.readline().split()[2])
         postfix = f.readline().split()[2]
 
+    postfix = postfix.replace('"', '')
     return major, minor, patch, postfix
 
 
-def set_version(major, minor, patch, postfix="\"\""):
+def set_version(major, minor, patch, postfix=""):
     tmp = Template(VERSION_CONTENT)
     version_inc = tmp.substitute(major=major, minor=minor, patch=patch, postfix=postfix)
 
@@ -34,8 +35,8 @@ def set_version(major, minor, patch, postfix="\"\""):
         f.write(version_inc)
 
 
-def update(major, minor, patch):
-    set_version(major, minor, patch)
+def update(major, minor, patch, postfix=""):
+    set_version(major, minor, patch, postfix)
 
 
 def main(argv):
@@ -56,8 +57,11 @@ def main(argv):
         patch += 1
         postfix = ""
         update(major, minor, patch)
+    elif len(argv.postfix) > 0:
+        patch += 1
+        postfix = argv.postfix
+        update(major, minor, patch, postfix)
 
-    postfix = postfix.replace('"', '')
     if len(postfix) == 0:
         print('v{}.{}.{}'.format(major, minor, patch))
     else:
@@ -73,6 +77,8 @@ if __name__ == "__main__":
             help='bumps minor version')
     argparser.add_argument('--patch', action='store_true',
             help='bumps patch')
+    argparser.add_argument('--postfix', type=str,
+            help='set postfix and bumps patch')
     argv = argparser.parse_args()
     main(argv)
 
