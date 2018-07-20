@@ -51,19 +51,19 @@ build:
   parallel: true
   project: build/lc0.sln
 after_build:
-- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false IF %OPENCL%==true 7z a lc0-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-windows-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false IF %OPENCL%==true 7z a lc0-windows-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
-  - path: lc0-$(NAME).zip
-    name: lc0-$(NAME)-zip
+  - path: lc0-windows-$(NAME).zip
+    name: lc0-windows-$(NAME)-zip
 deploy:
   - provider: GitHub
-    artifact: lc0-$(NAME).zip
+    artifact: lc0-windows-$(NAME).zip
     auth_token:
-      secure: xlw/7zqX2zEfNwrEr3/oaZ4FIREcdYgvMbWolZz4sUtzUfxrlyFoAvVj/I4FNlIN
+      secure: USFAdwQKTXqOXQjCYQfzWvzRpUhvqJLBkN4hbOg+j876vDxGZHt9bMYayb5evePp
     on:
       appveyor_repo_tag: true
 test_script:
