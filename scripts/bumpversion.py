@@ -15,10 +15,10 @@ VERSION_CONTENT = """
 #define LC0_VERSION_POSTFIX $postfix
 """
 VERSION_CONTENT = textwrap.dedent(VERSION_CONTENT).strip()
-EDITOR = os.environ.get("EDITOR", "vim")
+EDITOR = os.environ.get("EDITOR", "nano")
 
 
-def get_current_version():
+def get_version():
     with open(VERSION_FILE, 'r') as f:
         major = int(f.readline().split()[2])
         minor = int(f.readline().split()[2])
@@ -28,12 +28,16 @@ def get_current_version():
     return major, minor, patch, postfix
 
 
-def set_current_version(major, minor, patch, postfix="\"\""):
+def set_version(major, minor, patch, postfix="\"\""):
     tmp = Template(VERSION_CONTENT)
     version_inc = tmp.substitute(major=major, minor=minor, patch=patch, postfix=postfix)
 
     with open(VERSION_FILE, 'w') as f:
         f.write(version_inc)
+
+
+def commit(msg):
+    call(["git", "commit", "-am", msg])
 
 
 def tag(major, minor, patch):
@@ -42,7 +46,7 @@ def tag(major, minor, patch):
 
 
 def editor(init_msg):
-    with tempfile.NamedTemporaryFile() as f:
+    with tempfile.NamedTemporaryFile(suffix='.md') as f:
         f.write(init_msg.encode('utf-8'))
         f.flush()
         call([EDITOR, f.name])
@@ -51,14 +55,14 @@ def editor(init_msg):
 
 
 def update(major, minor, patch):
+    # edit changelog
     set_current_version(major, minor, patch)
-    # edit changelot
     # git commit
     # git tag
 
 
 def main(argv):
-    major, minor, patch, postfix = get_current_version()
+    major, minor, patch, postfix = get_version()
 
     if argv.major:
         major += 1
@@ -75,8 +79,6 @@ def main(argv):
         patch += 1
         postfix = ""
         update(major, minor, patch)
-
-    print(editor("# type message here"))
 
     print('{} {} {} {}'.format(major, minor, patch, postfix))
 
