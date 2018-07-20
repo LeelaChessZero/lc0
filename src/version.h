@@ -1,21 +1,7 @@
 #pragma once
 
 // Versioning is performed according to the standard at <https://semver.org/>
-// Our postfix consists of the 8 character git-sha1 id iff the commit is not
-// tagged. Version bumping should be performed using scripts/bumpversion.py. An
-// example versioning flow looks like this:
-//
-//   0.13.0 (released build)
-//   0.13.1-sha1 (development of next release)
-//   0.13.1-sha2
-//   0.13.1 (released build)
-//   0.13.2-sha3 (development of next release)
-//   0.13.2-sha4
-//   0.14.0 (released build)
-//   ...
-//   ...
-//   1.0.0 (released build)
-//   ...
+// Creating a new version should be performed using scripts/bumpversion.py.
 
 #include <string>
 #include "version.inc"

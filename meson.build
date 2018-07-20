@@ -32,28 +32,6 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   endif
 endif
 
-# Extract git version
-git_version = run_command(meson.current_source_dir() + '/scripts/bumpversion.py')
-if git_version.returncode() != 0
-  error('Unable to extract version') 
-else
-  version_str = git_version.stdout().strip()
-  version_array = version_str.split(' ')
-  major = version_array[0]
-  minor = version_array[1]
-  patch = version_array[2]
-  postfix = version_array.length() == 4 ? version_array[3] : ''
-endif
-
-conf_data = configuration_data()
-conf_data.set('major', major)
-conf_data.set('minor', minor)
-conf_data.set('patch', patch)
-conf_data.set('postfix', postfix)
-configure_file(input : meson.current_source_dir() + '/version.in',
-               output : 'version.inc',
-               configuration : conf_data)
-
 # Files to compile.
 deps = []
 files = []
