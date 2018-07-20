@@ -59,10 +59,10 @@ def update(major, minor, patch):
 
     # edit changelog
     set_version(major, minor, patch)
-    # git commit
-    # git tag
-    # set_version(major, minor, patch, "dev")
-    # git commit
+    # commit("version bump")
+    # tag(major, minor, patch)
+    # set_version(major, minor, patch + 1, "dev")
+    # commit("dev")
 
 
 def main(argv):
