@@ -47,8 +47,6 @@ const char* Search::kCacheHistoryLengthStr =
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
-const char* Search::kBackPropagateBetaStr = "Backpropagation gamma";
-const char* Search::kBackPropagateGammaStr = "Backpropagation beta";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -79,10 +77,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
-  options->Add<FloatOption>(kBackPropagateBetaStr, 0.0f, 100.0f,
-                            "backpropagate-beta") = 1.0f;
-  options->Add<FloatOption>(kBackPropagateGammaStr, -100.0f, 100.0f,
-                            "backpropagate-gamma") = 1.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -109,9 +103,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kBackPropagateBeta(options.Get<float>(kBackPropagateBetaStr)),
-      kBackPropagateGamma(options.Get<float>(kBackPropagateGammaStr)) {}
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -889,8 +881,7 @@ void SearchWorker::DoBackupUpdate() {
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
-      n->FinalizeScoreUpdate(v, search_->kBackPropagateGamma,
-                             search_->kBackPropagateBeta);
+      n->FinalizeScoreUpdate(v);
       // Q will be flipped for opponent.
       v = -v;
 
@@ -903,8 +894,8 @@ void SearchWorker::DoBackupUpdate() {
       // Best move.
       if (n->GetParent() == search_->root_node_ &&
           search_->best_move_edge_.GetN() <= n->GetN()) {
-            search_->best_move_edge_ =
-                search_->GetBestChildNoTemperature(search_->root_node_);
+        search_->best_move_edge_ =
+            search_->GetBestChildNoTemperature(search_->root_node_);
       }
     }
     ++search_->total_playouts_;
