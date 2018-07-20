@@ -127,10 +127,8 @@ if get_option('build_backends')
   tf_dl_lib = cc.find_library('dl', required: false)
   tf_tensorflow_lib = cc.find_library('libtensorflow_cc',
             dirs: tensorflow_libdir, required: false)
-  tf_protobuf_lib = cc.find_library('libprotobuf',
-            dirs: tensorflow_libdir, required: false)
 
-  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found()
     includes += include_directories(
       tensorflow_include,
       tensorflow_include[0] + '/bazel-genfiles',
@@ -141,7 +139,7 @@ if get_option('build_backends')
       tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
       is_system: true
     )
-    deps += [tf_dl_lib, tf_tensorflow_lib, tf_protobuf_lib]
+    deps += [tf_dl_lib, tf_tensorflow_lib]
     files += 'src/neural/network_tf.cc'
     has_backends = true
   endif
