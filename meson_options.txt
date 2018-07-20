@@ -3,6 +3,11 @@ option('tensorflow_include',
        value: ['/usr/local/include/tensorflow/'],
        description: 'Paths to tensorflow include directories')
 
+option('protobuf_include',
+       type: 'array',
+       value: ['/usr/local/include/'],
+       description: 'Paths to protobuf include directories')
+
 option('openblas_include',
        type: 'array',
        value: ['/usr/include/openblas/'],
@@ -17,6 +22,11 @@ option('tensorflow_libdir',
        type: 'array',
        value: ['/usr/local/lib/tensorflow_cc/'],
        description: 'Paths to tensorflow libraries')
+
+option('protobuf_libdir',
+       type: 'array',
+       value: ['/usr/lib/x86_64-linux-gnu/'],
+       description: 'Paths to protobuf libraries')
 
 option('openblas_libdirs',
        type: 'array',
