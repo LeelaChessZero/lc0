@@ -8,7 +8,7 @@ from string import Template
 
 VERSION_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../src/version.inc")
 VERSION_CONTENT = """
-#define LC0_VERSION_MAJOR $major 
+#define LC0_VERSION_MAJOR $major
 #define LC0_VERSION_MINOR $minor
 #define LC0_VERSION_PATCH $patch
 #define LC0_VERSION_POSTFIX $postfix
