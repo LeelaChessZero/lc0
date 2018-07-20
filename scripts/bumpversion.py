@@ -43,11 +43,11 @@ def tag(major, minor, patch):
 
 def editor(init_msg):
     with tempfile.NamedTemporaryFile() as f:
-        f.write(init_msg)
+        f.write(init_msg.encode('utf-8'))
         f.flush()
         call([EDITOR, f.name])
         f.seek(0)
-        return f.read()
+        return f.read().decode('utf-8')
 
 
 def update(major, minor, patch):
@@ -75,6 +75,8 @@ def main(argv):
         patch += 1
         postfix = ""
         update(major, minor, patch)
+
+    print(editor("# type message here"))
 
     print('{} {} {} {}'.format(major, minor, patch, postfix))
 
