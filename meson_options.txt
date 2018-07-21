@@ -80,7 +80,7 @@ option('opencl',
 
 option('tensorflow',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable TensorFlow backend')
 
 option('openblas',
