@@ -78,9 +78,9 @@ option('opencl',
        value: true,
        description: 'Enable OpenCL backend')
 
-option('tf',
+option('tensorflow',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable TensorFlow backend')
 
 option('openblas',

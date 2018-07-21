@@ -127,7 +127,7 @@ if get_option('build_backends')
   tf_protobuf_lib = cc.find_library('libprotobuf',
             dirs: tensorflow_libdir, required: false)
 
-  if get_option('tf') and tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
     includes += include_directories(
       tensorflow_include,
       tensorflow_include[0] + '/bazel-genfiles',
