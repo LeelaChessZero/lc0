@@ -45,7 +45,7 @@ class CachingComputation {
   // How many inputs are not found in cache and will be forwarded to a wrapped
   // computation.
   int GetCacheMisses() const;
-  // Total number of timea AddInput/AddInputByHash were (successfully) called.
+  // Total number of times AddInput/AddInputByHash were (successfully) called.
   int GetBatchSize() const;
   // Adds input by hash only. If that hash is not in cache, returns false
   // and does nothing. Otherwise adds.

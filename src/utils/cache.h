@@ -26,7 +26,10 @@
 
 namespace lczero {
 
-// Generic LRU cache. Thread-safe.
+// Generic LRU cache. Thread-safe. Takes ownership of all values, which are
+// deleted upon eviction; thus, using values stored requires pinning them, which
+// in turn requires Unpin()ing them after use. The use of LruCacheLock is
+// recommend to automate this element-memory management.
 template <class K, class V>
 class LruCache {
   static const double constexpr kLoadFactor = 1.33;
@@ -84,8 +87,9 @@ class LruCache {
 
   // Looks up and pins the element by key. Returns nullptr if not found.
   // If found, brings the element to the head of the queue (makes it last to
-  // evict).
-  V* Lookup(K key) {
+  // evict); furthermore, a call to Unpin must be made for each such element.
+  // Use of LruCacheLock is recommended to automate this pin management.
+  V* LookupAndPin(K key) {
     Mutex::Lock lock(mutex_);
 
     auto hash = hasher_(key) % hash_.size();
@@ -99,7 +103,8 @@ class LruCache {
     return nullptr;
   }
 
-  // Unpins the element given key and value.
+  // Unpins the element given key and value. Use of LruCacheLock is recommended
+  // to automate this pin management.
   void Unpin(K key, V* value) {
     Mutex::Lock lock(mutex_);
 
@@ -117,7 +122,7 @@ class LruCache {
       cur = &el->next_in_hash;
     }
 
-    // Now lookup in actve list.
+    // Now lookup in active list.
     auto hash = hasher_(key) % hash_.size();
     for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
       if (key == iter->key && value == iter->value.get()) {
@@ -197,7 +202,7 @@ class LruCache {
       iter->next_in_queue->prev_in_queue = iter->prev_in_queue;
     }
 
-    // Destroy or move into evicted list dependending on whether it's pinned.
+    // Destroy or move into evicted list depending on whether it's pinned.
     Item** cur = &hash_[hasher_(iter->key) % hash_.size()];
     for (Item* el = *cur; el; el = el->next_in_hash) {
       if (el == iter) {
@@ -272,12 +277,14 @@ class LruCacheLock {
  public:
   // Looks up the value in @cache by @key and pins it if found.
   LruCacheLock(LruCache<K, V>* cache, K key)
-      : cache_(cache), key_(key), value_(cache->Lookup(key_)) {}
+      : cache_(cache), key_(key), value_(cache->LookupAndPin(key_)) {}
 
   // Unpins the cache entry (if holds).
   ~LruCacheLock() {
     if (value_) cache_->Unpin(key_, value_);
   }
+
+  LruCacheLock(const LruCacheLock&) = delete;
 
   // Returns whether lock holds any value.
   operator bool() const { return value_; }

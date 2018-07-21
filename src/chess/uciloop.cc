@@ -28,6 +28,7 @@
 #include <utility>
 #include "utils/exception.h"
 #include "utils/string.h"
+#include "version.h"
 
 namespace lczero {
 
@@ -159,19 +160,19 @@ bool UciLoop::DispatchCommand(
       go_params.searchmoves =
           StrSplitAtWhitespace(GetOrEmpty(params, "searchmoves"));
     }
-#define OPTION(x)                         \
+#define UCIGOOPTION(x)                    \
   if (ContainsKey(params, #x)) {          \
     go_params.x = GetNumeric(params, #x); \
   }
-    OPTION(wtime);
-    OPTION(btime);
-    OPTION(winc);
-    OPTION(binc);
-    OPTION(movestogo);
-    OPTION(depth);
-    OPTION(nodes);
-    OPTION(movetime);
-#undef OPTION
+    UCIGOOPTION(wtime);
+    UCIGOOPTION(btime);
+    UCIGOOPTION(winc);
+    UCIGOOPTION(binc);
+    UCIGOOPTION(movestogo);
+    UCIGOOPTION(depth);
+    UCIGOOPTION(nodes);
+    UCIGOOPTION(movetime);
+#undef UCIGOOPTION
     CmdGo(go_params);
   } else if (command == "stop") {
     CmdStop();
@@ -194,10 +195,21 @@ void UciLoop::SetLogFilename(const std::string& filename) {
 }
 
 void UciLoop::SendResponse(const std::string& response) {
+  SendResponses({response});
+}
+
+void UciLoop::SendResponses(const std::vector<std::string>& responses) {
   static std::mutex output_mutex;
   std::lock_guard<std::mutex> lock(output_mutex);
-  if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
-  std::cout << response << std::endl;
+  for (auto& response : responses) {
+    if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
+    std::cout << response << std::endl;
+  }
+}
+
+void UciLoop::SendId() {
+  SendResponse("id name The Lc0 chess engine. v" + GetVersionStr());
+  SendResponse("id author The LCZero Authors.");
 }
 
 void UciLoop::SendBestMove(const BestMoveInfo& move) {

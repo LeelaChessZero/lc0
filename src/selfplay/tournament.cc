@@ -40,6 +40,8 @@ const char* kTrainingStr = "Write training data";
 const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
 const char* kVerboseThinkingStr = "Show verbose thinking messages";
+const char* kResignPlaythroughStr =
+              "The percentage of games which ignore resign";
 
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
@@ -50,7 +52,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player1");
   options->AddContext("player2");
 
-  options->Add<BoolOption>(kShareTreesStr, "share-trees") = false;
+  options->Add<BoolOption>(kShareTreesStr, "share-trees") = true;
   options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
   options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 8;
   options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
@@ -65,6 +67,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
       "multiplexing";
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
   options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
+  options->Add<FloatOption>(kResignPlaythroughStr, 0.0f, 100.0f,
+                            "resign-playthrough") = 0.0f;
 
   Search::PopulateUciParams(options);
   SelfPlayGame::PopulateUciParams(options);
@@ -94,7 +98,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kTotalGames(options.Get<int>(kTotalGamesStr)),
       kShareTree(options.Get<bool>(kShareTreesStr)),
       kParallelism(options.Get<int>(kParallelGamesStr)),
-      kTraining(options.Get<bool>(kTrainingStr)) {
+      kTraining(options.Get<bool>(kTrainingStr)),
+      kResignPlaythrough(options.Get<float>(kResignPlaythroughStr)) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     next_game_black_ = Random::Get().GetBool();
@@ -123,7 +128,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     std::string path =
         options.GetSubdict(kPlayerNames[idx]).Get<std::string>(kNetFileStr);
     if (path == kAutoDiscover) {
-      path = DiscoveryWeightsFile();
+      path = DiscoverWeightsFile();
     }
     Weights weights = LoadWeightsFromFile(path);
     std::string backend =
@@ -215,7 +220,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       if (verbose_thinking) {
         info_callback_(rich_info);
       } else {
-        // In non-verbose mode, remeber the last "info" message.
+        // In non-verbose mode, remember the last "info" message.
         last_thinking_info = rich_info;
       }
     };
@@ -233,8 +238,11 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
   auto& game = **game_iter;
 
+  // If kResignPlaythrough == 0, then this comparison is unconditionally true
+  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
+
   // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]]);
+  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
@@ -244,6 +252,10 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
     game_info.moves = game.GetMoves();
+    if (!enable_resign) {
+      game_info.min_false_positive_threshold =
+          game.GetWorstEvalForWinnerOrDraw();
+    }
     if (kTraining) {
       TrainingDataWriter writer(game_number);
       game.WriteTrainingData(&writer);
