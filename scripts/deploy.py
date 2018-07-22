@@ -97,8 +97,10 @@ def CheckOwnIntegrityAndFetch(p):
         RunCmdStep(
             'git diff-index --quiet HEAD --',
             doc="Check that git doesn't have uncommited changes"))
-    p.AddStep(RunCmdStep('git fetch', doc="Fetch fresh version from upstream"))
+    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(RunCmdStep('git pull', doc="Pull release from upstream"))
     p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
+    p.AddStep(RunCmdStep('git pull', doc="Pull master from upstream"))
     p.AddStep(CompareFileSha(OWN_FILENAME, require_equal=True))
 
 
