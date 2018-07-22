@@ -583,7 +583,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
-    if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    if (best_edge.edge() != nullptr && !is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) return {node, true};
@@ -639,7 +639,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       }
     }
 
-    history_.Append(best_edge.GetMove());
+    if (best_edge.edge() != nullptr) {
+      history_.Append(best_edge.GetMove());
+    }
     if (is_root_node && possible_moves <= 1 &&
         (search_->kDepthOneValueMode || !search_->limits_.infinite)) {
       // If there is only one move theoretically possible within remaining time,
