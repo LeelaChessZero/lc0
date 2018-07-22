@@ -23,12 +23,13 @@
 
 namespace lczero {
 
-// https://github.com/LeelaChessZero/lc0/issues/209
 TEST(PositionHistory, ComputeLastMoveRepetitions) {
   ChessBoard board;
   PositionHistory history;
-  board.SetFromFen("3b1k2/rp1r4/8/1RP2p1p/p1KP1P2/P3P2P/8/1R2B3 b - - 0 31");
-  history.Reset(board, 0, 0);
+  board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30");
+  history.Reset(board, 2, 30);
+  history.Append(Move("f7f8", true));
+  history.Append(Move("f2f4", false));
   history.Append(Move("d7h7", true));
   history.Append(Move("c4d3", false));
   history.Append(Move("h7d7", true));
