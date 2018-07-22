@@ -48,7 +48,7 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kDepthOneValueModeStr =
-    "Picks move based on value eval at depth 1";
+    "Picks move based on eval at depth 1";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
