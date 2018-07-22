@@ -4,7 +4,7 @@ To release a new version, `deploy.py` is used.
 
 ### Prerequisites
 
-`depoy.py` should be run from the repo, directly cloned from
+`deploy.py` should be run from the repo, directly cloned from
 `LeelaChessZero/lc0` (not fork), and upstreams from `master` and `release`
 branches should be configured to point to that repo.
 
@@ -25,22 +25,22 @@ Every pipeline consists of series of steps.
 
 To start pipeline, run it like this:
 ```bash
-$ ./depoy.py new_patch_release
+$ ./deploy.py new_patch_release
 ```
 
 To just get a list of steps in a pipeline, do that:
 ```bash
-$ ./depoy.py --list new_patch_release
+$ ./deploy.py --list new_patch_release
 ```
 
 To start pipeline from particular step (5 in this example), do that:
 ```bash
-$ ./depoy.py --start 5 new_patch_release
+$ ./deploy.py --start 5 new_patch_release
 ```
 
 To make pipeline ask confirmation before executing every step, run like this:
 ```bash
-$ ./depoy.py --steps new_patch_release
+$ ./deploy.py --steps new_patch_release
 ```
 
 The state of the pipeline is stored in file `/tmp/<pipeline-name>_state.json`, 
@@ -97,7 +97,7 @@ During patch release, only patch version is updated. Examples:
  one pipeline run is supported.
 
 ```bash
-$ ./depoy.py cherrypick
+$ ./deploy.py cherrypick
 ```
 The cherrypick pipeline commits cherrypicks, but does not push them (as
 patch release pipeline will do that).
