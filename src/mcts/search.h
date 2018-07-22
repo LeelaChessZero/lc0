@@ -93,8 +93,6 @@ class Search {
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
-  static const char* kBackPropagateBetaStr;
-  static const char* kBackPropagateGammaStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -167,8 +165,6 @@ class Search {
   const bool kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
-  const float kBackPropagateBeta;
-  const float kBackPropagateGamma;
 
   friend class SearchWorker;
 };
