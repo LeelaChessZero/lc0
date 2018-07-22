@@ -40,19 +40,69 @@ def cli(ctx, start, list, steps):
 def new_minor_release(ctx):
     p = ctx.obj['pipeline']
 
+    CheckOwnIntegrityAndFetch(p)
+    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(ReadCurrentVerionFromFile)
+    p.AddStep(GetNextVersion)
+    p.AddStep(RunCmdStep('git merge master', doc="Merge master into release"))
+    UpdateChangeLog(p)
+    p.AddStep(WriteAndCommitVersion('dev-version', add_tag=False))
+    p.AddStep(RunCmdStep('git checkout master', doc="Checkout release"))
+    p.AddStep(RunCmdStep('git merge release', doc="Merge release into master"))
+    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(WriteAndCommitVersion('new-version', add_tag=True))
+    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
+    p.AddStep(
+        RunCmdStep(
+            'git push --all origin', doc="Push release changes to github"))
+    p.AddStep(RunCmdStep('git push --tags origin', doc="Push tags to github"))
+    p.Run('new-release')
+
+
+@cli.command()
+@click.pass_context
+def cherrypick(ctx):
+    p = ctx.obj['pipeline']
+
+    CheckOwnIntegrityAndFetch(p)
+    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(SelectCommitToCherrypick(jump_on_end=3))
+    p.AddStep(CherryPick)
+    p.AddStep(RunJump(-2))
+    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
+    p.Run('cherrypick')
+
+
+@cli.command()
+@click.pass_context
+def new_patch_release(ctx):
+    p = ctx.obj['pipeline']
+    CheckOwnIntegrityAndFetch(p)
+    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(ReadCurrentVerionFromFile)
+    p.AddStep(GetNextPatchVersion)
+    UpdateChangeLog(p)
+    p.AddStep(WriteAndCommitVersion('new-version', add_tag=True))
+    p.AddStep(
+        RunCmdStep(
+            'git push --all origin', doc="Push release changes to github"))
+    p.AddStep(RunCmdStep('git push --tags origin', doc="Push tags to github"))
+    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
+    p.Run('new-patch')
+
+
+def CheckOwnIntegrityAndFetch(p):
     p.AddStep(RunStoreFileSha(OWN_FILENAME))
     p.AddStep(
         RunCmdStep(
             'git diff-index --quiet HEAD --',
             doc="Check that git doesn't have uncommited changes"))
-
     p.AddStep(RunCmdStep('git fetch', doc="Fetch fresh version from upstream"))
     p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
     p.AddStep(CompareFileSha(OWN_FILENAME, require_equal=True))
-    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
-    p.AddStep(ReadCurrentVerionFromFile)
-    p.AddStep(GetNextVersion)
-    p.AddStep(RunCmdStep('git merge master', doc="Merge master into release"))
+
+
+def UpdateChangeLog(p):
     p.AddStep(SaveGitLog)
     p.AddStep(PrependGitLogToChangeLog)
     p.AddStep(RunStoreFileSha(CHANGELOG_PATH))
@@ -62,43 +112,22 @@ def new_minor_release(ctx):
             doc="Edit changelog"))
     p.AddStep(CompareFileSha(CHANGELOG_PATH, require_equal=False))
     p.AddStep(RunCmdStep('git add %s' % CHANGELOG_PATH))
-    p.AddStep(WriteAndCommitVersion('new-version'))
-    p.AddStep(
-        RunCmdStep(
-            'git push --all origin', doc="Push release changes to github"))
-    p.AddStep(RunCmdStep('git push --tags origin', doc="Push tags to github"))
-    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
-    p.AddStep(RunCmdStep('git merge release', doc="Merge release into master"))
-    p.AddStep(WriteAndCommitVersion('dev-version'))
-    p.AddStep(
-        RunCmdStep(
-            'git push --all origin', doc="Push master changes to github"))
-    p.Run('new-release')
-
-
-@cli.command()
-@click.pass_context
-def cherrypick(ctx):
-    p = ctx.obj['pipeline']
-
-    p.AddStep(
-        RunCmdStep(
-            'git diff-index --quiet HEAD --',
-            doc="Check that git doesn't have uncommited changes"))
-    p.AddStep(RunCmdStep('git fetch', doc="Fetch fresh version from upstream"))
-    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
-    p.AddStep(SelectCommitToCherrypick)
-    p.AddStep(CherryPick)
-    p.AddStep(
-        RunCmdStep(
-            'git push --all origin', doc="Push release changes to github"))
-    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
-    p.Run('new-release')
 
 
 ############################################################################
 # Pipeline machinery
 ############################################################################
+
+
+def RunJump(where):
+    def f(ctx):
+        raise Jump(where)
+
+    if where > 0:
+        f.__doc__ = "Go %d steps forward" % where
+    else:
+        f.__doc__ = "Go %d steps backwards" % -where
+    return f
 
 
 def FormatVersion(version_dict):
@@ -110,29 +139,43 @@ def FormatVersion(version_dict):
     return res
 
 
-def SelectCommitToCherrypick(ctx):
-    """Choose which commit to cherrypick"""
-    proc = subprocess.Popen(
-        ['git', 'log', 'HEAD..master', '--pretty=format:%h %s'],
-        stdout=subprocess.PIPE)
-    commits = proc.communicate()[0].decode('utf-8').split('\n')
-    print(commits)
-    if proc.returncode != 0:
-        click.secho('Git returned non-zero exit code!', fg='red')
-        return False
+def SelectionPrompt(caption, choices, *, zero_choice=None):
     while True:
-        click.secho(
-            "Select commit to cherrypick (newer commits listed first).")
-        for i, n in enumerate(commits):
-            click.secho("%3d. %s" % (i + 1, n), fg='yellow')
+        click.secho(caption)
+        if zero_choice:
+            click.secho("%3d. %s" % (0, zero_choice), fg='yellow')
+        for i, n in enumerate(choices):
+            click.secho("%3d. %s" % (i + 1, n[0]), fg='yellow')
         r = click.prompt('', prompt_suffix='>>>>>>> ')
         try:
             r = int(r) - 1
-            if 0 <= r < len(commits):
-                ctx['cherrypick-commit'] = commits[r].split()[0]
-                return True
+            if zero_choice and r == -1:
+                return None
+            if 0 <= r < len(choices):
+                return choices[r][1]
         except:
             pass
+
+
+def SelectCommitToCherrypick(jump_on_end):
+    def f(ctx):
+        proc = subprocess.Popen(
+            ['git', 'log', 'HEAD..master', '--pretty=format:%h %s'],
+            stdout=subprocess.PIPE)
+        commits = proc.communicate()[0].decode('utf-8').split('\n')
+        if proc.returncode != 0:
+            click.secho('Git returned non-zero exit code!', fg='red')
+            return False
+        ctx['cherrypick-commit'] = SelectionPrompt(
+            "Select commit to cherrypick.",
+            [(x, x.split()[0]) for x in commits],
+            zero_choice="[Select 0 to finish.]")
+        if ctx['cherrypick-commit'] is None:
+            raise Jump(jump_on_end)
+        return True
+
+    f.__doc__ = "Choose which commit to cherrypick"
+    return f
 
 
 def CherryPick(ctx):
@@ -142,14 +185,14 @@ def CherryPick(ctx):
 
 def WriteVersionToFile(version):
     with open(VERSION_PATH, "w") as f:
-        f.write('This file is automatically generated by deploy.py. '
+        f.write('// This file is automatically generated by deploy.py. '
                 'Do not edit this file.\n')
         for k, v in version.items():
             f.write('#define LC0_VERSION_%s %s\n' % (k, json.dumps(v)))
     return True
 
 
-def WriteAndCommitVersion(version_key):
+def WriteAndCommitVersion(version_key, *, add_tag):
     def f(ctx):
         v = ctx[version_key]
         v_str = FormatVersion(v)
@@ -159,9 +202,10 @@ def WriteAndCommitVersion(version_key):
         if not RunCmdStep(
                 'git commit -m "Change version.inc to v%s."' % v_str)(ctx):
             return False
-        if not RunCmdStep(
-                'git tag -a v%s -m "Adding tag v%s"' % (v_str, v_str))(ctx):
-            return False
+        if add_tag:
+            if not RunCmdStep('git tag -a v%s -m "Adding tag v%s"' %
+                              (v_str, v_str))(ctx):
+                return False
         return True
 
     f.__doc__ = "Write version into version.inc, commit and tag."
@@ -200,6 +244,7 @@ def SaveGitLog(ctx):
 
 
 def GetNextVersion(ctx):
+    """Select new major/minor version."""
     v = ctx['old-version']
     variants = [
         {
@@ -215,25 +260,50 @@ def GetNextVersion(ctx):
             'POSTFIX': 'rc1',
         },
     ]
-    while True:
-        click.secho("Current version is %s. What will be the new one?" %
-                    FormatVersion(v))
-        for i, n in enumerate(variants):
-            click.secho("%d. %s" % (i + 1, FormatVersion(n)), fg='yellow')
-        r = click.prompt('', prompt_suffix='>>>>>>> ')
-        try:
-            r = int(r) - 1
-            if 0 <= r < len(variants):
-                ctx['new-version'] = variants[r]
-                ctx['dev-version'] = {
-                    'MAJOR': variants[r]['MAJOR'],
-                    'MINOR': variants[r]['MINOR'] + 1,
-                    'PATCH': 0,
-                    'POSTFIX': 'dev',
-                }
-                return True
-        except:
-            pass
+    ctx['new-version'] = SelectionPrompt(
+        "Current version is v%s. What will be the new one?" % FormatVersion(v),
+        [(FormatVersion(x), x) for x in variants])
+    ctx['dev-version'] = {
+        'MAJOR': ctx['new-version']['MAJOR'],
+        'MINOR': ctx['new-version']['MINOR'] + 1,
+        'PATCH': 0,
+        'POSTFIX': 'dev',
+    }
+    return True
+
+
+def GetNextPatchVersion(ctx):
+    """Select new patch version."""
+    v = ctx['old-version']
+    m = re.search(r'rc(\d+)', v['POSTFIX'])
+    if m:
+        variants = [
+            {
+                'MAJOR': v['MAJOR'],
+                'MINOR': v['MINOR'],
+                'PATCH': 0,
+                'POSTFIX': 'rc%d' % (int(m.group(1)) + 1),
+            },
+            {
+                'MAJOR': v['MAJOR'],
+                'MINOR': v['MINOR'],
+                'PATCH': 0,
+                'POSTFIX': '',
+            },
+        ]
+    else:
+        variants = [
+            {
+                'MAJOR': v['MAJOR'],
+                'MINOR': v['MINOR'],
+                'PATCH': v['PATCH'] + 1,
+                'POSTFIX': '',
+            },
+        ]
+    ctx['new-version'] = SelectionPrompt(
+        "Current version is v%s. What will be the new one?" % FormatVersion(v),
+        [(FormatVersion(x), x) for x in variants])
+    return True
 
 
 def ReadCurrentVerionFromFile(ctx):
@@ -317,7 +387,7 @@ def RunCmdStep(cmd_line, doc=None):
 
 def RetryPrompt():
     while True:
-        click.secho('(retry/ignore/abort)', fg='cyan')
+        click.secho('(type one of: retry/ignore/abort)', fg='cyan')
         value = click.prompt('', prompt_suffix='>>>>>>> ')
         if value == 'retry':
             return True
