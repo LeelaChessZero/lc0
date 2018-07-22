@@ -263,18 +263,6 @@ def GetNextVersion(ctx):
             'PATCH': 0,
             'POSTFIX': 'rc1',
         },
-        {
-            'MAJOR': v['MAJOR'],
-            'MINOR': v['MINOR'] + 1,
-            'PATCH': 0,
-            'POSTFIX': '',
-        },
-        {
-            'MAJOR': v['MAJOR'] + 1,
-            'MINOR': 0,
-            'PATCH': 0,
-            'POSTFIX': '',
-        },
     ]
     ctx['new-version'] = SelectionPrompt(
         "Current version is v%s. What will be the new one?" % FormatVersion(v),
