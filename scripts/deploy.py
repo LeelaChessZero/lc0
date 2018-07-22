@@ -133,11 +133,13 @@ def RunJump(where):
 
 
 def FormatVersion(version_dict):
-    res = '%d.%d' % (version_dict['MAJOR'], version_dict['MINOR'])
+    res = '%d.%d.%d' % (
+        version_dict['MAJOR'],
+        version_dict['MINOR'],
+        version_dict['PATCH'],
+    )
     if version_dict['POSTFIX']:
         res += '-%s' % version_dict['POSTFIX']
-    else:
-        res += '.%d' % version_dict['PATCH']
     return res
 
 
@@ -261,6 +263,18 @@ def GetNextVersion(ctx):
             'PATCH': 0,
             'POSTFIX': 'rc1',
         },
+        {
+            'MAJOR': v['MAJOR'],
+            'MINOR': v['MINOR'] + 1,
+            'PATCH': 0,
+            'POSTFIX': '',
+        },
+        {
+            'MAJOR': v['MAJOR'] + 1,
+            'MINOR': 0,
+            'PATCH': 0,
+            'POSTFIX': '',
+        },
     ]
     ctx['new-version'] = SelectionPrompt(
         "Current version is v%s. What will be the new one?" % FormatVersion(v),
@@ -283,13 +297,13 @@ def GetNextPatchVersion(ctx):
             {
                 'MAJOR': v['MAJOR'],
                 'MINOR': v['MINOR'],
-                'PATCH': 0,
+                'PATCH': v['PATCH'],
                 'POSTFIX': 'rc%d' % (int(m.group(1)) + 1),
             },
             {
                 'MAJOR': v['MAJOR'],
                 'MINOR': v['MINOR'],
-                'PATCH': 0,
+                'PATCH': v['PATCH'],
                 'POSTFIX': '',
             },
         ]
@@ -300,6 +314,12 @@ def GetNextPatchVersion(ctx):
                 'MINOR': v['MINOR'],
                 'PATCH': v['PATCH'] + 1,
                 'POSTFIX': '',
+            },
+            {
+                'MAJOR': v['MAJOR'],
+                'MINOR': v['MINOR'],
+                'PATCH': v['PATCH'] + 1,
+                'POSTFIX': 'rc1',
             },
         ]
     ctx['new-version'] = SelectionPrompt(
