@@ -283,7 +283,16 @@ class EdgeAndNode {
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+    if (IsTerminal() && GetQ(0.0f) == 1.0f) {
+      // Never bother with alternatives to checkmate. In theory, U represents
+      // the "uncertainty that this move is actually better than the leading
+      // move", so when we have a certain winner, we should set all sibling U
+      // to 0, meaning MCTS is guided by value alone. That's complicated to do,
+      // however, so instead we create the same behavior with this:
+      return std::numeric_limits<float>::infinity();
+    } else {
+      return numerator * GetP() / (1 + GetNStarted());
+    }
   }
 
   std::string DebugString() const;
