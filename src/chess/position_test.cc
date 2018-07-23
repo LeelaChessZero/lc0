@@ -23,7 +23,8 @@
 
 namespace lczero {
 
-TEST(PositionHistory, ComputeLastMoveRepetitions) {
+// https://github.com/LeelaChessZero/lc0/issues/209
+TEST(PositionHistory, ComputeLastMoveRepetitionsWithoutLegalEnPassant) {
   ChessBoard board;
   PositionHistory history;
   board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30");
@@ -37,6 +38,22 @@ TEST(PositionHistory, ComputeLastMoveRepetitions) {
   int history_idx = history.GetLength() - 1;
   const Position& repeated_position = history.GetPositionAt(history_idx);
   EXPECT_EQ(repeated_position.GetRepetitions(), 1);
+}
+
+TEST(PositionHistory, ComputeLastMoveRepetitionsWithLegalEnPassant) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP2p1/P3P2P/5P2/1R2B3 b - - 2 30");
+  history.Reset(board, 2, 30);
+  history.Append(Move("f7f8", true));
+  history.Append(Move("f2f4", false));
+  history.Append(Move("d7h7", true));
+  history.Append(Move("c4d3", false));
+  history.Append(Move("h7d7", true));
+  history.Append(Move("d3c4", false));
+  int history_idx = history.GetLength() - 1;
+  const Position& repeated_position = history.GetPositionAt(history_idx);
+  EXPECT_EQ(repeated_position.GetRepetitions(), 0);
 }
 
 }  // namespace lczero
