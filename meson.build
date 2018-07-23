@@ -59,7 +59,7 @@ endif
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
-files += gen.process('libs/lczero-common/proto/net.proto', 
+files += gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 
 #############################################################################
@@ -179,7 +179,7 @@ if get_option('build_backends')
       required_openblas_header = 'openblas_config.h'
       if not cc.has_header(required_openblas_header)
         openblas_headers_found = false
-        
+
         # add the first valid include directory
         foreach d : get_option('openblas_include')
           if not openblas_headers_found and cc.has_header(required_openblas_header, args: '-I' + d)
@@ -187,7 +187,7 @@ if get_option('build_backends')
             openblas_headers_found = true
           endif
         endforeach
-        
+
         if not openblas_headers_found
           error('Failed to detect OpenBLAS headers. Did you install libopenblas-dev?')
         endif
@@ -355,4 +355,10 @@ if get_option('gtest') and gtest.found()
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
     files, include_directories: includes, dependencies: test_deps
   ), timeout: 90)
+
+  test('PositionTest',
+    executable('position_test', 'src/chess/position_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
 endif
