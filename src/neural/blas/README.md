@@ -15,7 +15,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-*The source files of this directory are not covered by any additional
-permission.*
+**The source files of this directory are not covered by any additional
+permission.**
 
 
