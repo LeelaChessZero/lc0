@@ -657,6 +657,13 @@ void SearchWorker::ExtendNode(Node* node) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
       node->MakeTerminal(GameResult::WHITE_WON);
+      // Set this move and all its siblings as certain for search purposes.
+      // TODO: probably should take a mutex here? Maybe move this into MakeTerminal?
+      Node* parent = node->GetParent();
+      for (auto& edge : parent->Edges()) {
+        Node* sibling = edge.GetOrSpawnNode(parent);
+        sibling->MakeCertain();
+      }
     } else {
       node->MakeTerminal(GameResult::DRAW);
     }
