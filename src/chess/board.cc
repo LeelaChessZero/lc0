@@ -436,7 +436,10 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // Set en passant flag.
   if (to_row - from_row == 2 && pawns_.get(to)) {
-    pawns_.set(0, to_col);
+    BoardSquare ep_sq(to_row - 1, to_col);
+    if (kPawnAttacks[ep_sq.as_int()].intersects(their_pieces_ * pawns_)) {
+      pawns_.set(0, to_col);
+    }
   }
   return reset_50_moves;
 }
