@@ -124,9 +124,9 @@ along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 ### Additional permission under GNU GPL version 3 section 7
 
 _The source files of Lc0 with the exception of the BLAS and OpenCL
-backends (namely `network_blas.cc`, `network_opencl.cc` and all files
-in the `blas` and `opencl` directories have the following additional
-permission as allowed under GNU GPL version 3 section 7:_
+backends (all files in the `blas` and `opencl` sub-directories) have
+the following additional permission, as allowed under GNU GPL version 3
+section 7:_
 
 If you modify this Program, or any covered work, by linking or
 combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA

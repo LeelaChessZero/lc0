@@ -206,7 +206,7 @@ if get_option('build_backends')
     'src/neural/blas/convolution1.cc',
     'src/neural/blas/fully_connected_layer.cc',
     'src/neural/blas/winograd_convolution3.cc',
-    'src/neural/network_blas.cc'
+    'src/neural/blas/network_blas.cc'
     ]
 
     files += blas_files
@@ -243,7 +243,7 @@ if get_option('build_backends')
       opencl_files = [
       'src/neural/opencl/OpenCL.cc',
       'src/neural/opencl/OpenCLTuner.cc',
-      'src/neural/network_opencl.cc',
+      'src/neural/opencl/network_opencl.cc',
       ]
 
       if not get_option('blas')
