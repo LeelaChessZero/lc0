@@ -128,20 +128,20 @@ Move Edge::GetMove(bool as_opponent) const {
 // by half the precision that is ultimately kept (addition overflow into the 7
 // exponent bits is possible, but also works correctly).
 
-// Toss the sign and 2 highest bits of the exponent (assuming them to be 01),
-// take the next 16 bits, that leaves the 13 trailing LSB of the significand to
-// be lost as well. Round-to-nearest by adding a 1 in that 13th bit before
-// truncating.
+// Toss the sign and 3 highest bits of the exponent (assuming them to be 011),
+// take the next 16 bits, that leaves the 12 trailing LSB of the significand to
+// be lost as well. Round-to-nearest by adding a 1 in that 12th bit before
+// truncating. The minimum number that can be represented is 4.656613E-10.
 void Edge::SetP(float p) {
   assert(0.0f <= p);
-  uint32_t tmp;
+  int32_t tmp;
   std::memcpy(&tmp, &p, sizeof(float));
-  assert((tmp & (3 << 29)) == (1 << 29));
-  p_ = static_cast<uint16_t>((tmp - (1 << 29) + (1 << 12)) >> 13);
+  tmp -= (3 << 28) - (1 << 11);
+  p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
 }
 
 float Edge::GetP() const {
-  uint32_t tmp = (static_cast<uint32_t>(p_) << 13) + (1 << 29);
+  uint32_t tmp = (static_cast<uint32_t>(p_) << 12) + (3 << 28);
   float tmpf;
   std::memcpy(&tmpf, &tmp, sizeof(uint32_t));
   return tmpf;
