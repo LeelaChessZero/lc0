@@ -113,29 +113,36 @@ Move Edge::GetMove(bool as_opponent) const {
   return m;
 }
 
-// We use a 16 bit significand for storage savings in memory-critical Edges.
-// Non-zero priors are not allowed, as we use them multiplicatively to
-// calculate U. We have 16 bits, so 2^16 unique values available (we don't
-// reserve a value for "uninitialized"); we want them to be evenly
-// balanced around 1/2 (so that converting floats to ints preserves normality),
-// so we have to adjust the conversion slightly. For example, with 2 bits:
-// 0       0.25       0.5       0.75       1
-// |---------|---------|---------|---------|
-// A    B    C    D    E    F    G    H    I
-// In order to evenly balance the 4 available values, we need to actually put
-// them at 0.125, 0.375, 0.625, and 0.875, i.e. B, D, F, and H.
-// For converting floats to ints: just multiply by 2^(n=2) and truncate, which
-// maps [A,C) -> 0, [C,E) -> 1, [E,G) -> 2, [G,I) -> 3.
-// To convert these integers back to floats, divide by 2^(n=2), mapping 0 -> A,
-// 1 -> C, 2 -> E, 3 -> G. Recover the *balanced around 1/2* floats by adding
-// 0.125, i.e. 1/2^(n+1).
-float Edge::GetP() const {
-  return   static_cast<float>(p_) / static_cast<float>(1 << 16)
-         + static_cast<float>(1) / static_cast<float>(1 << 17);
+// We use strictly 16 bits to store policy values in memory-critical Edges.
+// We manage this by storing 16 bits taken directly from the float.
+// Floats are 1 sign bit, 8 bits of exponent, and 23 significand bits. The
+// exponent is stored a bit funny, in such a way that its most significant bit
+// is always off in the interval [0, 2).
+// See https://www.h-schmidt.net/FloatConverter/IEEE754.html for details.
+// Note that that means we don't actually get 2^16 unique values in [0,1],
+// rather some spread into (1,2), but (although it's possible) it's more
+// complicated to make use of the extra values. At any rate, it's true that the
+// available values are disproportionately clustered (and thus more precise)
+// towards 0, which is how NN policy behaves anyways (since policy always adds
+// up to 1). We also implement round-to-nearest by shifting the significand up
+// by half the precision that is ultimately kept (addition overflow into the 7
+// exponent bits is possible, but also works correctly).
+
+// Toss the sign and MSB of the exponent, take the next 16 bits, that leaves
+// the 14 trailing LSB of the significand to be lost as well. Round-to-nearest
+// by adding a 1 in that 14th bit before truncating.
+void Edge::SetP(float p) {
+  assert(0.0f <= p && p < 2.0f);
+  uint32_t tmp;
+  std::memcpy(&tmp, &p, sizeof(float));
+  p_ = static_cast<uint16_t>((tmp + (1 << 13)) >> 14);
 }
 
-void Edge::SetP(float val) {
-  p_ = static_cast<uint16_t>(val * (1 << 16));
+float Edge::GetP() const {
+  uint32_t tmp = static_cast<uint32_t>(p_) << 14;
+  float tmpf;
+  std::memcpy(&tmpf, &tmp, sizeof(uint32_t));
+  return tmpf;
 }
 
 std::string Edge::DebugString() const {
