@@ -591,7 +591,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) return {node, true};
-    // Unexamined leaf node. We've hit the end of this playout.
+    // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) return {node, false};
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
@@ -627,6 +627,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
+      if (Q == 1.0f && child.IsTerminal()) {
+        // If we find a checkmate, then the confidence is infinite, so ignore U.
+        best_edge = child;
+        break;
+      }
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;
@@ -657,13 +662,6 @@ void SearchWorker::ExtendNode(Node* node) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
       node->MakeTerminal(GameResult::WHITE_WON);
-      // Set this move and all its siblings as certain for search purposes.
-      // TODO: probably should take a mutex here? Maybe move this into MakeTerminal?
-      Node* parent = node->GetParent();
-      for (auto& edge : parent->Edges()) {
-        Node* sibling = edge.GetOrSpawnNode(parent);
-        sibling->MakeCertain();
-      }
     } else {
       node->MakeTerminal(GameResult::DRAW);
     }

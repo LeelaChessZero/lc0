@@ -160,28 +160,16 @@ Edge* Node::GetEdgeToNode(const Node* node) const {
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << " BitBools:" << bit_bools_ << " This:" << this << " Parent:" << parent_
+  oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
       << " Index:" << index_ << " Child:" << child_.get()
       << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
       << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
   return oss.str();
 }
 
-bool Node::IsTerminal() const {
-  return bit_bools_ & kTerminalMask;
-}
-
 void Node::MakeTerminal(GameResult result) {
-  bit_bools_ |= kTerminalMask;
+  is_terminal_ = true;
   q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
-}
-
-bool Node::IsCertain() const {
-  return bit_bools_ & kCertainMask;
-}
-
-void Node::MakeCertain() {
-  bit_bools_ |= kCertainMask;
 }
 
 bool Node::TryStartScoreUpdate() {

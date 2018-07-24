@@ -154,20 +154,14 @@ class Node {
   // for terminal nodes.
   float GetQ() const { return q_; }
 
+  // Returns whether the node is known to be draw/lose/win.
+  bool IsTerminal() const { return is_terminal_; }
   uint16_t GetFullDepth() const { return full_depth_; }
   uint16_t GetMaxDepth() const { return max_depth_; }
+  uint16_t GetNumEdges() const { return edges_.size(); }
 
-  // Returns whether the node is known to be draw/lose/win.
-  bool IsTerminal() const;
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
-
-  // In MCTS+PUCT, search is guided by Q+U; U is a sort of "uncertainty that
-  // this move might be better than the leading move"; when a checkmate is
-  // available, we can then say that it and its siblings are certain (the
-  // siblings being certainly worse than mate).
-  bool IsCertain() const;
-  void MakeCertain();
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -193,7 +187,6 @@ class Node {
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
 
-  uint16_t GetNumEdges() const { return edges_.size(); }
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
@@ -236,13 +229,8 @@ class Node {
   uint16_t max_depth_ = 0;
   // Complete depth all subnodes of this node were fully searched.
   uint16_t full_depth_ = 0;
-
-  // Stores miscellaneous booleans: IsTerminal, and IsCertain.
-  uint8_t bit_bools_ = 0;
-  enum Masks_ : uint8_t {
-    kTerminalMask = 0x1,
-    kCertainMask = 0x2,
-  };
+  // Does this node end game (with a winning of either sides or draw).
+  bool is_terminal_ = false;
 
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
@@ -285,24 +273,17 @@ class EdgeAndNode {
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
 
-  // Whether the node is known to be terminal or certain.
+  // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
-  bool IsCertain() const  { return node_ ? node_->IsCertain()  : false; }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
   Move GetMove(bool flip = false) const { return edge_->GetMove(flip); }
 
-  // Returns U, which in a sense measures the relative uncertainty that this
-  // move might be better than the leading move.
-  // U = numerator * p / N, where the passed numerator is expected to be equal
-  // to (cpuct * sqrt(N[parent])).
+  // Returns U = numerator * p / N.
+  // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    if (IsCertain()) {
-      return 0.0f;
-    } else {
-      return numerator * GetP() / (1 + GetNStarted());
-    }
+    return numerator * GetP() / (1 + GetNStarted());
   }
 
   std::string DebugString() const;
