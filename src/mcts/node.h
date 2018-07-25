@@ -80,7 +80,7 @@ class Edge {
   Move GetMove(bool as_opponent = false) const;
 
   // Returns or sets value of Move policy prior returned from the neural net
-  // (but can be changed by adding Dirichlet noise).
+  // (but can be changed by adding Dirichlet noise). Must be in [0,1].
   float GetP() const;
   void SetP(float val);
 
