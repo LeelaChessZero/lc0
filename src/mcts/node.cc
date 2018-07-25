@@ -117,8 +117,12 @@ Move Edge::GetMove(bool as_opponent) const {
 // We manage this by storing 16 bits taken directly from the float.
 // Floats are 1 sign bit, 8 bits of exponent, and 23 significand bits. The
 // exponent is stored a bit funny, in such a way that its most significant bit
-// is always off in the interval [0, 2).
+// is always off in the interval [0, 2). Furthermore, the next two bits are only
+// off for microscopic floats near 0; we ignore those and round up to the
+// smallest possible 5-bit-exp float above 0 (i.e. assume those 2 bits are set).
+//
 // See https://www.h-schmidt.net/FloatConverter/IEEE754.html for details.
+//
 // Note that that means we don't actually get 2^16 unique values in [0,1],
 // rather some spread into (1,2), but (although it's possible) it's more
 // complicated to make use of the extra values. At any rate, it's true that the
@@ -133,18 +137,21 @@ Move Edge::GetMove(bool as_opponent) const {
 // be lost as well. Round-to-nearest by adding a 1 in that 12th bit before
 // truncating. The minimum number that can be represented is 4.656613E-10.
 void Edge::SetP(float p) {
-  assert(0.0f <= p);
+  assert(0.0f <= p && p <= 1.0f);
   int32_t tmp;
   std::memcpy(&tmp, &p, sizeof(float));
-  tmp -= (3 << 28) - (1 << 11);
+  // If those 2 exponent bits (3<<28) aren't set, round up by setting tmp = 0.
+  // This is combined with the round-to-nearest addition (1<<11) into one op.
+  tmp -= 0x2FFFF800; // == (3 << 28) - (1 << 11)
   p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
 }
 
 float Edge::GetP() const {
-  uint32_t tmp = (static_cast<uint32_t>(p_) << 12) + (3 << 28);
-  float tmpf;
-  std::memcpy(&tmpf, &tmp, sizeof(uint32_t));
-  return tmpf;
+  // Reshift into place and set the assumed-set exponent bits.
+  uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
+  float ret;
+  std::memcpy(&ret, &tmp, sizeof(uint32_t));
+  return ret;
 }
 
 std::string Edge::DebugString() const {
