@@ -80,7 +80,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
   options->Add<FloatOption>(kEarlyExitStr, 0.1f, 10.0f,
-                            "p-early-exit") = 1.0f;
+                            "smart-pruning-aggresiveness") = 1.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
@@ -306,7 +306,7 @@ void Search::UpdateRemainingMoves() {
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
-      //put early_exit scaler here so calculation doesn't have to be done on every node
+      // Put early_exit scaler here so calculation doesn't have to be done on every node.
       int64_t remaining_playouts = kEarlyExit * remaining_time * nps / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
