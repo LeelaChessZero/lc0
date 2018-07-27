@@ -109,10 +109,12 @@ void WinogradConvolution3::Forward(const size_t batch_size,
 }
 
 
-#ifndef USE_ISPC
+
 void WinogradConvolution3::TransformIn(const size_t batch_size,
                                        const float* input,
                                        const size_t channels) {
+#ifndef USE_ISPC
+
   static const size_t kCacheSize = 128;
   float x[kWinogradAlpha][kWinogradAlpha];
   float T1[kWinogradAlpha][kWinogradAlpha];
@@ -202,16 +204,16 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
       }
     }
   }
-}
 
 #else // USE_ISPC
-void WinogradConvolution3::TransformIn(const size_t batch_size,
-                                       const float* input,
-                                       const size_t channels) {
+
   ispc::winograd_TransformIn_ispc( batch_size, input,channels,&V_[0]);
-}
 
 #endif // USE_ISPC
+
+}
+
+
 
 void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                                  const size_t input_channels,

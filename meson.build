@@ -202,13 +202,17 @@ if get_option('build_backends')
 
     if has_blas and get_option('ispc') and ispc.found()
       if host_machine.system() == 'windows'
-        outputnames = [ '@BASENAME@.obj', '@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj', '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj', '@BASENAME@_avx2.obj' ]
+        outputnames = [ '@BASENAME@.obj', '@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
+                        '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj', '@BASENAME@_avx2.obj' ]
       else
-        outputnames = [ '@BASENAME@.o', '@BASENAME@_sse2.o', '@BASENAME@_sse4.o', '@BASENAME@_avx.o', '@BASENAME@_avx11.o', '@BASENAME@_avx2.o' ]
+        outputnames = [ '@BASENAME@.o', '@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
+                        '@BASENAME@_avx.o', '@BASENAME@_avx11.o', '@BASENAME@_avx2.o' ]
       endif
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
-        arguments: ['-O2', '--arch=x86-64', '--target=sse2-i32x8,sse4-i32x8,avx1-i32x8,avx1.1-i32x8,avx2-i32x8' , '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@'],
+        arguments: [ '-O2', '--arch=x86-64',
+                     '--target=sse2-i32x8,sse4-i32x8,avx1-i32x8,avx1.1-i32x8,avx2-i32x8',
+                     '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
       )
     endif
 
