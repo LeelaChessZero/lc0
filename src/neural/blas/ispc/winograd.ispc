@@ -105,3 +105,58 @@ export void winograd_TransformIn_ispc(uniform size_t batch_size,
         }
     }
 }
+
+
+export void winograd_TransformOut_ispc(uniform size_t batch_size,
+                          const uniform float input[], uniform size_t channels,
+                          uniform float output[])
+{
+  float m[kWinogradTile];
+
+  for (uniform size_t batch_index = 0; batch_index < batch_size; batch_index++) {
+    const uniform size_t M_batch = channels * kTiles * batch_index;
+    const uniform size_t output_batch = batch_index * kWidth * kHeight * channels;
+
+    for (uniform int block_y = 0; block_y < kWtiles; block_y++) {
+      for (uniform int block_x = 0; block_x < kWtiles; block_x++) {
+        const uniform int x = 2 * block_x;
+        const uniform int y = 2 * block_y;
+
+        foreach (channel = 0 ... channels) {
+          const size_t M_channel = M_batch + channel;
+          const size_t output_channel = output_batch + channel * (kHeight * kWidth);
+          const uniform int b = block_y * kWtiles + block_x;
+          const size_t M_wtile = M_channel + channels * b;
+          const uniform int M_incr = channels * kTiles * batch_size;
+
+          for (uniform int wTile = 0; wTile < kWinogradTile; wTile++) {
+            m[wTile] = input[M_wtile + wTile*M_incr];
+          }
+
+
+          float o11 = m[0 * 4 + 0] + m[0 * 4 + 1] + m[0 * 4 + 2] + m[1 * 4 + 0] +
+                     m[1 * 4 + 1] + m[1 * 4 + 2] + m[2 * 4 + 0] + m[2 * 4 + 1] +
+                     m[2 * 4 + 2];
+
+          float o12 = m[0 * 4 + 1] - m[0 * 4 + 2] - m[0 * 4 + 3] + m[1 * 4 + 1] -
+                     m[1 * 4 + 2] - m[1 * 4 + 3] + m[2 * 4 + 1] - m[2 * 4 + 2] -
+                     m[2 * 4 + 3];
+
+          float o21 = m[1 * 4 + 0] + m[1 * 4 + 1] + m[1 * 4 + 2] - m[2 * 4 + 0] -
+                     m[2 * 4 + 1] - m[2 * 4 + 2] - m[3 * 4 + 0] - m[3 * 4 + 1] -
+                     m[3 * 4 + 2];
+
+          float o22 = m[1 * 4 + 1] - m[1 * 4 + 2] - m[1 * 4 + 3] - m[2 * 4 + 1] +
+                     m[2 * 4 + 2] + m[2 * 4 + 3] - m[3 * 4 + 1] + m[3 * 4 + 2] +
+                     m[3 * 4 + 3];
+
+          output[output_channel + (y)*kWidth + (x)] = o11;
+          output[output_channel + (y)*kWidth + (x + 1)] = o12;
+          output[output_channel + (y + 1) * kWidth + (x)] = o21;
+          output[output_channel + (y + 1) * kWidth + (x + 1)] = o22;
+        }
+      }
+    }
+  }
+}
+
