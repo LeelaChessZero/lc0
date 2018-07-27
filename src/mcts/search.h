@@ -102,6 +102,7 @@ class Search {
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kStickyCheckmateStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -174,6 +175,7 @@ class Search {
   const bool kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const bool kStickyCheckmate;
 
   friend class SearchWorker;
 };
