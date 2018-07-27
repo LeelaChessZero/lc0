@@ -1,8 +1,48 @@
-# Building and running Lc0
+[![CircleCI](https://circleci.com/gh/LeelaChessZero/lc0.svg?style=shield)](https://circleci.com/gh/LeelaChessZero/lc0)
+[![AppVeyor](https://ci.appveyor.com/api/projects/status/3245b83otdee7oj7?svg=true)](https://ci.appveyor.com/project/dubslow/lc0)
 
-Building right now may be a bit rough, we are improving and finding ways to simplifying the build process.
+# Lc0
 
-## Linux (generic)
+Lc0 is a UCI-compliant chess engine designed to play chess via neural network, specifically those of the [LeelaChessZero project](https://lczero.org).
+
+## Downloading source
+
+Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
+
+For essentially all purposes, including selfplay game generation and match play, we highly recommend using the `release` branch, which is equivalent to using the latest version tag.
+
+Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the versions output by the client and engine.
+
+
+Download using git:
+
+```
+git clone -b release --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+```
+
+If downloading an archive, you need to also download and place the submodule:
+ * Download https://github.com/LeelaChessZero/lc0/archive/release.zip ([.tar.gz](https://github.com/LeelaChessZero/lc0/archive/release.tar.gz) archive is also available)
+ * Extract
+ * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
+ * Move the second archive into the first archive's `libs/lczero-common/` folder and extract
+ * The final form should look like `<TOP>/libs/lczero-common/proto/`
+
+Having successfully acquired Lc0 via either of these methods, proceed to the build section below and follow the instructions for your OS.
+
+
+## Building and running Lc0
+
+Building should be easier now than it was in the past. Please report any problems you have.
+
+Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as the required libraries `protobuf` and `zlib`. (`gtest` is optionally used for the test suite.) If your system already has those two libraries installed, they will be used; otherwise Meson will generate its own copy of the two (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
+
+Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's MKL. For GPUs, OpenCL and CUDA+cudnn are supported.
+
+Given those basics, the OS and backend specific instructions are below.
+
+### Linux
+
+#### Generic
 
 1. Install backend:
     - (if you want version with tensorflow) Install `tensorflow_cc` by following steps described [here](https://github.com/FloopCZ/tensorflow_cc).
@@ -17,21 +57,21 @@ If you want to build with a different compiler, pass the `CC` and `CXX` environm
 
     CC=clang-6.0 CXX=clang++-6.0 ./build.sh
 
-### Ubuntu 16.04
+#### Ubuntu 16.04
 
 For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before performing the steps above:
 
     wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
     sudo apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main'
     sudo apt-get update
-    sudo apt-get install clang-6.0 ninja-build
+    sudo apt-get install clang-6.0 ninja-build protobuf-compiler libprotobuf-dev
     pip3 install meson --user
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
 
 
-## Windows
+### Windows
 
 0. Install Microsoft Visual Studio
 1. Install [CUDA](https://developer.nvidia.com/cuda-zone) (v9.2 is fine)
@@ -57,11 +97,41 @@ Or.
 
 7. Open generated solution `build/lc0.sln` in Visual Studio and build yourself.
 
-## Mac
+### Mac
 
 1. Install brew as per the instructions at https://brew.sh/
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
-5. Run `./build.sh`
-6. The resulting binary will be in build/release
+6. Run `./build.sh`
+7. The resulting binary will be in build/release
+
+## License
+
+Leela Chess is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+Leela Chess is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+### Additional permission under GNU GPL version 3 section 7
+
+_The source files of Lc0 with the exception of the BLAS and OpenCL
+backends (all files in the `blas` and `opencl` sub-directories) have
+the following additional permission, as allowed under GNU GPL version 3
+section 7:_
+
+If you modify this Program, or any covered work, by linking or
+combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+modified version of those libraries), containing parts covered by the
+terms of the respective license agreement, the licensors of this
+Program grant you additional permission to convey the resulting work.
+

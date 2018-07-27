@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include <algorithm>
@@ -77,14 +86,14 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 1.93f;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 1.95f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
   options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
-                            "time-curve-peak") = 26.0f;
+                            "time-curve-peak") = 26.2f;
   options->Add<FloatOption>(kTimeCurveLeftWidth, 0.0f, 1000.0f,
-                            "time-curve-left-width") = 67.0f;
+                            "time-curve-left-width") = 82.0f;
   options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
-                            "time-curve-right-width") = 76.0f;
+                            "time-curve-right-width") = 74.0f;
 
   Search::PopulateUciParams(options);
 
@@ -171,7 +180,7 @@ void EngineController::UpdateNetwork() {
 
   std::string net_path = network_path;
   if (net_path == kAutoDiscover) {
-    net_path = DiscoveryWeightsFile();
+    net_path = DiscoverWeightsFile();
   }
   Weights weights = LoadWeightsFromFile(net_path);
 
