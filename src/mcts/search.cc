@@ -49,7 +49,6 @@ const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
-const char* Search::kSmartPruningStr = "Enable smart pruning";
 const char* Search::kEarlyExitStr = "Aggressive smart pruning threshold";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
@@ -78,8 +77,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
-  options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
-  options->Add<FloatOption>(kEarlyExitStr, 0.1f, 10.0f,
+  options->Add<FloatOption>(kEarlyExitStr, 0.0f, 10.0f,
                             "smart-pruning-aggresiveness") = 1.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
@@ -111,7 +109,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
-      kSmartPruning(options.Get<bool>(kSmartPruningStr)),
+      kSmartPruning(kEarlyExitStr != 0.0f),
       kEarlyExit(options.Get<float>(kEarlyExitStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
