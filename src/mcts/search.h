@@ -169,8 +169,7 @@ class Search {
   const int kTempDecayMoves;
   const bool kNoise;
   const bool kVerboseStats;
-  const bool kSmartPruning;
-  const float kEarlyExit;
+  const float kAggressiveTimePruning;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
