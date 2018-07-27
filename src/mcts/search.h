@@ -97,7 +97,7 @@ class Search {
   static const char* kTempDecayMovesStr;
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
-  static const char* kEarlyExitStr;
+  static const char* kAggressiveTimePruningStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
