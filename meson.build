@@ -232,7 +232,7 @@ if get_option('build_backends')
     has_backends = true
 
     if get_option('ispc') and ispc.found()
-      files += iscp_gen.process('src/neural/blas/ispc/winograd.ispc')
+      files += iscp_gen.process('src/neural/blas/winograd.ispc')
       add_project_arguments('-DUSE_ISPC', language : 'cpp')
     endif
 
