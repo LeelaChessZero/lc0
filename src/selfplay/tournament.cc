@@ -83,7 +83,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch size
-  defaults->Set<bool>(Search::kSmartPruningStr, false);  // No smart pruning
+  defaults->Set<bool>(Search::kAggressiveTimePruning, 0.0);  // No smart pruning
   defaults->Set<float>(Search::kTemperatureStr, 1.0);    // Temperature = 1.0
   defaults->Set<bool>(Search::kNoiseStr, true);          // Dirichlet noise
   defaults->Set<float>(Search::kFpuReductionStr, 0.0);   // No FPU reduction.
