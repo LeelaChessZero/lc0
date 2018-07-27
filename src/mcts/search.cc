@@ -49,7 +49,7 @@ const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
-const char* Search::kEarlyExitStr = "Aggressive smart pruning threshold";
+const char* Search::kAggressiveTimePruningStr = "Aggressive smart pruning threshold";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
@@ -77,7 +77,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
-  options->Add<FloatOption>(kEarlyExitStr, 0.0f, 10.0f,
+  options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
                             "smart-pruning-aggresiveness") = 1.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
@@ -109,8 +109,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
-      kSmartPruning(kEarlyExitStr != 0.0f),
-      kEarlyExit(options.Get<float>(kEarlyExitStr)),
+      kAggressiveTimePruning(options.Get<float>(kAggressiveTimePruningStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
@@ -293,7 +292,7 @@ void Search::MaybeTriggerStop() {
 }
 
 void Search::UpdateRemainingMoves() {
-  if (!kSmartPruning) return;
+  if (kAggressiveTimePruning <=0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
@@ -305,7 +304,7 @@ void Search::UpdateRemainingMoves() {
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
       // Put early_exit scaler here so calculation doesn't have to be done on every node.
-      int64_t remaining_playouts = kEarlyExit * remaining_time * nps / 1000;
+      int64_t remaining_playouts = kAggressiveTimePruning * remaining_time * nps / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
