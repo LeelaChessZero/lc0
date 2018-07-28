@@ -102,6 +102,7 @@ class Search {
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kOutOfOrderEvalStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -174,6 +175,7 @@ class Search {
   const bool kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const bool kOutOfOrderEval;
 
   friend class SearchWorker;
 };
@@ -236,17 +238,26 @@ class SearchWorker {
     Node* node;
     bool is_collision = false;
     bool nn_queried = false;
+    bool is_cache_hit = false;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
   };
 
   NodeToProcess PickNodeToExtend();
   void ExtendNode(Node* node);
-  bool AddNodeToComputation(Node* node, bool add_if_cached = true);
+  bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);
+  void FetchSingleNodeResult(NodeToProcess* node_to_process,
+                             int idx_in_computation);
+  void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
 
   Search* const search_;
+  // List of nodes to process.
   std::vector<NodeToProcess> nodes_to_process_;
+  // How many of the nodes in a batch are collisions.
+  int collisions_found_;
+  // If true, pipeline should only eval the last entry in the cache.
+  bool out_of_order_eval_ = false;
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
