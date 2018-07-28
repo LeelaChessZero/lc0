@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #pragma once
@@ -166,7 +175,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, float gamma, float beta);
+  void FinalizeScoreUpdate(float v);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -243,8 +252,12 @@ class EdgeAndNode {
   EdgeAndNode() = default;
   EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
   explicit operator bool() const { return edge_ != nullptr; }
-  bool operator==(const EdgeAndNode& other) const { return edge_ == other.edge_; }
-  bool operator!=(const EdgeAndNode& other) const { return edge_ != other.edge_; }
+  bool operator==(const EdgeAndNode& other) const {
+    return edge_ == other.edge_;
+  }
+  bool operator!=(const EdgeAndNode& other) const {
+    return edge_ != other.edge_;
+  }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }

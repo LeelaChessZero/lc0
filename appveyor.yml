@@ -20,19 +20,12 @@ environment:
     BLAS: true
     CUDA: false
     GTEST: true
-skip_commits:
-  files:
-    - '**/*.md'
-    - '**/.gitignore'
-    - '**/*.cmd'
-    - '**/*.sh'
-    - COPYING
 install:
 - cmd: IF %CUDA%==false nuget install OpenBLAS -Version 0.2.14.1 -OutputDirectory C:\cache
 - cmd: IF %CUDA%==false nuget install opencl-nug -Version 0.777.12 -OutputDirectory C:\cache
 - cmd: set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2"
-- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" appveyor DownloadFile https://developer.nvidia.com/compute/cuda/9.2/Prod2/network_installers/cuda_9.2.148_win10_network
-- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" cuda_9.2.148_win10_network -s nvcc_9.2 cublas_dev_9.2 cublas_9.2 cudart_9.2
+- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" appveyor DownloadFile https://developer.nvidia.com/compute/cuda/9.2/Prod2/local_installers/cuda_9.2.148_win10
+- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" cuda_9.2.148_win10 -s nvcc_9.2 cublas_dev_9.2 cublas_9.2 cudart_9.2
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.1.4/cudnn-9.2-windows10-x64-v7.1.zip
 - cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-9.2-windows10-x64-v7.1.zip -oC:\cache
@@ -40,30 +33,37 @@ install:
 - cmd: pip3 install --upgrade meson
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" amd64
 - cmd: set PKG_FOLDER="C:\cache"
+- cmd: IF NOT EXIST c:\cache\protobuf\ git clone -b v3.5.1 --single-branch --depth 1 https://github.com/google/protobuf.git
+- cmd: IF NOT EXIST c:\cache\protobuf\ mkdir protobuf\build_msvc
+- cmd: IF NOT EXIST c:\cache\protobuf\ cd protobuf\build_msvc
+- cmd: IF NOT EXIST c:\cache\protobuf\ cmake -G "Visual Studio 14 2015 Win64" -Dprotobuf_BUILD_SHARED_LIBS=NO -Dprotobuf_MSVC_STATIC_RUNTIME=NO -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=c:/cache/protobuf ../cmake
+- cmd: IF NOT EXIST c:\cache\protobuf\ msbuild INSTALL.vcxproj /p:Configuration=Release /p:Platform=x64 /m
+- cmd: set PATH=c:\cache\protobuf\bin;%PATH%
+- cmd: cd C:\projects\lc0
 cache:
   - C:\cache
-  - C:\Python36\scripts
-  - C:\Python36\Lib\site-packages
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2'
+  - C:\projects\lc0\subprojects\packagecache
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: meson.py build --backend vs2015 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
+- cmd: meson.py build --backend vs2015 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
 build:
+  parallel: true
   project: build/lc0.sln
 after_build:
-- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false IF %OPENCL%==true 7z a lc0-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-windows-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false IF %OPENCL%==true 7z a lc0-windows-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
-  - path: lc0-$(NAME).zip
-    name: lc0-$(NAME)-zip
+  - path: lc0-windows-$(NAME).zip
+    name: lc0-windows-$(NAME)-zip
 deploy:
   - provider: GitHub
-    artifact: lc0-$(NAME).zip
+    artifact: lc0-windows-$(NAME).zip
     auth_token:
-      secure: xlw/7zqX2zEfNwrEr3/oaZ4FIREcdYgvMbWolZz4sUtzUfxrlyFoAvVj/I4FNlIN
+      secure: USFAdwQKTXqOXQjCYQfzWvzRpUhvqJLBkN4hbOg+j876vDxGZHt9bMYayb5evePp
     on:
       appveyor_repo_tag: true
 test_script:

@@ -24,46 +24,15 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#include "version.h"
 
-#pragma once
-#include <cstdint>
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
+std::uint32_t GetVersionInt(int major, int minor, int patch) {
+  return major * 1000000 + minor * 1000 + patch;
+}
 
-namespace lczero {
-
-// Iterates over all set bits of the value, lower to upper. The value of
-// dereferenced iterator is bit number (lower to upper, 0 bazed)
-template <typename T>
-class BitIterator {
- public:
-  BitIterator(std::uint64_t value) : value_(value){};
-  bool operator!=(const BitIterator& other) { return value_ != other.value_; }
-
-  void operator++() { value_ &= (value_ - 1); }
-  T operator*() const {
-#ifdef _MSC_VER
-    unsigned long result;
-    _BitScanForward64(&result, value_);
-    return result;
-#else
-    return __builtin_ctzll(value_);
-#endif
-  }
-
- private:
-  std::uint64_t value_;
-};
-
-class IterateBits {
- public:
-  IterateBits(std::uint64_t value) : value_(value) {}
-  BitIterator<int> begin() { return value_; }
-  BitIterator<int> end() { return 0; }
-
- private:
-  std::uint64_t value_;
-};
-
-}  // namespace lczero
+std::string GetVersionStr(int major, int minor, int patch, const std::string& postfix) {
+  auto v = std::to_string(major) + "." + std::to_string(minor) + "." +
+           std::to_string(patch);
+  if (postfix.empty()) return v;
+  return v + "-" + postfix;
+}
