@@ -64,8 +64,8 @@ with `dev` suffix added.
 
 Examples:
 
-- `v0.13.1 -> v0.14-rc1`, master branch becomes `v0.15-dev`
-- `v0.13.1 -> v1.0-rc1`, master branch becomes `v1.1-dev`
+- `v0.13.1 -> v0.14.0-rc1`, master branch becomes `v0.15.0-dev`
+- `v0.13.1 -> v1.0.0-rc1`, master branch becomes `v1.1-dev`
 
 To do that, just run:
 ```bash
@@ -84,8 +84,9 @@ During patch release, contents of `master` is NOT merged into `release`.
 Instead, you run `cherrypick` pipeline to pick individual changes to merge into.
 
 During patch release, only patch version is updated. Examples:
-- `v0.13-rc1` -> `v0.13-rc2`
-- `v0.13-rc1` -> `v0.13.0`
+- `v0.13.1-rc1` -> `v0.13.1-rc2`
+- `v0.13.0-rc1` -> `v0.13.0`
+- `v0.13.4` -> `v0.13.5-rc1`
 - `v0.13.4` -> `v0.13.5`
 
 
@@ -152,8 +153,8 @@ Found current version v1.3.1
 
 [ 8/23] Select new major/minor version....
 Current version is v1.3.1. What will be the new one?
-  1. 1.4-rc1
-  2. 2.0-rc1
+  1. 1.4.0-rc1
+  2. 2.0.0-rc1
 >>>>>>> 1
 
 [ 9/23] Merge master into release...
@@ -178,8 +179,8 @@ $ git add /home/crem/dev/test/changelog.txt
 
 [16/23] Write version into version.inc, commit and tag....
 $ git add /home/crem/dev/test/src/version.inc
-$ git commit -m "Change version.inc to v1.5-dev."
-[release 70e12c6] Change version.inc to v1.5-dev.
+$ git commit -m "Change version.inc to v1.5.0-dev."
+[release 70e12c6] Change version.inc to v1.5.0-dev.
  2 files changed, 8 insertions(+), 3 deletions(-)
 
 [17/23] Checkout release...
@@ -203,10 +204,10 @@ Your branch is ahead of 'origin/release' by 1 commit.
 
 [20/23] Write version into version.inc, commit and tag....
 $ git add /home/crem/dev/test/src/version.inc
-$ git commit -m "Change version.inc to v1.4-rc1."
-[release 2b515ea] Change version.inc to v1.4-rc1.
+$ git commit -m "Change version.inc to v1.4.0-rc1."
+[release 2b515ea] Change version.inc to v1.4.0-rc1.
  1 file changed, 2 insertions(+), 2 deletions(-)
-$ git tag -a v1.4-rc1 -m "Adding tag v1.4-rc1"
+$ git tag -a v1.4.0-rc1 -m "Adding tag v1.4.0-rc1"
 
 [21/23] Checkout master...
 $ git checkout master
@@ -233,7 +234,7 @@ Counting objects: 100% (1/1), done.
 Writing objects: 100% (1/1), 171 bytes | 171.00 KiB/s, done.
 Total 1 (delta 0), reused 0 (delta 0)
 To bitbucket.org:mooskagh/test.git
- * [new tag]         v1.4-rc1 -> v1.4-rc1
+ * [new tag]         v1.4.0-rc1 -> v1.4.0-rc1
 
 The pipeline has finished.
 ```
@@ -328,11 +329,11 @@ Switched to branch 'release'
 Your branch is up to date with 'origin/release'.
 
 [ 7/18] Read current version from version.inc file...
-Found current version v1.4-rc1
+Found current version v1.4.0-rc1
 
 [ 8/18] Select new patch version....
-Current version is v1.4-rc1. What will be the new one?
-  1. 1.4-rc2
+Current version is v1.4.0-rc1. What will be the new one?
+  1. 1.4.0-rc2
   2. 1.4.0
 >>>>>>> 2
 
