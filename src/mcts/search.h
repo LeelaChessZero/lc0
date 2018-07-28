@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #pragma once
@@ -27,6 +36,7 @@
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "utils/mutex.h"
+#include "utils/optional.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
@@ -88,10 +98,8 @@ class Search {
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
   static const char* kSmartPruningStr;
-  static const char* kVirtualLossBugStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
-  static const char* kExtraVirtualLossStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
 
@@ -100,15 +108,22 @@ class Search {
   std::pair<Move, Move> GetBestMoveInternal() const;
 
   // Returns a child with most visits, with or without temperature.
-  Node* GetBestChildNoTemperature(Node* parent) const;
-  Node* GetBestChildWithTemperature(Node* parent, float temperature) const;
+  // NoTemperature is safe to use on non-extended nodes, while WithTemperature
+  // accepts only nodes with at least 1 visited child.
+  EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
+  EdgeAndNode GetBestChildWithTemperature(Node* parent,
+                                          float temperature) const;
 
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
-  void SendMovesStats() const;
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
+
+  void SendMovesStats() const;
+
+  // We only need first ply for debug output, but could be easily generalized.
+  NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -136,8 +151,8 @@ class Search {
   const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
-  Node* best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
-  Node* last_outputted_best_move_node_ GUARDED_BY(nodes_mutex_) = nullptr;
+  EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
+  Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
@@ -155,10 +170,8 @@ class Search {
   const bool kNoise;
   const bool kVerboseStats;
   const bool kSmartPruning;
-  const float kVirtualLossBug;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
-  const float kExtraVirtualLoss;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
 
@@ -166,7 +179,7 @@ class Search {
 };
 
 // Single thread worker of the search engine.
-// That used to be just a function Search::Worker(), but to paralellize it
+// That used to be just a function Search::Worker(), but to parallelize it
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
@@ -185,9 +198,9 @@ class SearchWorker {
   // 2. Gather minibatch.
   // 3. Prefetch into cache.
   // 4. Run NN computation.
-  // 5. Populate computed nodes with results of the NN computation.
-  // 6. Update nodes.
-  // 7. Update status/counters.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
+  // 7. Update the Search's status and progress information.
   void ExecuteOneIteration();
 
   // Returns whether another search iteration is needed (false means exit).
@@ -207,13 +220,13 @@ class SearchWorker {
   // 4. Run NN computation.
   void RunNNComputation();
 
-  // 5. Populate computed nodes with results of the NN computation.
-  void FetchNNResults();
+  // 5. Retrieve NN computations (and terminal values) into nodes.
+  void FetchMinibatchResults();
 
-  // 6. Update nodes.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   void DoBackupUpdate();
 
-  // 7. Update status/counters.
+  // 7. Update the Search's status and progress information.
   void UpdateCounters();
 
  private:
@@ -223,6 +236,8 @@ class SearchWorker {
     Node* node;
     bool is_collision = false;
     bool nn_queried = false;
+    // Value from NN's value head, or -1/0/1 for terminal nodes.
+    float v;
   };
 
   NodeToProcess PickNodeToExtend();

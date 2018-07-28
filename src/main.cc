@@ -14,17 +14,27 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include <iostream>
 #include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
+#include "version.h"
 
 int main(int argc, const char** argv) {
   std::cerr << "       _" << std::endl;
   std::cerr << "|   _ | |" << std::endl;
-  std::cerr << "|_ |_ |_| built " << __DATE__ << std::endl;
+  std::cerr << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__ << std::endl;
   using namespace lczero;
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");

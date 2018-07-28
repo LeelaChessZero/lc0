@@ -3,15 +3,35 @@ option('tensorflow_include',
        value: ['/usr/local/include/tensorflow/'],
        description: 'Paths to tensorflow include directories')
 
+option('protobuf_include',
+       type: 'array',
+       value: ['/usr/local/include/'],
+       description: 'Paths to protobuf include directories')
+
 option('openblas_include',
        type: 'array',
        value: ['/usr/include/openblas/'],
        description: 'Paths to openblas include directories')
 
+option('opencl_include',
+       type: 'array',
+       value: ['/usr/include/'],
+       description: 'Paths to OpenCL include directories')
+
 option('tensorflow_libdir',
        type: 'array',
        value: ['/usr/local/lib/tensorflow_cc/'],
        description: 'Paths to tensorflow libraries')
+
+option('protobuf_libdir',
+       type: 'array',
+       value: ['/usr/lib/x86_64-linux-gnu/'],
+       description: 'Paths to protobuf libraries')
+
+option('openblas_libdirs',
+       type: 'array',
+       value: ['/usr/lib/'],
+       description: 'Paths to OpenCL libraries')
 
 option('opencl_libdirs',
        type: 'array',
@@ -58,9 +78,9 @@ option('opencl',
        value: true,
        description: 'Enable OpenCL backend')
 
-option('tf',
+option('tensorflow',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable TensorFlow backend')
 
 option('openblas',
@@ -77,3 +97,8 @@ option('accelerate',
        type: 'boolean',
        value: true,
        description: 'Enable Accelerate BLAS support')
+
+option('gtest',
+       type: 'boolean',
+       value: true,
+       description: 'Build gtest tests')

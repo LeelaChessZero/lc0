@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "selfplay/tournament.h"
@@ -128,7 +137,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     std::string path =
         options.GetSubdict(kPlayerNames[idx]).Get<std::string>(kNetFileStr);
     if (path == kAutoDiscover) {
-      path = DiscoveryWeightsFile();
+      path = DiscoverWeightsFile();
     }
     Weights weights = LoadWeightsFromFile(path);
     std::string backend =
@@ -220,7 +229,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       if (verbose_thinking) {
         info_callback_(rich_info);
       } else {
-        // In non-verbose mode, remeber the last "info" message.
+        // In non-verbose mode, remember the last "info" message.
         last_thinking_info = rich_info;
       }
     };
@@ -252,6 +261,10 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
     game_info.moves = game.GetMoves();
+    if (!enable_resign) {
+      game_info.min_false_positive_threshold =
+          game.GetWorstEvalForWinnerOrDraw();
+    }
     if (kTraining) {
       TrainingDataWriter writer(game_number);
       game.WriteTrainingData(&writer);

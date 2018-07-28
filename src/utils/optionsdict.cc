@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "utils/optionsdict.h"
@@ -159,8 +168,12 @@ class Lexer {
   void ReadIdentifier() {
     string_val_ = "";
     type_ = L_IDENTIFIER;
+    static const std::string kAllowedPunctuation = "_-./";
     for (; idx_ < str_.size(); ++idx_) {
-      if (!std::isalnum(str_[idx_]) && str_[idx_] != '_') break;
+      if (!std::isalnum(str_[idx_]) &&
+          kAllowedPunctuation.find(str_[idx_]) == std::string::npos) {
+        break;
+      }
       string_val_ += str_[idx_];
     }
   }
@@ -233,7 +246,8 @@ class Parser {
         // List entry starts with "(", that's a special case of subdict without
         // name, we have to come up with the name ourselves.
         identifier = GetFreeSubdictName(dict);
-      } else if (lexer_.GetToken() == Lexer::L_IDENTIFIER) {
+      } else if (lexer_.GetToken() == Lexer::L_IDENTIFIER ||
+                 lexer_.GetToken() == Lexer::L_STRING) {
         // Read identifier.
         identifier = lexer_.GetStringVal();
         lexer_.Next();

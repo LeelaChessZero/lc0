@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "uciloop.h"
@@ -28,7 +37,7 @@
 #include <utility>
 #include "utils/exception.h"
 #include "utils/string.h"
-#include "version.inc"
+#include "version.h"
 
 namespace lczero {
 
@@ -160,19 +169,19 @@ bool UciLoop::DispatchCommand(
       go_params.searchmoves =
           StrSplitAtWhitespace(GetOrEmpty(params, "searchmoves"));
     }
-#define LC0_OPTION(x)                         \
+#define UCIGOOPTION(x)                    \
   if (ContainsKey(params, #x)) {          \
     go_params.x = GetNumeric(params, #x); \
   }
-    LC0_OPTION(wtime);
-    LC0_OPTION(btime);
-    LC0_OPTION(winc);
-    LC0_OPTION(binc);
-    LC0_OPTION(movestogo);
-    LC0_OPTION(depth);
-    LC0_OPTION(nodes);
-    LC0_OPTION(movetime);
-#undef OPTION
+    UCIGOOPTION(wtime);
+    UCIGOOPTION(btime);
+    UCIGOOPTION(winc);
+    UCIGOOPTION(binc);
+    UCIGOOPTION(movestogo);
+    UCIGOOPTION(depth);
+    UCIGOOPTION(nodes);
+    UCIGOOPTION(movetime);
+#undef UCIGOOPTION
     CmdGo(go_params);
   } else if (command == "stop") {
     CmdStop();
@@ -195,27 +204,22 @@ void UciLoop::SetLogFilename(const std::string& filename) {
 }
 
 void UciLoop::SendResponse(const std::string& response) {
+  SendResponses({response});
+}
+
+void UciLoop::SendResponses(const std::vector<std::string>& responses) {
   static std::mutex output_mutex;
   std::lock_guard<std::mutex> lock(output_mutex);
-  if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
-  std::cout << response << std::endl;
+  for (auto& response : responses) {
+    if (debug_log_) debug_log_ << '<' << response << std::endl << std::flush;
+    std::cout << response << std::endl;
+  }
 }
-
-// TODO: remove these monstrosities
-#define LC0V_STR_INNER(a) #a
-#define LC0V_STR(a) LC0V_STR_INNER(a)
-#define LC0_VERSION_STRING     \
-    "v" LC0V_STR(LC0_VERSION_MAJOR) \
-    "." LC0V_STR(LC0_VERSION_MINOR) \
-    "." LC0V_STR(LC0_VERSION_PATCH)
 
 void UciLoop::SendId() {
-  SendResponse("id name The Lc0 chess engine. " LC0_VERSION_STRING);
+  SendResponse("id name The Lc0 chess engine. v" + GetVersionStr());
   SendResponse("id author The LCZero Authors.");
 }
-#undef LC0V_STR_INNER
-#undef LC0V_STR
-#undef LC0_VERSION_STRING
 
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
   std::string res = "bestmove " + move.bestmove.as_string();

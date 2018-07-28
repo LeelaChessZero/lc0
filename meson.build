@@ -29,10 +29,8 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
 
   if get_option('buildtype') == 'release'
     add_project_arguments('-march=native', language : 'cpp')
-    add_project_arguments('-mtune=native', language : 'cpp')
   endif
 endif
-
 
 # Files to compile.
 deps = []
@@ -40,12 +38,36 @@ files = []
 includes = []
 has_backends = false
 
+# Both protobuf and protoc must be the same version, so couple them together.
+protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
+if not protobuf_lib.found()
+  protobuf_dep = dependency('protobuf', required : false)
+else
+  protobuf_dep = protobuf_lib
+endif
+protoc = find_program('protoc', required : false)
+if not protobuf_dep.found() or not protoc.found()
+  deps += subproject('protobuf').get_variable('protobuf_dep')
+  protoc = subproject('protobuf').get_variable('protoc')
+else
+  deps += protobuf_dep
+  if protobuf_lib.found()
+    includes += include_directories(get_option('protobuf_include'))
+  endif
+endif
+
+gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
+  arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+
+files += gen.process('libs/lczero-common/proto/net.proto',
+  preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 
 #############################################################################
 ## Main files
 #############################################################################
 files += [
   'src/engine.cc',
+  'src/version.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
@@ -105,7 +127,7 @@ if get_option('build_backends')
   tf_protobuf_lib = cc.find_library('libprotobuf',
             dirs: tensorflow_libdir, required: false)
 
-  if get_option('tf') and tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
     includes += include_directories(
       tensorflow_include,
       tensorflow_include[0] + '/bazel-genfiles',
@@ -133,7 +155,11 @@ if get_option('build_backends')
   mkl_libdirs = get_option('mkl_libdirs')
   mkl_lib = cc.find_library('mkl_rt', dirs: mkl_libdirs, required: false)
 
-  openblas_lib = cc.find_library('openblas', required: false)
+  openblas_libdirs = get_option('openblas_libdirs')
+  openblas_lib = cc.find_library('openblas.dll', dirs: openblas_libdirs, required: false)
+  if not openblas_lib.found()
+    openblas_lib = cc.find_library('openblas', dirs: openblas_libdirs, required: false)
+  endif
 
   if get_option('blas') or get_option('opencl')
     if get_option('mkl') and mkl_lib.found()
@@ -149,7 +175,24 @@ if get_option('build_backends')
 
     elif get_option('openblas') and openblas_lib.found()
       add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
-      includes += include_directories(get_option('openblas_include'))
+
+      required_openblas_header = 'openblas_config.h'
+      if not cc.has_header(required_openblas_header)
+        openblas_headers_found = false
+
+        # add the first valid include directory
+        foreach d : get_option('openblas_include')
+          if not openblas_headers_found and cc.has_header(required_openblas_header, args: '-I' + d)
+            includes += include_directories(d)
+            openblas_headers_found = true
+          endif
+        endforeach
+
+        if not openblas_headers_found
+          error('Failed to detect OpenBLAS headers. Did you install libopenblas-dev?')
+        endif
+      endif
+
       deps += [ openblas_lib ]
       has_blas = true
 
@@ -159,8 +202,11 @@ if get_option('build_backends')
   if get_option('blas') and has_blas
 
     blas_files = [
-    'src/neural/blas/transforms.cc',
-    'src/neural/network_blas.cc'
+    'src/neural/blas/batchnorm.cc',
+    'src/neural/blas/convolution1.cc',
+    'src/neural/blas/fully_connected_layer.cc',
+    'src/neural/blas/winograd_convolution3.cc',
+    'src/neural/blas/network_blas.cc'
     ]
 
     files += blas_files
@@ -197,13 +243,14 @@ if get_option('build_backends')
       opencl_files = [
       'src/neural/opencl/OpenCL.cc',
       'src/neural/opencl/OpenCLTuner.cc',
-      'src/neural/network_opencl.cc',
+      'src/neural/opencl/network_opencl.cc',
       ]
 
       if not get_option('blas')
         opencl_files += 'src/neural/blas/transforms.cc'
       endif
 
+      includes += include_directories(get_option('opencl_include'))
       files += opencl_files
       has_backends = true
     else
@@ -273,7 +320,7 @@ endif
   ## ~~~~
   # Pick latest from https://wrapdb.mesonbuild.com/zlib and put into
   # subprojects/zlib.wrap
-  deps += subproject('zlib').get_variable('zlib_dep')
+  deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
 
   ## ~~~~~~~~
   ## Profiler
@@ -293,19 +340,25 @@ executable('lc0', 'src/main.cc',
 
 
 ### Tests
-gtest = dependency('gtest', required: false)
+gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
 test_deps = deps
-if gtest.found()
+if get_option('gtest') and gtest.found()
   test_deps += gtest
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ))
+  ), timeout: 90)
 
   test('HashCat',
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ))
+  ), timeout: 90)
+
+  test('PositionTest',
+    executable('position_test', 'src/chess/position_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
 endif

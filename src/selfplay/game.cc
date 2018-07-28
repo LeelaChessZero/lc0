@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "selfplay/game.h"
@@ -23,15 +32,15 @@
 
 namespace lczero {
 
-namespace{
+namespace {
 const char* kReuseTreeStr = "Reuse the node statistics between moves";
 const char* kResignPercentageStr = "Resign when win percentage drops below n";
-}
+}  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeStr, "reuse-tree") = false;
   options->Add<FloatOption>(kResignPercentageStr, 0.0f, 100.0f,
-                            "resign-percentage", 'r')  = 0.0f;
+                            "resign-percentage", 'r') = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
@@ -48,7 +57,8 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
   }
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads, bool enable_resign) {
+void SelfPlayGame::Play(int white_threads, int black_threads,
+                        bool enable_resign) {
   bool blacks_move = false;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -80,14 +90,15 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool enable_resign
     training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
         GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
 
+    float eval = search_->GetBestEval();
+    eval = (eval + 1) / 2;
+    if (eval < min_eval_[idx]) min_eval_[idx] = eval;
     if (enable_resign) {
       const float resignpct =
-              options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
-      float eval = search_->GetBestEval();
-      eval = (eval + 1) / 2;
-      if (eval < resignpct) { // always false when resignpct == 0
-        game_result_ = blacks_move ? GameResult::WHITE_WON
-                                   : GameResult::BLACK_WON;
+          options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
+      if (eval < resignpct) {  // always false when resignpct == 0
+        game_result_ =
+            blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
         break;
       }
     }
@@ -105,11 +116,17 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
   bool flip = !tree_[0]->IsBlackToMove();
   for (Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
-    moves.push_back(node->GetMove(flip));
+    moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove(flip));
     flip = !flip;
   }
   std::reverse(moves.begin(), moves.end());
   return moves;
+}
+
+float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
+  if (game_result_ == GameResult::WHITE_WON) return min_eval_[0];
+  if (game_result_ == GameResult::BLACK_WON) return min_eval_[1];
+  return std::min(min_eval_[0], min_eval_[1]);
 }
 
 void SelfPlayGame::Abort() {
