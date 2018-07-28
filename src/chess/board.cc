@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "chess/board.h"
@@ -436,7 +445,10 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // Set en passant flag.
   if (to_row - from_row == 2 && pawns_.get(to)) {
-    pawns_.set(0, to_col);
+    BoardSquare ep_sq(to_row - 1, to_col);
+    if (kPawnAttacks[ep_sq.as_int()].intersects(their_pieces_ * pawns_)) {
+      pawns_.set(0, to_col);
+    }
   }
   return reset_50_moves;
 }

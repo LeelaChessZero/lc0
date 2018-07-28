@@ -59,7 +59,7 @@ endif
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
-files += gen.process('libs/lczero-common/proto/net.proto', 
+files += gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 
 #############################################################################
@@ -179,7 +179,7 @@ if get_option('build_backends')
       required_openblas_header = 'openblas_config.h'
       if not cc.has_header(required_openblas_header)
         openblas_headers_found = false
-        
+
         # add the first valid include directory
         foreach d : get_option('openblas_include')
           if not openblas_headers_found and cc.has_header(required_openblas_header, args: '-I' + d)
@@ -187,7 +187,7 @@ if get_option('build_backends')
             openblas_headers_found = true
           endif
         endforeach
-        
+
         if not openblas_headers_found
           error('Failed to detect OpenBLAS headers. Did you install libopenblas-dev?')
         endif
@@ -197,6 +197,25 @@ if get_option('build_backends')
       has_blas = true
 
     endif
+
+    ispc = find_program('ispc', required: false)
+
+    if has_blas and get_option('ispc') and ispc.found()
+      if host_machine.system() == 'windows'
+        outputnames = [ '@BASENAME@.obj', '@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
+                        '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj', '@BASENAME@_avx2.obj' ]
+      else
+        outputnames = [ '@BASENAME@.o', '@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
+                        '@BASENAME@_avx.o', '@BASENAME@_avx11.o', '@BASENAME@_avx2.o' ]
+      endif
+      iscp_gen = generator(ispc,
+        output: [ '@BASENAME@_ispc.h', outputnames ],
+        arguments: [ '-O2', '--arch=x86-64',
+                     '--target=sse2-i32x8,sse4-i32x8,avx1-i32x8,avx1.1-i32x8,avx2-i32x8',
+                     '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
+      )
+    endif
+
   endif
 
   if get_option('blas') and has_blas
@@ -206,11 +225,16 @@ if get_option('build_backends')
     'src/neural/blas/convolution1.cc',
     'src/neural/blas/fully_connected_layer.cc',
     'src/neural/blas/winograd_convolution3.cc',
-    'src/neural/network_blas.cc'
+    'src/neural/blas/network_blas.cc'
     ]
 
     files += blas_files
     has_backends = true
+
+    if get_option('ispc') and ispc.found()
+      files += iscp_gen.process('src/neural/blas/winograd.ispc')
+      add_project_arguments('-DUSE_ISPC', language : 'cpp')
+    endif
 
   endif
 
@@ -243,7 +267,7 @@ if get_option('build_backends')
       opencl_files = [
       'src/neural/opencl/OpenCL.cc',
       'src/neural/opencl/OpenCLTuner.cc',
-      'src/neural/network_opencl.cc',
+      'src/neural/opencl/network_opencl.cc',
       ]
 
       if not get_option('blas')
@@ -270,7 +294,6 @@ if get_option('build_backends')
   nvcc = find_program('/usr/local/cuda-9.2/bin/nvcc',
                       '/usr/local/cuda-9.1/bin/nvcc',
                       'nvcc', required: false)
-
   cuda_files = [
     'src/neural/network_cudnn.cu',
   ]
@@ -355,4 +378,10 @@ if get_option('gtest') and gtest.found()
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
     files, include_directories: includes, dependencies: test_deps
   ), timeout: 90)
+
+  test('PositionTest',
+    executable('position_test', 'src/chess/position_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
 endif
