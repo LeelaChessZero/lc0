@@ -252,7 +252,7 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
                              CL_MAP_READ, 0, batch_size * finalSize_val);
 
   {
-    // Finish call is usually a busy wait. When using multiple threads
+    // Finish call is usually a busy wait. When using multiple threads,
     // use the lock to avoid busy waiting with all threads.
     std::lock_guard<std::mutex> lock(m_queue_finish_mutex);
     queue.finish();
@@ -409,13 +409,13 @@ void OpenCL_Network::convolve1(int channels, int outputs,
                                cl::Buffer& bufferOutput,
                                cl::Buffer& bufferMerge, weight_slice_t weights,
                                int batch_size) const {
-  // fixed for 8x8
+  // fixed for 8x8.
   constexpr int width = 8;
   constexpr int height = 8;
   constexpr int boardsize = width * height;
   constexpr int rowTiles = 8;
 
-  // Input channel grouping in multiples of 8
+  // Input channel grouping in multiples of 8.
   constexpr int channelGroup = 8;
   constexpr int channelShift = 3;
   constexpr int rowGroup = 1;
@@ -424,15 +424,15 @@ void OpenCL_Network::convolve1(int channels, int outputs,
   auto m_convolve_kernel = &opencl_thread_data.m_convolve1_kernel;
 
 #ifndef NDEBUG
-  // Total output size after reducing
+  // Total output size after reducing.
   size_t outSize = width * height * outputs * sizeof(net_t);
 
-  // Produce channel * output planes and merge them at the end
+  // Produce channel * output planes and merge them at the end.
   size_t mergeSize = (channels >> channelShift) * outSize;
   assert(mergeSize <= bufferMerge.getInfo<CL_MEM_SIZE>());
 #endif
 
-  // Copy the rows locally
+  // Copy the rows locally.
   size_t stripSize = width * sizeof(float);
 
   int rowBuffer = std::min<int>(channelGroup, 7);
@@ -484,7 +484,7 @@ void OpenCL_Network::innerproduct(cl::Buffer& input, weight_slice_t weights,
   auto sgemv_kernel = opencl_thread_data.m_sgemv_kernel;
   cl::CommandQueue& queue = opencl_thread_data.m_commandqueue;
 
-  // TODO: Tune these
+  // TODO: Tune these.
   size_t wgs1 = 64;
   size_t wpt1 = 1;
 
@@ -493,7 +493,7 @@ void OpenCL_Network::innerproduct(cl::Buffer& input, weight_slice_t weights,
   auto local_size = wgs1;
 
   try {
-    // Sets the kernel arguments
+    // Sets the kernel arguments.
     sgemv_kernel.setArg(0, static_cast<int>(outputs));
     sgemv_kernel.setArg(1, static_cast<int>(inputs));
     sgemv_kernel.setArg(2, weights[0]);
@@ -755,7 +755,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   m_context = context;
   m_device = best_device;
 
-  // Make program of the source code in the context
+  // Make program of the source code in the context.
   try {
     m_program =
         cl::Program(m_context, sourceCode_config + sourceCode_convolve1 +
@@ -773,7 +773,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   auto sgemm_tuners = t.load_sgemm_tuners(
       channels, WINOGRAD_P, channels, params.tune_batch_size * WINOGRAD_TILE);
 
-  // Build program for these specific devices
+  // Build program for these specific devices.
   try {
     std::string args = cl_args;
     args += sgemm_tuners;

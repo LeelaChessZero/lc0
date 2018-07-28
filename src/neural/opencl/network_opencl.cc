@@ -41,7 +41,7 @@ namespace {
 
 class OpenCLNetwork;
 
-// Copy the vectors we need after weights is deallocated
+// Copy the vectors we need after weights is deallocated.
 struct OpenCLWeights {
   const std::vector<float> ip2_val_w;
   const std::vector<float> ip2_val_b;
@@ -76,11 +76,10 @@ class OpenCLComputation : public NetworkComputation {
     const auto num_output_policies = weights_.num_output_policies;
     const auto num_value_channels = weights_.num_value_channels;
 
-    /* Typically
-     input_channels = 112
-     num_value_channels = 128
-     num_output_policy = 1858
-     */
+    // Typically
+    // input_channels = 112
+    // num_value_channels = 128
+    // num_output_policy = 1858
 
     std::vector<float> output_pol(largest_batch_size * num_output_policies);
     std::vector<float> output_val(largest_batch_size * num_value_channels);
@@ -97,14 +96,14 @@ class OpenCLComputation : public NetworkComputation {
       for (size_t j = 0; j < batch_size; j++) {
         std::vector<float> policy(weights_.num_output_policies);
 
-        // Get the moves
+        // Get the moves.
         FullyConnectedLayer::Softmax(num_output_policies,
                                      &output_pol[j * num_output_policies],
                                      policy.data());
 
         policies_.emplace_back(std::move(policy));
 
-        // Now get the score
+        // Now get the score.
         auto winrate = FullyConnectedLayer::Forward0D(
                              num_value_channels, weights_.ip2_val_w.data(),
                              &output_val[j * num_value_channels]) +
@@ -182,15 +181,14 @@ class OpenCLNetwork : public Network {
     const auto num_output_policy = weights.ip_pol_b.size();
     const auto num_value_channels = weights.ip1_val_b.size();
 
-    /* Typically
-     input_channels = 112
-     output_channels = 192
-     num_value_input_planes = 32
-     num_policy_input_planes = 32
-     num_value_channels = 128
-     num_output_policy = 1858
-     */
-
+    // Typically
+    // input_channels = 112
+    // output_channels = 192
+    // num_value_input_planes = 32
+    // num_policy_input_planes = 32
+    // num_value_channels = 128
+    // num_output_policy = 1858
+    
     static constexpr auto kWinogradAlpha = 4;
 
     opencl_.initialize(channels, params_);
@@ -215,12 +213,12 @@ class OpenCLNetwork : public Network {
     std::vector<float> input_batchnorm_stddivs =
         Batchnorm::InvertStddev(weights.input);
 
-    // Winograd filter transformation changes filter size to 4x4
+    // Winograd filter transformation changes filter size to 4x4.
     opencl_net_.push_input_convolution(kWinogradAlpha, inputChannels, channels,
                                        Upad, input_batchnorm_means,
                                        input_batchnorm_stddivs);
 
-    // residual blocks
+    // Residual blocks.
     for (auto i = size_t{0}; i < residual_blocks; i++) {
       auto& residual = weights.residual[i];
       auto& conv1 = residual.conv1;

@@ -269,7 +269,7 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
       auto args = m_opencl.m_cl_args + " " + defines;
       program.build(args.c_str());
     } catch (const cl::Error&) {
-      // Failed to compile, get next parameter
+      // Failed to compile, get next parameter.
       continue;
     }
 
@@ -338,7 +338,7 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
     if (max_error < MAX_ERROR && (best_time == 0 || sum < best_time)) {
       auto param_str = parameters_to_string(p);
       auto kernel_us = 1e-3f * (sum / runs);
-      // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out
+      // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out.
       auto kernel_gflops = total_flops / (sum / runs);
       std::cerr << std::fixed << std::setprecision(1) << "(" << param_counter
                 << "/" << valid_params.size() << ") " << param_str << " "
@@ -362,7 +362,7 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
                                const int batch_size, std::string tuners) {
   auto file_contents = std::vector<std::string>();
   {
-    // Read the previous contents to string
+    // Read the previous contents to string.
     auto file = std::ifstream{TUNER_FILE_LOCAL};
     if (file.good()) {
       auto line = std::string{};
@@ -382,7 +382,7 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
   auto tuning_line = tuning_line_prefix + tuners + ";" + device_name;
 
   // Write back previous data as long as it's not the device and
-  // tuning we just tuned
+  // tuning we just tuned.
   for (const auto& line : file_contents) {
     if (line.find(tuning_line_prefix) == std::string::npos ||
         line.find(device_name) == std::string::npos) {
@@ -390,7 +390,7 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
     }
   }
 
-  // Write new tuning
+  // Write new tuning.
   file << tuning_line << std::endl;
 
   if (file.fail()) {
@@ -468,8 +468,8 @@ std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
   auto tuners = tune_sgemm(m, n, k, batch_size);
   store_sgemm_tuners(m, n, k, batch_size, tuners);
 
-  // Exit immediately after tuning. Some NVIDIA drivers are buggy
-  // and will fail to compile the rest of the kernels after a tuning
+  // Exit immediately after tuning. Some NVIDIA drivers are buggy,
+  // and will fail to compile the rest of the kernels after a tuning,
   // run. See #729.
   if (m_params.tune_only) {
     exit(EXIT_SUCCESS);
