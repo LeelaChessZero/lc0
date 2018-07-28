@@ -31,6 +31,8 @@
 #include "utils/random.h"
 
 #include <cmath>
+#include <iomanip>
+#include <iostream>
 
 namespace lczero {
 
@@ -115,30 +117,30 @@ class CheckComputation : public NetworkComputation {
     }
 
     if (valueAlmostEqual && policyAlmostEqual) {
-      fprintf(stderr, "Check passed for a batch of %d.\n", size);
+      std::cerr << "Check passed for a batch of " << size << "." << std::endl;
       return;
     }
 
     if (!valueAlmostEqual && !policyAlmostEqual) {
-      fprintf(stderr,
-              "*** ERROR check failed for a batch of %d  both value and policy "
-              "incorrect.\n",
-              size);
+      std::cerr << "*** ERROR check failed for a batch of " << size
+                << " both value and policy "
+                   "incorrect.\n"
+                << std::endl;
       return;
     }
 
     if (!valueAlmostEqual) {
-      fprintf(stderr,
-              "*** ERROR check failed for a batch of %d value incorrect (but "
-              "policy ok).\n",
-              size);
+      std::cerr << "*** ERROR check failed for a batch of " << size
+                << " value incorrect (but "
+                   "policy ok)."
+                << std::endl;
       return;
     }
 
-    fprintf(stderr,
-            "*** ERROR check failed for a batch of %d policy incorrect (but "
-            "value ok).",
-            size);
+    std::cerr << "*** ERROR check failed for a batch of " << size
+              << " policy incorrect (but "
+                 "value ok)."
+              << std::endl;
   }
 
   bool IsAlmostEqual(double a, double b) const {
@@ -161,7 +163,8 @@ class CheckComputation : public NetworkComputation {
         histogram.Add(pv2 - pv1);
       }
     }
-    fprintf(stderr, "Absolute error histogram for a batch of %d:\n", size);
+    std::cerr << "Absolute error histogram for a batch of " << size
+              << std::endl;
     histogram.Dump();
   }
 
@@ -180,8 +183,9 @@ class CheckComputation : public NetworkComputation {
     }
 
     void Dump(const char* name) {
-      fprintf(stderr, "%s: absolute: %.1e, relative: %.1e\n", name,
-              max_absolute_error, max_relative_error);
+      std::cerr << std::scientific << std::setprecision(1) << name
+                << ": absolute: " << max_absolute_error
+                << ", relative: " << max_relative_error << "." << std::endl;
     }
 
     static double GetRelativeError(double a, double b) {
@@ -212,7 +216,8 @@ class CheckComputation : public NetworkComputation {
       }
     }
 
-    fprintf(stderr, "maximum error for a batch of %d:\n", size);
+    std::cerr << "maximum error for a batch of " << size << ":" << std::endl;
+
     value_error.Dump("  value");
     policy_error.Dump("  policy");
   }
@@ -260,19 +265,22 @@ class CheckNetwork : public Network {
     if (parents.size() > 0) {
       backendName1 = parents[0];
       backend1_dict = options.GetSubdict(backendName1);
-      backendName1 = backend1_dict.GetOrDefault<std::string>("backend", backendName1);
-   }
+      backendName1 =
+          backend1_dict.GetOrDefault<std::string>("backend", backendName1);
+    }
     if (parents.size() > 1) {
       backendName2 = parents[1];
       backend2_dict = options.GetSubdict(backendName2);
-      backendName2 = backend2_dict.GetOrDefault<std::string>("backend", backendName2);
+      backendName2 =
+          backend2_dict.GetOrDefault<std::string>("backend", backendName2);
     }
     if (parents.size() > 2) {
-      fprintf(stderr, "Warning, cannot check more than two backends\n");
+      std::cerr << "Warning, cannot check more than two backends" << std::endl;
     }
 
-    fprintf(stderr, "Working backend set to %s.\n", backendName1.c_str());
-    fprintf(stderr, "Reference backend set to %s.\n", backendName2.c_str());
+    std::cerr << "Working backend set to " << backendName1 << "." << std::endl;
+    std::cerr << "Reference backend set to " << backendName2 << "."
+              << std::endl;
 
     workNet_ =
         NetworkFactory::Get()->Create(backendName1, weights, backend1_dict);
@@ -283,19 +291,20 @@ class CheckNetwork : public Network {
         options.GetOrDefault<float>("freq", kDefaultCheckFrequency);
     switch (params_.mode) {
       case kCheckOnly:
-        fprintf(stderr,
-                "Check mode: check only with relative tolerance  %.1e, "
-                "absolute tolerance %.1e\n",
-                params_.absolute_tolerance, params_.relative_tolerance);
+        std::cerr << std::scientific << std::setprecision(1)
+                  << "Check mode: check only with relative tolerance "
+                  << params_.absolute_tolerance << ", absolute tolerance "
+                  << params_.relative_tolerance << "." << std::endl;
         break;
       case kErrorDisplay:
-        fprintf(stderr, "Check mode: error display\n");
+        std::cerr << "Check mode: error display." << std::endl;
         break;
       case kHistogram:
-        fprintf(stderr, "Check mode: histogram\n");
+        std::cerr << "Check mode: histogram." << std::endl;
         break;
     }
-    fprintf(stderr, "Check rate: %.0f %%\n", 100.0 * checkFrequency_);
+    std::cerr << "Check rate: " << std::fixed << std::setprecision(0)
+              << 100 * checkFrequency_ << "%." << std::endl;
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
