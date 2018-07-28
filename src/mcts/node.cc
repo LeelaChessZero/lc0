@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "mcts/node.h"
@@ -176,13 +185,9 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
-void Node::FinalizeScoreUpdate(float v, float gamma, float beta) {
+void Node::FinalizeScoreUpdate(float v) {
   // Recompute Q.
-  if (gamma == 1.0f && beta == 1.0f) {
-    q_ += (v - q_) / (n_ + 1);
-  } else {
-    q_ += (v - q_) / (std::pow(static_cast<float>(n_), gamma) * beta + 1);
-  }
+  q_ += (v - q_) / (n_ + 1);
   // Increment N.
   ++n_;
   // Decrement virtual loss.

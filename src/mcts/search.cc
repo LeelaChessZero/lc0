@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "mcts/search.h"
@@ -47,8 +56,6 @@ const char* Search::kCacheHistoryLengthStr =
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
-const char* Search::kBackPropagateBetaStr = "Backpropagation gamma";
-const char* Search::kBackPropagateGammaStr = "Backpropagation beta";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -79,10 +86,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
-  options->Add<FloatOption>(kBackPropagateBetaStr, 0.0f, 100.0f,
-                            "backpropagate-beta") = 1.0f;
-  options->Add<FloatOption>(kBackPropagateGammaStr, -100.0f, 100.0f,
-                            "backpropagate-gamma") = 1.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -109,9 +112,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kBackPropagateBeta(options.Get<float>(kBackPropagateBetaStr)),
-      kBackPropagateGamma(options.Get<float>(kBackPropagateGammaStr)) {}
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -364,7 +365,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
     }
   }
 
-  auto best_node = temperature && root_node_->GetN() > 1
+  auto best_node = temperature && root_node_->GetChildrenVisits() > 0
                        ? GetBestChildWithTemperature(root_node_, temperature)
                        : GetBestChildNoTemperature(root_node_);
 
@@ -401,6 +402,7 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
 // Returns a child chosen according to weighted-by-temperature visit count.
 EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
                                                 float temperature) const {
+  assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   const float n_parent = parent->GetN();
@@ -573,8 +575,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
-  int best_node_n = 0;
-  if (search_->best_move_edge_) best_node_n = search_->best_move_edge_.GetN();
+  int best_node_n = search_->best_move_edge_.GetN();
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
@@ -889,8 +890,7 @@ void SearchWorker::DoBackupUpdate() {
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
-      n->FinalizeScoreUpdate(v, search_->kBackPropagateGamma,
-                             search_->kBackPropagateBeta);
+      n->FinalizeScoreUpdate(v);
       // Q will be flipped for opponent.
       v = -v;
 
@@ -901,12 +901,10 @@ void SearchWorker::DoBackupUpdate() {
       if (full_depth_updated)
         full_depth_updated = n->UpdateFullDepth(&cur_full_depth);
       // Best move.
-      if (n->GetParent() == search_->root_node_) {
-        if (!search_->best_move_edge_ ||
-            search_->best_move_edge_.GetN() < n->GetN()) {
-          search_->best_move_edge_ =
-              EdgeAndNode(search_->root_node_->GetEdgeToNode(n), n);
-        }
+      if (n->GetParent() == search_->root_node_ &&
+          search_->best_move_edge_.GetN() <= n->GetN()) {
+        search_->best_move_edge_ =
+            search_->GetBestChildNoTemperature(search_->root_node_);
       }
     }
     ++search_->total_playouts_;

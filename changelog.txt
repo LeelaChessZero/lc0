@@ -1,0 +1,145 @@
+v0.16.0 (2018-07-20)
+~~~~~~~
+
+* Fully switched to official releases! No more https://crem.xyz/lc0/
+* Fixed a bug when pv display and smart pruning didn't sometimes work properly
+  after tree reuse.
+* Format of protobuf network files was changed.
+* Autodiscovery of protobuf based network files works now.
+
+
+lc0-win-20180715-cuda92-cudnn714
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Support of new format of network files (needed for lc0 launch on main
+  training server)
+* Fixed hang/poor performance in the beginning of search when there are many
+  threads. (Happened on linux only though).
+* Memory footprint is reduced a bit. (~-60 bytes per node)
+
+lc0-win-20180711-cuda92-cudnn714
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Edge-node separation introduced a bug that smart pruning didn't work. That's
+  fixed.
+* Changed options parsing so that --backend-opts=cudnn-fp16 is now possible.
+* Performance fixes (mostly for slowness introduced by edge-node separation).
+
+lc0-win-20180708-cuda92-cudnn714
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Mutex contention has been reduced (but locking mutex more rarely).
+  Helps a lot with many threads running. Especially recommended to check with
+  multi-GPU configuration.
+* Memory usage reduced at least 2x (probably more).
+* cudnn backend crashed on large batches (>800) that's fixed.
+  There is still a limit of batch size 1024 though.
+* (not in cudnn build, but for completeness)
+  Fixed NN computation with BLAS backend, it had up to 5% error before that.
+* Default time budgeting params have been changed again! (not by mach this time)
+  --slowmover=1.95
+  --time-curve-peak=26.2
+  --time-curve-left-width=82
+  --time-curve-right-width=74
+
+lc0-win-20180701-cuda92-cudnn714
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* fp16-based computation for very modern NVidia GPUs!
+  May reduce precision a bit, but should be compensated by nps boost.
+  Enable with --backend=cudnn-fp16 flag
+* V is now not stored in nodes (a bit less RAM used while thinking)
+* (not in cudnn build, but listing for completeness) blas batching support.
+
+lc0-win-20180629-cuda92-cudnn714
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Default time budgeting parameters have been changed (again!):
+  --slowmover=1.93
+  --time-curve-peak=26
+  --time-curve-left-width=67
+  --time-curve-right-width=76
+* When generating training games, the engine could confuse client by sending
+  corrupted output. That's fixed.
+
+lc0-win-20180624-cuda92-cudnn714
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Default time budgeting parameters have been changed:
+  --slowmover=2.13  (was 1.8)
+  --time-curve-peak=22.0  (was 41.0)
+  --time-curve-left-width=450.0  (was 1000.0)
+  --time-curve-right-width=30.0  (was 39.5)
+* During training game generation, the engine is able to send resign statistics.
+
+
+lc0-win-20180622-cuda92-cudnn714
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Time budged allocation has been changed, it allocates more time to early
+  stages of the game.
+  Graphs are here: https://github.com/LeelaChessZero/lc0/pull/59
+  Slowmover value has so be recalibrated, and default value was changed from 2.2 to 1.8.
+* Fixed a race condition in cache prefetch code. Realistically it hardly every
+  occured before though.
+
+lc0-win-20180619-cuda92-cudnn714-00
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Fix a bug instroduced in version 20180609 which caused the engine to miss checkmates sometimes.
+
+lc0-win-20180614-cuda92-cudnn714
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* "go searchmoves" uci command is now supported
+* It's possible now to disable tree reuse in training games
+* Few improvements for random backend
+* Lc0 now shows version in uci response
+* Analyzer mode has been removed
+* extra-virtual-loss has been removed
+* Implemented resign (for training games)
+
+lc0-win-20180609-cuda92-cudnn714-01
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* In addition to --backpropagate-gamma, there is also --backpropagate-beta!
+  Default is 1.0.
+
+lc0-win-20180609-cuda92-cudnn714-00
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Visible changes:
+* Experimental changes from 20180604 are now default.
+* Memory footprint is reduced by 8 bytes per visible node (+ ~240 bytes in
+  invisible nodes per visible)
+* Introduced --backpropagate-gamma flag.
+  Default is 1.0. There are rumours that reducing it to 0.75 improves play.
+* Extra-virtual-loss parameter has been removed.
+* Quotes in backend-opts parameter were not parsed properly, that's fixed.
+
+
+lc0-win-20180604-cuda92-cudnn714-experimental
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Visible changes:
+* Experimental default settings:
+  cPUCT: 3.4
+  FPU reduction: 0.9
+  policy Softmax: 2.2
+
+* Fix memory leak when GUI doesn't ever issue `isready` uci command.
+
+
+lc0-win-20180602-cuda92-cudnn714-00
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Visible changes:
+* cPUCT is now 3.1 by default instead of 1.2 (or what it was before)
+* Fixed Batch normalization epsilon in tensorflow backend (but noone uses tensorflow anyway)
+* Periodically (every 5 seconds) output "uci info" even if bestmove/depth doesn't change.
+* Memory management is redone so that node release happens after "bestmove" and "isready", rather than after "position" uci command.
+  That garbage collection could take tens of milliseconds and chess GUI already started timer at that point.
+  Memory management is always fragile, so fresh crashes and memory leaks are possible.
+
+Invisible changes:
+* Store castlings again as e1g1 and not e1h1. Fixes a bug that tree was not reused after castling.

@@ -24,46 +24,19 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-
 #pragma once
-#include <cstdint>
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
 
-namespace lczero {
+// Versioning is performed according to the standard at <https://semver.org/>
+// Creating a new version should be performed using scripts/bumpversion.py.
 
-// Iterates over all set bits of the value, lower to upper. The value of
-// dereferenced iterator is bit number (lower to upper, 0 bazed)
-template <typename T>
-class BitIterator {
- public:
-  BitIterator(std::uint64_t value) : value_(value){};
-  bool operator!=(const BitIterator& other) { return value_ != other.value_; }
+#include <string>
+#include "version.inc"
 
-  void operator++() { value_ &= (value_ - 1); }
-  T operator*() const {
-#ifdef _MSC_VER
-    unsigned long result;
-    _BitScanForward64(&result, value_);
-    return result;
-#else
-    return __builtin_ctzll(value_);
-#endif
-  }
+std::uint32_t GetVersionInt(int major = LC0_VERSION_MAJOR,
+                            int minor = LC0_VERSION_MINOR,
+                            int patch = LC0_VERSION_PATCH);
 
- private:
-  std::uint64_t value_;
-};
-
-class IterateBits {
- public:
-  IterateBits(std::uint64_t value) : value_(value) {}
-  BitIterator<int> begin() { return value_; }
-  BitIterator<int> end() { return 0; }
-
- private:
-  std::uint64_t value_;
-};
-
-}  // namespace lczero
+std::string GetVersionStr(int major = LC0_VERSION_MAJOR,
+                          int minor = LC0_VERSION_MINOR,
+                          int patch = LC0_VERSION_PATCH,
+                          const std::string& postfix = LC0_VERSION_POSTFIX);
