@@ -56,6 +56,7 @@ const char* Search::kCacheHistoryLengthStr =
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -86,6 +87,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
+  options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -112,7 +114,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -237,6 +240,8 @@ void Search::SendMovesStats() const {
       oss << " -.----";
     }
     oss << ") ";
+
+    oss << "(T: " << edge.IsTerminal() << ") ";
 
     info.comment = oss.str();
     info_callback_(info);
@@ -591,7 +596,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) return {node, true};
-    // Unexamined leaf node. We've hit the end of this playout.
+    // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) return {node, false};
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
@@ -627,6 +632,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
+      if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
+        // If we find a checkmate, then the confidence is infinite, so ignore U.
+        best_edge = child;
+        break;
+      }
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;
