@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <random>
@@ -222,8 +223,8 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
   auto cBuffer = cl::Buffer(m_context, CL_MEM_READ_WRITE,
                             sizeof(float) * c_size, nullptr, nullptr);
 
-  fprintf(stderr, "\nStarted OpenCL SGEMM tuner with batch size %d.\n",
-          batch_size);
+  std::cerr << "Started OpenCL SGEMM tuner with batch size " << batch_size
+            << "." << std::endl;
 
   auto valid_params = std::vector<int>{};
   auto cfgs = 1;
@@ -243,7 +244,8 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
     }
   }
 
-  fprintf(stderr, "Will try %zu valid configurations.\n", valid_params.size());
+  std::cerr << "Will try " << valid_params.size() << " valid configurations."
+            << std::endl;
 
   std::string best_params;
   auto best_time = unsigned{0};
@@ -335,19 +337,22 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
     }
     if (max_error < MAX_ERROR && (best_time == 0 || sum < best_time)) {
       auto param_str = parameters_to_string(p);
-      auto kernel_ms = 1e-6f * (sum / runs);
+      auto kernel_us = 1e-3f * (sum / runs);
       // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out
       auto kernel_gflops = total_flops / (sum / runs);
-      fprintf(stderr, "(%zu/%zu) %s %.4f ms (%.1f GFLOPS)\n", param_counter,
-              valid_params.size(), param_str.c_str(), kernel_ms, kernel_gflops);
+      std::cerr << std::fixed << std::setprecision(1) << "(" << param_counter
+                << "/" << valid_params.size() << ") " << param_str << " "
+                << kernel_us << " us (" << kernel_gflops << " GFLOPS)"
+                << std::endl;
+
       best_time = sum;
       best_params = defines;
     }
   }
   if (best_time == 0) {
-    fprintf(stderr,
-            "Failed to find a working configuration.\nCheck your OpenCL "
-            "drivers.\n");
+    std::cerr << "Failed to find a working configuration.\nCheck your OpenCL "
+                 "drivers."
+              << std::endl;
     throw std::runtime_error("Tuner failed to find working configuration.");
   }
   return best_params;
@@ -389,9 +394,9 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
   file << tuning_line << std::endl;
 
   if (file.fail()) {
-    fprintf(stderr, "Could not save the tuning result.\n");
-    fprintf(stderr, "Do I have write permissions on %s?\n",
-            TUNER_FILE_LOCAL.c_str());
+    std::cerr << "Could not save the tuning result." << std::endl;
+    std::cerr << "Do I have write permissions on " << TUNER_FILE_LOCAL << "?"
+              << std::endl;
   }
 }
 
@@ -451,8 +456,8 @@ std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
         auto tuners = sgemm_tuners_from_line(line, m, n, k, batch_size);
         if (tuners.size() != 0) {
           if (m_params.verbose) {
-            fprintf(stderr, "Loaded existing SGEMM tuning for batch_size %d.\n",
-              batch_size);
+            std::cerr << "Loaded existing SGEMM tuning for batch_size "
+                      << batch_size << "." << std::endl;
           }
           return tuners;
         }

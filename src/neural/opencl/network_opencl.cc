@@ -105,7 +105,7 @@ class OpenCLComputation : public NetworkComputation {
         policies_.emplace_back(std::move(policy));
 
         // Now get the score
-        double winrate = FullyConnectedLayer::Forward0D(
+        auto winrate = FullyConnectedLayer::Forward0D(
                              num_value_channels, weights_.ip2_val_w.data(),
                              &output_val[j * num_value_channels]) +
                          weights_.ip2_val_b[0];
@@ -145,8 +145,9 @@ class OpenCLComputation : public NetworkComputation {
 void OpenCLComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
   for (const InputPlane& plane : sample) {
     const float value = plane.value;
-    for (auto i = 0; i < kSquares; i++)
+    for (auto i = 0; i < kSquares; i++) {
       *(buffer++) = (plane.mask & (((uint64_t)1) << i)) != 0 ? value : 0;
+    }
   }
 }
 
@@ -162,16 +163,15 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-    params_.tune_batch_size =
-        options.GetOrDefault<int>("tune_batch_size", 2);
+    params_.tune_batch_size = options.GetOrDefault<int>("tune_batch_size", 2);
 
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 1));
     if (max_batch_size_ > kHardMaxBatchSize) {
       max_batch_size_ = kHardMaxBatchSize;
     }
-    fprintf(stderr, "OpenCL, maximum batch size set to %ld.\n",
-            max_batch_size_);
+    std::cerr << "OpenCL, maximum batch size set to " << max_batch_size_ << "."
+              << std::endl;
 
     const auto inputChannels = static_cast<size_t>(kInputPlanes);
     const auto channels = weights.input.biases.size();
