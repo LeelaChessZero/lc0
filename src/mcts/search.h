@@ -97,7 +97,7 @@ class Search {
   static const char* kTempDecayMovesStr;
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
-  static const char* kSmartPruningStr;
+  static const char* kAggressiveTimePruningStr;
   static const char* kFpuReductionStr;
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
@@ -170,7 +170,7 @@ class Search {
   const int kTempDecayMoves;
   const bool kNoise;
   const bool kVerboseStats;
-  const bool kSmartPruning;
+  const float kAggressiveTimePruning;
   const float kFpuReduction;
   const bool kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
