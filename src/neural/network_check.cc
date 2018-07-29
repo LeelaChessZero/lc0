@@ -30,6 +30,7 @@
 #include "utils/histogram.h"
 #include "utils/random.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
