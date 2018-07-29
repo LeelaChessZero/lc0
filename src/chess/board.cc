@@ -709,13 +709,9 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-#ifdef _MSC_VER
-  int our = _mm_popcnt_u64(our_pieces_.as_int());
-  int their = _mm_popcnt_u64(their_pieces_.as_int());
-#else
-  int our = __builtin_popcountll(our_pieces_.as_int());
-  int their = __builtin_popcountll(their_pieces_.as_int());
-#endif
+  int our = our_pieces_.count();
+  int their = their_pieces_.count();
+
   if (our + their < 4) {
     // K v K, K+B v K, K+N v K.
     return false;

@@ -86,6 +86,7 @@ files += [
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
+  'src/syzygy/syzygy.cc',
   'src/utils/commandline.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
