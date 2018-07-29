@@ -149,7 +149,7 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
                 }
               }
             }
-          }
+          
 
             // Calculates transpose(B).x.B
             // B = [[ 1.0,  0.0,  0.0,  0.0],
