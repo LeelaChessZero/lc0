@@ -73,6 +73,11 @@ option('ispc',
        value: true,
        description: 'use ispc')
 
+option('ispc_native_only',
+       type: 'boolean',
+       value: false,
+       description: 'use ispc and enable native arch only')
+
 option('cudnn',
        type: 'boolean',
        value: true,

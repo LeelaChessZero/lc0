@@ -201,17 +201,31 @@ if get_option('build_backends')
     ispc = find_program('ispc', required: false)
 
     if has_blas and get_option('ispc') and ispc.found()
+      ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
-        outputnames = [ '@BASENAME@.obj', '@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
-                        '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj', '@BASENAME@_avx2.obj' ]
+        outputnames = [ '@BASENAME@.obj']
+	if not ispc_native_only
+	    outputnames += ['@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
+                            '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj',
+			    '@BASENAME@_avx2.obj' ]
+	endif
       else
-        outputnames = [ '@BASENAME@.o', '@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
-                        '@BASENAME@_avx.o', '@BASENAME@_avx11.o', '@BASENAME@_avx2.o' ]
+        outputnames = [ '@BASENAME@.o']
+	if not ispc_native_only
+	   outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
+                           '@BASENAME@_avx.o', '@BASENAME@_avx11.o',
+			   '@BASENAME@_avx2.o' ]
+        endif
+      endif
+      if ispc_native_only
+        ispc_target = 'host'
+      else
+        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx1.1-i32x8,avx2-i32x8'
       endif
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
         arguments: [ '-O2', '--arch=x86-64',
-                     '--target=sse2-i32x8,sse4-i32x8,avx1-i32x8,avx1.1-i32x8,avx2-i32x8',
+                     '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
       )
     endif
