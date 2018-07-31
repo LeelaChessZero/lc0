@@ -128,7 +128,7 @@ class Node {
   using ConstIterator = Edge_Iterator<true>;
 
   // Takes pointer to a parent node and own index in a parent.
-  Node(Node* parent, uint16_t index) : index_(index), parent_(parent) {}
+  Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -207,24 +207,14 @@ class Node {
   std::string DebugString() const;
 
  private:
-  // List of edges.
-  EdgeList edges_;
-  // Index of this node is parent's edge list.
-  uint16_t index_;
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored.
-  float q_ = 0.0f;
-  // How many completed visits this node had.
-  uint32_t n_ = 0;
-  // (aka virtual loss). How many threads currently process this node (started
-  // but not finished). This value is added to n during selection which node
-  // to pick in MCTS, and also when selecting the best move.
-  uint16_t n_in_flight_ = 0;
-  // Sum of policy priors which have had at least one playout.
-  float visited_policy_ = 0.0f;
+  // Turns out the alignment and padding of the Node was costing more than 8
+  // bytes on modern compilers. Simply rearranging the members leads to
+  // significant savings on padding. As such, rather then organized conceptually
+  // the members are merely ordered from largest to smallest.
 
-  // Does this node end game (with a winning of either sides or draw).
-  bool is_terminal_ = false;
+  // TODO: shrink the padding on this somehow? It takes 16 bytes even though
+  // only 10 are real! Maybe even merge it into this class??
+  EdgeList edges_;
 
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
@@ -232,6 +222,25 @@ class Node {
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
+
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored.
+  float q_ = 0.0f;
+  // Sum of policy priors which have had at least one playout.
+  float visited_policy_ = 0.0f;
+  // How many completed visits this node had.
+  uint32_t n_ = 0;
+
+  // Index of this node is parent's edge list.
+  uint16_t index_;
+  // (AKA virtual loss.) How many threads currently process this node (started
+  // but not finished). This value is added to n during selection which node
+  // to pick in MCTS, and also when selecting the best move.
+  uint16_t n_in_flight_ = 0;
+
+  // Whether or not this node end game (with a winning of either sides or draw).
+  bool is_terminal_ = false;
+
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
