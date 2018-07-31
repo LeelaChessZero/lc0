@@ -26,7 +26,7 @@
 #include <array>
 
 #ifdef USE_ISPC
-#include "winograd_ispc.h"
+#include "winograd_transform_ispc.h"
 #endif
 
 namespace lczero {
