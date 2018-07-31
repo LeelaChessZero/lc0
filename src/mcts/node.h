@@ -409,7 +409,7 @@ class Node_Iterator {
   Node* operator->() { return node_; }
   bool operator==(Node_Iterator& other) { return node_ == other.node_; }
   bool operator!=(Node_Iterator& other) { return node_ != other.node_; }
-  void operator++() { node_ = node_->sibling_.get(); }
+  Node_Iterator operator++() { return node_ = node_->sibling_.get(); }
 
  private:
   Node* node_;
