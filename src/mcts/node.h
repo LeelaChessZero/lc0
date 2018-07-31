@@ -152,7 +152,9 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ() const { return q_; }
+  float GetQ(float minmax_component) const {
+    return minmax_q_ * minmax_component + q_ * (1.0f - minmax_component);
+  }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -216,6 +218,7 @@ class Node {
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored.
   float q_ = 0.0f;
+  float minmax_q_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
   // (aka virtual loss). How many threads currently process this node (started
@@ -265,8 +268,8 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
+  float GetQ(float default_q, float minmax_component) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetQ(minmax_component) : default_q;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }

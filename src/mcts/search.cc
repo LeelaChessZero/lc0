@@ -57,6 +57,8 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
+const char* Search::kMinMaxSearchComponentStr =
+    "Weight of the min-max component on the Q value updates";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -89,6 +91,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
+  options->Add<FloatOption>(kMinMaxSearchComponentStr, 0.0f, 1.0f,
+                            "minmax-search-component") = 0.5f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -116,7 +120,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
+      kMinMaxSearchComponent(options.Get<float>(kMinMaxSearchComponentStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -150,7 +155,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   uci_info_.nps =
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
-  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0));
+  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0, kMinMaxSearchComponent));
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
@@ -185,7 +190,7 @@ int64_t Search::GetTimeSinceStart() const {
 
 void Search::SendMovesStats() const {
   const float parent_q =
-      -root_node_->GetQ() -
+      -root_node_->GetQ(kMinMaxSearchComponent) -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
   const float U_coeff =
       kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
@@ -194,11 +199,11 @@ void Search::SendMovesStats() const {
   for (const auto& edge : root_node_->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
-            [&parent_q, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
+            [&parent_q, &U_coeff, this](EdgeAndNode a, EdgeAndNode b) {
               return std::forward_as_tuple(a.GetN(),
-                                           a.GetQ(parent_q) + a.GetU(U_coeff)) <
+                                           a.GetQ(parent_q, kMinMaxSearchComponent) + a.GetU(U_coeff)) <
                      std::forward_as_tuple(b.GetN(),
-                                           b.GetQ(parent_q) + b.GetU(U_coeff));
+                                           b.GetQ(parent_q, kMinMaxSearchComponent) + b.GetU(U_coeff));
             });
 
   const bool is_black_to_move = played_history_.IsBlackToMove();
@@ -218,19 +223,19 @@ void Search::SendMovesStats() const {
     oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
         << "%) ";
 
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(parent_q)
+    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(parent_q, kMinMaxSearchComponent)
         << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(parent_q) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(parent_q, kMinMaxSearchComponent) + edge.GetU(U_coeff) << ") ";
 
     oss << "(V: ";
     optional<float> v;
     if (edge.IsTerminal()) {
-      v = edge.node()->GetQ();
+      v = edge.node()->GetQ(kMinMaxSearchComponent);
     } else {
       NNCacheLock nneval = GetCachedFirstPlyResult(edge);
       if (nneval) v = -nneval->q;
@@ -343,10 +348,10 @@ void Search::UpdateRemainingMoves() {
 float Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  float parent_q = -root_node_->GetQ();
+  float parent_q = -root_node_->GetQ(kMinMaxSearchComponent);
   if (!root_node_->HasChildren()) return parent_q;
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
-  return best_edge.GetQ(parent_q);
+  return best_edge.GetQ(parent_q, kMinMaxSearchComponent);
 }
 
 std::pair<Move, Move> Search::GetBestMove() const {
@@ -396,7 +401,7 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
                   edge.GetMove()) == limits_.searchmoves.end()) {
       continue;
     }
-    std::tuple<int, float, float> val(edge.GetN(), edge.GetQ(-10.0),
+    std::tuple<int, float, float> val(edge.GetN(), edge.GetQ(-10.0, kMinMaxSearchComponent),
                                       edge.GetP());
     if (val > best) {
       best = val;
@@ -609,8 +614,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     int possible_moves = 0;
     float parent_q =
         ((is_root_node && search_->kNoise) || !search_->kFpuReduction)
-            ? -node->GetQ()
-            : -node->GetQ() -
+            ? -node->GetQ(search_->kMinMaxSearchComponent)
+            : -node->GetQ(search_->kMinMaxSearchComponent) -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -633,7 +638,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         }
         ++possible_moves;
       }
-      float Q = child.GetQ(parent_q);
+      float Q = child.GetQ(parent_q, search_->kMinMaxSearchComponent);
       if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
         // If we find a checkmate, then the confidence is infinite, so ignore U.
         best_edge = child;
@@ -775,11 +780,11 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   float puct_mult =
       search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
-  const float parent_q = -node->GetQ();
+  const float parent_q = -node->GetQ(search_->kMinMaxSearchComponent);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(parent_q), edge);
+    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(parent_q, search_->kMinMaxSearchComponent), edge);
   }
 
   size_t first_unsorted_index = 0;
@@ -808,7 +813,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-parent_q);
+      const float q = edge.GetQ(-parent_q, search_->kMinMaxSearchComponent);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
@@ -845,7 +850,7 @@ void SearchWorker::FetchMinibatchResults() {
     if (!node_to_process.nn_queried) {
       // Terminal nodes don't involve the neural NetworkComputation, nor do
       // they require any further processing after value retrieval.
-      node_to_process.v = node->GetQ();
+      node_to_process.v = node->GetQ(search_->kMinMaxSearchComponent);
       continue;
     }
     // For NN results, we need to populate policy as well as value.

@@ -181,8 +181,17 @@ bool Node::TryStartScoreUpdate() {
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
 void Node::FinalizeScoreUpdate(float v) {
-  // Recompute Q.
+  // Recompute MCTS Q.
   q_ += (v - q_) / (n_ + 1);
+  // Recompute MinMax Q.
+  if (n_ == 0) {
+    minmax_q_ = v;
+  } else {
+    for (Node* child : ChildNodes()) {
+      minmax_q_ = std::min(q_, -child->minmax_q_);
+    }
+  }
+
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
