@@ -169,7 +169,7 @@ std::string Node::DebugString() const {
 
 void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
-  q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
+  minmax_q_ = q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
 }
 
 bool Node::TryStartScoreUpdate() {
@@ -184,7 +184,7 @@ void Node::FinalizeScoreUpdate(float v) {
   // Recompute MCTS Q.
   q_ += (v - q_) / (n_ + 1);
   // Recompute MinMax Q.
-  if (n_ == 0) {
+  if (n_ == 0 || is_terminal_) {
     minmax_q_ = v;
   } else {
     auto child_nodes = ChildNodes();
