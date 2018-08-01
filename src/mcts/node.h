@@ -222,6 +222,8 @@ class Node {
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
   uint16_t n_in_flight_ = 0;
+  // Sum of policy priors which have had at least one playout.
+  float visited_policy_ = 0.0f;
 
   // Maximum depth any subnodes of this node were looked at.
   uint16_t max_depth_ = 0;
