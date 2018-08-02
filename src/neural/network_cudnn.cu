@@ -997,6 +997,10 @@ class CudnnNetwork : public Network {
       }
     }
 
+    printf(
+      "This backend uses CUDA and cuDNN dynamic link libraries by Nvidia.\n");
+    printf("For more information see https://developer.nvidia.com/cudnn\n");
+
     const int kNumInputPlanes = kInputPlanes;
     const int kNumFilters = weights.input.biases.size();
 
