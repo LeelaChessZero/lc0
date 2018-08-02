@@ -711,7 +711,7 @@ bool ChessBoard::HasMatingMaterial() const {
 
   // All the pieces together.
   uint64_t x = our_pieces_.as_int() | their_pieces_.as_int();
-  // x &= x - 1 clears the rigthmost bit.
+  // x &= x - 1 clears the rigthmost set bit (if any).
   x &= x - 1;
   x &= x - 1;
   x &= x - 1;
