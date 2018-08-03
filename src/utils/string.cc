@@ -28,6 +28,8 @@
 #include "utils/string.h"
 
 #include <algorithm>
+#include <cctype>
+#include <functional>
 #include <sstream>
 #include <vector>
 
