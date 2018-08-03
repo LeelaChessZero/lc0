@@ -30,7 +30,6 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
-#include <list>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
@@ -109,17 +108,15 @@ class Search {
  private:
   // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
-  
-  // Returns a list of all children with, with or without temperature in descending order of visits.
-  std::list<EdgeAndNode> GetAscChildrenNoTemperature(Node* parent) const;
-  std::list<EdgeAndNode> GetAscChildrenWithTemperature(Node* parent,
-                                                           float temperature) const;
+
+  // Returns a vector of all children in descending order of visits for multipv uci function.
+  std::vector<EdgeAndNode> GetDescChildrenNoTemperature(const Node* parent) const;
 
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
-  EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
-  EdgeAndNode GetBestChildWithTemperature(Node* parent,
+  EdgeAndNode GetBestChildNoTemperature(const Node* parent) const;
+  EdgeAndNode GetBestChildWithTemperature(const Node* parent,
                                           float temperature) const;
 
   int64_t GetTimeSinceStart() const;
@@ -159,7 +156,6 @@ class Search {
   const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
-  std::list<EdgeAndNode> asc_move_edges_ GUARDED_BY(nodes_mutex_);
   EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);

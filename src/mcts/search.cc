@@ -143,7 +143,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  if (!best_move_edge_ || asc_move_edges_.size() == 0) return;
+  if (!best_move_edge_) return;
   last_outputted_best_move_edge_ = best_move_edge_.edge();
   uci_info_.depth = root_node_->GetFullDepth();
   uci_info_.seldepth = root_node_->GetMaxDepth();
@@ -155,21 +155,22 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
   uci_info_.comment.clear();
 
-  int pv_idx = 0;
-  for (auto edge_ptr = asc_move_edges_.rbegin(); 
-         edge_ptr != asc_move_edges_.rend(); ++edge_ptr) {
-    bool flip = played_history_.IsBlackToMove();
-    uci_info_.score = 290.680623072 * tan(1.548090806 * edge_ptr->GetQ(0));
+  // Handle UCI multipv. Loop until we are out of moves or kMultiPv
+  std::vector<EdgeAndNode> sorted_edges = GetDescChildrenNoTemperature(root_node_);
+  for (int pv_idx = 0;
+       pv_idx < std::min(kMultiPv, static_cast<int>(sorted_edges.size()));
+       ++pv_idx) {
+    EdgeAndNode edge = sorted_edges[pv_idx];
+    bool is_black = played_history_.IsBlackToMove();
+    uci_info_.score = EdgeAndNode::GetCpScore(edge);
     uci_info_.pv.clear();
-    for (auto iter = *edge_ptr; iter;
-         iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
-      uci_info_.pv.push_back(iter.GetMove(flip));
-      if (!iter.node()) break;  // Last edge was dangling, cannot continue  
+    for (auto iter = edge; iter;
+         iter = GetBestChildNoTemperature(iter.node()), is_black = !is_black) {
+      uci_info_.pv.push_back(iter.GetMove(is_black));
+      if (!iter.node()) break;  // Last edge was dangling, cannot continue
     }
-    pv_idx++;
-    uci_info_.pv_idx = pv_idx;
+    uci_info_.multipv_idx = pv_idx + 1;
     info_callback_(uci_info_);
-    if(pv_idx >= std::min(kMultiPv, static_cast<int>(asc_move_edges_.size()))) break;
   }
 }
 
@@ -303,7 +304,6 @@ void Search::MaybeTriggerStop() {
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
     best_move_edge_ = EdgeAndNode();
-    asc_move_edges_ = std::list<EdgeAndNode> { best_move_edge_ };
   }
 }
 
@@ -392,18 +392,9 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
-EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
-  return GetAscChildrenNoTemperature(parent).back();
-}
-
-EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
-                                                   float temperature) const {
-  return GetAscChildrenWithTemperature(parent, temperature).back();
-}
-
-// Returns a child with most visits.
-std::list<EdgeAndNode> Search::GetAscChildrenNoTemperature(Node* parent) const {
-  std::list<EdgeAndNode> asc_edge_list;
+// all children in descending order of visits
+std::vector<EdgeAndNode> Search::GetDescChildrenNoTemperature(const Node* parent) const {
+  std::vector<EdgeAndNode> sorted_edges;
   // Best child is selected using the following criteria:
   // * Largest number of playouts.
   // * If two nodes have equal number:
@@ -415,23 +406,49 @@ std::list<EdgeAndNode> Search::GetAscChildrenNoTemperature(Node* parent) const {
                   edge.GetMove()) == limits_.searchmoves.end()) {
       continue;
     }
-    asc_edge_list.push_back(edge);
+    sorted_edges.push_back(edge);
   }
-  asc_edge_list.sort([] (const EdgeAndNode& lhs, const EdgeAndNode& rhs) {
-    std::tuple<int, float, float> lhs_val(lhs.GetN(), lhs.GetQ(-10.0),
-                                          lhs.GetP());
-    std::tuple<int, float, float> rhs_val(rhs.GetN(), rhs.GetQ(-10.0),
-                                          rhs.GetP());
-    return lhs_val < rhs_val;
+  // sort descending
+  std::sort(sorted_edges.begin(), sorted_edges.end(),
+            [] (const EdgeAndNode& lhs, const EdgeAndNode& rhs) {
+      std::tuple<int, float, float> lhs_val(lhs.GetN(), lhs.GetQ(-10.0),
+                                      lhs.GetP());
+      std::tuple<int, float, float> rhs_val(rhs.GetN(), rhs.GetQ(-10.0),
+                                        rhs.GetP());
+      return lhs_val > rhs_val;
   });
-  return asc_edge_list;
+  return sorted_edges;
+}
+
+// Returns a child with most visits.
+EdgeAndNode Search::GetBestChildNoTemperature(const Node* parent) const {
+  EdgeAndNode best_edge;
+  // Best child is selected using the following criteria:
+  // * Largest number of playouts.
+  // * If two nodes have equal number:
+  //   * If that number is 0, the one with larger prior wins.
+  //   * If that number is larger than 0, the one with larger eval wins.
+  std::tuple<int, float, float> best(-1, 0.0, 0.0);
+  for (auto edge : parent->Edges()) {
+    if (parent == root_node_ && !limits_.searchmoves.empty() &&
+        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
+                  edge.GetMove()) == limits_.searchmoves.end()) {
+      continue;
+    }
+    std::tuple<int, float, float> val(edge.GetN(), edge.GetQ(-10.0),
+                                      edge.GetP());
+    if (val > best) {
+      best = val;
+      best_edge = edge;
+    }
+  }
+  return best_edge;
 }
 
 // Returns a child chosen according to weighted-by-temperature visit count.
-std::list<EdgeAndNode> Search::GetAscChildrenWithTemperature(Node* parent,
+EdgeAndNode Search::GetBestChildWithTemperature(const Node* parent,
                                                 float temperature) const {
   assert(parent->GetChildrenVisits() > 0);
-  std::list<EdgeAndNode> asc_edge_list;
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   const float n_parent = parent->GetN();
@@ -457,11 +474,10 @@ std::list<EdgeAndNode> Search::GetAscChildrenWithTemperature(Node* parent,
                   edge.GetMove()) == limits_.searchmoves.end()) {
       continue;
     }
-    asc_edge_list.push_back(edge);
-    if (idx-- == 0) return asc_edge_list;
+    if (idx-- == 0) return edge;
   }
   assert(false);
-  return asc_edge_list;
+  return {};
 }
 
 void Search::StartThreads(size_t how_many) {
@@ -938,10 +954,8 @@ void SearchWorker::DoBackupUpdate() {
       // Best move.
       if (n->GetParent() == search_->root_node_ &&
           search_->best_move_edge_.GetN() <= n->GetN()) {
-        search_->asc_move_edges_ =
-            search_->GetAscChildrenNoTemperature(search_->root_node_);
         search_->best_move_edge_ =
-            search_->asc_move_edges_.back();
+            search_->GetBestChildNoTemperature(search_->root_node_);
       }
     }
     ++search_->total_playouts_;

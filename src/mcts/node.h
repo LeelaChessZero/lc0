@@ -30,6 +30,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <cmath>
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
@@ -284,6 +285,11 @@ class EdgeAndNode {
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
     return numerator * GetP() / (1 + GetNStarted());
+  }
+
+  // Calculates score in centipawns
+  static float GetCpScore(const EdgeAndNode& edge) {
+    return 290.680623072 * tan(1.548090806 * edge.GetQ(0));
   }
 
   std::string DebugString() const;

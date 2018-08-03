@@ -72,7 +72,7 @@ struct ThinkingInfo {
   // Best line found. Moves are from perspective of white player.
   std::vector<Move> pv;
   // Multi pv index
-  int pv_idx = -1;
+  int multipv_idx = -1;
   // Freeform comment.
   std::string comment;
 
