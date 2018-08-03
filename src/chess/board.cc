@@ -33,10 +33,6 @@
 #include <sstream>
 #include "utils/exception.h"
 
-#ifdef _MSC_VER
-#include <nmmintrin.h>
-#endif
-
 namespace lczero {
 
 using std::string;
