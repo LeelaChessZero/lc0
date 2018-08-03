@@ -709,14 +709,14 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-#ifdef _MSC_VER
-  int our = _mm_popcnt_u64(our_pieces_.as_int());
-  int their = _mm_popcnt_u64(their_pieces_.as_int());
-#else
-  int our = __builtin_popcountll(our_pieces_.as_int());
-  int their = __builtin_popcountll(their_pieces_.as_int());
-#endif
-  if (our + their < 4) {
+  // All the pieces together.
+  uint64_t x = our_pieces_.as_int() | their_pieces_.as_int();
+  // x &= x - 1 clears the rigthmost set bit (if any).
+  x &= x - 1;
+  x &= x - 1;
+  x &= x - 1;
+  // If x zero we started with 3 or less bits set.
+  if (x == 0) {
     // K v K, K+B v K, K+N v K.
     return false;
   }
