@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -177,9 +178,15 @@ class Node {
   void UpdateMaxDepth(const uint16_t& depth) {
     if (depth > max_depth_) max_depth_ = depth;
   }
+  void UpdateAverageDepth(const uint16_t& depth) {
+    // Denominator should be total+1, but we exclude the root from the average.
+    average_depth_ += (depth - average_depth_) / n_;
+  }
+
   uint16_t GetMaxDepth() const { return max_depth_; }
-  void UpdateAverageDepth(const uint16_t& depth) { cumulative_depth_ += depth; }
-  uint16_t GetAverageDepth() const;
+  uint16_t GetAverageDepth() const {
+    return static_cast<uint16_t>(std::round(average_depth_));
+  }
 
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
@@ -227,7 +234,7 @@ class Node {
   // Maximum depth any subnodes of this node were looked at.
   uint16_t max_depth_ = 0;
   // Running total depth of all searched nodes.
-  uint32_t cumulative_depth_ = 0;
+  float average_depth_ = 0.0f;
 
   // Does this node end game (with a winning of either sides or draw).
   bool is_terminal_ = false;

@@ -29,7 +29,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -191,12 +190,6 @@ void Node::FinalizeScoreUpdate(float v) {
   ++n_;
   // Decrement virtual loss.
   --n_in_flight_;
-}
-
-uint16_t Node::GetAverageDepth() const {
-  float ret =   static_cast<float>(cumulative_depth_)
-              / static_cast<float>(n_ - 1); // Exclude "this" node.
-  return static_cast<uint16_t>(std::round(ret));
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
