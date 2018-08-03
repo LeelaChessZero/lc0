@@ -30,6 +30,7 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
+#include <list>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
@@ -103,10 +104,16 @@ class Search {
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
   static const char* kStickyCheckmateStr;
+  static const char* kMultiPvStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
+  
+  // Returns a list of all children with, with or without temperature in descending order of visits.
+  std::list<EdgeAndNode> GetAscChildrenNoTemperature(Node* parent) const;
+  std::list<EdgeAndNode> GetAscChildrenWithTemperature(Node* parent,
+                                                           float temperature) const;
 
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
@@ -152,6 +159,7 @@ class Search {
   const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
+  std::list<EdgeAndNode> asc_move_edges_ GUARDED_BY(nodes_mutex_);
   EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
@@ -176,6 +184,7 @@ class Search {
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kStickyCheckmate;
+  int kMultiPv;
 
   friend class SearchWorker;
 };

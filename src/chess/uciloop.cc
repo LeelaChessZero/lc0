@@ -249,6 +249,7 @@ void UciLoop::SendInfo(const ThinkingInfo& info) {
     res += " pv";
     for (const auto& move : info.pv) res += " " + move.as_string();
   }
+  if (info.pv_idx > 0) res += " multipv " + std::to_string(info.pv_idx);
   if (!info.comment.empty()) res += " string " + info.comment;
   SendResponse(res);
 }
