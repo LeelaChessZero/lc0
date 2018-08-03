@@ -27,6 +27,7 @@
 
 #include "selfplay/loop.h"
 #include "selfplay/tournament.h"
+#include "utils/configfile.h"
 
 namespace lczero {
 
@@ -45,7 +46,7 @@ void SelfPlayLoop::RunLoop() {
   options_.Add<BoolOption>(kInteractive, "interactive") = false;
   SelfPlayTournament::PopulateOptions(&options_);
 
-  if (!options_.ProcessAllFlags()) return;
+  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
   if (options_.GetOptionsDict().Get<bool>(kInteractive)) {
     UciLoop::RunLoop();
   } else {

@@ -25,6 +25,10 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <iostream>
+#include <string>
+
+#include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/optionsparser.h"
 
@@ -36,14 +40,34 @@ namespace lczero {
 
 std::vector<std::string> ConfigFile::arguments_;
 
-void ConfigFile::Init() {
-  arguments_.clear();
-  //for (int i = 1; i < argc; ++i) arguments_.push_back(argv[i]);
-}
-
 void ConfigFile::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(kConfigFileStr, "config", 'c') = kDefaultConfigFile;
-  auto parser = *options;
+}
+
+bool ConfigFile::Init(OptionsParser* options) {
+  arguments_.clear();
+  //for (int i = 1; i < argc; ++i) arguments_.push_back(argv[i]);
+
+  // Process flags to get the config file parameter.
+  if (!options->ProcessAllFlags()) return false;
+  
+  // Get the config file parameter passed on the command line or the default.
+  OptionsDict dict = options->GetOptionsDict();
+  std::string filename = dict.Get<std::string>(kConfigFileStr);
+  filename = CommandLine::BinaryDirectory() + "/" + filename;
+
+  std::cout << "debug: config=" << filename << std::endl;
+
+  // Read the file into the args string.
+  std::string args;
+  if (!ParseFile(filename, args)) return false;
+
+  return true;
+}
+
+bool ConfigFile::ParseFile(std::string filename, std::string& args) {
+
+  return true;
 }
 
 }  // namespace lczero

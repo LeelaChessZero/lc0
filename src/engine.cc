@@ -254,7 +254,7 @@ EngineLoop::EngineLoop()
 }
 
 void EngineLoop::RunLoop() {
-  if (!options_.ProcessAllFlags()) return;
+  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
   UciLoop::RunLoop();
 }
 

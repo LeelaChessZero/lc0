@@ -38,16 +38,19 @@ class ConfigFile {
  public:
   ConfigFile() = delete;
 
-  // This function must be called before any other.
-  static void Init();
+  // This function must be called after PopulateOptions.
+  static bool Init(OptionsParser* options);
 
   // Config file arguments.
   static const std::vector<std::string>& Arguments() { return arguments_; }
 
-  // Add the config file parameter to the options dictionary
+  // Add the config file parameter to the options dictionary.
   static void PopulateOptions(OptionsParser* options);
 
  private:
+  // Reads the config file into a 1 line string.
+  static bool ParseFile(std::string filename, std::string& args);
+
   static std::vector<std::string> arguments_;
 };
 
