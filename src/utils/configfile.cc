@@ -25,12 +25,13 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <fstream>
 #include <iostream>
-#include <string>
 
 #include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/optionsparser.h"
+#include "utils/string.h"
 
 namespace lczero {
   namespace {
@@ -46,7 +47,6 @@ void ConfigFile::PopulateOptions(OptionsParser* options) {
 
 bool ConfigFile::Init(OptionsParser* options) {
   arguments_.clear();
-  //for (int i = 1; i < argc; ++i) arguments_.push_back(argv[i]);
 
   // Process flags to get the config file parameter.
   if (!options->ProcessAllFlags()) return false;
@@ -54,18 +54,40 @@ bool ConfigFile::Init(OptionsParser* options) {
   // Get the config file parameter passed on the command line or the default.
   OptionsDict dict = options->GetOptionsDict();
   std::string filename = dict.Get<std::string>(kConfigFileStr);
+  bool using_default = (filename == kDefaultConfigFile);
   filename = CommandLine::BinaryDirectory() + "/" + filename;
-
-  std::cout << "debug: config=" << filename << std::endl;
 
   // Read the file into the args string.
   std::string args;
-  if (!ParseFile(filename, args)) return false;
+  if (!ParseFile(filename, args, using_default)) return false;
+
+  arguments_ = StrSplitAtWhitespace(args);
 
   return true;
 }
 
-bool ConfigFile::ParseFile(std::string filename, std::string& args) {
+bool ConfigFile::ParseFile(std::string filename, std::string& args, bool def) {
+  std::ifstream input(filename);
+
+  if (!input.is_open()) {
+    //it is okay if we cannot open the default file since it is normal
+    //for it to not exist.
+    if (def) return true;
+
+    std::cerr << "Could not open configuration file: " << filename << std::endl;
+    return false;
+  }
+
+  std::cerr << "Found configuration file: " << filename << std::endl;
+
+  for(std::string line; getline( input, line );) {
+    // Remove all leading and trailing whitespace.
+    line = Trim(line);
+    // Ignore comments.
+    if (line.substr(0, 1) == "#") continue;
+
+    args += line + " ";
+  }
 
   return true;
 }

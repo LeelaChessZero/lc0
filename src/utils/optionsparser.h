@@ -101,7 +101,7 @@ class OptionsParser {
   // Call option setter all options.
   void SendAllOptions();
   // Processes all flags from the command line and an optional
-  // configuration file. Returns false if should exit.
+  // configuration file. Returns false if there is an invalid flag.
   bool ProcessAllFlags();
   // Processes either the command line or configuration file flags.
   bool ProcessFlags(const std::vector<std::string>& args);

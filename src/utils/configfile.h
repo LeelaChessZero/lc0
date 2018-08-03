@@ -49,7 +49,7 @@ class ConfigFile {
 
  private:
   // Reads the config file into a 1 line string.
-  static bool ParseFile(std::string filename, std::string& args);
+  static bool ParseFile(std::string filename, std::string& args, bool def);
 
   static std::vector<std::string> arguments_;
 };
