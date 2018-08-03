@@ -25,6 +25,10 @@
 
 #include <array>
 
+#ifdef USE_ISPC
+#include "winograd_transform_ispc.h"
+#endif
+
 namespace lczero {
 
 std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
@@ -104,9 +108,13 @@ void WinogradConvolution3::Forward(const size_t batch_size,
   TransformOut(batch_size, output, output_channels);
 }
 
+
+
 void WinogradConvolution3::TransformIn(const size_t batch_size,
                                        const float* input,
                                        const size_t channels) {
+#ifndef USE_ISPC
+
   static const size_t kCacheSize = 128;
   float x[kWinogradAlpha][kWinogradAlpha];
   float T1[kWinogradAlpha][kWinogradAlpha];
@@ -141,6 +149,7 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
                 }
               }
             }
+          
 
             // Calculates transpose(B).x.B
             // B = [[ 1.0,  0.0,  0.0,  0.0],
@@ -196,7 +205,16 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
       }
     }
   }
+
+#else // USE_ISPC
+
+  ispc::winograd_TransformIn_ispc( batch_size, input,channels,&V_[0]);
+
+#endif // USE_ISPC
+
 }
+
+
 
 void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                                  const size_t input_channels,
@@ -275,8 +293,11 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
 #endif
 }
 
+
 void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
                                         const size_t channels) {
+#ifndef USE_ISPC
+
   float m[kWinogradTile];
 
   for (size_t batch_index = 0; batch_index < batch_size; batch_index++) {
@@ -331,6 +352,12 @@ void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
       }
     }
   }
+
+#else // USE_ISPC
+
+  ispc::winograd_TransformOut_ispc( batch_size, &M_[0],channels,output);
+
+#endif // USE_ISPC
 }
 
 }  // namespace lczero
