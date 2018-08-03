@@ -31,6 +31,7 @@
 #include <iostream>
 #include <sstream>
 #include "utils/commandline.h"
+#include "utils/configfile.h"
 
 namespace lczero {
 
@@ -89,10 +90,14 @@ const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
 }
 
 bool OptionsParser::ProcessAllFlags() {
+  if (!ProcessFlags(ConfigFile::Arguments()) 
+    || !ProcessFlags(CommandLine::Arguments())) return false;
+  return true;
+}  
+
+bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
   std::string context;
-  for (auto iter = CommandLine::Arguments().begin(),
-            end = CommandLine::Arguments().end();
-       iter != end; ++iter) {
+  for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
     if (param == "-h" || param == "--help") {
       ShowHelp();
