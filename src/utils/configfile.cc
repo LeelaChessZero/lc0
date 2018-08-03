@@ -70,8 +70,8 @@ bool ConfigFile::ParseFile(std::string filename, std::string& args, bool def) {
   std::ifstream input(filename);
 
   if (!input.is_open()) {
-    //it is okay if we cannot open the default file since it is normal
-    //for it to not exist.
+    // It is okay if we cannot open the default file since it is normal
+    // for it to not exist.
     if (def) return true;
 
     std::cerr << "Could not open configuration file: " << filename << std::endl;
