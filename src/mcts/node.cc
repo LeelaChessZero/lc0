@@ -257,7 +257,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   float total_n = static_cast<float>(
       GetN() - 1);  // First visit was expansion of "this" itself.
   // Prevent garbage/invalid training data from being uploaded to server.
-  if (total_n <= 1) throw Exception("Search generated invalid data!");
+  if (total_n <= 0) throw Exception("Search generated invalid data!");
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
