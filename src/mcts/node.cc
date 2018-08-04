@@ -189,8 +189,8 @@ void Node::FinalizeScoreUpdate(float v) {
   } else {
     auto child_nodes = ChildNodes();
     minmax_q_ = -(std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
-      return lhs->minmax_q_ < rhs->minmax_q_;
-    })->minmax_q_);
+      return lhs->q_ < rhs->q_;
+    })->q_);
   }
 
   // If first visit, update parent's sum of policies visited at least once.
