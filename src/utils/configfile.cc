@@ -86,7 +86,7 @@ bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
     line = Trim(line);
     // Ignore comments.
     if (line.substr(0, 1) == "#") continue;
-    // Add the arguments to the arguments list.
+    // Add the line arguments to the arguments list.
     std::istringstream iss(line);
     std::string tmp;
     while (iss >> tmp) arguments_.emplace_back(std::move(tmp));
