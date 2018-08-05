@@ -153,10 +153,8 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ(int minmax_denominator) const {
-    constexpr float e = 2.71828182845904523536f;
-    float minmax_component = log(GetNStarted()/minmax_denominator + 1) / e;
-    return minmax_q_ * minmax_component + q_ * (1.0f - minmax_component);
+  float GetQ() const {
+    return minmax_q_;
   }
 
   // Returns whether the node is known to be draw/lose/win.
@@ -180,7 +178,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v);
+  void FinalizeScoreUpdate(float v, int minmax_denominator);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -271,8 +269,8 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float minmax_component) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetQ(minmax_component) : default_q;
+  float GetQ(float default_q) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }

@@ -180,7 +180,7 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
-void Node::FinalizeScoreUpdate(float v) {
+void Node::FinalizeScoreUpdate(float v, int minmax_denominator) {
   // Recompute MCTS Q.
   q_ += (v - q_) / (n_ + 1);
   // Recompute MinMax Q.
@@ -188,9 +188,12 @@ void Node::FinalizeScoreUpdate(float v) {
     minmax_q_ = v;
   } else {
     auto child_nodes = ChildNodes();
-    minmax_q_ = -(std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
+    float pure_minmax = -(std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
       return lhs->minmax_q_ < rhs->minmax_q_;
     })->minmax_q_);
+    constexpr float e = 2.71828182845904523536f;
+    float minmax_component = log(n_/minmax_denominator + 1) / e;
+    minmax_q_ = pure_minmax * minmax_component + q_ * (1.0f - minmax_component);
   }
 
   // If first visit, update parent's sum of policies visited at least once.
