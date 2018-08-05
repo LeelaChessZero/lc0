@@ -41,7 +41,7 @@ class ConfigFile {
   // This function must be called after PopulateOptions.
   static bool Init(OptionsParser* options);
 
-  // Config file arguments.
+  // Returns the command line arguments from the config file.
   static const std::vector<std::string>& Arguments() { return arguments_; }
 
   // Add the config file parameter to the options dictionary.
@@ -49,7 +49,7 @@ class ConfigFile {
 
  private:
   // Reads the config file into a 1 line string.
-  static bool ParseFile(std::string filename, std::string& args, bool def);
+  static bool ParseFile(const std::string filename, OptionsParser* options);
 
   static std::vector<std::string> arguments_;
 };

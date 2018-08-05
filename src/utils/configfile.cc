@@ -27,6 +27,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "utils/commandline.h"
 #include "utils/configfile.h"
@@ -36,7 +37,7 @@
 namespace lczero {
   namespace {
     const char* kConfigFileStr = "Configuration file path";
-    const char* kDefaultConfigFile = ".config";
+    const char* kDefaultConfigFile = "lc0.config";
   }
 
 std::vector<std::string> ConfigFile::arguments_;
@@ -54,25 +55,25 @@ bool ConfigFile::Init(OptionsParser* options) {
   // Get the config file parameter passed on the command line or the default.
   OptionsDict dict = options->GetOptionsDict();
   std::string filename = dict.Get<std::string>(kConfigFileStr);
-  bool using_default = (filename == kDefaultConfigFile);
   filename = CommandLine::BinaryDirectory() + "/" + filename;
 
   // Read the file into the args string.
-  std::string args;
-  if (!ParseFile(filename, args, using_default)) return false;
-
-  arguments_ = StrSplitAtWhitespace(args);
+  if (!ParseFile(filename, options)) return false;
 
   return true;
 }
 
-bool ConfigFile::ParseFile(std::string filename, std::string& args, bool def) {
+bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
   std::ifstream input(filename);
+
+  // Check to see if we are using the default config file or not.
+  OptionsDict dict = options->GetOptionsDict();
+  bool using_default_config = dict.IsDefault<std::string>(kConfigFileStr);
 
   if (!input.is_open()) {
     // It is okay if we cannot open the default file since it is normal
     // for it to not exist.
-    if (def) return true;
+    if (using_default_config) return true;
 
     std::cerr << "Could not open configuration file: " << filename << std::endl;
     return false;
@@ -85,8 +86,10 @@ bool ConfigFile::ParseFile(std::string filename, std::string& args, bool def) {
     line = Trim(line);
     // Ignore comments.
     if (line.substr(0, 1) == "#") continue;
-
-    args += line + " ";
+    // Add the arguments to the arguments list.
+    std::istringstream iss(line);
+    std::string tmp;
+    while (iss >> tmp) arguments_.emplace_back(std::move(tmp));
   }
 
   return true;

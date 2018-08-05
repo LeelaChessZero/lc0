@@ -97,7 +97,6 @@ void EngineController::PopulateOptions(OptionsParser* options) {
                             "time-curve-right-width") = 74.0f;
 
   Search::PopulateUciParams(options);
-
   ConfigFile::PopulateOptions(options);
 
   auto defaults = options->GetMutableDefaultsOptions();

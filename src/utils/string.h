@@ -46,13 +46,13 @@ std::vector<std::string> StrSplit(const std::string& str,
 // Parses comma-separated list of integers.
 std::vector<int> ParseIntList(const std::string& str);
 
-// Trim string from the start.
-std::string& LeftTrim(std::string& s);
+// Trims a string of whitespace from the start.
+std::string LeftTrim(const std::string& str);
 
-// Trim string from the end.
-std::string& RightTrim(std::string& s);
+// Trims a string of whitespace from the end.
+std::string RightTrim(const std::string& str);
 
-// Trim the string from both ends.
-std::string& Trim(std::string& s);
+// Trims a string of whitespace from both ends.
+std::string Trim(const std::string& str);
 
 }  // namespace lczero

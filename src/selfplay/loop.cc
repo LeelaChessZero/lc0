@@ -46,7 +46,7 @@ void SelfPlayLoop::RunLoop() {
   options_.Add<BoolOption>(kInteractive, "interactive") = false;
   SelfPlayTournament::PopulateOptions(&options_);
 
-  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
+  if (!options_.ProcessAllFlags()) return;
   if (options_.GetOptionsDict().Get<bool>(kInteractive)) {
     UciLoop::RunLoop();
   } else {

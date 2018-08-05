@@ -90,9 +90,8 @@ const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
 }
 
 bool OptionsParser::ProcessAllFlags() {
-  if (!ProcessFlags(ConfigFile::Arguments()) 
-    || !ProcessFlags(CommandLine::Arguments())) return false;
-  return true;
+  return ProcessFlags(ConfigFile::Arguments()) &&
+         ProcessFlags(CommandLine::Arguments());
 }  
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
