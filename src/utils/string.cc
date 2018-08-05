@@ -29,7 +29,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <functional>
 #include <sstream>
 #include <vector>
 
@@ -75,16 +74,16 @@ std::vector<int> ParseIntList(const std::string& str) {
 
 std::string LeftTrim(const std::string& str) {
   std::string s = str;
-  auto it = std::find_if(s.begin(), s.end(), [](char ch)
-    {return !std::isspace<char>(ch, std::locale::classic());});
+  auto it = std::find_if(s.begin(), s.end(), [](int ch)
+    {return !std::isspace(ch);});
   s.erase(s.begin(), it);
   return s;
 }
 
 std::string RightTrim(const std::string& str) {
   std::string s = str;
-  auto it = std::find_if(s.rbegin(), s.rend(), [](char ch)
-    {return !std::isspace<char>(ch, std::locale::classic());});
+  auto it = std::find_if(s.rbegin(), s.rend(), [](int ch)
+    {return !std::isspace(ch);});
   s.erase(it.base(), s.end());
   return s;
 }
