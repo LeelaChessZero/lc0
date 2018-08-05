@@ -175,10 +175,10 @@ class Node {
   void FinalizeScoreUpdate(float v);
 
   // Depth tracking and retrieval functions.
-  void UpdateMaxDepth(const uint16_t& depth) {
+  void UpdateMaxDepth(const uint16_t depth) {
     if (depth > max_depth_) max_depth_ = depth;
   }
-  void UpdateAverageDepth(const uint16_t& depth) {
+  void UpdateAverageDepth(const uint16_t depth) {
     // Denominator should be total+1, but we exclude the root from the average.
     average_depth_ += (depth - average_depth_) / n_;
   }
