@@ -35,6 +35,7 @@
 #include "chess/position.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
+#include <math.h>
 
 namespace lczero {
 
@@ -152,7 +153,9 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ(float minmax_component) const {
+  float GetQ(int minmax_denominator) const {
+    constexpr float e = 2.71828182845904523536f;
+    float minmax_component = log(GetNStarted()/minmax_denominator + 1) / e;
     return minmax_q_ * minmax_component + q_ * (1.0f - minmax_component);
   }
 
