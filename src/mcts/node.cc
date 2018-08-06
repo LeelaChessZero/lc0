@@ -188,10 +188,11 @@ void Node::FinalizeScoreUpdate(float v, float minmax_denominator) {
     minmax_q_ = v;
   } else {
     auto child_nodes = ChildNodes();
-    float pure_minmax = -(std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
+    auto best_child = std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
       return lhs->minmax_q_ < rhs->minmax_q_;
-    })->minmax_q_);
-    float minmax_component = tanh(n_/minmax_denominator);
+    };
+    float pure_minmax = -(best_child->minmax_q_);
+    float minmax_component = tanh( ((float)best_child->n_) / minmax_denominator ) / 2.0f;
     minmax_q_ = pure_minmax * minmax_component + q_ * (1.0f - minmax_component);
   }
 
