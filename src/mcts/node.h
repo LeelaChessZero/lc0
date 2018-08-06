@@ -178,7 +178,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, int minmax_denominator);
+  void FinalizeScoreUpdate(float v, float minmax_denominator);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);

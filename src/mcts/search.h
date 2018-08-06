@@ -177,7 +177,7 @@ class Search {
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kStickyCheckmate;
-  const int kMinMaxSearchComponent;
+  const float kMinMaxSearchComponent;
 
   friend class SearchWorker;
 };

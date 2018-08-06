@@ -91,8 +91,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
-  options->Add<IntOption>(kMinMaxSearchComponentStr, 0, 5000,
-                            "minmax-search-component") = 100;
+  options->Add<FloatOption>(kMinMaxSearchComponentStr, 0.0f, 50000.0f,
+                            "minmax-search-component") = 5000.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -121,7 +121,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
       kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
-      kMinMaxSearchComponent(options.Get<int>(kMinMaxSearchComponentStr)) {}
+      kMinMaxSearchComponent(options.Get<float>(kMinMaxSearchComponentStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
