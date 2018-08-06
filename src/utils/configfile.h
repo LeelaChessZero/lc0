@@ -48,7 +48,7 @@ class ConfigFile {
   static void PopulateOptions(OptionsParser* options);
 
  private:
-  // Reads the config file into a 1 line string.
+  // Parses the config file into the arguments_ vector.
   static bool ParseFile(const std::string filename, OptionsParser* options);
 
   static std::vector<std::string> arguments_;

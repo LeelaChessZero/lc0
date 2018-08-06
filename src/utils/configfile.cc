@@ -52,12 +52,12 @@ bool ConfigFile::Init(OptionsParser* options) {
   // Process flags to get the config file parameter.
   if (!options->ProcessAllFlags()) return false;
   
-  // Get the config file parameter passed on the command line or the default.
+  // Calculate the relative path of the config file.
   OptionsDict dict = options->GetOptionsDict();
   std::string filename = dict.Get<std::string>(kConfigFileStr);
   filename = CommandLine::BinaryDirectory() + "/" + filename;
 
-  // Read the file into the args string.
+  // Parses the file into the arguments_ vector.
   if (!ParseFile(filename, options)) return false;
 
   return true;
