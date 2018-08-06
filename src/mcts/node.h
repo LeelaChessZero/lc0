@@ -27,7 +27,6 @@
 
 #pragma once
 
-#include <cmath>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -185,7 +184,7 @@ class Node {
 
   uint16_t GetMaxDepth() const { return max_depth_; }
   uint16_t GetAverageDepth() const {
-    return static_cast<uint16_t>(std::round(average_depth_));
+    return static_cast<uint16_t>(average_depth_ + 0.5f);
   }
 
   V3TrainingData GetV3TrainingData(GameResult result,
