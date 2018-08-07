@@ -192,7 +192,7 @@ void Node::FinalizeScoreUpdate(float v, float minmax_denominator) {
       return lhs->minmax_q_ < rhs->minmax_q_;
     });
     float pure_minmax = -(best_child->minmax_q_);
-    float minmax_component = tanh( ((float)best_child->n_) / minmax_denominator ) / 2.0f;
+    float minmax_component = ((float)best_child->n_)/((float)n_);
     minmax_q_ = pure_minmax * minmax_component + q_ * (1.0f - minmax_component);
   }
 
