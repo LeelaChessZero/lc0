@@ -27,10 +27,10 @@
 
 #pragma once
 
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <cmath>
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
@@ -161,6 +161,11 @@ class Node {
   uint16_t GetMaxDepth() const { return max_depth_; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
+  // Calculates score in centipawns.
+  float GetCpScore() const {
+    return 290.680623072 * tan(1.548090806 * q_);
+  }
+
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
 
@@ -285,11 +290,6 @@ class EdgeAndNode {
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
     return numerator * GetP() / (1 + GetNStarted());
-  }
-
-  // Calculates score in centipawns
-  static float GetCpScore(const EdgeAndNode& edge) {
-    return 290.680623072 * tan(1.548090806 * edge.GetQ(0));
   }
 
   std::string DebugString() const;

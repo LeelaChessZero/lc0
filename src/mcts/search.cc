@@ -155,19 +155,19 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
   uci_info_.comment.clear();
 
-  // Handle UCI multipv. Loop until we are out of moves or kMultiPv
+  // Handle UCI multipv. Loop until we are out of moves or kMultiPv.
   std::vector<EdgeAndNode> sorted_edges = GetDescChildrenNoTemperature(root_node_);
   for (int pv_idx = 0;
        pv_idx < std::min(kMultiPv, static_cast<int>(sorted_edges.size()));
        ++pv_idx) {
     EdgeAndNode edge = sorted_edges[pv_idx];
-    bool is_black = played_history_.IsBlackToMove();
-    uci_info_.score = EdgeAndNode::GetCpScore(edge);
+    bool is_mirrored = played_history_.IsBlackToMove();
+    if (edge.HasNode()) uci_info_.score = edge.node()->GetCpScore();
     uci_info_.pv.clear();
     for (auto iter = edge; iter;
-         iter = GetBestChildNoTemperature(iter.node()), is_black = !is_black) {
-      uci_info_.pv.push_back(iter.GetMove(is_black));
-      if (!iter.node()) break;  // Last edge was dangling, cannot continue
+         iter = GetBestChildNoTemperature(iter.node()), is_mirrored = !is_mirrored) {
+      uci_info_.pv.push_back(iter.GetMove(is_mirrored));
+      if (!iter.node()) break;  // Last edge was dangling, cannot continue.
     }
     uci_info_.multipv_idx = pv_idx + 1;
     info_callback_(uci_info_);
@@ -392,7 +392,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
-// all children in descending order of visits
+// Gets all children in descending order of visits.
 std::vector<EdgeAndNode> Search::GetDescChildrenNoTemperature(const Node* parent) const {
   std::vector<EdgeAndNode> sorted_edges;
   // Best child is selected using the following criteria:
