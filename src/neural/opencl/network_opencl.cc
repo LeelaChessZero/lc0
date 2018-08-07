@@ -162,8 +162,8 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-    params_.tune_batch_size = options.GetOrDefault<int>("tune_batch_size", 2);
-
+        
+    // By default batch size is 1, as many old cards may not support more.
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 1));
     if (max_batch_size_ > kHardMaxBatchSize) {
@@ -171,6 +171,14 @@ class OpenCLNetwork : public Network {
     }
     std::cerr << "OpenCL, maximum batch size set to " << max_batch_size_ << "."
               << std::endl;
+
+    // By default, the max batch size used for tuning is the max batch size
+    // used for computations.
+    // It may not be the optimal value, then use tune_batch_size for fine
+    // tune.
+    params_.tune_batch_size =
+        options.GetOrDefault<int>("tune_batch_size", max_batch_size_);
+        
 
     const auto inputChannels = static_cast<size_t>(kInputPlanes);
     const auto channels = weights.input.biases.size();
