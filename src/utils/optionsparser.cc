@@ -221,27 +221,21 @@ StringOption::StringOption(const std::string& name,
                            std::function<void(const std::string&)> setter)
     : Option(name, long_flag, short_flag), setter_(setter) {}
 
-void StringOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, value);
+bool StringOption::SetValue(const std::string& value, OptionsDict* dict) {
+  return SetVal(dict, value);
 }
 
 bool StringOption::ProcessLongFlag(const std::string& flag,
                                    const std::string& value,
                                    OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
-    SetVal(dict, value);
-    return true;
-  }
+  if (flag == GetLongFlag()) return SetVal(dict, value);
   return false;
 }
 
 bool StringOption::ProcessShortFlagWithValue(char flag,
                                              const std::string& value,
                                              OptionsDict* dict) {
-  if (flag == GetShortFlag()) {
-    SetVal(dict, value);
-    return true;
-  }
+  if (flag == GetShortFlag()) return SetVal(dict, value);
   return false;
 }
 
@@ -262,8 +256,9 @@ std::string StringOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
 
-void StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+bool StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetName(), val);
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////
@@ -278,25 +273,19 @@ IntOption::IntOption(const std::string& name, int min, int max,
       max_(max),
       setter_(setter) {}
 
-void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stoi(value));
+bool IntOption::SetValue(const std::string& value, OptionsDict* dict) {
+  return SetVal(dict, std::stoi(value));
 }
 
 bool IntOption::ProcessLongFlag(const std::string& flag,
                                 const std::string& value, OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
-    SetVal(dict, std::stoi(value));
-    return true;
-  }
+  if (flag == GetLongFlag()) return SetVal(dict, std::stoi(value));
   return false;
 }
 
 bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                           OptionsDict* dict) {
-  if (flag == GetShortFlag()) {
-    SetVal(dict, std::stoi(value));
-    return true;
-  }
+  if (flag == GetShortFlag()) return SetVal(dict, std::stoi(value));
   return false;
 }
 
@@ -324,8 +313,14 @@ IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
 
-void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+bool IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  if (val < min_ || val > max_) {
+    std::cerr << "Option '--" << GetLongFlag() << "' must be between "
+              << min_ << " and " << max_ << "." << std::endl;
+    return false;
+  }
   dict->Set<ValueType>(GetName(), val);
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////
@@ -340,25 +335,19 @@ FloatOption::FloatOption(const std::string& name, float min, float max,
       max_(max),
       setter_(setter) {}
 
-void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stof(value));
+bool FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
+  return SetVal(dict, std::stof(value));
 }
 
 bool FloatOption::ProcessLongFlag(const std::string& flag,
                                   const std::string& value, OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
-    SetVal(dict, std::stof(value));
-    return true;
-  }
+  if (flag == GetLongFlag()) return SetVal(dict, std::stof(value));
   return false;
 }
 
 bool FloatOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                             OptionsDict* dict) {
-  if (flag == GetShortFlag()) {
-    SetVal(dict, std::stof(value));
-    return true;
-  }
+  if (flag == GetShortFlag()) return SetVal(dict, std::stof(value));
   return false;
 }
 
@@ -387,8 +376,14 @@ FloatOption::ValueType FloatOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
 
-void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+bool FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  if (val < min_ || val > max_) {
+    std::cerr << "Option '--" << GetLongFlag() << "' must be between "
+              << min_ << " and " << max_ << "." << std::endl;
+    return false;
+  }
   dict->Set<ValueType>(GetName(), val);
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////
@@ -399,28 +394,21 @@ BoolOption::BoolOption(const std::string& name, const std::string& long_flag,
                        char short_flag, std::function<void(bool)> setter)
     : Option(name, long_flag, short_flag), setter_(setter) {}
 
-void BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, value == "true");
+bool BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
+  return SetVal(dict, value == "true");
 }
 
 bool BoolOption::ProcessLongFlag(const std::string& flag,
                                  const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    SetVal(dict, value.empty() || (value != "off" && value != "false"));
-    return true;
+    return SetVal(dict, value.empty() || (value != "off" && value != "false"));
   }
-  if (flag == "no-" + GetLongFlag()) {
-    SetVal(dict, false);
-    return true;
-  }
+  if (flag == "no-" + GetLongFlag()) return SetVal(dict, false);
   return false;
 }
 
 bool BoolOption::ProcessShortFlag(char flag, OptionsDict* dict) {
-  if (flag == GetShortFlag()) {
-    SetVal(dict, !GetVal(*dict));
-    return true;
-  }
+  if (flag == GetShortFlag()) return SetVal(dict, !GetVal(*dict));
   return false;
 }
 
@@ -445,8 +433,9 @@ BoolOption::ValueType BoolOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
 
-void BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+bool BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetName(), val);
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////
@@ -459,27 +448,21 @@ ChoiceOption::ChoiceOption(const std::string& name,
                            std::function<void(const std::string&)> setter)
     : Option(name, long_flag, short_flag), setter_(setter), choices_(choices) {}
 
-void ChoiceOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, value);
+bool ChoiceOption::SetValue(const std::string& value, OptionsDict* dict) {
+  return SetVal(dict, value);
 }
 
 bool ChoiceOption::ProcessLongFlag(const std::string& flag,
                                    const std::string& value,
                                    OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
-    SetVal(dict, value);
-    return true;
-  }
+  if (flag == GetLongFlag()) return SetVal(dict, value);
   return false;
 }
 
 bool ChoiceOption::ProcessShortFlagWithValue(char flag,
                                              const std::string& value,
                                              OptionsDict* dict) {
-  if (flag == GetShortFlag()) {
-    SetVal(dict, value);
-    return true;
-  }
+  if (flag == GetShortFlag()) return SetVal(dict, value);
   return false;
 }
 
@@ -509,8 +492,23 @@ std::string ChoiceOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
 
-void ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+bool ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  bool valid = false;
+  std::string choice_string;
+  for (const auto& choice : choices_) {
+    choice_string += " " + choice;
+    if (val == choice) {
+      valid = true;
+      break;
+    }
+  }
+  if (!valid) {
+    std::cerr << "Option '--" << GetLongFlag() << "' must be one of the "
+              << "following values:" << choice_string << "." << std::endl;
+    return false;
+  }
   dict->Set<ValueType>(GetName(), val);
+  return true;
 }
 
 }  // namespace lczero
