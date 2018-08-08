@@ -152,6 +152,9 @@ struct TBTable {
   ~TBTable();
 };
 
+template<> TBTable<DTZ>::~TBTable();
+template<> TBTable<WDL>::~TBTable();
+
 // TBTables creates and keeps ownership of the TBTable objects, one for
 // each TB file found. It supports a fast, hash based, table lookup. Populated
 // at init time, accessed at probe time.  Its thread safety comes from the

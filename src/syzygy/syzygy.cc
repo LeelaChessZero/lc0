@@ -227,9 +227,9 @@ int count(const Position& pos, bool blackPieces, PieceType type) {
       BitBoard kings = board.our_king() + board.their_king();
       return (kings * pieces).count();
     }
+  default: // Invalid piece type.
+    return 0;
   }
-  // Invalid piece type.
-  return 0;
 }
 
 int count_all(const Position& pos) {
@@ -659,7 +659,7 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
     // their color is the reference one. So we just pick the first one.
     Piece pc = Piece(entry->get(0, 0)->pieces[0] ^ flipColor);
 
-    assert(type_of(pc) == PAWN);
+    assert(pc == W_PAWN || pc == B_PAWN);
 
     if (pc >= B_PAWN) {
       leadPawns = b = board.pawns() * board.theirs();
@@ -1467,7 +1467,7 @@ bool SyzygyTablebase::root_probe(const Position& pos, std::vector<Move>* safe_mo
   // Check whether a position was repeated since the last zeroing move.
   bool rep = pos.GetRepetitions() > 0;
 
-  int dtz, bound = true ? 900 : 1;
+  int dtz;
   std::vector<int> ranks;
   ranks.reserve(rootMoves.size());
   int best_rank = -1000;
