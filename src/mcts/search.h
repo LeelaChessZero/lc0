@@ -35,6 +35,7 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 #include "utils/optional.h"
 #include "utils/optionsdict.h"
@@ -55,7 +56,8 @@ class Search {
   Search(const NodeTree& tree, Network* network,
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const SearchLimits& limits,
-         const OptionsDict& options, NNCache* cache);
+         const OptionsDict& options, NNCache* cache,
+         SyzygyTablebase* syzygy_tb);
 
   ~Search();
 
@@ -143,6 +145,7 @@ class Search {
 
   Node* root_node_;
   NNCache* cache_;
+  SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
 

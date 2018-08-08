@@ -31,6 +31,7 @@
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 #include "utils/optionsparser.h"
 
@@ -82,6 +83,7 @@ class EngineController {
   ThinkingInfo::Callback info_callback_;
 
   NNCache cache_;
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
 
   // Locked means that there is some work to wait before responding readyok.

@@ -51,6 +51,7 @@ const char* kMoveOverheadStr = "Move time overhead in milliseconds";
 const char* kTimeCurvePeak = "Time weight curve peak ply";
 const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
 const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
+const char* kSyzygyTablebaseStr = "Syzygy tablebase paths";
 
 const char* kAutoDiscover = "<autodiscover>";
 
@@ -94,6 +95,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
                             "time-curve-left-width") = 82.0f;
   options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
                             "time-curve-right-width") = 74.0f;
+  options->Add<StringOption>(kSyzygyTablebaseStr, "syzygy", 's');
 
   Search::PopulateUciParams(options);
 
@@ -196,6 +198,15 @@ void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 
 void EngineController::EnsureReady() {
   UpdateNetwork();
+  std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseStr);
+  if (!tb_paths.empty()) {
+    std::cerr << "Loading Syzygy tablebases from " << tb_paths << std::endl;
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    if (!syzygy_tb_->init(tb_paths)) {
+      std::cerr << "Failed to load Syzygy tablebases!" << std::endl;
+      syzygy_tb_ = nullptr;
+    }
+  }
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
 }
 
@@ -230,7 +241,8 @@ void EngineController::Go(const GoParams& params) {
 
   search_ =
       std::make_unique<Search>(*tree_, network_.get(), best_move_callback_,
-                               info_callback_, limits, options_, &cache_);
+                               info_callback_, limits, options_, &cache_,
+                               syzygy_tb_.get());
 
   search_->StartThreads(options_.Get<int>(kThreadsOption));
 }

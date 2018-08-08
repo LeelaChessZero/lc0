@@ -218,20 +218,20 @@ class SyzygyTablebase {
   // Allows for the tablebases being used to be changed. This method is not
   // thread safe, there must be no concurrent usage while this method is
   // running. All other thread safe method calls must be strictly ordered with
-  // respect to this method.
-  void init(const std::string& paths);
+  // respect to this method. Returns success or failure to find TBs.
+  bool init(const std::string& paths);
 
   // Probes WDL tables for the given position to determine a WDLScore.
   // Thread safe.
   // Result is only strictly valid for positions with 0 ply 50 move counter.
   // Probe state will return FAIL if the position is not in the tablebase.
-  WDLScore probe_wdl(Position& pos, ProbeState* result);
+  WDLScore probe_wdl(const Position& pos, ProbeState* result);
 
   // Probes DTZ tables for the given position to determine the number of ply
   // before a zeroing move under optimal play.
   // Thread safe.
   // Probe state will return FAIL if the position is not in the tablebase.
-  int probe_dtz(Position& pos, ProbeState* result);
+  int probe_dtz(const Position& pos, ProbeState* result);
 
   // Probes DTZ tables to determine which moves are on the optimal play path.
   // Assumes the position is one reached such that the side to move has been
@@ -239,21 +239,21 @@ class SyzygyTablebase {
   // Thread safe.
   // Returns false if the position is not in the tablebase.
   // Safe moves are added to the safe_moves output paramater.
-  bool root_probe(Position& pos, std::vector<Move>* safe_moves);
+  bool root_probe(const Position& pos, std::vector<Move>* safe_moves);
 
   // Probes WDL tables to determine which moves might be on the optimal play
   // path. If 50 move ply counter is non-zero some (or maybe even all) of the
   // returned safe moves in a 'winning' position, may actually be draws.
   // Returns false if the position is not in the tablebase.
   // Safe moves are added to the safe_moves output paramater.
-  bool root_probe_wdl(Position& pos, std::vector<Move>* safe_moves);
+  bool root_probe_wdl(const Position& pos, std::vector<Move>* safe_moves);
 
  private:
   template<TBType Type, typename Ret = typename TBTable<Type>::Ret>
   Ret probe_table(const Position& pos, ProbeState* result, WDLScore wdl = WDL_DRAW);
 
   template<bool CheckZeroingMoves = false>
-  WDLScore search(Position& pos, ProbeState* result);
+  WDLScore search(const Position& pos, ProbeState* result);
 
   template<TBType Type>
   void* mapped(TBTable<Type>& e, const Position& pos);

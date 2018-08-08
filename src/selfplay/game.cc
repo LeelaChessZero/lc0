@@ -79,7 +79,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads,
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
           options_[idx].info_callback, options_[idx].search_limits,
-          *options_[idx].uci_options, options_[idx].cache);
+          *options_[idx].uci_options, options_[idx].cache, nullptr);
     }
 
     // Do search.

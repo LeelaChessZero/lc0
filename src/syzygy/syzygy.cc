@@ -1247,7 +1247,7 @@ Ret SyzygyTablebase::probe_table(const Position& pos, ProbeState* result, WDLSco
 // where the best move is an ep-move (even if losing). So in all these cases set
 // the state to ZEROING_BEST_MOVE.
 template <bool CheckZeroingMoves>
-WDLScore SyzygyTablebase::search(Position& pos, ProbeState* result) {
+WDLScore SyzygyTablebase::search(const Position& pos, ProbeState* result) {
 
   WDLScore value, bestValue = WDL_LOSS;
 
@@ -1308,13 +1308,13 @@ WDLScore SyzygyTablebase::search(Position& pos, ProbeState* result) {
 
 /// Tablebases::init() is called at startup and after every change to
 /// "SyzygyPath" UCI option to (re)create the various tables. It is not thread
-/// safe, nor it needs to be.
-void SyzygyTablebase::init(const std::string& paths) {
+/// safe, nor does it need to be.
+bool SyzygyTablebase::init(const std::string& paths) {
   tables_.clear();
   paths_ = paths;
 
   if (paths.empty() || paths == "<empty>")
-    return;
+    return false;
   // TODO: wrap this in a once.
   populate_tables();
 
@@ -1344,8 +1344,12 @@ void SyzygyTablebase::init(const std::string& paths) {
           tables_.add({KING, p1, p2, KING, p3, p4}, paths);
     }
   }
-  std::cerr << "Found " << tables_.size() << " wdl tablebases" << std::endl;
-  std::cerr << "Found " << tables_.dtz_size() << " dgz tablebases" << std::endl;
+  if (tables_.size() > 0) {
+    std::cerr << "Found " << tables_.size() << " wdl tablebases" << std::endl;
+    std::cerr << "Found " << tables_.dtz_size() << " dtz tablebases" << std::endl;
+    return true;
+  }
+  return false;
 }
 
 // Probe the WDL table for a particular position.
@@ -1356,7 +1360,7 @@ void SyzygyTablebase::init(const std::string& paths) {
 //  0 : draw
 //  1 : win, but draw under 50-move rule
 //  2 : win
-WDLScore SyzygyTablebase::probe_wdl(Position& pos, ProbeState* result) {
+WDLScore SyzygyTablebase::probe_wdl(const Position& pos, ProbeState* result) {
 
   *result = OK;
   return search(pos, result);
@@ -1388,7 +1392,7 @@ WDLScore SyzygyTablebase::probe_wdl(Position& pos, ProbeState* result) {
 //
 // In short, if a move is available resulting in dtz + 50-move-counter <= 99,
 // then do not accept moves leading to dtz + 50-move-counter == 100.
-int SyzygyTablebase::probe_dtz(Position& pos, ProbeState* result) {
+int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 
   *result = OK;
   WDLScore wdl = search<true>(pos, result);
@@ -1451,7 +1455,7 @@ int SyzygyTablebase::probe_dtz(Position& pos, ProbeState* result) {
 // Use the DTZ tables to rank root moves.
 //
 // A return value false indicates that not all probes were successful.
-bool SyzygyTablebase::root_probe(Position& pos, std::vector<Move>* safe_moves) {
+bool SyzygyTablebase::root_probe(const Position& pos, std::vector<Move>* safe_moves) {
 
   ProbeState result;
 
@@ -1524,7 +1528,7 @@ bool SyzygyTablebase::root_probe(Position& pos, std::vector<Move>* safe_moves) {
 // This is a fallback for the case that some or all DTZ tables are missing.
 //
 // A return value false indicates that not all probes were successful.
-bool SyzygyTablebase::root_probe_wdl(Position& pos, std::vector<Move>* safe_moves) {
+bool SyzygyTablebase::root_probe_wdl(const Position& pos, std::vector<Move>* safe_moves) {
 
   static const int WDL_to_rank[] = {-1000, -899, 0, 899, 1000};
 

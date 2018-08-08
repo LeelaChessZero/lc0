@@ -94,9 +94,11 @@ void Search::PopulateUciParams(OptionsParser* options) {
 Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
-               const OptionsDict& options, NNCache* cache)
+               const OptionsDict& options, NNCache* cache,
+               SyzygyTablebase* syzygy_tb)
     : root_node_(tree.GetCurrentHead()),
       cache_(cache),
+      syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
       network_(network),
       limits_(limits),
@@ -695,10 +697,12 @@ void SearchWorker::ExtendNode(Node* node) {
   }
 
   // Neither by-position or by-rule termination, but maybe it's a TB position.
-  if (board.no_legal_castle() && history_.Last().GetNoCapturePly() == 0 &&
-      (board.ours() + board.theirs()).count() <= syzygy_tb_.max_cardinality()) {
+  if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+        history_.Last().GetNoCapturePly() == 0 &&
+        (board.ours() + board.theirs()).count() <=
+          search_->syzygy_tb_->max_cardinality()) {
     ProbeState result;
-    WDLScore wdl = syzygy_tb_->probe_wdl(history_.Last(), &result);
+    WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &result);
     if (result == OK) {
       //tbhits++; need a counter to increment
       if (wdl == WDL_WIN) {
