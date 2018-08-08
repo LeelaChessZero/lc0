@@ -14,68 +14,78 @@
 
  You should have received a copy of the GNU General Public License
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+ Additional permission under GNU GPL version 3 section 7
+
+ If you modify this Program, or any covered work, by linking or
+ combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+ Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+ modified version of those libraries), containing parts covered by the
+ terms of the respective license agreement, the licensors of this
+ Program grant you additional permission to convey the resulting work.
  */
 
 #pragma once
 
 #include <cstddef>
+#include <string>
+#include <vector>
 
-/* Histogram with a logarithmic x-axis
- *
- *    0.50   +
- *           |
- *           |
- *           |
- *    0.40   |
- *
- *          ....
- *
- *           |
- *    0.10   +
- *           |
- *           |#
- *           |#         ##                     #|
- *           |#  #   # #### #  #     #         #|
- *    0.00   +----+----+----+----+---- ... +----+
- *
- *         -inf  -15  -14  -13  -12        5   inf
- */
+namespace lczero {
+
+// Histogram with a logarithmic x-axis.
+//
+//    0.50   +
+//           |
+//           |
+//           |
+//    0.40   |
+//
+//          ....
+//
+//           |
+//    0.10   +
+//           |
+//           |#
+//           |#         ##                     #|
+//           |#  #   # #### #  #     #         #|
+//    0.00   +----+----+----+----+---- ... +----+
+//
+//         -inf  -15  -14  -13  -12        5   inf
 
 class Histogram {
  public:
-  // Create a histogram with default scales.
+  // Creates a histogram with default scales.
   Histogram();
 
-  // Create a histogram from 10^minExp to 10^maxExp with minorScales
-  // spacing.
-  Histogram(int minExp, int maxExp, int minorScales);
+  // Creates a histogram from 10^min_exp to 10^max_exp
+  // with minor_scales spacing.
+  Histogram(int min_exp, int max_exp, int minor_scales);
 
   void Clear();
 
-  // Add a sample.
+  // Adds a sample.
   void Add(double value);
 
-  // Dump the histogram to stderr.
+  // Dumps the histogram to stderr.
   void Dump();
 
  private:
   int GetIndex(double val);
 
-  void Print(const char* what);
-  void Print(const char* what, size_t aligned);
-  void Print(const char* format, double value, size_t aligned);
-
   static constexpr int kDefaultMinExp = -15;
   static constexpr int kDefaultMaxExp = 5;
   static constexpr int kDefaultMinorScales = 5;
 
-  const int minExp_;
-  const int maxExp_;
-  const int minorScales_;
-  const int majorScales_;
-  const int totalScales_;
-  const int fullScales_;
-  double* const buckets_;
+  const int min_exp_;
+  const int max_exp_;
+  const int minor_scales_;
+  const int major_scales_;
+  const int total_scales_;
+  const int full_scales_;
+  std::vector<double> buckets_;
   double total_;
   double max_;
 };
+
+}  // namespace lczero

@@ -14,31 +14,58 @@
 
  You should have received a copy of the GNU General Public License
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+ Additional permission under GNU GPL version 3 section 7
+
+ If you modify this Program, or any covered work, by linking or
+ combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+ Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+ modified version of those libraries), containing parts covered by the
+ terms of the respective license agreement, the licensors of this
+ Program grant you additional permission to convey the resulting work.
  */
 
-#include "utils/histogram.h"
-
-#include <stdio.h>
-#include <string.h>
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <iostream>
+#include <stdio.h>
+#include <string.h>
+#include "utils/histogram.h"
+
+namespace lczero {
+
+namespace {
+void Print(const std::string& what) { std::cerr << what; }
+
+void PrintAligned(const std::string& what, int aligned) {
+  std::cerr << std::right << std::setw(aligned) << what;
+}
+
+std::string Format(const std::string& format, double value) {
+  static const int kMaxBufferSize = 32;
+  char buffer[kMaxBufferSize];
+  int len = snprintf(buffer, kMaxBufferSize, format.c_str(), value);
+  return std::string(buffer, buffer + len);
+}
+} // namespace
 
 Histogram::Histogram()
     : Histogram(kDefaultMinExp, kDefaultMaxExp, kDefaultMinorScales) {}
 
-Histogram::Histogram(int minExp, int maxExp, int minorScales)
-    : minExp_(minExp),
-      maxExp_(maxExp),
-      minorScales_(minorScales),
-      majorScales_(maxExp_ - minExp_ + 1),
-      totalScales_(majorScales_ * minorScales_),
-      fullScales_(totalScales_ + 4),
-      buckets_(new double[fullScales_]) {
+Histogram::Histogram(int min_exp, int max_exp, int minor_scales)
+    : min_exp_(min_exp),
+      max_exp_(max_exp),
+      minor_scales_(minor_scales),
+      major_scales_(max_exp_ - min_exp_ + 1),
+      total_scales_(major_scales_ * minor_scales_),
+      full_scales_(total_scales_ + 4),
+      buckets_(full_scales_) {
   Clear();
 }
 
 void Histogram::Clear() {
-  for (int i = 0; i < fullScales_; i++) buckets_[i] = 0;
+  for (int i = 0; i < full_scales_; i++) buckets_[i] = 0;
   total_ = 0;
   max_ = 0;
 }
@@ -57,40 +84,42 @@ void Histogram::Dump() {
     if (yscale > ymax) continue;
     bool scale = i % 5 == 0;
     if (scale) {
-      Print("%.2g", yscale, 5);
+      PrintAligned(Format("%.2g", yscale), 5);
       Print(" +");
     } else {
       Print("      |");
     }
     double ymin = (99 - i) * 0.01;
-    for (int j = 0; j < fullScales_; j++) {
+    for (int j = 0; j < full_scales_; j++) {
       double val = buckets_[j] / (double)total_;
-      if (val > ymin)
+      if (val > ymin) {
         Print("#");
-      else
+      } else {
         Print(" ");
+      }
     }
-    if (scale)
+    if (scale) {
       Print("+");
-    else
+    } else {
       Print("|");
+    }
     Print("\n");
   }
   Print("      +");
-  for (int j = 0; j <= majorScales_; j++) {
-    int size = j == 0 ? 5 : minorScales_;
+  for (int j = 0; j <= major_scales_; j++) {
+    int size = j == 0 ? 5 : minor_scales_;
     for (int k = 0; k < size - 1; k++) Print("-");
     Print("+");
   }
   Print("\n");
   Print("   -inf");
-  for (int j = 0; j < majorScales_; j++) {
-    int size = j == 0 ? 5 : minorScales_;
+  for (int j = 0; j < major_scales_; j++) {
+    int size = j == 0 ? 5 : minor_scales_;
     Print(" ");
-    Print("%g", minExp_ + j, size - 1);
+    PrintAligned(Format("%g", min_exp_ + j), size - 1);
   }
   Print("  ");
-  Print("+inf", minorScales_ - 2);
+  PrintAligned("+inf", minor_scales_ - 2);
   Print(" \n");
 }
 
@@ -100,30 +129,10 @@ int Histogram::GetIndex(double val) {
   // 2: -15 :    -15.1 ... -14.9          2 ... 3
   // 1:          -15.3 ... -15.1
   // 0:          -15.5 ... -15.3          0 ... 1
-
-  int index = (int)std::floor(2.5 + minorScales_ * (log10 - minExp_));
+  int index = static_cast<int>(std::floor(2.5 + minor_scales_ * (log10 - min_exp_)));
   if (index < 0) return 0;
-
-  if (index >= totalScales_) return totalScales_ + 3;
-
+  if (index >= total_scales_) return total_scales_ + 3;
   return index + 2;
 }
 
-void Histogram::Print(const char* what) {
-  // fprintf(stderr, what); is disallowed
-  fprintf(stderr, "%s", what);
-}
-
-void Histogram::Print(const char* what, size_t aligned) {
-  int remain = aligned - (int)strlen(what);
-  for (int i = 0; i < remain; i++) Print(" ");
-  Print(what);
-}
-
-void Histogram::Print(const char* format, double value, size_t aligned) {
-  static const size_t kMaxBufferSize = 32;
-  aligned = std::min(aligned, kMaxBufferSize);
-  char buffer[kMaxBufferSize];
-  snprintf(buffer, aligned, format, value);
-  Print(buffer, aligned);
-}
+}  // namespace lczero
