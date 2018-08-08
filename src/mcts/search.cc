@@ -153,6 +153,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   uci_info_.nps =
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
   uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0));
+  uci_info_.tb_hits = tb_hits_;
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
@@ -704,7 +705,6 @@ void SearchWorker::ExtendNode(Node* node) {
     ProbeState result;
     WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &result);
     if (result == OK) {
-      //tbhits++; need a counter to increment
       if (wdl == WDL_WIN) {
         node->MakeTerminal(GameResult::WHITE_WON);
       } else if (wdl == WDL_LOSS) {
@@ -712,6 +712,9 @@ void SearchWorker::ExtendNode(Node* node) {
       } else { // Cursed wins and blessed losses count as draws.
         node->MakeTerminal(GameResult::DRAW); 
       }
+      // TODO: This is probably a massive contention slowdown
+      SharedMutex::Lock lock(search_->nodes_mutex_);
+      search_->tb_hits_++;
       return;
     }
   }

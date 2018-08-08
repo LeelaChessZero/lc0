@@ -199,7 +199,7 @@ void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 void EngineController::EnsureReady() {
   UpdateNetwork();
   std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseStr);
-  if (!tb_paths.empty()) {
+  if (!syzygy_tb_ && !tb_paths.empty()) {
     std::cerr << "Loading Syzygy tablebases from " << tb_paths << std::endl;
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
     if (!syzygy_tb_->init(tb_paths)) {

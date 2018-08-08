@@ -69,6 +69,7 @@ struct ThinkingInfo {
   int hashfull = -1;
   // Win in centipawns.
   optional<int> score;
+  int tb_hits = -1;
   // Best line found. Moves are from perspective of white player.
   std::vector<Move> pv;
   // Freeform comment.
