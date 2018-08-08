@@ -86,10 +86,16 @@ bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
     line = Trim(line);
     // Ignore comments.
     if (line.substr(0, 1) == "#") continue;
-    // Add the line arguments to the arguments list.
-    std::istringstream iss(line);
-    std::string tmp;
-    while (iss >> tmp) arguments_.emplace_back(std::move(tmp));
+    // Skip blank lines.
+    if (line.length() == 0) continue;
+    // Only long form arguments starting with '--' are supported.
+    if (line.substr(0, 2) != "--") {
+      std::cerr << "Only '--' arguments are supported in the "
+                << "configuration file: '" << line << "'." << std::endl;
+      return false;
+    }
+    // Add the line to the arguments list.
+    arguments_.emplace_back(line);
   }
 
   return true;
