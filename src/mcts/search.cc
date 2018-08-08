@@ -694,6 +694,24 @@ void SearchWorker::ExtendNode(Node* node) {
     }
   }
 
+  // Neither by-position or by-rule termination, but maybe it's a TB position.
+  if (board.no_legal_castle() && history_.Last().GetNoCapturePly() == 0 &&
+      (board.ours() + board.theirs()).count() <= syzygy_tb_.max_cardinality()) {
+    ProbeState result;
+    WDLScore wdl = syzygy_tb_->probe_wdl(history_.Last(), &result);
+    if (result == OK) {
+      //tbhits++; need a counter to increment
+      if (wdl == WDL_WIN) {
+        node->MakeTerminal(GameResult::WHITE_WON);
+      } else if (wdl == WDL_LOSS) {
+        node->MakeTerminal(GameResult::BLACK_WON);
+      } else { // Cursed wins and blessed losses count as draws.
+        node->MakeTerminal(GameResult::DRAW); 
+      }
+      return;
+    }
+  }
+  
   // Add legal moves as edges of this node.
   node->CreateEdges(legal_moves);
 }

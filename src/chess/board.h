@@ -97,6 +97,7 @@ class ChessBoard {
     bool we_can_000() const { return data_ & 2; }
     bool they_can_00() const { return data_ & 4; }
     bool they_can_000() const { return data_ & 8; }
+    bool no_legal_castle() const { return data_ == 0; }
 
     void Mirror() { data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2); }
 
