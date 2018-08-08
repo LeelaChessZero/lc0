@@ -169,7 +169,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       uci_info_.pv.push_back(iter.GetMove(is_mirrored));
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
     }
-    uci_info_.multipv_idx = pv_idx + 1;
+    if (kMultiPv > 1) uci_info_.multipv_idx = pv_idx + 1;
     info_callback_(uci_info_);
   }
 }

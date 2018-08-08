@@ -162,7 +162,7 @@ class Node {
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Calculates score in centipawns.
-  float GetCpScore() const {
+  int GetCpScore() const {
     return 290.680623072 * tan(1.548090806 * q_);
   }
 
