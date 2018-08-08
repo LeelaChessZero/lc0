@@ -170,7 +170,7 @@ std::string Node::DebugString() const {
 
 void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
-  q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
+  minmax_q_ = q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
 }
 
 bool Node::TryStartScoreUpdate() {
@@ -181,9 +181,22 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
-void Node::FinalizeScoreUpdate(float v) {
-  // Recompute Q.
+void Node::FinalizeScoreUpdate(float v, float minmax_denominator) {
+  // Recompute MCTS Q.
   q_ += (v - q_) / (n_ + 1);
+  // Recompute MinMax Q.
+  if (n_ == 0 || is_terminal_) {
+    minmax_q_ = v;
+  } else {
+    auto child_nodes = ChildNodes();
+    auto best_child = std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
+      return lhs->minmax_q_ < rhs->minmax_q_;
+    });
+    float pure_minmax = -(best_child->minmax_q_);
+    float minmax_component = ((float)best_child->n_)/((float)(n_+1));
+    minmax_q_ = pure_minmax * minmax_component + q_ * (1.0f - minmax_component);
+  }
+
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();

@@ -57,6 +57,8 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
+const char* Search::kMinMaxSearchComponentStr =
+    "Weight of the min-max component on the Q value updates";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -89,6 +91,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
+  options->Add<FloatOption>(kMinMaxSearchComponentStr, 0.0f, 50000.0f,
+                            "minmax-search-component") = 5000.0f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -116,7 +120,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
+      kMinMaxSearchComponent(options.Get<float>(kMinMaxSearchComponentStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -194,7 +199,7 @@ void Search::SendMovesStats() const {
   for (const auto& edge : root_node_->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
-            [&parent_q, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
+            [&parent_q, &U_coeff, this](EdgeAndNode a, EdgeAndNode b) {
               return std::forward_as_tuple(a.GetN(),
                                            a.GetQ(parent_q) + a.GetU(U_coeff)) <
                      std::forward_as_tuple(b.GetN(),
@@ -902,7 +907,7 @@ void SearchWorker::DoBackupUpdate() {
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
-      n->FinalizeScoreUpdate(v);
+      n->FinalizeScoreUpdate(v, search_->kMinMaxSearchComponent);
       // Q will be flipped for opponent.
       v = -v;
 
