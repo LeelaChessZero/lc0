@@ -267,8 +267,8 @@ Position position_for_code(std::string code, bool whiteFirst) {
 
   std::string sides[] = {
     code.substr(code.find('K', 1)), // Weak
-    code.substr(0, code.find('K', 1))
-  }; // Strong
+    code.substr(0, code.find('K', 1) - 1) // Strong
+  };
 
   // If white is the strong side, need to tolower the weak side, otherwise 
   // the strong side.
@@ -1315,6 +1315,7 @@ bool SyzygyTablebase::init(const std::string& paths) {
 
   if (paths.empty() || paths == "<empty>")
     return false;
+
   // TODO: wrap this in a once.
   populate_tables();
 
@@ -1344,6 +1345,7 @@ bool SyzygyTablebase::init(const std::string& paths) {
           tables_.add({KING, p1, p2, KING, p3, p4}, paths);
     }
   }
+
   if (tables_.size() > 0) {
     std::cerr << "Found " << tables_.size() << " wdl tablebases" << std::endl;
     std::cerr << "Found " << tables_.dtz_size() << " dtz tablebases" << std::endl;
