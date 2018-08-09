@@ -75,16 +75,12 @@ class EngineController {
                                     const GoParams& params);
 
  private:
-  void UpdateNetwork();
+  void UpdateTBAndNetwork();
 
   const OptionsDict& options_;
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
-
-  NNCache cache_;
-  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
-  std::unique_ptr<Network> network_;
 
   // Locked means that there is some work to wait before responding readyok.
   RpSharedMutex busy_mutex_;
@@ -92,9 +88,13 @@ class EngineController {
 
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
+  std::unique_ptr<Network> network_;
+  NNCache cache_;
 
-  // Store current network settings to track when they change so that they
-  // are reloaded.
+  // Store current TB and network settings to track when they change so that
+  // they are reloaded.
+  std::string tb_paths_;
   std::string network_path_;
   std::string backend_;
   std::string backend_options_;

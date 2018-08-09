@@ -166,8 +166,20 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   return limits;
 }
 
-void EngineController::UpdateNetwork() {
+void EngineController::UpdateTBAndNetwork() {
   SharedLock lock(busy_mutex_);
+
+  std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseStr);
+  if (!tb_paths.empty() && tb_paths != tb_paths_) {
+    tb_paths_ = tb_paths;
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    std::cerr << "Loading Syzygy tablebases from " << tb_paths_ << std::endl;
+    if (!syzygy_tb_->init(tb_paths_)) {
+      std::cerr << "Failed to load Syzygy tablebases!" << std::endl;
+      syzygy_tb_ = nullptr;
+    }
+  }
+
   std::string network_path = options_.Get<std::string>(kWeightsStr);
   std::string backend = options_.Get<std::string>(kNnBackendStr);
   std::string backend_options = options_.Get<std::string>(kNnBackendOptionsStr);
@@ -197,16 +209,7 @@ void EngineController::UpdateNetwork() {
 void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 
 void EngineController::EnsureReady() {
-  UpdateNetwork();
-  std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseStr);
-  if (!syzygy_tb_ && !tb_paths.empty()) {
-    std::cerr << "Loading Syzygy tablebases from " << tb_paths << std::endl;
-    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-    if (!syzygy_tb_->init(tb_paths)) {
-      std::cerr << "Failed to load Syzygy tablebases!" << std::endl;
-      syzygy_tb_ = nullptr;
-    }
-  }
+  UpdateTBAndNetwork();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
 }
 
@@ -215,7 +218,7 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  UpdateNetwork();
+  UpdateTBAndNetwork();
 }
 
 void EngineController::SetPosition(const std::string& fen,
@@ -228,7 +231,7 @@ void EngineController::SetPosition(const std::string& fen,
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   tree_->ResetToPosition(fen, moves);
-  UpdateNetwork();
+  UpdateTBAndNetwork();
 }
 
 void EngineController::Go(const GoParams& params) {
