@@ -184,12 +184,6 @@ void Node::CancelScoreUpdate() { --n_in_flight_; }
 void Node::FinalizeScoreUpdate(float v) {
   // Recompute Q.
   q_ += (v - q_) / (n_ + 1);
-  // If first visit, update parent's sum of policies visited at least once.
-  if (n_ == 0 && parent_ != nullptr) {
-    parent_->visited_policy_ += parent_->edges_[index_].GetP();
-  }
-  // Increment N.
-  ++n_;
   // Recompute MinMax Q.
   if (n_ == 0 || is_terminal_) {
     minmax_q_ = v;
@@ -199,9 +193,15 @@ void Node::FinalizeScoreUpdate(float v) {
       return lhs->minmax_q_ < rhs->minmax_q_;
     });
     float pure_minmax = -(best_child->minmax_q_);
-    float minmax_component = ((float)best_child->n_)/((float)(n_));
+    float minmax_component = ((float)best_child->n_)/((float)(n_+1));
     minmax_q_ = pure_minmax * minmax_component + q_ * (1.0f - minmax_component);
   }
+  // If first visit, update parent's sum of policies visited at least once.
+  if (n_ == 0 && parent_ != nullptr) {
+    parent_->visited_policy_ += parent_->edges_[index_].GetP();
+  }
+  // Increment N.
+  ++n_;
   // Decrement virtual loss.
   --n_in_flight_;
 }
