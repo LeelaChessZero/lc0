@@ -30,8 +30,8 @@ install:
 - cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" appveyor DownloadFile https://developer.nvidia.com/compute/cuda/9.2/Prod2/local_installers/cuda_9.2.148_win10
 - cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" cuda_9.2.148_win10 -s nvcc_9.2 cublas_dev_9.2 cublas_9.2 cudart_9.2
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
-- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.1.4/cudnn-9.2-windows10-x64-v7.1.zip
-- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-9.2-windows10-x64-v7.1.zip -oC:\cache
+- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.2.1/cudnn-9.2-windows10-x64-v7.2.1.38.zip
+- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-9.2-windows10-x64-v7.2.1.38.zip -oC:\cache
 - cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
 - cmd: pip3 install --upgrade meson
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" amd64
@@ -44,7 +44,7 @@ install:
 - cmd: set PATH=c:\cache\protobuf\bin;%PATH%
 - cmd: cd C:\projects\lc0
 cache:
-  - C:\cache
+  - C:\cache -> appveyor.yml
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2'
   - C:\projects\lc0\subprojects\packagecache
 before_build:
