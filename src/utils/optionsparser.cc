@@ -49,12 +49,13 @@ std::vector<std::string> OptionsParser::ListOptionsUci() const {
   return result;
 }
 
-void OptionsParser::SetOption(const std::string& name, const std::string& value,
+bool OptionsParser::SetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   auto option = FindOptionByName(name);
   if (option) {
-    option->SetValue(value, GetMutableOptions(context));
+    return option->SetValue(value, GetMutableOptions(context));
   }
+  return false;
 }
 
 void OptionsParser::SendOption(const std::string& name) {
@@ -68,6 +69,14 @@ void OptionsParser::SendAllOptions() {
   for (const auto& x : options_) {
     x->SendValue(GetOptionsDict());
   }
+}
+
+OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
+    const std::string& flag) const {
+  for (const auto& val : options_) {
+    if (val->GetLongFlag() == flag) return val.get();
+  }
+  return nullptr;
 }
 
 OptionsParser::Option* OptionsParser::FindOptionByName(
@@ -395,13 +404,15 @@ BoolOption::BoolOption(const std::string& name, const std::string& long_flag,
     : Option(name, long_flag, short_flag), setter_(setter) {}
 
 bool BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
+  if (!ValidateBoolString(value)) return false;
   return SetVal(dict, value == "true");
 }
 
 bool BoolOption::ProcessLongFlag(const std::string& flag,
                                  const std::string& value, OptionsDict* dict) {
+  if (!ValidateBoolString(value)) return false;
   if (flag == GetLongFlag()) {
-    return SetVal(dict, value.empty() || (value != "off" && value != "false"));
+    return SetVal(dict, value.empty() || (value != "false"));
   }
   if (flag == "no-" + GetLongFlag()) return SetVal(dict, false);
   return false;
@@ -435,6 +446,15 @@ BoolOption::ValueType BoolOption::GetVal(const OptionsDict& dict) const {
 
 bool BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetName(), val);
+  return true;
+}
+
+bool BoolOption::ValidateBoolString(const std::string& val) {
+  if (val != "true" && val != "false") {
+    std::cerr << "Option '--" << GetLongFlag() << "' must be either "
+              << "'true' or 'false'." << val << std::endl;
+    return false;
+  }
   return true;
 }
 

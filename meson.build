@@ -398,4 +398,9 @@ if get_option('gtest') and gtest.found()
     files, include_directories: includes, dependencies: test_deps
   ), timeout: 90)
 
+  test('OptionsTest',
+    executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
 endif

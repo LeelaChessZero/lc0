@@ -94,7 +94,7 @@ class OptionsParser {
   std::vector<std::string> ListOptionsUci() const;
 
   // Set the option from string value.
-  void SetOption(const std::string& name, const std::string& value,
+  bool SetOption(const std::string& name, const std::string& value,
                  const std::string& context = "");
   // Call option setter for this option.
   void SendOption(const std::string& name);
@@ -111,6 +111,8 @@ class OptionsParser {
   OptionsDict* GetMutableDefaultsOptions() { return &defaults_; }
   // Adds a subdictionary for a given context.
   void AddContext(const std::string&);
+  // Returns an option based on the long flag.
+  Option* FindOptionByLongFlag(const std::string& flag) const;
 
  private:
   void ShowHelp() const;
@@ -216,6 +218,8 @@ class BoolOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   bool SetVal(OptionsDict* dict, const ValueType& val) const;
+  
+  bool ValidateBoolString(const std::string& val);
 
   std::function<void(bool)> setter_;
 };
