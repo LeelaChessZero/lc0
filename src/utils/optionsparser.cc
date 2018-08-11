@@ -118,7 +118,7 @@ bool OptionsParser::ProcessAllFlags() {
       }
       bool processed = false;
       Option* option = FindOptionByLongFlag(param);
-      if (option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
+      if (option && option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
         processed = true;
       }
       if (!processed) {
