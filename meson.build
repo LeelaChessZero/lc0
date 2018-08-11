@@ -199,7 +199,7 @@ if get_option('build_backends')
     endif
 
     ispc = find_program('ispc', required: false)
-
+    ispc_extra_args = []
     if has_blas and get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
@@ -210,7 +210,8 @@ if get_option('build_backends')
 			    '@BASENAME@_avx2.obj' ]
 	endif
       else
-        outputnames = [ '@BASENAME@.o']
+	ispc_extra_args += ['--pic']
+	outputnames = [ '@BASENAME@.o']
 	if not ispc_native_only
 	   outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
                            '@BASENAME@_avx.o', '@BASENAME@_avx11.o',
@@ -224,9 +225,10 @@ if get_option('build_backends')
       endif
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
-        arguments: [ '-O2', '--arch=x86-64', '--pic',
+        arguments: [ '-O2', '--arch=x86-64',
                      '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
+                     + ispc_extra_args
       )
     endif
 
