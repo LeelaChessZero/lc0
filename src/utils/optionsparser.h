@@ -111,15 +111,16 @@ class OptionsParser {
   OptionsDict* GetMutableDefaultsOptions() { return &defaults_; }
   // Adds a subdictionary for a given context.
   void AddContext(const std::string&);
-  // Returns an option based on the long flag.
-  Option* FindOptionByLongFlag(const std::string& flag) const;
 
  private:
+  // Print help to std::cerr
   void ShowHelp() const;
-
+  // Returns an option based on the long flag.
+  Option* FindOptionByLongFlag(const std::string& flag) const;
+  // Returns an option based by its name.
   Option* FindOptionByName(const std::string& name) const;
-  std::vector<std::unique_ptr<Option>> options_;
 
+  std::vector<std::unique_ptr<Option>> options_;
   OptionsDict defaults_;
   OptionsDict& values_;
 };

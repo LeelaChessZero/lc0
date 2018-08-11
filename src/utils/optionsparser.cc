@@ -117,11 +117,9 @@ bool OptionsParser::ProcessAllFlags() {
         param = param.substr(0, pos);
       }
       bool processed = false;
-      for (auto& option : options_) {
-        if (option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
-          processed = true;
-          break;
-        }
+      Option* option = FindOptionByLongFlag(param);
+      if (option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
+        processed = true;
       }
       if (!processed) {
         std::cerr << "Unknown command line flag: " << *iter << ".\n";
@@ -324,7 +322,7 @@ IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
 
 bool IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   if (val < min_ || val > max_) {
-    std::cerr << "Option '--" << GetLongFlag() << "' must be between "
+    std::cerr << "Flag '--" << GetLongFlag() << "' must be between "
               << min_ << " and " << max_ << "." << std::endl;
     return false;
   }
@@ -387,7 +385,7 @@ FloatOption::ValueType FloatOption::GetVal(const OptionsDict& dict) const {
 
 bool FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   if (val < min_ || val > max_) {
-    std::cerr << "Option '--" << GetLongFlag() << "' must be between "
+    std::cerr << "Flag '--" << GetLongFlag() << "' must be between "
               << min_ << " and " << max_ << "." << std::endl;
     return false;
   }
@@ -410,11 +408,11 @@ bool BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
 
 bool BoolOption::ProcessLongFlag(const std::string& flag,
                                  const std::string& value, OptionsDict* dict) {
+  if (flag == "no-" + GetLongFlag()) return SetVal(dict, false);
   if (!ValidateBoolString(value)) return false;
   if (flag == GetLongFlag()) {
     return SetVal(dict, value.empty() || (value != "false"));
   }
-  if (flag == "no-" + GetLongFlag()) return SetVal(dict, false);
   return false;
 }
 
@@ -451,8 +449,8 @@ bool BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 
 bool BoolOption::ValidateBoolString(const std::string& val) {
   if (val != "true" && val != "false") {
-    std::cerr << "Option '--" << GetLongFlag() << "' must be either "
-              << "'true' or 'false'." << val << std::endl;
+    std::cerr << "Flag '--" << GetLongFlag() << "' must be either "
+              << "'true' or 'false'." << std::endl;
     return false;
   }
   return true;
@@ -523,7 +521,7 @@ bool ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
     }
   }
   if (!valid) {
-    std::cerr << "Option '--" << GetLongFlag() << "' must be one of the "
+    std::cerr << "Flag '--" << GetLongFlag() << "' must be one of the "
               << "following values:" << choice_string << "." << std::endl;
     return false;
   }
