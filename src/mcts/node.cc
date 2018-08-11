@@ -33,6 +33,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <stack>
 #include <thread>
 #include "neural/encoder.h"
 #include "neural/network.h"
@@ -194,24 +195,6 @@ void Node::FinalizeScoreUpdate(float v) {
   --n_in_flight_;
 }
 
-void Node::UpdateMaxDepth(int depth) {
-  if (depth > max_depth_) max_depth_ = depth;
-}
-
-bool Node::UpdateFullDepth(uint16_t* depth) {
-  // TODO(crem) If this function won't be needed, consider also killing
-  //            ChildNodes/NodeRange/Nodes_Iterator.
-  if (full_depth_ > *depth) return false;
-  for (Node* child : ChildNodes()) {
-    if (*depth > child->full_depth_) *depth = child->full_depth_;
-  }
-  if (*depth >= full_depth_) {
-    full_depth_ = ++*depth;
-    return true;
-  }
-  return false;
-}
-
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
 
 void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
@@ -325,12 +308,66 @@ void NodeTree::MakeMove(Move move) {
   history_.Append(move);
 }
 
+// This function examines the tree to recalculate the already searched depth. At
+// first glance this might seem excessive, but, even aside from the memory
+// savings of not caching depths in Nodes, this is actually in sum a
+// computational savings as well. The simple reason is that for the old per-Node
+// depths, they are recalculated d times for *every* node, where d is the depth.
+// This recalculates *once* per node (and only the reused nodes at that), so
+// this replaces O(N log(N)) ops with 2*O(N) ops (N is the number of nodes,
+// d ~ log(N)). And, as if that wasn't cool enough, this actually moves some of
+// the computation out of the otherwise-critical search code/cpu time, and moves
+// it into the pre-search initialization which doesn't count against move-search
+// time. The only drawback is that this computational effort is changed from
+// spread-over-the-search to all-at-once-in-initializtion, but it's a very
+// simple and efficient loop, and even with dozens of millions of nodes, only
+// takes on the order of milliseconds (and UCI sends an `isready` command
+// between `position` and `go` anyways).
+void NodeTree::RecalculateDepth() {
+  // This is the iterative translation of the most obvious and simple recursive
+  // implementation of a traversal of the tree. Basically the wo choices for
+  // this are depth first and breadth first; the former is far more obvious from
+  // a recursive standpoint, and also has the advantage that the intermediate
+  // storage need only be logarithmically long relative to the number of nodes.
+  // (The latter, using a queue rather than a stack, would have an intermediate
+  // length much closer to linear in the number of nodes rather than
+  // logarithmic.) The recursive implementation looks like this:
+  // void RecalculateDepth(node, depth) {
+  //   Process(node, depth);
+  //   for (child : node) {
+  //     RecalculateDepth(child, depth+1);
+  //   }
+  // }
+  std::stack<Node*> stack;
+  cumulative_depth_ = max_depth_ = 0;
+
+  stack.push(current_head_);
+
+  while (!stack.empty()) {
+    auto& node = stack.top(); // stack::top returns a reference!
+    if (node) {
+      if (node->GetN() > 0) {
+        auto depth = stack.size() - 1;
+        cumulative_depth_ += depth;
+        if (max_depth_ < depth) max_depth_ = depth;
+
+        stack.push(node->child_.get());
+      }
+      node = node->sibling_.get(); // Modifies the stack entry inplace!
+    } else {
+      stack.pop();
+    }
+  }
+}
+
 void NodeTree::TrimTreeAtHead() {
   auto tmp = std::move(current_head_->sibling_);
   // Send dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
   *current_head_ = Node(current_head_->GetParent(), current_head_->index_);
   current_head_->sibling_ = std::move(tmp);
+
+  cumulative_depth_ = max_depth_ = 0;
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -364,6 +401,8 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   if (!seen_old_head) {
     assert(!current_head_->sibling_);
     TrimTreeAtHead();
+  } else {
+    RecalculateDepth();
   }
 }
 
@@ -373,6 +412,23 @@ void NodeTree::DeallocateTree() {
   gNodeGc.AddToGcQueue(std::move(gamebegin_node_));
   gamebegin_node_ = nullptr;
   current_head_ = nullptr;
+  cumulative_depth_ = max_depth_ = 0;
+}
+
+// Not thread safe!
+void NodeTree::UpdateDepth(uint16_t new_node_depth) {
+  if (new_node_depth > max_depth_) max_depth_ = new_node_depth;
+  cumulative_depth_ += new_node_depth;
+}
+
+uint16_t NodeTree::GetMaxDepth() const {
+  return max_depth_;
+}
+
+uint16_t NodeTree::GetAverageDepth() const {
+  float ret = static_cast<float>(cumulative_depth_) /
+              static_cast<float>(current_head_->n_ - 1); // Exclude root node.
+  return static_cast<uint16_t>(std::ceil(ret));
 }
 
 }  // namespace lczero

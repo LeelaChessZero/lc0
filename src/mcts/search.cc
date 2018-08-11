@@ -91,13 +91,13 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
-Search::Search(const NodeTree& tree, Network* network,
+Search::Search(NodeTree* tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache)
-    : root_node_(tree.GetCurrentHead()),
+    : tree_(tree),
+      root_node_(tree_->GetCurrentHead()),
       cache_(cache),
-      played_history_(tree.GetPositionHistory()),
       network_(network),
       limits_(limits),
       start_time_(std::chrono::steady_clock::now()),
@@ -142,8 +142,8 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_edge_) return;
   last_outputted_best_move_edge_ = best_move_edge_.edge();
-  uci_info_.depth = root_node_->GetFullDepth();
-  uci_info_.seldepth = root_node_->GetMaxDepth();
+  uci_info_.depth = tree_->GetAverageDepth();
+  uci_info_.seldepth = tree_->GetMaxDepth();
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_playouts_ + initial_visits_;
   uci_info_.hashfull =
@@ -153,7 +153,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0));
   uci_info_.pv.clear();
 
-  bool flip = played_history_.IsBlackToMove();
+  bool flip = tree_->GetPositionHistory().IsBlackToMove();
   for (auto iter = best_move_edge_; iter;
        iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
     uci_info_.pv.push_back(iter.GetMove(flip));
@@ -170,8 +170,8 @@ void Search::MaybeOutputInfo() {
   Mutex::Lock counters_lock(counters_mutex_);
   if (!responded_bestmove_ && best_move_edge_ &&
       (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
-       uci_info_.depth != root_node_->GetFullDepth() ||
-       uci_info_.seldepth != root_node_->GetMaxDepth() ||
+       uci_info_.depth != tree_->GetAverageDepth() ||
+       uci_info_.seldepth != tree_->GetMaxDepth() ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
   }
@@ -201,7 +201,7 @@ void Search::SendMovesStats() const {
                                            b.GetQ(parent_q) + b.GetU(U_coeff));
             });
 
-  const bool is_black_to_move = played_history_.IsBlackToMove();
+  const bool is_black_to_move = tree_->GetPositionHistory().IsBlackToMove();
   ThinkingInfo info;
   for (const auto& edge : edges) {
     std::ostringstream oss;
@@ -255,8 +255,9 @@ NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
   // It would be relatively straightforward to generalize this to fetch NN
   // results for an abitrary move.
   optional<float> retval;
-  PositionHistory history(played_history_);  // Is it worth it to move this
-  // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
+  PositionHistory history(tree_->GetPositionHistory());
+  // Is it worth it to move this initialization to SendMoveStats, reducing
+  // n memcpys to 1? Probably not.
   history.Append(edge.GetMove());
   auto hash = history.HashLast(kCacheHistoryLength + 1);
   NNCacheLock nneval(cache_, hash);
@@ -363,7 +364,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
 
   float temperature = kTemperature;
   if (temperature && kTempDecayMoves) {
-    int moves = played_history_.Last().GetGamePly() / 2;
+    int moves = tree_->GetPositionHistory().Last().GetGamePly() / 2;
     if (moves >= kTempDecayMoves) {
       temperature = 0.0;
     } else {
@@ -378,7 +379,8 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
 
   Move ponder_move;  // Default is "null move" which means "don't display
                      // anything".
-  return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
+  return {best_node.GetMove(tree_->GetPositionHistory().IsBlackToMove()),
+          ponder_move};
 }
 
 // Returns a child with most visits.
@@ -577,7 +579,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   Node* node = search_->root_node_;
   Node::Iterator best_edge;
   // Initialize position sequence with pre-move position.
-  history_.Trim(search_->played_history_.GetLength());
+  history_.Trim(search_->tree_->GetPositionHistory().GetLength());
 
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
@@ -739,7 +741,7 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // nodes which are likely useful in future.
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < search_->kMaxPrefetchBatch) {
-    history_.Trim(search_->played_history_.GetLength());
+    history_.Trim(search_->tree_->GetPositionHistory().GetLength());
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
     PrefetchIntoCache(search_->root_node_, search_->kMaxPrefetchBatch -
                                                computation_->GetCacheMisses());
@@ -893,12 +895,9 @@ void SearchWorker::DoBackupUpdate() {
 
     // Backup V value up to a root. After 1 visit, V = Q.
     float v = node_to_process.v;
-    // Maximum depth the node is explored.
+    // This node's depth in the tree relative to root_node_.
     uint16_t depth = 0;
-    // If the node is terminal, mark it as fully explored to an "infinite"
-    // depth.
-    uint16_t cur_full_depth = node->IsTerminal() ? 999 : 0;
-    bool full_depth_updated = true;
+
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
@@ -906,12 +905,6 @@ void SearchWorker::DoBackupUpdate() {
       // Q will be flipped for opponent.
       v = -v;
 
-      // Update the stats.
-      // Max depth.
-      n->UpdateMaxDepth(depth);
-      // Full depth.
-      if (full_depth_updated)
-        full_depth_updated = n->UpdateFullDepth(&cur_full_depth);
       // Best move.
       if (n->GetParent() == search_->root_node_ &&
           search_->best_move_edge_.GetN() <= n->GetN()) {
@@ -919,6 +912,8 @@ void SearchWorker::DoBackupUpdate() {
             search_->GetBestChildNoTemperature(search_->root_node_);
       }
     }
+    --depth; // Loop counts relative to root_node_->GetParent().
+    search_->tree_->UpdateDepth(depth);
     ++search_->total_playouts_;
   }
 }
