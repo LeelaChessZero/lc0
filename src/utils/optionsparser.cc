@@ -410,6 +410,7 @@ bool BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
 bool BoolOption::ProcessLongFlag(const std::string& flag,
                                  const std::string& value, OptionsDict* dict) {
   if (flag == "no-" + GetLongFlag()) return SetVal(dict, false);
+  if (flag ==  GetLongFlag() && value.empty()) return SetVal(dict, true);
   if (!ValidateBoolString(value)) return false;
   if (flag == GetLongFlag()) {
     return SetVal(dict, value.empty() || (value != "false"));
