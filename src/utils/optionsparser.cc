@@ -74,7 +74,8 @@ void OptionsParser::SendAllOptions() {
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
-    if (val->GetLongFlag() == flag) return val.get();
+    auto longflg = val->GetLongFlag();
+    if (flag == longflg || flag == ("no-" + longflg)) return val.get();
   }
   return nullptr;
 }
