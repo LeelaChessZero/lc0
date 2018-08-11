@@ -45,7 +45,7 @@ TEST(OptionsParser, FloatOptionCheckValueConstraints) {
   EXPECT_FALSE(options.SetOption("float-test-a", "100.0"));
 }
 
-TEST(Options, BoolOptionsCheckValueConstraints) {
+TEST(OptionsParser, BoolOptionsCheckValueConstraints) {
   OptionsParser options;
   options.Add<BoolOption>("bool-test-a", "bool-test-a", 'a') = false;
 
