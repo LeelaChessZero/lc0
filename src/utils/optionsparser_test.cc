@@ -19,7 +19,6 @@
 #include <gtest/gtest.h>
 
 #include <iostream>
-#include "chess/position.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
