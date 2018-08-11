@@ -204,18 +204,18 @@ if get_option('build_backends')
       ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
-	if not ispc_native_only
-	    outputnames += ['@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
-                            '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj',
-			    '@BASENAME@_avx2.obj' ]
-	endif
+        if not ispc_native_only
+          outputnames += ['@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
+                          '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj',
+                          '@BASENAME@_avx2.obj' ]
+        endif
       else
-	ispc_extra_args += ['--pic']
-	outputnames = [ '@BASENAME@.o']
-	if not ispc_native_only
-	   outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
+        ispc_extra_args += ['--pic']
+        outputnames = [ '@BASENAME@.o']
+        if not ispc_native_only
+          outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
                            '@BASENAME@_avx.o', '@BASENAME@_avx11.o',
-			   '@BASENAME@_avx2.o' ]
+                           '@BASENAME@_avx2.o' ]
         endif
       endif
       if ispc_native_only
