@@ -190,7 +190,7 @@ void Node::FinalizeScoreUpdate(float v) {
   } else {
     auto child_nodes = ChildNodes();
     auto best_child = std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
-      return lhs->minmax_q_ < rhs->minmax_q_;
+      return lhs->minmax_q_*((float)lhs->n_) < rhs->minmax_q_*((float)rhs->n_);
     });
     float pure_minmax = -(best_child->minmax_q_);
     float minmax_component = ((float)best_child->n_)/((float)(n_+1));
