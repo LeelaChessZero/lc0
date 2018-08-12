@@ -88,13 +88,16 @@ bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
     if (line.substr(0, 1) == "#") continue;
     // Skip blank lines.
     if (line.length() == 0) continue;
-    // Only long form arguments starting with '--' are supported.
+    // Allow long form arugments that omit '--'.  If omitted, add here.
+    if (line.substr(0, 1) != "-" && line.substr(0, 2) != "--") line = "--" + line;
+    // Fail now if the argument does begin with '--'.
     if (line.substr(0, 2) != "--") {
       std::cerr << "Only '--' arguments are supported in the "
                 << "configuration file: '" << line << "'." << std::endl;
       return false;
     }
     // Add the line to the arguments list.
+    std::cerr << line << std::endl;
     arguments_.emplace_back(line);
   }
 
