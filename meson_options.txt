@@ -68,6 +68,16 @@ option('blas',
        value: true,
        description: 'Enable BLAS backend')
 
+option('ispc',
+       type: 'boolean',
+       value: true,
+       description: 'use ispc')
+
+option('ispc_native_only',
+       type: 'boolean',
+       value: true,
+       description: 'use ispc and enable native arch only')
+
 option('cudnn',
        type: 'boolean',
        value: true,

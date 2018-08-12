@@ -13,9 +13,21 @@ void convolve1(
   // cl::NDRange global(channels, outputs, row);
   const int c   = get_global_id(0);  // channel
   const int o   = get_global_id(1);  // output
-  const int row = get_global_id(2);  // row
+  const int row_batch = get_global_id(2);  // row * batch_size
+
+  const int width = 8;
+  const int height = 8;
+  const int boardsize = width * height;
+
+  const int row = row_batch % 8;
+  const int batch = row_batch / 8;
+
   const int channels = get_global_size(0);
   const int outputs  = get_global_size(1);
+
+  const int input_offset = batch * boardsize * channels;
+  const int merge_offset = batch * boardsize * (channels >> 3) * outputs;
+
   // cl::NDRange local(2, (1->32), 1);
   const int lx = get_local_id(0);
   const int ly = get_local_id(1);
@@ -27,19 +39,18 @@ void convolve1(
   // output = outputs * height * width
   // weights = output * channels * filter
   // merge = channels * outputs * height * width
-  const int width = 8;
-  const int height = 8;
   const int strip_size = width;
   // Copy the input channels (strips) locally
   if (out_buff_size < 8 && ly == 0) {
     // strip-row
     for (int w = 0; w < width; w++) {
       channel_buff[lx * width + w] =
-      vload_net_t((c * height + row) * width + w, in);
+      vload_net_t((c * height + row) * width + w + input_offset, in);
     }
   } else if (out_buff_size >= 8 && ly < 8) {
     // Every thread copies a column
-    channel_buff[lx * width + ly] = vload_net_t((c * height + row) * width + ly, in);
+    channel_buff[lx * width + ly] = vload_net_t((c * height + row) * width +
+	    ly + input_offset, in);
   }
   // Copy the filter we are applying locally
   __private float filter_buff = vload_net_t((o * channels + c), weights);
@@ -65,7 +76,8 @@ void convolve1(
         val += row_buff[(ly * chan_buff_size + 5) * row_buff_size + lx];
         val += row_buff[(ly * chan_buff_size + 6) * row_buff_size + lx];
         val += row_buff[(ly * chan_buff_size + 7) * row_buff_size + lx];
-        vstore_net_t(val, (((c >> chan_shift) * height + row) * width + out_cw + lx) * outputs + o, merge);
+        vstore_net_t(val, (((c >> chan_shift) * height + row) * width +
+		    out_cw + lx) * outputs + o + merge_offset, merge);
       }
       out_cw  += row_buff_size;
       out_lane = 0;
@@ -82,6 +94,7 @@ __kernel void merge_bn(
   // cl::NDRange global(outputs, 8*8);
   const int gx = get_global_id(0);
   const int gy = get_global_id(1);
+  const int batch = get_global_id(2);
   const int output = gx;
   const int b = gy;
   const int outputs = get_global_size(0);
@@ -91,7 +104,8 @@ __kernel void merge_bn(
   const int o = output;
   float sum = 0;
   for (int c = 0; c < channels; c++) {
-    sum += vload_net_t((c * boardsize + b) * outputs + o, in);
+    sum += vload_net_t(batch * channels * boardsize * outputs +
+	    (c * boardsize + b) * outputs + o, in);
   }
   if (means) {
     const float mean = vload_net_t(o, means);
@@ -100,7 +114,7 @@ __kernel void merge_bn(
     sum = scale_stddiv * (sum - mean);
     sum = sum > 0 ? sum : 0.0f;
   }
-  vstore_net_t(sum, o * boardsize + b, out);
+  vstore_net_t(sum, batch * outputs * boardsize + o * boardsize + b, out);
 }
 
 // End of the C++11 raw string literal

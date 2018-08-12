@@ -33,6 +33,7 @@
 #include "mcts/search.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
+#include "utils/configfile.h"
 
 namespace lczero {
 namespace {
@@ -96,6 +97,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
                             "time-curve-right-width") = 74.0f;
 
   Search::PopulateUciParams(options);
+  ConfigFile::PopulateOptions(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
 
@@ -181,6 +183,8 @@ void EngineController::UpdateNetwork() {
   std::string net_path = network_path;
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
+  } else {
+    std::cerr << "Loading weights file from: " << net_path << std::endl;
   }
   Weights weights = LoadWeightsFromFile(net_path);
 
@@ -251,7 +255,7 @@ EngineLoop::EngineLoop()
 }
 
 void EngineLoop::RunLoop() {
-  if (!options_.ProcessAllFlags()) return;
+  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
   UciLoop::RunLoop();
 }
 
