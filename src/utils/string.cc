@@ -72,24 +72,22 @@ std::vector<int> ParseIntList(const std::string& str) {
   return result;
 }
 
-std::string LeftTrim(const std::string& str) {
-  std::string s = str;
-  auto it = std::find_if(s.begin(), s.end(), [](int ch)
+std::string LeftTrim(std::string str) {
+  auto it = std::find_if(str.begin(), str.end(), [](int ch)
     {return !std::isspace(ch);});
-  s.erase(s.begin(), it);
-  return s;
+  str.erase(str.begin(), it);
+  return str;
 }
 
-std::string RightTrim(const std::string& str) {
-  std::string s = str;
-  auto it = std::find_if(s.rbegin(), s.rend(), [](int ch)
+std::string RightTrim(std::string str) {
+  auto it = std::find_if(str.rbegin(), str.rend(), [](int ch)
     {return !std::isspace(ch);});
-  s.erase(it.base(), s.end());
-  return s;
+  str.erase(it.base(), str.end());
+  return str;
 }
 
-std::string Trim(const std::string& str) {
-  return LeftTrim(RightTrim(str));
+std::string Trim(std::string str) {
+  return LeftTrim(RightTrim(std::move(str)));
 }
 
 }  // namespace lczero

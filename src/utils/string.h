@@ -47,12 +47,12 @@ std::vector<std::string> StrSplit(const std::string& str,
 std::vector<int> ParseIntList(const std::string& str);
 
 // Trims a string of whitespace from the start.
-std::string LeftTrim(const std::string& str);
+std::string LeftTrim(std::string str);
 
 // Trims a string of whitespace from the end.
-std::string RightTrim(const std::string& str);
+std::string RightTrim(std::string str);
 
 // Trims a string of whitespace from both ends.
-std::string Trim(const std::string& str);
+std::string Trim(std::string str);
 
 }  // namespace lczero
