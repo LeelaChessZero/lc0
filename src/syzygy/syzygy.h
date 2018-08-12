@@ -33,6 +33,8 @@ class SyzygyTablebaseImpl;
 // conditions of the init method.
 class SyzygyTablebase {
  public:
+  SyzygyTablebase();
+  virtual ~SyzygyTablebase();
   // Current maximum number of pieces on board that can be probed for. Will
   // be 0 unless initialized with tablebase paths.
   // Thread safe.

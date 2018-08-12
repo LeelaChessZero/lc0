@@ -1327,6 +1327,10 @@ class SyzygyTablebaseImpl {
   std::vector<TbHashEntry> tbHash_;
 };
 
+SyzygyTablebase::SyzygyTablebase() : max_cardinality_(0) {}
+
+SyzygyTablebase::~SyzygyTablebase() = default;
+ 
 void SyzygyTablebase::init(const std::string& paths) {
   paths_ = paths;
   impl_.reset(new SyzygyTablebaseImpl(paths_));
