@@ -57,11 +57,8 @@ const char* Search::kCacheHistoryLengthStr =
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
-<<<<<<< HEAD
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
-=======
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
->>>>>>> upstream/master
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
