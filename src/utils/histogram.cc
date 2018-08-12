@@ -89,7 +89,7 @@ void Histogram::Dump() const {
       Print("      |");
     }
     double ymin = (99 - i) * 0.01;
-    for (int j = 0; j < buckets_.size(); j++) {
+    for (size_t j = 0; j < buckets_.size(); j++) {
       double val = buckets_[j] / (double)total_;
       if (val > ymin) {
         Print("#");
