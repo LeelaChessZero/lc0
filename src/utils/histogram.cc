@@ -76,7 +76,7 @@ void Histogram::Add(double value) {
   if (count > max_) max_ = count;
 }
 
-void Histogram::Dump() const{
+void Histogram::Dump() const {
   double ymax = 0.02 + max_ / (double)total_;
   for (int i = 0; i < 100; i++) {
     double yscale = 1 - i * 0.01;
@@ -122,7 +122,7 @@ void Histogram::Dump() const{
   Print(" \n");
 }
 
-int Histogram::GetIndex(double val) const{
+int Histogram::GetIndex(double val) const {
   if (val <= 0) return 0;
   double log10 = std::log10(val);
   // 2: -15 :    -15.1 ... -14.9          2 ... 3
