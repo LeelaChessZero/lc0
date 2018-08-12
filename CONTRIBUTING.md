@@ -2,7 +2,7 @@
 
 These are the guidelines and standards followed by this codebase.
 
-The language is C++, specifically C++14. The compiler used must support C++14, and the entire C++14 standard featureset may be used. As such, manual `new` and `delete` memory mangement is disallowed; use the standard library tools for managing memory (such as `unique_ptr`, `shared_ptr` etc.). When compiler support is more widespread, the project may upgrade to the C++17 standard in the future.
+The language is C++, specifically C++14. As such, manual `new` and `delete` memory mangement is strongly discouraged; use the standard library tools for managing memory (such as `unique_ptr`, `shared_ptr` etc.). When compiler support is more widespread, the project may upgrade to the C++17 standard in the future.
 
 This codebase uses semantic versioning. A release is the final commit for that version number, and all subsequent commits are development for the next version. `master` is the default branch, and the active development branch (as such, all Pull Requests go here); it always targets a minor (or major) version which succeeds the current relase. `release` is always equivalent to the latest tag.
 
@@ -16,8 +16,8 @@ This codebase largely complies with the [Google C++ style guide](https://google.
 Notable exceptions:
  1. C++ exceptions are allowed (in fact, only `lczero::Exception`, defined in `utils/exception.h`, is allowed)
  2. We use `#pragma once` instead of header guards.
- 3. Default function parameters are sometimes allowed, not only for constructors and assignment operators.
- 4. Rvalue reference function params are sometimes allowed.
+ 3. Default function parameters are sometimes allowed.
+ 4. Rvalue reference function params are sometimes allowed, not only for constructors and assignment operators.
 
 For items (3) and (4), usage of those are discouraged, only use them if they benefit readability or have significant performance gain. It's possible that those exceptions (3) and (4) will be disallowed in future.
 
@@ -56,7 +56,7 @@ The internal code dependency structure looks like this:
 
 ### Git history
 
-Pull Requests are squahsed when merged. This means all commits in the branch will be squashed into one commit applied onto master, so PRs (and branches) should stick to *one* topic only. If you think changes deserve separate commits, make separate PRs for each commit. (This also means it's not possible to reuse one branch for multiple PRs; new PRs must either use entirely new branches, or else you could use `git reset --hard` on the current branch.)
+Pull Requests are squahsed when merged. This means all commits in the branch will be squashed into one commit applied onto master, so branches and their PRs should stick to *one* topic only. If you think changes deserve separate commits, make separate PRs for each commit.
 
 
 ### Command line/UCI options
