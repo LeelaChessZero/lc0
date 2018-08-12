@@ -36,6 +36,7 @@
 #include <thread>
 #include "neural/encoder.h"
 #include "neural/network.h"
+#include "utils/exception.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -236,7 +237,9 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
 
   // Populate probabilities.
   float total_n = static_cast<float>(
-      GetN() - 1);  // First visit was expansion of it inself.
+      GetN() - 1);  // First visit was expansion of "this" itself.
+  // Prevent garbage/invalid training data from being uploaded to server.
+  if (total_n <= 0) throw Exception("Search generated invalid data!");
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
