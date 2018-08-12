@@ -68,10 +68,10 @@ class Histogram {
   void Add(double value);
 
   // Dumps the histogram to stderr.
-  void Dump();
+  void Dump() const;
 
  private:
-  int GetIndex(double val);
+  int GetIndex(double val) const;
 
   static constexpr int kDefaultMinExp = -15;
   static constexpr int kDefaultMaxExp = 5;
@@ -82,7 +82,6 @@ class Histogram {
   const int minor_scales_;
   const int major_scales_;
   const int total_scales_;
-  const int full_scales_;
   std::vector<double> buckets_;
   double total_;
   double max_;

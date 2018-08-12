@@ -59,13 +59,12 @@ Histogram::Histogram(int min_exp, int max_exp, int minor_scales)
       minor_scales_(minor_scales),
       major_scales_(max_exp_ - min_exp_ + 1),
       total_scales_(major_scales_ * minor_scales_),
-      full_scales_(total_scales_ + 4),
-      buckets_(full_scales_) {
+      buckets_(total_scales_ + 4) {
   Clear();
 }
 
 void Histogram::Clear() {
-  for (int i = 0; i < full_scales_; i++) buckets_[i] = 0;
+  std::fill(buckets_.begin(), buckets_.end(), 0);
   total_ = 0;
   max_ = 0;
 }
@@ -77,7 +76,7 @@ void Histogram::Add(double value) {
   if (count > max_) max_ = count;
 }
 
-void Histogram::Dump() {
+void Histogram::Dump() const{
   double ymax = 0.02 + max_ / (double)total_;
   for (int i = 0; i < 100; i++) {
     double yscale = 1 - i * 0.01;
@@ -90,7 +89,7 @@ void Histogram::Dump() {
       Print("      |");
     }
     double ymin = (99 - i) * 0.01;
-    for (int j = 0; j < full_scales_; j++) {
+    for (int j = 0; j < buckets_.size(); j++) {
       double val = buckets_[j] / (double)total_;
       if (val > ymin) {
         Print("#");
@@ -123,7 +122,7 @@ void Histogram::Dump() {
   Print(" \n");
 }
 
-int Histogram::GetIndex(double val) {
+int Histogram::GetIndex(double val) const{
   if (val <= 0) return 0;
   double log10 = std::log10(val);
   // 2: -15 :    -15.1 ... -14.9          2 ... 3
