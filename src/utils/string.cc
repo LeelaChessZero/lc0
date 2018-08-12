@@ -27,6 +27,8 @@
 
 #include "utils/string.h"
 
+#include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <vector>
 
@@ -68,6 +70,24 @@ std::vector<int> ParseIntList(const std::string& str) {
     result.push_back(std::stoi(x));
   }
   return result;
+}
+
+std::string LeftTrim(std::string str) {
+  auto it = std::find_if(str.begin(), str.end(), [](int ch)
+    {return !std::isspace(ch);});
+  str.erase(str.begin(), it);
+  return str;
+}
+
+std::string RightTrim(std::string str) {
+  auto it = std::find_if(str.rbegin(), str.rend(), [](int ch)
+    {return !std::isspace(ch);});
+  str.erase(it.base(), str.end());
+  return str;
+}
+
+std::string Trim(std::string str) {
+  return LeftTrim(RightTrim(std::move(str)));
 }
 
 }  // namespace lczero
