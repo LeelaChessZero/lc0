@@ -49,14 +49,19 @@ const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
-const char* Search::kSmartPruningStr = "Enable smart pruning";
+const char* Search::kAggressiveTimePruningStr =
+    "Aggressive smart pruning threshold";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+<<<<<<< HEAD
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
+=======
+const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
+>>>>>>> upstream/master
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -78,7 +83,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
-  options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
+  options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
+                            "smart-pruning-aggresiveness") = 0.68f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
@@ -88,6 +94,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
+  options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -110,12 +117,13 @@ Search::Search(const NodeTree& tree, Network* network,
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
-      kSmartPruning(options.Get<bool>(kSmartPruningStr)),
+      kAggressiveTimePruning(options.Get<float>(kAggressiveTimePruningStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)) {}
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -241,6 +249,8 @@ void Search::SendMovesStats() const {
     }
     oss << ") ";
 
+    oss << "(T: " << edge.IsTerminal() << ") ";
+
     info.comment = oss.str();
     info_callback_(info);
   }
@@ -294,7 +304,7 @@ void Search::MaybeTriggerStop() {
 }
 
 void Search::UpdateRemainingMoves() {
-  if (!kSmartPruning) return;
+  if (kAggressiveTimePruning <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
@@ -305,7 +315,10 @@ void Search::UpdateRemainingMoves() {
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
-      int64_t remaining_playouts = remaining_time * nps / 1000;
+      // Put early_exit scaler here so calculation doesn't have to be done on
+      // every node.
+      int64_t remaining_playouts =
+          kAggressiveTimePruning * remaining_time * nps / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -618,7 +631,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) return {node, true};
-    // Unexamined leaf node. We've hit the end of this playout.
+    // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) return {node, false};
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
@@ -654,6 +667,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
+      if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
+        // If we find a checkmate, then the confidence is infinite, so ignore U.
+        best_edge = child;
+        break;
+      }
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;
