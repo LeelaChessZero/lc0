@@ -228,17 +228,32 @@ namespace lczero {
         network->markOutput(*valueOutTensor);
         network->markOutput(*policyOutTensor);
 
-        // Ankan - TODO: fix these hardcoded stuff
-        const int max_batch = 256;
-        const size_t maxScratchSize = 2*1024*1024*1024ull;
+        // Ankan - test fp16
+        //builder->setFp16Mode(true);
 
-        builder->setMaxBatchSize(max_batch);
-        builder->setMaxWorkspaceSize(maxScratchSize);
+        size_t freeMem, totalMem;
+        cudaMemGetInfo(&freeMem, &totalMem);
+        printf("\nGPU Memory, total: %llu, free: %llu\n", totalMem, freeMem);
+
+        // reserve half of free mem for large batch, 1/4th for medium batch, and 1/8th for small batch
+        builder->setMaxBatchSize(kLargeBatchSize);
+        builder->setMaxWorkspaceSize(freeMem/2);
+        engine_large_ = builder->buildCudaEngine(*network);
+        context_large_ = engine_large_->createExecutionContext();
+
+        builder->setMaxBatchSize(kMediumBatchSize);
+        builder->setMaxWorkspaceSize(freeMem/4);
+        engine_medium_ = builder->buildCudaEngine(*network);
+        context_medium_ = engine_medium_->createExecutionContext();
+
+        builder->setMaxBatchSize(kSmallBatchSize);
+        builder->setMaxWorkspaceSize(freeMem/8);
+        engine_small_ = builder->buildCudaEngine(*network);
+        context_small_ = engine_small_->createExecutionContext();
 
         // TODO: buildCudaEngine take a very long time (as TRT does all its optimizations inside this function)
         // Need to serialize engnie object and save it to file (for each weight file), and load it directly from file if present
-        engine_ = builder->buildCudaEngine(*network);
-        context_ = engine_->createExecutionContext();
+
 
         network->destroy();
         builder->destroy();
@@ -261,19 +276,39 @@ namespace lczero {
         float *opVal = io->op_value_mem_gpu_;
 
 
-        // run the network using TRT
-        assert(engine_->getNbBindings() == 3);
+        // Run the network using TRT.
+
+        // decide which engine to use based on batch size
+        nvinfer1::IExecutionContext *context;
+        nvinfer1::ICudaEngine *engine;
+        if (batchSize <= kSmallBatchSize)
+        {
+            context = context_small_;
+            engine = engine_small_;
+        }
+        else if (batchSize <= kMediumBatchSize)
+        {
+            context = context_medium_;
+            engine = engine_medium_;
+        }
+        else
+        {
+            context = context_large_;
+            engine = engine_large_;
+        }
+
+        assert(engine->getNbBindings() == 3);
         void* buffers[3];
 
-        const int inputIndex = engine_->getBindingIndex("board");
-        const int valueOutIndex = engine_->getBindingIndex("valueOut");
-        const int policyOutIndex = engine_->getBindingIndex("policyOut");
+        const int inputIndex = engine->getBindingIndex("board");
+        const int valueOutIndex = engine->getBindingIndex("valueOut");
+        const int policyOutIndex = engine->getBindingIndex("policyOut");
 
         buffers[inputIndex] = scratch_mem_;
         buffers[valueOutIndex] = opVal;
         buffers[policyOutIndex] = opPol;
 
-        context_->enqueue(batchSize, buffers, (cudaStream_t) 0, nullptr);
+        context->enqueue(batchSize, buffers, (cudaStream_t) 0, nullptr);
         cudaDeviceSynchronize();
 
         #ifdef DEBUG_RAW_NPS
@@ -304,8 +339,14 @@ namespace lczero {
     ~TRTNetwork() 
     {
         if (scratch_mem_) ReportCUDAErrors(cudaFree(scratch_mem_));
-        context_->destroy();
-        engine_->destroy();
+
+        context_small_->destroy();
+        context_medium_->destroy();
+        context_large_->destroy();
+
+        engine_small_->destroy();
+        engine_medium_->destroy();
+        engine_large_->destroy();
     }
 
     std::unique_ptr<NetworkComputation> NewComputation() override 
@@ -337,8 +378,14 @@ namespace lczero {
 
   private:
     int gpu_id_;
-    nvinfer1::IExecutionContext* context_;
-    nvinfer1::ICudaEngine* engine_;
+
+    // TODO: maybe make these configurible
+    static const int kSmallBatchSize = 16;
+    static const int kMediumBatchSize = 64;
+    static const int kLargeBatchSize = 1024;
+
+    nvinfer1::IExecutionContext *context_small_, *context_medium_, *context_large_;
+    nvinfer1::ICudaEngine *engine_small_, *engine_medium_, *engine_large_;
 
     // currently only one NN Eval can happen a time (we can fix this if needed by
     // allocating more memory)
