@@ -97,7 +97,6 @@ bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
       return false;
     }
     // Add the line to the arguments list.
-    std::cerr << line << std::endl;
     arguments_.emplace_back(line);
   }
 
