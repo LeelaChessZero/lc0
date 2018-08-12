@@ -298,23 +298,30 @@ if get_option('build_backends')
   endif
 
 
-  ## ~~~~~
-  ## cuDNN
-  ## ~~~~~
+  ## ~~~~~~~~~~~~~
+  ## cuDNN and TRT
+  ## ~~~~~~~~~~~~~
   cudnn_libdirs = get_option('cudnn_libdirs')
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
+  cu_trt = cc.find_library('nvinfer', dirs: cudnn_libdirs, required: false)
   nvcc = find_program('/usr/local/cuda-9.2/bin/nvcc',
                       '/usr/local/cuda-9.1/bin/nvcc',
                       'nvcc', required: false)
   cuda_files = [
     'src/neural/network_cudnn.cu',
   ]
+  if cu_trt.found()
+    cuda_files += ['src/neural/network_trt.cu']
+  endif
 
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     includes += include_directories(get_option('cudnn_include'))
     deps += [cu_blas, cu_dnn, cu_dart]
+    if cu_trt.found()
+      deps += [cu_trt]
+    endif
   cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                     '-I', meson.current_source_dir() + '/src']
   if host_machine.system() == 'windows'

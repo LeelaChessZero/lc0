@@ -36,10 +36,68 @@
 #include <cublas_v2.h>
 #include <cudnn.h>
 #include <algorithm>
+#include "neural/network_cuda.h"
 
 //#define DEBUG_RAW_NPS
 
 namespace lczero {
+
+void CudaError(cudaError_t status, const char *file, const int &line) {
+  if (status != cudaSuccess) {
+    char message[128];
+    sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
+            file, line);
+    throw Exception(message);
+  }
+}
+
+int DivUp(int a, int b) { return (a + b - 1) / b; }
+
+__global__ void expandPlanes_kernel_Fp32_NCHW(float *output,
+                                              const uint64_t *masks,
+                                              const float *values, int n) {
+  // Block size of 256, same mask/val for 64 consecutive threads.
+  constexpr int kNumShmemElments = 256 / 64;
+
+  __shared__ uint64_t shMasks[kNumShmemElments];
+  __shared__ float shVals[kNumShmemElments];
+
+  int index = threadIdx.x + blockDim.x * blockIdx.x;
+
+  int planeIndex = index >> 6;
+
+  if (planeIndex >= n) return;
+
+  // load inputs to shared memory.
+  if (threadIdx.x < kNumShmemElments) {
+    shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
+    shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
+  }
+  __syncthreads();
+
+  uint64_t mask = shMasks[threadIdx.x >> 6];
+
+  int sqIndex = index & 0x3F;
+  float op = 0;
+
+  bool set = !!(mask & (1ull << sqIndex));
+  if (set) {
+    op = shVals[threadIdx.x >> 6];
+  }
+  output[index] = op;
+}
+
+void expandPlanes_Fp32_NCHW(float *output, const uint64_t *masks,
+                            const float *values, int n) {
+  int threads = n * 8 * 8;  // Each thread writes a single element.
+  const int blockSize = 256;
+  int blocks = DivUp(threads, blockSize);
+  expandPlanes_kernel_Fp32_NCHW<<<blocks, blockSize>>>(output, masks, values,
+                                                       n);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+  
 namespace {
 
 void CudnnError(cudnnStatus_t status, const char *file, const int &line) {
@@ -86,23 +144,8 @@ void CublasError(cublasStatus_t status, const char *file, const int &line) {
   }
 }
 
-void CudaError(cudaError_t status, const char *file, const int &line) {
-  if (status != cudaSuccess) {
-    char message[128];
-    sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
-            file, line);
-    throw Exception(message);
-  }
-}
-
 #define ReportCUDNNErrors(status) CudnnError(status, __FILE__, __LINE__)
 #define ReportCUBLASErrors(status) CublasError(status, __FILE__, __LINE__)
-#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
-
-// Hard-coded for now, no point in going above this anyway (can possibly save
-// memory by reducing this).
-static constexpr int kMaxBatchSize = 1024;
-static constexpr int kNumOutputPolicy = 1858;
 
 // The Layer objects only hold memory for weights, biases, etc
 // memory for input and output tensors is provided by caller of Eval.
@@ -230,7 +273,6 @@ class FCLayer : public BaseLayer<DataType> {
 //  2. output of the layer
 //  3. data from old layer for skip connection
 
-int DivUp(int a, int b) { return (a + b - 1) / b; }
 
 /////////////////////////////////////////////////////////////////////////////
 //          Simple CUDA kernels used by certain layers                     //
@@ -378,50 +420,6 @@ void batchNormForward(T *output, const T *input, const T *skipInput, int N,
   batchNormForward_kernel<<<blocks, kBlockSize>>>(
       output, input, skipInput, N, C, H, W, means, var_multipliers, relu);
 
-  ReportCUDAErrors(cudaGetLastError());
-}
-
-__global__ void expandPlanes_kernel_Fp32_NCHW(float *output,
-                                              const uint64_t *masks,
-                                              const float *values, int n) {
-  // Block size of 256, same mask/val for 64 consecutive threads.
-  constexpr int kNumShmemElments = 256 / 64;
-
-  __shared__ uint64_t shMasks[kNumShmemElments];
-  __shared__ float shVals[kNumShmemElments];
-
-  int index = threadIdx.x + blockDim.x * blockIdx.x;
-
-  int planeIndex = index >> 6;
-
-  if (planeIndex >= n) return;
-
-  // load inputs to shared memory.
-  if (threadIdx.x < kNumShmemElments) {
-    shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
-    shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
-  }
-  __syncthreads();
-
-  uint64_t mask = shMasks[threadIdx.x >> 6];
-
-  int sqIndex = index & 0x3F;
-  float op = 0;
-
-  bool set = !!(mask & (1ull << sqIndex));
-  if (set) {
-    op = shVals[threadIdx.x >> 6];
-  }
-  output[index] = op;
-}
-
-void expandPlanes_Fp32_NCHW(float *output, const uint64_t *masks,
-                            const float *values, int n) {
-  int threads = n * 8 * 8;  // Each thread writes a single element.
-  const int blockSize = 256;
-  int blocks = DivUp(threads, blockSize);
-  expandPlanes_kernel_Fp32_NCHW<<<blocks, blockSize>>>(output, masks, values,
-                                                       n);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -876,48 +874,6 @@ FCLayer<DataType>::~FCLayer() {
   ReportCUDAErrors(cudaFree(biases_));
 }
 
-struct InputsOutputs {
-  InputsOutputs() {
-    ReportCUDAErrors(cudaHostAlloc(
-        &input_masks_mem_, kMaxBatchSize * kInputPlanes * sizeof(uint64_t),
-        cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
-
-    ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
-                                   kMaxBatchSize * kInputPlanes * sizeof(float),
-                                   cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
-
-    ReportCUDAErrors(cudaHostAlloc(
-        &op_policy_mem_, kMaxBatchSize * kNumOutputPolicy * sizeof(float),
-        cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&op_policy_mem_gpu_, op_policy_mem_, 0));
-
-    ReportCUDAErrors(cudaHostAlloc(
-        &op_value_mem_, kMaxBatchSize * sizeof(float), cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
-  }
-  ~InputsOutputs() {
-    ReportCUDAErrors(cudaFreeHost(input_masks_mem_));
-    ReportCUDAErrors(cudaFreeHost(input_val_mem_));
-    ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
-    ReportCUDAErrors(cudaFreeHost(op_value_mem_));
-  }
-  uint64_t *input_masks_mem_;
-  float *input_val_mem_;
-  float *op_policy_mem_;
-  float *op_value_mem_;
-
-  // GPU pointers for the above allocations
-  uint64_t *input_masks_mem_gpu_;
-  float *input_val_mem_gpu_;
-  float *op_policy_mem_gpu_;
-  float *op_value_mem_gpu_;
-};
 
 // This namespace should be closed at the very end of file, but otherwise
 // there are nvcc warnings. Weird way to silence warnings.
@@ -1324,49 +1280,50 @@ class CudnnNetwork : public Network {
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false) {
-    const float epsilon = 1e-5f;
+};
 
-    // Compute reciprocal of std-dev from the variances (so that it can be just
-    // multiplied).
-    std::vector<float> &stddev = block.bn_stddivs;
-    for (auto &&w : stddev) {
-      w = 1.0f / std::sqrt(w + epsilon);
-    }
+void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer) {
+  const float epsilon = 1e-5f;
 
-    // Biases are not calculated and are typically zero but some networks might
-    // still have non-zero biases.
-    // Move biases to batchnorm means to make the output match without having
-    // to separately add the biases.
-    for (auto j = size_t{0}; j < block.bn_means.size(); j++) {
-      block.bn_means[j] -= block.biases[j];
-      block.biases[j] = 0.0f;
-    }
+  // Compute reciprocal of std-dev from the variances (so that it can be just
+  // multiplied).
+  std::vector<float> &stddev = block.bn_stddivs;
+  for (auto &&w : stddev) {
+    w = 1.0f / std::sqrt(w + epsilon);
+  }
 
-    // Get rid of the BN layer by adjusting weights and biases of the
-    // convolution idea proposed by Henrik Forstén and first implemented in
-    // leela go zero.
-    if (foldBNLayer) {
-      const int outputs = block.biases.size();
-      const int channels = block.weights.size() / (outputs * 3 * 3);
+  // Biases are not calculated and are typically zero but some networks might
+  // still have non-zero biases.
+  // Move biases to batchnorm means to make the output match without having
+  // to separately add the biases.
+  for (auto j = size_t{0}; j < block.bn_means.size(); j++) {
+    block.bn_means[j] -= block.biases[j];
+    block.biases[j] = 0.0f;
+  }
 
-      for (auto o = 0; o < outputs; o++) {
-        for (auto c = 0; c < channels; c++) {
-          for (auto i = 0; i < 9; i++) {
-            block.weights[o * channels * 9 + c * 9 + i] *= block.bn_stddivs[o];
-          }
+  // Get rid of the BN layer by adjusting weights and biases of the
+  // convolution idea proposed by Henrik Forstén and first implemented in
+  // leela go zero.
+  if (foldBNLayer) {
+    const int outputs = block.biases.size();
+    const int channels = block.weights.size() / (outputs * 3 * 3);
+
+    for (auto o = 0; o < outputs; o++) {
+      for (auto c = 0; c < channels; c++) {
+        for (auto i = 0; i < 9; i++) {
+          block.weights[o * channels * 9 + c * 9 + i] *= block.bn_stddivs[o];
         }
-
-        block.bn_means[o] *= block.bn_stddivs[o];
-        block.bn_stddivs[o] = 1.0f;
-
-        // Move means to convolution biases.
-        block.biases[o] = -block.bn_means[o];
-        block.bn_means[o] = 0.0f;
       }
+
+      block.bn_means[o] *= block.bn_stddivs[o];
+      block.bn_stddivs[o] = 1.0f;
+
+      // Move means to convolution biases.
+      block.biases[o] = -block.bn_means[o];
+      block.bn_means[o] = 0.0f;
     }
   }
-};
+}
 
 template <typename DataType>
 CudnnNetworkComputation<DataType>::CudnnNetworkComputation(
