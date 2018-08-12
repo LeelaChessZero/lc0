@@ -83,8 +83,13 @@ class ThreadData {
 
 class OpenCL_Network {
  public:
-  OpenCL_Network(OpenCL& opencl) : m_opencl(opencl) {}
+  OpenCL_Network(OpenCL& opencl) : m_opencl(opencl), m_max_batch_size(1) {}
+
   OpenCL& getOpenCL() { return m_opencl; }
+
+  size_t getMaxMatchSize() const { return m_max_batch_size; }
+
+  void setMaxMatchSize(size_t new_value) { m_max_batch_size = new_value; }
 
   void push_input_convolution(unsigned int filter_size, unsigned int channels,
                               unsigned int outputs,
@@ -164,7 +169,7 @@ class OpenCL_Network {
   size_t get_layer_count() const { return m_layers.size(); }
 
   void forward(const std::vector<net_t>& input, std::vector<net_t>& output_pol,
-               std::vector<net_t>& output_val) const;
+               std::vector<net_t>& output_val, const int batch_size) const;
 
  private:
   using weight_slice_t = std::vector<cl::Buffer>::const_iterator;
@@ -179,17 +184,18 @@ class OpenCL_Network {
                  cl::Buffer& bufferM, weight_slice_t weights,
                  cl::Buffer* bufferResidual, weight_slice_t bn_weights,
                  bool skip_in_transform, bool fuse_in_transform,
-                 bool store_inout) const;
+                 bool store_inout, int batch_size) const;
 
   void convolve1(int channels, int outputs, cl::Buffer& bufferInput,
                  cl::Buffer& bufferOutput, cl::Buffer& bufferMerge,
-                 weight_slice_t weights) const;
+                 weight_slice_t weights, int batch_size) const;
 
   void innerproduct(cl::Buffer& input, weight_slice_t weights,
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
-                    const int outputs, const int relu) const;
+                    const int outputs, const int relu, int batch_size) const;
 
   OpenCL& m_opencl;
+  size_t m_max_batch_size;
 
   // this mutex is not required for correctness, but this exists simply
   // because queue.finish() is a busy wait and having a lot of threads
