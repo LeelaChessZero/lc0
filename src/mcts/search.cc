@@ -49,7 +49,8 @@ const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
-const char* Search::kAggressiveTimePruningStr = "Aggressive smart pruning threshold";
+const char* Search::kTimePruningStr = "Time pruning aggression";
+const char* Search::kNodePruningStr = "Node pruning";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
@@ -78,8 +79,9 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
-  options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
-                            "smart-pruning-aggresiveness") = 0.68f;
+  options->Add<FloatOption>(kTimePruningStr, 0.0f, 10.0f,
+                            "time-pruning") = 0.68f;
+  options->Add<BoolOption>(kNodePruningStr, "node-pruning") = false;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
@@ -111,7 +113,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
-      kAggressiveTimePruning(options.Get<float>(kAggressiveTimePruningStr)),
+      kTimePruning(options.Get<float>(kTimePruningStr)),
+      kNodePruning(options.Get<bool>(kNodePruningStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
@@ -297,11 +300,11 @@ void Search::MaybeTriggerStop() {
 }
 
 void Search::UpdateRemainingMoves() {
-  if (kAggressiveTimePruning <= 0.0f) return;
+  if (kTimePruning <= 0.0f && !kNodePruning) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
-  if (limits_.time_ms >= 0) {
+  if (kTimePruning > 0.0f && limits_.time_ms >= 0) {
     auto time_since_start = GetTimeSinceStart();
     if (time_since_start > kSmartPruningToleranceMs) {
       auto nps = (1000LL * total_playouts_ + kSmartPruningToleranceNodes) /
@@ -309,14 +312,14 @@ void Search::UpdateRemainingMoves() {
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
       // Put early_exit scaler here so calculation doesn't have to be done on every node.
-      int64_t remaining_playouts = kAggressiveTimePruning * remaining_time * nps / 1000;
+      int64_t remaining_playouts = kTimePruning * remaining_time * nps / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
     }
   }
   // Check how many visits are left.
-  if (limits_.visits >= 0) {
+  if (kNodePruning && limits_.visits >= 0) {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     auto remaining_visits =
@@ -325,7 +328,7 @@ void Search::UpdateRemainingMoves() {
     if (remaining_visits < remaining_playouts_)
       remaining_playouts_ = remaining_visits;
   }
-  if (limits_.playouts >= 0) {
+  if (kNodePruning && limits_.playouts >= 0) {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     auto remaining_playouts =
@@ -647,7 +650,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     }
 
     history_.Append(best_edge.GetMove());
-    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
+    if (search_->kNodePruning && is_root_node &&
+        possible_moves <= 1 && !search_->limits_.infinite) {
       // If there is only one move theoretically possible within remaining time,
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
