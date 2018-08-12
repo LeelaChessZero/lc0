@@ -58,6 +58,8 @@ The internal code dependency structure looks like this:
 
 Pull Requests are squahsed when merged. This means all commits in the branch will be squashed into one commit applied onto master, so branches and their PRs should stick to *one* topic only. If you think changes deserve separate commits, make separate PRs for each commit.
 
+This also means it's not possible to reuse one branch for multiple PRs; new PRs must either use entirely new branches, or else you could use `git reset --hard` on the current branch.
+
 
 ### Command line/UCI options
 
