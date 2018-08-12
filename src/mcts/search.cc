@@ -531,44 +531,41 @@ bool SearchWorker::IsSearchActive() const {
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
     std::unique_ptr<NetworkComputation> computation) {
-  // If last iteration was out of order eval, continue gathering batch.
-  if (out_of_order_eval_) {
-    // If NN eval was already processed on the last iteration, remove it.
-    if (nodes_to_process_.back().nn_queried) computation_->PopInput();
-    // Was already processed on the last iteration.
-    nodes_to_process_.pop_back();
-    out_of_order_eval_ = false;
-    return;
-  }
-
-  // It was not an out-of-order eval, batch is fresh.
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
-  nodes_to_process_.clear();
-  collisions_found_ = 0;
+  minibatch_.clear();
 }
 
 // 2. Gather minibatch.
 // ~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::GatherMinibatch() {
-  int nodes_found = nodes_to_process_.size() - collisions_found_;
+  // Total number of nodes to process.
+  int minibatch_size = 0;
+  int collisions_found = 0;
+  // Number of nodes processed out of order.
+  int number_out_of_order = 0;
 
   // Gather nodes to process in the current batch.
-  while (nodes_found < search_->kMiniBatchSize) {
+  // If we had too many (kMiniBatchSize) nodes out of order, also exit so that
+  // search has a chance to exit search.
+  // TODO(crem) change that to checking search_->stop_ when bestmove reporting
+  // is in a separate thread.
+  while (minibatch_size < search_->kMiniBatchSize &&
+         number_out_of_order < search_->kMiniBatchSize) {
     // If there's something to process without touching slow neural net, do it.
-    if (nodes_found > 0 && computation_->GetCacheMisses() == 0) return;
+    if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
-    nodes_to_process_.emplace_back(PickNodeToExtend());
-    auto& picked_node = nodes_to_process_.back();
+    minibatch_.emplace_back(PickNodeToExtend());
+    auto& picked_node = minibatch_.back();
     auto* node = picked_node.node;
 
     // There was a collision. If limit has been reached, return, otherwise
     // just start search of another node.
     if (picked_node.is_collision) {
-      if (++collisions_found_ > search_->kAllowedNodeCollisions) return;
+      if (++collisions_found > search_->kAllowedNodeCollisions) return;
       continue;
     }
-    ++nodes_found;
+    ++minibatch_size;
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
@@ -578,9 +575,8 @@ void SearchWorker::GatherMinibatch() {
 
       // Only send non-terminal nodes to neural network
       if (!node->IsTerminal()) {
-        nodes_to_process_.back().nn_queried = true;
-        nodes_to_process_.back().is_cache_hit =
-            AddNodeToComputation(node, true);
+        minibatch_.back().nn_queried = true;
+        minibatch_.back().is_cache_hit = AddNodeToComputation(node, true);
       }
     }
 
@@ -589,10 +585,18 @@ void SearchWorker::GatherMinibatch() {
     // out of order eval for it.
     if (search_->kOutOfOrderEval) {
       const bool is_terminal = node->IsTerminal();
-      if (is_terminal ||
-          (!is_terminal && nodes_to_process_.back().is_cache_hit)) {
-        out_of_order_eval_ = true;
-        return;
+      if (is_terminal || minibatch_.back().is_cache_hit) {
+        // Perform out of order eval for the last entry in minibatch_.
+        FetchSingleNodeResult(&minibatch_.back(),
+                              computation_->GetBatchSize() - 1);
+        DoBackupUpdateSingleNode(minibatch_.back());
+
+        // Remove last entry in minibatch_, as it has just been
+        // processed.
+        // If NN eval was already processed out of order, remove it.
+        if (minibatch_.back().nn_queried) computation_->PopInput();
+        minibatch_.pop_back();
+        --minibatch_size;
       }
     }
   }
@@ -764,8 +768,6 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
 // 3. Prefetch into cache.
 // ~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::MaybePrefetchIntoCache() {
-  // If out of order eval is going on, don't prefetch anything into cache.
-  if (out_of_order_eval_) return;
   // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
@@ -861,27 +863,14 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() {
-  // Do not do NN eval if there's nothing to compute, or if it's an out-of-order
-  // eval, don't compute.
-  if (!out_of_order_eval_ && computation_->GetBatchSize() != 0) {
-    computation_->ComputeBlocking();
-  }
-}
+void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
-  // If it is an out-of-order eval, only eval last item in a batch.
-  if (out_of_order_eval_) {
-    FetchSingleNodeResult(&nodes_to_process_.back(),
-                          computation_->GetBatchSize() - 1);
-    return;
-  }
-
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
-  for (auto& node_to_process : nodes_to_process_) {
+  for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process, idx_in_computation);
     if (node_to_process.nn_queried) ++idx_in_computation;
   }
@@ -927,13 +916,7 @@ void SearchWorker::DoBackupUpdate() {
   // Update nodes.
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
-  // If it's out of order eval, only backpropagate last item in a batch.
-  if (out_of_order_eval_) {
-    DoBackupUpdateSingleNode(nodes_to_process_.back());
-    return;
-  }
-
-  for (const NodeToProcess& node_to_process : nodes_to_process_) {
+  for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
   }
 }
@@ -992,7 +975,7 @@ void SearchWorker::UpdateCounters() {
   // Collisions don't count as work, so have to enumerate to find out if there
   // was anything done.
   bool work_done = false;
-  for (NodeToProcess& node_to_process : nodes_to_process_) {
+  for (NodeToProcess& node_to_process : minibatch_) {
     if (!node_to_process.is_collision) {
       work_done = true;
       break;

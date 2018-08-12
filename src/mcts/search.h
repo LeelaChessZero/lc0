@@ -133,7 +133,7 @@ class Search {
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
-  // Becomes true when smart pruning decides
+  // Becomes true when smart pruning decides that no better move can be found.
   bool found_best_move_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
@@ -255,11 +255,7 @@ class SearchWorker {
 
   Search* const search_;
   // List of nodes to process.
-  std::vector<NodeToProcess> nodes_to_process_;
-  // How many of the nodes in a batch are collisions.
-  int collisions_found_;
-  // If true, pipeline should only eval the last entry in the cache.
-  bool out_of_order_eval_ = false;
+  std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
