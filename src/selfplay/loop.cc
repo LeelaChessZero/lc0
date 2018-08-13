@@ -91,7 +91,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   // and move list potentially contain spaces.
   if (info.min_false_positive_threshold) {
     std::string resign_res = "resign_report";
-    resign_res += 
+    resign_res +=
         " fp_threshold " + std::to_string(*info.min_false_positive_threshold);
     responses.push_back(resign_res);
   }
@@ -132,6 +132,41 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   res += " draw " + std::to_string(info.results[1][0]) + " " +
          std::to_string(info.results[1][1]);
   SendResponse(res);
+
+  // Compute player1's ELO relative to player 2.
+  auto wins = info.results[0][0];
+  auto losses = info.results[2][0];
+  auto draws = info.results[1][0];
+  double n = wins + losses + draws;
+  double w, l, d;
+  w = wins / n;
+  l = losses / n;
+  d = draws / n;
+  // mu is the estimate of the expected score
+  auto mu = w + d / 2.0;
+  auto devW = w * pow(1.0 - mu, 2);
+  auto devL = l * pow(mu, 2);
+  auto devD = d * pow(0.5 - mu, 2);
+  // The variance of player1's score from a single game is
+  // approximated as devW + devL + devD; she scores
+  // 1 with probability ~w, 0.5 w.p. ~d, and 0 w.p. ~l.
+  // We approximate the variance of the average of n of these as
+  // (devW + devL + devD) / n by the central limit theorem
+  auto stddev = sqrt((devW + devL + devD) / n);
+  // The 95% confidence interval is thus given by
+  // (mu - stddev * 1.96, mu + stddev * 1.96)
+  auto muLow = mu - stddev * 1.96;
+  auto muHigh = mu + stddev * 1.96;
+  auto eloDelta = [](const double score) {
+    // Compute the difference in ELO between players, for a given score
+    return std::to_string(-400. * log10(1.0 / score - 1.0));
+  };
+  SendResponse(
+    "The estimated ELO of player1 relative to player2 is " +
+      eloDelta(mu) + " with confidence interval (" + eloDelta(muLow) +
+      " , " + eloDelta(muHigh) + ")"
+  );
+
 }
 
 }  // namespace lczero
