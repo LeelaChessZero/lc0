@@ -23,6 +23,9 @@
 
 namespace lczero {
 
+// TODO: Tests for root_probe and root_probe_wdl. The former needs to check
+// scenarios with non-zero rule 50 count.
+
 void TestValidExpectation(SyzygyTablebase* tablebase, const std::string& fen,
                           WDLScore expected, int expected_dtz) {
   ChessBoard board;
@@ -114,6 +117,10 @@ TEST(Syzygy, Simple5PieceProbes) {
   TestValidExpectation(&tablebase, "8/6B1/8/8/B7/8/K1pk4/8 b - - 0 1",
                        WDL_BLESSED_LOSS, -101);
 
+  // A mate to be played on the board that is a capture.
+  TestValidExpectation(&tablebase, "k7/p7/8/8/3Q4/8/5B2/7K w - - 0 1", WDL_WIN,
+                       1);
+
   // Philidor draw position.
   TestValidExpectation(&tablebase, "8/8/8/8/4pk2/R7/7r/4K3 b - - 0 1", WDL_DRAW,
                        0);
@@ -128,6 +135,14 @@ TEST(Syzygy, Simple5PieceProbes) {
                        -1);
   TestValidExpectation(&tablebase, "KNNNk3/8/8/8/8/8/8/8 w - - 0 1", WDL_WIN,
                        29);
+  TestValidExpectation(&tablebase, "8/1k6/1p1r4/5K2/8/8/8/2R5 w - - 0 1",
+                       WDL_DRAW, 0);
+  TestValidExpectation(&tablebase, "8/7p/5k2/8/5PK1/7P/8/8 b - - 0 1", WDL_DRAW,
+                       0);
+  TestValidExpectation(&tablebase, "1k1n4/8/p7/5KP1/8/8/8/8 b - - 0 1", WDL_WIN,
+                       4);
+  TestValidExpectation(&tablebase, "8/k7/8/2R5/8/4q3/8/4B2K w - - 0 1",
+                       WDL_DRAW, 0);
 }
 
 }  // namespace lczero
