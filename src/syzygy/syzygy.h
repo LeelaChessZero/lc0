@@ -43,7 +43,7 @@ class SyzygyTablebase {
   // thread safe, there must be no concurrent usage while this method is
   // running. All other thread safe method calls must be strictly ordered with
   // respect to this method.
-  void init(const std::string& paths);
+  bool init(const std::string& paths);
   // Probes WDL tables for the given position to determine a WDLScore.
   // Thread safe.
   // Result is only strictly valid for positions with 0 ply 50 move counter.

@@ -11,6 +11,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -1331,10 +1332,15 @@ SyzygyTablebase::SyzygyTablebase() : max_cardinality_(0) {}
 
 SyzygyTablebase::~SyzygyTablebase() = default;
  
-void SyzygyTablebase::init(const std::string& paths) {
+bool SyzygyTablebase::init(const std::string& paths) {
   paths_ = paths;
   impl_.reset(new SyzygyTablebaseImpl(paths_));
   max_cardinality_ = impl_->max_cardinality();
+  if (max_cardinality_ <= 2) {
+    impl_ = nullptr;
+    return false;
+  }
+  return true;
 }
 
 // For a position where the side to move has a winning capture it is not
