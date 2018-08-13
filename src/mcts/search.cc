@@ -558,7 +558,7 @@ void SearchWorker::GatherMinibatch() {
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    if (node->IsTerminal()) continue;
+    if (node->IsTerminal() && node != search_->root_node_) continue;
 
     // Node was never visited, extend it.
     ExtendNode(node);
