@@ -695,31 +695,31 @@ void SearchWorker::ExtendNode(Node* node) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
-  }
-
-  // Neither by-position or by-rule termination, but maybe it's a TB position.
-  if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+    
+    // Neither by-position or by-rule termination, but maybe it's a TB position.
+    if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
         history_.Last().GetNoCapturePly() == 0 &&
         (board.ours() + board.theirs()).count() <=
           search_->syzygy_tb_->max_cardinality()) {
-    ProbeState state;
-    WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
-    if (state == OK) {
-      // If the colors seem backwards, check the checkmate check above.
-      if (wdl == WDL_WIN) {
-        node->MakeTerminal(GameResult::BLACK_WON);
-      } else if (wdl == WDL_LOSS) {
-        node->MakeTerminal(GameResult::WHITE_WON);
-      } else { // Cursed wins and blessed losses count as draws.
-        node->MakeTerminal(GameResult::DRAW); 
+      ProbeState state;
+      WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
+      if (state == OK) {
+        // If the colors seem backwards, check the checkmate check above.
+        if (wdl == WDL_WIN) {
+          node->MakeTerminal(GameResult::BLACK_WON);
+        } else if (wdl == WDL_LOSS) {
+          node->MakeTerminal(GameResult::WHITE_WON);
+        } else { // Cursed wins and blessed losses count as draws.
+          node->MakeTerminal(GameResult::DRAW); 
+        }
+        // TODO: This is probably a massive contention slowdown
+        SharedMutex::Lock lock(search_->nodes_mutex_);
+        search_->tb_hits_++;
+        return;
       }
-      // TODO: This is probably a massive contention slowdown
-      SharedMutex::Lock lock(search_->nodes_mutex_);
-      search_->tb_hits_++;
-      return;
     }
   }
-  
+
   // Add legal moves as edges of this node.
   node->CreateEdges(legal_moves);
 }
