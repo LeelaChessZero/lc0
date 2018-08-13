@@ -32,27 +32,26 @@
 
 namespace lczero {
 
-// Joins strings using @delim as delimiter.
-std::string StrJoin(const std::vector<std::string>& strings,
-                    const std::string& delim = " ");
+class OptionsParser;
 
-// Splits strings at whitespace.
-std::vector<std::string> StrSplitAtWhitespace(const std::string& str);
+class ConfigFile {
+ public:
+  ConfigFile() = delete;
 
-// Split string by delimiter.
-std::vector<std::string> StrSplit(const std::string& str,
-                                  const std::string& delim);
+  // This function must be called after PopulateOptions.
+  static bool Init(OptionsParser* options);
 
-// Parses comma-separated list of integers.
-std::vector<int> ParseIntList(const std::string& str);
+  // Returns the command line arguments from the config file.
+  static const std::vector<std::string>& Arguments() { return arguments_; }
 
-// Trims a string of whitespace from the start.
-std::string LeftTrim(std::string str);
+  // Add the config file parameter to the options dictionary.
+  static void PopulateOptions(OptionsParser* options);
 
-// Trims a string of whitespace from the end.
-std::string RightTrim(std::string str);
+ private:
+  // Parses the config file into the arguments_ vector.
+  static bool ParseFile(const std::string filename, OptionsParser* options);
 
-// Trims a string of whitespace from both ends.
-std::string Trim(std::string str);
+  static std::vector<std::string> arguments_;
+};
 
 }  // namespace lczero

@@ -49,13 +49,15 @@ const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
-const char* Search::kSmartPruningStr = "Enable smart pruning";
+const char* Search::kAggressiveTimePruningStr =
+    "Aggressive smart pruning threshold";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -77,7 +79,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
-  options->Add<BoolOption>(kSmartPruningStr, "smart-pruning") = true;
+  options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
+                            "smart-pruning-aggresiveness") = 0.68f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
@@ -86,6 +89,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
+  options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -108,11 +112,12 @@ Search::Search(const NodeTree& tree, Network* network,
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
-      kSmartPruning(options.Get<bool>(kSmartPruningStr)),
+      kAggressiveTimePruning(options.Get<float>(kAggressiveTimePruningStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)) {}
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -138,8 +143,8 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_edge_) return;
   last_outputted_best_move_edge_ = best_move_edge_.edge();
-  uci_info_.depth = root_node_->GetFullDepth();
-  uci_info_.seldepth = root_node_->GetMaxDepth();
+  uci_info_.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
+  uci_info_.seldepth = max_depth_;
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_playouts_ + initial_visits_;
   uci_info_.hashfull =
@@ -166,8 +171,9 @@ void Search::MaybeOutputInfo() {
   Mutex::Lock counters_lock(counters_mutex_);
   if (!responded_bestmove_ && best_move_edge_ &&
       (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
-       uci_info_.depth != root_node_->GetFullDepth() ||
-       uci_info_.seldepth != root_node_->GetMaxDepth() ||
+       uci_info_.depth !=
+           cum_depth_ / (total_playouts_ ? total_playouts_ : 1) ||
+       uci_info_.seldepth != max_depth_ ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
   }
@@ -238,6 +244,8 @@ void Search::SendMovesStats() const {
     }
     oss << ") ";
 
+    oss << "(T: " << edge.IsTerminal() << ") ";
+
     info.comment = oss.str();
     info_callback_(info);
   }
@@ -291,7 +299,7 @@ void Search::MaybeTriggerStop() {
 }
 
 void Search::UpdateRemainingMoves() {
-  if (!kSmartPruning) return;
+  if (kAggressiveTimePruning <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
@@ -302,7 +310,10 @@ void Search::UpdateRemainingMoves() {
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
-      int64_t remaining_playouts = remaining_time * nps / 1000;
+      // Put early_exit scaler here so calculation doesn't have to be done on
+      // every node.
+      int64_t remaining_playouts =
+          kAggressiveTimePruning * remaining_time * nps / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -545,7 +556,6 @@ void SearchWorker::GatherMinibatch() {
       continue;
     }
     ++nodes_found;
-
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
     if (node->IsTerminal()) continue;
@@ -579,6 +589,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
+  uint16_t depth = 0;
+
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
     // Set 'node' to point to the node that was picked on previous iteration,
@@ -588,14 +600,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
-    if (!node->TryStartScoreUpdate()) return {node, true};
-    // Unexamined leaf node. We've hit the end of this playout.
-    if (!node->HasChildren()) return {node, false};
+    if (!node->TryStartScoreUpdate()) return {node, true, depth};
+    // Either terminal or unexamined leaf node -- the end of this playout.
+    if (!node->HasChildren()) return {node, false, depth};
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-
     float puct_mult =
         search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = -100.0f;
@@ -627,6 +639,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
+      if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
+        // If we find a checkmate, then the confidence is infinite, so ignore U.
+        best_edge = child;
+        break;
+      }
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;
@@ -866,7 +883,12 @@ void SearchWorker::FetchMinibatchResults() {
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
-  // Update nodes.
+  // Initialize playout and depth counters.
+  uint16_t max_depth_batch = 0;
+  uint32_t cum_depth_batch = 0;
+  uint16_t playouts_batch = 0;
+ 
+  // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
   for (NodeToProcess& node_to_process : nodes_to_process_) {
     Node* node = node_to_process.node;
@@ -881,25 +903,13 @@ void SearchWorker::DoBackupUpdate() {
 
     // Backup V value up to a root. After 1 visit, V = Q.
     float v = node_to_process.v;
-    // Maximum depth the node is explored.
-    uint16_t depth = 0;
-    // If the node is terminal, mark it as fully explored to an "infinite"
-    // depth.
-    uint16_t cur_full_depth = node->IsTerminal() ? 999 : 0;
-    bool full_depth_updated = true;
+
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
-      ++depth;
       n->FinalizeScoreUpdate(v);
       // Q will be flipped for opponent.
       v = -v;
 
-      // Update the stats.
-      // Max depth.
-      n->UpdateMaxDepth(depth);
-      // Full depth.
-      if (full_depth_updated)
-        full_depth_updated = n->UpdateFullDepth(&cur_full_depth);
       // Best move.
       if (n->GetParent() == search_->root_node_ &&
           search_->best_move_edge_.GetN() <= n->GetN()) {
@@ -907,8 +917,20 @@ void SearchWorker::DoBackupUpdate() {
             search_->GetBestChildNoTemperature(search_->root_node_);
       }
     }
-    ++search_->total_playouts_;
+    ++playouts_batch;
+    cum_depth_batch += node_to_process.depth;
+    if (node_to_process.depth > max_depth_batch) {
+      max_depth_batch = node_to_process.depth;
+	}
   }
+  // Update global depth and playouts from batch stats.
+  // The two stage update, batch ->search, is in
+  // preparation of a mutex reorganization.
+  if (max_depth_batch > search_->max_depth_) {
+    search_->max_depth_ = max_depth_batch;
+  }
+  search_->cum_depth_ += cum_depth_batch;
+  search_->total_playouts_ += playouts_batch;
 }
 
 // 7. Update the Search's status and progress information.
