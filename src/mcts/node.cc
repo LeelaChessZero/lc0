@@ -194,24 +194,6 @@ void Node::FinalizeScoreUpdate(float v) {
   --n_in_flight_;
 }
 
-void Node::UpdateMaxDepth(int depth) {
-  if (depth > max_depth_) max_depth_ = depth;
-}
-
-bool Node::UpdateFullDepth(uint16_t* depth) {
-  // TODO(crem) If this function won't be needed, consider also killing
-  //            ChildNodes/NodeRange/Nodes_Iterator.
-  if (full_depth_ > *depth) return false;
-  for (Node* child : ChildNodes()) {
-    if (*depth > child->full_depth_) *depth = child->full_depth_;
-  }
-  if (*depth >= full_depth_) {
-    full_depth_ = ++*depth;
-    return true;
-  }
-  return false;
-}
-
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
 
 void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }

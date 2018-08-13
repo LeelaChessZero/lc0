@@ -156,10 +156,6 @@ class Node {
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
-  uint16_t GetFullDepth() const { return full_depth_; }
-  uint16_t GetMaxDepth() const { return max_depth_; }
-  uint16_t GetNumEdges() const { return edges_.size(); }
-
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
 
@@ -177,15 +173,24 @@ class Node {
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v);
 
-  // Updates max depth, if new depth is larger.
-  void UpdateMaxDepth(int depth);
+  // Depth tracking and retrieval functions.
+  void UpdateMaxDepth(const uint16_t depth) {
+    if (depth > max_depth_) max_depth_ = depth;
+  }
+  void UpdateAverageDepth(const uint16_t depth) {
+    // Denominator should be total+1, but we exclude the root from the average.
+    average_depth_ += (depth - average_depth_) / n_;
+  }
 
-  // Calculates the full depth if new depth is larger, updates it, returns
-  // in depth parameter, and returns true if it was indeed updated.
-  bool UpdateFullDepth(uint16_t* depth);
+  uint16_t GetMaxDepth() const { return max_depth_; }
+  uint16_t GetAverageDepth() const {
+    return static_cast<uint16_t>(average_depth_ + 0.5f);
+  }
 
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
+
+  uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -227,8 +232,9 @@ class Node {
 
   // Maximum depth any subnodes of this node were looked at.
   uint16_t max_depth_ = 0;
-  // Complete depth all subnodes of this node were fully searched.
-  uint16_t full_depth_ = 0;
+  // Running total depth of all searched nodes.
+  float average_depth_ = 0.0f;
+
   // Does this node end game (with a winning of either sides or draw).
   bool is_terminal_ = false;
 

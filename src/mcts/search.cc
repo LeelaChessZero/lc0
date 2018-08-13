@@ -142,7 +142,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_edge_) return;
   last_outputted_best_move_edge_ = best_move_edge_.edge();
-  uci_info_.depth = root_node_->GetFullDepth();
+  uci_info_.depth = root_node_->GetAverageDepth();
   uci_info_.seldepth = root_node_->GetMaxDepth();
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_playouts_ + initial_visits_;
@@ -170,7 +170,7 @@ void Search::MaybeOutputInfo() {
   Mutex::Lock counters_lock(counters_mutex_);
   if (!responded_bestmove_ && best_move_edge_ &&
       (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
-       uci_info_.depth != root_node_->GetFullDepth() ||
+       uci_info_.depth != root_node_->GetAverageDepth() ||
        uci_info_.seldepth != root_node_->GetMaxDepth() ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
@@ -895,23 +895,19 @@ void SearchWorker::DoBackupUpdate() {
     float v = node_to_process.v;
     // Maximum depth the node is explored.
     uint16_t depth = 0;
-    // If the node is terminal, mark it as fully explored to an "infinite"
-    // depth.
-    uint16_t cur_full_depth = node->IsTerminal() ? 999 : 0;
-    bool full_depth_updated = true;
+
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
-      ++depth;
+
       n->FinalizeScoreUpdate(v);
       // Q will be flipped for opponent.
       v = -v;
 
       // Update the stats.
-      // Max depth.
       n->UpdateMaxDepth(depth);
-      // Full depth.
-      if (full_depth_updated)
-        full_depth_updated = n->UpdateFullDepth(&cur_full_depth);
+      n->UpdateAverageDepth(depth);
+      ++depth;
+
       // Best move.
       if (n->GetParent() == search_->root_node_ &&
           search_->best_move_edge_.GetN() <= n->GetN()) {
