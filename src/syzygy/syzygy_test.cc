@@ -120,6 +120,14 @@ TEST(Syzygy, Simple5PieceProbes) {
   // Double mirrored and color swapped.
   TestValidExpectation(&tablebase, "3k4/R7/7r/2KP4/8/8/8/8 w - - 0 1", WDL_DRAW,
                        0);
+
+  // Some suggestions.
+  TestValidExpectation(&tablebase, "kqqQK3/8/8/8/8/8/8/8 b - - 0 1", WDL_WIN,
+                       1);
+  TestValidExpectation(&tablebase, "kqqQK3/8/8/8/8/8/8/8 w - - 0 1", WDL_LOSS,
+                       -1);
+  TestValidExpectation(&tablebase, "KNNNk3/8/8/8/8/8/8/8 w - - 0 1", WDL_WIN,
+                       29);
 }
 
 }  // namespace lczero
