@@ -28,6 +28,9 @@
 #include "selfplay/loop.h"
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
+#include <iomanip>
+#include <sstream>
+#include <math>
 
 namespace lczero {
 
@@ -133,7 +136,7 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
          std::to_string(info.results[1][1]);
   SendResponse(res);
 
-  // Compute player1's ELO relative to player 2.
+  // Compute player1's elo relative to player 2.
   auto wins = info.results[0][0];
   auto losses = info.results[2][0];
   auto draws = info.results[1][0];
@@ -158,15 +161,15 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   auto muLow = mu - stddev * 1.96;
   auto muHigh = mu + stddev * 1.96;
   auto eloDelta = [](const double score) {
-    // Compute the difference in ELO between players, for a given score
-    return std::to_string(-400. * log10(1.0 / score - 1.0));
+    // Compute the difference in elo between players, for a given score
+    return -400. * log10(1.0 / score - 1.0);
   };
-  SendResponse(
-    "The estimated ELO of player1 relative to player2 is " +
-      eloDelta(mu) + " with confidence interval (" + eloDelta(muLow) +
-      " , " + eloDelta(muHigh) + ")"
-  );
-
+  std::ostringstream out;
+  out << std::setprecision(2)
+      << "The estimated elo of player1 relative to player2 is "
+      << eloDelta(mu) << " with confidence interval (" << eloDelta(muLow)
+      << " , " << eloDelta(muHigh) << ")";
+  SendResponse(out.str());
 }
 
 }  // namespace lczero
