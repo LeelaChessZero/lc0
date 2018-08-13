@@ -1320,8 +1320,8 @@ class SyzygyTablebaseImpl {
   int numPaths_ = 0;
   std::string paths_;
 
-  int tbNumPiece_, tbNumPawn_;
-  int numWdl_, numDtm_, numDtz_;
+  int tbNumPiece_ = 0, tbNumPawn_ = 0;
+  int numWdl_ = 0, numDtm_ = 0, numDtz_ = 0;
 
   std::vector<PieceEntry> pieceEntries_;
   std::vector<PawnEntry> pawnEntries_;
