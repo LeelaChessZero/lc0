@@ -702,13 +702,14 @@ void SearchWorker::ExtendNode(Node* node) {
         history_.Last().GetNoCapturePly() == 0 &&
         (board.ours() + board.theirs()).count() <=
           search_->syzygy_tb_->max_cardinality()) {
-    ProbeState result;
-    WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &result);
-    if (result == OK) {
+    ProbeState state;
+    WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
+    if (state == OK) {
+      // If the colors seem backwards, check the checkmate check above.
       if (wdl == WDL_WIN) {
-        node->MakeTerminal(GameResult::WHITE_WON);
-      } else if (wdl == WDL_LOSS) {
         node->MakeTerminal(GameResult::BLACK_WON);
+      } else if (wdl == WDL_LOSS) {
+        node->MakeTerminal(GameResult::WHITE_WON);
       } else { // Cursed wins and blessed losses count as draws.
         node->MakeTerminal(GameResult::DRAW); 
       }
