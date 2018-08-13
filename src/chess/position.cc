@@ -91,7 +91,17 @@ GameResult PositionHistory::ComputeGameResult() const {
 
 void PositionHistory::Reset(const ChessBoard& board, int no_capture_ply,
                             int game_ply) {
+  // No move history is available to initialize history planes.
+  // However presence of empty history planes yields nonsensical evaluations.
+  // As a workaround all history planes are filled with the current position.
   positions_.clear();
+  Position currentPos = Position(board, no_capture_ply, game_ply);
+  Move nullMove = Move(0);
+  const int kMoveHistory = 8;
+  for (int idx = 0; idx < kMoveHistory - 1; idx++) {
+    positions_.emplace_back(Position(currentPos, nullMove).GetBoard(),
+                            no_capture_ply, game_ply);
+  }
   positions_.emplace_back(board, no_capture_ply, game_ply);
 }
 
