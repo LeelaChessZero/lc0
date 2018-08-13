@@ -141,7 +141,7 @@ int WdlToDtz[] = {-1, -101, 0, 101, 1};
 // DTZ tables don't store valid scores for moves that reset the rule50 counter
 // like captures and pawn moves but we can easily recover the correct dtz of the
 // previous move if we know the position's WDL score.
-int dtz_before_zeroing(WDLScore wdl) { return WdlToDtz[wdl]; }
+int dtz_before_zeroing(WDLScore wdl) { return WdlToDtz[wdl+2]; }
 
 // Return the sign of a number (-1, 0, 1)
 template <typename T>
@@ -788,8 +788,6 @@ class SyzygyTablebaseImpl {
       : pieceEntries_(TB_MAX_PIECE), pawnEntries_(TB_MAX_PAWN) {
     initonce_indicies();
 
-    tbNumPiece_ = tbNumPawn_ = 0;
-    TB_MaxCardinality_ = TB_MaxCardinalityDTM_ = 0;
     if (paths.size() == 0 || paths == "<empty>") return;
     paths_ = paths;
 
@@ -1312,15 +1310,17 @@ class SyzygyTablebaseImpl {
     return v;
   }
 
-  int TB_MaxCardinality_ = 0, TB_MaxCardinalityDTM_ = 0;
-  int TB_CardinalityDTM_;
+  int TB_MaxCardinality_ = 0;
+  int TB_MaxCardinalityDTM_ = 0;
 
   Mutex tbMutex_;
-  int numPaths_ = 0;
   std::string paths_;
 
-  int tbNumPiece_, tbNumPawn_;
-  int numWdl_, numDtm_, numDtz_;
+  int tbNumPiece_ = 0;
+  int tbNumPawn_ = 0;
+  int numWdl_ = 0;
+  int numDtm_ = 0;
+  int numDtz_ = 0;
 
   std::vector<PieceEntry> pieceEntries_;
   std::vector<PawnEntry> pawnEntries_;
@@ -1382,7 +1382,7 @@ WDLScore SyzygyTablebase::search(const Position& pos, ProbeState* result) {
   if (noMoreMoves)
     value = bestValue;
   else {
-    int raw_result;
+    int raw_result = 1;
     value = static_cast<WDLScore>(
         impl_->probe_wdl_table(pos.GetBoard(), &raw_result));
     *result = static_cast<ProbeState>(raw_result);
@@ -1442,7 +1442,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   // DTZ stores a 'don't care' value in this case, or even a plain wrong
   // one as in case the best move is a losing ep, so it cannot be probed.
   if (*result == ZEROING_BEST_MOVE) return dtz_before_zeroing(wdl);
-  int raw_result = 0;
+  int raw_result = 1;
   int dtz = impl_->probe_dtz_table(pos.GetBoard(), wdl, &raw_result);
   *result = static_cast<ProbeState>(raw_result);
   if (*result == FAIL) return 0;

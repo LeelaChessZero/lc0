@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <deque>
+#include <memory>
 #include <tuple>
 #include <vector>
 #include "chess/position.h"
