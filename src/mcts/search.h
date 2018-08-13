@@ -158,9 +158,9 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int>::max();
-  // Maximum search depth = length of longest path taken in picknodetoextend.
+  // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
-  // Average search depth = average of max_depth.
+  // Cummulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;

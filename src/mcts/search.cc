@@ -601,7 +601,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            Will revisit that after rethinking locking strategy.
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
     depth++;
-	// n_in_flight_ is incremented. If the method returns false, then there is
+    // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) return {node, true, depth};
     // Either terminal or unexamined leaf node -- the end of this playout.
@@ -883,7 +883,7 @@ void SearchWorker::FetchMinibatchResults() {
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
-  // Update nodes, playouts and depth counters
+  // Initialize playout and depth counters.
   uint16_t max_depth_batch = 0;
   uint32_t cum_depth_batch = 0;
   uint16_t playouts_batch = 0;
@@ -921,7 +921,7 @@ void SearchWorker::DoBackupUpdate() {
     cum_depth_batch += node_to_process.depth;
     if (node_to_process.depth > max_depth_batch) {
       max_depth_batch = node_to_process.depth;
-	  }
+	}
   }
   // Update global depth and playouts from batch stats.
   // The two stage update, batch ->search, is in
