@@ -30,7 +30,7 @@
 #include "utils/configfile.h"
 #include <iomanip>
 #include <sstream>
-#include <math>
+#include <cmath>
 
 namespace lczero {
 
