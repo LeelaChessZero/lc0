@@ -137,9 +137,9 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   SendResponse(res);
 
   // Compute player1's elo relative to player 2.
-  auto wins = info.results[0][0];
-  auto losses = info.results[2][0];
-  auto draws = info.results[1][0];
+  auto wins = info.results[0][0]+info.results[0][1];
+  auto losses = info.results[2][0] + info.results[2][1];
+  auto draws = info.results[1][0] + info.results[1][0];
   double n = wins + losses + draws;
   double w, l, d;
   w = wins / n;
