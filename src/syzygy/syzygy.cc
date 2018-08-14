@@ -1010,7 +1010,7 @@ class SyzygyTablebaseImpl {
     std::string fname = name_for_tb(name, suffix);
     void* base_address;
 #ifndef _WIN32
-    stat statbuf;
+    struct stat statbuf;
     int fd = ::open(fname.c_str(), O_RDONLY);
     if (fd == -1) return nullptr;
     fstat(fd, &statbuf);
