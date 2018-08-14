@@ -104,6 +104,8 @@ class Search {
   static const char* kAllowedNodeCollisionsStr;
   static const char* kStickyCheckmateStr;
 
+  int64_t bonus_time_ms = -1;
+
  private:
   // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;

@@ -657,6 +657,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
       search_->found_best_move_ = true;
+      // Since we ran out of other moves before running out of time, use the
+      // saved time on the next move. If the next move is also smart pruned,
+      // extra time will continue rolling forward.  This way we spend time saved
+      // by smart pruning on the earliest move with a real decision to make,
+      // instead of adding a small bit of time to the average time to the
+      // rest of the time curve.
+      auto time_since_start = search_->GetTimeSinceStart();
+      // This max() might not be needed. Can we ever be over time? Adding it
+      // just in case for now.
+      search_->bonus_time_ms = std::max<long int>(0, search_->limits_.time_ms - time_since_start);
     }
     is_root_node = false;
   }
