@@ -59,6 +59,9 @@ class BoardSquare {
   // Row := 7 - row.  Col remains the same.
   void Mirror() { square_ = square_ ^ 0b111000; }
 
+  // Col := 7 - col.  Row remains the same.
+  void HorizontallyMirror() { square_ = square_ ^ 0b000111; }
+
   // Checks whether coordinate is within 0..7.
   static bool IsValidCoord(int x) { return x >= 0 && x < 8; }
 
@@ -137,6 +140,17 @@ class BitBoard {
              (board_ & 0xFFFF0000FFFF0000) >> 16;
     board_ =
         (board_ & 0x00FF00FF00FF00FF) << 8 | (board_ & 0xFF00FF00FF00FF00) >> 8;
+  }
+
+  // Mirrors horizontally about the center files.
+  // File 'a' is mapped to file 'h' and vice versa.
+  void HorizontallyMirror() {
+    const std::uint64_t k1 = 0x5555555555555555;
+    const std::uint64_t k2 = 0x3333333333333333;
+    const std::uint64_t k4 = 0x0f0f0f0f0f0f0f0f;
+    board_ = ((board_ >> 1) & k1) | ((board_ & k1) << 1);
+    board_ = ((board_ >> 2) & k2) | ((board_ & k2) << 2);
+    board_ = ((board_ >> 4) & k4) | ((board_ & k4) << 4);
   }
 
   bool operator==(const BitBoard& other) const {

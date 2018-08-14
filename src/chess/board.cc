@@ -58,6 +58,17 @@ void ChessBoard::Mirror() {
   flipped_ = !flipped_;
 }
 
+void ChessBoard::HorizontallyMirror() {
+  assert(castlings_.as_int() == 0);
+  our_pieces_.HorizontallyMirror();
+  their_pieces_.HorizontallyMirror();
+  rooks_.HorizontallyMirror();
+  bishops_.HorizontallyMirror();
+  pawns_.HorizontallyMirror();
+  our_king_.HorizontallyMirror();
+  their_king_.HorizontallyMirror();
+}
+
 namespace {
 static const BitBoard kPawnMask = 0x00FFFFFFFFFFFF00ULL;
 
