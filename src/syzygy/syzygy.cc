@@ -1547,7 +1547,8 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   *result = static_cast<ProbeState>(raw_result);
   if (*result == FAIL) return 0;
   if (*result != CHANGE_STM) {
-    return (dtz + 1 + 100 * (wdl == WDL_BLESSED_LOSS || wdl == WDL_CURSED_WIN)) *
+    return (dtz + 1 +
+            100 * (wdl == WDL_BLESSED_LOSS || wdl == WDL_CURSED_WIN)) *
            sign_of(wdl);
   }
   // DTZ stores results for the other side, so we need to do a 1-ply search and
