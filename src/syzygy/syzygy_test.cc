@@ -51,19 +51,19 @@ TEST(Syzygy, Simple3PieceProbes) {
   }
   // Longest 3 piece position.
   TestValidExpectation(&tablebase, "8/8/8/8/8/8/2Rk4/1K6 b - - 0 1", WDL_LOSS,
-                       -31);
+                       -32);
   // Invert color of above, no change.
   TestValidExpectation(&tablebase, "8/8/8/8/8/8/2rK4/1k6 w - - 0 1", WDL_LOSS,
-                       -31);
+                       -32);
   // Horizontal mirror.
   TestValidExpectation(&tablebase, "8/8/8/8/8/8/4kR2/6K1 b - - 0 1", WDL_LOSS,
-                       -31);
+                       -32);
   // Vertical mirror.
   TestValidExpectation(&tablebase, "6K1/4kR2/8/8/8/8/8/8 b - - 0 1", WDL_LOSS,
-                       -31);
+                       -32);
   // Horizontal mirror again.
   TestValidExpectation(&tablebase, "1K6/2Rk4/8/8/8/8/8/8 b - - 0 1", WDL_LOSS,
-                       -31);
+                       -32);
 
   // A draw by capture position, leaving KvK.
   TestValidExpectation(&tablebase, "5Qk1/8/8/8/8/8/8/4K3 b - - 0 1", WDL_DRAW,
@@ -75,11 +75,11 @@ TEST(Syzygy, Simple3PieceProbes) {
 
   // A position with a pawn that needs a king move first to win.
   TestValidExpectation(&tablebase, "8/8/8/8/8/k1p5/8/3K4 b - - 0 1", WDL_WIN,
-                       2);
+                       3);
 
   // A position with a pawn that needs a few king moves before its a loss.
   TestValidExpectation(&tablebase, "8/2p5/8/8/8/5k2/8/2K5 w - - 0 1", WDL_LOSS,
-                       -7);
+                       -8);
 }
 
 TEST(Syzygy, Simple4PieceProbes) {
@@ -93,11 +93,17 @@ TEST(Syzygy, Simple4PieceProbes) {
 
   // Longest 4 piece position.
   TestValidExpectation(&tablebase, "8/8/8/6B1/8/8/4k3/1K5N b - - 0 1", WDL_LOSS,
-                       -64);
+                       -65);
 
   // Some random checkmate position.
   TestValidExpectation(&tablebase, "8/8/8/8/8/2p5/3q2k1/4K3 w - - 0 1",
                        WDL_LOSS, -1);
+
+  // Enpassant capture victory vs loss without rights.
+  TestValidExpectation(&tablebase, "7k/8/8/8/Pp2K3/8/8/8 b - a3 0 1", WDL_WIN,
+                       1);
+  TestValidExpectation(&tablebase, "7k/8/8/8/Pp2K3/8/8/8 b - - 0 1", WDL_LOSS,
+                       -1);
 }
 
 TEST(Syzygy, Simple5PieceProbes) {
@@ -128,19 +134,25 @@ TEST(Syzygy, Simple5PieceProbes) {
   TestValidExpectation(&tablebase, "3k4/R7/7r/2KP4/8/8/8/8 w - - 0 1", WDL_DRAW,
                        0);
 
+  // En passant is a loss, without is draw by stalemate.
+  TestValidExpectation(&tablebase, "8/8/8/8/6Pp/7K/5Q2/7k b - g3 0 1", WDL_LOSS,
+                       -1);
+  TestValidExpectation(&tablebase, "8/8/8/8/6Pp/7K/5Q2/7k b - - 0 1", WDL_DRAW,
+                       0);
+
   // Some suggestions.
   TestValidExpectation(&tablebase, "kqqQK3/8/8/8/8/8/8/8 b - - 0 1", WDL_WIN,
                        1);
   TestValidExpectation(&tablebase, "kqqQK3/8/8/8/8/8/8/8 w - - 0 1", WDL_LOSS,
-                       -1);
+                       -2);
   TestValidExpectation(&tablebase, "KNNNk3/8/8/8/8/8/8/8 w - - 0 1", WDL_WIN,
-                       29);
+                       30);
   TestValidExpectation(&tablebase, "8/1k6/1p1r4/5K2/8/8/8/2R5 w - - 0 1",
                        WDL_DRAW, 0);
   TestValidExpectation(&tablebase, "8/7p/5k2/8/5PK1/7P/8/8 b - - 0 1", WDL_DRAW,
                        0);
   TestValidExpectation(&tablebase, "1k1n4/8/p7/5KP1/8/8/8/8 b - - 0 1", WDL_WIN,
-                       4);
+                       5);
   TestValidExpectation(&tablebase, "8/k7/8/2R5/8/4q3/8/4B2K w - - 0 1",
                        WDL_DRAW, 0);
 }

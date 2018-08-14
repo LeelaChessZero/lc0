@@ -196,6 +196,16 @@ BitBoard pieces(const ChessBoard& pos, int type, bool theirs) {
   return BitBoard();
 }
 
+bool is_capture(const ChessBoard& pos, const Move& move) {
+  // Simple capture.
+  if (pos.theirs().get(move.to())) return true;
+  // Enpassant capture. Pawn moves other than straight it must be a capture.
+  if (pos.pawns().get(move.from()) && move.from().col() != move.to().col()) {
+    return true;
+  }
+  return false;
+}
+
 constexpr char kPieceToChar[] = " PNBRQK  pnbrqk";
 
 // Given a position, produce a text string of the form KQPvKRP, where
@@ -1444,7 +1454,7 @@ WDLScore SyzygyTablebase::search(const Position& pos, ProbeState* result) {
   size_t total_count = move_list.size();
   size_t move_count = 0;
   for (const Move& move : move_list) {
-    if (!pos.GetBoard().theirs().get(move.to()) &&
+    if (!is_capture(pos.GetBoard(), move) &&
         (!CheckZeroingMoves || !pos.GetBoard().pawns().get(move.from()))) {
       continue;
     }
@@ -1537,7 +1547,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   *result = static_cast<ProbeState>(raw_result);
   if (*result == FAIL) return 0;
   if (*result != CHANGE_STM) {
-    return (dtz + 100 * (wdl == WDL_BLESSED_LOSS || wdl == WDL_CURSED_WIN)) *
+    return (dtz + 1 + 100 * (wdl == WDL_BLESSED_LOSS || wdl == WDL_CURSED_WIN)) *
            sign_of(wdl);
   }
   // DTZ stores results for the other side, so we need to do a 1-ply search and
