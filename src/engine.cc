@@ -160,9 +160,9 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   }
 
   // If we saved time from smart pruning the prior move, add it to this move.
-  if (search_->bonus_time_ms > 0) {
-    this_move_time += search_->bonus_time_ms;
-    search_->bonus_time_ms = 0;
+  if (bonus_time_ms > 0) {
+    this_move_time += bonus_time_ms;
+    bonus_time_ms = 0;
   }
 
   // Make sure we don't exceed current time limit with what we calculated.

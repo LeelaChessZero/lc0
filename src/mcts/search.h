@@ -40,6 +40,8 @@
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
+extern int64_t bonus_time_ms;
+
 namespace lczero {
 
 struct SearchLimits {
@@ -103,8 +105,6 @@ class Search {
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
   static const char* kStickyCheckmateStr;
-
-  int64_t bonus_time_ms = -1;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).

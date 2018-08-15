@@ -40,6 +40,8 @@
 #include "neural/encoder.h"
 #include "utils/random.h"
 
+int64_t bonus_time_ms = -1;
+
 namespace lczero {
 
 const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
@@ -666,7 +668,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       auto time_since_start = search_->GetTimeSinceStart();
       // This max() might not be needed. Can we ever be over time? Adding it
       // just in case for now.
-      search_->bonus_time_ms = std::max<long int>(0, search_->limits_.time_ms - time_since_start);
+      bonus_time_ms = std::max<long int>(0, search_->limits_.time_ms - time_since_start);
     }
     is_root_node = false;
   }
