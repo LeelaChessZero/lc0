@@ -174,7 +174,7 @@ class Search {
   const bool kVerboseStats;
   const float kAggressiveTimePruning;
   const float kFpuReduction;
-  const bool kCacheHistoryLength;
+  const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kStickyCheckmate;
@@ -240,11 +240,11 @@ class SearchWorker {
     Node* node;
     bool is_collision = false;
     bool nn_queried = false;
-	uint16_t depth;
+    uint16_t depth;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
   };
-  
+
   NodeToProcess PickNodeToExtend();
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached = true);
