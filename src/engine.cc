@@ -161,6 +161,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
 
   // If we saved time from smart pruning the prior move, add it to this move.
   if (bonus_time_ms > 0) {
+    std::cerr << "Adding bonus time " << bonus_time_ms << " to " << this_move_time << std::endl;
     this_move_time += bonus_time_ms;
     bonus_time_ms = 0;
   }
