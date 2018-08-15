@@ -399,4 +399,9 @@ if get_option('gtest') and gtest.found()
     files, include_directories: includes, dependencies: test_deps
   ), timeout: 90)
 
+  test('SyzygyTest',
+    executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
 endif
