@@ -139,12 +139,16 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   // Compute player1's elo relative to player 2.
   auto wins = info.results[0][0]+info.results[0][1];
   auto losses = info.results[2][0] + info.results[2][1];
-  auto draws = info.results[1][0] + info.results[1][0];
-  double n = wins + losses + draws;
+  auto draws = info.results[1][0] + info.results[1][1];
+  auto n = wins + losses + draws;
+  if (n == 0) {
+    // no games
+    return;
+  }
   double w, l, d;
-  w = wins / n;
-  l = losses / n;
-  d = draws / n;
+  w = wins / (double)n;
+  l = losses / (double)n;
+  d = draws / (double)n;
   // mu is the estimate of the expected score
   auto mu = w + d / 2.0;
   auto devW = w * pow(1.0 - mu, 2);
@@ -164,8 +168,15 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
     // Compute the difference in elo between players, for a given score
     return -400. * log10(1.0 / score - 1.0);
   };
+  auto inBounds = [](const double score) {
+    // is the score within the bounds of what we can estimate elo and elo bounds for?
+    return score > 0 && score < 1;
+  };
   std::ostringstream out;
-  out << std::setprecision(2)
+  if (!inBounds(mu) || !inBounds(muLow) || !inBounds(muHigh)) {
+    return;
+  }
+  out << std::setprecision(3)
       << "The estimated elo of player1 relative to player2 is "
       << eloDelta(mu) << " with confidence interval (" << eloDelta(muLow)
       << " , " << eloDelta(muHigh) << ")";
