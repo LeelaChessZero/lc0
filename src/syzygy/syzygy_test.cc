@@ -23,6 +23,9 @@
 
 namespace lczero {
 
+// Try to find syzygy relative to current working directory.
+constexpr auto kPaths = "syzygy";
+
 // TODO: Tests for root_probe and root_probe_wdl. The former needs to check
 // scenarios with non-zero rule 50 count.
 
@@ -43,8 +46,7 @@ void TestValidExpectation(SyzygyTablebase* tablebase, const std::string& fen,
 
 TEST(Syzygy, Simple3PieceProbes) {
   SyzygyTablebase tablebase;
-  // Try to find syzygy relative to current working directory.
-  tablebase.init("syzygy");
+  tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 3) {
     // These probes require 3 piece tablebase.
     return;
@@ -84,8 +86,7 @@ TEST(Syzygy, Simple3PieceProbes) {
 
 TEST(Syzygy, Simple4PieceProbes) {
   SyzygyTablebase tablebase;
-  // Try to find syzygy relative to current working directory.
-  tablebase.init("syzygy");
+  tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 4) {
     // These probes require 4 piece tablebase.
     return;
@@ -108,8 +109,7 @@ TEST(Syzygy, Simple4PieceProbes) {
 
 TEST(Syzygy, Simple5PieceProbes) {
   SyzygyTablebase tablebase;
-  // Try to find syzygy relative to current working directory.
-  tablebase.init("syzygy");
+  tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 5) {
     // These probes require 5 piece tablebase.
     return;
