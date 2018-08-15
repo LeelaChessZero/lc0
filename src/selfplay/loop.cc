@@ -27,6 +27,7 @@
 
 #include "selfplay/loop.h"
 #include "selfplay/tournament.h"
+#include "utils/configfile.h"
 
 namespace lczero {
 

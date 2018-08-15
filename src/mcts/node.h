@@ -156,8 +156,6 @@ class Node {
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
-  uint16_t GetFullDepth() const { return full_depth_; }
-  uint16_t GetMaxDepth() const { return max_depth_; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
@@ -227,10 +225,6 @@ class Node {
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
 
-  // Maximum depth any subnodes of this node were looked at.
-  uint16_t max_depth_ = 0;
-  // Complete depth all subnodes of this node were fully searched.
-  uint16_t full_depth_ = 0;
   // Does this node end game (with a winning of either sides or draw).
   bool is_terminal_ = false;
 

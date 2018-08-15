@@ -161,11 +161,14 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int>::max();
+  // Maximum search depth = length of longest path taken in PickNodetoExtend.
+  uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
+  // Cummulative depth of all paths taken in PickNodetoExtend.
+  uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
   std::atomic<int> tb_hits_;
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
-
   // External parameters.
   const int kMiniBatchSize;
   const int kMaxPrefetchBatch;
@@ -176,7 +179,7 @@ class Search {
   const bool kVerboseStats;
   const float kAggressiveTimePruning;
   const float kFpuReduction;
-  const bool kCacheHistoryLength;
+  const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kStickyCheckmate;
@@ -237,11 +240,12 @@ class SearchWorker {
 
  private:
   struct NodeToProcess {
-    NodeToProcess(Node* node, bool is_collision)
-        : node(node), is_collision(is_collision) {}
+    NodeToProcess(Node* node, bool is_collision, uint16_t depth)
+        : node(node), is_collision(is_collision), depth(depth) {}
     Node* node;
     bool is_collision = false;
     bool nn_queried = false;
+    uint16_t depth;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
   };
