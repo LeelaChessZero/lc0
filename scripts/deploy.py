@@ -23,13 +23,13 @@ CHANGELOG_PATH = os.path.join(REPO_ROOT, 'changelog.txt')
     '--start', '-s', default=1, type=int, help='Start with this step.')
 @click.option('--list', '-l', is_flag=True, help='Only show list of steps.')
 @click.option(
-    '--steps', is_flag=True, help='Ask confirmation before every step.')
+    '--confirm', is_flag=True, help='Ask confirmation before every step.')
 @click.pass_context
-def cli(ctx, start, list, steps):
+def cli(ctx, start, list, confirm):
     p = ctx.obj['pipeline']
     p.start = start
     p.list_only = list
-    p.step_by_step = steps
+    p.step_by_step = confirm
 
 
 ############################################################################
@@ -40,22 +40,36 @@ def cli(ctx, start, list, steps):
 def new_minor_release(ctx):
     p = ctx.obj['pipeline']
 
+    # version.inc update strategy:
+    # 1. Merge everything from master to release (version file is not changed
+    #    because it was already merged at step 3 of previous iteration)
+    # 2. Change version.inc in release branch to new "dev"
+    # 3. Merge release to master (so that master has new "dev" too)
+    # 4. Change version.inc in release branch to new release version.
+
+    # Then do the push, so all that merging back and forth is kind of atomic
+    # from github point of view).
+
+    # Without that (e.g. modifying version.inc independently rather than having
+    # a sequence), all merges will have a collision in version.inc and that's
+    # painful to resolve.
+
     CheckOwnIntegrityAndFetch(p)
-    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(RunCmdStep('git checkout release', doc='Checkout release'))
     p.AddStep(ReadCurrentVerionFromFile)
     p.AddStep(GetNextVersion)
-    p.AddStep(RunCmdStep('git merge master', doc="Merge master into release"))
+    p.AddStep(RunCmdStep('git merge master', doc='Merge master into release'))
     UpdateChangeLog(p)
     p.AddStep(WriteAndCommitVersion('dev-version', add_tag=False))
-    p.AddStep(RunCmdStep('git checkout master', doc="Checkout release"))
-    p.AddStep(RunCmdStep('git merge release', doc="Merge release into master"))
-    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(RunCmdStep('git checkout master', doc='Checkout master'))
+    p.AddStep(RunCmdStep('git merge release', doc='Merge release into master'))
+    p.AddStep(RunCmdStep('git checkout release', doc='Checkout release'))
     p.AddStep(WriteAndCommitVersion('new-version', add_tag=True))
-    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
+    p.AddStep(RunCmdStep('git checkout master', doc='Checkout master'))
     p.AddStep(
         RunCmdStep(
-            'git push --all origin', doc="Push release changes to github"))
-    p.AddStep(RunCmdStep('git push --tags origin', doc="Push tags to github"))
+            'git push --all origin', doc='Push release changes to github'))
+    p.AddStep(RunCmdStep('git push --tags origin', doc='Push tags to github'))
     p.Run('new-release')
 
 
@@ -65,11 +79,11 @@ def cherrypick(ctx):
     p = ctx.obj['pipeline']
 
     CheckOwnIntegrityAndFetch(p)
-    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(RunCmdStep('git checkout release', doc='Checkout release'))
     p.AddStep(SelectCommitToCherrypick(jump_on_end=3))
     p.AddStep(CherryPick)
     p.AddStep(RunJump(-2))
-    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
+    p.AddStep(RunCmdStep('git checkout master', doc='Checkout master'))
     p.Run('cherrypick')
 
 
@@ -78,16 +92,16 @@ def cherrypick(ctx):
 def new_patch_release(ctx):
     p = ctx.obj['pipeline']
     CheckOwnIntegrityAndFetch(p)
-    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
+    p.AddStep(RunCmdStep('git checkout release', doc='Checkout release'))
     p.AddStep(ReadCurrentVerionFromFile)
     p.AddStep(GetNextPatchVersion)
     UpdateChangeLog(p)
     p.AddStep(WriteAndCommitVersion('new-version', add_tag=True))
     p.AddStep(
         RunCmdStep(
-            'git push --all origin', doc="Push release changes to github"))
-    p.AddStep(RunCmdStep('git push --tags origin', doc="Push tags to github"))
-    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
+            'git push --all origin', doc='Push release changes to github'))
+    p.AddStep(RunCmdStep('git push --tags origin', doc='Push tags to github'))
+    p.AddStep(RunCmdStep('git checkout master', doc='Checkout master'))
     p.Run('new-patch')
 
 
@@ -97,10 +111,10 @@ def CheckOwnIntegrityAndFetch(p):
         RunCmdStep(
             'git diff-index --quiet HEAD --',
             doc="Check that git doesn't have uncommited changes"))
-    p.AddStep(RunCmdStep('git checkout release', doc="Checkout release"))
-    p.AddStep(RunCmdStep('git pull', doc="Pull release from upstream"))
-    p.AddStep(RunCmdStep('git checkout master', doc="Checkout master"))
-    p.AddStep(RunCmdStep('git pull', doc="Pull master from upstream"))
+    p.AddStep(RunCmdStep('git checkout release', doc='Checkout release'))
+    p.AddStep(RunCmdStep('git pull', doc='Pull release from upstream'))
+    p.AddStep(RunCmdStep('git checkout master', doc='Checkout master'))
+    p.AddStep(RunCmdStep('git pull', doc='Pull master from upstream'))
     p.AddStep(CompareFileSha(OWN_FILENAME, require_equal=True))
 
 
@@ -110,10 +124,10 @@ def UpdateChangeLog(p):
     p.AddStep(RunStoreFileSha(CHANGELOG_PATH))
     p.AddStep(
         RunCmdStep(
-            '%s %s' % (os.getenv('EDITOR', 'vim'), CHANGELOG_PATH),
-            doc="Edit changelog"))
+            '{0} {1}'.format(os.getenv('EDITOR', 'vim'), CHANGELOG_PATH),
+            doc='Edit changelog'))
     p.AddStep(CompareFileSha(CHANGELOG_PATH, require_equal=False))
-    p.AddStep(RunCmdStep('git add %s' % CHANGELOG_PATH))
+    p.AddStep(RunCmdStep(f'git add {CHANGELOG_PATH}'))
 
 
 ############################################################################
@@ -121,25 +135,21 @@ def UpdateChangeLog(p):
 ############################################################################
 
 
-def RunJump(where):
+def RunJump(offset):
     def f(ctx):
-        raise Jump(where)
+        raise Jump(offset)
 
-    if where > 0:
-        f.__doc__ = "Go %d steps forward" % where
+    if offset > 0:
+        f.__doc__ = f'Go {offset} steps forward'
     else:
-        f.__doc__ = "Go %d steps backwards" % -where
+        f.__doc__ = f'Go {-offset} steps backwards'
     return f
 
 
 def FormatVersion(version_dict):
-    res = '%d.%d.%d' % (
-        version_dict['MAJOR'],
-        version_dict['MINOR'],
-        version_dict['PATCH'],
-    )
+    res = '{MAJOR}.{MINOR}.{PATCH}'.format(*version_dict)
     if version_dict['POSTFIX']:
-        res += '-%s' % version_dict['POSTFIX']
+        res += '-{0}'.format(version_dict['POSTFIX'])
     return res
 
 
@@ -147,9 +157,9 @@ def SelectionPrompt(caption, choices, *, zero_choice=None):
     while True:
         click.secho(caption)
         if zero_choice:
-            click.secho("%3d. %s" % (0, zero_choice), fg='yellow')
+            click.secho(f'  0. {zero_choice}', fg='yellow')
         for i, n in enumerate(choices):
-            click.secho("%3d. %s" % (i + 1, n[0]), fg='yellow')
+            click.secho(f'{i+1:3}. {n[0]}', fg='yellow')
         r = click.prompt('', prompt_suffix='>>>>>>> ')
         try:
             r = int(r) - 1
@@ -157,7 +167,7 @@ def SelectionPrompt(caption, choices, *, zero_choice=None):
                 return None
             if 0 <= r < len(choices):
                 return choices[r][1]
-        except:
+        except ValueError:
             pass
 
 
@@ -171,28 +181,30 @@ def SelectCommitToCherrypick(jump_on_end):
             click.secho('Git returned non-zero exit code!', fg='red')
             return False
         ctx['cherrypick-commit'] = SelectionPrompt(
-            "Select commit to cherrypick.",
-            [(x, x.split()[0]) for x in commits],
-            zero_choice="[Select 0 to finish.]")
+            'Select commit to cherrypick.', [(x, x.split()[0])
+                                             for x in commits],
+            zero_choice='[Select 0 to finish.]')
         if ctx['cherrypick-commit'] is None:
             raise Jump(jump_on_end)
         return True
 
-    f.__doc__ = "Choose which commit to cherrypick"
+    f.__doc__ = 'Choose which commit to cherrypick'
     return f
 
 
 def CherryPick(ctx):
     """Cherry-pick a commit"""
-    return RunCmdStep('git cherry-pick %s' % ctx['cherrypick-commit'])(ctx)
+    return RunCmdStep(f'git cherry-pick {ctx["cherrypick-commit"]}')(ctx)
 
 
 def WriteVersionToFile(version):
-    with open(VERSION_PATH, "w") as f:
+    with open(VERSION_PATH, 'w') as f:
         f.write('// This file is automatically generated by deploy.py. '
                 'Do not edit this file.\n')
         for k, v in version.items():
-            f.write('#define LC0_VERSION_%s %s\n' % (k, json.dumps(v)))
+            # Value may be string or number. JSON formatting of those data
+            # types is conveniently the same as in C++, so outputting JSON.
+            f.write(f'#define LC0_VERSION_{k} {json.dumps(v)}\n')
     return True
 
 
@@ -201,18 +213,18 @@ def WriteAndCommitVersion(version_key, *, add_tag):
         v = ctx[version_key]
         v_str = FormatVersion(v)
         WriteVersionToFile(v)
-        if not RunCmdStep('git add %s' % VERSION_PATH)(ctx):
+        if not RunCmdStep('git add ' + VERSION_PATH)(ctx):
             return False
-        if not RunCmdStep(
-                'git commit -m "Change version.inc to v%s."' % v_str)(ctx):
+        if not RunCmdStep(f'git commit -m "Change version.inc to v{v_str}."')(
+                ctx):
             return False
         if add_tag:
-            if not RunCmdStep('git tag -a v%s -m "Adding tag v%s"' %
-                              (v_str, v_str))(ctx):
+            if not RunCmdStep(f'git tag -a v{v_str} -m "Adding tag v{v_str}"')(
+                    ctx):
                 return False
         return True
 
-    f.__doc__ = "Write version into version.inc, commit and tag."
+    f.__doc__ = 'Write version into version.inc, commit and tag.'
     return f
 
 
@@ -221,7 +233,7 @@ def PrependGitLogToChangeLog(ctx):
     with open(CHANGELOG_PATH, 'r') as f:
         contents = f.read()
 
-    contents = "v%s\n%s\n\nPLEASE EDIT THE FOLLOWING LOG!\n\n%s\n" % (
+    contents = 'v%s\n%s\n\nPLEASE EDIT THE FOLLOWING LOG!\n\n{0}\n'.format(
         FormatVersion(ctx['new-version']),
         '~' * (1 + len(FormatVersion(ctx['new-version']))),
         ctx['git-log'],
@@ -236,8 +248,7 @@ def PrependGitLogToChangeLog(ctx):
 def SaveGitLog(ctx):
     """Store git log for appending to changelog.txt"""
     proc = subprocess.Popen(
-        ['git', 'log',
-         'v%s..HEAD' % FormatVersion(ctx['old-version'])],
+        ['git', 'log', f'v{FormatVersion(ctx["old-version"])}..HEAD'],
         stdout=subprocess.PIPE)
     ctx['git-log'] = proc.communicate()[0].decode('utf-8')
     if proc.returncode != 0:
@@ -265,7 +276,7 @@ def GetNextVersion(ctx):
         },
     ]
     ctx['new-version'] = SelectionPrompt(
-        "Current version is v%s. What will be the new one?" % FormatVersion(v),
+        f'Current version is v{FormatVersion(v)}. What will be the new one?',
         [(FormatVersion(x), x) for x in variants])
     ctx['dev-version'] = {
         'MAJOR': ctx['new-version']['MAJOR'],
@@ -286,7 +297,7 @@ def GetNextPatchVersion(ctx):
                 'MAJOR': v['MAJOR'],
                 'MINOR': v['MINOR'],
                 'PATCH': v['PATCH'],
-                'POSTFIX': 'rc%d' % (int(m.group(1)) + 1),
+                'POSTFIX': f'rc{int(m.group(1)) + 1}',
             },
             {
                 'MAJOR': v['MAJOR'],
@@ -311,7 +322,7 @@ def GetNextPatchVersion(ctx):
             },
         ]
     ctx['new-version'] = SelectionPrompt(
-        "Current version is v%s. What will be the new one?" % FormatVersion(v),
+        f'Current version is v{FormatVersion(v)}. What will be the new one?',
         [(FormatVersion(x), x) for x in variants])
     return True
 
@@ -328,12 +339,11 @@ def ReadCurrentVerionFromFile(ctx):
     for x in ['MAJOR', 'MINOR', 'PATCH', 'POSTFIX']:
         if x not in version:
             click.secho(
-                "Unable to parse version from %s: missing %s" % (VERSION_PATH,
-                                                                 x),
+                f'Unable to parse version from {VERSION_PATH}: missing {x}',
                 fg='red')
             return None
     click.secho(
-        'Found current version v%s' % FormatVersion(version), fg='yellow')
+        f'Found current version v{FormatVersion(version)}', fg='yellow')
     ctx['old-version'] = version
     return True
 
@@ -351,47 +361,48 @@ def ComputeSha256(filename):
 
 def RunStoreFileSha(filename):
     def f(ctx):
-        key = 'self-sha-%s' % filename
+        key = f'self-sha-{filename}'
         ctx[key] = ComputeSha256(filename)
-        click.secho("SHA256 of %s is %s" % (filename, ctx[key]))
+        click.secho(f'SHA256 of {filename} is {ctx[key]}')
         return True
 
-    f.__doc__ = "Store SHA of %s" % filename
+    f.__doc__ = f'Store SHA of {filename}'
     return f
 
 
 def CompareFileSha(filename, *, require_equal):
     def f(ctx):
         sha = ComputeSha256(filename)
-        click.secho("SHA256 of %s is %s" % (filename, sha))
+        click.secho(f'SHA256 of {filename} is {sha}')
 
         if require_equal and sha != ctx['self-sha-' + filename]:
-            click.secho("File %s changed." % filename, fg='red')
+            click.secho(f'File {filename} changed.', fg='red')
             return False
         if not require_equal and sha == ctx['self-sha-' + filename]:
-            click.secho("File %s not changed." % filename, fg='red')
+            click.secho(f'File {filename} not changed.', fg='red')
             return False
         return True
 
-    f.__doc__ = "Compare SHA of %s" % filename
+    f.__doc__ = f'Compare SHA of {filename}'
     return f
 
 
 # A step which runs exernal command.
 def RunCmdStep(cmd_line, doc=None):
     def f(context):
-        click.secho('$ %s' % cmd_line, fg='yellow')
+        click.secho(f'$ {cmd_line}', fg='yellow')
         r = os.system(cmd_line)
         if r != 0:
-            click.echo('Return code %d, The command was: %s' %
-                       (r, click.style(cmd_line, fg='yellow')))
+            click.echo(
+                f'Return code {r}, '
+                f'The command was: {click.style(cmd_line, fg="yellow")}')
             return False
         return True
 
     if doc:
         f.__doc__ = doc
     else:
-        f.__doc__ = "Execution of %s " % cmd_line
+        f.__doc__ = f'Execution of {cmd_line} '
     return f
 
 
@@ -409,8 +420,8 @@ def RetryPrompt():
 
 # Exception when step decides to jump to another step.
 class Jump(BaseException):
-    def __init__(self, whereto):
-        self.whereto = whereto
+    def __init__(self, offset):
+        self.offset = offset
 
 
 class Pipeline:
@@ -427,7 +438,7 @@ class Pipeline:
         self.steps.append(func)
 
     def StateFileName(self):
-        return os.path.join('/tmp', '%s_state.json' % self.cmd_name)
+        return os.path.join('/tmp', f'lc0_{self.cmd_name}_state.json')
 
     def MaybeLoadState(self):
         if os.path.isfile(self.StateFileName()):
@@ -445,7 +456,7 @@ class Pipeline:
         self.cmd_name = cmd_name
         if self.list_only:
             for i, n in enumerate(self.steps):
-                click.secho('%2d. %s' % (i + 1, n.__doc__))
+                click.secho(f'{i+2:2}. {n.__doc__}')
             return
         click.clear()
 
@@ -464,7 +475,7 @@ class Pipeline:
                     click.style(
                         '[%2d/%2d]' %
                         (self.context['idx'] + 1, len(self.steps)),
-                        fg='green') + ' %s...' % task_f.__doc__)
+                        fg='green') + f' {task_f.__doc__}...')
                 if self.step_by_step:
                     if not click.confirm('Should I run it?'):
                         raise click.Abort
@@ -474,11 +485,10 @@ class Pipeline:
             except click.Abort:
                 raise
             except Jump as jmp:
-                self.context['idx'] += jmp.whereto
+                self.context['idx'] += jmp.offset
                 click.secho(
-                    '[ JMP ] Jumping to %d (%s)' %
-                    (self.context['idx'] + 1,
-                     self.steps[self.context['idx']].__doc__),
+                    f'[ JMP ] Jumping to {self.context["idx"] + 1} '
+                    f'({self.steps[self.context["idx"]].__doc__})',
                     fg='green',
                     bold=True)
                 continue
