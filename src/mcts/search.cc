@@ -155,7 +155,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   uci_info_.nps =
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
   uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0));
-  uci_info_.tb_hits = tb_hits_.load(std::memory_order_acq_rel);
+  uci_info_.tb_hits = tb_hits_.load(std::memory_order_acquire);
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
