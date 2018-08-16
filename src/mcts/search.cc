@@ -709,7 +709,9 @@ void SearchWorker::ExtendNode(Node* node) {
           search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
-      if (state == OK) {
+      // Only fail state means the WDL is wrong, probe_wdl may produce correct
+      // result with a stat other than OK.
+      if (state != FAIL) {
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
           node->MakeTerminal(GameResult::BLACK_WON);
