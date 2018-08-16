@@ -113,36 +113,41 @@ Move Edge::GetMove(bool as_opponent) const {
   return m;
 }
 
-// We use strictly 16 bits to store policy values in memory-critical Edges.
-// We manage this by storing 16 bits taken directly from the float.
-// Floats are 1 sign bit, 8 bits of exponent, and 23 significand bits. The
-// exponent is stored a bit funny, in such a way that its most significant bit
-// is always off in the interval [0, 2). Furthermore, the next two bits are only
-// off for microscopic floats near 0; we ignore those and round up to the
-// smallest possible 5-bit-exp float above 0 (i.e. assume those 2 bits are set).
+// Policy priors (P) are stored in a compressed 16-bit format.
 //
+// Source values are 32-bit floats:
+// * bit 31 is sign (zero means positive)
+// * bit 30 is sign of exponent (zero means nonpositive)
+// * bits 29..23 are value bits of exponent
+// * bits 22..0 are significand bits (plus a "virtual" always-on bit: s ∈ [1,2))
+// The number is then sign * 2^exponent * significand, usually.
 // See https://www.h-schmidt.net/FloatConverter/IEEE754.html for details.
 //
-// Note that that means we don't actually get 2^16 unique values in [0,1],
-// rather some spread into (1,2), but (although it's possible) it's more
-// complicated to make use of the extra values. At any rate, it's true that the
-// available values are disproportionately clustered (and thus more precise)
-// towards 0, which is how NN policy behaves anyways (since policy always adds
-// up to 1). We also implement round-to-nearest by shifting the significand up
-// by half the precision that is ultimately kept (addition overflow into the 7
-// exponent bits is possible, but also works correctly).
+// In compressed 16-bit value we store bits 27..12:
+// * bit 31 is always off as values are always >= 0
+// * bit 30 is always off as values are always < 2
+// * bits 29..28 are only off for values < 4.6566e-10, assume they are always on
+// * bits 11..0 are for higher precision, they are dropped leaving only 11 bits
+//     of precision
+//
+// When converting to compressed format, bit 11 is added to in order to make it
+// a rounding rather than truncation.
+//
+// Out of 65556 possible values, 2047 are outside of [0,1] interval (they are in
+// interval (1,2)). This is fine because the values in [0,1] are skewed towards
+// 0, which is also exactly how the components of policy tend to behave (since
+// they add up to 1).
 
-// Toss the sign and 3 highest bits of the exponent (assuming them to be 011),
-// take the next 16 bits, that leaves the 12 trailing LSB of the significand to
-// be lost as well. Round-to-nearest by adding a 1 in that 12th bit before
-// truncating. The minimum number that can be represented is 4.656613E-10.
+// If the two assumed-on exponent bits (3<<28) are in fact off, the input is
+// rounded up to the smallest value with them on. We verify this by subtracting
+// the two bits from the input and checking for a negative result. This is
+// combined with the round-to-nearest addition (1<<11).
 void Edge::SetP(float p) {
+  constexpr int32_t roundings = (1 << 11) - (3 << 28);
   assert(0.0f <= p && p <= 1.0f);
   int32_t tmp;
   std::memcpy(&tmp, &p, sizeof(float));
-  // If those 2 exponent bits (3<<28) aren't set, round up by setting tmp = 0.
-  // This is combined with the round-to-nearest addition (1<<11) into one op.
-  tmp -= 0x2FFFF800; // == (3 << 28) - (1 << 11)
+  tmp += roundings;
   p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
 }
 

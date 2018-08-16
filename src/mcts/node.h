@@ -95,8 +95,8 @@ class Edge {
   // Root node contains move a1a1.
   Move move_;
 
-  // Probability that this move will be made. From policy head of the neural
-  // network. Stored with a 16 bit significand in the form of a uint16_t.
+  // Probability that this move will be made, from the policy head of the neural
+  // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
 
   friend class EdgeList;
