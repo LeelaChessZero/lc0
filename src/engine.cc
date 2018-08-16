@@ -140,6 +140,12 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
       std::max(int64_t{0},
                time + increment * (movestogo - 1) - move_overhead * movestogo);
 
+  if (bonus_time_ms > 0) {
+    // Don't calculate the time curve using the bonus time, use the normal real
+    // curve we'd expect without smart pruning.
+    total_moves_time -= bonus_time_ms;
+  }
+
   constexpr int kSmartPruningToleranceMs = 200;
   float this_move_weight = ComputeMoveWeight(
       ply, time_curve_peak, time_curve_left_width, time_curve_right_width);
