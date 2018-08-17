@@ -146,7 +146,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   uci_info_.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   uci_info_.seldepth = max_depth_;
   uci_info_.time = GetTimeSinceStart();
-  uci_info_.nodes = total_playouts_ + initial_visits_;
+  uci_info_.nodes = total_playouts_;
   uci_info_.hashfull =
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   uci_info_.nps =
