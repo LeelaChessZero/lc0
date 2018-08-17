@@ -249,9 +249,8 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
 
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;
-    fprintf(stderr, "BLAS warning, maximum batch size set to %ld.",
-            max_batch_size_);
   }
+  fprintf(stderr, "BLAS, maximum batch size set to %ld.\n", max_batch_size_);
 
   const auto inputChannels = kInputPlanes;
   const auto channels = static_cast<int>(weights.input.biases.size());
