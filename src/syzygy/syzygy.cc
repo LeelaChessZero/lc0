@@ -1562,7 +1562,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   int min_DTZ = 0xFFFF;
   for (const Move& move : pos.GetBoard().GenerateLegalMoves()) {
     Position next_pos = Position(pos, move);
-    bool zeroing = next_pos.GetNoCapturePly() == 0;
+    bool zeroing = next_pos.Get50MoveNoResetPly() == 0;
     // For zeroing moves we want the dtz of the move _before_ doing it,
     // otherwise we will get the dtz of the next move sequence. Search the
     // position after the move to get the score sign (because even in a winning
@@ -1593,7 +1593,7 @@ bool SyzygyTablebase::root_probe(const Position& pos,
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   // Obtain 50-move counter for the root position
-  int cnt50 = pos.GetNoCapturePly();
+  int cnt50 = pos.Get50MoveNoResetPly();
   // Check whether a position was repeated since the last zeroing move.
   bool rep = pos.GetRepetitions() > 0;
   int dtz;
@@ -1604,7 +1604,7 @@ bool SyzygyTablebase::root_probe(const Position& pos,
   for (auto& m : root_moves) {
     Position next_pos = Position(pos, m);
     // Calculate dtz for the current move counting from the root position
-    if (next_pos.GetNoCapturePly() == 0) {
+    if (next_pos.Get50MoveNoResetPly() == 0) {
       // In case of a zeroing move, dtz is one of -101/-1/0/1/101
       WDLScore wdl = static_cast<WDLScore>(-probe_wdl(next_pos, &result));
       dtz = dtz_before_zeroing(wdl);

@@ -55,7 +55,7 @@ class Position {
   void SetRepetitions(int repetitions) { repetitions_ = repetitions; }
 
   // Number of ply with no captures and pawn moves.
-  int GetNoCapturePly() const { return no_capture_ply_; }
+  int Get50MoveNoResetPly() const { return no_capture_ply_; }
 
   // Returns whether castle is still allowed in given direction.
   bool CanCastle(Castling) const;

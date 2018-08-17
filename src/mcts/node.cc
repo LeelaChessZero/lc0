@@ -270,7 +270,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   // Other params.
   result.side_to_move = position.IsBlackToMove() ? 1 : 0;
   result.move_count = 0;
-  result.rule50_count = position.GetNoCapturePly();
+  result.rule50_count = position.Get50MoveNoResetPly();
 
   // Game result.
   if (game_result == GameResult::WHITE_WON) {
