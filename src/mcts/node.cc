@@ -348,10 +348,13 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
     if (old_head == current_head_) seen_old_head = true;
   }
 
-  // If we didn't see old head, it means that new position is shorter.
+  // If we didn't see old head, it means that new position is shorter; or if the
+  // node is already marked as terminal, clear it to allow forced analysis.
   // As we killed the search tree already, trim it to redo the search.
   if (!seen_old_head) {
     assert(!current_head_->sibling_);
+    TrimTreeAtHead();
+  } else if (current_head_->IsTerminal()) {
     TrimTreeAtHead();
   }
 }
