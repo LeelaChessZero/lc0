@@ -206,6 +206,11 @@ void Search::SendMovesStats() const {
 
   const bool is_black_to_move = played_history_.IsBlackToMove();
   ThinkingInfo info;
+  std::ostringstream oss;
+  oss << "visits " << initial_visits_ + total_playouts_ << " playouts "
+      << total_playouts_;
+  info.comment = oss.str();
+  info_callback_(info);
   for (const auto& edge : edges) {
     std::ostringstream oss;
     oss << std::fixed;
