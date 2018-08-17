@@ -119,8 +119,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
-      tb_hits_(0) {}
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {

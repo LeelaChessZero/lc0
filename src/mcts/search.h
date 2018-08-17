@@ -165,7 +165,7 @@ class Search {
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
-  std::atomic<int> tb_hits_;
+  std::atomic<int> tb_hits_{0};
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;

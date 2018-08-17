@@ -96,7 +96,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
                             "time-curve-left-width") = 82.0f;
   options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
                             "time-curve-right-width") = 74.0f;
-  options->Add<StringOption>(kSyzygyTablebaseStr, "syzygy", 's');
+  options->Add<StringOption>(kSyzygyTablebaseStr, "syzygy-paths", 's');
 
   Search::PopulateUciParams(options);
   ConfigFile::PopulateOptions(options);
@@ -173,12 +173,13 @@ void EngineController::UpdateTBAndNetwork() {
 
   std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseStr);
   if (!tb_paths.empty() && tb_paths != tb_paths_) {
-    tb_paths_ = tb_paths;
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-    std::cerr << "Loading Syzygy tablebases from " << tb_paths_ << std::endl;
-    if (!syzygy_tb_->init(tb_paths_)) {
+    std::cerr << "Loading Syzygy tablebases from " << tb_paths << std::endl;
+    if (!syzygy_tb_->init(tb_paths)) {
       std::cerr << "Failed to load Syzygy tablebases!" << std::endl;
       syzygy_tb_ = nullptr;
+    } else {
+      tb_paths_ = tb_paths;
     }
   }
 
