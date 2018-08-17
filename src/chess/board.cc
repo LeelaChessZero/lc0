@@ -705,11 +705,16 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-  if (our_pieces_.count() + their_pieces_.count() < 4) {
+  uint64_t all_pieces = our_pieces_.as_int() | their_pieces_.as_int();
+  // x &= x - 1 clears the rigthmost set bit (if any).
+  all_pieces &= all_pieces - 1;
+  all_pieces &= all_pieces - 1;
+  all_pieces &= all_pieces - 1;
+  // If x zero we started with 3 or less bits set.
+  if (all_pieces == 0) {
     // K v K, K+B v K, K+N v K.
     return false;
   }
-
   if (!our_knights().empty() || !their_knights().empty()) {
     return true;
   }

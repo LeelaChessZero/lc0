@@ -1287,7 +1287,10 @@ class SyzygyTablebaseImpl {
     Key key = calc_key_from_position(pos);
 
     // Test for KvK
-    if (type == WDL && (pos.ours() + pos.theirs()).count() == 2) return 0;
+    if (type == WDL && pos.ours() == pos.our_king()
+          && pos.theirs() == pos.their_king()) {
+      return 0;
+    }
 
     int hash_idx = key >> (64 - TB_HASHBITS);
     while (tb_hash_[hash_idx].key && tb_hash_[hash_idx].key != key) {
