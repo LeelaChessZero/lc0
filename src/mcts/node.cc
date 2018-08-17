@@ -207,7 +207,7 @@ void Node::FinalizeScoreUpdateMinimaxComponent(float v) {
   } else {
     auto child_nodes = ChildNodes();
     auto best_child = std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
-      return lhs->q_*((float)lhs->n) < rhs->q_*((float)rhs->n);
+      return lhs->q_*((float)lhs->n_) < rhs->q_*((float)rhs->n_);
     });
     float pure_minmax = -(best_child->q_);
     float minmax_component = ((float)best_child->n_)/((float)(n_+1));
