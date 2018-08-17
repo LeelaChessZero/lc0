@@ -152,7 +152,7 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ() const { return minmax_q_; }
+  float GetQ() const { return q_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -175,7 +175,10 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v);
+  void FinalizeScoreUpdate(float v, bool use_alternative_algorithm);
+
+  // Updates the node Q value using an algorithm based on subtree max Q*N value
+  void FinalizeScoreUpdateMinimaxComponent(float v);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -215,9 +218,10 @@ class Node {
   uint16_t index_;
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored.
+  float mcts_q_ = 0.0f;
+  // Can be either "mcts_q_" or a value calculated using an alternative
+  // algorithm (enabled/disabled via "kExperimentalQUpdate" flag)
   float q_ = 0.0f;
-  // Q value that uses a "Minimax" component
-  float minmax_q_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
   // (aka virtual loss). How many threads currently process this node (started

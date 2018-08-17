@@ -57,6 +57,8 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
+const char* Search::kExperimentalQUpdateStr =
+    "Use alternative experimental Q update algorithm";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -89,6 +91,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
+  options->Add<BoolOption>(kExperimentalQUpdateStr,
+                            "alternative-q-update-algorithm") = false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -116,7 +120,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
+      kExperimentalQUpdate(options.Get<bool>(kExperimentalQUpdateStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -902,7 +907,7 @@ void SearchWorker::DoBackupUpdate() {
     for (Node* n = node; n != search_->root_node_->GetParent();
          n = n->GetParent()) {
       ++depth;
-      n->FinalizeScoreUpdate(v);
+      n->FinalizeScoreUpdate(v, search_->kExperimentalQUpdate);
       // Q will be flipped for opponent.
       v = -v;
 
