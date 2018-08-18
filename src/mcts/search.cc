@@ -174,7 +174,8 @@ void Search::MaybeOutputInfo() {
   if (!responded_bestmove_ && best_move_edge_ &&
       (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
        uci_info_.depth !=
-           cum_depth_ / (total_playouts_ ? total_playouts_ : 1) ||
+           static_cast<int>(cum_depth_ /
+                            (total_playouts_ ? total_playouts_ : 1)) ||
        uci_info_.seldepth != max_depth_ ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
@@ -903,7 +904,7 @@ void SearchWorker::DoBackupUpdate() {
   uint16_t max_depth_batch = 0;
   uint32_t cum_depth_batch = 0;
   uint16_t playouts_batch = 0;
- 
+
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
   for (NodeToProcess& node_to_process : nodes_to_process_) {
@@ -937,7 +938,7 @@ void SearchWorker::DoBackupUpdate() {
     cum_depth_batch += node_to_process.depth;
     if (node_to_process.depth > max_depth_batch) {
       max_depth_batch = node_to_process.depth;
-	}
+    }
   }
   // Update global depth and playouts from batch stats.
   // The two stage update, batch ->search, is in
