@@ -50,7 +50,7 @@ const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
-    "How earlier to move if improvement is unlikely";
+    "Aversion to search if change unlikely";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
@@ -80,7 +80,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
-                            "unlikely-moves-avoidance") = 1.47f;
+                            "futile-search-aversion") = 1.47f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
