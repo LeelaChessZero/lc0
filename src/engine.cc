@@ -95,6 +95,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
                             "time-curve-left-width") = 82.0f;
   options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
                             "time-curve-right-width") = 74.0f;
+  // Add "Ponder" option to signal to GUIs that we support pondering.
+  // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>("Ponder", "ponder") = false;
 
   Search::PopulateUciParams(options);
@@ -213,14 +215,13 @@ void EngineController::NewGame() {
 
 void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
-  current_position_ = CurrentPosition { fen, moves_str };
-
   SharedLock lock(busy_mutex_);
+  current_position_ = CurrentPosition { fen, moves_str };
   search_.reset();
 }
 
 void EngineController::SetupPosition(const std::string& fen,
-                                      const std::vector<std::string>& moves_str) {
+                                     const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
   search_.reset();
 
@@ -238,11 +239,11 @@ void EngineController::Go(const GoParams& params) {
   ThinkingInfo::Callback info_callback(info_callback_);
 
   if(current_position_) {
-    if (params.ponder && !(*current_position_).moves.empty()) {
-      std::vector<std::string> moves((*current_position_).moves);
+    if (params.ponder && !current_position_->moves.empty()) {
+      std::vector<std::string> moves(current_position_->moves);
       std::string ponder_move = moves.back();
       moves.pop_back();
-      SetupPosition((*current_position_).fen, moves);
+      SetupPosition(current_position_->fen, moves);
 
       info_callback = [this, ponder_move](const ThinkingInfo& info) {
         ThinkingInfo ponder_info(info);
@@ -263,7 +264,7 @@ void EngineController::Go(const GoParams& params) {
         info_callback_(ponder_info);
       };
     } else {
-      SetupPosition((*current_position_).fen, (*current_position_).moves);
+      SetupPosition(current_position_->fen, current_position_->moves);
     }
   } else if (!tree_) {
     SetupPosition(ChessBoard::kStartingFen, {});
