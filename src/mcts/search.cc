@@ -548,8 +548,8 @@ void SearchWorker::GatherMinibatch() {
   int number_out_of_order = 0;
 
   // Gather nodes to process in the current batch.
-  // If we had too many (kMiniBatchSize) nodes out of order, also exit so that
-  // search has a chance to exit search.
+  // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
+  // iteration so that search can exit.
   // TODO(crem) change that to checking search_->stop_ when bestmove reporting
   // is in a separate thread.
   while (minibatch_size < search_->kMiniBatchSize &&
@@ -575,10 +575,10 @@ void SearchWorker::GatherMinibatch() {
       // Node was never visited, extend it.
       ExtendNode(node);
 
-      // Only send non-terminal nodes to neural network
+      // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
-        minibatch_.back().nn_queried = true;
-        minibatch_.back().is_cache_hit = AddNodeToComputation(node, true);
+        picked_node.nn_queried = true;
+        picked_node.is_cache_hit = AddNodeToComputation(node, true);
       }
     }
 
@@ -586,16 +586,15 @@ void SearchWorker::GatherMinibatch() {
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
     if (search_->kOutOfOrderEval) {
-      if (node->IsTerminal() || minibatch_.back().is_cache_hit) {
+      if (node->IsTerminal() || picked_node.is_cache_hit) {
         // Perform out of order eval for the last entry in minibatch_.
-        FetchSingleNodeResult(&minibatch_.back(),
-                              computation_->GetBatchSize() - 1);
-        DoBackupUpdateSingleNode(minibatch_.back());
+        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+        DoBackupUpdateSingleNode(picked_node);
 
         // Remove last entry in minibatch_, as it has just been
         // processed.
         // If NN eval was already processed out of order, remove it.
-        if (minibatch_.back().nn_queried) computation_->PopCacheHit();
+        if (picked_node.nn_queried) computation_->PopCacheHit();
         minibatch_.pop_back();
         --minibatch_size;
       }
