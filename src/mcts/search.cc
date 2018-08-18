@@ -309,7 +309,7 @@ void Search::MaybeTriggerStop() {
       // This max() might not be needed. Can we ever be over time? Adding it
       // just in case for now.
       bonus_time_ms = std::max<long int>(0, limits_.time_ms - time_since_start);
-      std::cerr << "Storing bonus time " << bonus_time_ms << std::endl;
+      std::cerr << "Storing bonus time " << limits_.time_ms << "-" << time_since_start << " = " << bonus_time_ms << std::endl;
     }
   }
 }

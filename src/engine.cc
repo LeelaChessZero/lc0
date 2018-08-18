@@ -143,6 +143,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   if (bonus_time_ms > 0) {
     // Don't calculate the time curve using the bonus time, use the normal real
     // curve we'd expect without smart pruning.
+    std::cerr << "Total time was " << total_moves_time << " remove bonus " << bonus_time_ms << std::endl;
     total_moves_time -= bonus_time_ms;
   }
 
@@ -157,6 +158,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // Compute the move time without slowmover.
   float this_move_time = total_moves_time * this_move_weight /
                          (this_move_weight + other_move_weights);
+    std::cerr << "this_move_time is  " << this_move_time << std::endl;
 
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
