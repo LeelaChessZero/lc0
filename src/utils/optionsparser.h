@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #pragma once
@@ -91,8 +100,11 @@ class OptionsParser {
   void SendOption(const std::string& name);
   // Call option setter all options.
   void SendAllOptions();
-  // Processes all flags. Returns false if should exit.
+  // Processes all flags from the command line and an optional
+  // configuration file. Returns false if there is an invalid flag.
   bool ProcessAllFlags();
+  // Processes either the command line or configuration file flags.
+  bool ProcessFlags(const std::vector<std::string>& args);
 
   // Get the options dict for given context.
   const OptionsDict& GetOptionsDict(const std::string& context = {});

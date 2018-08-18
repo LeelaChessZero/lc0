@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "uciloop.h"
@@ -28,7 +37,7 @@
 #include <utility>
 #include "utils/exception.h"
 #include "utils/string.h"
-#include "version.inc"
+#include "version.h"
 
 namespace lczero {
 
@@ -216,21 +225,10 @@ void UciLoop::SendResponses(const std::vector<std::string>& responses) {
   }
 }
 
-// TODO: remove these monstrosities
-#define LC0V_STR_INNER(a) #a
-#define LC0V_STR(a) LC0V_STR_INNER(a)
-#define LC0_VERSION_STRING     \
-    "v" LC0V_STR(LC0_VERSION_MAJOR) \
-    "." LC0V_STR(LC0_VERSION_MINOR) \
-    "." LC0V_STR(LC0_VERSION_PATCH)
-
 void UciLoop::SendId() {
-  SendResponse("id name The Lc0 chess engine. " LC0_VERSION_STRING);
+  SendResponse("id name The Lc0 chess engine. v" + GetVersionStr());
   SendResponse("id author The LCZero Authors.");
 }
-#undef LC0V_STR_INNER
-#undef LC0V_STR
-#undef LC0_VERSION_STRING
 
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
   std::string res = "bestmove " + move.bestmove.as_string();

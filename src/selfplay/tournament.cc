@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "selfplay/tournament.h"
@@ -74,10 +83,10 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch size
-  defaults->Set<bool>(Search::kSmartPruningStr, false);  // No smart pruning
-  defaults->Set<float>(Search::kTemperatureStr, 1.0);    // Temperature = 1.0
+  defaults->Set<float>(Search::kAggressiveTimePruningStr, 0.0f);  // No smart pruning
+  defaults->Set<float>(Search::kTemperatureStr, 1.0f);    // Temperature = 1.0
   defaults->Set<bool>(Search::kNoiseStr, true);          // Dirichlet noise
-  defaults->Set<float>(Search::kFpuReductionStr, 0.0);   // No FPU reduction.
+  defaults->Set<float>(Search::kFpuReductionStr, 0.0f);   // No FPU reduction.
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
@@ -128,7 +137,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     std::string path =
         options.GetSubdict(kPlayerNames[idx]).Get<std::string>(kNetFileStr);
     if (path == kAutoDiscover) {
-      path = DiscoveryWeightsFile();
+      path = DiscoverWeightsFile();
     }
     Weights weights = LoadWeightsFromFile(path);
     std::string backend =

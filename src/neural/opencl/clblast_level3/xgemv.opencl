@@ -48,9 +48,14 @@ INLINE_FUNC real LoadMatrixA(const __global real* restrict agm, const int x, con
 __kernel __attribute__((reqd_work_group_size(WGS1, 1, 1)))
 void Xgemv(const int m, const int n,
                     const __global real* restrict agm, const int a_offset, const int a_ld,
-                    const __global real* restrict xgm, const int x_offset,
-                    __global real* ygm, const int y_offset,
+                    const __global real* restrict x, const int x_offset,
+                    __global real* y, const int y_offset,
                     __global real* bias, const int relu) {
+
+  const int batch = get_global_id(1);
+  __global real* xgm=x + batch*n;
+  __global real* ygm=y + batch*m;
+
   // Local memory for the vector X
   __local real xlm[WGS1];
 
@@ -111,7 +116,7 @@ void Xgemv(const int m, const int n,
       }
 
       // Stores the final result
-	  real out = acc1[_w] + bias[gid + y_offset];
+	  real out = acc1[_w] + bias[gid];
 	  if (relu) {
 	    out = out > 0.0f ? out : 0.0f;
 	  }

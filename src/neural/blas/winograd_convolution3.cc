@@ -25,6 +25,10 @@
 
 #include <array>
 
+#ifdef USE_ISPC
+#include "winograd_transform_ispc.h"
+#endif
+
 namespace lczero {
 
 std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
@@ -107,98 +111,102 @@ void WinogradConvolution3::Forward(const size_t batch_size,
 void WinogradConvolution3::TransformIn(const size_t batch_size,
                                        const float* input,
                                        const size_t channels) {
+#ifndef USE_ISPC
+
+  static const size_t kCacheSize = 128;
   float x[kWinogradAlpha][kWinogradAlpha];
   float T1[kWinogradAlpha][kWinogradAlpha];
-
+  float R[16][kCacheSize];
   for (size_t batch_index = 0; batch_index < batch_size; batch_index++) {
+    size_t channels_rem = channels;
     const float* input_batch =
         input + batch_index * kWidth * kHeight * channels;
     float* V_batch = &V_[channels * kTiles * batch_index];
-
-    for (size_t channel = 0; channel < channels; channel++) {
-      float* V_channel = V_batch + channel;
-      const float* input_channel = input_batch + channel * (kWidth * kHeight);
-
+    for (size_t channel_long = 0; channel_long < channels;
+         channel_long += kCacheSize) {
+      const size_t channel_step = std::min<size_t>(kCacheSize, channels_rem);
+      channels_rem -= channel_step;
       for (int block_y = 0; block_y < kWtiles; block_y++) {
         for (int block_x = 0; block_x < kWtiles; block_x++) {
           // Tiles overlap by 2
           const int yin = 2 * block_y - 1;
           const int xin = 2 * block_x - 1;
 
-          for (int i = 0; i < kWinogradAlpha; i++) {
-            for (int j = 0; j < kWinogradAlpha; j++) {
-              if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < kHeight &&
-                  (xin + j) < kWidth) {
-                x[i][j] = input_channel[(yin + i) * kWidth + (xin + j)];
-              } else {
-                x[i][j] = 0.0f;
+          for (size_t ch = 0; ch < channel_step; ++ch) {
+            const size_t channel = channel_long + ch;
+
+            const float* input_channel =
+                input_batch + channel * (kWidth * kHeight);
+            for (int i = 0; i < kWinogradAlpha; i++) {
+              for (int j = 0; j < kWinogradAlpha; j++) {
+                if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < kHeight &&
+                    (xin + j) < kWidth) {
+                  x[i][j] = input_channel[(yin + i) * kWidth + (xin + j)];
+                } else {
+                  x[i][j] = 0.0f;
+                }
               }
             }
+
+            // Calculates transpose(B).x.B
+            // B = [[ 1.0,  0.0,  0.0,  0.0],
+            //      [ 0.0,  1.0, -1.0,  1.0],
+            //      [-1.0,  1.0,  1.0,  0.0],
+            //      [ 0.0,  0.0,  0.0, -1.0]]
+
+            T1[0][0] = x[0][0] - x[2][0];
+            T1[0][1] = x[0][1] - x[2][1];
+            T1[0][2] = x[0][2] - x[2][2];
+            T1[0][3] = x[0][3] - x[2][3];
+            T1[1][0] = x[1][0] + x[2][0];
+            T1[1][1] = x[1][1] + x[2][1];
+            T1[1][2] = x[1][2] + x[2][2];
+            T1[1][3] = x[1][3] + x[2][3];
+            T1[2][0] = x[2][0] - x[1][0];
+            T1[2][1] = x[2][1] - x[1][1];
+            T1[2][2] = x[2][2] - x[1][2];
+            T1[2][3] = x[2][3] - x[1][3];
+            T1[3][0] = x[1][0] - x[3][0];
+            T1[3][1] = x[1][1] - x[3][1];
+            T1[3][2] = x[1][2] - x[3][2];
+            T1[3][3] = x[1][3] - x[3][3];
+
+            R[0][ch] = T1[0][0] - T1[0][2];
+            R[1][ch] = T1[0][1] + T1[0][2];
+            R[2][ch] = T1[0][2] - T1[0][1];
+            R[3][ch] = T1[0][1] - T1[0][3];
+            R[4][ch] = T1[1][0] - T1[1][2];
+            R[5][ch] = T1[1][1] + T1[1][2];
+            R[6][ch] = T1[1][2] - T1[1][1];
+            R[7][ch] = T1[1][1] - T1[1][3];
+            R[8][ch] = T1[2][0] - T1[2][2];
+            R[9][ch] = T1[2][1] + T1[2][2];
+            R[10][ch] = T1[2][2] - T1[2][1];
+            R[11][ch] = T1[2][1] - T1[2][3];
+            R[12][ch] = T1[3][0] - T1[3][2];
+            R[13][ch] = T1[3][1] + T1[3][2];
+            R[14][ch] = T1[3][2] - T1[3][1];
+            R[15][ch] = T1[3][1] - T1[3][3];
           }
-
-          // Calculates transpose(B).x.B
-          // B = [[ 1.0,  0.0,  0.0,  0.0],
-          //      [ 0.0,  1.0, -1.0,  1.0],
-          //      [-1.0,  1.0,  1.0,  0.0],
-          //      [ 0.0,  0.0,  0.0, -1.0]]
-
-          //     WinogradTile T1, T2;
-
-          T1[0][0] = x[0][0] - x[2][0];
-          T1[0][1] = x[0][1] - x[2][1];
-          T1[0][2] = x[0][2] - x[2][2];
-          T1[0][3] = x[0][3] - x[2][3];
-          T1[1][0] = x[1][0] + x[2][0];
-          T1[1][1] = x[1][1] + x[2][1];
-          T1[1][2] = x[1][2] + x[2][2];
-          T1[1][3] = x[1][3] + x[2][3];
-          T1[2][0] = x[2][0] - x[1][0];
-          T1[2][1] = x[2][1] - x[1][1];
-          T1[2][2] = x[2][2] - x[1][2];
-          T1[2][3] = x[2][3] - x[1][3];
-          T1[3][0] = x[1][0] - x[3][0];
-          T1[3][1] = x[1][1] - x[3][1];
-          T1[3][2] = x[1][2] - x[3][2];
-          T1[3][3] = x[1][3] - x[3][3];
-
+          float* V_channel = V_batch + channel_long;
           const auto V_incr = channels * kTiles * batch_size;
           float* wTile_V = V_channel + channels * (block_y * kWtiles + block_x);
-
-          *wTile_V = T1[0][0] - T1[0][2];
-          wTile_V += V_incr;
-          *wTile_V = T1[0][1] + T1[0][2];
-          wTile_V += V_incr;
-          *wTile_V = T1[0][2] - T1[0][1];
-          wTile_V += V_incr;
-          *wTile_V = T1[0][1] - T1[0][3];
-          wTile_V += V_incr;
-          *wTile_V = T1[1][0] - T1[1][2];
-          wTile_V += V_incr;
-          *wTile_V = T1[1][1] + T1[1][2];
-          wTile_V += V_incr;
-          *wTile_V = T1[1][2] - T1[1][1];
-          wTile_V += V_incr;
-          *wTile_V = T1[1][1] - T1[1][3];
-          wTile_V += V_incr;
-          *wTile_V = T1[2][0] - T1[2][2];
-          wTile_V += V_incr;
-          *wTile_V = T1[2][1] + T1[2][2];
-          wTile_V += V_incr;
-          *wTile_V = T1[2][2] - T1[2][1];
-          wTile_V += V_incr;
-          *wTile_V = T1[2][1] - T1[2][3];
-          wTile_V += V_incr;
-          *wTile_V = T1[3][0] - T1[3][2];
-          wTile_V += V_incr;
-          *wTile_V = T1[3][1] + T1[3][2];
-          wTile_V += V_incr;
-          *wTile_V = T1[3][2] - T1[3][1];
-          wTile_V += V_incr;
-          *wTile_V = T1[3][1] - T1[3][3];
+          for (size_t i = 0; i < 16; ++i) {
+            for (size_t ch = 0; ch < channel_step; ++ch) {
+              wTile_V[ch] = R[i][ch];
+            }
+            wTile_V += V_incr;
+          }
         }
       }
     }
   }
+
+#else  // USE_ISPC
+
+  ispc::winograd_TransformIn_ispc(batch_size, input, channels, &V_[0]);
+
+#endif  // USE_ISPC
 }
 
 void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
@@ -280,6 +288,8 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
 
 void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
                                         const size_t channels) {
+#ifndef USE_ISPC
+
   float m[kWinogradTile];
 
   for (size_t batch_index = 0; batch_index < batch_size; batch_index++) {
@@ -334,6 +344,12 @@ void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
       }
     }
   }
+
+#else  // USE_ISPC
+
+  ispc::winograd_TransformOut_ispc(batch_size, &M_[0], channels, output);
+
+#endif  // USE_ISPC
 }
 
 }  // namespace lczero

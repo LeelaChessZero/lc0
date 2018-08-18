@@ -14,10 +14,21 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "utils/string.h"
 
+#include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <vector>
 
@@ -59,6 +70,24 @@ std::vector<int> ParseIntList(const std::string& str) {
     result.push_back(std::stoi(x));
   }
   return result;
+}
+
+std::string LeftTrim(std::string str) {
+  auto it = std::find_if(str.begin(), str.end(), [](int ch)
+    {return !std::isspace(ch);});
+  str.erase(str.begin(), it);
+  return str;
+}
+
+std::string RightTrim(std::string str) {
+  auto it = std::find_if(str.rbegin(), str.rend(), [](int ch)
+    {return !std::isspace(ch);});
+  str.erase(it.base(), str.end());
+  return str;
+}
+
+std::string Trim(std::string str) {
+  return LeftTrim(RightTrim(std::move(str)));
 }
 
 }  // namespace lczero
