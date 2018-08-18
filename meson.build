@@ -86,6 +86,7 @@ files += [
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
+  'src/syzygy/syzygy.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/histogram.cc',
@@ -399,6 +400,11 @@ if get_option('gtest') and gtest.found()
 
   test('PositionTest',
     executable('position_test', 'src/chess/position_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
+  test('SyzygyTest',
+    executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
     files, include_directories: includes, dependencies: test_deps
   ), timeout: 90)
 
