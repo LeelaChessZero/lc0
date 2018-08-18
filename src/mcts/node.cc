@@ -139,12 +139,13 @@ Move Edge::GetMove(bool as_opponent) const {
 // they add up to 1).
 
 // If the two assumed-on exponent bits (3<<28) are in fact off, the input is
-// rounded up to the smallest value with them on. We verify this by subtracting
-// the two bits from the input and checking for a negative result. This is
-// combined with the round-to-nearest addition (1<<11).
+// rounded up to the smallest value with them on. We accomplish this by
+// subtracting the two bits from the input and checking for a negative result
+// (the subtraction works despite crossing from exponent to significand). This
+// is combined with the round-to-nearest addition (1<<11) into one op.
 void Edge::SetP(float p) {
-  constexpr int32_t roundings = (1 << 11) - (3 << 28);
   assert(0.0f <= p && p <= 1.0f);
+  constexpr int32_t roundings = (1 << 11) - (3 << 28);
   int32_t tmp;
   std::memcpy(&tmp, &p, sizeof(float));
   tmp += roundings;
