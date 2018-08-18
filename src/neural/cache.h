@@ -75,7 +75,7 @@ class CachingComputation {
   float GetPVal(int sample, int move_id) const;
   // Pops last input from the computation. Only allowed for inputs which were
   // cached.
-  void PopInput();
+  void PopCacheHit();
 
  private:
   struct WorkItem {

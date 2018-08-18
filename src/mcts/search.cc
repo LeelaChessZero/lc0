@@ -586,8 +586,7 @@ void SearchWorker::GatherMinibatch() {
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
     if (search_->kOutOfOrderEval) {
-      const bool is_terminal = node->IsTerminal();
-      if (is_terminal || minibatch_.back().is_cache_hit) {
+      if (node->IsTerminal() || minibatch_.back().is_cache_hit) {
         // Perform out of order eval for the last entry in minibatch_.
         FetchSingleNodeResult(&minibatch_.back(),
                               computation_->GetBatchSize() - 1);
@@ -596,7 +595,7 @@ void SearchWorker::GatherMinibatch() {
         // Remove last entry in minibatch_, as it has just been
         // processed.
         // If NN eval was already processed out of order, remove it.
-        if (minibatch_.back().nn_queried) computation_->PopInput();
+        if (minibatch_.back().nn_queried) computation_->PopCacheHit();
         minibatch_.pop_back();
         --minibatch_size;
       }

@@ -48,7 +48,7 @@ bool CachingComputation::AddInputByHash(uint64_t hash) {
   return true;
 }
 
-void CachingComputation::PopInput() {
+void CachingComputation::PopCacheHit() {
   assert(!batch_.empty());
   assert(batch_.back().lock);
   assert(batch_.back().idx_in_parent == -1);
