@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -78,12 +79,10 @@ class Edge {
   // is false) or as opponent (if as_opponent is true).
   Move GetMove(bool as_opponent = false) const;
 
-  // Returns value of Move probability returned from the neural net
-  // (but can be changed by adding Dirichlet noise).
-  float GetP() const { return p_; }
-
-  // Sets move probability.
-  void SetP(float val) { p_ = val; }
+  // Returns or sets value of Move policy prior returned from the neural net
+  // (but can be changed by adding Dirichlet noise). Must be in [0,1].
+  float GetP() const;
+  void SetP(float val);
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -96,9 +95,9 @@ class Edge {
   // Root node contains move a1a1.
   Move move_;
 
-  // Probability that this move will be made. From policy head of the neural
-  // network.
-  float p_ = 0.0;
+  // Probability that this move will be made, from the policy head of the neural
+  // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
+  uint16_t p_ = 0;
 
   friend class EdgeList;
 };
