@@ -146,8 +146,8 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_edge_) return;
   last_outputted_best_move_edge_ = best_move_edge_.edge();
-  uci_info_.depth = root_node_->GetFullDepth();
-  uci_info_.seldepth = root_node_->GetMaxDepth();
+  uci_info_.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
+  uci_info_.seldepth = max_depth_;
   uci_info_.time = GetTimeSinceStart();
   uci_info_.nodes = total_playouts_ + initial_visits_;
   uci_info_.hashfull =
@@ -174,8 +174,10 @@ void Search::MaybeOutputInfo() {
   Mutex::Lock counters_lock(counters_mutex_);
   if (!responded_bestmove_ && best_move_edge_ &&
       (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
-       uci_info_.depth != root_node_->GetFullDepth() ||
-       uci_info_.seldepth != root_node_->GetMaxDepth() ||
+       uci_info_.depth !=
+           static_cast<int>(cum_depth_ /
+                            (total_playouts_ ? total_playouts_ : 1)) ||
+       uci_info_.seldepth != max_depth_ ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
   }
@@ -620,6 +622,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
+  uint16_t depth = 0;
+
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
     // Set 'node' to point to the node that was picked on previous iteration,
@@ -629,14 +633,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
-    if (!node->TryStartScoreUpdate()) return {node, true};
+    if (!node->TryStartScoreUpdate()) return {node, true, depth};
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) return {node, false};
+    if (!node->HasChildren()) return {node, false, depth};
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-
     float puct_mult =
         search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = -100.0f;
@@ -913,7 +917,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
-  // Update nodes.
+  // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   for (const NodeToProcess& node_to_process : minibatch_) {
@@ -935,25 +939,13 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
-  // Maximum depth the node is explored.
-  uint16_t depth = 0;
-  // If the node is terminal, mark it as fully explored to an "infinite"
-  // depth.
-  uint16_t cur_full_depth = node->IsTerminal() ? 999 : 0;
-  bool full_depth_updated = true;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    ++depth;
     n->FinalizeScoreUpdate(v);
     // Q will be flipped for opponent.
     v = -v;
 
     // Update the stats.
-    // Max depth.
-    n->UpdateMaxDepth(depth);
-    // Full depth.
-    if (full_depth_updated)
-      full_depth_updated = n->UpdateFullDepth(&cur_full_depth);
     // Best move.
     if (n->GetParent() == search_->root_node_ &&
         search_->best_move_edge_.GetN() <= n->GetN()) {
@@ -962,7 +954,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
   ++search_->total_playouts_;
-}
+  search_->cum_depth_ += node_to_process.depth;
+  search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
+}  // namespace lczero
 
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
