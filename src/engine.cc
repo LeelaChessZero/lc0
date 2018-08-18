@@ -49,6 +49,7 @@ const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
 const char* kSlowMoverStr = "Scale thinking time";
 const char* kMoveOverheadStr = "Move time overhead in milliseconds";
+const char* kLagBufferStr = "Lag buffer for remote play in milliseconds";
 const char* kTimeCurvePeak = "Time weight curve peak ply";
 const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
 const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
@@ -89,6 +90,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
   options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.66f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
+  options->Add<IntOption>(kLagBufferStr, 0, 10000, "lagbuffer") = 0;
   options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
                             "time-curve-peak") = 26.2f;
   options->Add<FloatOption>(kTimeCurveLeftWidth, 0.0f, 1000.0f,
@@ -131,6 +133,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverStr);
   int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
+  int64_t lagbuffer = options_.Get<int>(kLagBufferStr);
   float time_curve_peak = options_.Get<float>(kTimeCurvePeak);
   float time_curve_left_width = options_.Get<float>(kTimeCurveLeftWidth);
   float time_curve_right_width = options_.Get<float>(kTimeCurveRightWidth);
@@ -138,7 +141,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // Total time till control including increments.
   auto total_moves_time =
       std::max(int64_t{0},
-               time + increment * (movestogo - 1) - move_overhead * movestogo);
+               time - lagbuffer + increment * (movestogo - 1) - move_overhead * movestogo);
 
   constexpr int kSmartPruningToleranceMs = 200;
   float this_move_weight = ComputeMoveWeight(
@@ -162,7 +165,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // Make sure we don't exceed current time limit with what we calculated.
   limits.time_ms = std::max(
       int64_t{0},
-      std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
+      std::min(static_cast<int64_t>(this_move_time), time - lagbuffer - move_overhead));
   return limits;
 }
 
