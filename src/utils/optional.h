@@ -36,11 +36,13 @@ class optional {
  public:
   operator bool() const { return has_value_; }
   constexpr const T& operator*() const& { return value_; }
+  constexpr const T* operator->() const& { return &value_; }
   optional<T>& operator=(const T& value) {
     value_ = value;
     has_value_ = true;
     return *this;
   }
+  void reset() { has_value_ = false; }
 
  private:
   T value_;

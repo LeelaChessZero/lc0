@@ -383,6 +383,10 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
 
   Move ponder_move;  // Default is "null move" which means "don't display
                      // anything".
+  if (best_node.HasNode() && best_node.node()->HasChildren()) {
+   ponder_move =
+       GetBestChildNoTemperature(best_node.node()).GetMove(!played_history_.IsBlackToMove());
+  }
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
