@@ -90,11 +90,11 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 1.00f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
   options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
-                            "time-curve-peak") = 26.2f;
+                            "time-curve-peak") = 1.0f;
   options->Add<FloatOption>(kTimeCurveLeftWidth, 0.0f, 1000.0f,
-                            "time-curve-left-width") = 82.0f;
+                            "time-curve-left-width") = 60.0f;
   options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
-                            "time-curve-right-width") = 74.0f;
+                            "time-curve-right-width") = 60.0f;
 
   Search::PopulateUciParams(options);
   ConfigFile::PopulateOptions(options);
