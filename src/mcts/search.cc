@@ -691,7 +691,7 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().Get50MoveNoResetPly() >= 100) {
+    if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
@@ -703,7 +703,7 @@ void SearchWorker::ExtendNode(Node* node) {
     
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
-        history_.Last().Get50MoveNoResetPly() == 0 &&
+        history_.Last().GetNoCaptureNoPawnPly() == 0 &&
         (board.ours() + board.theirs()).count() <=
           search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;

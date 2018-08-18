@@ -82,7 +82,7 @@ GameResult PositionHistory::ComputeGameResult() const {
   }
 
   if (!board.HasMatingMaterial()) return GameResult::DRAW;
-  if (Last().Get50MoveNoResetPly() >= 100) return GameResult::DRAW;
+  if (Last().GetNoCaptureNoPawnPly() >= 100) return GameResult::DRAW;
   if (Last().GetGamePly() >= 450) return GameResult::DRAW;
   if (Last().GetRepetitions() >= 2) return GameResult::DRAW;
 
@@ -106,14 +106,14 @@ void PositionHistory::Append(Move m) {
 int PositionHistory::ComputeLastMoveRepetitions() const {
   const auto& last = positions_.back();
   // TODO(crem) implement hash/cache based solution.
-  if (last.Get50MoveNoResetPly() < 4) return 0;
+  if (last.GetNoCaptureNoPawnPly() < 4) return 0;
 
   for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
     const auto& pos = positions_[idx];
     if (pos.GetBoard() == last.GetBoard()) {
       return 1 + pos.GetRepetitions();
     }
-    if (pos.Get50MoveNoResetPly() < 2) return 0;
+    if (pos.GetNoCaptureNoPawnPly() < 2) return 0;
   }
   return 0;
 }
@@ -125,7 +125,7 @@ uint64_t PositionHistory::HashLast(int positions) const {
     if (!positions--) break;
     hash = HashCat(hash, iter->Hash());
   }
-  return HashCat(hash, Last().Get50MoveNoResetPly());
+  return HashCat(hash, Last().GetNoCaptureNoPawnPly());
 }
 
 }  // namespace lczero

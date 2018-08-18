@@ -52,7 +52,7 @@ const char* kMoveOverheadStr = "Move time overhead in milliseconds";
 const char* kTimeCurvePeak = "Time weight curve peak ply";
 const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
 const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
-const char* kSyzygyTablebaseStr = "Syzygy tablebase paths";
+const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
 
 const char* kAutoDiscover = "<autodiscover>";
 
