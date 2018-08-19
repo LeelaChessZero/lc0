@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -705,13 +705,13 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-  // All the pieces together.
+  // Count the total pieces on the board.
   uint64_t x = our_pieces_.as_int() | their_pieces_.as_int();
   // x &= x - 1 clears the rigthmost set bit (if any).
   x &= x - 1;
   x &= x - 1;
   x &= x - 1;
-  // If x zero we started with 3 or less bits set.
+  // If x is zero we started with 3 or less bits set.
   if (x == 0) {
     // K v K, K+B v K, K+N v K.
     return false;

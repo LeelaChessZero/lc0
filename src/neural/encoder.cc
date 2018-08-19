@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -48,7 +48,7 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     if (board.castlings().they_can_000()) result[kAuxPlaneBase + 2].SetAll();
     if (board.castlings().they_can_00()) result[kAuxPlaneBase + 3].SetAll();
     if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
-    result[kAuxPlaneBase + 5].Fill(history.Last().GetNoCapturePly());
+    result[kAuxPlaneBase + 5].Fill(history.Last().GetNoCaptureNoPawnPly());
     // Plane kAuxPlaneBase + 6 used to be movecount plane, now it's all zeros.
     // Plane kAuxPlaneBase + 7 is all ones to help NN find board edges.
     result[kAuxPlaneBase + 7].SetAll();
