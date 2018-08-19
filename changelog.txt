@@ -25,18 +25,19 @@ New visible features:
   (which was 4 all the time).
   Also, depth values do include reused tree, only nodes visited during the
   current search session.
-* --sticky-checkmates flag (default off), supposed to find shorter checkmate
-  sequences.
+* --sticky-checkmates experimental flag (default off), supposed to find shorter
+  checkmate sequences.
 * More features in backend "check".
 
 
 Performance optimizations:
+* Release windows executables are built with "whole program optimization".
 * Added --out-of-order-eval flag (default is off).
   Switching it on makes cached/terminal nodes higher priority, which increases
   nps.
-* OpenCL backend now supports batches (~5x speedup!)
+* OpenCL backend now supports batches (up to 5x speedup!)
 * Performance optimizations for BLAS backend.
-* Total visits policy is now cached.
+* Total visited policy is now cached.
 * Values of priors (P) are stored now as 16-bit float rather than 32-bit float,
   that saves considerable amount of RAM.
 
@@ -56,7 +57,7 @@ Removed features:
 
 
 Other changes:
-* Release .zip package now contains NVdia CUDA and cuDNN .dlls.
+* Release lc0-windows-cuda.zip package now contains NVdia CUDA and cuDNN .dlls.
 
 
 v0.16.0 (2018-07-20)
