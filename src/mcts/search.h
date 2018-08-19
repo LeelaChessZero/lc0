@@ -104,6 +104,7 @@ class Search {
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kOutOfOrderEvalStr;
   static const char* kStickyCheckmateStr;
 
  private:
@@ -134,7 +135,7 @@ class Search {
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
-  // Becomes true when smart pruning decides
+  // Becomes true when smart pruning decides that no better move can be found.
   bool found_best_move_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
@@ -182,6 +183,7 @@ class Search {
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const bool kOutOfOrderEval;
   const bool kStickyCheckmate;
 
   friend class SearchWorker;
@@ -241,22 +243,27 @@ class SearchWorker {
  private:
   struct NodeToProcess {
     NodeToProcess(Node* node, bool is_collision, uint16_t depth)
-        : node(node), is_collision(is_collision), depth(depth) {}
+        : node(node), depth(depth), is_collision(is_collision) {}
     Node* node;
-    bool is_collision = false;
-    bool nn_queried = false;
-    uint16_t depth;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
+    uint16_t depth;
+    bool is_collision = false;
+    bool nn_queried = false;
+    bool is_cache_hit = false;
   };
 
   NodeToProcess PickNodeToExtend();
   void ExtendNode(Node* node);
-  bool AddNodeToComputation(Node* node, bool add_if_cached = true);
+  bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);
+  void FetchSingleNodeResult(NodeToProcess* node_to_process,
+                             int idx_in_computation);
+  void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
 
   Search* const search_;
-  std::vector<NodeToProcess> nodes_to_process_;
+  // List of nodes to process.
+  std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
