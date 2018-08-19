@@ -895,8 +895,9 @@ void SearchWorker::FetchMinibatchResults() {
       if (search_->kPolicySoftmaxTemp != 1.0f) {
         p = pow(p, 1 / search_->kPolicySoftmaxTemp);
       }
-      total += p;
       edge.edge()->SetP(p);
+      // Edge::SetP does some rounding, so only add to the total after rounding.
+      total += edge.edge()->GetP();
     }
     // Normalize P values to add up to 1.0.
     if (total > 0.0f) {
