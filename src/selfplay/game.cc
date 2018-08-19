@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -79,7 +79,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads,
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
           options_[idx].info_callback, options_[idx].search_limits,
-          *options_[idx].uci_options, options_[idx].cache);
+          *options_[idx].uci_options, options_[idx].cache, nullptr);
+          // TODO: add Syzygy option for selfplay.
     }
 
     // Do search.

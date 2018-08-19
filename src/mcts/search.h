@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -35,6 +35,7 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 #include "utils/optional.h"
 #include "utils/optionsdict.h"
@@ -55,7 +56,8 @@ class Search {
   Search(const NodeTree& tree, Network* network,
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const SearchLimits& limits,
-         const OptionsDict& options, NNCache* cache);
+         const OptionsDict& options, NNCache* cache,
+         SyzygyTablebase* syzygy_tb);
 
   ~Search();
 
@@ -144,6 +146,7 @@ class Search {
 
   Node* root_node_;
   NNCache* cache_;
+  SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
 
@@ -163,6 +166,8 @@ class Search {
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
+  std::atomic<int> tb_hits_{0};
+
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
   // External parameters.

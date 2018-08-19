@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -52,6 +52,7 @@ const char* kMoveOverheadStr = "Move time overhead in milliseconds";
 const char* kTimeCurvePeak = "Time weight curve peak ply";
 const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
 const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
+const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
 
 const char* kAutoDiscover = "<autodiscover>";
 
@@ -95,6 +96,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
                             "time-curve-left-width") = 82.0f;
   options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
                             "time-curve-right-width") = 74.0f;
+  options->Add<StringOption>(kSyzygyTablebaseStr, "syzygy-paths", 's');
+  // Add "Ponder" option to signal to GUIs that we support pondering.
+  // This option is currently not used by lc0 in any way.
+  options->Add<BoolOption>("Ponder", "ponder") = false;
 
   Search::PopulateUciParams(options);
   ConfigFile::PopulateOptions(options);
@@ -111,17 +116,17 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
                                                     const GoParams& params) {
   SearchLimits limits;
-  limits.visits = params.nodes;
   limits.time_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
-  limits.infinite = params.infinite;
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
     for (const auto& move : params.searchmoves) {
       limits.searchmoves.emplace_back(move, is_black);
     }
   }
-  if (params.infinite || time < 0) return limits;
+  limits.infinite = params.infinite || params.ponder;
+  limits.visits = limits.infinite ? -1 : params.nodes;
+  if (limits.infinite || time < 0) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
   int movestogo = params.movestogo < 0 ? 50 : params.movestogo;
@@ -166,8 +171,21 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   return limits;
 }
 
-void EngineController::UpdateNetwork() {
+void EngineController::UpdateTBAndNetwork() {
   SharedLock lock(busy_mutex_);
+
+  std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseStr);
+  if (!tb_paths.empty() && tb_paths != tb_paths_) {
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    std::cerr << "Loading Syzygy tablebases from " << tb_paths << std::endl;
+    if (!syzygy_tb_->init(tb_paths)) {
+      std::cerr << "Failed to load Syzygy tablebases!" << std::endl;
+      syzygy_tb_ = nullptr;
+    } else {
+      tb_paths_ = tb_paths;
+    }
+  }
+
   std::string network_path = options_.Get<std::string>(kWeightsStr);
   std::string backend = options_.Get<std::string>(kNnBackendStr);
   std::string backend_options = options_.Get<std::string>(kNnBackendOptionsStr);
@@ -197,7 +215,7 @@ void EngineController::UpdateNetwork() {
 void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 
 void EngineController::EnsureReady() {
-  UpdateNetwork();
+  UpdateTBAndNetwork();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
 }
 
@@ -206,11 +224,19 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  UpdateNetwork();
+  current_position_.reset();
+  UpdateTBAndNetwork();
 }
 
 void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
+  SharedLock lock(busy_mutex_);
+  current_position_ = CurrentPosition { fen, moves_str };
+  search_.reset();
+}
+
+void EngineController::SetupPosition(const std::string& fen,
+                                     const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
   search_.reset();
 
@@ -219,12 +245,44 @@ void EngineController::SetPosition(const std::string& fen,
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   tree_->ResetToPosition(fen, moves);
-  UpdateNetwork();
+  UpdateTBAndNetwork();
 }
 
 void EngineController::Go(const GoParams& params) {
-  if (!tree_) {
-    SetPosition(ChessBoard::kStartingFen, {});
+  go_params_ = params;
+
+  ThinkingInfo::Callback info_callback(info_callback_);
+
+  if(current_position_) {
+    if (params.ponder && !current_position_->moves.empty()) {
+      std::vector<std::string> moves(current_position_->moves);
+      std::string ponder_move = moves.back();
+      moves.pop_back();
+      SetupPosition(current_position_->fen, moves);
+
+      info_callback = [this, ponder_move](const ThinkingInfo& info) {
+        ThinkingInfo ponder_info(info);
+        if (!ponder_info.pv.empty() && ponder_info.pv[0].as_string() == ponder_move) {
+          ponder_info.pv.erase(ponder_info.pv.begin());
+        } else {
+          ponder_info.pv.clear();
+        }
+        if(ponder_info.score) {
+          ponder_info.score = -*ponder_info.score;
+        }
+        if(ponder_info.depth > 1) {
+          ponder_info.depth--;
+        }
+        if(ponder_info.seldepth > 1) {
+          ponder_info.seldepth--;
+        }
+        info_callback_(ponder_info);
+      };
+    } else {
+      SetupPosition(current_position_->fen, current_position_->moves);
+    }
+  } else if (!tree_) {
+    SetupPosition(ChessBoard::kStartingFen, {});
   }
 
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
@@ -232,9 +290,15 @@ void EngineController::Go(const GoParams& params) {
 
   search_ =
       std::make_unique<Search>(*tree_, network_.get(), best_move_callback_,
-                               info_callback_, limits, options_, &cache_);
+                               info_callback, limits, options_, &cache_,
+                               syzygy_tb_.get());
 
   search_->StartThreads(options_.Get<int>(kThreadsOption));
+}
+
+void EngineController::PonderHit() {
+  go_params_.ponder = false;
+  Go(go_params_);
 }
 
 void EngineController::Stop() {
@@ -303,6 +367,10 @@ void EngineLoop::CmdPosition(const std::string& position,
 void EngineLoop::CmdGo(const GoParams& params) {
   EnsureOptionsSent();
   engine_.Go(params);
+}
+
+void EngineLoop::CmdPonderHit() {
+  engine_.PonderHit();
 }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }

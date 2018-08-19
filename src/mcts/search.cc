@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -50,7 +50,7 @@ const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
-    "Aggressive smart pruning threshold";
+    "Aversion to search if change unlikely";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
@@ -82,7 +82,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
-                            "smart-pruning-aggresiveness") = 0.68f;
+                            "futile-search-aversion") = 1.47f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
@@ -99,9 +99,11 @@ void Search::PopulateUciParams(OptionsParser* options) {
 Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
-               const OptionsDict& options, NNCache* cache)
+               const OptionsDict& options, NNCache* cache,
+               SyzygyTablebase* syzygy_tb)
     : root_node_(tree.GetCurrentHead()),
       cache_(cache),
+      syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
       network_(network),
       limits_(limits),
@@ -157,6 +159,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   uci_info_.nps =
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
   uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0));
+  uci_info_.tb_hits = tb_hits_.load(std::memory_order_acquire);
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
@@ -319,7 +322,7 @@ void Search::UpdateRemainingMoves() {
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
-          kAggressiveTimePruning * remaining_time * nps / 1000;
+          remaining_time * nps / kAggressiveTimePruning / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -388,6 +391,10 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
 
   Move ponder_move;  // Default is "null move" which means "don't display
                      // anything".
+  if (best_node.HasNode() && best_node.node()->HasChildren()) {
+   ponder_move =
+       GetBestChildNoTemperature(best_node.node()).GetMove(!played_history_.IsBlackToMove());
+  }
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
@@ -694,7 +701,7 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetNoCapturePly() >= 100) {
+    if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
@@ -702,6 +709,29 @@ void SearchWorker::ExtendNode(Node* node) {
     if (history_.Last().GetRepetitions() >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
+    }
+    
+    // Neither by-position or by-rule termination, but maybe it's a TB position.
+    if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+        history_.Last().GetNoCaptureNoPawnPly() == 0 &&
+        (board.ours() + board.theirs()).count() <=
+          search_->syzygy_tb_->max_cardinality()) {
+      ProbeState state;
+      WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
+      // Only fail state means the WDL is wrong, probe_wdl may produce correct
+      // result with a stat other than OK.
+      if (state != FAIL) {
+        // If the colors seem backwards, check the checkmate check above.
+        if (wdl == WDL_WIN) {
+          node->MakeTerminal(GameResult::BLACK_WON);
+        } else if (wdl == WDL_LOSS) {
+          node->MakeTerminal(GameResult::WHITE_WON);
+        } else { // Cursed wins and blessed losses count as draws.
+          node->MakeTerminal(GameResult::DRAW); 
+        }
+        search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
+        return;
+      }
     }
   }
 
