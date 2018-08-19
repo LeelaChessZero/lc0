@@ -37,7 +37,7 @@ Performance optimizations:
   nps.
 * OpenCL backend now supports batches (up to 5x speedup!)
 * Performance optimizations for BLAS backend.
-* Total visited policy is now cached.
+* Total visited policy (for FPU reduction) is now cached.
 * Values of priors (P) are stored now as 16-bit float rather than 32-bit float,
   that saves considerable amount of RAM.
 
