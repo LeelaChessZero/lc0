@@ -48,7 +48,7 @@ Bugfixes:
   not possible.
 * Fixed the bug which caused --cache-history-length for values 2..7 work the
   same as --cache-history-length=1.
-  This is fixed, but default is temporariry changed to --cache-history-length=1
+  This is fixed, but default is temporarily changed to --cache-history-length=1
   during play. (For training games, it's 7)
 
 
