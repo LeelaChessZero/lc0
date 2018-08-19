@@ -21,7 +21,7 @@ New visible features:
 
      syzygy-paths=/path/to/syzygy/
 
-* In uci info, depth is not average depth rather than full depth
+* In uci info, "depth" is now average depth rather than full depth
   (which was 4 all the time).
   Also, depth values do include reused tree, only nodes visited during the
   current search session.
