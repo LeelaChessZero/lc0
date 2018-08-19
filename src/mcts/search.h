@@ -104,7 +104,6 @@ class Search {
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
-  static const char* kOutOfOrderEvalStr;
   static const char* kStickyCheckmateStr;
 
  private:
@@ -171,7 +170,7 @@ class Search {
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
   // External parameters.
-  const int kMiniBatchSize;
+  const unsigned int kMiniBatchSize;
   const int kMaxPrefetchBatch;
   const float kCpuct;
   const float kTemperature;
@@ -183,7 +182,6 @@ class Search {
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
-  const bool kOutOfOrderEval;
   const bool kStickyCheckmate;
 
   friend class SearchWorker;

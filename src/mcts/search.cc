@@ -57,7 +57,6 @@ const char* Search::kCacheHistoryLengthStr =
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
-const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
 
 namespace {
@@ -90,7 +89,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
-  options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
@@ -121,7 +119,6 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
       kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
 
 namespace {
@@ -549,20 +546,17 @@ void SearchWorker::InitializeIteration(
 // ~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
-  int minibatch_size = 0;
   int collisions_found = 0;
   // Number of nodes processed out of order.
-  int number_out_of_order = 0;
+  unsigned int number_out_of_order = 0;
 
   // Gather nodes to process in the current batch.
   // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
   // iteration so that search can exit.
   // TODO(crem) change that to checking search_->stop_ when bestmove reporting
   // is in a separate thread.
-  while (minibatch_size < search_->kMiniBatchSize &&
+  while (minibatch_.size() < search_->kMiniBatchSize &&
          number_out_of_order < search_->kMiniBatchSize) {
-    // If there's something to process without touching slow neural net, do it.
-    if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
     minibatch_.emplace_back(PickNodeToExtend());
     auto& picked_node = minibatch_.back();
@@ -574,7 +568,6 @@ void SearchWorker::GatherMinibatch() {
       if (++collisions_found > search_->kAllowedNodeCollisions) return;
       continue;
     }
-    ++minibatch_size;
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
@@ -589,23 +582,15 @@ void SearchWorker::GatherMinibatch() {
       }
     }
 
-    // If out of order eval is enabled and the node to compute we added last
-    // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
-    // out of order eval for it.
-    if (search_->kOutOfOrderEval) {
-      if (node->IsTerminal() || picked_node.is_cache_hit) {
-        // Perform out of order eval for the last entry in minibatch_.
-        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
-        DoBackupUpdateSingleNode(picked_node);
+    // If the latest node doesn't require NN eval (i.e. it's a cache hit or
+    // known terminal node), do an out of order eval and immediately remove it.
+    if (node->IsTerminal() || picked_node.is_cache_hit) {
+      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+      DoBackupUpdateSingleNode(picked_node);
 
-        // Remove last entry in minibatch_, as it has just been
-        // processed.
-        // If NN eval was already processed out of order, remove it.
-        if (picked_node.nn_queried) computation_->PopCacheHit();
-        minibatch_.pop_back();
-        --minibatch_size;
-        ++number_out_of_order;
-      }
+      if (picked_node.nn_queried) computation_->PopCacheHit();
+      minibatch_.pop_back();
+      ++number_out_of_order;
     }
   }
 }
