@@ -251,7 +251,7 @@ void Search::SendMovesStats() const {
     }
     oss << ") ";
 
-    oss << "(T: " << edge.IsTerminal() << ") ";
+    if (edge.IsTerminal()) oss << "(T) ";
 
     info.comment = oss.str();
     info_callback_(info);
