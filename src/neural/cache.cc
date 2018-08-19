@@ -48,6 +48,13 @@ bool CachingComputation::AddInputByHash(uint64_t hash) {
   return true;
 }
 
+void CachingComputation::PopCacheHit() {
+  assert(!batch_.empty());
+  assert(batch_.back().lock);
+  assert(batch_.back().idx_in_parent == -1);
+  batch_.pop_back();
+}
+
 void CachingComputation::AddInput(
     uint64_t hash, InputPlanes&& input,
     std::vector<uint16_t>&& probabilities_to_cache) {
