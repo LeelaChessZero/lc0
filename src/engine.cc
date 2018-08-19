@@ -111,6 +111,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
   defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
+  // Cache key has a history of 1 ply back. That's to be compatible with old
+  // bug. Also tests show that for now 1 has better strength than 7.
+  // TODO(crem) Revisit this setting.
+  defaults->Set<int>(Search::kCacheHistoryLengthStr, 1);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
@@ -231,12 +235,12 @@ void EngineController::NewGame() {
 void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
-  current_position_ = CurrentPosition { fen, moves_str };
+  current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
 }
 
-void EngineController::SetupPosition(const std::string& fen,
-                                     const std::vector<std::string>& moves_str) {
+void EngineController::SetupPosition(
+    const std::string& fen, const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
   search_.reset();
 
@@ -253,7 +257,7 @@ void EngineController::Go(const GoParams& params) {
 
   ThinkingInfo::Callback info_callback(info_callback_);
 
-  if(current_position_) {
+  if (current_position_) {
     if (params.ponder && !current_position_->moves.empty()) {
       std::vector<std::string> moves(current_position_->moves);
       std::string ponder_move = moves.back();
@@ -262,18 +266,19 @@ void EngineController::Go(const GoParams& params) {
 
       info_callback = [this, ponder_move](const ThinkingInfo& info) {
         ThinkingInfo ponder_info(info);
-        if (!ponder_info.pv.empty() && ponder_info.pv[0].as_string() == ponder_move) {
+        if (!ponder_info.pv.empty() &&
+            ponder_info.pv[0].as_string() == ponder_move) {
           ponder_info.pv.erase(ponder_info.pv.begin());
         } else {
           ponder_info.pv.clear();
         }
-        if(ponder_info.score) {
+        if (ponder_info.score) {
           ponder_info.score = -*ponder_info.score;
         }
-        if(ponder_info.depth > 1) {
+        if (ponder_info.depth > 1) {
           ponder_info.depth--;
         }
-        if(ponder_info.seldepth > 1) {
+        if (ponder_info.seldepth > 1) {
           ponder_info.seldepth--;
         }
         info_callback_(ponder_info);
@@ -288,10 +293,9 @@ void EngineController::Go(const GoParams& params) {
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
                                      tree_->IsBlackToMove(), params);
 
-  search_ =
-      std::make_unique<Search>(*tree_, network_.get(), best_move_callback_,
-                               info_callback, limits, options_, &cache_,
-                               syzygy_tb_.get());
+  search_ = std::make_unique<Search>(*tree_, network_.get(),
+                                     best_move_callback_, info_callback, limits,
+                                     options_, &cache_, syzygy_tb_.get());
 
   search_->StartThreads(options_.Get<int>(kThreadsOption));
 }
@@ -369,9 +373,7 @@ void EngineLoop::CmdGo(const GoParams& params) {
   engine_.Go(params);
 }
 
-void EngineLoop::CmdPonderHit() {
-  engine_.PonderHit();
-}
+void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
 
