@@ -83,4 +83,4 @@ class WinogradConvolution3 {
   std::vector<float> V_;
   std::vector<float> M_;
 };
-}
+}  // namespace lczero

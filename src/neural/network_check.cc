@@ -25,8 +25,8 @@
   Program grant you additional permission to convey the resulting work.
  */
 
-#include "neural/network.h"
 #include "neural/factory.h"
+#include "neural/network.h"
 #include "utils/histogram.h"
 #include "utils/random.h"
 

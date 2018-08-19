@@ -1314,8 +1314,8 @@ class SyzygyTablebaseImpl {
     Key key = calc_key_from_position(pos);
 
     // Test for KvK
-    if (type == WDL && pos.ours() == pos.our_king()
-          && pos.theirs() == pos.their_king()) {
+    if (type == WDL && pos.ours() == pos.our_king() &&
+        pos.theirs() == pos.their_king()) {
       return 0;
     }
 
