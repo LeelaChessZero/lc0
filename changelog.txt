@@ -23,7 +23,7 @@ New visible features:
 
 * In uci info, "depth" is now average depth rather than full depth
   (which was 4 all the time).
-  Also, depth values do include reused tree, only nodes visited during the
+  Also, depth values do not include reused tree, only nodes visited during the
   current search session.
 * --sticky-checkmates experimental flag (default off), supposed to find shorter
   checkmate sequences.
