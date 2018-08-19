@@ -6,7 +6,7 @@ New visible features:
 * Tablebases are supported now (only WDL probe for now).
   Command line parameter is
   --syzygy-paths=/path/to/syzygy/
-* Old smart pruning flag is gone. Insted there is
+* Old smart pruning flag is gone. Instead there is
   --futile-search-aversion flag.
   --futile-search-aversion=0 is equivalent to old --no-smart-pruning.
   --futile-search-aversion=1 is equivalent to old --smart-pruning.
