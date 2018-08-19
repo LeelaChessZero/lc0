@@ -604,6 +604,7 @@ void SearchWorker::GatherMinibatch() {
         if (picked_node.nn_queried) computation_->PopCacheHit();
         minibatch_.pop_back();
         --minibatch_size;
+        ++number_out_of_order;
       }
     }
   }
