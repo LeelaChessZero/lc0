@@ -253,6 +253,7 @@ void UciLoop::SendInfo(const ThinkingInfo& info) {
   if (info.score) res += " score cp " + std::to_string(*info.score);
   if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
   if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
+  if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
 
   if (!info.pv.empty()) {
     res += " pv";

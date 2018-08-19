@@ -95,9 +95,11 @@ void Search::PopulateUciParams(OptionsParser* options) {
 Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
-               const OptionsDict& options, NNCache* cache)
+               const OptionsDict& options, NNCache* cache,
+               SyzygyTablebase* syzygy_tb)
     : root_node_(tree.GetCurrentHead()),
       cache_(cache),
+      syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
       network_(network),
       limits_(limits),
@@ -152,6 +154,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   uci_info_.nps =
       uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
   uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0));
+  uci_info_.tb_hits = tb_hits_.load(std::memory_order_acquire);
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
@@ -693,7 +696,7 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetNoCapturePly() >= 100) {
+    if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
@@ -701,6 +704,29 @@ void SearchWorker::ExtendNode(Node* node) {
     if (history_.Last().GetRepetitions() >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
+    }
+    
+    // Neither by-position or by-rule termination, but maybe it's a TB position.
+    if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+        history_.Last().GetNoCaptureNoPawnPly() == 0 &&
+        (board.ours() + board.theirs()).count() <=
+          search_->syzygy_tb_->max_cardinality()) {
+      ProbeState state;
+      WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
+      // Only fail state means the WDL is wrong, probe_wdl may produce correct
+      // result with a stat other than OK.
+      if (state != FAIL) {
+        // If the colors seem backwards, check the checkmate check above.
+        if (wdl == WDL_WIN) {
+          node->MakeTerminal(GameResult::BLACK_WON);
+        } else if (wdl == WDL_LOSS) {
+          node->MakeTerminal(GameResult::WHITE_WON);
+        } else { // Cursed wins and blessed losses count as draws.
+          node->MakeTerminal(GameResult::DRAW); 
+        }
+        search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
+        return;
+      }
     }
   }
 
