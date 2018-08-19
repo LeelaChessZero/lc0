@@ -38,4 +38,4 @@ class Convolution1 {
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
 };
-}
+}  // namespace lczero

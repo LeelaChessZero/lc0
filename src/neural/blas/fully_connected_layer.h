@@ -46,4 +46,4 @@ class FullyConnectedLayer {
   static constexpr auto kSquares = kWidth * kHeight;
 };
 
-}  // lczero
+}  // namespace lczero

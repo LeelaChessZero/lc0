@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -35,12 +35,13 @@ namespace lczero {
 
 class RandomNetworkComputation : public NetworkComputation {
  public:
-  RandomNetworkComputation(int delay, int seed) : delay_ms_(delay), seed_(seed) {}
+  RandomNetworkComputation(int delay, int seed)
+      : delay_ms_(delay), seed_(seed) {}
   void AddInput(InputPlanes&& input) override {
     std::uint64_t hash = seed_;
     for (const auto& plane : input) {
       hash = HashCat({hash, plane.mask});
-      std::uint64_t value_hash = 
+      std::uint64_t value_hash =
           *reinterpret_cast<const std::uint32_t*>(&plane.value);
       hash = HashCat({hash, value_hash});
     }
@@ -71,7 +72,7 @@ class RandomNetworkComputation : public NetworkComputation {
 class RandomNetwork : public Network {
  public:
   RandomNetwork(const Weights& /*weights*/, const OptionsDict& options)
-      : delay_ms_(options.GetOrDefault<int>("delay", 0)), 
+      : delay_ms_(options.GetOrDefault<int>("delay", 0)),
         seed_(options.GetOrDefault<int>("seed", 0)) {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_);
