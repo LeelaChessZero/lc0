@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -50,7 +50,7 @@ const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
-    "Aggressive smart pruning threshold";
+    "Aversion to search if change unlikely";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
@@ -80,7 +80,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
-                            "smart-pruning-aggresiveness") = 0.68f;
+                            "futile-search-aversion") = 1.47f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
@@ -175,7 +175,8 @@ void Search::MaybeOutputInfo() {
   if (!responded_bestmove_ && best_move_edge_ &&
       (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
        uci_info_.depth !=
-           cum_depth_ / (total_playouts_ ? total_playouts_ : 1) ||
+           static_cast<int>(cum_depth_ /
+                            (total_playouts_ ? total_playouts_ : 1)) ||
        uci_info_.seldepth != max_depth_ ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
@@ -316,7 +317,7 @@ void Search::UpdateRemainingMoves() {
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
-          kAggressiveTimePruning * remaining_time * nps / 1000;
+          remaining_time * nps / kAggressiveTimePruning / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -385,6 +386,10 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
 
   Move ponder_move;  // Default is "null move" which means "don't display
                      // anything".
+  if (best_node.HasNode() && best_node.node()->HasChildren()) {
+   ponder_move =
+       GetBestChildNoTemperature(best_node.node()).GetMove(!played_history_.IsBlackToMove());
+  }
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
@@ -913,7 +918,7 @@ void SearchWorker::DoBackupUpdate() {
   uint16_t max_depth_batch = 0;
   uint32_t cum_depth_batch = 0;
   uint16_t playouts_batch = 0;
- 
+
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
   for (NodeToProcess& node_to_process : nodes_to_process_) {
@@ -947,7 +952,7 @@ void SearchWorker::DoBackupUpdate() {
     cum_depth_batch += node_to_process.depth;
     if (node_to_process.depth > max_depth_batch) {
       max_depth_batch = node_to_process.depth;
-	}
+    }
   }
   // Update global depth and playouts from batch stats.
   // The two stage update, batch ->search, is in
