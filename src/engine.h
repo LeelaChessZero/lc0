@@ -33,8 +33,8 @@
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
-#include "utils/optionsparser.h"
 #include "utils/optional.h"
+#include "utils/optionsparser.h"
 
 // CUDNN eval
 // comment/disable this to enable tensor flow path

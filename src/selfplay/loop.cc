@@ -91,7 +91,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   // and move list potentially contain spaces.
   if (info.min_false_positive_threshold) {
     std::string resign_res = "resign_report";
-    resign_res += 
+    resign_res +=
         " fp_threshold " + std::to_string(*info.min_false_positive_threshold);
     responses.push_back(resign_res);
   }

@@ -27,10 +27,9 @@
 
 #pragma once
 
+#include <time.h>
 #include <string>
 #include <vector>
-#include <time.h>
-
 
 namespace lczero {
 

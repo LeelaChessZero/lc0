@@ -35,15 +35,16 @@
 #include "utils/string.h"
 
 namespace lczero {
-  namespace {
-    const char* kConfigFileStr = "Configuration file path";
-    const char* kDefaultConfigFile = "lc0.config";
-  }
+namespace {
+const char* kConfigFileStr = "Configuration file path";
+const char* kDefaultConfigFile = "lc0.config";
+}  // namespace
 
 std::vector<std::string> ConfigFile::arguments_;
 
 void ConfigFile::PopulateOptions(OptionsParser* options) {
-  options->Add<StringOption>(kConfigFileStr, "config", 'c') = kDefaultConfigFile;
+  options->Add<StringOption>(kConfigFileStr, "config", 'c') =
+      kDefaultConfigFile;
 }
 
 bool ConfigFile::Init(OptionsParser* options) {
@@ -51,7 +52,7 @@ bool ConfigFile::Init(OptionsParser* options) {
 
   // Process flags to get the config file parameter.
   if (!options->ProcessAllFlags()) return false;
-  
+
   // Calculate the relative path of the config file.
   OptionsDict dict = options->GetOptionsDict();
   std::string filename = dict.Get<std::string>(kConfigFileStr);
@@ -81,7 +82,7 @@ bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
 
   std::cerr << "Found configuration file: " << filename << std::endl;
 
-  for(std::string line; getline( input, line );) {
+  for (std::string line; getline(input, line);) {
     // Remove all leading and trailing whitespace.
     line = Trim(line);
     // Ignore comments.
@@ -89,8 +90,10 @@ bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
     // Skip blank lines.
     if (line.length() == 0) continue;
     // Allow long form arugments that omit '--'.  If omitted, add here.
-    if (line.substr(0, 1) != "-" && line.substr(0, 2) != "--") line = "--" + line;
-    // Fail now if the argument does begin with '--'.
+    if (line.substr(0, 1) != "-" && line.substr(0, 2) != "--") {
+      line = "--" + line;
+    }
+    // Fail now if the argument does not begin with '--'.
     if (line.substr(0, 2) != "--") {
       std::cerr << "Only '--' arguments are supported in the "
                 << "configuration file: '" << line << "'." << std::endl;

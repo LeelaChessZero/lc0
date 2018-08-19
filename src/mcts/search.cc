@@ -390,8 +390,8 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   Move ponder_move;  // Default is "null move" which means "don't display
                      // anything".
   if (best_node.HasNode() && best_node.node()->HasChildren()) {
-   ponder_move =
-       GetBestChildNoTemperature(best_node.node()).GetMove(!played_history_.IsBlackToMove());
+    ponder_move = GetBestChildNoTemperature(best_node.node())
+                      .GetMove(!played_history_.IsBlackToMove());
   }
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
@@ -604,6 +604,7 @@ void SearchWorker::GatherMinibatch() {
         if (picked_node.nn_queried) computation_->PopCacheHit();
         minibatch_.pop_back();
         --minibatch_size;
+        ++number_out_of_order;
       }
     }
   }
@@ -735,12 +736,12 @@ void SearchWorker::ExtendNode(Node* node) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
-    
+
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
         history_.Last().GetNoCaptureNoPawnPly() == 0 &&
         (board.ours() + board.theirs()).count() <=
-          search_->syzygy_tb_->max_cardinality()) {
+            search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
@@ -751,8 +752,8 @@ void SearchWorker::ExtendNode(Node* node) {
           node->MakeTerminal(GameResult::BLACK_WON);
         } else if (wdl == WDL_LOSS) {
           node->MakeTerminal(GameResult::WHITE_WON);
-        } else { // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW); 
+        } else {  // Cursed wins and blessed losses count as draws.
+          node->MakeTerminal(GameResult::DRAW);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;

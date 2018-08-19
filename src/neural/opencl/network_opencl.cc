@@ -16,12 +16,12 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/network.h"
 #include "neural/blas/batchnorm.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
+#include "neural/network.h"
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
 
@@ -105,9 +105,9 @@ class OpenCLComputation : public NetworkComputation {
 
         // Now get the score.
         auto winrate = FullyConnectedLayer::Forward0D(
-                             num_value_channels, weights_.ip2_val_w.data(),
-                             &output_val[j * num_value_channels]) +
-                         weights_.ip2_val_b[0];
+                           num_value_channels, weights_.ip2_val_w.data(),
+                           &output_val[j * num_value_channels]) +
+                       weights_.ip2_val_b[0];
 
         q_values_.emplace_back(std::tanh(winrate));
       }
@@ -162,7 +162,7 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-        
+
     // By default batch size is 1, as many old cards may not support more.
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 1));
@@ -178,7 +178,6 @@ class OpenCLNetwork : public Network {
     // tune.
     params_.tune_batch_size =
         options.GetOrDefault<int>("tune_batch_size", max_batch_size_);
-        
 
     const auto inputChannels = static_cast<size_t>(kInputPlanes);
     const auto channels = weights.input.biases.size();
@@ -196,7 +195,7 @@ class OpenCLNetwork : public Network {
     // num_policy_input_planes = 32
     // num_value_channels = 128
     // num_output_policy = 1858
-    
+
     static constexpr auto kWinogradAlpha = 4;
 
     opencl_.initialize(channels, params_);

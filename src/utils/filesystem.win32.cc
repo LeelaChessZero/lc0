@@ -67,8 +67,8 @@ time_t GetFileTime(const std::string& filename) {
   if (!GetFileAttributesExA(filename.c_str(), GetFileExInfoStandard, &s)) {
     throw Exception("Cannot stat file: " + filename);
   }
-  return (static_cast<uint64_t>(s.ftLastWriteTime.dwHighDateTime)
-         << 32) + s.ftLastWriteTime.dwLowDateTime;
+  return (static_cast<uint64_t>(s.ftLastWriteTime.dwHighDateTime) << 32) +
+         s.ftLastWriteTime.dwLowDateTime;
 }
 
 }  // namespace lczero

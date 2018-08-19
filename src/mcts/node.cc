@@ -197,8 +197,7 @@ void Node::CreateEdges(const MoveList& moves) {
 Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
 Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
-float Node::GetVisitedPolicy() const { return visited_policy_;  }
-
+float Node::GetVisitedPolicy() const { return visited_policy_; }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
@@ -246,7 +245,6 @@ void Node::FinalizeScoreUpdate(float v) {
   // Decrement virtual loss.
   --n_in_flight_;
 }
-
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
 
