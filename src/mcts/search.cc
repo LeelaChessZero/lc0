@@ -251,7 +251,13 @@ void Search::SendMovesStats() const {
     }
     oss << ") ";
 
-    if (edge.IsTerminal()) oss << "(T) ";
+    if (edge.IsCertain()) {
+      if (edge.IsTerminal()) {
+        oss << "(CT) ";
+      } else {
+        oss << "(C) ";
+      }
+    }
 
     info.comment = oss.str();
     info_callback_(info);
@@ -712,9 +718,9 @@ void SearchWorker::ExtendNode(Node* node) {
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
+      node->MarkTerminal(GameResult::WHITE_WON);
     } else {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MarkTerminal(GameResult::DRAW);
     }
     return;
   }
@@ -723,17 +729,17 @@ void SearchWorker::ExtendNode(Node* node) {
   // if they are root, then thinking about them is the point.
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MarkTerminal(GameResult::DRAW);
       return;
     }
 
     if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MarkTerminal(GameResult::DRAW);
       return;
     }
 
     if (history_.Last().GetRepetitions() >= 2) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MarkTerminal(GameResult::DRAW);
       return;
     }
 
@@ -749,11 +755,11 @@ void SearchWorker::ExtendNode(Node* node) {
       if (state != FAIL) {
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON);
+          node->MarkTerminal(GameResult::BLACK_WON);
         } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON);
+          node->MarkTerminal(GameResult::WHITE_WON);
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW);
+          node->MarkTerminal(GameResult::DRAW);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;

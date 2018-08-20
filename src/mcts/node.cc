@@ -214,7 +214,7 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
-void Node::MakeTerminal(GameResult result) {
+void Node::MarkTerminal(GameResult result) {
   bool_bitfield_ |= kTerminalMask | kCertainMask;
   if (result == GameResult::DRAW) {
     q_ = 0.0f;
@@ -222,6 +222,31 @@ void Node::MakeTerminal(GameResult result) {
     q_ = 1.0f;
   } else if (result == GameResult::BLACK_WON) {
     q_ = -1.0f;
+  }
+}
+
+// Check if the child positions are all themselves certain (or if we have a
+// certain winning position).
+void Node::CheckChildrenCertainty() {
+  bool all_certain = true;
+  float best_certain_q = -1.0f;
+  for (const auto& child : Edges()) {
+    bool certain = child.IsCertain();
+    all_certain &= certain;
+    if (certain) {
+      float q = child.GetQ(-1.0f);
+      if (q == 1.0f) {
+        MarkCertain();
+        q_ = -1.0f;
+        return;
+      } else if (q > best_certain_q) {
+        best_certain_q = q;
+      }
+    }
+  }
+  if (all_certain) {
+    MarkCertain();
+    q_ = -best_certain_q;
   }
 }
 

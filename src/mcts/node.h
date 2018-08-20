@@ -156,12 +156,15 @@ class Node {
   // Whether or not the node is known to be a draw/loss/win. All terminal nodes
   // are also certain.
   bool IsTerminal() const { return bool_bitfield_ & kTerminalMask; }
-  // Mark this node as terminal and set its score.
-  void MakeTerminal(GameResult result);
+  // Mark this node as terminal (and certain) and set its score.
+  void MarkTerminal(GameResult result);
   // Whether or not this node's evaluation is guaranteed.
   bool IsCertain() const { return bool_bitfield_ & kCertainMask; }
   // Mark this node's evaluation as guaranteed.
-  void MakeCertain() { bool_bitfield_ |= kCertainMask; }
+  void MarkCertain() { bool_bitfield_ |= kCertainMask; }
+  // Check if the child positions are all themselves certain (or if we have a
+  // certain winning position).
+  void CheckChildrenCertainty();
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -285,8 +288,9 @@ class EdgeAndNode {
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
 
-  // Whether the node is known to be terminal.
+  // Whether the node is known to be certain or terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
+  bool IsCertain() const { return node_ ? node_->IsCertain() : false; }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
