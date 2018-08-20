@@ -153,12 +153,15 @@ class Node {
   // for terminal nodes.
   float GetQ() const { return q_; }
 
-  // Returns whether the node is known to be draw/lose/win.
-  bool IsTerminal() const { return is_terminal_; }
-  uint16_t GetNumEdges() const { return edges_.size(); }
-
-  // Makes the node terminal and sets it's score.
+  // Whether or not the node is known to be a draw/loss/win. All terminal nodes
+  // are also certain.
+  bool IsTerminal() const { return bool_bitfield_ & kTerminalMask; }
+  // Mark this node as terminal and set its score.
   void MakeTerminal(GameResult result);
+  // Whether or not this node's evaluation is guaranteed.
+  bool IsCertain() const { return bool_bitfield_ & kCertainMask; }
+  // Mark this node's evaluation as guaranteed.
+  void MakeCertain() { bool_bitfield_ |= kCertainMask; }
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -187,6 +190,8 @@ class Node {
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
+
+  uint16_t GetNumEdges() const { return edges_.size(); }
 
   class NodeRange;
   // Returns range for iterating over nodes. Note that there may be edges
@@ -239,8 +244,11 @@ class Node {
   // to pick in MCTS, and also when selecting the best move.
   uint16_t n_in_flight_ = 0;
 
-  // Whether or not this node end game (with a winning of either sides or draw).
-  bool is_terminal_ = false;
+  uint8_t bool_bitfield_ = 0;
+  enum Masks : uint8_t {
+    kTerminalMask = 0b00000001,
+    kCertainMask  = 0b00000010
+  };
 
 
   // TODO(mooskagh) Unfriend NodeTree.

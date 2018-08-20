@@ -207,15 +207,15 @@ Edge* Node::GetEdgeToNode(const Node* node) const {
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
-      << " Index:" << index_ << " Child:" << child_.get()
+  oss << " Boolbitfield:" << bool_bitfield_ << " This:" << this << " Parent:"
+      << parent_ << " Index:" << index_ << " Child:" << child_.get()
       << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
       << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
   return oss.str();
 }
 
 void Node::MakeTerminal(GameResult result) {
-  is_terminal_ = true;
+  bool_bitfield_ |= kTerminalMask | kCertainMask;
   if (result == GameResult::DRAW) {
     q_ = 0.0f;
   } else if (result == GameResult::WHITE_WON) {
