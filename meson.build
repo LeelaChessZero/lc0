@@ -86,8 +86,10 @@ files += [
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
+  'src/syzygy/syzygy.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
+  'src/utils/histogram.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
@@ -200,22 +202,23 @@ if get_option('build_backends')
     endif
 
     ispc = find_program('ispc', required: false)
-
+    ispc_extra_args = []
     if has_blas and get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
-	if not ispc_native_only
-	    outputnames += ['@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
-                            '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj',
-			    '@BASENAME@_avx2.obj' ]
-	endif
+        if not ispc_native_only
+          outputnames += ['@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
+                          '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj',
+                          '@BASENAME@_avx2.obj' ]
+        endif
       else
+        ispc_extra_args += ['--pic']
         outputnames = [ '@BASENAME@.o']
-	if not ispc_native_only
-	   outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
+        if not ispc_native_only
+          outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
                            '@BASENAME@_avx.o', '@BASENAME@_avx11.o',
-			   '@BASENAME@_avx2.o' ]
+                           '@BASENAME@_avx2.o' ]
         endif
       endif
       if ispc_native_only
@@ -228,6 +231,7 @@ if get_option('build_backends')
         arguments: [ '-O2', '--arch=x86-64',
                      '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
+                     + ispc_extra_args
       )
     endif
 
@@ -396,6 +400,11 @@ if get_option('gtest') and gtest.found()
 
   test('PositionTest',
     executable('position_test', 'src/chess/position_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
+  test('SyzygyTest',
+    executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
     files, include_directories: includes, dependencies: test_deps
   ), timeout: 90)
 

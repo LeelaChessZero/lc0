@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -35,6 +35,7 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 #include "utils/optional.h"
 #include "utils/optionsdict.h"
@@ -55,7 +56,8 @@ class Search {
   Search(const NodeTree& tree, Network* network,
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const SearchLimits& limits,
-         const OptionsDict& options, NNCache* cache);
+         const OptionsDict& options, NNCache* cache,
+         SyzygyTablebase* syzygy_tb);
 
   ~Search();
 
@@ -102,6 +104,7 @@ class Search {
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
+  static const char* kOutOfOrderEvalStr;
   static const char* kStickyCheckmateStr;
 
  private:
@@ -132,7 +135,7 @@ class Search {
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
-  // Becomes true when smart pruning decides
+  // Becomes true when smart pruning decides that no better move can be found.
   bool found_best_move_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
@@ -143,6 +146,7 @@ class Search {
 
   Node* root_node_;
   NNCache* cache_;
+  SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
 
@@ -158,10 +162,14 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int>::max();
+  // Maximum search depth = length of longest path taken in PickNodetoExtend.
+  uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
+  // Cummulative depth of all paths taken in PickNodetoExtend.
+  uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
+  std::atomic<int> tb_hits_{0};
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
-
   // External parameters.
   const int kMiniBatchSize;
   const int kMaxPrefetchBatch;
@@ -172,9 +180,10 @@ class Search {
   const bool kVerboseStats;
   const float kAggressiveTimePruning;
   const float kFpuReduction;
-  const bool kCacheHistoryLength;
+  const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
+  const bool kOutOfOrderEval;
   const bool kStickyCheckmate;
 
   friend class SearchWorker;
@@ -233,22 +242,28 @@ class SearchWorker {
 
  private:
   struct NodeToProcess {
-    NodeToProcess(Node* node, bool is_collision)
-        : node(node), is_collision(is_collision) {}
+    NodeToProcess(Node* node, bool is_collision, uint16_t depth)
+        : node(node), depth(depth), is_collision(is_collision) {}
     Node* node;
-    bool is_collision = false;
-    bool nn_queried = false;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
+    uint16_t depth;
+    bool is_collision = false;
+    bool nn_queried = false;
+    bool is_cache_hit = false;
   };
 
   NodeToProcess PickNodeToExtend();
   void ExtendNode(Node* node);
-  bool AddNodeToComputation(Node* node, bool add_if_cached = true);
+  bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);
+  void FetchSingleNodeResult(NodeToProcess* node_to_process,
+                             int idx_in_computation);
+  void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
 
   Search* const search_;
-  std::vector<NodeToProcess> nodes_to_process_;
+  // List of nodes to process.
+  std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;

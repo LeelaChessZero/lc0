@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -113,9 +113,56 @@ Move Edge::GetMove(bool as_opponent) const {
   return m;
 }
 
+// Policy priors (P) are stored in a compressed 16-bit format.
+//
+// Source values are 32-bit floats:
+// * bit 31 is sign (zero means positive)
+// * bit 30 is sign of exponent (zero means nonpositive)
+// * bits 29..23 are value bits of exponent
+// * bits 22..0 are significand bits (plus a "virtual" always-on bit: s ∈ [1,2))
+// The number is then sign * 2^exponent * significand, usually.
+// See https://www.h-schmidt.net/FloatConverter/IEEE754.html for details.
+//
+// In compressed 16-bit value we store bits 27..12:
+// * bit 31 is always off as values are always >= 0
+// * bit 30 is always off as values are always < 2
+// * bits 29..28 are only off for values < 4.6566e-10, assume they are always on
+// * bits 11..0 are for higher precision, they are dropped leaving only 11 bits
+//     of precision
+//
+// When converting to compressed format, bit 11 is added to in order to make it
+// a rounding rather than truncation.
+//
+// Out of 65556 possible values, 2047 are outside of [0,1] interval (they are in
+// interval (1,2)). This is fine because the values in [0,1] are skewed towards
+// 0, which is also exactly how the components of policy tend to behave (since
+// they add up to 1).
+
+// If the two assumed-on exponent bits (3<<28) are in fact off, the input is
+// rounded up to the smallest value with them on. We accomplish this by
+// subtracting the two bits from the input and checking for a negative result
+// (the subtraction works despite crossing from exponent to significand). This
+// is combined with the round-to-nearest addition (1<<11) into one op.
+void Edge::SetP(float p) {
+  assert(0.0f <= p && p <= 1.0f);
+  constexpr int32_t roundings = (1 << 11) - (3 << 28);
+  int32_t tmp;
+  std::memcpy(&tmp, &p, sizeof(float));
+  tmp += roundings;
+  p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
+}
+
+float Edge::GetP() const {
+  // Reshift into place and set the assumed-set exponent bits.
+  uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
+  float ret;
+  std::memcpy(&ret, &tmp, sizeof(uint32_t));
+  return ret;
+}
+
 std::string Edge::DebugString() const {
   std::ostringstream oss;
-  oss << "Move: " << move_.as_string() << " P:" << p_;
+  oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
   return oss.str();
 }
 
@@ -150,8 +197,7 @@ void Node::CreateEdges(const MoveList& moves) {
 Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
 Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
-float Node::GetVisitedPolicy() const { return visited_policy_;  }
-
+float Node::GetVisitedPolicy() const { return visited_policy_; }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
@@ -170,7 +216,13 @@ std::string Node::DebugString() const {
 
 void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
-  q_ = (result == GameResult::DRAW) ? 0.0f : 1.0f;
+  if (result == GameResult::DRAW) {
+    q_ = 0.0f;
+  } else if (result == GameResult::WHITE_WON) {
+    q_ = 1.0f;
+  } else if (result == GameResult::BLACK_WON) {
+    q_ = -1.0f;
+  }
 }
 
 bool Node::TryStartScoreUpdate() {
@@ -192,24 +244,6 @@ void Node::FinalizeScoreUpdate(float v) {
   ++n_;
   // Decrement virtual loss.
   --n_in_flight_;
-}
-
-void Node::UpdateMaxDepth(int depth) {
-  if (depth > max_depth_) max_depth_ = depth;
-}
-
-bool Node::UpdateFullDepth(uint16_t* depth) {
-  // TODO(crem) If this function won't be needed, consider also killing
-  //            ChildNodes/NodeRange/Nodes_Iterator.
-  if (full_depth_ > *depth) return false;
-  for (Node* child : ChildNodes()) {
-    if (*depth > child->full_depth_) *depth = child->full_depth_;
-  }
-  if (*depth >= full_depth_) {
-    full_depth_ = ++*depth;
-    return true;
-  }
-  return false;
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
@@ -254,10 +288,9 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   result.version = 3;
 
   // Populate probabilities.
-  float total_n = static_cast<float>(
-      GetN() - 1);  // First visit was expansion of "this" itself.
+  float total_n = static_cast<float>(GetChildrenVisits());
   // Prevent garbage/invalid training data from being uploaded to server.
-  if (total_n <= 0) throw Exception("Search generated invalid data!");
+  if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
@@ -281,7 +314,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   // Other params.
   result.side_to_move = position.IsBlackToMove() ? 1 : 0;
   result.move_count = 0;
-  result.rule50_count = position.GetNoCapturePly();
+  result.rule50_count = position.GetNoCaptureNoPawnPly();
 
   // Game result.
   if (game_result == GameResult::WHITE_WON) {
@@ -359,12 +392,14 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
     if (old_head == current_head_) seen_old_head = true;
   }
 
-  // If we didn't see old head, it means that new position is shorter.
-  // As we killed the search tree already, trim it to redo the search.
-  if (!seen_old_head) {
-    assert(!current_head_->sibling_);
-    TrimTreeAtHead();
-  }
+  // MakeMove guarantees that no siblings exist; but, if we didn't see the old
+  // head, it means we might have a position that was an ancestor to a
+  // previously searched position, which means that the current_head_ might
+  // retain old n_ and q_ (etc) data, even though its old children were
+  // previously trimmed; we need to reset current_head_ in that case.
+  // Also, if the current_head_ is terminal, reset that as well to allow forced
+  // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
+  if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
 }
 
 void NodeTree::DeallocateTree() {
