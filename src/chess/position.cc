@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -82,7 +82,7 @@ GameResult PositionHistory::ComputeGameResult() const {
   }
 
   if (!board.HasMatingMaterial()) return GameResult::DRAW;
-  if (Last().GetNoCapturePly() >= 100) return GameResult::DRAW;
+  if (Last().GetNoCaptureNoPawnPly() >= 100) return GameResult::DRAW;
   if (Last().GetGamePly() >= 450) return GameResult::DRAW;
   if (Last().GetRepetitions() >= 2) return GameResult::DRAW;
 
@@ -106,14 +106,14 @@ void PositionHistory::Append(Move m) {
 int PositionHistory::ComputeLastMoveRepetitions() const {
   const auto& last = positions_.back();
   // TODO(crem) implement hash/cache based solution.
-  if (last.GetNoCapturePly() < 4) return 0;
+  if (last.GetNoCaptureNoPawnPly() < 4) return 0;
 
   for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
     const auto& pos = positions_[idx];
     if (pos.GetBoard() == last.GetBoard()) {
       return 1 + pos.GetRepetitions();
     }
-    if (pos.GetNoCapturePly() < 2) return 0;
+    if (pos.GetNoCaptureNoPawnPly() < 2) return 0;
   }
   return 0;
 }
@@ -125,7 +125,7 @@ uint64_t PositionHistory::HashLast(int positions) const {
     if (!positions--) break;
     hash = HashCat(hash, iter->Hash());
   }
-  return HashCat(hash, Last().GetNoCapturePly());
+  return HashCat(hash, Last().GetNoCaptureNoPawnPly());
 }
 
 }  // namespace lczero

@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -78,12 +79,10 @@ class Edge {
   // is false) or as opponent (if as_opponent is true).
   Move GetMove(bool as_opponent = false) const;
 
-  // Returns value of Move probability returned from the neural net
-  // (but can be changed by adding Dirichlet noise).
-  float GetP() const { return p_; }
-
-  // Sets move probability.
-  void SetP(float val) { p_ = val; }
+  // Returns or sets value of Move policy prior returned from the neural net
+  // (but can be changed by adding Dirichlet noise). Must be in [0,1].
+  float GetP() const;
+  void SetP(float val);
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -96,9 +95,9 @@ class Edge {
   // Root node contains move a1a1.
   Move move_;
 
-  // Probability that this move will be made. From policy head of the neural
-  // network.
-  float p_ = 0.0;
+  // Probability that this move will be made, from the policy head of the neural
+  // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
+  uint16_t p_ = 0;
 
   friend class EdgeList;
 };
@@ -209,8 +208,8 @@ class Node {
  private:
   // Turns out the alignment and padding of the Node was costing more than 8
   // bytes on modern compilers. Simply rearranging the members leads to
-  // significant savings on padding. As such, rather then organized conceptually
-  // the members are merely ordered from largest to smallest.
+  // significant savings on padding. As such, instead of being organized
+  // conceptually, the members are merely ordered from largest to smallest.
 
   // TODO: shrink the padding on this somehow? It takes 16 bytes even though
   // only 10 are real! Maybe even merge it into this class??
@@ -224,7 +223,9 @@ class Node {
   std::unique_ptr<Node> sibling_;
 
   // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored.
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
   float q_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;

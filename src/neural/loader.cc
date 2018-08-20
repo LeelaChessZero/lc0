@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -41,7 +41,6 @@
 #include "version.h"
 
 namespace lczero {
-
 
 namespace {
 const std::uint32_t kWeightMagic = 0x1c0;
@@ -125,7 +124,8 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
                     net.min_version().patch());
 
   if (net_ver > lc0_ver)
-    throw Exception("Invalid weight file: lc0 version >= " + min_version + " required.");
+    throw Exception("Invalid weight file: lc0 version >= " + min_version +
+                    " required.");
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
     throw Exception("Invalid weight file: wrong encoding.");
@@ -258,7 +258,7 @@ std::string DiscoverWeightsFile() {
 
     // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
     // our own magic should suffice.
-    auto magic = reinterpret_cast<std::uint32_t*>(buf+1);
+    auto magic = reinterpret_cast<std::uint32_t*>(buf + 1);
     if (*magic == kWeightMagic) {
       std::cerr << "Found pb network file: " << candidate.second << std::endl;
       return candidate.second;

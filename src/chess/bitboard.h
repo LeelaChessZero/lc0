@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -95,6 +95,13 @@ class BitBoard {
 
   std::uint64_t as_int() const { return board_; }
   void clear() { board_ = 0; }
+  int count() const {
+#ifdef _MSC_VER
+    return _mm_popcnt_u64(board_);
+#else
+    return __builtin_popcountll(board_);
+#endif
+  }
 
   // Sets the value for given square to 1 if cond is true.
   // Otherwise does nothing (doesn't reset!).
