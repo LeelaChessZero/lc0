@@ -296,6 +296,18 @@ EdgeAndNode Node::GetBestChildWithTemp(float temp,
   return {};
 }
 
+// Get the best Q which isn't the best_move_ Q.
+float Node::GetBestAlternateQ(const EdgeAndNode best_move_edge,
+                              const MoveSet* searchmoves) const {
+  float best = -1.0f;
+  for (const auto& child : Edges(searchmoves)) {
+    if (child == best_move_edge) continue;
+    float q = child.GetQ(-1.0f);
+    if (q > best) best = q;
+  }
+  return best;
+}
+
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
 
 void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }

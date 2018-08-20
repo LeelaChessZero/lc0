@@ -159,6 +159,9 @@ class Node {
   EdgeAndNode GetBestChildNoTemp(const MoveSet* searchmoves = {}) const;
   EdgeAndNode GetBestChildWithTemp(float temp,
                                    const MoveSet* searchmoves = {}) const;
+  // Get the best Q which isn't the best_move_ Q.
+  float GetBestAlternateQ(const EdgeAndNode best_move_edge,
+                          const MoveSet* searchmoves = nullptr) const;
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -324,7 +327,7 @@ class Edge_Iterator : public EdgeAndNode {
     if (edge_) Actualize();
   }
 
-  // Function to support range interface.
+  // Functions to support range interface.
   Edge_Iterator<is_const> begin() { return *this; }
   Edge_Iterator<is_const> end() { return {}; }
 

@@ -81,7 +81,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
   options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
-                            "futile-search-aversion") = 1.47f;
+                            "futile-search-aversion") = 1.0f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
@@ -305,6 +305,18 @@ void Search::MaybeTriggerStop() {
   }
 }
 
+namespace {
+float ComputeDynamicPruningPoliteness(float top, float best_alt) {
+  // The idea is to make early exit from search, or budget more time, based on
+  // the relative gap between first and second place Q. This function will
+  // remain subject to *much* future tweaking. TODO: include relative visit
+  // counts as well as relative scores
+  assert(std::abs(top) <= 1.0f && std::abs(best_alt) <= 1.0f);
+  float gap = 1 + best_alt - top;
+  return gap*gap;
+}
+} // namespace
+
 void Search::UpdateRemainingMoves() {
   if (kAggressiveTimePruning <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
@@ -316,7 +328,12 @@ void Search::UpdateRemainingMoves() {
       auto nps = (1000LL * total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
-      int64_t remaining_time = limits_.time_ms - time_since_start;
+      float best_alt_q = root_node_->GetBestAlternateQ(best_move_edge_,
+                                                       &limits_.searchmoves);
+      float politeness = ComputeDynamicPruningPoliteness(
+                          best_move_edge_.GetQ(root_node_->GetQ()), best_alt_q);
+      // TODO: add a limits_.max_ms and cap there!
+      int64_t remaining_time = (limits_.time_ms - time_since_start) * politeness;
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
