@@ -122,6 +122,8 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
                              std::vector<net_t>& output_val,
                              const int batch_size) const {
   constexpr auto tiles = WINOGRAD_P;
+  constexpr auto width = 8;
+  constexpr auto height = 8;
 
   auto finalSize_pol =
       m_layers[m_layers.size() - 2].ip_out_size * sizeof(net_t);
@@ -150,7 +152,7 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
 
     const auto max_batch_size = getMaxMatchSize();
     const auto alloc_inSize =
-        max_batch_size * m_ceil * m_ceil * max_channels * sizeof(net_t);
+        max_batch_size * width * height * max_channels * sizeof(net_t);
     const auto alloc_vm_size =
         max_batch_size * WINOGRAD_TILE * m_ceil * n_ceil * sizeof(net_t);
 
