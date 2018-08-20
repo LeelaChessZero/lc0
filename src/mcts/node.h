@@ -153,10 +153,15 @@ class Node {
   // for terminal nodes.
   float GetQ() const { return q_; }
 
+  // Returns a child with most visits, with or without temperature.
+  // NoTemperature is safe to use on non-extended nodes, while WithTemperature
+  // accepts only nodes with at least 1 visited child.
+  EdgeAndNode GetBestChildNoTemp(const MoveSet* searchmoves = {}) const;
+  EdgeAndNode GetBestChildWithTemp(float temp,
+                                   const MoveSet* searchmoves = {}) const;
+
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
-  uint16_t GetNumEdges() const { return edges_.size(); }
-
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
 
@@ -174,19 +179,14 @@ class Node {
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v);
 
-  // Updates max depth, if new depth is larger.
-  void UpdateMaxDepth(int depth);
-
-  // Calculates the full depth if new depth is larger, updates it, returns
-  // in depth parameter, and returns true if it was indeed updated.
-  bool UpdateFullDepth(uint16_t* depth);
-
   V3TrainingData GetV3TrainingData(GameResult result,
                                    const PositionHistory& history) const;
 
   // Returns range for iterating over edges.
-  ConstIterator Edges() const;
-  Iterator Edges();
+  ConstIterator Edges(const MoveSet* searchmoves = nullptr) const;
+  Iterator Edges(MoveSet* searchmoves = nullptr);
+
+  uint16_t GetNumEdges() const { return edges_.size(); }
 
   class NodeRange;
   // Returns range for iterating over nodes. Note that there may be edges
@@ -315,10 +315,12 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator() {}
 
   // Creates "begin()" iterator. Also happens to be a range constructor.
-  Edge_Iterator(const EdgeList& edges, Ptr node_ptr)
+  Edge_Iterator(const EdgeList& edges, Ptr node_ptr,
+                const MoveSet* searchmoves = nullptr)
       : EdgeAndNode(edges.size() ? edges.get() : nullptr, nullptr),
         node_ptr_(node_ptr),
-        total_count_(edges.size()) {
+        total_count_(edges.size()),
+        searchmoves_(searchmoves) {
     if (edge_) Actualize();
   }
 
@@ -333,8 +335,11 @@ class Edge_Iterator : public EdgeAndNode {
     if (++current_idx_ == total_count_) {
       edge_ = nullptr;
     } else {
-      ++edge_;
-      Actualize();
+      do {
+        ++edge_;
+        Actualize();
+      } while (searchmoves_ && !searchmoves_->empty() &&
+               !searchmoves_->count(edge_->GetMove()));
     }
   }
   Edge_Iterator& operator*() { return *this; }
@@ -392,6 +397,7 @@ class Edge_Iterator : public EdgeAndNode {
   Ptr node_ptr_;
   uint16_t current_idx_ = 0;
   uint16_t total_count_ = 0;
+  const MoveSet* searchmoves_ = nullptr;
 };
 
 class Node_Iterator {

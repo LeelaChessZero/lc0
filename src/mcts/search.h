@@ -30,6 +30,7 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
+#include "chess/bitboard.h"
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
@@ -48,7 +49,7 @@ struct SearchLimits {
   std::int64_t playouts = -1;
   std::int64_t time_ms = -1;
   bool infinite = false;
-  MoveList searchmoves;
+  MoveSet searchmoves;
 };
 
 class Search {
@@ -110,13 +111,6 @@ class Search {
  private:
   // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
-
-  // Returns a child with most visits, with or without temperature.
-  // NoTemperature is safe to use on non-extended nodes, while WithTemperature
-  // accepts only nodes with at least 1 visited child.
-  EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
-  EdgeAndNode GetBestChildWithTemperature(Node* parent,
-                                          float temperature) const;
 
   int64_t GetTimeSinceStart() const;
   void UpdateRemainingMoves();

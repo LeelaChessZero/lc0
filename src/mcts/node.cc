@@ -38,6 +38,7 @@
 #include "neural/network.h"
 #include "utils/exception.h"
 #include "utils/hashcat.h"
+#include "utils/random.h"
 
 namespace lczero {
 
@@ -194,8 +195,12 @@ void Node::CreateEdges(const MoveList& moves) {
   edges_ = EdgeList(moves);
 }
 
-Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
-Node::Iterator Node::Edges() { return {edges_, &child_}; }
+Node::ConstIterator Node::Edges(const MoveSet* searchmoves) const {
+  return {edges_, &child_, searchmoves};
+}
+Node::Iterator Node::Edges(MoveSet* searchmoves) {
+  return {edges_, &child_, searchmoves};
+}
 
 float Node::GetVisitedPolicy() const { return visited_policy_; }
 
@@ -244,6 +249,51 @@ void Node::FinalizeScoreUpdate(float v) {
   ++n_;
   // Decrement virtual loss.
   --n_in_flight_;
+}
+
+// Returns a child with most visits.
+EdgeAndNode Node::GetBestChildNoTemp(const MoveSet* searchmoves) const {
+  EdgeAndNode best_edge;
+  // Best child is selected using the following criteria:
+  // * Largest number of playouts.
+  // * If two nodes have equal number:
+  //   * If that number is 0, the one with larger prior wins.
+  //   * If that number is larger than 0, the one with larger eval wins.
+  std::tuple<int, float, float> best(-1, 0.0, 0.0);
+  for (const auto& child : Edges(searchmoves)) {
+    std::tuple<int, float, float> val(child.GetN(), child.GetQ(-10.0),
+                                      child.GetP());
+    if (val > best) {
+      best = val;
+      best_edge = child;
+    }
+  }
+  return best_edge;
+}
+
+// Returns a child chosen according to weighted-by-temperature visit count.
+EdgeAndNode Node::GetBestChildWithTemp(float temp,
+                                       const MoveSet* searchmoves) const {
+  assert(GetChildrenVisits() > 0);
+  std::vector<float> cumulative_sums;
+  float sum = 0.0;
+  const float inv_n = 1 / GetN(), coldness = 1 / temp;
+
+  for (const auto& child : Edges(searchmoves)) {
+    sum += std::pow(child.GetN() * inv_n, coldness);
+    cumulative_sums.push_back(sum);
+  }
+
+  float toss = Random::Get().GetFloat(cumulative_sums.back());
+  int idx =
+      std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
+      cumulative_sums.begin();
+
+  for (const auto& child : Edges(searchmoves)) {
+    if (idx-- == 0) return child;
+  }
+  assert(false);
+  return {};
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }

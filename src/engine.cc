@@ -125,7 +125,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
     for (const auto& move : params.searchmoves) {
-      limits.searchmoves.emplace_back(move, is_black);
+      limits.searchmoves.emplace(move, is_black);
     }
   }
   limits.infinite = params.infinite || params.ponder;

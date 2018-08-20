@@ -162,7 +162,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 
   bool flip = played_history_.IsBlackToMove();
   for (auto iter = best_move_edge_; iter;
-       iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
+       iter = iter.node()->GetBestChildNoTemp(), flip = !flip) {
     uci_info_.pv.push_back(iter.GetMove(flip));
     if (!iter.node()) break;  // Last edge was dangling, cannot continue.
   }
@@ -356,7 +356,7 @@ float Search::GetBestEval() const {
   Mutex::Lock counters_lock(counters_mutex_);
   float parent_q = -root_node_->GetQ();
   if (!root_node_->HasChildren()) return parent_q;
-  EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
+  EdgeAndNode best_edge = root_node_->GetBestChildNoTemp(&limits_.searchmoves);
   return best_edge.GetQ(parent_q);
 }
 
@@ -384,76 +384,17 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   }
 
   auto best_node = temperature && root_node_->GetChildrenVisits() > 0
-                       ? GetBestChildWithTemperature(root_node_, temperature)
-                       : GetBestChildNoTemperature(root_node_);
+                       ? root_node_->GetBestChildWithTemp(temperature,
+                                                          &limits_.searchmoves)
+                       : root_node_->GetBestChildNoTemp(&limits_.searchmoves);
 
   Move ponder_move;  // Default is "null move" which means "don't display
                      // anything".
   if (best_node.HasNode() && best_node.node()->HasChildren()) {
-    ponder_move = GetBestChildNoTemperature(best_node.node())
+    ponder_move = best_node.node()->GetBestChildNoTemp()
                       .GetMove(!played_history_.IsBlackToMove());
   }
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
-}
-
-// Returns a child with most visits.
-EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
-  EdgeAndNode best_edge;
-  // Best child is selected using the following criteria:
-  // * Largest number of playouts.
-  // * If two nodes have equal number:
-  //   * If that number is 0, the one with larger prior wins.
-  //   * If that number is larger than 0, the one with larger eval wins.
-  std::tuple<int, float, float> best(-1, 0.0, 0.0);
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  edge.GetMove()) == limits_.searchmoves.end()) {
-      continue;
-    }
-    std::tuple<int, float, float> val(edge.GetN(), edge.GetQ(-10.0),
-                                      edge.GetP());
-    if (val > best) {
-      best = val;
-      best_edge = edge;
-    }
-  }
-  return best_edge;
-}
-
-// Returns a child chosen according to weighted-by-temperature visit count.
-EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
-                                                float temperature) const {
-  assert(parent->GetChildrenVisits() > 0);
-  std::vector<float> cumulative_sums;
-  float sum = 0.0;
-  const float n_parent = parent->GetN();
-
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  edge.GetMove()) == limits_.searchmoves.end()) {
-      continue;
-    }
-    sum += std::pow(edge.GetN() / n_parent, 1 / temperature);
-    cumulative_sums.push_back(sum);
-  }
-
-  float toss = Random::Get().GetFloat(cumulative_sums.back());
-  int idx =
-      std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
-      cumulative_sums.begin();
-
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  edge.GetMove()) == limits_.searchmoves.end()) {
-      continue;
-    }
-    if (idx-- == 0) return edge;
-  }
-  assert(false);
-  return {};
 }
 
 void Search::StartThreads(size_t how_many) {
@@ -656,7 +597,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
             ? -node->GetQ()
             : -node->GetQ() -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
-    for (auto child : node->Edges()) {
+    MoveSet searchmoves = is_root_node ? search_->limits_.searchmoves : MoveSet{};
+    for (Node::Iterator child : node->Edges(&searchmoves)) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
         // remaining playouts, don't consider it.
@@ -666,13 +608,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         if (child != search_->best_move_edge_ &&
             search_->remaining_playouts_ <
                 best_node_n - static_cast<int>(child.GetN())) {
-          continue;
-        }
-        // If searchmoves was sent, restrict the search only in that moves
-        if (!search_->limits_.searchmoves.empty() &&
-            std::find(search_->limits_.searchmoves.begin(),
-                      search_->limits_.searchmoves.end(),
-                      child.GetMove()) == search_->limits_.searchmoves.end()) {
           continue;
         }
         ++possible_moves;
@@ -980,7 +915,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (n->GetParent() == search_->root_node_ &&
         search_->best_move_edge_.GetN() <= n->GetN()) {
       search_->best_move_edge_ =
-          search_->GetBestChildNoTemperature(search_->root_node_);
+          search_->root_node_->GetBestChildNoTemp();
     }
   }
   ++search_->total_playouts_;

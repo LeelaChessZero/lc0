@@ -29,7 +29,9 @@
 
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "utils/bititer.h"
@@ -214,6 +216,7 @@ class Move {
   Move(const std::string& str, bool black = false);
   Move(const char* str, bool black = false) : Move(std::string(str), black) {}
 
+  uint16_t data() const { return data_; }
   BoardSquare to() const { return BoardSquare(data_ & kToMask); }
   BoardSquare from() const { return BoardSquare((data_ & kFromMask) >> 6); }
   Promotion promotion() const { return Promotion((data_ & kPromoMask) >> 12); }
@@ -280,5 +283,13 @@ class Move {
 };
 
 using MoveList = std::vector<Move>;
+
+struct MoveHasher {
+  size_t operator()(const Move& m) const {
+    return std::hash<uint16_t>{}(m.data());
+  }
+};
+
+using MoveSet = std::unordered_set<Move, MoveHasher>;
 
 }  // namespace lczero
