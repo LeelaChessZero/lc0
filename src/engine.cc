@@ -120,7 +120,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
                                                     const GoParams& params) {
   SearchLimits limits;
-  limits.time_ms = params.movetime;
+  limits.time_ms = limits.max_ms = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
@@ -172,6 +172,9 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   limits.time_ms = std::max(
       int64_t{0},
       std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
+  limits.max_ms = std::max(
+      int64_t{0},
+      std::min(limits.time_ms * 2, time - move_overhead));
   return limits;
 }
 

@@ -241,7 +241,7 @@ void UciLoop::SendBestMove(const BestMoveInfo& move) {
 }
 
 void UciLoop::SendInfo(const ThinkingInfo& info) {
-  std::string res = "info";
+  std::string res;
   if (info.player != -1) res += " player " + std::to_string(info.player);
   if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
   if (info.is_black)
@@ -259,8 +259,8 @@ void UciLoop::SendInfo(const ThinkingInfo& info) {
     res += " pv";
     for (const auto& move : info.pv) res += " " + move.as_string();
   }
-  if (!info.comment.empty()) res += " string " + info.comment;
-  SendResponse(res);
+  if (!res.empty()) SendResponse("info" + res);
+  if (!info.comment.empty()) SendResponse("info string " + info.comment);
 }
 
 }  // namespace lczero

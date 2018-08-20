@@ -302,7 +302,7 @@ float Node::GetBestAlternateQ(const EdgeAndNode best_move_edge,
   float best = -1.0f;
   for (const auto& child : Edges(searchmoves)) {
     if (child == best_move_edge) continue;
-    float q = child.GetQ(-1.0f);
+    float q = child.GetQ(GetQ());
     if (q > best) best = q;
   }
   return best;
