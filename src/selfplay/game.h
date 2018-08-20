@@ -64,7 +64,8 @@ class SelfPlayGame {
   static void PopulateUciParams(OptionsParser* options);
 
   // Starts the game and blocks until the game is finished.
-  void Play(int white_threads, int black_threads, bool enable_resign=true);
+  void Play(int white_threads, int black_threads, bool training,
+            bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();

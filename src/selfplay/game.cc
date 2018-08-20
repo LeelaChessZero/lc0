@@ -58,7 +58,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads,
-                        bool enable_resign) {
+                        bool training, bool enable_resign) {
   bool blacks_move = false;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -80,16 +80,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads,
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
           options_[idx].info_callback, options_[idx].search_limits,
           *options_[idx].uci_options, options_[idx].cache, nullptr);
-          // TODO: add Syzygy option for selfplay.
+      // TODO: add Syzygy option for selfplay.
     }
 
     // Do search.
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
     if (abort_) break;
 
-    // Append training data. The GameResult is later overwritten.
-    training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
-        GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
+    if (training) {
+      // Append training data. The GameResult is later overwritten.
+      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
+          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
+    }
 
     float eval = search_->GetBestEval();
     eval = (eval + 1) / 2;
@@ -137,6 +139,7 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
+  assert(!training_data_.empty());
   bool black_to_move =
       tree_[0]->GetPositionHistory().Starting().IsBlackToMove();
   for (auto chunk : training_data_) {

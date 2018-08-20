@@ -197,8 +197,7 @@ void Node::CreateEdges(const MoveList& moves) {
 Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
 Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
-float Node::GetVisitedPolicy() const { return visited_policy_;  }
-
+float Node::GetVisitedPolicy() const { return visited_policy_; }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
@@ -310,10 +309,9 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   result.version = 3;
 
   // Populate probabilities.
-  float total_n = static_cast<float>(
-      GetN() - 1);  // First visit was expansion of "this" itself.
+  float total_n = static_cast<float>(GetChildrenVisits());
   // Prevent garbage/invalid training data from being uploaded to server.
-  if (total_n <= 0) throw Exception("Search generated invalid data!");
+  if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
   std::memset(result.probabilities, 0, sizeof(result.probabilities));
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =

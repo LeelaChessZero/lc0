@@ -42,7 +42,6 @@
 
 namespace lczero {
 
-
 namespace {
 const std::uint32_t kWeightMagic = 0x1c0;
 
@@ -125,7 +124,8 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
                     net.min_version().patch());
 
   if (net_ver > lc0_ver)
-    throw Exception("Invalid weight file: lc0 version >= " + min_version + " required.");
+    throw Exception("Invalid weight file: lc0 version >= " + min_version +
+                    " required.");
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
     throw Exception("Invalid weight file: wrong encoding.");
@@ -258,7 +258,7 @@ std::string DiscoverWeightsFile() {
 
     // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
     // our own magic should suffice.
-    auto magic = reinterpret_cast<std::uint32_t*>(buf+1);
+    auto magic = reinterpret_cast<std::uint32_t*>(buf + 1);
     if (*magic == kWeightMagic) {
       std::cerr << "Found pb network file: " << candidate.second << std::endl;
       return candidate.second;

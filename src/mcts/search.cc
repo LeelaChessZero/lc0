@@ -57,6 +57,7 @@ const char* Search::kCacheHistoryLengthStr =
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
+const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
 const char* Search::kExperimentalQUpdateStr =
     "Use alternative experimental Q update algorithm";
@@ -91,6 +92,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
+  options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
   options->Add<BoolOption>(kExperimentalQUpdateStr,
                             "alternative-q-update-algorithm") = false;
@@ -123,6 +125,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
       kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
       kExperimentalQUpdate(options.Get<bool>(kExperimentalQUpdateStr)) {}
 
@@ -253,7 +256,7 @@ void Search::SendMovesStats() const {
     }
     oss << ") ";
 
-    oss << "(T: " << edge.IsTerminal() << ") ";
+    if (edge.IsTerminal()) oss << "(T) ";
 
     info.comment = oss.str();
     info_callback_(info);
@@ -392,8 +395,8 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   Move ponder_move;  // Default is "null move" which means "don't display
                      // anything".
   if (best_node.HasNode() && best_node.node()->HasChildren()) {
-   ponder_move =
-       GetBestChildNoTemperature(best_node.node()).GetMove(!played_history_.IsBlackToMove());
+    ponder_move = GetBestChildNoTemperature(best_node.node())
+                      .GetMove(!played_history_.IsBlackToMove());
   }
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
@@ -542,24 +545,32 @@ bool SearchWorker::IsSearchActive() const {
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
     std::unique_ptr<NetworkComputation> computation) {
-  nodes_to_process_.clear();
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
+  minibatch_.clear();
 }
 
 // 2. Gather minibatch.
 // ~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::GatherMinibatch() {
-  int nodes_found = 0;
+  // Total number of nodes to process.
+  int minibatch_size = 0;
   int collisions_found = 0;
+  // Number of nodes processed out of order.
+  int number_out_of_order = 0;
 
   // Gather nodes to process in the current batch.
-  while (nodes_found < search_->kMiniBatchSize) {
+  // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
+  // iteration so that search can exit.
+  // TODO(crem) change that to checking search_->stop_ when bestmove reporting
+  // is in a separate thread.
+  while (minibatch_size < search_->kMiniBatchSize &&
+         number_out_of_order < search_->kMiniBatchSize) {
     // If there's something to process without touching slow neural net, do it.
-    if (nodes_found > 0 && computation_->GetCacheMisses() == 0) return;
+    if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
-    nodes_to_process_.emplace_back(PickNodeToExtend());
-    auto& picked_node = nodes_to_process_.back();
+    minibatch_.emplace_back(PickNodeToExtend());
+    auto& picked_node = minibatch_.back();
     auto* node = picked_node.node;
 
     // There was a collision. If limit has been reached, return, otherwise
@@ -568,18 +579,38 @@ void SearchWorker::GatherMinibatch() {
       if (++collisions_found > search_->kAllowedNodeCollisions) return;
       continue;
     }
-    ++nodes_found;
+    ++minibatch_size;
+
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    if (node->IsTerminal()) continue;
-
-    // Node was never visited, extend it.
-    ExtendNode(node);
-
-    // Only send non-terminal nodes to neural network
     if (!node->IsTerminal()) {
-      nodes_to_process_.back().nn_queried = true;
-      AddNodeToComputation(node);
+      // Node was never visited, extend it.
+      ExtendNode(node);
+
+      // Only send non-terminal nodes to a neural network.
+      if (!node->IsTerminal()) {
+        picked_node.nn_queried = true;
+        picked_node.is_cache_hit = AddNodeToComputation(node, true);
+      }
+    }
+
+    // If out of order eval is enabled and the node to compute we added last
+    // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
+    // out of order eval for it.
+    if (search_->kOutOfOrderEval) {
+      if (node->IsTerminal() || picked_node.is_cache_hit) {
+        // Perform out of order eval for the last entry in minibatch_.
+        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+        DoBackupUpdateSingleNode(picked_node);
+
+        // Remove last entry in minibatch_, as it has just been
+        // processed.
+        // If NN eval was already processed out of order, remove it.
+        if (picked_node.nn_queried) computation_->PopCacheHit();
+        minibatch_.pop_back();
+        --minibatch_size;
+        ++number_out_of_order;
+      }
     }
   }
 }
@@ -710,12 +741,12 @@ void SearchWorker::ExtendNode(Node* node) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
-    
+
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
         history_.Last().GetNoCaptureNoPawnPly() == 0 &&
         (board.ours() + board.theirs()).count() <=
-          search_->syzygy_tb_->max_cardinality()) {
+            search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
@@ -726,8 +757,8 @@ void SearchWorker::ExtendNode(Node* node) {
           node->MakeTerminal(GameResult::BLACK_WON);
         } else if (wdl == WDL_LOSS) {
           node->MakeTerminal(GameResult::WHITE_WON);
-        } else { // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW); 
+        } else {  // Cursed wins and blessed losses count as draws.
+          node->MakeTerminal(GameResult::DRAW);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
@@ -870,104 +901,97 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() {
-  // This function is so small as to be silly, but its parent function is
-  // conceptually cleaner for it.
-  if (computation_->GetBatchSize() != 0) computation_->ComputeBlocking();
-}
+void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
-  for (auto& node_to_process : nodes_to_process_) {
-    Node* node = node_to_process.node;
-    if (!node_to_process.nn_queried) {
-      // Terminal nodes don't involve the neural NetworkComputation, nor do
-      // they require any further processing after value retrieval.
-      node_to_process.v = node->GetQ();
-      continue;
+  for (auto& node_to_process : minibatch_) {
+    FetchSingleNodeResult(&node_to_process, idx_in_computation);
+    if (node_to_process.nn_queried) ++idx_in_computation;
+  }
+}
+
+void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
+                                         int idx_in_computation) {
+  Node* node = node_to_process->node;
+  if (!node_to_process->nn_queried) {
+    // Terminal nodes don't involve the neural NetworkComputation, nor do
+    // they require any further processing after value retrieval.
+    node_to_process->v = node->GetQ();
+    return;
+  }
+  // For NN results, we need to populate policy as well as value.
+  // First the value...
+  node_to_process->v = -computation_->GetQVal(idx_in_computation);
+  // ...and secondly, the policy data.
+  float total = 0.0;
+  for (auto edge : node->Edges()) {
+    float p =
+        computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
+    if (search_->kPolicySoftmaxTemp != 1.0f) {
+      p = pow(p, 1 / search_->kPolicySoftmaxTemp);
     }
-    // For NN results, we need to populate policy as well as value.
-    // First the value...
-    node_to_process.v = -computation_->GetQVal(idx_in_computation);
-    // ...and secondly, the policy data.
-    float total = 0.0;
-    for (auto edge : node->Edges()) {
-      float p = computation_->GetPVal(idx_in_computation,
-                                      edge.GetMove().as_nn_index());
-      if (search_->kPolicySoftmaxTemp != 1.0f) {
-        p = pow(p, 1 / search_->kPolicySoftmaxTemp);
-      }
-      total += p;
-      edge.edge()->SetP(p);
-    }
-    // Normalize P values to add up to 1.0.
-    if (total > 0.0f) {
-      float scale = 1.0f / total;
-      for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
-    }
-    // Add Dirichlet noise if enabled and at root.
-    if (search_->kNoise && node == search_->root_node_) {
-      ApplyDirichletNoise(node, 0.25, 0.3);
-    }
-    ++idx_in_computation;
+    edge.edge()->SetP(p);
+    // Edge::SetP does some rounding, so only add to the total after rounding.
+    total += edge.edge()->GetP();
+  }
+  // Normalize P values to add up to 1.0.
+  if (total > 0.0f) {
+    float scale = 1.0f / total;
+    for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
+  }
+  // Add Dirichlet noise if enabled and at root.
+  if (search_->kNoise && node == search_->root_node_) {
+    ApplyDirichletNoise(node, 0.25, 0.3);
   }
 }
 
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
-  // Initialize playout and depth counters.
-  uint16_t max_depth_batch = 0;
-  uint32_t cum_depth_batch = 0;
-  uint16_t playouts_batch = 0;
-
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
-  for (NodeToProcess& node_to_process : nodes_to_process_) {
-    Node* node = node_to_process.node;
-    if (node_to_process.is_collision) {
-      // If it was a collision, just undo counters.
-      for (node = node->GetParent(); node != search_->root_node_->GetParent();
-           node = node->GetParent()) {
-        node->CancelScoreUpdate();
-      }
-      continue;
-    }
 
-    // Backup V value up to a root. After 1 visit, V = Q.
-    float v = node_to_process.v;
-
-    for (Node* n = node; n != search_->root_node_->GetParent();
-         n = n->GetParent()) {
-      n->FinalizeScoreUpdate(v, search_->kExperimentalQUpdate);
-      // Q will be flipped for opponent.
-      v = -v;
-
-      // Best move.
-      if (n->GetParent() == search_->root_node_ &&
-          search_->best_move_edge_.GetN() <= n->GetN()) {
-        search_->best_move_edge_ =
-            search_->GetBestChildNoTemperature(search_->root_node_);
-      }
-    }
-    ++playouts_batch;
-    cum_depth_batch += node_to_process.depth;
-    if (node_to_process.depth > max_depth_batch) {
-      max_depth_batch = node_to_process.depth;
-    }
+  for (const NodeToProcess& node_to_process : minibatch_) {
+    DoBackupUpdateSingleNode(node_to_process);
   }
-  // Update global depth and playouts from batch stats.
-  // The two stage update, batch ->search, is in
-  // preparation of a mutex reorganization.
-  if (max_depth_batch > search_->max_depth_) {
-    search_->max_depth_ = max_depth_batch;
-  }
-  search_->cum_depth_ += cum_depth_batch;
-  search_->total_playouts_ += playouts_batch;
 }
+
+void SearchWorker::DoBackupUpdateSingleNode(
+    const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
+  Node* node = node_to_process.node;
+  if (node_to_process.is_collision) {
+    // If it was a collision, just undo counters.
+    for (node = node->GetParent(); node != search_->root_node_->GetParent();
+         node = node->GetParent()) {
+      node->CancelScoreUpdate();
+    }
+    return;
+  }
+
+  // Backup V value up to a root. After 1 visit, V = Q.
+  float v = node_to_process.v;
+  for (Node* n = node; n != search_->root_node_->GetParent();
+       n = n->GetParent()) {
+    n->FinalizeScoreUpdate(v, search_->kExperimentalQUpdate);
+    // Q will be flipped for opponent.
+    v = -v;
+
+    // Update the stats.
+    // Best move.
+    if (n->GetParent() == search_->root_node_ &&
+        search_->best_move_edge_.GetN() <= n->GetN()) {
+      search_->best_move_edge_ =
+          search_->GetBestChildNoTemperature(search_->root_node_);
+    }
+  }
+  ++search_->total_playouts_;
+  search_->cum_depth_ += node_to_process.depth;
+  search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
+}  // namespace lczero
 
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
@@ -980,7 +1004,7 @@ void SearchWorker::UpdateCounters() {
   // Collisions don't count as work, so have to enumerate to find out if there
   // was anything done.
   bool work_done = false;
-  for (NodeToProcess& node_to_process : nodes_to_process_) {
+  for (NodeToProcess& node_to_process : minibatch_) {
     if (!node_to_process.is_collision) {
       work_done = true;
       break;
