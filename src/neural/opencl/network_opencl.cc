@@ -165,7 +165,7 @@ class OpenCLNetwork : public Network {
 
     // By default batch size is 1, as many old cards may not support more.
     auto max_batch_size_ =
-        static_cast<size_t>(options.GetOrDefault<int>("batch_size", 1));
+        static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));
     if (max_batch_size_ > kHardMaxBatchSize) {
       max_batch_size_ = kHardMaxBatchSize;
     }
