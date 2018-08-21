@@ -315,6 +315,13 @@ void Search::UpdateRemainingMoves() {
       auto nps = (1000LL * total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
+      if (nps_ < 0) {
+        nps_ = nps;
+      } else {
+        // Simple IIR low pass filter: H(z)=0.5z^-1/(1-0.5z^-1)
+        nps_ = 0.5 * (nps + nps_);
+        nps = nps_;
+      }
       int64_t remaining_time = limits_.time_ms - time_since_start;
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
