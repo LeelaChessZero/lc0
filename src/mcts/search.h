@@ -105,7 +105,6 @@ class Search {
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
   static const char* kOutOfOrderEvalStr;
-  static const char* kStickyCheckmateStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -184,7 +183,6 @@ class Search {
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kOutOfOrderEval;
-  const bool kStickyCheckmate;
 
   friend class SearchWorker;
 };

@@ -58,7 +58,6 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
-const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -91,7 +90,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
-  options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -121,8 +119,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -527,7 +524,7 @@ void SearchWorker::ExecuteOneIteration() {
   // 4. Run NN computation.
   RunNNComputation();
 
-  // 5. Retrieve NN computations (and terminal values) into nodes.
+  // 5. Retrieve NN computations (and already-certain values) into nodes.
   FetchMinibatchResults();
 
   // 6. Propagate the new nodes' information to all their parents in the tree.
@@ -582,24 +579,24 @@ void SearchWorker::GatherMinibatch() {
     }
     ++minibatch_size;
 
-    // If node is already known as terminal (win/loss/draw according to rules
-    // of the game), it means that we already visited this node before.
-    if (!node->IsTerminal()) {
+    // If node is already known as certain, it means that we already visited
+    // this node before.
+    if (!node->IsCertain()) {
       // Node was never visited, extend it.
       ExtendNode(node);
 
-      // Only send non-terminal nodes to a neural network.
-      if (!node->IsTerminal()) {
+      // Only send uncertain nodes to a neural network.
+      if (!node->IsCertain()) {
         picked_node.nn_queried = true;
         picked_node.is_cache_hit = AddNodeToComputation(node, true);
       }
     }
 
     // If out of order eval is enabled and the node to compute we added last
-    // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
+    // doesn't require NN eval (i.e. it's a cache hit or certain node), do
     // out of order eval for it.
     if (search_->kOutOfOrderEval) {
-      if (node->IsTerminal() || picked_node.is_cache_hit) {
+      if (node->IsCertain() || picked_node.is_cache_hit) {
         // Perform out of order eval for the last entry in minibatch_.
         FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
         DoBackupUpdateSingleNode(picked_node);
@@ -646,11 +643,15 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            Will revisit that after rethinking locking strategy.
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
     depth++;
+
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) return {node, true, depth};
-    // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) return {node, false, depth};
+
+    // If this node is already certain, or if it is unexamined, then this is the
+    // end of the playout.
+    if (!node->HasChildren() || node->IsCertain()) return {node, false, depth};
+
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
@@ -683,12 +684,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         }
         ++possible_moves;
       }
+      // TODO: any fancy search changes for a mix of certain and uncertain children?
       float Q = child.GetQ(parent_q);
-      if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
-        // If we find a checkmate, then the confidence is infinite, so ignore U.
-        best_edge = child;
-        break;
-      }
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;
@@ -839,8 +836,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   assert(node);
   // n = 0 and n_in_flight_ > 0, that means the node is being extended.
   if (node->GetN() == 0) return 0;
-  // The node is terminal; don't prefetch it.
-  if (node->IsTerminal()) return 0;
+  // The node is certain, don't prefetch it.
+  if (node->IsCertain()) return 0;
 
   // Populate all subnodes and their scores.
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
@@ -904,10 +901,10 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 // ~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
-// 5. Retrieve NN computations (and terminal values) into nodes.
+// 5. Retrieve NN computations (and certain values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
-  // Populate NN/cached results, or terminal results, into nodes.
+  // Populate NN/cached results, or certain results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process, idx_in_computation);
@@ -919,7 +916,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          int idx_in_computation) {
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {
-    // Terminal nodes don't involve the neural NetworkComputation, nor do
+    // Certain nodes don't involve the neural NetworkComputation, nor do
     // they require any further processing after value retrieval.
     node_to_process->v = node->GetQ();
     return;
@@ -975,10 +972,16 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
+  bool prev_child_was_certain = false;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
+
+    // Update this node.
     n->FinalizeScoreUpdate(v);
-    // Q will be flipped for opponent.
+    if (prev_child_was_certain) n->CheckChildrenCertainty();
+
+    // Prepare for parent node.
+    prev_child_was_certain = n->IsCertain();
     v = -v;
 
     // Update the stats.

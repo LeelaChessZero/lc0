@@ -425,6 +425,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // Also, if the current_head_ is terminal, reset that as well to allow forced
   // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
   if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
+  // TODO: how to handle root-reuse of certain nodes?
 }
 
 void NodeTree::DeallocateTree() {
