@@ -228,13 +228,14 @@ void Node::MarkTerminal(GameResult result) {
 // Check if the child positions are all themselves certain (or if we have a
 // certain winning position).
 void Node::CheckChildrenCertainty() {
+  if (!HasChildren()) return;
   bool all_certain = true;
-  float best_certain_q = -1.0f;
+  float best_certain_q = -12.0f;
   for (const auto& child : Edges()) {
     bool certain = child.IsCertain();
-    all_certain &= certain;
+    all_certain = certain && all_certain;
     if (certain) {
-      float q = child.GetQ(-1.0f);
+      float q = child.GetQ(-12.0f);
       if (q == 1.0f) {
         MarkCertain();
         q_ = -1.0f;
@@ -248,6 +249,11 @@ void Node::CheckChildrenCertainty() {
     MarkCertain();
     q_ = -best_certain_q;
   }
+}
+
+void Node::ResetCertainVisits() {
+  n_ = n_in_flight_ = 0;
+  for (const auto& child : Edges()) n_ += child.GetN();
 }
 
 bool Node::TryStartScoreUpdate() {
@@ -426,6 +432,7 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
   if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
   // TODO: how to handle root-reuse of certain nodes?
+  if (current_head_->IsCertain()) current_head_->ResetCertainVisits();
 }
 
 void NodeTree::DeallocateTree() {

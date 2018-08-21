@@ -407,6 +407,7 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
+  // TODO: make sure this handles certain nodes?
   std::tuple<int, float, float> best(-1, 0.0, 0.0);
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !limits_.searchmoves.empty() &&
@@ -650,7 +651,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
 
     // If this node is already certain, or if it is unexamined, then this is the
     // end of the playout.
-    if (!node->HasChildren() || node->IsCertain()) return {node, false, depth};
+    if (!node->HasChildren() || (!is_root_node && node->IsCertain())) return {node, false, depth};
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.

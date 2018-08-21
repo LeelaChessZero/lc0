@@ -165,6 +165,8 @@ class Node {
   // Check if the child positions are all themselves certain (or if we have a
   // certain winning position).
   void CheckChildrenCertainty();
+  // Certain nodes get n_ incremented but not their kids' n_ incremented -- reset that here for tree reuse.
+  void ResetCertainVisits();
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
