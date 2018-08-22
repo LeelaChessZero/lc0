@@ -65,6 +65,8 @@ void TestValidRootExpectation(SyzygyTablebase* tablebase,
   for (auto move : invalid_dtz_only) {
     EXPECT_FALSE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
                            move) != allowed_moves_dtz.end());
+    EXPECT_TRUE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
+                          move) != allowed_moves_wdl.end());
   }
 }
 
@@ -136,7 +138,8 @@ TEST(Syzygy, Root3PieceProbes) {
                            {Move("f3f2", true)}, {Move("g8h7", true)});
   TestValidRootExpectation(&tablebase, "8/8/8/8/8/k1p5/8/3K4 b - - 0 1",
                            {Move("a3b3", true)}, {Move("c3c2", true)});
-  // WDL doesn't know that with such a high 50 ply count this position has become a blessed loss (draw) for black.
+  // WDL doesn't know that with such a high 50 ply count this position has
+  // become a blessed loss (draw) for black.
   TestValidRootExpectation(&tablebase, "8/8/8/8/8/8/2Rk4/1K6 b - - 69 71",
                            {Move("d2d3", true)}, {}, {Move("d2e3", true)});
 }
