@@ -126,6 +126,10 @@ class Search {
 
   void SendMovesStats() const;
 
+  // Populates the given list with allowed root moves.
+  // Returns true if the population came from tablebase.
+  bool PopulateRootMoveLimit(MoveList* root_moves) const;
+
   // We only need first ply for debug output, but could be easily generalized.
   NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
 

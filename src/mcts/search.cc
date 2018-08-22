@@ -366,6 +366,26 @@ std::pair<Move, Move> Search::GetBestMove() const {
   return GetBestMoveInternal();
 }
 
+bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
+  // Search moves overrides tablebase.
+  if (!limits_.searchmoves.empty()) {
+    *root_moves = limits_.searchmoves;
+    return false;
+  }
+  auto board = played_history_.Last().GetBoard();
+  if (!syzygy_tb_ || !board.castlings().no_legal_castle() ||
+      (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
+    return false;
+  }
+  if (!syzygy_tb_->root_probe(played_history_.Last(), root_moves)) {
+    if (!syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves)) {
+      // Failed both dtz and wdl hits.
+      return false;
+    }
+  }
+  return true;
+}
+
 // Returns the best move, maybe with temperature (according to the settings).
 std::pair<Move, Move> Search::GetBestMoveInternal() const
     REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) {
@@ -398,6 +418,10 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
 
 // Returns a child with most visits.
 EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
+  MoveList root_limit;
+  if (parent == root_node_) {
+    PopulateRootMoveLimit(&root_limit);
+  }
   EdgeAndNode best_edge;
   // Best child is selected using the following criteria:
   // * Largest number of playouts.
@@ -406,9 +430,9 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   //   * If that number is larger than 0, the one with larger eval wins.
   std::tuple<int, float, float> best(-1, 0.0, 0.0);
   for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  edge.GetMove()) == limits_.searchmoves.end()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
       continue;
     }
     std::tuple<int, float, float> val(edge.GetN(), edge.GetQ(-10.0),
@@ -424,15 +448,20 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
 // Returns a child chosen according to weighted-by-temperature visit count.
 EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
                                                 float temperature) const {
+  MoveList root_limit;
+  if (parent == root_node_) {
+    PopulateRootMoveLimit(&root_limit);
+  }
+
   assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   const float n_parent = parent->GetN();
 
   for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  edge.GetMove()) == limits_.searchmoves.end()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
       continue;
     }
     sum += std::pow(edge.GetN() / n_parent, 1 / temperature);
@@ -445,9 +474,9 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       cumulative_sums.begin();
 
   for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !limits_.searchmoves.empty() &&
-        std::find(limits_.searchmoves.begin(), limits_.searchmoves.end(),
-                  edge.GetMove()) == limits_.searchmoves.end()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
       continue;
     }
     if (idx-- == 0) return edge;
@@ -546,24 +575,8 @@ void SearchWorker::InitializeIteration(
 
   if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;
-    // Search moves overrides tablebase.
-    if (!search_->limits_.searchmoves.empty()) {
-      root_move_filter_ = search_->limits_.searchmoves;
-    } else {
-      auto board = history_.Last().GetBoard();
-      if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
-          (board.ours() + board.theirs()).count() <=
-              search_->syzygy_tb_->max_cardinality()) {
-        if (!search_->syzygy_tb_->root_probe(history_.Last(),
-                                             &root_move_filter_)) {
-          if (search_->syzygy_tb_->root_probe_wdl(history_.Last(),
-                                                  &root_move_filter_)) {
-            search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-          }
-        } else {
-          search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        }
-      }
+    if (search_->PopulateRootMoveLimit(&root_move_filter_)) {
+      search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
     }
   }
 }
