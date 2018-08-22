@@ -267,6 +267,8 @@ class SearchWorker {
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
+  MoveList root_move_filter_;
+  bool root_move_filter_populated_;
 };
 
 }  // namespace lczero

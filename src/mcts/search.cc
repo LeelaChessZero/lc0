@@ -543,6 +543,25 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
   minibatch_.clear();
+
+  if (!root_move_filter_populated_) {
+    root_move_filter_populated_ = true;
+    // Search moves overrides tablebase.
+    if (!search_->limits_.searchmoves.empty()) {
+      root_move_filter_ = search_->limits_.searchmoves;
+    } else {
+      auto board = history_.Last().GetBoard();
+      if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+          (board.ours() + board.theirs()).count() <=
+              search_->syzygy_tb_->max_cardinality()) {
+        if (!search_->syzygy_tb_->root_probe(history_.Last(),
+                                             &root_move_filter_)) {
+          search_->syzygy_tb_->root_probe_wdl(history_.Last(),
+                                              &root_move_filter_);
+        }
+      }
+    }
+  }
 }
 
 // 2. Gather minibatch.
@@ -668,11 +687,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
                 best_node_n - static_cast<int>(child.GetN())) {
           continue;
         }
-        // If searchmoves was sent, restrict the search only in that moves
-        if (!search_->limits_.searchmoves.empty() &&
-            std::find(search_->limits_.searchmoves.begin(),
-                      search_->limits_.searchmoves.end(),
-                      child.GetMove()) == search_->limits_.searchmoves.end()) {
+        // If root move filter exists, make sure move is in the list.
+        if (!root_move_filter_.empty() &&
+            std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                      child.GetMove()) == root_move_filter_.end()) {
           continue;
         }
         ++possible_moves;
