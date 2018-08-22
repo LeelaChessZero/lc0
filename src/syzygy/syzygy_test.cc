@@ -35,8 +35,6 @@ namespace lczero {
 // Try to find syzygy relative to current working directory.
 constexpr auto kPaths = "syzygy";
 
-// TODO: Tests for root_probe and root_probe_wdl. The former needs to check
-// scenarios with non-zero rule 50 count.
 void TestValidRootExpectation(SyzygyTablebase* tablebase,
                               const std::string& fen,
                               const MoveList& valid_moves,
