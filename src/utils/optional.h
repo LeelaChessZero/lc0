@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -36,11 +36,13 @@ class optional {
  public:
   operator bool() const { return has_value_; }
   constexpr const T& operator*() const& { return value_; }
+  constexpr const T* operator->() const& { return &value_; }
   optional<T>& operator=(const T& value) {
     value_ = value;
     has_value_ = true;
     return *this;
   }
+  void reset() { has_value_ = false; }
 
  private:
   T value_;

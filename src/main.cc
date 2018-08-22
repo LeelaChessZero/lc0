@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -34,7 +34,8 @@
 int main(int argc, const char** argv) {
   std::cerr << "       _" << std::endl;
   std::cerr << "|   _ | |" << std::endl;
-  std::cerr << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__ << std::endl;
+  std::cerr << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__
+            << std::endl;
   using namespace lczero;
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");

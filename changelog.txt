@@ -1,3 +1,76 @@
+v0.17.0-rc2 (2018-08-21)
+~~~~~~~~~~~
+
+* Fixed a bug, that rule50 value was located in wrong place in a training data.
+* OpenCL uses much less VRAM now.
+* Default OpenCL batch size is 16 now (was 1).
+* Default time management related configuration was tweaked:
+  --futile-move-aversion is 1.33 now (was 1.47)
+  --slowmover is 2.4 now (was 2.6)
+
+
+v0.17.0-rc1 (2018-08-19)
+~~~~~~~~~~~
+
+New visible features:
+* Implemented ponder support.
+* Tablebases are supported now (only WDL probe for now).
+  Command line parameter is
+  --syzygy-paths=/path/to/syzygy/
+* Old smart pruning flag is gone. Instead there is
+  --futile-search-aversion flag.
+  --futile-search-aversion=0 is equivalent to old --no-smart-pruning.
+  --futile-search-aversion=1 is equivalent to old --smart-pruning.
+  Now default is 1.47, which means that engine will sometimes decide to
+  stop search earlier even when there is theoretical chance (but not very
+  probable) that best move decision could be changed if allowed to think more.
+* Lc0 now supports configuration files. Options can be listed there instead of
+  command line flags / uci params.
+  Config should be named lc0.config and located in the same directory as lc0.
+  Should list one command line option per line, with '--' in the beginning
+  being optional, for example:
+
+     syzygy-paths=/path/to/syzygy/
+
+* In uci info, "depth" is now average depth rather than full depth
+  (which was 4 all the time).
+  Also, depth values do not include reused tree, only nodes visited during the
+  current search session.
+* --sticky-checkmates experimental flag (default off), supposed to find shorter
+  checkmate sequences.
+* More features in backend "check".
+
+
+Performance optimizations:
+* Release windows executables are built with "whole program optimization".
+* Added --out-of-order-eval flag (default is off).
+  Switching it on makes cached/terminal nodes higher priority, which increases
+  nps.
+* OpenCL backend now supports batches (up to 5x speedup!)
+* Performance optimizations for BLAS backend.
+* Total visited policy (for FPU reduction) is now cached.
+* Values of priors (P) are stored now as 16-bit float rather than 32-bit float,
+  that saves considerable amount of RAM.
+
+
+Bugfixes:
+* Fixed en passant detection bug which caused the position after pawn moving by
+  two squares not counted towards threefold repetition even if en passant was
+  not possible.
+* Fixed the bug which caused --cache-history-length for values 2..7 work the
+  same as --cache-history-length=1.
+  This is fixed, but default is temporarily changed to --cache-history-length=1
+  during play. (For training games, it's 7)
+
+
+Removed features:
+* Backpropagation beta / backpropagation gamma parameters have been removed.
+
+
+Other changes:
+* Release lc0-windows-cuda.zip package now contains NVdia CUDA and cuDNN .dlls.
+
+
 v0.16.0 (2018-07-20)
 ~~~~~~~
 

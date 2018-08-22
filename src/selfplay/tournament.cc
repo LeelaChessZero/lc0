@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -50,7 +50,7 @@ const char* kNnBackendStr = "NN backend to use";
 const char* kNnBackendOptionsStr = "NN backend parameters";
 const char* kVerboseThinkingStr = "Show verbose thinking messages";
 const char* kResignPlaythroughStr =
-              "The percentage of games which ignore resign";
+    "The percentage of games which ignore resign";
 
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
@@ -82,11 +82,12 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   Search::PopulateUciParams(options);
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
-  defaults->Set<int>(Search::kMiniBatchSizeStr, 32);     // Minibatch size
-  defaults->Set<float>(Search::kAggressiveTimePruningStr, 0.0f);  // No smart pruning
-  defaults->Set<float>(Search::kTemperatureStr, 1.0f);    // Temperature = 1.0
+  defaults->Set<int>(Search::kMiniBatchSizeStr, 32);  // Minibatch size
+  defaults->Set<float>(Search::kAggressiveTimePruningStr,
+                       0.0f);                            // No smart pruning
+  defaults->Set<float>(Search::kTemperatureStr, 1.0f);   // Temperature = 1.0
   defaults->Set<bool>(Search::kNoiseStr, true);          // Dirichlet noise
-  defaults->Set<float>(Search::kFpuReductionStr, 0.0f);   // No FPU reduction.
+  defaults->Set<float>(Search::kFpuReductionStr, 0.0f);  // No FPU reduction.
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
@@ -251,7 +252,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
 
   // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], enable_resign);
+  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining,
+            enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
