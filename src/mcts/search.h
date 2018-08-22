@@ -268,7 +268,7 @@ class SearchWorker {
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
   MoveList root_move_filter_;
-  bool root_move_filter_populated_;
+  bool root_move_filter_populated_ = false;
 };
 
 }  // namespace lczero
