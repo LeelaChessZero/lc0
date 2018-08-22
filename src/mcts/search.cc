@@ -556,8 +556,12 @@ void SearchWorker::InitializeIteration(
               search_->syzygy_tb_->max_cardinality()) {
         if (!search_->syzygy_tb_->root_probe(history_.Last(),
                                              &root_move_filter_)) {
-          search_->syzygy_tb_->root_probe_wdl(history_.Last(),
-                                              &root_move_filter_);
+          if (search_->syzygy_tb_->root_probe_wdl(history_.Last(),
+                                                  &root_move_filter_)) {
+            search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
+          }
+        } else {
+          search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         }
       }
     }
