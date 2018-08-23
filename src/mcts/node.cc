@@ -258,12 +258,23 @@ void Node::FinalizeScoreUpdateMinimaxComponent(float v) {
     q_ = v;
   } else {
     auto child_nodes = ChildNodes();
-    auto best_child = std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
-      return lhs->q_*((float)lhs->n_) < rhs->q_*((float)rhs->n_);
+    auto highest_n_child = std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
+      return lhs->n_ < rhs->n_ || (lhs->n_ == rhs->n_ && lhs->q_ < rhs->q_);
     });
-    float pure_minmax = -(best_child->q_);
-    float minmax_component = ((float)best_child->n_)/((float)(n_+1));
-    q_ = pure_minmax * minmax_component + mcts_q_ * (1.0f - minmax_component);
+    uint32_t best_nodes_n_sum = 0;
+    for (auto child : child_nodes) {
+      if (child == *highest_n_child || child->q_ > highest_n_child->q_) {
+        best_nodes_n_sum += child->n_;
+      }
+    }
+    float bests_q = 0.0f;
+    for (auto child : child_nodes) {
+      if (child == *highest_n_child || child->q_ > highest_n_child->q_) {
+        bests_q -= child->q_ * (((float)child->n_)/((float)best_nodes_n_sum));
+      }
+    }
+    float minmax_component = ((float)std::min(n_, (uint32_t)150)) / 200.0f;
+    q_ = bests_q * minmax_component + mcts_q_ * (1.0f - minmax_component);
   }
 }
 
