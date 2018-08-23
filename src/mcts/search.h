@@ -248,12 +248,11 @@ class SearchWorker {
     uint16_t depth;
     bool is_collision = false;
     bool nn_queried = false;
-    bool is_cache_hit = false;
   };
 
   NodeToProcess PickNodeToExtend();
   void ExtendNode(Node* node);
-  bool AddNodeToComputation(Node* node, bool add_if_cached);
+  bool AddNodeToComputation(Node* node);
   int PrefetchIntoCache(Node* node, int budget);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              int idx_in_computation);

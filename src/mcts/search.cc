@@ -577,18 +577,16 @@ void SearchWorker::GatherMinibatch() {
 
       // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
-        picked_node.nn_queried = true;
-        picked_node.is_cache_hit = AddNodeToComputation(node, true);
+        picked_node.nn_queried = AddNodeToComputation(node);
       }
     }
 
     // If the latest node doesn't require NN eval (i.e. it's a cache hit or
     // known terminal node), do an out of order eval and immediately remove it.
-    if (node->IsTerminal() || picked_node.is_cache_hit) {
-      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+    if (!picked_node.nn_queried) {
+      picked_node.v = node->GetQ();
       DoBackupUpdateSingleNode(picked_node);
 
-      if (picked_node.nn_queried) computation_->PopCacheHit();
       minibatch_.pop_back();
       ++number_out_of_order;
     }
@@ -750,15 +748,12 @@ void SearchWorker::ExtendNode(Node* node) {
   node->CreateEdges(legal_moves);
 }
 
-// Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
+// Returns whether node was added to cache (i.e. if it was a cache miss).
+bool SearchWorker::AddNodeToComputation(Node* node) {
   auto hash = history_.HashLast(search_->kCacheHistoryLength + 1);
   // If already in cache, no need to do anything.
-  if (add_if_cached) {
-    if (computation_->AddInputByHash(hash)) return true;
-  } else {
-    if (search_->cache_->ContainsKey(hash)) return true;
-  }
+  if (search_->cache_->ContainsKey(hash)) return false;
+
   auto planes = EncodePositionForNN(history_, 8);
 
   std::vector<uint16_t> moves;
@@ -780,7 +775,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   }
 
   computation_->AddInput(hash, std::move(planes), std::move(moves));
-  return false;
+  return true;
 }
 
 // 3. Prefetch into cache.
@@ -805,7 +800,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false)) {
+    if (!AddNodeToComputation(node)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
@@ -889,20 +884,15 @@ void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
+    assert(node_to_process.nn_queried);
     FetchSingleNodeResult(&node_to_process, idx_in_computation);
-    if (node_to_process.nn_queried) ++idx_in_computation;
+    ++idx_in_computation;
   }
 }
 
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          int idx_in_computation) {
   Node* node = node_to_process->node;
-  if (!node_to_process->nn_queried) {
-    // Terminal nodes don't involve the neural NetworkComputation, nor do
-    // they require any further processing after value retrieval.
-    node_to_process->v = node->GetQ();
-    return;
-  }
   // For NN results, we need to populate policy as well as value.
   // First the value...
   node_to_process->v = -computation_->GetQVal(idx_in_computation);
