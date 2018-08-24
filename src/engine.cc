@@ -364,8 +364,11 @@ void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
   EnsureOptionsSent();
   std::string fen = position;
+  std::vector<std::string> history = moves;
   if (fen.empty()) fen = ChessBoard::kStartingFen;
-  engine_.SetPosition(fen, moves);
+  // Make sure the history has at least 2 moves when not from startpos
+  else if (history.size() < 2) history.insert(history.begin(), 2, "a1a1");
+  engine_.SetPosition(fen, history);
 }
 
 void EngineLoop::CmdGo(const GoParams& params) {
