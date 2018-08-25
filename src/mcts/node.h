@@ -172,10 +172,16 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, bool use_alternative_algorithm);
+  void FinalizeScoreUpdate(float v,
+                           bool experimental_q_enabled,
+                           uint32_t experimental_q_required_n,
+                           float experimental_q_weight
+                           );
 
   // Updates the node Q value using an algorithm based on subtree max Q*N value
-  void FinalizeScoreUpdateMinimaxComponent(float v);
+  void FinalizeScoreUpdateMinimaxComponent(float v,
+                                           uint32_t required_n,
+                                           float max_weight);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -219,7 +225,7 @@ class Node {
   // perspective of the player-to-move for the position.
   float mcts_q_ = 0.0f;
   // Can be either "mcts_q_" or a value calculated using an alternative
-  // algorithm (enabled/disabled via "kExperimentalQUpdate" flag)
+  // algorithm (enabled/disabled via "kExperimentalQEnabled" flag)
   float q_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;

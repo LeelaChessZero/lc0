@@ -106,7 +106,9 @@ class Search {
   static const char* kAllowedNodeCollisionsStr;
   static const char* kOutOfOrderEvalStr;
   static const char* kStickyCheckmateStr;
-  static const char* kExperimentalQUpdateStr;
+  static const char* kExperimentalQEnabledStr;
+  static const char* kExperimentalQRequiredNStr;
+  static const char* kExperimentalQWeightStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -186,7 +188,9 @@ class Search {
   const int kAllowedNodeCollisions;
   const bool kOutOfOrderEval;
   const bool kStickyCheckmate;
-  const bool kExperimentalQUpdate;
+  const bool kExperimentalQEnabled;
+  const int kExperimentalQRequiredN;
+  const float kExperimentalQWeight;
 
   friend class SearchWorker;
 };

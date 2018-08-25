@@ -233,11 +233,16 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
-void Node::FinalizeScoreUpdate(float v, bool use_alternative_algorithm) {
+void Node::FinalizeScoreUpdate(float v,
+                               bool experimental_q_enabled,
+                               uint32_t experimental_q_required_n,
+                               float experimental_q_weight) {
   // Recompute Q.
   mcts_q_ += (v - mcts_q_) / (n_ + 1);
-  if (use_alternative_algorithm) {
-    FinalizeScoreUpdateMinimaxComponent(v);
+  if (experimental_q_enabled) {
+    FinalizeScoreUpdateMinimaxComponent(v,
+                                        experimental_q_required_n,
+                                        experimental_q_weight);
   } else {
     // If no alternative algorithm is used, "q_" is just "mcts_q_"
     q_ = mcts_q_;
@@ -252,7 +257,9 @@ void Node::FinalizeScoreUpdate(float v, bool use_alternative_algorithm) {
   --n_in_flight_;
 }
 
-void Node::FinalizeScoreUpdateMinimaxComponent(float v) {
+void Node::FinalizeScoreUpdateMinimaxComponent(float v,
+                                               uint32_t required_n,
+                                               float max_weight) {
   // Recompute MinMax Q.
   if (n_ == 0 || is_terminal_) {
     q_ = v;
@@ -273,7 +280,8 @@ void Node::FinalizeScoreUpdateMinimaxComponent(float v) {
         bests_q -= child->q_ * (((float)child->n_)/((float)best_nodes_n_sum));
       }
     }
-    float minmax_component = ((float)std::min(n_, (uint32_t)150)) / 200.0f;
+    float minmax_component = (float)std::min(n_, required_n)/(float)required_n;
+    minmax_component *= max_weight;
     q_ = bests_q * minmax_component + mcts_q_ * (1.0f - minmax_component);
   }
 }

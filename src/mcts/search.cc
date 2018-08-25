@@ -59,8 +59,12 @@ const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
-const char* Search::kExperimentalQUpdateStr =
+const char* Search::kExperimentalQEnabledStr =
     "Use alternative experimental Q update algorithm";
+const char* Search::kExperimentalQRequiredNStr =
+    "Nodes required for experimental Q to be fully considered";
+const char* Search::kExperimentalQWeightStr =
+    "Max weight of experimental Q compared to normal Q (percentage)";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -94,8 +98,12 @@ void Search::PopulateUciParams(OptionsParser* options) {
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
-  options->Add<BoolOption>(kExperimentalQUpdateStr,
+  options->Add<BoolOption>(kExperimentalQEnabledStr,
                             "alternative-q-update-algorithm") = false;
+  options->Add<IntOption>(kExperimentalQRequiredNStr, 1, 1000,
+                            "alternative-q-required-n") = 150;
+  options->Add<IntOption>(kExperimentalQWeightStr, 1, 100,
+                            "alternative-q-weight") = 75;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -127,7 +135,9 @@ Search::Search(const NodeTree& tree, Network* network,
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
       kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
-      kExperimentalQUpdate(options.Get<bool>(kExperimentalQUpdateStr)) {}
+      kExperimentalQEnabled(options.Get<bool>(kExperimentalQEnabledStr)),
+      kExperimentalQRequiredN(options.Get<int>(kExperimentalQRequiredNStr)),
+      kExperimentalQWeight(options.Get<int>(kExperimentalQWeightStr)/100.0f) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -976,7 +986,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.v;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v, search_->kExperimentalQUpdate);
+    n->FinalizeScoreUpdate(v,
+                           search_->kExperimentalQEnabled,
+                           search_->kExperimentalQRequiredN,
+                           search_->kExperimentalQWeight);
     // Q will be flipped for opponent.
     v = -v;
 
