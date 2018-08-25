@@ -1,3 +1,14 @@
+v0.17.0-rc2 (2018-08-21)
+~~~~~~~~~~~
+
+* Fixed a bug, that rule50 value was located in wrong place in a training data.
+* OpenCL uses much less VRAM now.
+* Default OpenCL batch size is 16 now (was 1).
+* Default time management related configuration was tweaked:
+  --futile-move-aversion is 1.33 now (was 1.47)
+  --slowmover is 2.4 now (was 2.6)
+
+
 v0.17.0-rc1 (2018-08-19)
 ~~~~~~~~~~~
 

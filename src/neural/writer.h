@@ -44,8 +44,8 @@ struct V3TrainingData {
   uint8_t castling_them_ooo;
   uint8_t castling_them_oo;
   uint8_t side_to_move;
-  uint8_t move_count;
   uint8_t rule50_count;
+  uint8_t move_count;
   int8_t result;
 } PACKED_STRUCT;
 static_assert(sizeof(V3TrainingData) == 8276, "Wrong struct size");
