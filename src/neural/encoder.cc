@@ -36,6 +36,26 @@ const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 }  // namespace
 
+void SetInputPlanesFromBoard(InputPlanes& planes, int board_index,
+                             const ChessBoard& board, int repetitions) {
+  const int base = board_index * kPlanesPerBoard;
+  planes[base + 0].mask = (board.ours() * board.pawns()).as_int();
+  planes[base + 1].mask = (board.our_knights()).as_int();
+  planes[base + 2].mask = (board.ours() * board.bishops()).as_int();
+  planes[base + 3].mask = (board.ours() * board.rooks()).as_int();
+  planes[base + 4].mask = (board.ours() * board.queens()).as_int();
+  planes[base + 5].mask = (board.our_king()).as_int();
+
+  planes[base + 6].mask = (board.theirs() * board.pawns()).as_int();
+  planes[base + 7].mask = (board.their_knights()).as_int();
+  planes[base + 8].mask = (board.theirs() * board.bishops()).as_int();
+  planes[base + 9].mask = (board.theirs() * board.rooks()).as_int();
+  planes[base + 10].mask = (board.theirs() * board.queens()).as_int();
+  planes[base + 11].mask = (board.their_king()).as_int();
+
+  if (repetitions >= 1) planes[base + 12].SetAll();
+}
+
 InputPlanes EncodePositionForNN(const PositionHistory& history,
                                 int history_planes) {
   InputPlanes result(kAuxPlaneBase + 8);
@@ -54,32 +74,35 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     result[kAuxPlaneBase + 7].SetAll();
   }
 
-  bool flip = false;
-  int history_idx = history.GetLength() - 1;
-  for (int i = 0; i < std::min(history_planes, kMoveHistory);
-       ++i, flip = !flip, --history_idx) {
-    if (history_idx < 0) break;
-    const Position& position = history.GetPositionAt(history_idx);
+  // Always fill all planes with valid chess positions.
+  // Otherwise empty history positions yields nonsensical evaluations.
+  const int history_positions = std::min(history.GetLength(), history_planes);
+  const int fill_in_positions = kMoveHistory - history_positions;
+
+  // First, fill in as many actual history positions as available.
+  ChessBoard last_board_used;
+  int last_board_repititions;
+  for (int i = 0; i < history_positions; i++) {
+    const Position& position =
+        history.GetPositionAt(history.GetLength() - 1 - i);
+    const bool flip = (i % 2) == 1;
     const ChessBoard& board =
         flip ? position.GetThemBoard() : position.GetBoard();
+    SetInputPlanesFromBoard(result, i, board, position.GetRepetitions());
 
-    const int base = i * kPlanesPerBoard;
-    result[base + 0].mask = (board.ours() * board.pawns()).as_int();
-    result[base + 1].mask = (board.our_knights()).as_int();
-    result[base + 2].mask = (board.ours() * board.bishops()).as_int();
-    result[base + 3].mask = (board.ours() * board.rooks()).as_int();
-    result[base + 4].mask = (board.ours() * board.queens()).as_int();
-    result[base + 5].mask = (board.our_king()).as_int();
+    last_board_used = board;
+    last_board_repititions = position.GetRepetitions();
+  }
 
-    result[base + 6].mask = (board.theirs() * board.pawns()).as_int();
-    result[base + 7].mask = (board.their_knights()).as_int();
-    result[base + 8].mask = (board.theirs() * board.bishops()).as_int();
-    result[base + 9].mask = (board.theirs() * board.rooks()).as_int();
-    result[base + 10].mask = (board.theirs() * board.queens()).as_int();
-    result[base + 11].mask = (board.their_king()).as_int();
+  // Second, fill in any remaining positions repeat of last available position.
+  if (fill_in_positions > 0) {
+    ChessBoard fill_in_board = ChessBoard(last_board_used);
+    fill_in_board.UndoMoveToPriorBoardIfPossible();
 
-    const int repetitions = position.GetRepetitions();
-    if (repetitions >= 1) result[base + 12].SetAll();
+    for (int i = 0; i < fill_in_positions; i++) {
+      SetInputPlanesFromBoard(result, history_positions + i, fill_in_board,
+                              last_board_repititions);
+    }
   }
 
   return result;

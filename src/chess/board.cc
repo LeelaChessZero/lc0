@@ -449,6 +449,39 @@ bool ChessBoard::ApplyMove(Move move) {
   return reset_50_moves;
 }
 
+bool ChessBoard::UndoMoveToPriorBoardIfPossible() {
+  // Check if any en passant bits set, making undo possible.
+  const uint64_t ep_bits_right = pawns_.as_int() & 255;
+  const uint64_t ep_bits_left = pawns_.as_int() >> 56;
+  if (!ep_bits_right && !ep_bits_left) return false;
+
+  if (ep_bits_right) {
+    int ep_column = 0;
+    while (ep_column < 8 && !(ep_bits_right & (1 << ep_column))) {
+      ep_column++;
+    }
+
+    our_pieces_.set(1, ep_column);
+    pawns_.set(1, ep_column);
+    our_pieces_.reset(3, ep_column);
+    pawns_.reset(3, ep_column);
+  } else if (ep_bits_left) {
+    int ep_column_ = 0;
+    while (ep_column_ < 8 && !(ep_bits_left & (1 << ep_column_))) {
+      ep_column_++;
+    }
+    their_pieces_.set(6, ep_column_);
+    pawns_.set(6, ep_column_);
+    their_pieces_.reset(4, ep_column_);
+    pawns_.reset(4, ep_column_);
+  }
+
+  // Remove en passant flags.
+  pawns_ *= kPawnMask;
+
+  return true;
+}
+
 bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   const int row = square.row();
   const int col = square.col();
