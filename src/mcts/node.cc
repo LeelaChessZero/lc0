@@ -264,25 +264,47 @@ void Node::FinalizeScoreUpdateMinimaxComponent(float v,
   if (n_ == 0 || is_terminal_) {
     q_ = v;
   } else {
+    // Find the child node with highest N
     auto child_nodes = ChildNodes();
     auto highest_n_child = std::max_element(child_nodes.begin(), child_nodes.end(), [] (Node *lhs, Node *rhs) {
       return lhs->n_ < rhs->n_ || (lhs->n_ == rhs->n_ && lhs->q_ < rhs->q_);
     });
-    uint32_t best_nodes_n_sum = 0;
+
+    // Backup all the Q and N values of the childs nodes that have better or
+    // equal Q value than the node with the highest N
+    constexpr int max_array_size = 8;
+    std::array<float, max_array_size> qs;
+    std::array<uint32_t, max_array_size> ns;
+    int count = 0;
     for (auto child : child_nodes) {
       if (child == *highest_n_child || child->q_ > highest_n_child->q_) {
-        best_nodes_n_sum += child->n_;
+        qs[count] = child->q_;
+        ns[count] = child->n_;
+        ++count;
+        if (count == max_array_size) {
+          break;
+        }
       }
     }
+
+    // Get the sum N of all child nodes
+    float best_nodes_n_sum = 0;
+    for (int i = 0; i < count; ++i) {
+      best_nodes_n_sum += ns[i];
+    }
+
+    // Calculate "bests_q"
     float bests_q = 0.0f;
-    for (auto child : child_nodes) {
-      if (child == *highest_n_child || child->q_ > highest_n_child->q_) {
-        bests_q -= child->q_ * (((float)child->n_)/((float)best_nodes_n_sum));
-      }
+    for (int i = 0; i < count; ++i) {
+      bests_q -= qs[i] * ((float)ns[i] / best_nodes_n_sum);
     }
-    float minmax_component = (float)std::min(n_, required_n)/(float)required_n;
-    minmax_component *= max_weight;
-    q_ = bests_q * minmax_component + mcts_q_ * (1.0f - minmax_component);
+
+    // Calculate the "minmax_w"
+    float minmax_w = (float)std::min(n_, required_n) / (float)required_n;
+    minmax_w *= max_weight;
+
+    // Finally update "q_"
+    q_ = bests_q * minmax_w + mcts_q_ * (1.0f - minmax_w);
   }
 }
 
