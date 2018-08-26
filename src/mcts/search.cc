@@ -59,6 +59,7 @@ const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
+const char* Search::kBackPropagateMomentumStr = "Backpropagation momentum";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -92,6 +93,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
+  options->Add<FloatOption>(kBackPropagateMomentumStr, 0.0f, 1.0f,
+                            "backpropagate-momentum") = 0.9f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -122,7 +125,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
+      kBackPropagateMomentum(options.Get<float>(kBackPropagateMomentumStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -971,7 +975,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.v;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v);
+    n->FinalizeScoreUpdate(v, search_->kBackPropagateMomentum);
     // Q will be flipped for opponent.
     v = -v;
 
