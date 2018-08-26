@@ -488,8 +488,8 @@ void Search::WatchdogThread() {
     {
       using namespace std::chrono_literals;
       constexpr auto kMaxWaitTime = 100ms;
-      auto remaining_time = (limits_.time_ms - GetTimeSinceStart()) * 1ms;
       Mutex::Lock lock(counters_mutex_);
+      auto remaining_time = (limits_.time_ms - GetTimeSinceStart()) * 1ms;
       watchdog_cv_.wait_for(
           lock.get_raw(), std::min(remaining_time, kMaxWaitTime),
           [this]() NO_THREAD_SAFETY_ANALYSIS { return stop_; });
