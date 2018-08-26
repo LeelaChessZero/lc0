@@ -186,7 +186,7 @@ class Search {
   const int kAllowedNodeCollisions;
   const bool kOutOfOrderEval;
   const bool kStickyCheckmate;
-  const bool kBackPropagateMomentum;
+  const float kBackPropagateMomentum;
 
   friend class SearchWorker;
 };
