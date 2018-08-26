@@ -80,6 +80,9 @@ class Search {
   void Abort();
   // Blocks until all worker thread finish.
   void Wait();
+  // Returns whether search is active. Workers check that to see whether another
+  // search iteration is needed.
+  bool IsSearchActive() const;
 
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
@@ -125,6 +128,9 @@ class Search {
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
 
   void SendMovesStats() const;
+  // Function which runs in a separate thread and watches for time and
+  // uci `stop` command;
+  void WatchdogThread();
 
   // We only need first ply for debug output, but could be easily generalized.
   NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
@@ -140,6 +146,8 @@ class Search {
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
   std::pair<Move, Move> best_move_ GUARDED_BY(counters_mutex_);
+  // Condition variable used to notify about stop_ being set.
+  std::condition_variable watchdog_cv_;
 
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
@@ -199,7 +207,7 @@ class SearchWorker {
 
   // Runs iterations while needed.
   void RunBlocking() {
-    while (IsSearchActive()) {
+    while (search_->IsSearchActive()) {
       ExecuteOneIteration();
     }
   }
@@ -213,9 +221,6 @@ class SearchWorker {
   // 6. Propagate the new nodes' information to all their parents in the tree.
   // 7. Update the Search's status and progress information.
   void ExecuteOneIteration();
-
-  // Returns whether another search iteration is needed (false means exit).
-  bool IsSearchActive() const;
 
   // The same operations one by one:
   // 1. Initialize internal structures.

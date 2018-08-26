@@ -275,6 +275,8 @@ NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
 void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
+  // Already responded bestmove, nothing to do here.
+  if (responded_bestmove_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
   // If smart pruning tells to stop (best move found), stop.
@@ -458,7 +460,12 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
-  while (threads_.size() < how_many) {
+  // First thread is a watchdog thread.
+  if (threads_.size() == 0) {
+    threads_.emplace_back([this]() { WatchdogThread(); });
+  }
+  // Start working threads.
+  while (threads_.size() <= how_many) {
     threads_.emplace_back([this]() {
       SearchWorker worker(this);
       worker.RunBlocking();
@@ -466,18 +473,30 @@ void Search::StartThreads(size_t how_many) {
   }
 }
 
-void Search::RunSingleThreaded() {
-  SearchWorker worker(this);
-  worker.RunBlocking();
+void Search::RunBlocking(size_t threads) {
+  StartThreads(threads);
+  Wait();
 }
 
-void Search::RunBlocking(size_t threads) {
-  if (threads == 1) {
-    RunSingleThreaded();
-  } else {
-    StartThreads(threads);
-    Wait();
+bool Search::IsSearchActive() const {
+  Mutex::Lock lock(counters_mutex_);
+  return !stop_;
+}
+
+void Search::WatchdogThread() {
+  while (IsSearchActive()) {
+    {
+      using namespace std::chrono_literals;
+      constexpr auto kMaxWaitTime = 100ms;
+      auto remaining_time = (limits_.time_ms - GetTimeSinceStart()) * 1ms;
+      Mutex::Lock lock(counters_mutex_);
+      watchdog_cv_.wait_for(
+          lock.get_raw(), std::min(remaining_time, kMaxWaitTime),
+          [this]() NO_THREAD_SAFETY_ANALYSIS { return stop_; });
+    }
+    MaybeTriggerStop();
   }
+  MaybeTriggerStop();
 }
 
 void Search::Stop() {
@@ -529,11 +548,6 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 7. Update the Search's status and progress information.
   UpdateCounters();
-}
-
-bool SearchWorker::IsSearchActive() const {
-  Mutex::Lock lock(search_->counters_mutex_);
-  return !search_->stop_;
 }
 
 // 1. Initialize internal structures.
