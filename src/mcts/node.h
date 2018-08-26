@@ -214,6 +214,7 @@ class Node {
   // subtree. For terminal nodes, eval is stored. This is from the perspective
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
+  float q_buff_ = 0.0f;
   float q_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
