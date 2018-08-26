@@ -273,7 +273,7 @@ void Node::FinalizeScoreUpdateMinimaxComponent(float v,
 
     // Backup all the Q and N values of the childs nodes that have better or
     // equal Q value than the node with the highest N
-    constexpr uint32_t max_array_size = 8;
+    constexpr uint32_t max_array_size = 16;
     std::array<float, max_array_size> qs;
     std::array<uint32_t, max_array_size> ns;
     uint32_t count = 0;
@@ -293,6 +293,10 @@ void Node::FinalizeScoreUpdateMinimaxComponent(float v,
     for (uint32_t i = 0; i < count; ++i) {
       best_nodes_n_sum += ns[i];
     }
+
+    // This should not be required, but it's crashing for some reason so trying
+    // to fix...
+    best_nodes_n_sum = std::max(1, best_nodes_n_sum);
 
     // Calculate "bests_q"
     float bests_q = 0.0f;
