@@ -101,9 +101,9 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kExperimentalQEnabledStr,
                             "alternative-q-update-algorithm") = false;
   options->Add<IntOption>(kExperimentalQRequiredNStr, 1, 1000,
-                            "alternative-q-required-n") = 150;
+                            "alternative-q-required-n") = 250;
   options->Add<IntOption>(kExperimentalQWeightStr, 1, 100,
-                            "alternative-q-weight") = 75;
+                            "alternative-q-weight") = 50;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
