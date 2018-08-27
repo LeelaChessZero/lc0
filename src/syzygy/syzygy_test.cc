@@ -217,6 +217,19 @@ TEST(Syzygy, Simple5PieceProbes) {
                        WDL_DRAW, 0);
 }
 
+TEST(Syzygy, Root5PieceProbes) {
+  SyzygyTablebase tablebase;
+  tablebase.init(kPaths);
+  if (tablebase.max_cardinality() < 5) {
+    // These probes require 5 piece tablebase.
+    return;
+  }
+  TestValidRootExpectation(&tablebase, "8/8/8/Q7/8/1k1K4/1r6/8 w - - 79 44",
+                           {Move("a5a1", false)}, {}, {Move("a5d5", false)});
+  TestValidRootExpectation(&tablebase, "8/8/8/3Q4/k7/3K4/1r6/8 w - - 81 45",
+                           {Move("d5a8", false)}, {}, {Move("d3c3", false)});
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
