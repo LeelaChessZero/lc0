@@ -49,6 +49,7 @@ const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
+const char* Search::kVeryVerboseStatsStr = "Display very verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
     "Aversion to search if change unlikely";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
@@ -80,6 +81,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
+  options->Add<BoolOption>(kVeryVerboseStatsStr, "very-verbose-move-stats") = false;
   options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
                             "futile-search-aversion") = 1.33f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
@@ -116,6 +118,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
+      kVeryVerboseStats(options.Get<bool>(kVeryVerboseStatsStr)),
       kAggressiveTimePruning(options.Get<float>(kAggressiveTimePruningStr)),
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
@@ -183,6 +186,7 @@ void Search::MaybeOutputInfo() {
        uci_info_.seldepth != max_depth_ ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
+    if (kVeryVerboseStats) SendMovesStats();
   }
 }
 
