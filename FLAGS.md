@@ -47,6 +47,7 @@ List of command line flags:
 | <nobr>--tempdecay-moves=NUM</nobr> | Moves with temperature decay | Reduce temperature for every move linearly from initial temperature to 0, during this number of moves since game start. `0` disables tempdecay.<br>Default: `0` |
 | -n,<br>--[no-]noise | Add Dirichlet noise at root node | Add noise to root node prior probabilities. That allows engine to explore moves which are known to be very bad, which is useful to discover new ideas during training.<br>Default: `false` |
 | <nobr>--[no-]verbose-move-stats | Display verbose move stats | Display Q, V, N, U and P values of every move candidate after each move.<br>Default: `false` |
+| <nobr>--[no-]very-verbose-move-stats | Display very verbose move stats | Display Q, V, N, U and P values of every move candidate after each UCI info string.<br>Default: `false` |
 | --[no-]smart-pruning  | Enable smart pruning | Default: `true` |
 | --virtual-loss-bug=NUM | Virtual loss bug | Default: `0` |
 | --fpu-reduction=NUM | First Play Urgency Reduction | Default: `0.2` |
