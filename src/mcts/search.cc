@@ -377,13 +377,8 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
-  if (!syzygy_tb_->root_probe(played_history_.Last(), root_moves)) {
-    if (!syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves)) {
-      // Failed both dtz and wdl hits.
-      return false;
-    }
-  }
-  return true;
+  return syzygy_tb_->root_probe(played_history_.Last(), root_moves) ||
+         syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
 // Returns the best move, maybe with temperature (according to the settings).
