@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -49,7 +49,7 @@ class ConfigFile {
 
  private:
   // Parses the config file into the arguments_ vector.
-  static bool ParseFile(const std::string filename, OptionsParser* options);
+  static bool ParseFile(const std::string& filename, OptionsParser* options);
 
   static std::vector<std::string> arguments_;
 };

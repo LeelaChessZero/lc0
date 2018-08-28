@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -51,9 +51,10 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
          {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth",
-          "nodes", "movetime", "searchmoves"}},
+          "nodes", "movetime", "searchmoves", "ponder"}},
         {{"start"}, {}},
         {{"stop"}, {}},
+        {{"ponderhit"}, {}},
         {{"quit"}, {}},
 };
 
@@ -169,6 +170,12 @@ bool UciLoop::DispatchCommand(
       go_params.searchmoves =
           StrSplitAtWhitespace(GetOrEmpty(params, "searchmoves"));
     }
+    if (ContainsKey(params, "ponder")) {
+      if (!GetOrEmpty(params, "ponder").empty()) {
+        throw Exception("Unexpected token " + GetOrEmpty(params, "ponder"));
+      }
+      go_params.ponder = true;
+    }
 #define UCIGOOPTION(x)                    \
   if (ContainsKey(params, #x)) {          \
     go_params.x = GetNumeric(params, #x); \
@@ -185,6 +192,8 @@ bool UciLoop::DispatchCommand(
     CmdGo(go_params);
   } else if (command == "stop") {
     CmdStop();
+  } else if (command == "ponderhit") {
+    CmdPonderHit();
   } else if (command == "start") {
     CmdStart();
   } else if (command == "quit") {
@@ -244,6 +253,7 @@ void UciLoop::SendInfo(const ThinkingInfo& info) {
   if (info.score) res += " score cp " + std::to_string(*info.score);
   if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
   if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
+  if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
 
   if (!info.pv.empty()) {
     res += " pv";

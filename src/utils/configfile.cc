@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -35,15 +35,16 @@
 #include "utils/string.h"
 
 namespace lczero {
-  namespace {
-    const char* kConfigFileStr = "Configuration file path";
-    const char* kDefaultConfigFile = "lc0.config";
-  }
+namespace {
+const char* kConfigFileStr = "Configuration file path";
+const char* kDefaultConfigFile = "lc0.config";
+}  // namespace
 
 std::vector<std::string> ConfigFile::arguments_;
 
 void ConfigFile::PopulateOptions(OptionsParser* options) {
-  options->Add<StringOption>(kConfigFileStr, "config", 'c') = kDefaultConfigFile;
+  options->Add<StringOption>(kConfigFileStr, "config", 'c') =
+      kDefaultConfigFile;
 }
 
 bool ConfigFile::Init(OptionsParser* options) {
@@ -51,10 +52,15 @@ bool ConfigFile::Init(OptionsParser* options) {
 
   // Process flags to get the config file parameter.
   if (!options->ProcessAllFlags()) return false;
-  
+
   // Calculate the relative path of the config file.
   OptionsDict dict = options->GetOptionsDict();
   std::string filename = dict.Get<std::string>(kConfigFileStr);
+
+  // If filename is an empty string then return true.  This is to override 
+  // loading the default configuration file.
+  if (filename == "") return true;
+
   filename = CommandLine::BinaryDirectory() + "/" + filename;
 
   // Parses the file into the arguments_ vector.
@@ -63,7 +69,7 @@ bool ConfigFile::Init(OptionsParser* options) {
   return true;
 }
 
-bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
+bool ConfigFile::ParseFile(const std::string& filename, OptionsParser* options) {
   std::ifstream input(filename);
 
   // Check to see if we are using the default config file or not.
@@ -81,14 +87,18 @@ bool ConfigFile::ParseFile(const std::string filename, OptionsParser* options) {
 
   std::cerr << "Found configuration file: " << filename << std::endl;
 
-  for(std::string line; getline( input, line );) {
+  for (std::string line; getline(input, line);) {
     // Remove all leading and trailing whitespace.
     line = Trim(line);
     // Ignore comments.
     if (line.substr(0, 1) == "#") continue;
     // Skip blank lines.
     if (line.length() == 0) continue;
-    // Only long form arguments starting with '--' are supported.
+    // Allow long form arugments that omit '--'.  If omitted, add here.
+    if (line.substr(0, 1) != "-" && line.substr(0, 2) != "--") {
+      line = "--" + line;
+    }
+    // Fail now if the argument does not begin with '--'.
     if (line.substr(0, 2) != "--") {
       std::cerr << "Only '--' arguments are supported in the "
                 << "configuration file: '" << line << "'." << std::endl;

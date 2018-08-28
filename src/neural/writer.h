@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -44,8 +44,8 @@ struct V3TrainingData {
   uint8_t castling_them_ooo;
   uint8_t castling_them_oo;
   uint8_t side_to_move;
-  uint8_t move_count;
   uint8_t rule50_count;
+  uint8_t move_count;
   int8_t result;
 } PACKED_STRUCT;
 static_assert(sizeof(V3TrainingData) == 8276, "Wrong struct size");

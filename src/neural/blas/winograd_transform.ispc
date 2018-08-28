@@ -22,8 +22,8 @@ uniform const size_t kWidth = 8;
 uniform const size_t kHeight = 8;
 uniform const size_t kSquares = kWidth * kHeight;
 
-uniform const size_t kWtiles = 4; //(kWidth + 1) / 2; 
-uniform const size_t kTiles = kWtiles * kWtiles; // 16
+uniform const size_t kWtiles = 4;                 //(kWidth + 1) / 2;
+uniform const size_t kTiles = kWtiles * kWtiles;  // 16
 
 uniform const size_t kWinogradAlpha = 4;
 uniform const size_t kWinogradTile = kWinogradAlpha * kWinogradAlpha;
@@ -31,9 +31,7 @@ uniform const size_t kWinogradTile = kWinogradAlpha * kWinogradAlpha;
 export void winograd_TransformIn_ispc(uniform size_t batch_size,
                                       const uniform float input[],
                                       uniform size_t channels,
-                                      uniform float output[])
-{
-
+                                      uniform float output[]) {
   float x[kWinogradAlpha][kWinogradAlpha];
   float T1[kWinogradAlpha][kWinogradAlpha];
 
@@ -47,18 +45,16 @@ export void winograd_TransformIn_ispc(uniform size_t batch_size,
         const uniform int yin = 2 * block_y - 1;
         const uniform int xin = 2 * block_x - 1;
 
-        foreach(channel = 0 ... channels) {
+        foreach (channel = 0 ... channels) {
           size_t V_channel = V_batch + channel;
           size_t input_channel = input_batch + channel * (kWidth * kHeight);
 
           for (uniform int i = 0; i < kWinogradAlpha; i++) {
             for (uniform int j = 0; j < kWinogradAlpha; j++) {
-              if ((yin + i) >= 0 && (xin + j) >= 0 &&
-                  (yin + i) < kHeight && (xin + j) < kWidth) {
-                x[i][j] = input[input_channel +
-                          (yin + i) * kWidth + (xin + j)];
-              }
-              else {
+              if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < kHeight &&
+                  (xin + j) < kWidth) {
+                x[i][j] = input[input_channel + (yin + i) * kWidth + (xin + j)];
+              } else {
                 x[i][j] = 0.0f;
               }
             }
@@ -82,8 +78,8 @@ export void winograd_TransformIn_ispc(uniform size_t batch_size,
           T1[3][3] = x[1][3] - x[3][3];
 
           const size_t V_incr = channels * kTiles * batch_size;
-          const size_t wTile_V = V_channel +
-                                 channels * (block_y * kWtiles + block_x);
+          const size_t wTile_V =
+              V_channel + channels * (block_y * kWtiles + block_x);
 
           output[wTile_V + V_incr * 0] = T1[0][0] - T1[0][2];
           output[wTile_V + V_incr * 1] = T1[0][1] + T1[0][2];
@@ -107,11 +103,10 @@ export void winograd_TransformIn_ispc(uniform size_t batch_size,
   }
 }
 
-
 export void winograd_TransformOut_ispc(uniform size_t batch_size,
-                          const uniform float input[], uniform size_t channels,
-                          uniform float output[])
-{
+                                       const uniform float input[],
+                                       uniform size_t channels,
+                                       uniform float output[]) {
   float m[kWinogradTile];
 
   for (uniform size_t batch_index = 0; batch_index < batch_size;
@@ -132,7 +127,7 @@ export void winograd_TransformOut_ispc(uniform size_t batch_size,
           const uniform int M_incr = channels * kTiles * batch_size;
 
           for (uniform int wTile = 0; wTile < kWinogradTile; wTile++) {
-            m[wTile] = input[M_wtile + wTile*M_incr];
+            m[wTile] = input[M_wtile + wTile * M_incr];
           }
 
           float o11 = m[0 * 4 + 0] + m[0 * 4 + 1] + m[0 * 4 + 2] +
@@ -160,4 +155,3 @@ export void winograd_TransformOut_ispc(uniform size_t batch_size,
     }
   }
 }
-
