@@ -488,11 +488,22 @@ void Search::WatchdogThread() {
     {
       using namespace std::chrono_literals;
       constexpr auto kMaxWaitTime = 100ms;
+      constexpr auto kMinWaitTime = 1ms;
       Mutex::Lock lock(counters_mutex_);
-      auto remaining_time = (limits_.time_ms - GetTimeSinceStart()) * 1ms;
-      watchdog_cv_.wait_for(
-          lock.get_raw(), std::min(remaining_time, kMaxWaitTime),
-          [this]() NO_THREAD_SAFETY_ANALYSIS { return stop_; });
+      auto remaining_time = limits_.time_ms >= 0
+                                ? (limits_.time_ms - GetTimeSinceStart()) * 1ms
+                                : kMaxWaitTime;
+      if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
+      if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
+      // There is no real need to have max wait time, and sometimes it's fine
+      // to wait without timeout at all (e.g. in `go nodes` mode), but we
+      // still limit wait time for exotic cases like when pc goes to sleep
+      // mode during thinking.
+      // Minimum wait time is there to prevent busy wait and other thread
+      // starvation.
+      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
+                            [this]()
+                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
     }
     MaybeTriggerStop();
   }

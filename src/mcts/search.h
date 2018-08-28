@@ -70,9 +70,6 @@ class Search {
   // Starts search with k threads and wait until it finishes.
   void RunBlocking(size_t threads);
 
-  // Runs search single-threaded, blocking.
-  void RunSingleThreaded();
-
   // Stops search. At the end bestmove will be returned. The function is not
   // blocking, so it returns before search is actually done.
   void Stop();
