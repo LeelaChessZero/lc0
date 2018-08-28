@@ -96,10 +96,18 @@ class BitBoard {
   std::uint64_t as_int() const { return board_; }
   void clear() { board_ = 0; }
   int count() const {
+#ifdef NO_POPCNT
+    std::uint64_t x = board_;
+    x -= (x >> 1) & 0x5555555555555555;
+    x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333);
+    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F;
+    return (x * 0x0101010101010101) >> 56;
+#else
 #ifdef _MSC_VER
     return _mm_popcnt_u64(board_);
 #else
     return __builtin_popcountll(board_);
+#endif
 #endif
   }
 
