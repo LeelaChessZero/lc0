@@ -108,6 +108,11 @@ option('accelerate',
        value: true,
        description: 'Enable Accelerate BLAS support')
 
+option('popcnt',
+       type: 'boolean',
+       value: true,
+       description: 'Use the popcnt instruction')
+
 option('gtest',
        type: 'boolean',
        value: true,

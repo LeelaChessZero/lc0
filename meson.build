@@ -377,9 +377,14 @@ endif
 ## Main Executable
 #############################################################################
 
-executable('lc0', 'src/main.cc',
-  files, include_directories: includes, dependencies: deps, install: true)
-
+if get_option('popcnt')
+  executable('lc0', 'src/main.cc',
+    files, include_directories: includes, dependencies: deps, install: true)
+else
+  add_project_arguments('-DNO_POPCNT', language : 'cpp')
+  executable('lc0_nopopcnt', 'src/main.cc',
+    files, include_directories: includes, dependencies: deps, install: true)
+endif
 
 ### Tests
 gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
