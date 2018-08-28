@@ -143,8 +143,6 @@ class Search {
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
   std::pair<Move, Move> best_move_ GUARDED_BY(counters_mutex_);
-  // Condition variable used to notify about stop_ being set.
-  std::condition_variable watchdog_cv_;
 
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);

@@ -484,6 +484,9 @@ bool Search::IsSearchActive() const {
 }
 
 void Search::WatchdogThread() {
+  // Condition variable used to watch stop_ variable.
+  std::condition_variable watchdog_cv;
+
   while (IsSearchActive()) {
     {
       using namespace std::chrono_literals;
@@ -501,9 +504,9 @@ void Search::WatchdogThread() {
       // mode during thinking.
       // Minimum wait time is there to prevent busy wait and other thread
       // starvation.
-      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
-                            [this]()
-                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
+      watchdog_cv.wait_for(lock.get_raw(), remaining_time,
+                           [this]()
+                               NO_THREAD_SAFETY_ANALYSIS { return stop_; });
     }
     MaybeTriggerStop();
   }
