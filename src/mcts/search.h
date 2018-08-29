@@ -126,6 +126,10 @@ class Search {
 
   void SendMovesStats() const;
 
+  // Populates the given list with allowed root moves.
+  // Returns true if the population came from tablebase.
+  bool PopulateRootMoveLimit(MoveList* root_moves) const;
+
   // We only need first ply for debug output, but could be easily generalized.
   NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
 
@@ -267,6 +271,8 @@ class SearchWorker {
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
+  MoveList root_move_filter_;
+  bool root_move_filter_populated_ = false;
 };
 
 }  // namespace lczero
