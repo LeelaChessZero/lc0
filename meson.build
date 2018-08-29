@@ -196,7 +196,14 @@ if get_option('build_backends')
 
       deps += [ openblas_lib ]
       has_blas = true
+    endif
 
+    if has_blas
+      blas_files = [
+      'src/neural/blas/batchnorm.cc',
+      'src/neural/blas/fully_connected_layer.cc',
+      'src/neural/blas/winograd_convolution3.cc'
+      ]
     endif
 
     ispc = find_program('ispc', required: false)
@@ -237,11 +244,8 @@ if get_option('build_backends')
 
   if get_option('blas') and has_blas
 
-    blas_files = [
-    'src/neural/blas/batchnorm.cc',
+    blas_files += [
     'src/neural/blas/convolution1.cc',
-    'src/neural/blas/fully_connected_layer.cc',
-    'src/neural/blas/winograd_convolution3.cc',
     'src/neural/blas/network_blas.cc'
     ]
 
@@ -288,7 +292,7 @@ if get_option('build_backends')
       ]
 
       if not get_option('blas')
-        opencl_files += 'src/neural/blas/transforms.cc'
+        opencl_files += blas_files
       endif
 
       includes += include_directories(get_option('opencl_include'))
