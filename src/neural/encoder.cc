@@ -81,7 +81,6 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
 
   // First, fill in as many actual history positions as available.
   ChessBoard last_board_used;
-  int last_board_repititions;
   for (int i = 0; i < history_positions; i++) {
     const Position& position =
         history.GetPositionAt(history.GetLength() - 1 - i);
@@ -91,7 +90,6 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     SetInputPlanesFromBoard(result, i, board, position.GetRepetitions());
 
     last_board_used = board;
-    last_board_repititions = position.GetRepetitions();
   }
 
   // Second, fill in any remaining positions repeat of last available position.
@@ -100,8 +98,7 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     fill_in_board.UndoMoveToPriorBoardIfPossible();
 
     for (int i = 0; i < fill_in_positions; i++) {
-      SetInputPlanesFromBoard(result, history_positions + i, fill_in_board,
-                              last_board_repititions);
+      SetInputPlanesFromBoard(result, history_positions + i, fill_in_board, 0);
     }
   }
 
