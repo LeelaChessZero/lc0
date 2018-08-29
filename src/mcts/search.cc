@@ -281,20 +281,20 @@ void Search::MaybeTriggerStop() {
   if (total_playouts_ == 0) return;
   // If smart pruning tells to stop (best move found), stop.
   if (found_best_move_) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached playouts limit.
   if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached visits limit.
   if (limits_.visits >= 0 &&
       total_playouts_ + initial_visits_ >= limits_.visits) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached time limit.
   if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
-    stop_ = true;
+    FireStopInternal();
   }
   // If we are the first to see that stop is needed.
   if (stop_ && !responded_bestmove_) {
@@ -484,9 +484,6 @@ bool Search::IsSearchActive() const {
 }
 
 void Search::WatchdogThread() {
-  // Condition variable used to watch stop_ variable.
-  std::condition_variable watchdog_cv;
-
   while (IsSearchActive()) {
     {
       using namespace std::chrono_literals;
@@ -504,24 +501,29 @@ void Search::WatchdogThread() {
       // mode during thinking.
       // Minimum wait time is there to prevent busy wait and other thread
       // starvation.
-      watchdog_cv.wait_for(lock.get_raw(), remaining_time,
-                           [this]()
-                               NO_THREAD_SAFETY_ANALYSIS { return stop_; });
+      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
+                            [this]()
+                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
     }
     MaybeTriggerStop();
   }
   MaybeTriggerStop();
 }
 
+void Search::FireStopInternal() REQUIRES(counters_mutex_) {
+  stop_ = true;
+  watchdog_cv_.notify_all();
+}
+
 void Search::Stop() {
   Mutex::Lock lock(counters_mutex_);
-  stop_ = true;
+  FireStopInternal();
 }
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
   responded_bestmove_ = true;
-  stop_ = true;
+  FireStopInternal();
 }
 
 void Search::Wait() {

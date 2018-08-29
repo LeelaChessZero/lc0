@@ -123,6 +123,8 @@ class Search {
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
+  // Sets stop to true and notifies watchdog thread.
+  void FireStopInternal();
 
   void SendMovesStats() const;
   // Function which runs in a separate thread and watches for time and
@@ -135,6 +137,8 @@ class Search {
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   bool stop_ GUARDED_BY(counters_mutex_) = false;
+  // Condition variable used to watch stop_ variable.
+  std::condition_variable watchdog_cv_;
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
