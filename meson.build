@@ -320,7 +320,6 @@ if get_option('build_backends')
   ]
 
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
-    includes += include_directories(get_option('cudnn_include'))
     deps += [cu_blas, cu_dnn, cu_dart]
   cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                     '-I', meson.current_source_dir() + '/src']
