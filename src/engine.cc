@@ -108,15 +108,15 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
   defaults->Set<float>(Search::kFpuReductionStr, 0.9f);  // FPU reduction = 0.9
+  defaults->Set<float>(Search::kFPUPowScalingStr, 0.5f);
   defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
+  defaults->Set<float>(Search::kCpuctPowScalingStr, 0.5f);
   defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
   // Cache key has a history of 1 ply back. That's to be compatible with old
   // bug. Also tests show that for now 1 has better strength than 7.
   // TODO(crem) Revisit this setting.
   defaults->Set<int>(Search::kCacheHistoryLengthStr, 1);
-  defaults->Set<float>(Search::kCpuctPowScalingStr, 0.5f);
-  defaults->Set<float>(Search::kFPUPowScalingStr, 0.5f);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,

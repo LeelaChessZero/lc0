@@ -45,6 +45,7 @@ namespace lczero {
 const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
 const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
+const char* Search::kCpuctPowScalingStr = "CpuctPowScaling";
 const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
@@ -52,6 +53,7 @@ const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
     "Aversion to search if change unlikely";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
+const char* Search::kFPUPowScalingStr = "FPUPowScaling";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
@@ -59,8 +61,6 @@ const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
-const char* Search::kCpuctPowScalingStr = "CpuctPowScaling";
-const char* Search::kFPUPowScalingStr = "FPUPowScaling";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -94,9 +94,9 @@ void Search::PopulateUciParams(OptionsParser* options) {
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
-  options->Add<FloatOption>(kCpuctPowScalingStr, 0.0f, 0.5f,
+  options->Add<FloatOption>(kCpuctPowScalingStr, 0.1f, 1.0f,
                             "cpuct-powscaling") = 0.5f;
-  options->Add<FloatOption>(kFPUPowScalingStr, 0.0f, 0.5f,
+  options->Add<FloatOption>(kFPUPowScalingStr, 0.1f, 1.0f,
                             "fpu-powscaling") = 0.5f;
 }
 

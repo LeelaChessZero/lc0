@@ -95,19 +95,19 @@ class Search {
   static const char* kMiniBatchSizeStr;
   static const char* kMaxPrefetchBatchStr;
   static const char* kCpuctStr;
+  static const char* kCpuctPowScalingStr;
   static const char* kTemperatureStr;
   static const char* kTempDecayMovesStr;
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
   static const char* kAggressiveTimePruningStr;
   static const char* kFpuReductionStr;
+  static const char* kFPUPowScalingStr;
   static const char* kCacheHistoryLengthStr;
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
   static const char* kOutOfOrderEvalStr;
   static const char* kStickyCheckmateStr;
-  static const char* kCpuctPowScalingStr;
-  static const char* kFPUPowScalingStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -180,19 +180,19 @@ class Search {
   const int kMiniBatchSize;
   const int kMaxPrefetchBatch;
   const float kCpuct;
+  const float kCpuctPowScaling;
   const float kTemperature;
   const int kTempDecayMoves;
   const bool kNoise;
   const bool kVerboseStats;
   const float kAggressiveTimePruning;
   const float kFpuReduction;
+  const float kFPUPowScaling;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kOutOfOrderEval;
   const bool kStickyCheckmate;
-  const float kCpuctPowScaling;
-  const float kFPUPowScaling;
 
   friend class SearchWorker;
 };
