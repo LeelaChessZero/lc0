@@ -59,6 +59,8 @@ const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
 const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
+const char* Search::kCpuctPowScalingStr = "CpuctPowScaling";
+const char* Search::kFPUPowScalingStr = "FPUPowScaling";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -92,6 +94,10 @@ void Search::PopulateUciParams(OptionsParser* options) {
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
+  options->Add<FloatOption>(kCpuctPowScalingStr, 0.0f, 0.5f,
+                            "cpuct-powscaling") = 0.5f;
+  options->Add<FloatOption>(kFPUPowScalingStr, 0.0f, 0.5f,
+                            "fpu-powscaling") = 0.5f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -122,7 +128,9 @@ Search::Search(const NodeTree& tree, Network* network,
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
+      kCpuctPowScaling(options.Get<float>(kCpuctPowScalingStr)),
+      kFPUPowScaling(options.Get<float>(kFPUPowScalingStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -195,9 +203,9 @@ int64_t Search::GetTimeSinceStart() const {
 void Search::SendMovesStats() const {
   const float parent_q =
       -root_node_->GetQ() -
-      kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
+      kFpuReduction * std::pow(root_node_->GetVisitedPolicy(),kFPUPowScaling);
   const float U_coeff =
-      kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+      kCpuct * std::pow(std::max(root_node_->GetChildrenVisits(), 1u),kCpuctPowScaling);
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : root_node_->Edges()) edges.push_back(edge);

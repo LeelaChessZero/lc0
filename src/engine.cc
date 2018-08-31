@@ -115,6 +115,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // bug. Also tests show that for now 1 has better strength than 7.
   // TODO(crem) Revisit this setting.
   defaults->Set<int>(Search::kCacheHistoryLengthStr, 1);
+  defaults->Set<float>(Search::kCpuctPowScalingStr, 0.5f);
+  defaults->Set<float>(Search::kFPUPowScalingStr, 0.5f);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
