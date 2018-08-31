@@ -77,6 +77,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
   options->Add<IntOption>(kMaxPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
+  options->Add<FloatOption>(kCpuctPowScalingStr, 0.1f, 1.0f,
+                            "cpuct-powscaling") = 0.5f;
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
@@ -86,6 +88,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "futile-search-aversion") = 1.33f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
+  options->Add<FloatOption>(kFPUPowScalingStr, 0.1f, 1.0f,
+                            "fpu-powscaling") = 0.5f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
                           "cache-history-length") = 7;
   options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1f, 10.0f,
@@ -94,10 +98,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
-  options->Add<FloatOption>(kCpuctPowScalingStr, 0.1f, 1.0f,
-                            "cpuct-powscaling") = 0.5f;
-  options->Add<FloatOption>(kFPUPowScalingStr, 0.1f, 1.0f,
-                            "fpu-powscaling") = 0.5f;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
