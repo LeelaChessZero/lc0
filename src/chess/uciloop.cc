@@ -226,7 +226,7 @@ void UciLoop::SendResponses(const std::vector<std::string>& responses) {
 }
 
 void UciLoop::SendId() {
-  SendResponse("id name The Lc0 chess engine. v" + GetVersionStr());
+  SendResponse("id name Lc0 v" + GetVersionStr());
   SendResponse("id author The LCZero Authors.");
 }
 
