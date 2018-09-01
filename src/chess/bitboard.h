@@ -97,7 +97,11 @@ class BitBoard {
   void clear() { board_ = 0; }
   int count() const {
 #ifdef _MSC_VER
+#ifdef _WIN64
     return _mm_popcnt_u64(board_);
+#else
+    return __popcnt(board_) + __popcnt(board_ >> 32);
+#endif
 #else
     return __builtin_popcountll(board_);
 #endif
