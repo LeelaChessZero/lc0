@@ -176,6 +176,18 @@ EdgeList::EdgeList(MoveList moves)
   for (auto move : moves) edge++->SetMove(move);
 }
 
+EdgeList::EdgeList(EdgeList&& other)
+    : edges_(std::move(other.edges_)), size_(other.size_) {
+  other.size_ = 0;
+}
+
+EdgeList& EdgeList::operator=(EdgeList&& other) {
+  edges_ = std::move(other.edges_);
+  size_ = other.size_;
+  other.size_ = 0;
+  return *this;
+}
+
 /////////////////////////////////////////////////////////////////////////
 // Node
 /////////////////////////////////////////////////////////////////////////
@@ -210,7 +222,8 @@ std::string Node::DebugString() const {
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
       << " Index:" << index_ << " Child:" << child_.get()
       << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
-      << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
+      << " N_:" << n_in_flight_ << " Edges:" << edges_.size()
+      << " SubTree:" << subtree_.get();
   return oss.str();
 }
 
@@ -234,6 +247,7 @@ bool Node::TryStartScoreUpdate() {
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
 void Node::FinalizeScoreUpdate(float v) {
+  assert(!subtree_);
   // Recompute Q.
   q_ += (v - q_) / (n_ + 1);
   // If first visit, update parent's sum of policies visited at least once.
@@ -328,6 +342,50 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   return result;
 }
 
+void Node::FixChildrenParents() {
+  for (auto* node : ChildNodes()) node->parent_ = this;
+}
+
+void Node::DetachSubtree() {
+  assert(!HasDetachedSubtree());
+
+  std::unique_ptr<Node> subtree_root = std::make_unique<Node>(nullptr, 0);
+  subtree_root->edges_ = std::move(edges_);
+  subtree_root->q_ = q_;
+  subtree_root->n_ = n_;
+  assert(n_in_flight_ == 0);
+  subtree_root->visited_policy_ = visited_policy_;
+  assert(!is_terminal_);
+  subtree_root->child_ = std::move(child_);
+  // `sibling_` is NOT to be moved moved to detached subtree.
+  subtree_root->FixChildrenParents();
+
+  subtree_ = std::make_unique<SubTree>(this, std::move(subtree_root));
+}
+
+void Node::ReattachSubtree() {
+  assert(HasDetachedSubtree());
+  std::unique_ptr<SubTree> subtree = std::move(subtree_);
+  assert(nullptr == subtree->GetRootNode()->parent_);
+  assert(0 == subtree->GetRootNode()->index_);
+  auto index = index_;
+  auto parent = parent_;
+  std::unique_ptr<Node> sibling = std::move(subtree->GetRootNode()->sibling_);
+  // DO NOT SUBMIT add checks that that subtree is not in use.
+  *this = std::move(*subtree->GetRootNode());
+  index_ = index;
+  parent_ = parent;
+  sibling_ = std::move(sibling);
+  FixChildrenParents();
+}
+
+/////////////////////////////////////////////////////////////////////////
+// SubTree
+/////////////////////////////////////////////////////////////////////////
+
+SubTree::SubTree(Node* parent_node, std::unique_ptr<Node> detached_node)
+    : root_(std::move(detached_node)), parent_node_(parent_node) {}
+
 /////////////////////////////////////////////////////////////////////////
 // EdgeAndNode
 /////////////////////////////////////////////////////////////////////////
@@ -345,25 +403,38 @@ std::string EdgeAndNode::DebugString() const {
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
+  Node* old_head = current_head_->GetRootNode();
   Node* new_head = nullptr;
-  for (auto& n : current_head_->Edges()) {
+  // Search through existing children whether that move already has node.
+  for (auto& n : old_head->Edges()) {
     if (n.GetMove() == move) {
-      new_head = n.GetOrSpawnNode(current_head_);
+      new_head = n.GetOrSpawnNode(old_head);
       break;
     }
   }
-  current_head_->ReleaseChildrenExceptOne(new_head);
-  current_head_ =
-      new_head ? new_head : current_head_->CreateSingleChildNode(move);
+  // Deallocate nodes from other moves.
+  old_head->ReleaseChildrenExceptOne(new_head);
+
+  // If a node for a move was not there, create it.
+  if (!new_head) new_head = old_head->CreateSingleChildNode(move);
+
+  // Detach node for a new head if it's not already detached.
+  if (!new_head->HasDetachedSubtree()) new_head->DetachSubtree();
+
+  // Reattach old head to its parent.
+  if (current_head_->HasParent()) current_head_->Reattach();
+
+  // Update current head to a detached subtree.
+  current_head_ = new_head->GetDetachedSubtree();
   history_.Append(move);
 }
 
 void NodeTree::TrimTreeAtHead() {
-  auto tmp = std::move(current_head_->sibling_);
+  Node* head = current_head_->GetRootNode();
+  assert(!head->sibling_);
   // Send dependent nodes for GC instead of destroying them immediately.
-  gNodeGc.AddToGcQueue(std::move(current_head_->child_));
-  *current_head_ = Node(current_head_->GetParent(), current_head_->index_);
-  current_head_->sibling_ = std::move(tmp);
+  gNodeGc.AddToGcQueue(std::move(head->child_));
+  *head = Node(head->GetParent(), head->index_);
 }
 
 void NodeTree::ResetToPosition(const std::string& starting_fen,
@@ -372,21 +443,23 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   int no_capture_ply;
   int full_moves;
   starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
+  if (game_tree_ && history_.Starting().GetBoard() != starting_board) {
     // Completely different position.
     DeallocateTree();
   }
 
-  if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node>(nullptr, 0);
+  if (!game_tree_) {
+    game_tree_ =
+        std::make_unique<SubTree>(nullptr, std::make_unique<Node>(nullptr, 0));
   }
 
   history_.Reset(starting_board, no_capture_ply,
                  full_moves * 2 - (starting_board.flipped() ? 1 : 2));
 
-  Node* old_head = current_head_;
-  current_head_ = gamebegin_node_.get();
-  bool seen_old_head = (gamebegin_node_.get() == old_head);
+  SubTree* old_head = current_head_;
+  bool seen_old_head = (game_tree_.get() == old_head);
+  current_head_ = game_tree_.get();
+
   for (const auto& move : moves) {
     MakeMove(move);
     if (old_head == current_head_) seen_old_head = true;
@@ -399,14 +472,16 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously trimmed; we need to reset current_head_ in that case.
   // Also, if the current_head_ is terminal, reset that as well to allow forced
   // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
+  if (!seen_old_head || current_head_->GetRootNode()->IsTerminal()) {
+    TrimTreeAtHead();
+  }
 }
 
 void NodeTree::DeallocateTree() {
-  // Same as gamebegin_node_.reset(), but actual deallocation will happen in
+  // Same as game_tree_.reset(), but actual deallocation will happen in
   // GC thread.
-  gNodeGc.AddToGcQueue(std::move(gamebegin_node_));
-  gamebegin_node_ = nullptr;
+  gNodeGc.AddToGcQueue(std::move(game_tree_->GetRootNode()->child_));
+  game_tree_ = nullptr;
   current_head_ = nullptr;
 }
 

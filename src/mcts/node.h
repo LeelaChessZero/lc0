@@ -73,6 +73,7 @@ namespace lczero {
 //                                       +------------+
 
 class Node;
+class SubTree;
 class Edge {
  public:
   // Returns move from the point of view of the player making it (if as_opponent
@@ -107,6 +108,9 @@ class EdgeList {
  public:
   EdgeList() {}
   EdgeList(MoveList moves);
+  EdgeList(EdgeList&&);
+  EdgeList& operator=(EdgeList&&);
+
   Edge* get() const { return edges_.get(); }
   Edge& operator[](size_t idx) const { return edges_[idx]; }
   operator bool() const { return static_cast<bool>(edges_); }
@@ -205,7 +209,18 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
+  bool HasDetachedSubtree() const { return static_cast<bool>(subtree_); }
+  void DetachSubtree();
+  void ReattachSubtree();
+  SubTree* GetDetachedSubtree() const {
+    assert(HasDetachedSubtree());
+    return subtree_.get();
+  }
+
  private:
+  Node& operator=(Node&& other) = default;
+  void FixChildrenParents();
+
   // List of edges.
   EdgeList edges_;
   // Index of this node is parent's edge list.
@@ -233,6 +248,8 @@ class Node {
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
+  // If that node is a stub of a detached subtree, pointer to a subtree.
+  std::unique_ptr<SubTree> subtree_;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -316,7 +333,7 @@ class Edge_Iterator : public EdgeAndNode {
 
   // Creates "begin()" iterator. Also happens to be a range constructor.
   Edge_Iterator(const EdgeList& edges, Ptr node_ptr)
-      : EdgeAndNode(edges.size() ? edges.get() : nullptr, nullptr),
+      : EdgeAndNode(edges ? edges.get() : nullptr, nullptr),
         node_ptr_(node_ptr),
         total_count_(edges.size()) {
     if (edge_) Actualize();
@@ -418,6 +435,26 @@ class Node::NodeRange {
   friend class Node;
 };
 
+class SubTree {
+ public:
+  SubTree(Node* parent_node, std::unique_ptr<Node> detached_node);
+
+  // DO NOT SUBMIT add comments
+  Node* GetRootNode() const { return root_.get(); }
+  bool HasParent() const { return parent_node_ != nullptr; }
+  // After subtree is reattached, the instance of SubTree class is destroyed,
+  // so when this funciton returns, there's no SubTree{}.
+  void Reattach() { parent_node_->ReattachSubtree(); }
+
+ private:
+ public:  // DO NOT SUBMIT
+  // Root of a subtree.
+  std::unique_ptr<Node> root_;
+
+  // A node of the same position as root_, but in parent tree.
+  Node* parent_node_ = nullptr;
+};
+
 class NodeTree {
  public:
   ~NodeTree() { DeallocateTree(); }
@@ -434,16 +471,18 @@ class NodeTree {
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
   bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }
-  Node* GetCurrentHead() const { return current_head_; }
-  Node* GetGameBeginNode() const { return gamebegin_node_.get(); }
+  // Regurns root of head subtree.
+  Node* GetCurrentHeadNode() const { return current_head_->GetRootNode(); }
+  // Returns game root node.
+  Node* GetGameBeginNode() const { return game_tree_->GetRootNode(); }
   const PositionHistory& GetPositionHistory() const { return history_; }
 
  private:
   void DeallocateTree();
-  // A node which to start search from.
-  Node* current_head_ = nullptr;
-  // Root node of a game tree.
-  std::unique_ptr<Node> gamebegin_node_;
+  // A subtree from which so start search.
+  SubTree* current_head_ = nullptr;
+  // Root game subtree.
+  std::unique_ptr<SubTree> game_tree_;
   PositionHistory history_;
 };
 

@@ -57,8 +57,8 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
   }
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads,
-                        bool training, bool enable_resign) {
+void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
+                        bool enable_resign) {
   bool blacks_move = false;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -89,8 +89,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads,
 
     if (training) {
       // Append training data. The GameResult is later overwritten.
-      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
-          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
+      training_data_.push_back(
+          tree_[idx]->GetCurrentHeadNode()->GetV3TrainingData(
+              GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
     }
 
     float eval = search_->GetBestEval();
@@ -117,7 +118,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads,
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
   bool flip = !tree_[0]->IsBlackToMove();
-  for (Node* node = tree_[0]->GetCurrentHead();
+  for (Node* node = tree_[0]->GetCurrentHeadNode();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
     moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove(flip));
     flip = !flip;

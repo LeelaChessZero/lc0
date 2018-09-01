@@ -99,7 +99,7 @@ Search::Search(const NodeTree& tree, Network* network,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb)
-    : root_node_(tree.GetCurrentHead()),
+    : root_node_(tree.GetCurrentHeadNode()),
       cache_(cache),
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
