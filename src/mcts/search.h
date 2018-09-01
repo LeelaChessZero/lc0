@@ -51,6 +51,46 @@ struct SearchLimits {
   MoveList searchmoves;
 };
 
+struct SearchParams {
+ public:
+  SearchParams(const OptionsDict& options);
+
+  // Populates UciOptions with search parameters.
+  static void PopulateUciParams(OptionsParser* options);
+
+  // Strings for UCI params. So that others can override defaults.
+  static const char* kMiniBatchSizeStr;
+  static const char* kMaxPrefetchBatchStr;
+  static const char* kCpuctStr;
+  static const char* kTemperatureStr;
+  static const char* kTempDecayMovesStr;
+  static const char* kNoiseStr;
+  static const char* kVerboseStatsStr;
+  static const char* kAggressiveTimePruningStr;
+  static const char* kFpuReductionStr;
+  static const char* kCacheHistoryLengthStr;
+  static const char* kPolicySoftmaxTempStr;
+  static const char* kAllowedNodeCollisionsStr;
+  static const char* kOutOfOrderEvalStr;
+  static const char* kStickyCheckmateStr;
+
+  // External parameters.
+  const int kMiniBatchSize;
+  const int kMaxPrefetchBatch;
+  const float kCpuct;
+  const float kTemperature;
+  const int kTempDecayMoves;
+  const bool kNoise;
+  const bool kVerboseStats;
+  const float kAggressiveTimePruning;
+  const float kFpuReduction;
+  const int kCacheHistoryLength;
+  const float kPolicySoftmaxTemp;
+  const int kAllowedNodeCollisions;
+  const bool kOutOfOrderEval;
+  const bool kStickyCheckmate;
+};
+
 class Search {
  public:
   Search(const NodeTree& tree, Network* network,
@@ -60,9 +100,6 @@ class Search {
          SyzygyTablebase* syzygy_tb);
 
   ~Search();
-
-  // Populates UciOptions with search parameters.
-  static void PopulateUciParams(OptionsParser* options);
 
   // Starts worker threads and returns immediately.
   void StartThreads(size_t how_many);
@@ -88,24 +125,6 @@ class Search {
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
   float GetBestEval() const;
-
-  // Strings for UCI params. So that others can override defaults.
-  // TODO(mooskagh) There are too many options for now. Factor out that into a
-  // separate class.
-  static const char* kMiniBatchSizeStr;
-  static const char* kMaxPrefetchBatchStr;
-  static const char* kCpuctStr;
-  static const char* kTemperatureStr;
-  static const char* kTempDecayMovesStr;
-  static const char* kNoiseStr;
-  static const char* kVerboseStatsStr;
-  static const char* kAggressiveTimePruningStr;
-  static const char* kFpuReductionStr;
-  static const char* kCacheHistoryLengthStr;
-  static const char* kPolicySoftmaxTempStr;
-  static const char* kAllowedNodeCollisionsStr;
-  static const char* kOutOfOrderEvalStr;
-  static const char* kStickyCheckmateStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -181,21 +200,9 @@ class Search {
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
-  // External parameters.
-  const int kMiniBatchSize;
-  const int kMaxPrefetchBatch;
-  const float kCpuct;
-  const float kTemperature;
-  const int kTempDecayMoves;
-  const bool kNoise;
-  const bool kVerboseStats;
-  const float kAggressiveTimePruning;
-  const float kFpuReduction;
-  const int kCacheHistoryLength;
-  const float kPolicySoftmaxTemp;
-  const int kAllowedNodeCollisions;
-  const bool kOutOfOrderEval;
-  const bool kStickyCheckmate;
+
+  // Command line / UCI parameters that affect search.
+  SearchParams params_;
 
   friend class SearchWorker;
 };

@@ -42,23 +42,26 @@
 
 namespace lczero {
 
-const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
-const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
-const char* Search::kCpuctStr = "Cpuct MCTS option";
-const char* Search::kTemperatureStr = "Initial temperature";
-const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
-const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
-const char* Search::kVerboseStatsStr = "Display verbose move stats";
-const char* Search::kAggressiveTimePruningStr =
+const char* SearchParams::kMiniBatchSizeStr = "Minibatch size for NN inference";
+const char* SearchParams::kMaxPrefetchBatchStr =
+    "Max prefetch nodes, per NN call";
+const char* SearchParams::kCpuctStr = "Cpuct MCTS option";
+const char* SearchParams::kTemperatureStr = "Initial temperature";
+const char* SearchParams::kTempDecayMovesStr = "Moves with temperature decay";
+const char* SearchParams::kNoiseStr = "Add Dirichlet noise at root node";
+const char* SearchParams::kVerboseStatsStr = "Display verbose move stats";
+const char* SearchParams::kAggressiveTimePruningStr =
     "Aversion to search if change unlikely";
-const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
-const char* Search::kCacheHistoryLengthStr =
+const char* SearchParams::kFpuReductionStr = "First Play Urgency Reduction";
+const char* SearchParams::kCacheHistoryLengthStr =
     "Length of history to include in cache";
-const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
-const char* Search::kAllowedNodeCollisionsStr =
+const char* SearchParams::kPolicySoftmaxTempStr = "Policy softmax temperature";
+const char* SearchParams::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
-const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
-const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
+const char* SearchParams::kOutOfOrderEvalStr =
+    "Out-of-order cache backpropagation";
+const char* SearchParams::kStickyCheckmateStr =
+    "Ignore alternatives to checkmate";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -67,7 +70,27 @@ const int kSmartPruningToleranceMs = 200;
 const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
 
-void Search::PopulateUciParams(OptionsParser* options) {
+//////////////////////////////////////////////////////////////////////////////
+// SearchParams
+//////////////////////////////////////////////////////////////////////////////
+
+SearchParams::SearchParams(const OptionsDict& options)
+    : kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
+      kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
+      kCpuct(options.Get<float>(kCpuctStr)),
+      kTemperature(options.Get<float>(kTemperatureStr)),
+      kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
+      kNoise(options.Get<bool>(kNoiseStr)),
+      kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
+      kAggressiveTimePruning(options.Get<float>(kAggressiveTimePruningStr)),
+      kFpuReduction(options.Get<float>(kFpuReductionStr)),
+      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
+      kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
+      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+
+void SearchParams::PopulateUciParams(OptionsParser* options) {
   // Here the "safe defaults" are listed.
   // Many of them are overridden with optimized defaults in engine.cc and
   // tournament.cc
@@ -94,6 +117,10 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// Search
+//////////////////////////////////////////////////////////////////////////////
+
 Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
@@ -109,20 +136,7 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
-      kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
-      kCpuct(options.Get<float>(kCpuctStr)),
-      kTemperature(options.Get<float>(kTemperatureStr)),
-      kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
-      kNoise(options.Get<bool>(kNoiseStr)),
-      kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
-      kAggressiveTimePruning(options.Get<float>(kAggressiveTimePruningStr)),
-      kFpuReduction(options.Get<float>(kFpuReductionStr)),
-      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
-      kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      params_(options) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -195,9 +209,9 @@ int64_t Search::GetTimeSinceStart() const {
 void Search::SendMovesStats() const {
   const float parent_q =
       -root_node_->GetQ() -
-      kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
+      params_.kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
   const float U_coeff =
-      kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+      params_.kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : root_node_->Edges()) edges.push_back(edge);
@@ -267,7 +281,7 @@ NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
   PositionHistory history(played_history_);  // Is it worth it to move this
   // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
   history.Append(edge.GetMove());
-  auto hash = history.HashLast(kCacheHistoryLength + 1);
+  auto hash = history.HashLast(params_.kCacheHistoryLength + 1);
   NNCacheLock nneval(cache_, hash);
   return nneval;
 }
@@ -299,7 +313,7 @@ void Search::MaybeTriggerStop() {
   // If we are the first to see that stop is needed.
   if (stop_ && !responded_bestmove_) {
     SendUciInfo();
-    if (kVerboseStats) SendMovesStats();
+    if (params_.kVerboseStats) SendMovesStats();
     best_move_ = GetBestMoveInternal();
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
@@ -308,7 +322,7 @@ void Search::MaybeTriggerStop() {
 }
 
 void Search::UpdateRemainingMoves() {
-  if (kAggressiveTimePruning <= 0.0f) return;
+  if (params_.kAggressiveTimePruning <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
@@ -322,7 +336,7 @@ void Search::UpdateRemainingMoves() {
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
-          remaining_time * nps / kAggressiveTimePruning / 1000;
+          remaining_time * nps / params_.kAggressiveTimePruning / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -332,8 +346,8 @@ void Search::UpdateRemainingMoves() {
   if (limits_.visits >= 0) {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
-    auto remaining_visits =
-        limits_.visits - total_playouts_ - initial_visits_ + kMiniBatchSize - 1;
+    auto remaining_visits = limits_.visits - total_playouts_ - initial_visits_ +
+                            params_.kMiniBatchSize - 1;
 
     if (remaining_visits < remaining_playouts_)
       remaining_playouts_ = remaining_visits;
@@ -342,7 +356,7 @@ void Search::UpdateRemainingMoves() {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     auto remaining_playouts =
-        limits_.visits - total_playouts_ + kMiniBatchSize + 1;
+        limits_.visits - total_playouts_ + params_.kMiniBatchSize + 1;
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
   }
@@ -389,14 +403,14 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   if (responded_bestmove_) return best_move_;
   if (!root_node_->HasChildren()) return {};
 
-  float temperature = kTemperature;
-  if (temperature && kTempDecayMoves) {
+  float temperature = params_.kTemperature;
+  if (temperature && params_.kTempDecayMoves) {
     int moves = played_history_.Last().GetGamePly() / 2;
-    if (moves >= kTempDecayMoves) {
+    if (moves >= params_.kTempDecayMoves) {
       temperature = 0.0;
     } else {
-      temperature *=
-          static_cast<float>(kTempDecayMoves - moves) / kTempDecayMoves;
+      temperature *= static_cast<float>(params_.kTempDecayMoves - moves) /
+                     params_.kTempDecayMoves;
     }
   }
 
@@ -620,8 +634,8 @@ void SearchWorker::GatherMinibatch() {
   // iteration so that search can exit.
   // TODO(crem) change that to checking search_->stop_ when bestmove reporting
   // is in a separate thread.
-  while (minibatch_size < search_->kMiniBatchSize &&
-         number_out_of_order < search_->kMiniBatchSize) {
+  while (minibatch_size < search_->params_.kMiniBatchSize &&
+         number_out_of_order < search_->params_.kMiniBatchSize) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
@@ -632,7 +646,7 @@ void SearchWorker::GatherMinibatch() {
     // There was a collision. If limit has been reached, return, otherwise
     // just start search of another node.
     if (picked_node.is_collision) {
-      if (++collisions_found > search_->kAllowedNodeCollisions) return;
+      if (++collisions_found > search_->params_.kAllowedNodeCollisions) return;
       continue;
     }
     ++minibatch_size;
@@ -653,7 +667,7 @@ void SearchWorker::GatherMinibatch() {
     // If out of order eval is enabled and the node to compute we added last
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
-    if (search_->kOutOfOrderEval) {
+    if (search_->params_.kOutOfOrderEval) {
       if (node->IsTerminal() || picked_node.is_cache_hit) {
         // Perform out of order eval for the last entry in minibatch_.
         FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
@@ -708,15 +722,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     if (!node->HasChildren()) return {node, false, depth};
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    float puct_mult =
-        search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+    float puct_mult = search_->params_.kCpuct *
+                      std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = -100.0f;
     int possible_moves = 0;
     float parent_q =
-        ((is_root_node && search_->kNoise) || !search_->kFpuReduction)
+        ((is_root_node && search_->params_.kNoise) ||
+         !search_->params_.kFpuReduction)
             ? -node->GetQ()
-            : -node->GetQ() -
-                  search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
+            : -node->GetQ() - search_->params_.kFpuReduction *
+                                  std::sqrt(node->GetVisitedPolicy());
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -738,7 +753,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
-      if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
+      if (search_->params_.kStickyCheckmate && Q == 1.0f &&
+          child.IsTerminal()) {
         // If we find a checkmate, then the confidence is infinite, so ignore U.
         best_edge = child;
         break;
@@ -827,7 +843,7 @@ void SearchWorker::ExtendNode(Node* node) {
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
-  auto hash = history_.HashLast(search_->kCacheHistoryLength + 1);
+  auto hash = history_.HashLast(search_->params_.kCacheHistoryLength + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) return true;
@@ -865,10 +881,10 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
   if (computation_->GetCacheMisses() > 0 &&
-      computation_->GetCacheMisses() < search_->kMaxPrefetchBatch) {
+      computation_->GetCacheMisses() < search_->params_.kMaxPrefetchBatch) {
     history_.Trim(search_->played_history_.GetLength());
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
-    PrefetchIntoCache(search_->root_node_, search_->kMaxPrefetchBatch -
+    PrefetchIntoCache(search_->root_node_, search_->params_.kMaxPrefetchBatch -
                                                computation_->GetCacheMisses());
   }
 }
@@ -899,8 +915,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   // Populate all subnodes and their scores.
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
-  float puct_mult =
-      search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  float puct_mult = search_->params_.kCpuct *
+                    std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
   const float parent_q = -node->GetQ();
   for (auto edge : node->Edges()) {
@@ -986,8 +1002,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
-    if (search_->kPolicySoftmaxTemp != 1.0f) {
-      p = pow(p, 1 / search_->kPolicySoftmaxTemp);
+    if (search_->params_.kPolicySoftmaxTemp != 1.0f) {
+      p = pow(p, 1 / search_->params_.kPolicySoftmaxTemp);
     }
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
@@ -999,7 +1015,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (search_->kNoise && node == search_->root_node_) {
+  if (search_->params_.kNoise && node == search_->root_node_) {
     ApplyDirichletNoise(node, 0.25, 0.3);
   }
 }
