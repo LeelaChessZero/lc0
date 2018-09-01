@@ -206,15 +206,15 @@ class Node {
   std::string DebugString() const;
 
  private:
-  // Turns out the alignment and padding of the Node was costing more than 8
-  // bytes on modern compilers. Simply rearranging the members leads to
-  // significant savings on padding. As such, instead of being organized
-  // conceptually, the members are merely ordered from largest to smallest.
+  // To minimize the number of padding bytes and to avoid having unnecessary
+  // padding when new fields are added, we arrange the fields by size, largest
+  // to smallest.
 
   // TODO: shrink the padding on this somehow? It takes 16 bytes even though
   // only 10 are real! Maybe even merge it into this class??
   EdgeList edges_;
 
+  // 8 byte fields.
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
@@ -222,6 +222,7 @@ class Node {
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
 
+  // 4 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored. This is from the perspective
   // of the player who "just" moved to reach this position, rather than from the
@@ -232,6 +233,7 @@ class Node {
   // How many completed visits this node had.
   uint32_t n_ = 0;
 
+  // 2 byte fields.
   // Index of this node is parent's edge list.
   uint16_t index_;
   // (AKA virtual loss.) How many threads currently process this node (started
@@ -239,9 +241,9 @@ class Node {
   // to pick in MCTS, and also when selecting the best move.
   uint16_t n_in_flight_ = 0;
 
+  // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
   bool is_terminal_ = false;
-
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -250,6 +252,9 @@ class Node {
   friend class Node_Iterator;
   friend class Edge;
 };
+
+// A basic sanity check. This must be adjusted when Node members are adjusted.
+static_assert(sizeof(Node) == 64, "Unexpected size of Node");
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
