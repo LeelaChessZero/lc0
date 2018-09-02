@@ -159,7 +159,7 @@ class Search {
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
-  EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
+  static EdgeAndNode GetBestChildNoTemperature(Node* parent);
   EdgeAndNode GetBestChildWithTemperature(Node* parent,
                                           float temperature) const;
 
@@ -167,6 +167,7 @@ class Search {
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
+  void UpdateBestMove();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
   // Sets stop to true and notifies watchdog thread.
   void FireStopInternal();
@@ -216,10 +217,8 @@ class Search {
   const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
-  EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
-  int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int>::max();
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
@@ -271,10 +270,13 @@ class SearchWorker {
   // 6. Propagate the new nodes' information to all their parents in the tree.
   void DoBackupUpdate();
 
-  // 7. Update the Search's status and progress information.
-  void UpdateCounters();
-
   Node* GetRootNode() { return tree_->GetRootNode(); }
+
+  int64_t GetTotalPlayouts() const {
+    return total_playouts_.load(std::memory_order_acquire);
+  }
+
+  const EdgeAndNode& GetBestMoveEdge() const { return best_move_edge_; }
 
  private:
   struct NodeToProcess {
@@ -309,6 +311,9 @@ class SearchWorker {
   NNCache* cache_;
   const SearchParams params_;
   bool is_root_worker_ = true;  // DO NOT SUBMIT
+
+  std::atomic<int64_t> total_playouts_;
+  EdgeAndNode best_move_edge_;
 };
 
 }  // namespace lczero

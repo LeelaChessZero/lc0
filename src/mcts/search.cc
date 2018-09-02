@@ -164,22 +164,25 @@ Node* Search::GetRootNode() const {
 }
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  if (!best_move_edge_) return;
-  last_outputted_best_move_edge_ = best_move_edge_.edge();
-  uci_info_.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
+  const auto& best_move_edge =
+      worker_overlord_.GetRootWorker()->GetBestMoveEdge();
+  if (!best_move_edge) return;
+  SearchWorker* root_worker = worker_overlord_.GetRootWorker();
+  auto total_playouts = root_worker->GetTotalPlayouts();
+  last_outputted_best_move_edge_ = best_move_edge.edge();
+  uci_info_.depth = cum_depth_ / (total_playouts ? total_playouts : 1);
   uci_info_.seldepth = max_depth_;
   uci_info_.time = GetTimeSinceStart();
-  uci_info_.nodes = total_playouts_ + initial_visits_;
+  uci_info_.nodes = total_playouts + initial_visits_;
   uci_info_.hashfull =
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
-  uci_info_.nps =
-      uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
-  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0));
+  uci_info_.nps = uci_info_.time ? (total_playouts * 1000 / uci_info_.time) : 0;
+  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge.GetQ(0));
   uci_info_.tb_hits = tb_hits_.load(std::memory_order_acquire);
   uci_info_.pv.clear();
 
   bool flip = played_history_.IsBlackToMove();
-  for (auto iter = best_move_edge_; iter;
+  for (auto iter = best_move_edge; iter;
        iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
     uci_info_.pv.push_back(iter.GetMove(flip));
     if (!iter.node()) break;  // Last edge was dangling, cannot continue.
@@ -193,11 +196,16 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 void Search::MaybeOutputInfo() {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  if (!responded_bestmove_ && best_move_edge_ &&
-      (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
+  const auto& best_move_edge =
+      worker_overlord_.GetRootWorker()->GetBestMoveEdge();
+  SearchWorker* root_worker = worker_overlord_.GetRootWorker();
+  auto total_playouts = root_worker->GetTotalPlayouts();
+
+  if (!responded_bestmove_ && best_move_edge &&
+      (best_move_edge.edge() != last_outputted_best_move_edge_ ||
        uci_info_.depth !=
            static_cast<int>(cum_depth_ /
-                            (total_playouts_ ? total_playouts_ : 1)) ||
+                            (total_playouts ? total_playouts : 1)) ||
        uci_info_.seldepth != max_depth_ ||
        uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
     SendUciInfo();
@@ -294,21 +302,24 @@ NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
 void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
+  SearchWorker* root_worker = worker_overlord_.GetRootWorker();
+  auto total_playouts = root_worker->GetTotalPlayouts();
+
   // Already responded bestmove, nothing to do here.
   if (responded_bestmove_) return;
   // Don't stop when the root node is not yet expanded.
-  if (total_playouts_ == 0) return;
+  if (total_playouts == 0) return;
   // If smart pruning tells to stop (best move found), stop.
   if (found_best_move_) {
     FireStopInternal();
   }
   // Stop if reached playouts limit.
-  if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
+  if (limits_.playouts >= 0 && total_playouts >= limits_.playouts) {
     FireStopInternal();
   }
   // Stop if reached visits limit.
   if (limits_.visits >= 0 &&
-      total_playouts_ + initial_visits_ >= limits_.visits) {
+      total_playouts + initial_visits_ >= limits_.visits) {
     FireStopInternal();
   }
   // Stop if reached time limit.
@@ -322,19 +333,22 @@ void Search::MaybeTriggerStop() {
     best_move_ = GetBestMoveInternal();
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
-    best_move_edge_ = EdgeAndNode();
+    // best_move_edge_ = EdgeAndNode();  Why was it needed? DO NOT SUBMIT
   }
 }
 
 void Search::UpdateRemainingMoves() {
   if (params_.kAggressiveTimePruning <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
+  SearchWorker* root_worker = worker_overlord_.GetRootWorker();
+  auto total_playouts = root_worker->GetTotalPlayouts();
+
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
   if (limits_.time_ms >= 0) {
     auto time_since_start = GetTimeSinceStart();
     if (time_since_start > kSmartPruningToleranceMs) {
-      auto nps = (1000LL * total_playouts_ + kSmartPruningToleranceNodes) /
+      auto nps = (1000LL * total_playouts + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
@@ -351,7 +365,7 @@ void Search::UpdateRemainingMoves() {
   if (limits_.visits >= 0) {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
-    auto remaining_visits = limits_.visits - total_playouts_ - initial_visits_ +
+    auto remaining_visits = limits_.visits - total_playouts - initial_visits_ +
                             params_.kMiniBatchSize - 1;
 
     if (remaining_visits < remaining_playouts_)
@@ -361,7 +375,7 @@ void Search::UpdateRemainingMoves() {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     auto remaining_playouts =
-        limits_.visits - total_playouts_ + params_.kMiniBatchSize + 1;
+        limits_.visits - total_playouts + params_.kMiniBatchSize + 1;
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
   }
@@ -434,12 +448,12 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
 }
 
 // Returns a child with most visits.
-EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
-  Node* root_node = GetRootNode();
-  MoveList root_limit;
-  if (parent == root_node) {
-    PopulateRootMoveLimit(&root_limit);
-  }
+EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) {
+  /*  Node* root_node = GetRootNode();
+    MoveList root_limit;
+    if (parent == root_node) {
+      PopulateRootMoveLimit(&root_limit);
+    } */
   EdgeAndNode best_edge;
   // Best child is selected using the following criteria:
   // * Largest number of playouts.
@@ -448,11 +462,11 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   //   * If that number is larger than 0, the one with larger eval wins.
   std::tuple<int, float, float> best(-1, 0.0, 0.0);
   for (auto edge : parent->Edges()) {
-    if (parent == root_node && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
-      continue;
-    }
+    /*    if (parent == root_node && !root_limit.empty() &&
+            std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+                root_limit.end()) {
+          continue;
+        } */
     std::tuple<int, float, float> val(edge.GetN(), edge.GetQ(-10.0),
                                       edge.GetP());
     if (val > best) {
@@ -504,51 +518,6 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   return {};
 }
 
-void Search::WorkerThread() {
-  SingleThreadBatchingNetwork network(network_);
-  while (IsSearchActive()) {
-    network.Reset();
-    std::vector<std::unique_ptr<SearchWorker>> workers;
-
-    while (network.GetTotalBatchSize() < params_.kMiniBatchSize) {
-      auto worker = worker_overlord_.AquireWorker();
-      if (!worker) break;
-      // 1. Initialize internal structures.
-      // @computation is the computation to use on this iteration.
-      worker->InitializeIteration(network.NewComputation());
-
-      // 2. Gather minibatch.
-      worker->GatherMinibatch(params_.kMiniBatchSize -
-                              network.GetTotalBatchSize());
-
-      // 3. Prefetch into cache.
-      worker->MaybePrefetchIntoCache(params_.kMiniBatchSize -
-                                     network.GetTotalBatchSize());
-      workers.push_back(std::move(worker));
-    }
-
-    // 4. Run NN computation.
-    for (auto& worker : workers) worker->RunNNComputation();
-
-    for (auto& worker : workers) {
-      // 5. Retrieve NN computations (and terminal values) into nodes.
-      worker->FetchMinibatchResults();
-
-      // 6. Propagate the new nodes' information to all their parents in the
-      // tree.
-      worker->DoBackupUpdate();
-
-      // 7. Update the Search's status and progress information.
-      worker->UpdateCounters();
-      worker_overlord_.ReleaseWorker(std::move(worker));
-    }
-
-    if (workers.empty()) {
-      // DO NOT SUBMIT, do some rest
-    }
-  }
-}
-
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
   // First thread is a watchdog thread.
@@ -598,6 +567,54 @@ void Search::WatchdogThread() {
   MaybeTriggerStop();
 }
 
+void Search::WorkerThread() {
+  SingleThreadBatchingNetwork network(network_);
+  while (IsSearchActive()) {
+    network.Reset();
+    std::vector<std::unique_ptr<SearchWorker>> workers;
+
+    while (network.GetTotalBatchSize() < params_.kMiniBatchSize) {
+      auto worker = worker_overlord_.AquireWorker();
+      if (!worker) break;
+      // 1. Initialize internal structures.
+      // @computation is the computation to use on this iteration.
+      worker->InitializeIteration(network.NewComputation());
+
+      // 2. Gather minibatch.
+      worker->GatherMinibatch(params_.kMiniBatchSize -
+                              network.GetTotalBatchSize());
+
+      // 3. Prefetch into cache.
+      worker->MaybePrefetchIntoCache(params_.kMiniBatchSize -
+                                     network.GetTotalBatchSize());
+      workers.push_back(std::move(worker));
+    }
+
+    // 4. Run NN computation.
+    for (auto& worker : workers) worker->RunNNComputation();
+
+    for (auto& worker : workers) {
+      // 5. Retrieve NN computations (and terminal values) into nodes.
+      worker->FetchMinibatchResults();
+
+      // 6. Propagate the new nodes' information to all their parents in the
+      // tree.
+      worker->DoBackupUpdate();
+
+      // DO NOT SUBMIT
+      worker_overlord_.ReleaseWorker(std::move(worker));
+    }
+
+    UpdateRemainingMoves();  // Updates smart pruning counters.
+    MaybeOutputInfo();
+    MaybeTriggerStop();
+
+    if (workers.empty()) {
+      // DO NOT SUBMIT, do some rest
+    }
+  }
+}
+
 void Search::FireStopInternal() REQUIRES(counters_mutex_) {
   stop_ = true;
   watchdog_cv_.notify_all();
@@ -630,39 +647,6 @@ Search::~Search() {
 //////////////////////////////////////////////////////////////////////////////
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
-
-// Does one full iteration of MCTS search:
-// 1. Initialize internal structures.
-// 2. Gather minibatch.
-// 3. Prefetch into cache.
-// 4. Run NN computation.
-// 5. Retrieve NN computations (and terminal values) into nodes.
-// 6. Propagate the new nodes' information to all their parents in the tree.
-// 7. Update the Search's status and progress information.
-//  void ExecuteOneIteration();
-
-// void SearchWorker::ExecuteOneIteration() {
-//   // 1. Initialize internal structures.
-//   InitializeIteration(search_->network_->NewComputation());
-
-//   // 2. Gather minibatch.
-//   GatherMinibatch();
-
-//   // 3. Prefetch into cache.
-//   MaybePrefetchIntoCache();
-
-//   // 4. Run NN computation.
-//   RunNNComputation();
-
-//   // 5. Retrieve NN computations (and terminal values) into nodes.
-//   FetchMinibatchResults();
-
-//   // 6. Propagate the new nodes' information to all their parents in the
-//   tree. DoBackupUpdate();
-
-//   // 7. Update the Search's status and progress information.
-//   UpdateCounters();
-// }
 
 // 1. Initialize internal structures.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1102,44 +1086,40 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Q will be flipped for opponent.
     v = -v;
 
-    // Update the stats.
-    // Best move.
-    // DO NOT SUBMIT
-    /*
-    if (n->GetParent() == nullptr &&
-        search_->best_move_edge_.GetN() <= n->GetN()) {
-      search_->best_move_edge_ =
-          search_->GetBestChildNoTemperature(search_->root_node_);
-    }*/
-  } /*
-   ++search_->total_playouts_;
-   search_->cum_depth_ += node_to_process.depth;
-   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
-   */
+    // Update best move.
+    if (n->GetParent() == nullptr && best_move_edge_.GetN() <= n->GetN()) {
+      best_move_edge_ = Search::GetBestChildNoTemperature(GetRootNode());
+    }
+  }
+  total_playouts_.fetch_add(1, std::memory_order_release);
+  // DO NOT SUBMIT
+  /* search_->cum_depth_ += node_to_process.depth;
+  search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
+  */
 }  // namespace lczero
 
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::UpdateCounters() {
-  // DO NOT SUBMIT
-  // search_->UpdateRemainingMoves();  // Updates smart pruning counters.
-  // search_->MaybeOutputInfo();
-  // search_->MaybeTriggerStop();
-  /*
-    // If this thread had no work, sleep for some milliseconds.
-    // Collisions don't count as work, so have to enumerate to find out if there
-    // was anything done.
-    bool work_done = false;
-    for (NodeToProcess& node_to_process : minibatch_) {
-      if (!node_to_process.is_collision) {
-        work_done = true;
-        break;
-      }
+// void SearchWorker::UpdateCounters() {
+// DO NOT SUBMIT
+// search_->UpdateRemainingMoves();  // Updates smart pruning counters.
+// search_->MaybeOutputInfo();
+// search_->MaybeTriggerStop();
+/*
+  // If this thread had no work, sleep for some milliseconds.
+  // Collisions don't count as work, so have to enumerate to find out if there
+  // was anything done.
+  bool work_done = false;
+  for (NodeToProcess& node_to_process : minibatch_) {
+    if (!node_to_process.is_collision) {
+      work_done = true;
+      break;
     }
-    if (!work_done) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    } */
-}
+  }
+  if (!work_done) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  } */
+// }
 
 //////////////////////////////////////////////////////////////////////////////
 // WorkerOverlord
