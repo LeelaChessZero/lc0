@@ -275,24 +275,26 @@ NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
 void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
+  // Already responded bestmove, nothing to do here.
+  if (responded_bestmove_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
   // If smart pruning tells to stop (best move found), stop.
   if (found_best_move_) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached playouts limit.
   if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached visits limit.
   if (limits_.visits >= 0 &&
       total_playouts_ + initial_visits_ >= limits_.visits) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached time limit.
   if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
-    stop_ = true;
+    FireStopInternal();
   }
   // If we are the first to see that stop is needed.
   if (stop_ && !responded_bestmove_) {
@@ -482,7 +484,12 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
-  while (threads_.size() < how_many) {
+  // First thread is a watchdog thread.
+  if (threads_.size() == 0) {
+    threads_.emplace_back([this]() { WatchdogThread(); });
+  }
+  // Start working threads.
+  while (threads_.size() <= how_many) {
     threads_.emplace_back([this]() {
       SearchWorker worker(this);
       worker.RunBlocking();
@@ -490,29 +497,57 @@ void Search::StartThreads(size_t how_many) {
   }
 }
 
-void Search::RunSingleThreaded() {
-  SearchWorker worker(this);
-  worker.RunBlocking();
+void Search::RunBlocking(size_t threads) {
+  StartThreads(threads);
+  Wait();
 }
 
-void Search::RunBlocking(size_t threads) {
-  if (threads == 1) {
-    RunSingleThreaded();
-  } else {
-    StartThreads(threads);
-    Wait();
+bool Search::IsSearchActive() const {
+  Mutex::Lock lock(counters_mutex_);
+  return !stop_;
+}
+
+void Search::WatchdogThread() {
+  while (IsSearchActive()) {
+    {
+      using namespace std::chrono_literals;
+      constexpr auto kMaxWaitTime = 100ms;
+      constexpr auto kMinWaitTime = 1ms;
+      Mutex::Lock lock(counters_mutex_);
+      auto remaining_time = limits_.time_ms >= 0
+                                ? (limits_.time_ms - GetTimeSinceStart()) * 1ms
+                                : kMaxWaitTime;
+      if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
+      if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
+      // There is no real need to have max wait time, and sometimes it's fine
+      // to wait without timeout at all (e.g. in `go nodes` mode), but we
+      // still limit wait time for exotic cases like when pc goes to sleep
+      // mode during thinking.
+      // Minimum wait time is there to prevent busy wait and other thread
+      // starvation.
+      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
+                            [this]()
+                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
+    }
+    MaybeTriggerStop();
   }
+  MaybeTriggerStop();
+}
+
+void Search::FireStopInternal() REQUIRES(counters_mutex_) {
+  stop_ = true;
+  watchdog_cv_.notify_all();
 }
 
 void Search::Stop() {
   Mutex::Lock lock(counters_mutex_);
-  stop_ = true;
+  FireStopInternal();
 }
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
   responded_bestmove_ = true;
-  stop_ = true;
+  FireStopInternal();
 }
 
 void Search::Wait() {
@@ -553,11 +588,6 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 7. Update the Search's status and progress information.
   UpdateCounters();
-}
-
-bool SearchWorker::IsSearchActive() const {
-  Mutex::Lock lock(search_->counters_mutex_);
-  return !search_->stop_;
 }
 
 // 1. Initialize internal structures.
