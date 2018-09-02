@@ -56,7 +56,7 @@ class SingleThreadBatchingNetwork : public Network {
   // Start a fresh batch.
   void Reset();
 
-  // DO NOT SUBMIT
+  // Returns total batch size after reset for all computations together.
   int GetTotalBatchSize() const;
 
  private:

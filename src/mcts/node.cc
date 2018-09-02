@@ -364,14 +364,20 @@ void Node::DetachSubtree() {
 }
 
 void Node::ReattachSubtree() {
+  // Check that there is a subtree to attach.
   assert(HasDetachedSubtree());
+  // Check that no search worker is using this subtree.
+  assert(!subtree_->HasWorker());
+  // Check that root of a subtree was root indeed.
+  assert(nullptr == subtree_->GetRootNode()->parent_);
+  assert(0 == subtree_->GetRootNode()->index_);
+
+  // Take ownership of a subtree.
   std::unique_ptr<SubTree> subtree = std::move(subtree_);
-  assert(nullptr == subtree->GetRootNode()->parent_);
-  assert(0 == subtree->GetRootNode()->index_);
+
   auto index = index_;
   auto parent = parent_;
   std::unique_ptr<Node> sibling = std::move(subtree->GetRootNode()->sibling_);
-  // DO NOT SUBMIT add checks that that subtree is not in use.
   *this = std::move(*subtree->GetRootNode());
   index_ = index;
   parent_ = parent;
@@ -385,6 +391,20 @@ void Node::ReattachSubtree() {
 
 SubTree::SubTree(Node* parent_node, std::unique_ptr<Node> detached_node)
     : root_(std::move(detached_node)), parent_node_(parent_node) {}
+
+bool SubTree::HasWorker() const {
+  return is_used_.load(std::memory_order_acquire);
+}
+
+void SubTree::SetHasAssignedWorker() {
+  assert(!HasWorker());
+  is_used_.store(true, std::memory_order_release);
+}
+
+void SubTree::ResetHasAssignedWorker() {
+  assert(HasWorker());
+  is_used_.store(false, std::memory_order_release);
+}
 
 /////////////////////////////////////////////////////////////////////////
 // EdgeAndNode

@@ -235,21 +235,13 @@ class Search {
   friend class SearchWorker;
 };
 
-// Single thread worker of the search engine.
-// That used to be just a function Search::Worker(), but to parallelize it
-// within one thread, have to split into stages.
+// A worker, doing search on a single subtree. Guaranteed to be ran in one
+// thread at a time.
 class SearchWorker {
  public:
   SearchWorker(const SearchParams& params, const PositionHistory& history,
-               SubTree* tree, NNCache* cache)
-      : tree_(tree),
-        history_length_(history.GetLength()),
-        history_(history),
-        cache_(cache),
-        params_(params) {}
-
-  // Puts subtree back into "available" state.
-  ~SearchWorker() { tree_->MarkUnused(); }
+               SubTree* tree, NNCache* cache, WorkerOverlord* overlord);
+  ~SearchWorker();
 
   // 1. Initialize internal structures.
   // @computation is the computation to use on this iteration.
@@ -270,12 +262,13 @@ class SearchWorker {
   // 6. Propagate the new nodes' information to all their parents in the tree.
   void DoBackupUpdate();
 
+  // Returns root node of a subtree that worker processes.
   Node* GetRootNode() { return tree_->GetRootNode(); }
 
-  int64_t GetTotalPlayouts() const {
-    return total_playouts_.load(std::memory_order_acquire);
-  }
+  // Total playouts that this worker evaluated.
+  int64_t GetTotalPlayouts() const;
 
+  // Returns move from subtree's root (possibly null if not yet known).
   const EdgeAndNode& GetBestMoveEdge() const { return best_move_edge_; }
 
  private:
@@ -299,6 +292,8 @@ class SearchWorker {
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
 
+  bool IsRootWorker() const { return this == overlord_->GetRootWorker(); }
+
   SubTree* tree_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
@@ -310,10 +305,10 @@ class SearchWorker {
   // bool root_move_filter_populated_ = false;
   NNCache* cache_;
   const SearchParams params_;
-  bool is_root_worker_ = true;  // DO NOT SUBMIT
 
   std::atomic<int64_t> total_playouts_;
   EdgeAndNode best_move_edge_;
+  WorkerOverlord* const overlord_;
 };
 
 }  // namespace lczero

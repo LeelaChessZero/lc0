@@ -333,7 +333,6 @@ void Search::MaybeTriggerStop() {
     best_move_ = GetBestMoveInternal();
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
-    // best_move_edge_ = EdgeAndNode();  Why was it needed? DO NOT SUBMIT
   }
 }
 
@@ -567,15 +566,26 @@ void Search::WatchdogThread() {
   MaybeTriggerStop();
 }
 
+// A main search thread. There may be several of those.
 void Search::WorkerThread() {
+  // The requests from multiple detached subtrees will be computed in parallel
+  // through SingleThreadBatchingNetwork adapter/
   SingleThreadBatchingNetwork network(network_);
+
   while (IsSearchActive()) {
+    // Make batching network collect a new batch.
     network.Reset();
+
     std::vector<std::unique_ptr<SearchWorker>> workers;
 
+    // While there is a space in a minibatch, get more workers.
     while (network.GetTotalBatchSize() < params_.kMiniBatchSize) {
+      // Get free worker with a highest priority.
       auto worker = worker_overlord_.AquireWorker();
+
+      // No workers availabe, break.
       if (!worker) break;
+
       // 1. Initialize internal structures.
       // @computation is the computation to use on this iteration.
       worker->InitializeIteration(network.NewComputation());
@@ -591,6 +601,7 @@ void Search::WorkerThread() {
     }
 
     // 4. Run NN computation.
+    // In fact batching network adapter only actually will run computation once.
     for (auto& worker : workers) worker->RunNNComputation();
 
     for (auto& worker : workers) {
@@ -601,7 +612,7 @@ void Search::WorkerThread() {
       // tree.
       worker->DoBackupUpdate();
 
-      // DO NOT SUBMIT
+      // Release the worker back to a pool for other threads to use.
       worker_overlord_.ReleaseWorker(std::move(worker));
     }
 
@@ -610,7 +621,9 @@ void Search::WorkerThread() {
     MaybeTriggerStop();
 
     if (workers.empty()) {
-      // DO NOT SUBMIT, do some rest
+      // TODO(crem) If there was no workers gathered, or not enough workers,
+      //            create new workers and subtrees more aggresively.
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
 }
@@ -648,6 +661,24 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
+SearchWorker::SearchWorker(const SearchParams& params,
+                           const PositionHistory& history, SubTree* tree,
+                           NNCache* cache, WorkerOverlord* overlord)
+    : tree_(tree),
+      history_length_(history.GetLength()),
+      history_(history),
+      cache_(cache),
+      params_(params),
+      overlord_(overlord) {
+  tree_->SetHasAssignedWorker();
+}
+
+SearchWorker::~SearchWorker() { tree_->ResetHasAssignedWorker(); }
+
+int64_t SearchWorker::GetTotalPlayouts() const {
+  return total_playouts_.load(std::memory_order_acquire);
+}
+
 // 1. Initialize internal structures.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
@@ -674,13 +705,14 @@ void SearchWorker::GatherMinibatch(int max_batch_size) {
   int number_out_of_order = 0;
 
   // Gather nodes to process in the current batch.
-  // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
-  // iteration so that search can exit.
+  // If we had too many (kMiniBatchSize) nodes out of order, also interrupt
+  // the iteration so that search can exit.
   // TODO(crem) change that to checking search_->stop_ when bestmove reporting
   // is in a separate thread.
   while (minibatch_size < max_batch_size &&
          number_out_of_order < max_batch_size) {
-    // If there's something to process without touching slow neural net, do it.
+    // If there's something to process without touching slow neural net, do
+    // it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
     minibatch_.emplace_back(PickNodeToExtend());
@@ -741,7 +773,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   history_.Trim(history_length_);
 
   // Fetch the current best root node visits for possible smart pruning.
-  // DO NOT SUBMIT
   // int best_node_n = search_->best_move_edge_.GetN();
 
   // True on first iteration, false as we dive deeper.
@@ -781,18 +812,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         // best_move_node_ could have changed since best_node_n was retrieved.
         // To ensure we have at least one node to expand, always include
         // current best node.
-        // DO NOT SUBMIT
-        /*        if (child != search_->best_move_edge_ &&
-                    search_->remaining_playouts_ <
-                        best_node_n - static_cast<int>(child.GetN())) {
-                  continue;
-                } */
+        // DO NOT SUBMIT   Fix smart pruning!
+        // if (IsRootWorker() && child != search_->best_move_edge_ &&
+        //     search_->remaining_playouts_ <
+        //         best_node_n - static_cast<int>(child.GetN())) {
+        //   continue;
+        // }
+        /*
         // If root move filter exists, make sure move is in the list.
         if (!root_move_filter_.empty() &&
             std::find(root_move_filter_.begin(), root_move_filter_.end(),
                       child.GetMove()) == root_move_filter_.end()) {
           continue;
-        }
+        }*/
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
@@ -807,7 +839,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     /*
     DO NOT SUBMIT
     if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
-      // If there is only one move theoretically possible within remaining time,
+      // If there is only one move theoretically possible within remaining
+    time,
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
       search_->found_best_move_ = true;
@@ -852,7 +885,8 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    // Neither by-position or by-rule termination, but maybe it's a TB position.
+    // Neither by-position or by-rule termination, but maybe it's a TB
+    // position.
     /*if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
         history_.Last().GetNoCaptureNoPawnPly() == 0 &&
         (board.ours() + board.theirs()).count() <=
@@ -1055,7 +1089,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (params_.kNoise && is_root_worker_ && node == tree_->GetRootNode()) {
+  if (params_.kNoise && node == tree_->GetRootNode() && IsRootWorker()) {
     ApplyDirichletNoise(node, 0.25, 0.3);
   }
 }
@@ -1098,29 +1132,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
   */
 }  // namespace lczero
 
-// 7. Update the Search's status and progress information.
-//~~~~~~~~~~~~~~~~~~~~
-// void SearchWorker::UpdateCounters() {
-// DO NOT SUBMIT
-// search_->UpdateRemainingMoves();  // Updates smart pruning counters.
-// search_->MaybeOutputInfo();
-// search_->MaybeTriggerStop();
-/*
-  // If this thread had no work, sleep for some milliseconds.
-  // Collisions don't count as work, so have to enumerate to find out if there
-  // was anything done.
-  bool work_done = false;
-  for (NodeToProcess& node_to_process : minibatch_) {
-    if (!node_to_process.is_collision) {
-      work_done = true;
-      break;
-    }
-  }
-  if (!work_done) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  } */
-// }
-
 //////////////////////////////////////////////////////////////////////////////
 // WorkerOverlord
 //////////////////////////////////////////////////////////////////////////////
@@ -1130,7 +1141,7 @@ void WorkerOverlord::SpawnNewWorker(bool is_root, SubTree* tree,
   assert(static_cast<bool>(root_worker_) != is_root);
 
   auto new_worker =
-      std::make_unique<SearchWorker>(params_, history, tree, cache_);
+      std::make_unique<SearchWorker>(params_, history, tree, cache_, this);
   if (is_root) root_worker_ = new_worker.get();
 
   ReleaseWorker(std::move(new_worker));

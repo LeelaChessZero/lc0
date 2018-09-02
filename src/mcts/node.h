@@ -440,23 +440,37 @@ class SubTree {
  public:
   SubTree(Node* parent_node, std::unique_ptr<Node> detached_node);
 
-  // DO NOT SUBMIT add comments
+  // Returns a root node of the subtree.
   Node* GetRootNode() const { return root_.get(); }
+
+  // Returns whether the subtree is a parent subtree (otherwise it's game begin
+  // subtree).
   bool HasParent() const { return parent_node_ != nullptr; }
-  // After subtree is reattached, the instance of SubTree class is destroyed,
-  // so when this funciton returns, there's no SubTree{}.
+
+  // Reattaches this subtree to a parent. After subtree is reattached, the
+  // instance of SubTree class is destroyed, so when this funciton returns,
+  // there's no SubTree{}.
   void Reattach() { parent_node_->ReattachSubtree(); }
 
-  void MarkUnused() { is_used_.clear(std::memory_order_release); }
+  // Marks this subtree as having worker.
+  void SetHasAssignedWorker();
+
+  // Marks this subtree as not having worker.
+  void ResetHasAssignedWorker();
+
+  // Returns whether there is a worker assigned to this subtree.
+  bool HasWorker() const;
 
  private:
   // Root of a subtree.
   std::unique_ptr<Node> root_;
 
   // A node of the same position as root_, but in parent tree.
+  // Nullptr if there's no parent tree.
   Node* parent_node_ = nullptr;
 
-  std::atomic_flag is_used_;
+  // Stores whether there is a worker assigned to this subtree.
+  std::atomic<bool> is_used_;
 };
 
 class NodeTree {
