@@ -408,4 +408,9 @@ if get_option('gtest') and gtest.found()
     files, include_directories: includes, dependencies: test_deps
   ), timeout: 90)
 
+  test('EncodePositionForNN', 
+    executable('encoder_test', 'src/neural/encoder_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
 endif
