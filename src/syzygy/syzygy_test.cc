@@ -86,6 +86,7 @@ void TestValidExpectation(SyzygyTablebase* tablebase, const std::string& fen,
 }
 
 TEST(Syzygy, Simple3PieceProbes) {
+  EXPECT_EQ(1, 2);
   SyzygyTablebase tablebase;
   tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 3) {
