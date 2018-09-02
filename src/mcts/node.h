@@ -28,6 +28,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -446,13 +447,16 @@ class SubTree {
   // so when this funciton returns, there's no SubTree{}.
   void Reattach() { parent_node_->ReattachSubtree(); }
 
+  void MarkUnused() { is_used_.clear(std::memory_order_release); }
+
  private:
- public:  // DO NOT SUBMIT
   // Root of a subtree.
   std::unique_ptr<Node> root_;
 
   // A node of the same position as root_, but in parent tree.
   Node* parent_node_ = nullptr;
+
+  std::atomic_flag is_used_;
 };
 
 class NodeTree {
@@ -475,6 +479,8 @@ class NodeTree {
   Node* GetCurrentHeadNode() const { return current_head_->GetRootNode(); }
   // Returns game root node.
   Node* GetGameBeginNode() const { return game_tree_->GetRootNode(); }
+  SubTree* GetTreeAtCurrentMove() const { return current_head_; }
+
   const PositionHistory& GetPositionHistory() const { return history_; }
 
  private:

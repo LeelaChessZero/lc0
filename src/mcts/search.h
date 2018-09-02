@@ -51,6 +51,8 @@ struct SearchLimits {
   MoveList searchmoves;
 };
 
+// TODO(crem) Move that to a separate file. Takes lots of space but not really
+// essential.
 struct SearchParams {
  public:
   SearchParams(const OptionsDict& options);
@@ -72,7 +74,6 @@ struct SearchParams {
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
   static const char* kOutOfOrderEvalStr;
-  static const char* kStickyCheckmateStr;
 
   // External parameters.
   const int kMiniBatchSize;
@@ -88,7 +89,30 @@ struct SearchParams {
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kOutOfOrderEval;
-  const bool kStickyCheckmate;
+};
+
+class SearchWorker;
+class WorkerOverlord {
+ public:
+  WorkerOverlord(const SearchParams& params, NNCache* cache)
+      : params_(params), cache_(cache) {}
+
+  SearchWorker* GetRootWorker() const { return root_worker_; }
+
+  void SpawnNewWorker(bool is_root, SubTree* tree,
+                      const PositionHistory& history);
+
+  std::unique_ptr<SearchWorker> AquireWorker();
+  void ReleaseWorker(std::unique_ptr<SearchWorker>);
+
+ private:
+  const SearchParams& params_;
+  SearchWorker* root_worker_ = nullptr;
+  NNCache* cache_;
+
+  mutable Mutex queue_mutex_;
+  std::vector<std::unique_ptr<SearchWorker>> idle_workers_
+      GUARDED_BY(queue_mutex_);
 };
 
 class Search {
@@ -127,6 +151,8 @@ class Search {
   float GetBestEval() const;
 
  private:
+  Node* GetRootNode() const;
+
   // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
 
@@ -149,6 +175,8 @@ class Search {
   // Function which runs in a separate thread and watches for time and
   // uci `stop` command;
   void WatchdogThread();
+  // Search worker thread.
+  void WorkerThread();
 
   // Populates the given list with allowed root moves.
   // Returns true if the population came from tablebase.
@@ -156,6 +184,8 @@ class Search {
 
   // We only need first ply for debug output, but could be easily generalized.
   NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
+
+  WorkerOverlord worker_overlord_;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -174,7 +204,7 @@ class Search {
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
-  Node* root_node_;
+  // Node* root_node_;
   NNCache* cache_;
   SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
@@ -200,7 +230,6 @@ class Search {
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
-
   // Command line / UCI parameters that affect search.
   SearchParams params_;
 
@@ -212,36 +241,26 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search)
-      : search_(search), history_(search_->played_history_) {}
+  SearchWorker(const SearchParams& params, const PositionHistory& history,
+               SubTree* tree, NNCache* cache)
+      : tree_(tree),
+        history_length_(history.GetLength()),
+        history_(history),
+        cache_(cache),
+        params_(params) {}
 
-  // Runs iterations while needed.
-  void RunBlocking() {
-    while (search_->IsSearchActive()) {
-      ExecuteOneIteration();
-    }
-  }
+  // Puts subtree back into "available" state.
+  ~SearchWorker() { tree_->MarkUnused(); }
 
-  // Does one full iteration of MCTS search:
-  // 1. Initialize internal structures.
-  // 2. Gather minibatch.
-  // 3. Prefetch into cache.
-  // 4. Run NN computation.
-  // 5. Retrieve NN computations (and terminal values) into nodes.
-  // 6. Propagate the new nodes' information to all their parents in the tree.
-  // 7. Update the Search's status and progress information.
-  void ExecuteOneIteration();
-
-  // The same operations one by one:
   // 1. Initialize internal structures.
   // @computation is the computation to use on this iteration.
   void InitializeIteration(std::unique_ptr<NetworkComputation> computation);
 
   // 2. Gather minibatch.
-  void GatherMinibatch();
+  void GatherMinibatch(int max_batch_size);
 
   // 3. Prefetch into cache.
-  void MaybePrefetchIntoCache();
+  void MaybePrefetchIntoCache(int max_batch_size);
 
   // 4. Run NN computation.
   void RunNNComputation();
@@ -254,6 +273,8 @@ class SearchWorker {
 
   // 7. Update the Search's status and progress information.
   void UpdateCounters();
+
+  Node* GetRootNode() { return tree_->GetRootNode(); }
 
  private:
   struct NodeToProcess {
@@ -276,14 +297,18 @@ class SearchWorker {
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
 
-  Search* const search_;
+  SubTree* tree_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
+  const int history_length_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
   MoveList root_move_filter_;
-  bool root_move_filter_populated_ = false;
+  // bool root_move_filter_populated_ = false;
+  NNCache* cache_;
+  const SearchParams params_;
+  bool is_root_worker_ = true;  // DO NOT SUBMIT
 };
 
 }  // namespace lczero

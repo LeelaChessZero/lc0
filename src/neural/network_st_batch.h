@@ -50,14 +50,17 @@ namespace lczero {
 //     use(x)
 class SingleThreadBatchingNetwork : public Network {
  public:
-  SingleThreadBatchingNetwork(std::unique_ptr<Network> parent);
+  SingleThreadBatchingNetwork(Network* parent);
   std::unique_ptr<NetworkComputation> NewComputation() override;
 
   // Start a fresh batch.
   void Reset();
 
+  // DO NOT SUBMIT
+  int GetTotalBatchSize() const;
+
  private:
-  std::unique_ptr<Network> parent_;
+  Network* parent_;
   std::unique_ptr<NetworkComputation> parent_computation_;
   int computations_pending_ = 0;
   friend class SingleThreadBatchingNetworkComputation;

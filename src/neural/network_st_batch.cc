@@ -31,14 +31,16 @@
 
 namespace lczero {
 
-SingleThreadBatchingNetwork::SingleThreadBatchingNetwork(
-    std::unique_ptr<Network> parent)
-    : parent_(std::move(parent)) {}
+SingleThreadBatchingNetwork::SingleThreadBatchingNetwork(Network* parent)
+    : parent_(parent) {}
 
 std::unique_ptr<NetworkComputation>
 SingleThreadBatchingNetwork::NewComputation() {
-  ++computations_pending_;
   return std::make_unique<SingleThreadBatchingNetworkComputation>(this);
+}
+
+int SingleThreadBatchingNetwork::GetTotalBatchSize() const {
+  return parent_computation_->GetBatchSize();
 }
 
 void SingleThreadBatchingNetwork::Reset() {
@@ -54,11 +56,12 @@ SingleThreadBatchingNetworkComputation::SingleThreadBatchingNetworkComputation(
 void SingleThreadBatchingNetworkComputation::AddInput(InputPlanes&& input) {
   assert(start_idx_ + batch_size_ ==
          network_->parent_computation_->GetBatchSize());
-  ++batch_size_;
+  if (batch_size_++ == 0) ++network_->computations_pending_;
   network_->parent_computation_->AddInput(std::move(input));
 }
 
 void SingleThreadBatchingNetworkComputation::ComputeBlocking() {
+  assert(batch_size_ > 0);
   if (--network_->computations_pending_ == 0)
     network_->parent_computation_->ComputeBlocking();
 }
