@@ -411,6 +411,6 @@ if get_option('gtest') and gtest.found()
   test('EncodePositionForNN', 
     executable('encoder_test', 'src/neural/encoder_test.cc',
     files, include_directories: includes, dependencies: test_deps
-  ), timeout: 90)
+  ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
 endif
