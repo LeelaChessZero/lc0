@@ -453,7 +453,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
-  const float n_parent = parent->GetN();
+  uint32_t max_n = 0;
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -461,9 +461,22 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    sum += std::pow(edge.GetN() / n_parent, 1 / temperature);
+    if(edge.GetN() > max_n) {
+      max_n = edge.GetN();
+    }
+  }
+  assert(max_n);
+
+  for (auto edge : parent->Edges()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
+      continue;
+    }
+    sum += std::pow(static_cast<float>(edge.GetN()) / max_n, 1 / temperature);
     cumulative_sums.push_back(sum);
   }
+  assert(sum);
 
   float toss = Random::Get().GetFloat(cumulative_sums.back());
   int idx =
