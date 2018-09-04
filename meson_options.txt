@@ -55,7 +55,7 @@ option('mkl_include',
 
 option('cudnn_include', 
        type: 'array',
-       value: [],
+       value: ['/usr/local/cuda/include/'],
        description: 'Paths to cudnn include directory')
 
 option('build_backends',
