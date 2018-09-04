@@ -294,10 +294,13 @@ void Node::FinalizeScoreUpdateMinimaxComponent(float v,
       best_nodes_n_sum += ns[i];
     }
 
-    // This should not be required, but it's crashing for some reason so trying
-    // to fix...
-    best_nodes_n_sum = std::max((uint32_t)1, best_nodes_n_sum);
-
+    // Don't know why, but sometimes "best_nodes_n_sum" is 0
+    // use "mcts_q_" if that happens to prevent crash.
+    if (best_nodes_n_sum == 0) {
+      q_ = mcts_q_;
+      return;
+    }
+    
     // Calculate "bests_q"
     float bests_q = 0.0f;
     for (uint32_t i = 0; i < count; ++i) {
