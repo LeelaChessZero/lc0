@@ -108,6 +108,18 @@ class BitBoard {
     return __builtin_popcountll(board_);
 #endif
   }
+  int count_few() const {
+#if defined(NO_POPCNT)
+    std::uint64_t x = board_;
+    int count;
+    for (count = 0; x != 0; ++count) {
+      x &= x - 1;
+    }
+    return count;
+#else
+    return count();
+#endif
+  }
 
   // Sets the value for given square to 1 if cond is true.
   // Otherwise does nothing (doesn't reset!).
