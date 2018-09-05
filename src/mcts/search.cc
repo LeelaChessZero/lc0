@@ -466,7 +466,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if (edge.GetN() < kMinimumTemperatureVisits) continue;
+    if (edge.GetN() < static_cast<unsigned int>(kMinimumTemperatureVisits))
+      continue;
 
     sum += std::pow(edge.GetN() / n_parent, 1 / temperature);
     cumulative_sums.push_back(sum);
@@ -483,7 +484,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if (edge.GetN() < kMinimumTemperatureVisits) continue;
+    if (edge.GetN() < static_cast<unsigned int>(kMinimumTemperatureVisits))
+      continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
