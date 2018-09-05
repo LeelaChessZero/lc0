@@ -908,7 +908,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
   float puct_mult =
-      search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      search_->kCpuct * std::pow(std::max(node->GetChildrenVisits(), 1u), search_->kCpuctPowScaling);
   // FPU reduction is not taken into account.
   const float parent_q = -node->GetQ();
   for (auto edge : node->Edges()) {
