@@ -717,14 +717,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
-        search_->kCpuct * std::pow(std::max(node->GetChildrenVisits(), 1u), kCpuctPowScaling);
+        search_->kCpuct * std::pow(std::max(node->GetChildrenVisits(), 1u), search_->kCpuctPowScaling);
     float best = -100.0f;
     int possible_moves = 0;
     float parent_q =
         ((is_root_node && search_->kNoise) || !search_->kFpuReduction)
             ? -node->GetQ()
             : -node->GetQ() -
-                  search_->kFpuReduction * std::pow(node->GetVisitedPolicy(), kFPUPowScaling);
+                  search_->kFpuReduction * std::pow(node->GetVisitedPolicy(), search_->kFPUPowScaling);
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
