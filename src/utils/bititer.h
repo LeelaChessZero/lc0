@@ -50,7 +50,7 @@ class BitIterator {
     return result;
 #else
     unsigned long result;
-    if (result & 0xFFFFFFFF) {
+    if (value_ & 0xFFFFFFFF) {
       _BitScanForward(&result, value_);
     } else {
       _BitScanForward(&result, value_ >> 32);
