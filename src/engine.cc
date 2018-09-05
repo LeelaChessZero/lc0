@@ -108,7 +108,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
   defaults->Set<float>(Search::kFpuReductionStr, 0.9f);  // FPU reduction = 0.9
+  defaults->Set<float>(Search::kFPUPowScalingStr, 0.5f);
   defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
+  defaults->Set<float>(Search::kCpuctPowScalingStr, 0.5f);
   defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
   // Cache key has a history of 1 ply back. That's to be compatible with old

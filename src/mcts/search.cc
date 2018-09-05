@@ -45,6 +45,7 @@ namespace lczero {
 const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
 const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
+const char* Search::kCpuctPowScalingStr = "CpuctPowScaling";
 const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
@@ -52,6 +53,7 @@ const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
     "Aversion to search if change unlikely";
 const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
+const char* Search::kFPUPowScalingStr = "FPUPowScaling";
 const char* Search::kCacheHistoryLengthStr =
     "Length of history to include in cache";
 const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
@@ -75,6 +77,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
   options->Add<IntOption>(kMaxPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
+  options->Add<FloatOption>(kCpuctPowScalingStr, 0.1f, 1.0f,
+                            "cpuct-powscaling") = 0.5f;
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
@@ -84,6 +88,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
                             "futile-search-aversion") = 1.33f;
   options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
                             "fpu-reduction") = 0.0f;
+  options->Add<FloatOption>(kFPUPowScalingStr, 0.1f, 1.0f,
+                            "fpu-powscaling") = 0.5f;
   options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
                           "cache-history-length") = 7;
   options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1f, 10.0f,
@@ -122,7 +128,9 @@ Search::Search(const NodeTree& tree, Network* network,
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)),
+      kCpuctPowScaling(options.Get<float>(kCpuctPowScalingStr)),
+      kFPUPowScaling(options.Get<float>(kFPUPowScalingStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -195,9 +203,9 @@ int64_t Search::GetTimeSinceStart() const {
 void Search::SendMovesStats() const {
   const float parent_q =
       -root_node_->GetQ() -
-      kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
+      kFpuReduction * std::pow(root_node_->GetVisitedPolicy(),kFPUPowScaling);
   const float U_coeff =
-      kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+      kCpuct * std::pow(std::max(root_node_->GetChildrenVisits(), 1u),kCpuctPowScaling);
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : root_node_->Edges()) edges.push_back(edge);
