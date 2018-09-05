@@ -45,9 +45,9 @@ Given those basics, the OS and backend specific instructions are below.
 #### Generic
 
 1. Install backend:
-    - (if you want version with tensorflow) Install `tensorflow_cc` by following steps described [here](https://github.com/FloopCZ/tensorflow_cc).
-    - (if you want cuDNN version) Install [CUDA](https://developer.nvidia.com/cuda-zone) and [cuDNN](https://developer.nvidia.com/cudnn).
-    - (if you want OpenBLAS version) Install OpenBLAS (`libopenblas-dev`).
+    - If you want to use NVidia graphics cards Install [CUDA](https://developer.nvidia.com/cuda-zone) and [cuDNN](https://developer.nvidia.com/cudnn).
+    - If you want to use AMD graphics cards install OpenCL.
+    - if you want OpenBLAS version Install OpenBLAS (`libopenblas-dev`).
 2. Install ninja build (`ninja-build`), meson, and (optionally) gtest (`libgtest-dev`).
 3. Go to `lc0/`
 4. Run `./build.sh`

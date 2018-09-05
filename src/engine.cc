@@ -147,7 +147,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // Total time till control including increments.
   auto total_moves_time =
       std::max(int64_t{0},
-               time + increment * (movestogo - 1) - move_overhead * movestogo);
+               time + increment * (movestogo - 1) - move_overhead);
 
   if (bonus_time_ms > 0) {
     // Don't calculate the time curve using the bonus time, use the normal real
