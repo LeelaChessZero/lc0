@@ -80,7 +80,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
   options->Add<IntOption>(kMinimumTemperatureVisitsStr, 0, 1000,
-                          "minimum-temperature-visits") = 2;
+                          "minimum-temperature-visits") = 0;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
