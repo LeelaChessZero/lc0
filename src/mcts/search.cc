@@ -457,18 +457,33 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
   assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
+  std::vector<EdgeAndNode> edges;
+  auto edge_iterator = parent->Edges();
   float sum = 0.0;
   const float n_parent = parent->GetN();
 
-  for (auto edge : parent->Edges()) {
+  // Load edges to vector.
+  for (auto& edge : edge_iterator) edges.push_back(edge);
+
+  // Filter empty edges
+  edges.erase(std::remove_if(edges.begin(), edges.end(),
+                             [&](auto edge) {
+                               return edge.GetN() <=
+                                      static_cast<unsigned int>(
+                                          kMinimumTemperatureVisits);
+                             }),
+              edges.end());
+
+  // Avoids crash if no edges left.
+  if (edges.empty())
+    for (auto& edge : edge_iterator) edges.push_back(edge);
+
+  for (auto edge : edges) {
     if (parent == root_node_ && !root_limit.empty() &&
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
             root_limit.end()) {
       continue;
     }
-    if (edge.GetN() <= static_cast<unsigned int>(kMinimumTemperatureVisits))
-      continue;
-
     sum += std::pow(edge.GetN() / n_parent, 1 / temperature);
     cumulative_sums.push_back(sum);
   }
@@ -478,14 +493,12 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
       cumulative_sums.begin();
 
-  for (auto edge : parent->Edges()) {
+  for (auto edge : edges) {
     if (parent == root_node_ && !root_limit.empty() &&
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
             root_limit.end()) {
       continue;
     }
-    if (edge.GetN() <= static_cast<unsigned int>(kMinimumTemperatureVisits))
-      continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
