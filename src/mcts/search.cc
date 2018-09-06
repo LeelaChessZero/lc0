@@ -465,7 +465,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   // Load edges to vector.
   for (auto& edge : edge_iterator) edges.push_back(edge);
 
-  // Filter empty edges
+  // Filter edges that do not have enough visits.
   edges.erase(std::remove_if(edges.begin(), edges.end(),
                              [&](auto edge) {
                                return edge.GetN() <=
@@ -474,9 +474,10 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
                              }),
               edges.end());
 
-  // Avoids crash if no edges left.
-  if (edges.empty())
+  // Avoids crash if all edges have been filtered.
+  if (edges.empty()) {
     for (auto& edge : edge_iterator) edges.push_back(edge);
+  }
 
   for (auto edge : edges) {
     if (parent == root_node_ && !root_limit.empty() &&
