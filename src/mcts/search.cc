@@ -456,7 +456,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   }
 
   assert(parent->GetChildrenVisits() > 0);
-  std::vector<EdgeAndNode> accepted_edges, all_edges;
+  std::vector<EdgeAndNode> accepted_edges, filtered_edges;
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -468,12 +468,12 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
     if (edge.GetN() >= static_cast<unsigned int>(kMinimumTemperatureVisits)) {
       accepted_edges.push_back(edge);
     } else { 
-      all_edges.push_back(edge);
+      filtered_edges.push_back(edge);
     }
   }
 
   if (accepted_edges.empty()) {
-    accepted_edges = all_edges;
+    accepted_edges = filtered_edges;
   }
 
   const float n_parent = parent->GetN();
