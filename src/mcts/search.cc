@@ -457,51 +457,39 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
   assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
-  std::vector<EdgeAndNode> edges;
-  auto edge_iterator = parent->Edges();
+  std::vector<EdgeAndNode> accepted_edges, all_edges;
   float sum = 0.0;
   const float n_parent = parent->GetN();
 
-  // Load edges to vector.
-  for (auto& edge : edge_iterator) edges.push_back(edge);
-
-  // Filter edges that do not have enough visits.
-  edges.erase(std::remove_if(edges.begin(), edges.end(),
-                             [&](auto edge) {
-                               return edge.GetN() <=
-                                      static_cast<unsigned int>(
-                                          kMinimumTemperatureVisits);
-                             }),
-              edges.end());
-
-  // Avoids crash if all edges have been filtered.
-  if (edges.empty()) {
-    for (auto& edge : edge_iterator) edges.push_back(edge);
-  }
-
-  for (auto edge : edges) {
+  for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
             root_limit.end()) {
       continue;
     }
+
+    if (edge.GetN() <= static_cast<unsigned int>(kMinimumTemperatureVisits))
+      accepted_edges.push_back(edge);
+
+    all_edges.push_back(edge);
+  }
+
+  if (accepted_edges.empty()) {
+    accepted_edges = all_edges;
+  }
+
+  for (const auto& edge : accepted_edges) {
     sum += std::pow(edge.GetN() / n_parent, 1 / temperature);
     cumulative_sums.push_back(sum);
   }
 
-  float toss = Random::Get().GetFloat(cumulative_sums.back());
-  int idx =
+  const float toss = Random::Get().GetFloat(cumulative_sums.back());
+  const int idx =
       std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
       cumulative_sums.begin();
 
-  for (auto edge : edges) {
-    if (parent == root_node_ && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
-      continue;
-    }
-    if (idx-- == 0) return edge;
-  }
+  return accepted_edges[idx];
+
   assert(false);
   return {};
 }
