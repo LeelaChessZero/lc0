@@ -470,9 +470,9 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
     if (edge.GetN() <= static_cast<unsigned int>(kMinimumTemperatureVisits)) {
       accepted_edges.push_back(edge);
+    } else {
+      all_edges.push_back(edge);
     }
-
-    all_edges.push_back(edge);
   }
 
   if (accepted_edges.empty()) {
