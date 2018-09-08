@@ -467,7 +467,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
     if (edge.GetN() >= static_cast<unsigned int>(kMinimumTemperatureVisits)) {
       accepted_edges.push_back(edge);
-    } else { 
+    } else {
       filtered_edges.push_back(edge);
     }
   }
@@ -475,6 +475,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   if (accepted_edges.empty()) {
     accepted_edges = filtered_edges;
   }
+
+  assert(accepted_edges.size() != 0);
 
   const float n_parent = parent->GetN();
   float sum = 0.0;
@@ -492,9 +494,6 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       cumulative_sums.begin();
 
   return accepted_edges[idx];
-
-  assert(false);
-  return {};
 }
 
 void Search::StartThreads(size_t how_many) {
