@@ -79,8 +79,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
-  options->Add<IntOption>(kMinimumTemperatureVisitsStr, 1, 1000,
-                          "minimum-temperature-visits") = 1;
+  options->Add<IntOption>(kMinimumTemperatureVisitsStr, 0, 1000,
+                          "minimum-temperature-visits") = 0;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
@@ -465,7 +465,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       continue;
     }
 
-    if (edge.GetN() >= static_cast<unsigned int>(kMinimumTemperatureVisits)) {
+    if (edge.GetN() > static_cast<unsigned int>(kMinimumTemperatureVisits)) {
       accepted_edges.push_back(edge);
     } else {
       filtered_edges.push_back(edge);
