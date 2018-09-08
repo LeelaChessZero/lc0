@@ -732,8 +732,9 @@ void SearchWorker::GatherMinibatch(int max_batch_size) {
     ++minibatch_size;
 
     // If node is already known as terminal (win/loss/draw according to rules
-    // of the game), it means that we already visited this node before.
-    if (!node->IsTerminal()) {
+    // of the game), or it has a detached subtree, it means that we already
+    // visited this node before and have no need to extend it.
+    if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
       ExtendNode(node);
 
@@ -747,20 +748,18 @@ void SearchWorker::GatherMinibatch(int max_batch_size) {
     // If out of order eval is enabled and the node to compute we added last
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
-    if (params_.kOutOfOrderEval) {
-      if (node->IsTerminal() || picked_node.is_cache_hit) {
-        // Perform out of order eval for the last entry in minibatch_.
-        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
-        DoBackupUpdateSingleNode(picked_node);
+    if (params_.kOutOfOrderEval && picked_node.CanEvalOutOfOrder()) {
+      // Perform out of order eval for the last entry in minibatch_.
+      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+      DoBackupUpdateSingleNode(picked_node);
 
-        // Remove last entry in minibatch_, as it has just been
-        // processed.
-        // If NN eval was already processed out of order, remove it.
-        if (picked_node.nn_queried) computation_->PopCacheHit();
-        minibatch_.pop_back();
-        --minibatch_size;
-        ++number_out_of_order;
-      }
+      // Remove last entry in minibatch_, as it has just been
+      // processed.
+      // If NN eval was already processed out of order, remove it.
+      if (picked_node.nn_queried) computation_->PopCacheHit();
+      minibatch_.pop_back();
+      --minibatch_size;
+      ++number_out_of_order;
     }
   }
 }
@@ -793,11 +792,26 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            Will revisit that after rethinking locking strategy.
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
     depth++;
+    // If node has detached subtree, that may have many reasons.
+    if (node->HasDetachedSubtree()) {
+      SubTree* subtree = node->GetDetachedSubtree();
+      // If the subtree doesn't have worker allocated, add it.
+      if (!subtree->HasWorker()) {
+        overlord_->SpawnNewWorker(false, node->GetDetachedSubtree(), history_);
+      }
+      // The subtree is behind, it's a node collision.
+      if (subtree->GetN() <= node->GetN()) {
+        return NodeToProcess::Collision(node, depth);
+      }
+      return NodeToProcess::Subtree(node, depth);
+    }
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
-    if (!node->TryStartScoreUpdate()) return {node, true, depth};
+    if (!node->TryStartScoreUpdate()) {
+      return NodeToProcess::Collision(node, depth);
+    }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) return {node, false, depth};
+    if (!node->HasChildren()) return NodeToProcess::Extension(node, depth);
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
@@ -1066,6 +1080,13 @@ void SearchWorker::FetchMinibatchResults() {
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          int idx_in_computation) {
   Node* node = node_to_process->node;
+  if (node_to_process->is_subtree) {
+    // If detached subtree, there is a magic formuala for V which correctly
+    // updates Q all the way to the root.
+    auto new_q = node->GetDetachedSubtree()->GetQ();
+    node_to_process->v = new_q + (new_q - node->GetQ()) * node->GetN();
+    return;
+  }
   if (!node_to_process->nn_queried) {
     // Terminal nodes don't involve the neural NetworkComputation, nor do
     // they require any further processing after value retrieval.

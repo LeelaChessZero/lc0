@@ -461,8 +461,12 @@ class SubTree {
   // Returns whether there is a worker assigned to this subtree.
   bool HasWorker() const;
 
-  // Called by parent worker.
+  // Called by subtree worker.
   void UpdateNQ(uint32_t n, float q);
+
+  // Called by parent worker.
+  uint32_t GetN() const;
+  float GetQ() const;
 
  private:
   // Root of a subtree.

@@ -411,6 +411,9 @@ void SubTree::UpdateNQ(uint32_t n, float q) {
   n_.store(n, std::memory_order_release);
 }
 
+uint32_t SubTree::GetN() const { return n_.load(std::memory_order_acquire); }
+float SubTree::GetQ() const { return q_.load(std::memory_order_acquire); }
+
 /////////////////////////////////////////////////////////////////////////
 // EdgeAndNode
 /////////////////////////////////////////////////////////////////////////

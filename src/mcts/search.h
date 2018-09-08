@@ -276,15 +276,38 @@ class SearchWorker {
 
  private:
   struct NodeToProcess {
-    NodeToProcess(Node* node, bool is_collision, uint16_t depth)
-        : node(node), depth(depth), is_collision(is_collision) {}
+    NodeToProcess(Node* node, bool is_collision, bool is_subtree,
+                  uint16_t depth)
+        : node(node),
+          depth(depth),
+          is_collision(is_collision),
+          is_subtree(is_subtree) {}
+    bool IsExtendable() const {
+      return is_collision == false && is_subtree == false &&
+             !node->IsTerminal();
+    }
+    bool CanEvalOutOfOrder() const {
+      return is_cache_hit || is_subtree || node->IsTerminal();
+    }
+
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
     uint16_t depth;
     bool is_collision = false;
+    bool is_subtree = false;
     bool nn_queried = false;
     bool is_cache_hit = false;
+
+    static NodeToProcess Collision(Node* node, uint16_t depth) {
+      return NodeToProcess(node, true, false, depth);
+    }
+    static NodeToProcess Extension(Node* node, uint16_t depth) {
+      return NodeToProcess(node, false, false, depth);
+    }
+    static NodeToProcess Subtree(Node* node, uint16_t depth) {
+      return NodeToProcess(node, false, true, depth);
+    }
   };
 
   NodeToProcess PickNodeToExtend();
