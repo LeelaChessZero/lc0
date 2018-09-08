@@ -569,7 +569,7 @@ void Search::WatchdogThread() {
 // A main search thread. There may be several of those.
 void Search::WorkerThread() {
   // The requests from multiple detached subtrees will be computed in parallel
-  // through SingleThreadBatchingNetwork adapter/
+  // through SingleThreadBatchingNetwork adapter.
   SingleThreadBatchingNetwork network(network_);
 
   while (IsSearchActive()) {
@@ -1162,6 +1162,40 @@ void SearchWorker::DoBackupUpdateSingleNode(
 void SearchWorker::TransferCountersToStub() {
   Node* root = tree_->GetRootNode();
   tree_->UpdateNQ(root->GetN(), root->GetQ());
+
+  // Hacky temporary algorithm.
+  int total_nodes = 0;
+  std::map<int, std::map<Node*, int>> depth_to_node_and_count;
+  for (const NodeToProcess& node_to_process : minibatch_) {
+    if (node_to_process.nn_queried || node_to_process.is_cache_hit) {
+      ++total_nodes;
+      int depth = node_to_process.depth;
+      for (Node* n = node_to_process.node; n; n = n->GetParent()) {
+        ++depth_to_node_and_count[-depth][n];
+        --depth;
+      }
+    }
+  }
+
+  if (total_nodes < 100) return;
+  for (const auto& depths : depth_to_node_and_count) {
+    for (const auto& node : depths.second) {
+      if (node.second >= total_nodes / 4 &&
+          node.second <= total_nodes * 3 / 4) {
+        std::cerr << "Detaching: " << node.first << " " << node.second << '/'
+                  << total_nodes << " D" << -depths.first << std::endl;
+        history_.Trim(history_length_);
+        std::vector<Move> moves;
+        for (Node* n = node.first; n->GetParent(); n = n->GetParent()) {
+          moves.push_back(n->GetEdgeToSelf()->GetMove());
+        }
+        std::reverse(moves.begin(), moves.end());
+        for (const auto& m : moves) history_.Append(m);
+        overlord_->SpawnNewWorker(false, node.first->DetachSubtree(), history_);
+        return;
+      }
+    }
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////////

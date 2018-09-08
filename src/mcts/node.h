@@ -207,11 +207,14 @@ class Node {
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
 
+  // Returns edge which leads to this node.
+  Edge* GetEdgeToSelf() const;
+
   // Debug information about the node.
   std::string DebugString() const;
 
   bool HasDetachedSubtree() const { return static_cast<bool>(subtree_); }
-  void DetachSubtree();
+  SubTree* DetachSubtree();
   void ReattachSubtree();
   SubTree* GetDetachedSubtree() const {
     assert(HasDetachedSubtree());
@@ -477,12 +480,12 @@ class SubTree {
   Node* parent_node_ = nullptr;
 
   // Stores whether there is a worker assigned to this subtree.
-  std::atomic<bool> is_used_;
+  std::atomic<bool> is_used_{false};
 
   // Latest counters from subtree's root.
-  std::atomic<float> q_;
+  std::atomic<float> q_{0.0f};
   // How many completed visits this node had.
-  std::atomic<uint32_t> n_;
+  std::atomic<uint32_t> n_{0};
 };
 
 class NodeTree {

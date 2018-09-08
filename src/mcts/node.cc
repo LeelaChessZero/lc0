@@ -217,6 +217,11 @@ Edge* Node::GetEdgeToNode(const Node* node) const {
   return &edges_[node->index_];
 }
 
+Edge* Node::GetEdgeToSelf() const {
+  assert(parent_);
+  return parent_->GetEdgeToNode(this);
+}
+
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
@@ -247,7 +252,6 @@ bool Node::TryStartScoreUpdate() {
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
 void Node::FinalizeScoreUpdate(float v) {
-  assert(!subtree_);
   // Recompute Q.
   q_ += (v - q_) / (n_ + 1);
   // If first visit, update parent's sum of policies visited at least once.
@@ -346,7 +350,7 @@ void Node::FixChildrenParents() {
   for (auto* node : ChildNodes()) node->parent_ = this;
 }
 
-void Node::DetachSubtree() {
+SubTree* Node::DetachSubtree() {
   assert(!HasDetachedSubtree());
 
   std::unique_ptr<Node> subtree_root = std::make_unique<Node>(nullptr, 0);
@@ -361,6 +365,7 @@ void Node::DetachSubtree() {
   subtree_root->FixChildrenParents();
 
   subtree_ = std::make_unique<SubTree>(this, std::move(subtree_root));
+  return subtree_.get();
 }
 
 void Node::ReattachSubtree() {

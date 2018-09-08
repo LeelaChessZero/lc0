@@ -62,7 +62,7 @@ class SingleThreadBatchingNetwork : public Network {
  private:
   Network* parent_;
   std::unique_ptr<NetworkComputation> parent_computation_;
-  int computations_pending_ = 0;
+  bool computed_ = false;
   friend class SingleThreadBatchingNetworkComputation;
 };
 

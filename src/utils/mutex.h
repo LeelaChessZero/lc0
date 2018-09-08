@@ -59,7 +59,7 @@ class CAPABILITY("mutex") RpSharedMutex {
 
  private:
   std::shared_timed_mutex mutex_;
-  std::atomic<int> waiting_readers_;
+  std::atomic<int> waiting_readers_{0};
 };
 
 // std::mutex wrapper for clang thread safety annotation.

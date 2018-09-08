@@ -332,7 +332,7 @@ class SearchWorker {
   NNCache* cache_;
   const SearchParams params_;
 
-  std::atomic<int64_t> total_playouts_;
+  std::atomic<int64_t> total_playouts_{0};
   EdgeAndNode best_move_edge_;
   WorkerOverlord* const overlord_;
 };

@@ -44,8 +44,10 @@ int SingleThreadBatchingNetwork::GetTotalBatchSize() const {
 }
 
 void SingleThreadBatchingNetwork::Reset() {
-  assert(computations_pending_ == 0);
+  assert(computed_ || !parent_computation_ ||
+         parent_computation_->GetBatchSize() == 0);
   parent_computation_ = parent_->NewComputation();
+  computed_ = false;
 }
 
 SingleThreadBatchingNetworkComputation::SingleThreadBatchingNetworkComputation(
@@ -56,23 +58,24 @@ SingleThreadBatchingNetworkComputation::SingleThreadBatchingNetworkComputation(
 void SingleThreadBatchingNetworkComputation::AddInput(InputPlanes&& input) {
   assert(start_idx_ + batch_size_ ==
          network_->parent_computation_->GetBatchSize());
-  if (batch_size_++ == 0) ++network_->computations_pending_;
+  assert(!network_->computed_);
   network_->parent_computation_->AddInput(std::move(input));
+  ++batch_size_;
 }
 
 void SingleThreadBatchingNetworkComputation::ComputeBlocking() {
   assert(batch_size_ > 0);
-  if (--network_->computations_pending_ == 0)
-    network_->parent_computation_->ComputeBlocking();
+  if (!network_->computed_) network_->parent_computation_->ComputeBlocking();
+  network_->computed_ = true;
 }
 
 float SingleThreadBatchingNetworkComputation::GetQVal(int sample) const {
-  return network_->parent_computation_->GetQVal(sample - start_idx_);
+  return network_->parent_computation_->GetQVal(sample + start_idx_);
 }
 
 float SingleThreadBatchingNetworkComputation::GetPVal(int sample,
                                                       int move_id) const {
-  return network_->parent_computation_->GetPVal(sample - start_idx_, move_id);
+  return network_->parent_computation_->GetPVal(sample + start_idx_, move_id);
 }
 
 }  // namespace lczero
