@@ -262,6 +262,9 @@ class SearchWorker {
   // 6. Propagate the new nodes' information to all their parents in the tree.
   void DoBackupUpdate();
 
+  // 7. Transfer information from the root of the subtree into the subtree stub.
+  void TransferCountersToStub();
+
   // Returns root node of a subtree that worker processes.
   Node* GetRootNode() { return tree_->GetRootNode(); }
 

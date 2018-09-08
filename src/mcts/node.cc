@@ -406,6 +406,11 @@ void SubTree::ResetHasAssignedWorker() {
   is_used_.store(false, std::memory_order_release);
 }
 
+void SubTree::UpdateNQ(uint32_t n, float q) {
+  q_.store(q, std::memory_order_release);
+  n_.store(n, std::memory_order_release);
+}
+
 /////////////////////////////////////////////////////////////////////////
 // EdgeAndNode
 /////////////////////////////////////////////////////////////////////////

@@ -461,6 +461,9 @@ class SubTree {
   // Returns whether there is a worker assigned to this subtree.
   bool HasWorker() const;
 
+  // Called by parent worker.
+  void UpdateNQ(uint32_t n, float q);
+
  private:
   // Root of a subtree.
   std::unique_ptr<Node> root_;
@@ -471,6 +474,11 @@ class SubTree {
 
   // Stores whether there is a worker assigned to this subtree.
   std::atomic<bool> is_used_;
+
+  // Latest counters from subtree's root.
+  std::atomic<float> q_;
+  // How many completed visits this node had.
+  std::atomic<uint32_t> n_;
 };
 
 class NodeTree {

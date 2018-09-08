@@ -612,6 +612,10 @@ void Search::WorkerThread() {
       // tree.
       worker->DoBackupUpdate();
 
+      // 7. Transfer information from the root of the subtree into the subtree
+      // stub.
+      worker->TransferCountersToStub();
+
       // Release the worker back to a pool for other threads to use.
       worker_overlord_.ReleaseWorker(std::move(worker));
     }
@@ -1130,7 +1134,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
   /* search_->cum_depth_ += node_to_process.depth;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
   */
-}  // namespace lczero
+}
+
+// 7. Transfer information from the root of the subtree into the subtree stub.
+// ~~~~~~~~~~~~~~
+void SearchWorker::TransferCountersToStub() {
+  Node* root = tree_->GetRootNode();
+  tree_->UpdateNQ(root->GetN(), root->GetQ());
+}
 
 //////////////////////////////////////////////////////////////////////////////
 // WorkerOverlord
