@@ -493,7 +493,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
       cumulative_sums.begin();
 
-  return accepted_edges[idx];
+  return accepted_edges.at(idx);
 }
 
 void Search::StartThreads(size_t how_many) {
