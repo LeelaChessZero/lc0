@@ -233,9 +233,10 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
-void Node::FinalizeScoreUpdate(float v) {
+void Node::FinalizeScoreUpdate(float v, float momentum) {
   // Recompute Q.
-  q_ += (v - q_) / (n_ + 1);
+  q_buff_ = momentum * q_buff_ + (1 - momentum) * v;
+  q_ = q_buff_ / (1 - std::pow(momentum, static_cast<float>(n_) + 1));
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
