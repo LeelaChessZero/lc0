@@ -1196,6 +1196,8 @@ void SearchWorker::TransferCountersToStub() {
     }
   }
 
+  static int total = 1;
+
   if (total_nodes < 150) return;
   for (const auto& depths : depth_to_node_and_count) {
     for (const auto& node : depths.second) {
@@ -1208,7 +1210,8 @@ void SearchWorker::TransferCountersToStub() {
         }
         std::reverse(moves.begin(), moves.end());
         std::cerr << "Detaching: " << node.first << " " << node.second << '/'
-                  << total_nodes << " D" << -depths.first;
+                  << total_nodes << " D" << -depths.first << " total "
+                  << ++total;
         for (const auto& m : moves) {
           history_.Append(m);
           std::cerr << ' ' << m.as_string();
