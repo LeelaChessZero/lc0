@@ -578,7 +578,6 @@ void Search::WorkerThread() {
 
     std::vector<std::unique_ptr<SearchWorker>> workers;
 
-    std::cerr << "========\n";
     // While there is a space in a minibatch, get more workers.
     while (network.GetTotalBatchSize() < params_.kMiniBatchSize) {
       // Get free worker with a highest priority.
@@ -586,13 +585,6 @@ void Search::WorkerThread() {
 
       // No workers availabe, break.
       if (!worker) break;
-
-      std::cerr << worker.get() << " " << worker->tree_ << std::dec
-                << " root:" << worker->IsRootWorker()
-                << " behind:" << worker->tree_->IsBehind()
-                << " recommended:" << worker->GetRecommendedBatch()
-                << " paren:" << worker->tree_->parent_n_
-                << " n:" << worker->tree_->n_;
 
       // 1. Initialize internal structures.
       // @computation is the computation to use on this iteration.
@@ -606,10 +598,6 @@ void Search::WorkerThread() {
       // 3. Prefetch into cache.
       // worker->MaybePrefetchIntoCache(params_.kMiniBatchSize -
       //                                network.GetTotalBatchSize());
-
-      std::cerr << " misses:" << worker->computation_->GetCacheMisses()
-                << " batch:" << worker->computation_->GetBatchSize()
-                << " minibatch:" << worker->minibatch_.size() << std::endl;
 
       workers.push_back(std::move(worker));
     }
@@ -639,8 +627,6 @@ void Search::WorkerThread() {
     MaybeTriggerStop();
 
     if (workers.empty()) {
-      // TODO(crem) If there was no workers gathered, or not enough workers,
-      //            create new workers and subtrees more aggresively.
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
@@ -1201,8 +1187,8 @@ void SearchWorker::TransferCountersToStub() {
   if (total_nodes < 150) return;
   for (const auto& depths : depth_to_node_and_count) {
     for (const auto& node : depths.second) {
-      if (node.second >= total_nodes / 3 &&
-          node.second <= total_nodes * 2 / 3) {
+      if (node.second >= total_nodes * 4 / 9 &&
+          node.second <= total_nodes * 5 / 9) {
         history_.Trim(history_length_);
         std::vector<Move> moves;
         for (Node* n = node.first; n->GetParent(); n = n->GetParent()) {
@@ -1217,6 +1203,7 @@ void SearchWorker::TransferCountersToStub() {
           std::cerr << ' ' << m.as_string();
         }
         std::cerr << std::endl;
+        // std::cerr << history_.Last().DebugString() << std::endl;
         overlord_->SpawnNewWorker(false, node.first->DetachSubtree(), history_);
         return;
       }
