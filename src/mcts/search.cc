@@ -592,20 +592,16 @@ void Search::WorkerThread() {
                 << " behind:" << worker->tree_->IsBehind()
                 << " recommended:" << worker->GetRecommendedBatch()
                 << " paren:" << worker->tree_->parent_n_
-                << " n:" << worker->tree_->n_
-                << " def:" << worker->tree_->typical_deficiency_;
+                << " n:" << worker->tree_->n_;
 
       // 1. Initialize internal structures.
       // @computation is the computation to use on this iteration.
       worker->InitializeIteration(network.NewComputation());
 
-      std::cerr << " misses0:" << worker->computation_->GetCacheMisses()
-                << " batch0:" << worker->computation_->GetBatchSize()
-                << " minibatch0:" << worker->minibatch_.size();
-
       // 2. Gather minibatch.
-      worker->GatherMinibatch(params_.kMiniBatchSize -
-                              network.GetTotalBatchSize());
+      worker->GatherMinibatch(
+          std::min(worker->GetRecommendedBatch(),
+                   params_.kMiniBatchSize - network.GetTotalBatchSize()));
 
       // 3. Prefetch into cache.
       // worker->MaybePrefetchIntoCache(params_.kMiniBatchSize -
@@ -1200,25 +1196,25 @@ void SearchWorker::TransferCountersToStub() {
     }
   }
 
-  static bool DONOT = false;
-  // if (DONOT) return;
-
-  if (total_nodes < 30) return;
+  if (total_nodes < 150) return;
   for (const auto& depths : depth_to_node_and_count) {
     for (const auto& node : depths.second) {
       if (node.second >= total_nodes / 3 &&
           node.second <= total_nodes * 2 / 3) {
-        std::cerr << "Detaching: " << node.first << " " << node.second << '/'
-                  << total_nodes << " D" << -depths.first << std::endl;
         history_.Trim(history_length_);
         std::vector<Move> moves;
         for (Node* n = node.first; n->GetParent(); n = n->GetParent()) {
           moves.push_back(n->GetEdgeToSelf()->GetMove());
         }
         std::reverse(moves.begin(), moves.end());
-        for (const auto& m : moves) history_.Append(m);
+        std::cerr << "Detaching: " << node.first << " " << node.second << '/'
+                  << total_nodes << " D" << -depths.first;
+        for (const auto& m : moves) {
+          history_.Append(m);
+          std::cerr << ' ' << m.as_string();
+        }
+        std::cerr << std::endl;
         overlord_->SpawnNewWorker(false, node.first->DetachSubtree(), history_);
-        DONOT = true;
         return;
       }
     }

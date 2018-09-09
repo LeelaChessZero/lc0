@@ -475,7 +475,6 @@ class SubTree {
   uint32_t GetN() const;
   float GetQ() const;
   void PullStatsFromParent();
-  void ReportDeficiency();
 
  private:
  public:
@@ -495,7 +494,6 @@ class SubTree {
   std::atomic<uint32_t> n_{0};
 
   std::atomic<uint32_t> parent_n_{0};
-  std::atomic<uint32_t> typical_deficiency_{1};
 };
 
 class NodeTree {

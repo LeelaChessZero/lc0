@@ -106,7 +106,7 @@ class WorkerOverlord {
   void ReleaseWorker(std::unique_ptr<SearchWorker>);
 
  private:
-  const SearchParams& params_;
+  const SearchParams params_;
   SearchWorker* root_worker_ = nullptr;
   NNCache* cache_;
 
