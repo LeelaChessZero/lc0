@@ -243,13 +243,26 @@ void Node::MakeTerminal(GameResult result) {
   }
 }
 
+bool Node::TryStartUpdateFromSubtree() {
+  assert(subtree_);
+  if (subtree_->GetN() <= n_) {
+    subtree_->ReportDeficiency();
+    return false;
+  }
+  ++n_in_flight_;
+  return true;
+}
+
 bool Node::TryStartScoreUpdate() {
   if (n_ == 0 && n_in_flight_ > 0) return false;
   ++n_in_flight_;
   return true;
 }
 
-void Node::CancelScoreUpdate() { --n_in_flight_; }
+void Node::CancelScoreUpdate() {
+  assert(n_in_flight_ > 0);
+  --n_in_flight_;
+}
 
 void Node::FinalizeScoreUpdate(float v) {
   // Recompute Q.
@@ -261,6 +274,7 @@ void Node::FinalizeScoreUpdate(float v) {
   // Increment N.
   ++n_;
   // Decrement virtual loss.
+  assert(n_in_flight_ > 0);
   --n_in_flight_;
 }
 
@@ -395,7 +409,11 @@ void Node::ReattachSubtree() {
 /////////////////////////////////////////////////////////////////////////
 
 SubTree::SubTree(Node* parent_node, std::unique_ptr<Node> detached_node)
-    : root_(std::move(detached_node)), parent_node_(parent_node) {}
+    : root_(std::move(detached_node)),
+      parent_node_(parent_node),
+      q_(root_->GetQ()),
+      n_(root_->GetN()),
+      parent_n_(root_->GetN()) {}
 
 bool SubTree::HasWorker() const {
   return is_used_.load(std::memory_order_acquire);
@@ -418,6 +436,27 @@ void SubTree::UpdateNQ(uint32_t n, float q) {
 
 uint32_t SubTree::GetN() const { return n_.load(std::memory_order_acquire); }
 float SubTree::GetQ() const { return q_.load(std::memory_order_acquire); }
+
+void SubTree::ReportDeficiency() {
+  // std::cerr << " Def:" << this;
+  typical_deficiency_.fetch_add(1, std::memory_order_release);
+}
+
+void SubTree::PullStatsFromParent() {
+  assert(parent_node_);
+  parent_n_.store(parent_node_->GetN(), std::memory_order_release);
+}
+
+int SubTree::GetRecommendedBatchSize() const {
+  return parent_n_.load(std::memory_order_acquire) +
+         // typical_deficiency_.load(std::memory_order_acquire) -
+         100 - n_.load(std::memory_order_acquire);
+}
+
+bool SubTree::IsBehind() const {
+  return parent_n_.load(std::memory_order_acquire) >=
+         n_.load(std::memory_order_acquire);
+}
 
 /////////////////////////////////////////////////////////////////////////
 // EdgeAndNode

@@ -170,6 +170,7 @@ class Node {
   // "being updated" by incrementing n-in-flight, and return true.
   // Otherwise return false.
   bool TryStartScoreUpdate();
+  bool TryStartUpdateFromSubtree();
   // Decrements n-in-flight back.
   void CancelScoreUpdate();
   // Updates the node with newly computed value v.
@@ -464,14 +465,20 @@ class SubTree {
   // Returns whether there is a worker assigned to this subtree.
   bool HasWorker() const;
 
+  int GetRecommendedBatchSize() const;
+  bool IsBehind() const;
+
   // Called by subtree worker.
   void UpdateNQ(uint32_t n, float q);
 
   // Called by parent worker.
   uint32_t GetN() const;
   float GetQ() const;
+  void PullStatsFromParent();
+  void ReportDeficiency();
 
  private:
+ public:
   // Root of a subtree.
   std::unique_ptr<Node> root_;
 
@@ -486,6 +493,9 @@ class SubTree {
   std::atomic<float> q_{0.0f};
   // How many completed visits this node had.
   std::atomic<uint32_t> n_{0};
+
+  std::atomic<uint32_t> parent_n_{0};
+  std::atomic<uint32_t> typical_deficiency_{1};
 };
 
 class NodeTree {

@@ -111,7 +111,7 @@ void SearchParams::PopulateUciParams(OptionsParser* options) {
                             "policy-softmax-temp") = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
-  options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
+  options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = true;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -578,25 +578,43 @@ void Search::WorkerThread() {
 
     std::vector<std::unique_ptr<SearchWorker>> workers;
 
+    std::cerr << "========\n";
     // While there is a space in a minibatch, get more workers.
     while (network.GetTotalBatchSize() < params_.kMiniBatchSize) {
       // Get free worker with a highest priority.
-      auto worker = worker_overlord_.AquireWorker();
+      auto worker = worker_overlord_.AcquireWorker();
 
       // No workers availabe, break.
       if (!worker) break;
 
+      std::cerr << worker.get() << " " << worker->tree_ << std::dec
+                << " root:" << worker->IsRootWorker()
+                << " behind:" << worker->tree_->IsBehind()
+                << " recommended:" << worker->GetRecommendedBatch()
+                << " paren:" << worker->tree_->parent_n_
+                << " n:" << worker->tree_->n_
+                << " def:" << worker->tree_->typical_deficiency_;
+
       // 1. Initialize internal structures.
       // @computation is the computation to use on this iteration.
       worker->InitializeIteration(network.NewComputation());
+
+      std::cerr << " misses0:" << worker->computation_->GetCacheMisses()
+                << " batch0:" << worker->computation_->GetBatchSize()
+                << " minibatch0:" << worker->minibatch_.size();
 
       // 2. Gather minibatch.
       worker->GatherMinibatch(params_.kMiniBatchSize -
                               network.GetTotalBatchSize());
 
       // 3. Prefetch into cache.
-      worker->MaybePrefetchIntoCache(params_.kMiniBatchSize -
-                                     network.GetTotalBatchSize());
+      // worker->MaybePrefetchIntoCache(params_.kMiniBatchSize -
+      //                                network.GetTotalBatchSize());
+
+      std::cerr << " misses:" << worker->computation_->GetCacheMisses()
+                << " batch:" << worker->computation_->GetBatchSize()
+                << " minibatch:" << worker->minibatch_.size() << std::endl;
+
       workers.push_back(std::move(worker));
     }
 
@@ -713,8 +731,8 @@ void SearchWorker::GatherMinibatch(int max_batch_size) {
   // the iteration so that search can exit.
   // TODO(crem) change that to checking search_->stop_ when bestmove reporting
   // is in a separate thread.
-  while (minibatch_size < max_batch_size &&
-         number_out_of_order < max_batch_size) {
+  while (minibatch_size < max_batch_size /*&&
+         number_out_of_order < max_batch_size*/) {
     // If there's something to process without touching slow neural net, do
     // it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
@@ -799,11 +817,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       if (!subtree->HasWorker()) {
         overlord_->SpawnNewWorker(false, node->GetDetachedSubtree(), history_);
       }
-      // The subtree is behind, it's a node collision.
-      if (subtree->GetN() <= node->GetN()) {
+      // DO NOT SUBMIT write comment
+      if (node->TryStartUpdateFromSubtree()) {
+        return NodeToProcess::Subtree(node, depth);
+      } else {
         return NodeToProcess::Collision(node, depth);
       }
-      return NodeToProcess::Subtree(node, depth);
     }
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
@@ -1150,11 +1169,15 @@ void SearchWorker::DoBackupUpdateSingleNode(
       best_move_edge_ = Search::GetBestChildNoTemperature(GetRootNode());
     }
   }
-  total_playouts_.fetch_add(1, std::memory_order_release);
+  node = node_to_process.node;
+  if (node->HasDetachedSubtree()) {
+    node->GetDetachedSubtree()->PullStatsFromParent();
+  }
   // DO NOT SUBMIT
   /* search_->cum_depth_ += node_to_process.depth;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
   */
+  total_playouts_.fetch_add(1, std::memory_order_release);
 }
 
 // 7. Transfer information from the root of the subtree into the subtree stub.
@@ -1177,11 +1200,14 @@ void SearchWorker::TransferCountersToStub() {
     }
   }
 
-  if (total_nodes < 100) return;
+  static bool DONOT = false;
+  // if (DONOT) return;
+
+  if (total_nodes < 30) return;
   for (const auto& depths : depth_to_node_and_count) {
     for (const auto& node : depths.second) {
-      if (node.second >= total_nodes / 4 &&
-          node.second <= total_nodes * 3 / 4) {
+      if (node.second >= total_nodes / 3 &&
+          node.second <= total_nodes * 2 / 3) {
         std::cerr << "Detaching: " << node.first << " " << node.second << '/'
                   << total_nodes << " D" << -depths.first << std::endl;
         history_.Trim(history_length_);
@@ -1192,10 +1218,24 @@ void SearchWorker::TransferCountersToStub() {
         std::reverse(moves.begin(), moves.end());
         for (const auto& m : moves) history_.Append(m);
         overlord_->SpawnNewWorker(false, node.first->DetachSubtree(), history_);
+        DONOT = true;
         return;
       }
     }
   }
+}
+
+bool SearchWorker::HasHigherPriorityThan(
+    const SearchWorker* other_worker) const {
+  if (IsRootWorker()) return true;
+  if (tree_->GetRecommendedBatchSize() == 0) return false;
+  if (!other_worker) return true;
+  if (other_worker->IsRootWorker()) return false;
+  if (tree_->IsBehind() == other_worker->tree_->IsBehind()) {
+    return tree_->GetRecommendedBatchSize() >
+           other_worker->tree_->GetRecommendedBatchSize();
+  }
+  return tree_->IsBehind();
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1213,9 +1253,19 @@ void WorkerOverlord::SpawnNewWorker(bool is_root, SubTree* tree,
   ReleaseWorker(std::move(new_worker));
 }
 
-std::unique_ptr<SearchWorker> WorkerOverlord::AquireWorker() {
+std::unique_ptr<SearchWorker> WorkerOverlord::AcquireWorker() {
   Mutex::Lock lock(queue_mutex_);
-  if (idle_workers_.empty()) return {};
+
+  std::unique_ptr<SearchWorker>* best_worker = nullptr;
+  for (auto& worker : idle_workers_) {
+    if (worker->HasHigherPriorityThan(best_worker ? best_worker->get()
+                                                  : nullptr))
+      best_worker = &worker;
+  }
+
+  if (!best_worker) return {};
+
+  std::swap(*best_worker, idle_workers_.back());
   auto res = std::move(idle_workers_.back());
   idle_workers_.pop_back();
   return res;

@@ -102,7 +102,7 @@ class WorkerOverlord {
   void SpawnNewWorker(bool is_root, SubTree* tree,
                       const PositionHistory& history);
 
-  std::unique_ptr<SearchWorker> AquireWorker();
+  std::unique_ptr<SearchWorker> AcquireWorker();
   void ReleaseWorker(std::unique_ptr<SearchWorker>);
 
  private:
@@ -274,6 +274,15 @@ class SearchWorker {
   // Returns move from subtree's root (possibly null if not yet known).
   const EdgeAndNode& GetBestMoveEdge() const { return best_move_edge_; }
 
+  // DO NOT SUBMIT
+  // other_worker can be nullptr!
+  bool HasHigherPriorityThan(const SearchWorker* other_worker) const;
+
+  int GetRecommendedBatch() const {
+    return IsRootWorker() ? std::numeric_limits<int>::max()
+                          : tree_->GetRecommendedBatchSize();
+  }
+
  private:
   struct NodeToProcess {
     NodeToProcess(Node* node, bool is_collision, bool is_subtree,
@@ -318,6 +327,7 @@ class SearchWorker {
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
 
+ public:
   bool IsRootWorker() const { return this == overlord_->GetRootWorker(); }
 
   SubTree* tree_;
