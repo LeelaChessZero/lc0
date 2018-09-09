@@ -1187,8 +1187,8 @@ void SearchWorker::TransferCountersToStub() {
   if (total_nodes < 150) return;
   for (const auto& depths : depth_to_node_and_count) {
     for (const auto& node : depths.second) {
-      if (node.second >= total_nodes * 4 / 9 &&
-          node.second <= total_nodes * 5 / 9) {
+      if (node.second >= total_nodes * 14 / 29 &&
+          node.second <= total_nodes * 15 / 29) {
         history_.Trim(history_length_);
         std::vector<Move> moves;
         for (Node* n = node.first; n->GetParent(); n = n->GetParent()) {
