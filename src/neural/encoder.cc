@@ -85,4 +85,85 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
   return result;
 }
 
+namespace {
+BoardSquare SingleSquare(BitBoard input) { 
+  for (auto sq : input) {
+    return sq;
+  }
+  assert(false);
+  return BoardSquare();
+}
+}
+
+Move DecodeMoveFromInput(const InputPlanes& planes) {
+  auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
+  auto knightdiff = BitBoard(planes[7].mask ^ planes[kPlanesPerBoard + 7].mask);
+  auto bishopdiff = BitBoard(planes[8].mask ^ planes[kPlanesPerBoard + 8].mask);
+  auto rookdiff = BitBoard(planes[9].mask ^ planes[kPlanesPerBoard + 9].mask);
+  auto queendiff = 
+    BitBoard(planes[10].mask ^ planes[kPlanesPerBoard + 10].mask);
+  // Handle Promotion.
+  if (pawndiff.count() == 1) {
+    auto from = SingleSquare(pawndiff);
+    if (knightdiff.count() == 1) {
+      auto to = SingleSquare(knightdiff);
+      return Move(from, to, Move::Promotion::Knight);
+    }
+    if (bishopdiff.count() == 1) {
+      auto to = SingleSquare(bishopdiff);
+      return Move(from, to, Move::Promotion::Bishop);
+    }
+    if (rookdiff.count() == 1) {
+      auto to = SingleSquare(rookdiff);
+      return Move(from, to, Move::Promotion::Rook);
+    }
+    if (queendiff.count() == 1) {
+      auto to = SingleSquare(queendiff);
+      return Move(from, to, Move::Promotion::Queen);
+    }
+    assert(false);
+    return Move();
+  }
+  // check king first as castling moves both king and rook.
+  auto kingdiff = BitBoard(planes[11].mask ^ planes[kPlanesPerBoard + 11].mask);
+  if (kingdiff.count() == 2) {
+    auto from =
+        SingleSquare(planes[kPlanesPerBoard + 11].mask & kingdiff.as_int());
+    auto to = SingleSquare(planes[11].mask & kingdiff.as_int());
+    return Move(from, to);
+  }
+  if (queendiff.count() == 2) {
+    auto from =
+        SingleSquare(planes[kPlanesPerBoard + 10].mask & queendiff.as_int());
+    auto to = SingleSquare(planes[10].mask & queendiff.as_int());
+    return Move(from, to);
+  }
+  if (rookdiff.count() == 2) {
+    auto from =
+        SingleSquare(planes[kPlanesPerBoard + 9].mask & rookdiff.as_int());
+    auto to = SingleSquare(planes[9].mask & rookdiff.as_int());
+    return Move(from, to);
+  }
+  if (bishopdiff.count() == 2) {
+    auto from =
+        SingleSquare(planes[kPlanesPerBoard + 8].mask & bishopdiff.as_int());
+    auto to = SingleSquare(planes[8].mask & bishopdiff.as_int());
+    return Move(from, to);
+  }
+  if (knightdiff.count() == 2) {
+    auto from =
+        SingleSquare(planes[kPlanesPerBoard + 7].mask & knightdiff.as_int());
+    auto to = SingleSquare(planes[7].mask & knightdiff.as_int());
+    return Move(from, to);
+  }
+  if (pawndiff.count() == 2) {
+    auto from =
+        SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
+    auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
+    return Move(from, to);
+  }
+  assert(false);
+  return Move();
+}
+
 }  // namespace lczero

@@ -28,6 +28,7 @@
 #include "neural/writer.h"
 
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include "utils/commandline.h"
 #include "utils/exception.h"
@@ -35,6 +36,40 @@
 #include "utils/random.h"
 
 namespace lczero {
+namespace {
+// Reverse bits in every byte of a number
+uint64_t ReverseBitsInBytes(uint64_t v) {
+  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
+  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
+  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
+  return v;
+}
+}  // namespace
+
+InputPlanes PlanesFromTrainingData(const V3TrainingData& data) { InputPlanes result;
+  for (int i = 0; i < 104; i++) {
+    result.emplace_back();
+    result.back().mask = ReverseBitsInBytes(data.planes[i]);
+  }
+  // TODO: set up the special input planes.
+  return result;
+}
+
+TrainingDataReader::TrainingDataReader(std::string filename)
+    : filename_(filename) {
+  fin_ = gzopen(filename_.c_str(), "rb");
+  if (!fin_) {
+    throw Exception("Cannot open gzip file " + filename_);
+  }
+}
+
+TrainingDataReader::~TrainingDataReader() {
+  gzclose(fin_);
+}
+
+bool TrainingDataReader::ReadChunk(V3TrainingData* data){
+  return gzread(fin_, reinterpret_cast<void*>(data), sizeof(*data)) == sizeof(*data);
+}
 
 TrainingDataWriter::TrainingDataWriter(int game_id) {
   static std::string directory =
@@ -50,6 +85,12 @@ TrainingDataWriter::TrainingDataWriter(int game_id) {
   fout_ = gzopen(filename_.c_str(), "wb");
   if (!fout_) throw Exception("Cannot create gzip file " + filename_);
 }
+
+TrainingDataWriter::TrainingDataWriter(std::string filename) : filename_(filename) {
+  fout_ = gzopen(filename_.c_str(), "wb");
+  if (!fout_) throw Exception("Cannot create gzip file " + filename_);
+}
+
 
 void TrainingDataWriter::WriteChunk(const V3TrainingData& data) {
   auto bytes_written =

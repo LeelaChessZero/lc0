@@ -35,5 +35,9 @@ namespace lczero {
 // Encodes the last position in history for the neural network request.
 InputPlanes EncodePositionForNN(const PositionHistory& history,
                                 int history_planes);
+// Decodes the move that led to current position using the current and last ply
+// in input planes. Move is from the perspective of the current position to move
+// player, so will need flipping if it is to be applied to the prior position.
+Move DecodeMoveFromInput(const InputPlanes& planes);
 
 }  // namespace lczero

@@ -26,14 +26,130 @@
 */
 
 #include "selfplay/loop.h"
+#include "neural/encoder.h"
+#include "neural/writer.h"
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
+#include "utils/filesystem.h"
 
 namespace lczero {
 
 namespace {
 const char* kInteractive = "Run in interactive mode with uci-like interface";
+const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
+const char* kInputDirStr = "Directory with gzipped files in need of rescoring.";
+const char* kOutputDirStr = "Directory to write rescored files.";
+const char* kThreadsStr = "Number of concurrent threads to rescore with.";
+
+void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
+                 std::string outputDir) {
+  // Scope to ensure reader and writer are closed before deleting source file.
+  {
+    TrainingDataReader reader(file);
+    std::string fileName = file.substr(file.find_last_of("/\\") + 1);
+    TrainingDataWriter writer(outputDir + "/" + fileName);
+    std::vector<V3TrainingData> fileContents;
+    V3TrainingData data;
+    while (reader.ReadChunk(&data)) {
+      fileContents.push_back(data);
+    }
+    MoveList moves;
+    for (int i = 1; i < fileContents.size(); i++) {
+      moves.push_back(
+          DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i])));
+      // All moves decoded are from the point of view of the side after the move
+      // so need to mirror them all to be applicable to apply to the position before.
+      moves.back().Mirror();
+    }
+    PositionHistory history;
+    int rule50ply;
+    int gameply;
+    ChessBoard board;
+    board.SetFromFen(ChessBoard::kStartingFen, &rule50ply, &gameply);
+    history.Reset(board, rule50ply, gameply);
+    int last_rescore = -1;
+    for (int i = 0; i < moves.size(); i++) {
+      history.Append(moves[i]);
+      const auto& board = history.Last().GetBoard();
+      if (board.castlings().no_legal_castle() &&
+          history.Last().GetNoCaptureNoPawnPly() == 0 &&
+          (board.ours() + board.theirs()).count() <=
+              tablebase->max_cardinality()) {
+        ProbeState state;
+        WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+        // Only fail state means the WDL is wrong, probe_wdl may produce correct
+        // result with a stat other than OK.
+        if (state != FAIL) {
+          int8_t score_to_apply = 0;
+          if (wdl == WDL_WIN) {
+            score_to_apply = 1;
+          } else if (wdl == WDL_LOSS) {
+            score_to_apply = -1;
+          }
+          for (int j = i + 1; j > last_rescore; j--) {
+            /*
+            if (fileContents[j].result != score_to_apply) {
+            std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
+                      << (int)score_to_apply 
+                      << std::endl;
+            }
+            */
+            fileContents[j].result = score_to_apply;
+            score_to_apply = -score_to_apply;
+          }
+          last_rescore = i + 1;
+        }
+      }
+    }
+    for (auto chunk : fileContents) {
+      writer.WriteChunk(chunk);
+    }
+  }
+  remove(file.c_str());
+}
+
+void ProcessFiles(const std::vector<std::string>& files,
+                  SyzygyTablebase* tablebase, std::string outputDir, int offset,
+                  int mod) {
+  for (int i = offset; i < files.size(); i += mod) {
+    ProcessFile(files[i], tablebase, outputDir);
+  }
+}
 }  // namespace
+
+RescoreLoop::RescoreLoop() {}
+
+RescoreLoop::~RescoreLoop() {}
+
+void RescoreLoop::RunLoop() {
+  options_.Add<StringOption>(kSyzygyTablebaseStr, "syzygy-paths", 's');
+  options_.Add<StringOption>(kInputDirStr, "input", 'i');
+  options_.Add<StringOption>(kOutputDirStr, "output", 'o');
+  options_.Add<IntOption>(kThreadsStr, 1, 20, "threads", 't') = 1;
+  SelfPlayTournament::PopulateOptions(&options_);
+
+  if (!options_.ProcessAllFlags()) return;
+  SyzygyTablebase tablebase;
+  if (!tablebase.init(
+          options_.GetOptionsDict().Get<std::string>(kSyzygyTablebaseStr)) ||
+      tablebase.max_cardinality() < 3) {
+    std::cerr << "FAILED TO LOAD SYZYGY" << std::endl;
+    return;
+  }
+  auto inputDir = options_.GetOptionsDict().Get<std::string>(kInputDirStr);
+  auto files =
+      GetFileList(inputDir);
+  if (files.size() == 0) {
+    std::cerr << "No files to process" << std::endl;
+    return;
+  }
+  for (int i = 0; i < files.size(); i++) {
+    files[i] = inputDir + "/" + files[i];
+  }
+  // TODO: support threads option.
+  ProcessFiles(files, &tablebase,
+               options_.GetOptionsDict().Get<std::string>(kOutputDirStr), 0, 1);
+}
 
 SelfPlayLoop::SelfPlayLoop() {}
 
