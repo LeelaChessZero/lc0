@@ -99,8 +99,9 @@ class WorkerOverlord {
   SearchWorker* GetRootWorker() const { return root_worker_; }
 
   // Spawns a new worker from a subtree which doesn't have worker.
+  // DO NOT SUBMIT parent should not be there!
   void SpawnNewWorker(bool is_root, SubTree* tree,
-                      const PositionHistory& history);
+                      const PositionHistory& history, SearchWorker* parent);
 
   struct LeasedWorker {
     LeasedWorker(LeasedWorker&&) = default;
@@ -274,7 +275,8 @@ class Search {
 class SearchWorker {
  public:
   SearchWorker(const SearchParams& params, const PositionHistory& history,
-               SubTree* tree, NNCache* cache, WorkerOverlord* overlord);
+               SubTree* tree, NNCache* cache, WorkerOverlord* overlord,
+               SearchWorker* parent);
   ~SearchWorker();
 
   // 1. Initialize internal structures.
@@ -307,8 +309,9 @@ class SearchWorker {
   const EdgeAndNode& GetBestMoveEdge() const { return best_move_edge_; }
 
   int GetRecommendedBatch() const {
-    return IsRootWorker() ? std::numeric_limits<int>::max()
-                          : tree_->GetRecommendedBatchSize();
+    if (IsRootWorker()) return std::numeric_limits<int>::max();
+    return std::min(parent_->GetRecommendedBatch() / 2,
+                    tree_->GetRecommendedBatchSize());
   }
 
   const PositionHistory& GetHistoryToNode(Node* node);
@@ -379,6 +382,8 @@ class SearchWorker {
   std::atomic<int64_t> total_playouts_{0};
   EdgeAndNode best_move_edge_;
   WorkerOverlord* const overlord_;
+  // DO NOT SUBMIT it should be not here!
+  SearchWorker* parent_;
 };
 
 }  // namespace lczero

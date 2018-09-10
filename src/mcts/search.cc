@@ -131,7 +131,7 @@ Search::Search(const NodeTree& tree, Network* network,
       info_callback_(info_callback),
       params_(options) {
   worker_overlord_.SpawnNewWorker(true, tree.GetTreeAtCurrentMove(),
-                                  played_history_);
+                                  played_history_, nullptr);
 }
 
 namespace {
@@ -665,13 +665,15 @@ Search::~Search() {
 
 SearchWorker::SearchWorker(const SearchParams& params,
                            const PositionHistory& history, SubTree* tree,
-                           NNCache* cache, WorkerOverlord* overlord)
+                           NNCache* cache, WorkerOverlord* overlord,
+                           SearchWorker* parent)
     : tree_(tree),
       history_length_(history.GetLength()),
       history_(history),
       cache_(cache),
       params_(params),
-      overlord_(overlord) {
+      overlord_(overlord),
+      parent_(parent) {
   tree_->SetHasAssignedWorker();
 }
 
@@ -799,7 +801,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       SubTree* subtree = node->GetDetachedSubtree();
       // If the subtree doesn't have worker allocated, add it.
       if (!subtree->HasWorker()) {
-        overlord_->SpawnNewWorker(false, node->GetDetachedSubtree(), history_);
+        overlord_->SpawnNewWorker(false, node->GetDetachedSubtree(), history_,
+                                  this);
       }
       // DO NOT SUBMIT write comment
       if (node->TryStartUpdateFromSubtree()) {
@@ -1130,11 +1133,12 @@ int kMinSubtreeReserve = 2;
 }
 
 void WorkerOverlord::SpawnNewWorker(bool is_root, SubTree* tree,
-                                    const PositionHistory& history) {
+                                    const PositionHistory& history,
+                                    SearchWorker* parent) {
   assert(static_cast<bool>(root_worker_) != is_root);
 
-  auto new_worker =
-      std::make_unique<SearchWorker>(params_, history, tree, cache_, this);
+  auto new_worker = std::make_unique<SearchWorker>(params_, history, tree,
+                                                   cache_, this, parent);
   if (is_root) root_worker_ = new_worker.get();
 
   ReleaseWorker(std::move(new_worker));
@@ -1180,14 +1184,18 @@ void WorkerOverlord::MaybeDetach(
     const std::vector<DetachCandidate>& candidates) {
   if (subtrees_to_detach_ == 0) return;
   for (const auto& candidate : candidates) {
-    if (candidate.total_eval_visits < 100) continue;
-    if (candidate.node_visits < candidate.total_eval_visits * 0.3) continue;
+    // std::cerr << "Trying! " << candidate.node_visits << '/'
+    //           << candidate.total_eval_visits << " (" << subtrees_to_detach_
+    //           << ")\n";
+    if (candidate.total_eval_visits < 50) continue;
+    if (candidate.node_visits < candidate.total_eval_visits * 0.2) continue;
     if (candidate.node_visits > candidate.total_eval_visits * 0.7) continue;
     std::cerr << "Detaching! " << candidate.node_visits << '/'
               << candidate.total_eval_visits << " (" << subtrees_to_detach_
               << ")\n";
     SpawnNewWorker(false, candidate.node->DetachSubtree(),
-                   candidate.worker->GetHistoryToNode(candidate.node));
+                   candidate.worker->GetHistoryToNode(candidate.node),
+                   candidate.worker);
     if (--subtrees_to_detach_ == 0) break;
   }
 }
