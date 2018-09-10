@@ -116,6 +116,27 @@ class WorkerOverlord {
   void ReleaseWorker(std::unique_ptr<SearchWorker>);
   void ReleaseWorker(LeasedWorker);
 
+  struct DetachCandidate {
+    DetachCandidate(SearchWorker* worker, Node* node,
+                    double node_prior_from_root, int node_visits,
+                    int total_eval_visits, int total_visits)
+        : worker(worker),
+          node(node),
+          node_prior_from_root(node_prior_from_root),
+          node_visits(node_visits),
+          total_eval_visits(total_eval_visits),
+          total_visits(total_visits) {}
+
+    SearchWorker* worker;
+    Node* node;
+    double node_prior_from_root;
+    int node_visits;
+    int total_eval_visits;
+    int total_visits;
+  };
+
+  void MaybeDetach(const std::vector<DetachCandidate>& candidates);
+
  private:
   const SearchParams params_;
   SearchWorker* root_worker_ = nullptr;
@@ -124,6 +145,8 @@ class WorkerOverlord {
   mutable Mutex queue_mutex_;
   std::vector<std::unique_ptr<SearchWorker>> idle_workers_
       GUARDED_BY(queue_mutex_);
+
+  int subtrees_to_detach_ = 0;
 };
 
 class Search {
@@ -271,7 +294,8 @@ class SearchWorker {
   void DoBackupUpdate();
 
   // 6. Transfer information from the root of the subtree into the subtree stub.
-  void TransferCountersToStub();
+  void TransferCountersToStub(
+      std::vector<WorkerOverlord::DetachCandidate>* candidates);
 
   // Returns root node of a subtree that worker processes.
   Node* GetRootNode() { return tree_->GetRootNode(); }
@@ -282,20 +306,19 @@ class SearchWorker {
   // Returns move from subtree's root (possibly null if not yet known).
   const EdgeAndNode& GetBestMoveEdge() const { return best_move_edge_; }
 
-  // DO NOT SUBMIT
-  // other_worker can be nullptr!
-  bool HasHigherPriorityThan(const SearchWorker* other_worker) const;
-
   int GetRecommendedBatch() const {
     return IsRootWorker() ? std::numeric_limits<int>::max()
                           : tree_->GetRecommendedBatchSize();
   }
 
+  const PositionHistory& GetHistoryToNode(Node* node);
+
  private:
   struct NodeToProcess {
     NodeToProcess(Node* node, bool is_collision, bool is_subtree,
-                  uint16_t depth)
+                  uint16_t depth, Node* node_at_root)
         : node(node),
+          node_at_root(node_at_root),
           depth(depth),
           is_collision(is_collision),
           is_subtree(is_subtree) {}
@@ -307,7 +330,10 @@ class SearchWorker {
       return is_cache_hit || is_subtree || node->IsTerminal();
     }
 
+    // The node to extend.
     Node* node;
+    // First node from root on the wat to `node`.
+    Node* node_at_root = nullptr;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
     uint16_t depth;
@@ -316,14 +342,14 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_cache_hit = false;
 
-    static NodeToProcess Collision(Node* node, uint16_t depth) {
-      return NodeToProcess(node, true, false, depth);
+    static NodeToProcess Collision(Node* node, uint16_t depth, Node* at_root) {
+      return NodeToProcess(node, true, false, depth, at_root);
     }
-    static NodeToProcess Extension(Node* node, uint16_t depth) {
-      return NodeToProcess(node, false, false, depth);
+    static NodeToProcess Extension(Node* node, uint16_t depth, Node* at_root) {
+      return NodeToProcess(node, false, false, depth, at_root);
     }
-    static NodeToProcess Subtree(Node* node, uint16_t depth) {
-      return NodeToProcess(node, false, true, depth);
+    static NodeToProcess Subtree(Node* node, uint16_t depth, Node* at_root) {
+      return NodeToProcess(node, false, true, depth, at_root);
     }
   };
 

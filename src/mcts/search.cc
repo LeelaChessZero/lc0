@@ -598,6 +598,7 @@ void Search::WorkerThread() {
     // In fact batching network adapter only actually will run computation once.
     for (auto& lease : workers) lease.worker->RunNNComputation();
 
+    std::vector<WorkerOverlord::DetachCandidate> candidates;
     for (auto& lease : workers) {
       // 4. Retrieve NN computations (and terminal values) into nodes.
       lease.worker->FetchMinibatchResults();
@@ -608,9 +609,14 @@ void Search::WorkerThread() {
 
       // 6. Transfer information from the root of the subtree into the subtree
       // stub.
-      lease.worker->TransferCountersToStub();
+      lease.worker->TransferCountersToStub(&candidates);
+    }
 
-      // Release the worker back to a pool for other threads to use.
+    // Pass candidates for detaching to overlord, maybe it will detach some.
+    worker_overlord_.MaybeDetach(candidates);
+
+    // Release workers back to a pool for other threads to use.
+    for (auto& lease : workers) {
       worker_overlord_.ReleaseWorker(std::move(lease));
     }
 
@@ -773,6 +779,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   uint16_t depth = 0;
+  Node* node_at_root = nullptr;
 
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
@@ -782,7 +789,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
-    if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    if (!is_root_node) {
+      node = best_edge.GetOrSpawnNode(/* parent */ node);
+      if (!node_at_root) node_at_root = node;
+    }
     depth++;
     // If node has detached subtree, that may have many reasons.
     if (node->HasDetachedSubtree()) {
@@ -793,18 +803,20 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       }
       // DO NOT SUBMIT write comment
       if (node->TryStartUpdateFromSubtree()) {
-        return NodeToProcess::Subtree(node, depth);
+        return NodeToProcess::Subtree(node, depth, node_at_root);
       } else {
-        return NodeToProcess::Collision(node, depth);
+        return NodeToProcess::Collision(node, depth, node_at_root);
       }
     }
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
-      return NodeToProcess::Collision(node, depth);
+      return NodeToProcess::Collision(node, depth, node_at_root);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) return NodeToProcess::Extension(node, depth);
+    if (!node->HasChildren()) {
+      return NodeToProcess::Extension(node, depth, node_at_root);
+    }
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
@@ -1059,69 +1071,65 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
 // 6. Transfer information from the root of the subtree into the subtree stub.
 // ~~~~~~~~~~~~~~
-void SearchWorker::TransferCountersToStub() {
+void SearchWorker::TransferCountersToStub(
+    std::vector<WorkerOverlord::DetachCandidate>* candidates) {
   Node* root = tree_->GetRootNode();
   tree_->UpdateNQ(root->GetN(), root->GetQ());
 
-  // Hacky temporary algorithm.
-  int total_nodes = 0;
-  std::map<int, std::map<Node*, int>> depth_to_node_and_count;
+  int evaled_nodes = 0;
+
+  int counter = 0;
+  Node* best = nullptr;
   for (const NodeToProcess& node_to_process : minibatch_) {
-    if (node_to_process.nn_queried || node_to_process.is_cache_hit) {
-      ++total_nodes;
-      int depth = node_to_process.depth;
-      for (Node* n = node_to_process.node; n; n = n->GetParent()) {
-        ++depth_to_node_and_count[-depth][n];
-        --depth;
-      }
+    if (!node_to_process.nn_queried && !node_to_process.is_cache_hit) {
+      continue;
+    }
+    ++evaled_nodes;
+    if (counter == 0) {
+      best = node_to_process.node_at_root;
+    }
+    if (best == node_to_process.node_at_root) {
+      ++counter;
+    } else {
+      --counter;
     }
   }
 
-  static int total = 1;
+  if (best == nullptr) return;
 
-  if (total_nodes < 150) return;
-  for (const auto& depths : depth_to_node_and_count) {
-    for (const auto& node : depths.second) {
-      if (node.second >= total_nodes * 14 / 29 &&
-          node.second <= total_nodes * 15 / 29) {
-        history_.Trim(history_length_);
-        std::vector<Move> moves;
-        for (Node* n = node.first; n->GetParent(); n = n->GetParent()) {
-          moves.push_back(n->GetEdgeToSelf()->GetMove());
-        }
-        std::reverse(moves.begin(), moves.end());
-        std::cerr << "Detaching: " << node.first << " " << node.second << '/'
-                  << total_nodes << " D" << -depths.first << " total "
-                  << ++total;
-        for (const auto& m : moves) {
-          history_.Append(m);
-          std::cerr << ' ' << m.as_string();
-        }
-        std::cerr << std::endl;
-        // std::cerr << history_.Last().DebugString() << std::endl;
-        overlord_->SpawnNewWorker(false, node.first->DetachSubtree(), history_);
-        return;
-      }
+  counter = 0;
+  for (const NodeToProcess& node_to_process : minibatch_) {
+    if (!node_to_process.nn_queried && !node_to_process.is_cache_hit) {
+      continue;
     }
+    if (best == node_to_process.node_at_root) ++counter;
+  }
+
+  if (counter * 2 > evaled_nodes) {
+    candidates->emplace_back(this, best, best->GetEdgeToSelf()->GetP(), counter,
+                             evaled_nodes, minibatch_.size());
   }
 }
 
-bool SearchWorker::HasHigherPriorityThan(
-    const SearchWorker* other_worker) const {
-  if (IsRootWorker()) return true;
-  if (tree_->GetRecommendedBatchSize() == 0) return false;
-  if (!other_worker) return true;
-  if (other_worker->IsRootWorker()) return false;
-  if (tree_->IsBehind() == other_worker->tree_->IsBehind()) {
-    return tree_->GetRecommendedBatchSize() >
-           other_worker->tree_->GetRecommendedBatchSize();
+const PositionHistory& SearchWorker::GetHistoryToNode(Node* node) {
+  std::vector<Move> moves;
+  for (; node->GetParent(); node = node->GetParent()) {
+    moves.push_back(node->GetEdgeToSelf()->GetMove());
   }
-  return tree_->IsBehind();
+  std::reverse(moves.begin(), moves.end());
+
+  history_.Trim(history_length_);
+  for (const auto& m : moves) history_.Append(m);
+  return history_;
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // WorkerOverlord
 //////////////////////////////////////////////////////////////////////////////
+
+namespace {
+int kMinSubtreeReserve = 2;
+}
 
 void WorkerOverlord::SpawnNewWorker(bool is_root, SubTree* tree,
                                     const PositionHistory& history) {
@@ -1137,18 +1145,25 @@ void WorkerOverlord::SpawnNewWorker(bool is_root, SubTree* tree,
 WorkerOverlord::LeasedWorker WorkerOverlord::AcquireWorker() {
   Mutex::Lock lock(queue_mutex_);
 
+  int total_available_workers = 0;
+  int recommended_batch_size = 0;
   std::unique_ptr<SearchWorker>* best_worker = nullptr;
   for (auto& worker : idle_workers_) {
-    if (worker->HasHigherPriorityThan(best_worker ? best_worker->get()
-                                                  : nullptr))
+    if (worker->GetRecommendedBatch() == 0) continue;
+    ++total_available_workers;
+    if (worker->GetRecommendedBatch() > recommended_batch_size) {
       best_worker = &worker;
+      recommended_batch_size = worker->GetRecommendedBatch();
+    }
   }
+
+  subtrees_to_detach_ = std::max(subtrees_to_detach_,
+                                 kMinSubtreeReserve - total_available_workers);
 
   if (!best_worker) return {};
 
   std::swap(*best_worker, idle_workers_.back());
   auto res = std::move(idle_workers_.back());
-  auto recommended_batch_size = res->GetRecommendedBatch();
 
   idle_workers_.pop_back();
   return {std::move(res), recommended_batch_size};
@@ -1161,6 +1176,19 @@ void WorkerOverlord::ReleaseWorker(std::unique_ptr<SearchWorker> worker) {
 
 void WorkerOverlord::ReleaseWorker(LeasedWorker lease) {
   ReleaseWorker(std::move(lease.worker));
+}
+
+void WorkerOverlord::MaybeDetach(
+    const std::vector<DetachCandidate>& candidates) {
+  if (subtrees_to_detach_ == 0) return;
+  for (const auto& candidate : candidates) {
+    if (candidate.total_eval_visits < 100) continue;
+    if (candidate.node_visits > candidate.total_eval_visits * 0.6) continue;
+    std::cerr << "Detaching!\n";
+    SpawnNewWorker(false, candidate.node->DetachSubtree(),
+                   candidate.worker->GetHistoryToNode(candidate.node));
+    if (--subtrees_to_detach_ == 0) break;
+  }
 }
 
 }  // namespace lczero
