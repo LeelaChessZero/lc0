@@ -95,13 +95,26 @@ class WorkerOverlord {
   WorkerOverlord(const SearchParams& params, NNCache* cache)
       : params_(params), cache_(cache) {}
 
+  // Returns root worker of the search.
   SearchWorker* GetRootWorker() const { return root_worker_; }
 
+  // Spawns a new worker from a subtree which doesn't have worker.
   void SpawnNewWorker(bool is_root, SubTree* tree,
                       const PositionHistory& history);
 
-  std::unique_ptr<SearchWorker> AcquireWorker();
+  struct LeasedWorker {
+    LeasedWorker(LeasedWorker&&) = default;
+    // nullptr if no work to do.
+    std::unique_ptr<SearchWorker> worker;
+    int recommended_batch_size;
+  };
+
+  // Aquires worker to get some work.
+  LeasedWorker AcquireWorker();
+
+  // Return worker after thread finished to do its work.
   void ReleaseWorker(std::unique_ptr<SearchWorker>);
+  void ReleaseWorker(LeasedWorker);
 
  private:
   const SearchParams params_;

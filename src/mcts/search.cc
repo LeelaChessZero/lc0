@@ -572,46 +572,46 @@ void Search::WorkerThread() {
     // Make batching network collect a new batch.
     network.Reset();
 
-    std::vector<std::unique_ptr<SearchWorker>> workers;
+    std::vector<WorkerOverlord::LeasedWorker> workers;
 
     // While there is a space in a minibatch, get more workers.
     while (network.GetTotalBatchSize() < params_.kMiniBatchSize) {
       // Get free worker with a highest priority.
-      auto worker = worker_overlord_.AcquireWorker();
+      auto lease = worker_overlord_.AcquireWorker();
 
       // No workers availabe, break.
-      if (!worker) break;
+      if (!lease.worker) break;
 
       // 1. Initialize internal structures.
       // @computation is the computation to use on this iteration.
-      worker->InitializeIteration(network.NewComputation());
+      lease.worker->InitializeIteration(network.NewComputation());
 
       // 2. Gather minibatch.
-      worker->GatherMinibatch(
-          std::min(worker->GetRecommendedBatch(),
+      lease.worker->GatherMinibatch(
+          std::min(lease.recommended_batch_size,
                    params_.kMiniBatchSize - network.GetTotalBatchSize()));
 
-      workers.push_back(std::move(worker));
+      workers.push_back(std::move(lease));
     }
 
     // 3. Run NN computation.
     // In fact batching network adapter only actually will run computation once.
-    for (auto& worker : workers) worker->RunNNComputation();
+    for (auto& lease : workers) lease.worker->RunNNComputation();
 
-    for (auto& worker : workers) {
+    for (auto& lease : workers) {
       // 4. Retrieve NN computations (and terminal values) into nodes.
-      worker->FetchMinibatchResults();
+      lease.worker->FetchMinibatchResults();
 
       // 5. Propagate the new nodes' information to all their parents in the
       // tree.
-      worker->DoBackupUpdate();
+      lease.worker->DoBackupUpdate();
 
       // 6. Transfer information from the root of the subtree into the subtree
       // stub.
-      worker->TransferCountersToStub();
+      lease.worker->TransferCountersToStub();
 
       // Release the worker back to a pool for other threads to use.
-      worker_overlord_.ReleaseWorker(std::move(worker));
+      worker_overlord_.ReleaseWorker(std::move(lease));
     }
 
     UpdateRemainingMoves();  // Updates smart pruning counters.
@@ -1134,7 +1134,7 @@ void WorkerOverlord::SpawnNewWorker(bool is_root, SubTree* tree,
   ReleaseWorker(std::move(new_worker));
 }
 
-std::unique_ptr<SearchWorker> WorkerOverlord::AcquireWorker() {
+WorkerOverlord::LeasedWorker WorkerOverlord::AcquireWorker() {
   Mutex::Lock lock(queue_mutex_);
 
   std::unique_ptr<SearchWorker>* best_worker = nullptr;
@@ -1148,12 +1148,19 @@ std::unique_ptr<SearchWorker> WorkerOverlord::AcquireWorker() {
 
   std::swap(*best_worker, idle_workers_.back());
   auto res = std::move(idle_workers_.back());
+  auto recommended_batch_size = res->GetRecommendedBatch();
+
   idle_workers_.pop_back();
-  return res;
+  return {std::move(res), recommended_batch_size};
 }
+
 void WorkerOverlord::ReleaseWorker(std::unique_ptr<SearchWorker> worker) {
   Mutex::Lock lock(queue_mutex_);
   idle_workers_.push_back(std::move(worker));
+}
+
+void WorkerOverlord::ReleaseWorker(LeasedWorker lease) {
+  ReleaseWorker(std::move(lease.worker));
 }
 
 }  // namespace lczero
