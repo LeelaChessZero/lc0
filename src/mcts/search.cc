@@ -44,8 +44,6 @@
 namespace lczero {
 
 const char* SearchParams::kMiniBatchSizeStr = "Minibatch size for NN inference";
-const char* SearchParams::kMaxPrefetchBatchStr =
-    "Max prefetch nodes, per NN call";
 const char* SearchParams::kCpuctStr = "Cpuct MCTS option";
 const char* SearchParams::kTemperatureStr = "Initial temperature";
 const char* SearchParams::kTempDecayMovesStr = "Moves with temperature decay";
@@ -75,7 +73,6 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 
 SearchParams::SearchParams(const OptionsDict& options)
     : kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
-      kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
       kTemperature(options.Get<float>(kTemperatureStr)),
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
@@ -94,7 +91,6 @@ void SearchParams::PopulateUciParams(OptionsParser* options) {
   // tournament.cc
 
   options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
-  options->Add<IntOption>(kMaxPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
@@ -595,26 +591,22 @@ void Search::WorkerThread() {
           std::min(worker->GetRecommendedBatch(),
                    params_.kMiniBatchSize - network.GetTotalBatchSize()));
 
-      // 3. Prefetch into cache.
-      // worker->MaybePrefetchIntoCache(params_.kMiniBatchSize -
-      //                                network.GetTotalBatchSize());
-
       workers.push_back(std::move(worker));
     }
 
-    // 4. Run NN computation.
+    // 3. Run NN computation.
     // In fact batching network adapter only actually will run computation once.
     for (auto& worker : workers) worker->RunNNComputation();
 
     for (auto& worker : workers) {
-      // 5. Retrieve NN computations (and terminal values) into nodes.
+      // 4. Retrieve NN computations (and terminal values) into nodes.
       worker->FetchMinibatchResults();
 
-      // 6. Propagate the new nodes' information to all their parents in the
+      // 5. Propagate the new nodes' information to all their parents in the
       // tree.
       worker->DoBackupUpdate();
 
-      // 7. Transfer information from the root of the subtree into the subtree
+      // 6. Transfer information from the root of the subtree into the subtree
       // stub.
       worker->TransferCountersToStub();
 
@@ -966,108 +958,11 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   return false;
 }
 
-// 3. Prefetch into cache.
-// ~~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::MaybePrefetchIntoCache(int max_batch_size) {
-  // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
-  // If there are requests to NN, but the batch is not full, try to prefetch
-  // nodes which are likely useful in future.
-  if (max_batch_size > 0 && computation_->GetCacheMisses() > 0 &&
-      computation_->GetCacheMisses() < params_.kMaxPrefetchBatch) {
-    history_.Trim(history_length_);
-    PrefetchIntoCache(
-        tree_->GetRootNode(),
-        std::min(max_batch_size,
-                 params_.kMaxPrefetchBatch - computation_->GetCacheMisses()));
-  }
-}
-
-// Prefetches up to @budget nodes into cache. Returns number of nodes
-// prefetched.
-int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
-  if (budget <= 0) return 0;
-
-  // We are in a leaf, which is not yet being processed.
-  if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false)) {
-      // Make it return 0 to make it not use the slot, so that the function
-      // tries hard to find something to cache even among unpopular moves.
-      // In practice that slows things down a lot though, as it's not always
-      // easy to find what to cache.
-      return 1;
-    }
-    return 1;
-  }
-
-  assert(node);
-  // n = 0 and n_in_flight_ > 0, that means the node is being extended.
-  if (node->GetN() == 0) return 0;
-  // The node is terminal; don't prefetch it.
-  if (node->IsTerminal()) return 0;
-
-  // Populate all subnodes and their scores.
-  typedef std::pair<float, EdgeAndNode> ScoredEdge;
-  std::vector<ScoredEdge> scores;
-  float puct_mult =
-      params_.kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  // FPU reduction is not taken into account.
-  const float parent_q = -node->GetQ();
-  for (auto edge : node->Edges()) {
-    if (edge.GetP() == 0.0f) continue;
-    // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(parent_q), edge);
-  }
-
-  size_t first_unsorted_index = 0;
-  int total_budget_spent = 0;
-  int budget_to_spend = budget;  // Initialize for the case where there's only
-                                 // one child.
-  for (size_t i = 0; i < scores.size(); ++i) {
-    if (budget <= 0) break;
-
-    // Sort next chunk of a vector. 3 at a time. Most of the time it's fine.
-    if (first_unsorted_index != scores.size() &&
-        i + 2 >= first_unsorted_index) {
-      const int new_unsorted_index =
-          std::min(scores.size(), budget < 2 ? first_unsorted_index + 2
-                                             : first_unsorted_index + 3);
-      std::partial_sort(scores.begin() + first_unsorted_index,
-                        scores.begin() + new_unsorted_index, scores.end(),
-                        [](const ScoredEdge& a, const ScoredEdge& b) {
-                          return a.first < b.first;
-                        });
-      first_unsorted_index = new_unsorted_index;
-    }
-
-    auto edge = scores[i].second;
-    // Last node gets the same budget as prev-to-last node.
-    if (i != scores.size() - 1) {
-      // Sign of the score was flipped for sorting, so flip it back.
-      const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-parent_q);
-      if (next_score > q) {
-        budget_to_spend =
-            std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
-                                 edge.GetNStarted()) +
-                                 1);
-      } else {
-        budget_to_spend = budget;
-      }
-    }
-    history_.Append(edge.GetMove());
-    const int budget_spent = PrefetchIntoCache(edge.node(), budget_to_spend);
-    history_.Pop();
-    budget -= budget_spent;
-    total_budget_spent += budget_spent;
-  }
-  return total_budget_spent;
-}
-
-// 4. Run NN computation.
+// 3. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
-// 5. Retrieve NN computations (and terminal values) into nodes.
+// 4. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
@@ -1120,7 +1015,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
 }
 
-// 6. Propagate the new nodes' information to all their parents in the tree.
+// 5. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
   for (const NodeToProcess& node_to_process : minibatch_) {
@@ -1162,7 +1057,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   total_playouts_.fetch_add(1, std::memory_order_release);
 }
 
-// 7. Transfer information from the root of the subtree into the subtree stub.
+// 6. Transfer information from the root of the subtree into the subtree stub.
 // ~~~~~~~~~~~~~~
 void SearchWorker::TransferCountersToStub() {
   Node* root = tree_->GetRootNode();

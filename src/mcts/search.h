@@ -62,7 +62,6 @@ struct SearchParams {
 
   // Strings for UCI params. So that others can override defaults.
   static const char* kMiniBatchSizeStr;
-  static const char* kMaxPrefetchBatchStr;
   static const char* kCpuctStr;
   static const char* kTemperatureStr;
   static const char* kTempDecayMovesStr;
@@ -77,7 +76,6 @@ struct SearchParams {
 
   // External parameters.
   const int kMiniBatchSize;
-  const int kMaxPrefetchBatch;
   const float kCpuct;
   const float kTemperature;
   const int kTempDecayMoves;
@@ -250,19 +248,16 @@ class SearchWorker {
   // 2. Gather minibatch.
   void GatherMinibatch(int max_batch_size);
 
-  // 3. Prefetch into cache.
-  void MaybePrefetchIntoCache(int max_batch_size);
-
-  // 4. Run NN computation.
+  // 3. Run NN computation.
   void RunNNComputation();
 
-  // 5. Retrieve NN computations (and terminal values) into nodes.
+  // 4. Retrieve NN computations (and terminal values) into nodes.
   void FetchMinibatchResults();
 
-  // 6. Propagate the new nodes' information to all their parents in the tree.
+  // 5. Propagate the new nodes' information to all their parents in the tree.
   void DoBackupUpdate();
 
-  // 7. Transfer information from the root of the subtree into the subtree stub.
+  // 6. Transfer information from the root of the subtree into the subtree stub.
   void TransferCountersToStub();
 
   // Returns root node of a subtree that worker processes.
