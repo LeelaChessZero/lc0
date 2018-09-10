@@ -78,7 +78,7 @@ void TestValidExpectation(SyzygyTablebase* tablebase, const std::string& fen,
   history.Reset(board, 0, 1);
   ProbeState result;
   WDLScore score = tablebase->probe_wdl(history.Last(), &result);
-  EXPECT_EQ(result, FAIL);
+  EXPECT_NE(result, FAIL);
   EXPECT_EQ(score, expected);
   int moves = tablebase->probe_dtz(history.Last(), &result);
   EXPECT_NE(result, FAIL);
