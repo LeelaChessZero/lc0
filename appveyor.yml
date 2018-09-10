@@ -5,16 +5,16 @@ image:
 - Visual Studio 2017
 environment:
   matrix:
-  - NAME: cuda
-    OPENCL: false
-    BLAS: false
-    CUDA: true
-    GTEST: false
-  - NAME: opencl
-    OPENCL: true
-    BLAS: true
-    CUDA: false
-    GTEST: false
+#  - NAME: cuda
+#    OPENCL: false
+#    BLAS: false
+#    CUDA: true
+#    GTEST: false
+#  - NAME: opencl
+#    OPENCL: true
+#    BLAS: true
+#    CUDA: false
+#    GTEST: false
   - NAME: blas
     OPENCL: false
     BLAS: true
@@ -42,6 +42,9 @@ install:
 - cmd: IF NOT EXIST c:\cache\protobuf\ cmake -G "Visual Studio 14 2015 Win64" -Dprotobuf_BUILD_SHARED_LIBS=NO -Dprotobuf_MSVC_STATIC_RUNTIME=NO -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=c:/cache/protobuf ../cmake
 - cmd: IF NOT EXIST c:\cache\protobuf\ msbuild INSTALL.vcxproj /p:Configuration=Release /p:Platform=x64 /m
 - cmd: set PATH=c:\cache\protobuf\bin;%PATH%
+- cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy 
+- cmd: IF %GTEST%==true cd C:\cache\syzygy 
+- cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
 - cmd: cd C:\projects\lc0
 cache:
   - C:\cache
