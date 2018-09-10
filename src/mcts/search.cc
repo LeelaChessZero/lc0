@@ -1080,18 +1080,18 @@ void SearchWorker::TransferCountersToStub(
 
   int counter = 0;
   Node* best = nullptr;
+  std::unordered_map<Node*, int> node_to_count;
+
   for (const NodeToProcess& node_to_process : minibatch_) {
     if (!node_to_process.nn_queried && !node_to_process.is_cache_hit) {
       continue;
     }
+    if (!node_to_process.node_at_root) continue;
     ++evaled_nodes;
-    if (counter == 0) {
+    auto new_count = ++node_to_count[node_to_process.node_at_root];
+    if (new_count > counter) {
+      counter = new_count;
       best = node_to_process.node_at_root;
-    }
-    if (best == node_to_process.node_at_root) {
-      ++counter;
-    } else {
-      --counter;
     }
   }
 
@@ -1105,10 +1105,8 @@ void SearchWorker::TransferCountersToStub(
     if (best == node_to_process.node_at_root) ++counter;
   }
 
-  if (counter * 2 > evaled_nodes) {
-    candidates->emplace_back(this, best, best->GetEdgeToSelf()->GetP(), counter,
-                             evaled_nodes, minibatch_.size());
-  }
+  candidates->emplace_back(this, best, best->GetEdgeToSelf()->GetP(), counter,
+                           evaled_nodes, minibatch_.size());
 }
 
 const PositionHistory& SearchWorker::GetHistoryToNode(Node* node) {
@@ -1157,8 +1155,8 @@ WorkerOverlord::LeasedWorker WorkerOverlord::AcquireWorker() {
     }
   }
 
-  subtrees_to_detach_ = std::max(subtrees_to_detach_,
-                                 kMinSubtreeReserve - total_available_workers);
+  subtrees_to_detach_ = std::max(
+      subtrees_to_detach_, kMinSubtreeReserve - total_available_workers + 1);
 
   if (!best_worker) return {};
 
@@ -1183,8 +1181,11 @@ void WorkerOverlord::MaybeDetach(
   if (subtrees_to_detach_ == 0) return;
   for (const auto& candidate : candidates) {
     if (candidate.total_eval_visits < 100) continue;
-    if (candidate.node_visits > candidate.total_eval_visits * 0.6) continue;
-    std::cerr << "Detaching!\n";
+    if (candidate.node_visits < candidate.total_eval_visits * 0.3) continue;
+    if (candidate.node_visits > candidate.total_eval_visits * 0.7) continue;
+    std::cerr << "Detaching! " << candidate.node_visits << '/'
+              << candidate.total_eval_visits << " (" << subtrees_to_detach_
+              << ")\n";
     SpawnNewWorker(false, candidate.node->DetachSubtree(),
                    candidate.worker->GetHistoryToNode(candidate.node));
     if (--subtrees_to_detach_ == 0) break;
