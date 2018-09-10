@@ -131,7 +131,7 @@ Search::Search(const NodeTree& tree, Network* network,
       info_callback_(info_callback),
       params_(options) {
   worker_overlord_.SpawnNewWorker(true, tree.GetTreeAtCurrentMove(),
-                                  played_history_, nullptr);
+                                  played_history_);
 }
 
 namespace {
@@ -665,15 +665,13 @@ Search::~Search() {
 
 SearchWorker::SearchWorker(const SearchParams& params,
                            const PositionHistory& history, SubTree* tree,
-                           NNCache* cache, WorkerOverlord* overlord,
-                           SearchWorker* parent)
+                           NNCache* cache, WorkerOverlord* overlord)
     : tree_(tree),
       history_length_(history.GetLength()),
       history_(history),
       cache_(cache),
       params_(params),
-      overlord_(overlord),
-      parent_(parent) {
+      overlord_(overlord) {
   tree_->SetHasAssignedWorker();
 }
 
@@ -690,6 +688,16 @@ void SearchWorker::InitializeIteration(
   computation_ =
       std::make_unique<CachingComputation>(std::move(computation), cache_);
   minibatch_.clear();
+
+  int target_ahead = tree_->GetTargetAheadNodes();
+
+  if (reached_target_ahead_ && tree_->IsBehind()) {
+    tree_->SetTargetAheadNodes(
+        std::min(2 * target_ahead, params_.kMiniBatchSize));
+    reached_target_ahead_ = false;
+  } else if (target_ahead > 1) {
+    tree_->SetTargetAheadNodes(target_ahead - 1);
+  }
 
   /* if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;
@@ -801,8 +809,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       SubTree* subtree = node->GetDetachedSubtree();
       // If the subtree doesn't have worker allocated, add it.
       if (!subtree->HasWorker()) {
-        overlord_->SpawnNewWorker(false, node->GetDetachedSubtree(), history_,
-                                  this);
+        overlord_->SpawnNewWorker(false, node->GetDetachedSubtree(), history_);
       }
       // DO NOT SUBMIT write comment
       if (node->TryStartUpdateFromSubtree()) {
@@ -1078,6 +1085,9 @@ void SearchWorker::TransferCountersToStub(
     std::vector<WorkerOverlord::DetachCandidate>* candidates) {
   Node* root = tree_->GetRootNode();
   tree_->UpdateNQ(root->GetN(), root->GetQ());
+  if (tree_->IsAhead()) {
+    reached_target_ahead_ = true;
+  }
 
   int evaled_nodes = 0;
 
@@ -1133,12 +1143,11 @@ int kMinSubtreeReserve = 2;
 }
 
 void WorkerOverlord::SpawnNewWorker(bool is_root, SubTree* tree,
-                                    const PositionHistory& history,
-                                    SearchWorker* parent) {
+                                    const PositionHistory& history) {
   assert(static_cast<bool>(root_worker_) != is_root);
 
-  auto new_worker = std::make_unique<SearchWorker>(params_, history, tree,
-                                                   cache_, this, parent);
+  auto new_worker =
+      std::make_unique<SearchWorker>(params_, history, tree, cache_, this);
   if (is_root) root_worker_ = new_worker.get();
 
   ReleaseWorker(std::move(new_worker));
@@ -1187,15 +1196,17 @@ void WorkerOverlord::MaybeDetach(
     // std::cerr << "Trying! " << candidate.node_visits << '/'
     //           << candidate.total_eval_visits << " (" << subtrees_to_detach_
     //           << ")\n";
-    if (candidate.total_eval_visits < 50) continue;
-    if (candidate.node_visits < candidate.total_eval_visits * 0.2) continue;
-    if (candidate.node_visits > candidate.total_eval_visits * 0.7) continue;
+    // if (candidate.total_eval_visits < 10) continue;
+    // if (candidate.node_visits < candidate.total_visits * 0.90) continue;
+    // if (candidate.node_visits > candidate.total_visits * 0.90) continue;
+    if (candidate.node_visits < params_.kMiniBatchSize / 3) continue;
     std::cerr << "Detaching! " << candidate.node_visits << '/'
               << candidate.total_eval_visits << " (" << subtrees_to_detach_
               << ")\n";
-    SpawnNewWorker(false, candidate.node->DetachSubtree(),
-                   candidate.worker->GetHistoryToNode(candidate.node),
-                   candidate.worker);
+    auto subtree = candidate.node->DetachSubtree();
+    subtree->SetTargetAheadNodes(candidate.node_visits);
+    SpawnNewWorker(false, std::move(subtree),
+                   candidate.worker->GetHistoryToNode(candidate.node));
     if (--subtrees_to_detach_ == 0) break;
   }
 }

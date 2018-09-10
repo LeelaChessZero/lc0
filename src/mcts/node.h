@@ -443,6 +443,11 @@ class Node::NodeRange {
 class SubTree {
  public:
   SubTree(Node* parent_node, std::unique_ptr<Node> detached_node);
+  ~SubTree() {
+    std::cerr << "~SubTree: " << IsAhead() << '\t' << n_at_start_ << '\t' << n_
+              << '\t' << parent_n_ << '\t' << (n_ - parent_n_) << '\t'
+              << target_ahead_nodes_ << std::endl;
+  }
 
   // Returns a root node of the subtree.
   Node* GetRootNode() const { return root_.get(); }
@@ -467,6 +472,7 @@ class SubTree {
 
   int GetRecommendedBatchSize() const;
   bool IsBehind() const;
+  bool IsAhead() const;
 
   // Called by subtree worker.
   void UpdateNQ(uint32_t n, float q);
@@ -475,6 +481,8 @@ class SubTree {
   uint32_t GetN() const;
   float GetQ() const;
   void PullStatsFromParent();
+  int GetTargetAheadNodes() const { return target_ahead_nodes_; }
+  void SetTargetAheadNodes(int val) { target_ahead_nodes_ = val; }
 
  private:
  public:
@@ -494,6 +502,9 @@ class SubTree {
   std::atomic<uint32_t> n_{0};
 
   std::atomic<uint32_t> parent_n_{0};
+
+  int target_ahead_nodes_ = 1;
+  uint32_t n_at_start_;
 };
 
 class NodeTree {

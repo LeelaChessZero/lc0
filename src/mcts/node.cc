@@ -410,7 +410,9 @@ SubTree::SubTree(Node* parent_node, std::unique_ptr<Node> detached_node)
       parent_node_(parent_node),
       q_(root_->GetQ()),
       n_(root_->GetN()),
-      parent_n_(root_->GetN()) {}
+      parent_n_(root_->GetN()) {
+  n_at_start_ = n_;
+}
 
 bool SubTree::HasWorker() const {
   return is_used_.load(std::memory_order_acquire);
@@ -440,14 +442,21 @@ void SubTree::PullStatsFromParent() {
 }
 
 int SubTree::GetRecommendedBatchSize() const {
-  return std::max(
-      0, static_cast<int>(parent_n_.load(std::memory_order_acquire)) + 256 -
-             static_cast<int>(n_.load(std::memory_order_acquire)));
+  return std::max(0,
+                  static_cast<int>(parent_n_.load(std::memory_order_acquire)) +
+                      target_ahead_nodes_ -
+                      static_cast<int>(n_.load(std::memory_order_acquire)));
 }
 
 bool SubTree::IsBehind() const {
   return parent_n_.load(std::memory_order_acquire) >=
          n_.load(std::memory_order_acquire);
+}
+
+bool SubTree::IsAhead() const {
+  return static_cast<int>(n_.load(std::memory_order_acquire)) -
+             static_cast<int>(parent_n_.load(std::memory_order_acquire)) >=
+         target_ahead_nodes_;
 }
 
 /////////////////////////////////////////////////////////////////////////
