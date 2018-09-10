@@ -43,7 +43,7 @@ install:
 - cmd: IF NOT EXIST c:\cache\protobuf\ msbuild INSTALL.vcxproj /p:Configuration=Release /p:Platform=x64 /m
 - cmd: set PATH=c:\cache\protobuf\bin;%PATH%
 - cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy 
-- cmd: IF %GTEST%==true cd C:\cache\syzygy 
+- cmd: IF %GTEST%==true cd C:\cache\syzygy
 - cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
 - cmd: cd C:\projects\lc0
 cache:
@@ -82,6 +82,7 @@ deploy:
 test_script:
 - cmd: cd build
 - cmd: IF %GTEST%==true copy C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
+- cmd: IF %GTEST%==true xcopy /s /i C:\cache\syzygy syzygy
 - cmd: IF %GTEST%==true meson.py test --print-errorlogs
 - cmd: cd ..
 on_finish:
