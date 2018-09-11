@@ -110,7 +110,7 @@ class WorkerOverlord {
   };
 
   // Aquires worker to get some work.
-  LeasedWorker AcquireWorker();
+  LeasedWorker AcquireWorker(int batch_left);
 
   // Return worker after thread finished to do its work.
   void ReleaseWorker(std::unique_ptr<SearchWorker>);
@@ -146,7 +146,7 @@ class WorkerOverlord {
   std::vector<std::unique_ptr<SearchWorker>> idle_workers_
       GUARDED_BY(queue_mutex_);
 
-  int subtrees_to_detach_ = 0;
+  int nodes_to_add_into_batch_ = 0;
 };
 
 class Search {
