@@ -233,7 +233,7 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
-void Node::FinalizeScoreUpdate(float v) {
+void Node::FinalizeScoreUpdate(double v) {
   // Recompute Q.
   q_ += (v - q_) / (n_ + 1);
   // If first visit, update parent's sum of policies visited at least once.

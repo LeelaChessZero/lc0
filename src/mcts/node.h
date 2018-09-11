@@ -151,7 +151,7 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ() const { return q_; }
+  double GetQ() const { return q_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -172,7 +172,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v);
+  void FinalizeScoreUpdate(double v);
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -214,7 +214,7 @@ class Node {
   // subtree. For terminal nodes, eval is stored. This is from the perspective
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
-  float q_ = 0.0f;
+  double q_ = 0.0;
   // How many completed visits this node had.
   uint32_t n_ = 0;
   // (aka virtual loss). How many threads currently process this node (started
@@ -260,7 +260,7 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q) const {
+  double GetQ(double default_q) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
   }
   // N-related getters, from Node (if exists).
@@ -277,7 +277,7 @@ class EdgeAndNode {
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator) const {
+  double GetU(double numerator) const {
     return numerator * GetP() / (1 + GetNStarted());
   }
 

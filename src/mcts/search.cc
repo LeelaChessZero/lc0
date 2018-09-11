@@ -193,10 +193,10 @@ int64_t Search::GetTimeSinceStart() const {
 }
 
 void Search::SendMovesStats() const {
-  const float parent_q =
+  const double parent_q =
       -root_node_->GetQ() -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
-  const float U_coeff =
+  const double U_coeff =
       kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
 
   std::vector<EdgeAndNode> edges;
@@ -237,7 +237,7 @@ void Search::SendMovesStats() const {
         << edge.GetQ(parent_q) + edge.GetU(U_coeff) << ") ";
 
     oss << "(V: ";
-    optional<float> v;
+    optional<double> v;
     if (edge.IsTerminal()) {
       v = edge.node()->GetQ();
     } else {
@@ -353,10 +353,10 @@ void Search::UpdateRemainingMoves() {
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
 // settings. So, somethimes, they may return results of different moves.
-float Search::GetBestEval() const {
+double Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  float parent_q = -root_node_->GetQ();
+  double parent_q = -root_node_->GetQ();
   if (!root_node_->HasChildren()) return parent_q;
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
   return best_edge.GetQ(parent_q);
@@ -425,14 +425,14 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  std::tuple<int, float, float> best(-1, 0.0, 0.0);
+  std::tuple<int, double, float> best(-1, 0.0, 0.0);
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
             root_limit.end()) {
       continue;
     }
-    std::tuple<int, float, float> val(edge.GetN(), edge.GetQ(-10.0),
+    std::tuple<int, double, float> val(edge.GetN(), edge.GetQ(-10.0),
                                       edge.GetP());
     if (val > best) {
       best = val;
@@ -710,9 +710,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     // playout remains incomplete; we must go deeper.
     float puct_mult =
         search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-    float best = -100.0f;
+    double best = -100.0f;
     int possible_moves = 0;
-    float parent_q =
+    double parent_q =
         ((is_root_node && search_->kNoise) || !search_->kFpuReduction)
             ? -node->GetQ()
             : -node->GetQ() -
@@ -737,13 +737,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         }
         ++possible_moves;
       }
-      float Q = child.GetQ(parent_q);
+      double Q = child.GetQ(parent_q);
       if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
         // If we find a checkmate, then the confidence is infinite, so ignore U.
         best_edge = child;
         break;
       }
-      const float score = child.GetU(puct_mult) + Q;
+      const double score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;
         best_edge = child;
@@ -897,12 +897,12 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   if (node->IsTerminal()) return 0;
 
   // Populate all subnodes and their scores.
-  typedef std::pair<float, EdgeAndNode> ScoredEdge;
+  typedef std::pair<double, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
-  float puct_mult =
+  double puct_mult =
       search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
-  const float parent_q = -node->GetQ();
+  const double parent_q = -node->GetQ();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
@@ -934,8 +934,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     // Last node gets the same budget as prev-to-last node.
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
-      const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-parent_q);
+      const double next_score = -scores[i + 1].first;
+      const double q = edge.GetQ(-parent_q);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
@@ -1028,7 +1028,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   }
 
   // Backup V value up to a root. After 1 visit, V = Q.
-  float v = node_to_process.v;
+  double v = node_to_process.v;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
     n->FinalizeScoreUpdate(v);

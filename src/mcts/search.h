@@ -87,7 +87,7 @@ class Search {
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  float GetBestEval() const;
+  double GetBestEval() const;
 
   // Strings for UCI params. So that others can override defaults.
   // TODO(mooskagh) There are too many options for now. Factor out that into a
@@ -254,7 +254,7 @@ class SearchWorker {
         : node(node), depth(depth), is_collision(is_collision) {}
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
-    float v;
+    double v;
     uint16_t depth;
     bool is_collision = false;
     bool nn_queried = false;
