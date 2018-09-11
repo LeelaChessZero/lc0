@@ -595,8 +595,10 @@ void Search::WorkerThread() {
       workers.push_back(std::move(lease));
     }
 
-    if (network.GetTotalBatchSize())
-      std::cerr << "Batch size: " << network.GetTotalBatchSize() << std::endl;
+    /*    if (network.GetTotalBatchSize())
+          std::cerr << "Batch size: " << network.GetTotalBatchSize() <<
+       std::endl;
+    */
     // 3. Run NN computation.
     // In fact batching network adapter only actually will run computation once.
     for (auto& lease : workers) lease.worker->RunNNComputation();
@@ -1201,16 +1203,15 @@ void WorkerOverlord::MaybeDetach(
     const std::vector<DetachCandidate>& candidates) {
   for (const auto& candidate : candidates) {
     if (nodes_to_add_into_batch_ <= 0) return;
-    // std::cerr << "Trying! " << candidate.node_visits << '/'
-    //           << candidate.total_eval_visits << " (" << subtrees_to_detach_
-    //           << ")\n";
     if (candidate.total_eval_visits < 40) continue;
     if (candidate.node_visits < candidate.total_visits * 0.3) continue;
     if (candidate.node_visits > candidate.total_visits * 0.7) continue;
     // if (candidate.node_visits < params_.kMiniBatchSize / 3) continue;
-    std::cerr << "Detaching! " << candidate.node_visits << '/'
-              << candidate.total_eval_visits << " (" << nodes_to_add_into_batch_
-              << ")\n";
+    /*    std::cerr << "Detaching! " << candidate.node_visits << '/'
+                  << candidate.total_eval_visits << " (" <<
+       nodes_to_add_into_batch_
+                  << ")\n";
+    */
     auto subtree = candidate.node->DetachSubtree();
     subtree->SetTargetAheadNodes(candidate.node_visits);
     SpawnNewWorker(false, std::move(subtree),
