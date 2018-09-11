@@ -193,7 +193,7 @@ int64_t Search::GetTimeSinceStart() const {
 }
 
 void Search::SendMovesStats() const {
-  const float parent_q =
+  const float parent_q = kNoise ? 0.0f :
       -root_node_->GetQ() -
       kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
   const float U_coeff =
@@ -712,9 +712,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = -100.0f;
     int possible_moves = 0;
+    // Initialize Q=0 for self-play games played with noise following AZ paper's
+    // behavior of searching wider for losing positions and deeper for winning
+    // positions. Allow tuning first play urgency of parentQ to optimize search.
     float parent_q =
-        ((is_root_node && search_->kNoise) || !search_->kFpuReduction)
-            ? -node->GetQ()
+        is_root_node && search_->kNoise
+            ? 0.0f
             : -node->GetQ() -
                   search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
     for (auto child : node->Edges()) {
