@@ -41,6 +41,11 @@ const char* kInputDirStr = "Directory with gzipped files in need of rescoring.";
 const char* kOutputDirStr = "Directory to write rescored files.";
 const char* kThreadsStr = "Number of concurrent threads to rescore with.";
 
+int games = 0;
+int positions = 0;
+int rescored = 0;
+int delta = 0;
+
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir) {
   // Scope to ensure reader and writer are closed before deleting source file.
@@ -61,6 +66,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       // so need to mirror them all to be applicable to apply to the position before.
       moves.back().Mirror();
     }
+    games += 1;
+    positions += fileContents.size();
     PositionHistory history;
     int rule50ply;
     int gameply;
@@ -87,13 +94,17 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             score_to_apply = -1;
           }
           for (int j = i + 1; j > last_rescore; j--) {
-            /*
+            
             if (fileContents[j].result != score_to_apply) {
+              rescored += 1;
+              delta += abs(fileContents[j].result - score_to_apply);
+              /*
             std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
                       << (int)score_to_apply 
                       << std::endl;
+                      */
             }
-            */
+            
             fileContents[j].result = score_to_apply;
             score_to_apply = -score_to_apply;
           }
@@ -105,7 +116,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       writer.WriteChunk(chunk);
     }
   }
-  remove(file.c_str());
+  //remove(file.c_str());
 }
 
 void ProcessFiles(const std::vector<std::string>& files,
@@ -149,6 +160,10 @@ void RescoreLoop::RunLoop() {
   // TODO: support threads option.
   ProcessFiles(files, &tablebase,
                options_.GetOptionsDict().Get<std::string>(kOutputDirStr), 0, 1);
+  std::cout << "Games processed: " << games << std::endl;
+  std::cout << "Positions processed: " << positions << std::endl;
+  std::cout << "Rescores performed: " << rescored << std::endl;
+  std::cout << "Cumulative outcome change: " << delta << std::endl;
 }
 
 SelfPlayLoop::SelfPlayLoop() {}
