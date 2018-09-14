@@ -45,6 +45,7 @@ int games = 0;
 int positions = 0;
 int rescored = 0;
 int delta = 0;
+int rescored2 = 0;
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir) {
@@ -63,7 +64,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       moves.push_back(
           DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i])));
       // All moves decoded are from the point of view of the side after the move
-      // so need to mirror them all to be applicable to apply to the position before.
+      // so need to mirror them all to be applicable to apply to the position
+      // before.
       moves.back().Mirror();
     }
     games += 1;
@@ -94,17 +96,16 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             score_to_apply = -1;
           }
           for (int j = i + 1; j > last_rescore; j--) {
-            
             if (fileContents[j].result != score_to_apply) {
               rescored += 1;
               delta += abs(fileContents[j].result - score_to_apply);
               /*
             std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
-                      << (int)score_to_apply 
+                      << (int)score_to_apply
                       << std::endl;
                       */
             }
-            
+
             fileContents[j].result = score_to_apply;
             score_to_apply = -score_to_apply;
           }
@@ -112,11 +113,54 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
     }
+    board.SetFromFen(ChessBoard::kStartingFen, &rule50ply, &gameply);
+    history.Reset(board, rule50ply, gameply);
+    for (int i = 0; i < moves.size(); i++) {
+      history.Append(moves[i]);
+      const auto& board = history.Last().GetBoard();
+      if (board.castlings().no_legal_castle() &&
+          history.Last().GetNoCaptureNoPawnPly() != 0 &&
+          (board.ours() + board.theirs()).count() <=
+              tablebase->max_cardinality()) {
+        ProbeState state;
+        WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+        // Only fail state means the WDL is wrong, probe_wdl may produce correct
+        // result with a stat other than OK.
+        if (state != FAIL) {
+          int8_t score_to_apply = 0;
+          if (wdl == WDL_WIN) {
+            score_to_apply = 1;
+          } else if (wdl == WDL_LOSS) {
+            score_to_apply = -1;
+          }
+          // If the WDL result disagrees with the game outcome, make it a draw.
+          // WDL draw is always draw regardless of prior moves since zero, so that clearly works.
+          // Otherwise, the WDL result could be correct or draw, so best we can
+          // do is change scores that don't agree, to be a draw. If score was a
+          // draw this is a no-op, if it was opposite it becomes a draw.
+          int8_t new_score = fileContents[i + 1].result != score_to_apply
+                                 ? 0
+                                 : fileContents[i + 1].result;
+          if (new_score != fileContents[i + 1].result) {
+            rescored2 += 1;
+            // No point tracking deltas, they are always unity.
+            /*
+          std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
+                    << (int)score_to_apply
+                    << std::endl;
+                    */
+          }
+
+          fileContents[i + 1].result = new_score;
+        }
+      }
+    }
+
     for (auto chunk : fileContents) {
       writer.WriteChunk(chunk);
     }
   }
-  //remove(file.c_str());
+  // remove(file.c_str());
 }
 
 void ProcessFiles(const std::vector<std::string>& files,
@@ -148,8 +192,7 @@ void RescoreLoop::RunLoop() {
     return;
   }
   auto inputDir = options_.GetOptionsDict().Get<std::string>(kInputDirStr);
-  auto files =
-      GetFileList(inputDir);
+  auto files = GetFileList(inputDir);
   if (files.size() == 0) {
     std::cerr << "No files to process" << std::endl;
     return;
@@ -164,6 +207,7 @@ void RescoreLoop::RunLoop() {
   std::cout << "Positions processed: " << positions << std::endl;
   std::cout << "Rescores performed: " << rescored << std::endl;
   std::cout << "Cumulative outcome change: " << delta << std::endl;
+  std::cout << "Secondary rescores performed: " << rescored2 << std::endl;
 }
 
 SelfPlayLoop::SelfPlayLoop() {}
