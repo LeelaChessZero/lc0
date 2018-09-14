@@ -111,10 +111,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
   defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
-  // Cache key has a history of 1 ply back. That's to be compatible with old
-  // bug. Also tests show that for now 1 has better strength than 7.
-  // TODO(crem) Revisit this setting.
-  defaults->Set<int>(Search::kCacheHistoryLengthStr, 1);
+  defaults->Set<int>(Search::kCacheHistoryLengthStr, 0);
+  defaults->Set<bool>(Search::kOutOfOrderEvalStr, true);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
@@ -146,8 +144,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
 
   // Total time till control including increments.
   auto total_moves_time =
-      std::max(int64_t{0},
-               time + increment * (movestogo - 1) - move_overhead);
+      std::max(int64_t{0}, time + increment * (movestogo - 1) - move_overhead);
 
   constexpr int kSmartPruningToleranceMs = 200;
   float this_move_weight = ComputeMoveWeight(
