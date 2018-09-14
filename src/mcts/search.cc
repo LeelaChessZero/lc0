@@ -58,7 +58,6 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
-const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -91,7 +90,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
-  options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -121,8 +119,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -738,11 +735,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
-      if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
-        // If we find a checkmate, then the confidence is infinite, so ignore U.
-        best_edge = child;
-        break;
-      }
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;
