@@ -62,10 +62,8 @@ class MuxingComputation : public NetworkComputation {
   }
 
   void NotifyReady() {
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      dataready_ = true;
-    }
+    std::unique_lock<std::mutex> lock(mutex_);
+    dataready_ = true;
     dataready_cv_.notify_one();
   }
 
