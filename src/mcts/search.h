@@ -136,6 +136,8 @@ class WorkerOverlord {
   };
 
   void MaybeDetach(const std::vector<DetachCandidate>& candidates);
+  int GetTotalIdleBatchSize() const;
+  void ReportEmptyBatch(int batch_size);
 
  private:
   const SearchParams params_;
@@ -146,7 +148,7 @@ class WorkerOverlord {
   std::vector<std::unique_ptr<SearchWorker>> idle_workers_
       GUARDED_BY(queue_mutex_);
 
-  int nodes_to_add_into_batch_ = 0;
+  std::atomic<int> nodes_to_add_into_batch_{0};
 };
 
 class Search {
@@ -211,7 +213,7 @@ class Search {
   // uci `stop` command;
   void WatchdogThread();
   // Search worker thread.
-  void WorkerThread();
+  void WorkerThread(int num);
 
   // Populates the given list with allowed root moves.
   // Returns true if the population came from tablebase.

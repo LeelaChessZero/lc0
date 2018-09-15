@@ -521,7 +521,8 @@ void Search::StartThreads(size_t how_many) {
   }
   // Start working threads.
   while (threads_.size() <= how_many) {
-    threads_.emplace_back([this]() { WorkerThread(); });
+    int thread_id = threads_.size() - 1;
+    threads_.emplace_back([this, thread_id]() { WorkerThread(thread_id); });
   }
 }
 
@@ -563,7 +564,7 @@ void Search::WatchdogThread() {
 }
 
 // A main search thread. There may be several of those.
-void Search::WorkerThread() {
+void Search::WorkerThread(int thread_num) {
   // The requests from multiple detached subtrees will be computed in parallel
   // through SingleThreadBatchingNetwork adapter.
   SingleThreadBatchingNetwork network(network_);
@@ -574,25 +575,30 @@ void Search::WorkerThread() {
 
     std::vector<WorkerOverlord::LeasedWorker> workers;
 
-    // While there is a space in a minibatch, get more workers.
-    while (network.GetTotalBatchSize() < params_.kMiniBatchSize) {
-      // Get free worker with a highest priority.
-      auto lease = worker_overlord_.AcquireWorker(params_.kMiniBatchSize -
-                                                  network.GetTotalBatchSize());
+    if (thread_num == 0 ||
+        worker_overlord_.GetTotalIdleBatchSize() >= params_.kMiniBatchSize) {
+      // While there is a space in a minibatch, get more workers.
+      while (network.GetTotalBatchSize() < params_.kMiniBatchSize) {
+        // Get free worker with a highest priority.
+        auto lease = worker_overlord_.AcquireWorker(
+            params_.kMiniBatchSize - network.GetTotalBatchSize());
 
-      // No workers availabe, break.
-      if (!lease.worker) break;
+        // No workers availabe, break.
+        if (!lease.worker) break;
 
-      // 1. Initialize internal structures.
-      // @computation is the computation to use on this iteration.
-      lease.worker->InitializeIteration(network.NewComputation());
+        // 1. Initialize internal structures.
+        // @computation is the computation to use on this iteration.
+        lease.worker->InitializeIteration(network.NewComputation());
 
-      // 2. Gather minibatch.
-      lease.worker->GatherMinibatch(
-          std::min(lease.recommended_batch_size,
-                   params_.kMiniBatchSize - network.GetTotalBatchSize()));
+        // 2. Gather minibatch.
+        lease.worker->GatherMinibatch(
+            std::min(lease.recommended_batch_size,
+                     params_.kMiniBatchSize - network.GetTotalBatchSize()));
 
-      workers.push_back(std::move(lease));
+        workers.push_back(std::move(lease));
+      }
+    } else {
+      worker_overlord_.ReportEmptyBatch(params_.kMiniBatchSize);
     }
 
     if (network.GetTotalBatchSize())
@@ -1156,6 +1162,20 @@ void WorkerOverlord::SpawnNewWorker(bool is_root, SubTree* tree,
   ReleaseWorker(std::move(new_worker));
 }
 
+int WorkerOverlord::GetTotalIdleBatchSize() const {
+  Mutex::Lock lock(queue_mutex_);
+  int total_batch_size = 0;
+  for (auto& worker : idle_workers_) {
+    total_batch_size += worker->GetRecommendedBatch();
+  }
+  return total_batch_size;
+}
+
+void WorkerOverlord::ReportEmptyBatch(int batch_size) {
+  Mutex::Lock lock(queue_mutex_);
+  nodes_to_add_into_batch_ = kMinBatchReserve + batch_size;
+}
+
 WorkerOverlord::LeasedWorker WorkerOverlord::AcquireWorker(int batch_left) {
   Mutex::Lock lock(queue_mutex_);
 
@@ -1175,9 +1195,10 @@ WorkerOverlord::LeasedWorker WorkerOverlord::AcquireWorker(int batch_left) {
     }
   }
 
-  nodes_to_add_into_batch_ = std::max(
-      nodes_to_add_into_batch_, kMinBatchReserve + batch_left -
-                                    total_batch_size - recommended_batch_size);
+  nodes_to_add_into_batch_ =
+      std::max(nodes_to_add_into_batch_.load(), kMinBatchReserve + batch_left -
+                                                    total_batch_size -
+                                                    recommended_batch_size);
 
   if (!best_worker) return {};
 
@@ -1199,21 +1220,27 @@ void WorkerOverlord::ReleaseWorker(LeasedWorker lease) {
 
 void WorkerOverlord::MaybeDetach(
     const std::vector<DetachCandidate>& candidates) {
+  if (nodes_to_add_into_batch_ <= 0) return;
+  const DetachCandidate* best_candidate = nullptr;
+
   for (const auto& candidate : candidates) {
-    if (nodes_to_add_into_batch_ <= 0) return;
-    /*    if (candidate.total_eval_visits < 40) continue;
-        if (candidate.node_visits < candidate.total_visits * 0.3) continue;
-        if (candidate.node_visits > candidate.total_visits * 0.7) continue;
-    */
-    if (candidate.node_visits < params_.kMiniBatchSize * 0.7) continue;
-    std::cerr << "Detaching! " << candidate.node_visits << '/'
-              << candidate.total_eval_visits << " (" << nodes_to_add_into_batch_
-              << ")\n";
-    auto subtree = candidate.node->DetachSubtree();
-    subtree->SetTargetAheadNodes(candidate.node_visits);
-    SpawnNewWorker(false, std::move(subtree),
-                   candidate.worker->GetHistoryToNode(candidate.node));
-    nodes_to_add_into_batch_ -= candidate.node_visits;
+    if (candidate.node_visits < 40) continue;
+    if (!best_candidate ||
+        best_candidate->node_visits < candidate.node_visits) {
+      best_candidate = &candidate;
+    }
+  }
+
+  if (best_candidate) {
+    std::cerr << "Detaching! " << best_candidate->node_visits << '/'
+              << best_candidate->total_eval_visits << " ("
+              << nodes_to_add_into_batch_ << ")\n";
+    auto subtree = best_candidate->node->DetachSubtree();
+    subtree->SetTargetAheadNodes(best_candidate->node_visits);
+    SpawnNewWorker(
+        false, std::move(subtree),
+        best_candidate->worker->GetHistoryToNode(best_candidate->node));
+    nodes_to_add_into_batch_ -= best_candidate->node_visits;
   }
 }
 
