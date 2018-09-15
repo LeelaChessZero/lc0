@@ -701,8 +701,8 @@ void SearchWorker::InitializeIteration(
   int target_ahead = tree_->GetTargetAheadNodes();
 
   if (reached_target_ahead_ && tree_->IsBehind()) {
-    tree_->SetTargetAheadNodes(
-        std::min(2 * target_ahead, params_.kMiniBatchSize));
+    tree_->SetTargetAheadNodes(std::min(15 + target_ahead + target_ahead / 16,
+                                        params_.kMiniBatchSize));
     reached_target_ahead_ = false;
   } else if (target_ahead > 1) {
     tree_->SetTargetAheadNodes(target_ahead - 1);
@@ -1236,6 +1236,7 @@ void WorkerOverlord::MaybeDetach(
               << best_candidate->total_eval_visits << " ("
               << nodes_to_add_into_batch_ << ")\n";
     auto subtree = best_candidate->node->DetachSubtree();
+    subtree->debux_ = best_candidate->node_visits;
     subtree->SetTargetAheadNodes(best_candidate->node_visits);
     SpawnNewWorker(
         false, std::move(subtree),

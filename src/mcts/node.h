@@ -444,9 +444,9 @@ class SubTree {
  public:
   SubTree(Node* parent_node, std::unique_ptr<Node> detached_node);
   ~SubTree() {
-    std::cerr << "~SubTree: " << IsAhead() << '\t' << n_at_start_ << '\t' << n_
-              << '\t' << parent_n_ << '\t' << (n_ - parent_n_) << '\t'
-              << target_ahead_nodes_ << std::endl;
+    std::cerr << "~SubTree: " << debux_ << "\t([" << IsAhead() << "])\t"
+              << n_at_start_ << '\t' << n_ << '\t' << parent_n_ << '\t'
+              << (n_ - parent_n_) << '\t' << target_ahead_nodes_ << std::endl;
   }
 
   // Returns a root node of the subtree.
@@ -505,6 +505,7 @@ class SubTree {
 
   int target_ahead_nodes_ = 1;
   uint32_t n_at_start_;
+  int debux_ = 0;
 };
 
 class NodeTree {
