@@ -50,12 +50,14 @@ std::vector<std::string> OptionsParser::ListOptionsUci() const {
   return result;
 }
 
-void OptionsParser::SetOption(const std::string& name, const std::string& value,
+bool OptionsParser::SetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   auto option = FindOptionByName(name);
   if (option) {
     option->SetValue(value, GetMutableOptions(context));
-  }
+    return true;
+  } 
+  return false;
 }
 
 void OptionsParser::SendOption(const std::string& name) {
