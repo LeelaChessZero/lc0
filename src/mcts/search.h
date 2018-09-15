@@ -41,6 +41,8 @@
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
+extern int64_t bonus_time_ms;
+
 namespace lczero {
 
 struct SearchLimits {

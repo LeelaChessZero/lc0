@@ -40,6 +40,8 @@
 #include "neural/encoder.h"
 #include "utils/random.h"
 
+int64_t bonus_time_ms = -1;
+
 namespace lczero {
 
 const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
@@ -301,6 +303,20 @@ void Search::MaybeTriggerStop() {
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
     best_move_edge_ = EdgeAndNode();
+
+    if (found_best_move_) {
+      // Since we ran out of other moves before running out of time, use the
+      // saved time on the next move. If the next move is also smart pruned,
+      // extra time will continue rolling forward.  This way we spend time saved
+      // by smart pruning on the earliest move with a real decision to make,
+      // instead of adding a small bit of time to the average time to the
+      // rest of the time curve.
+      auto time_since_start = GetTimeSinceStart();
+      // This max() might not be needed. Can we ever be over time? Adding it
+      // just in case for now.
+      bonus_time_ms = std::max<long int>(0, limits_.time_ms - time_since_start);
+      std::cerr << "Storing bonus time " << limits_.time_ms << "-" << time_since_start << " = " << bonus_time_ms << std::endl;
+    }
   }
 }
 

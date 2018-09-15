@@ -88,14 +88,14 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.4f;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 1.00f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
   options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
-                            "time-curve-peak") = 26.2f;
+                            "time-curve-peak") = 1.0f;
   options->Add<FloatOption>(kTimeCurveLeftWidth, 0.0f, 1000.0f,
-                            "time-curve-left-width") = 82.0f;
+                            "time-curve-left-width") = 60.0f;
   options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
-                            "time-curve-right-width") = 74.0f;
+                            "time-curve-right-width") = 60.0f;
   options->Add<StringOption>(kSyzygyTablebaseStr, "syzygy-paths", 's');
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
@@ -146,6 +146,13 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   auto total_moves_time =
       std::max(int64_t{0}, time + increment * (movestogo - 1) - move_overhead);
 
+  if (bonus_time_ms > 0) {
+    // Don't calculate the time curve using the bonus time, use the normal real
+    // curve we'd expect without smart pruning.
+    std::cerr << "Total time was " << total_moves_time << " remove bonus " << bonus_time_ms << std::endl;
+    total_moves_time -= bonus_time_ms;
+  }
+
   constexpr int kSmartPruningToleranceMs = 200;
   float this_move_weight = ComputeMoveWeight(
       ply, time_curve_peak, time_curve_left_width, time_curve_right_width);
@@ -157,12 +164,20 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // Compute the move time without slowmover.
   float this_move_time = total_moves_time * this_move_weight /
                          (this_move_weight + other_move_weights);
+    std::cerr << "this_move_time is  " << this_move_time << std::endl;
 
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
   if (slowmover < 1.0 ||
       this_move_time * slowmover > kSmartPruningToleranceMs) {
     this_move_time *= slowmover;
+  }
+
+  // If we saved time from smart pruning the prior move, add it to this move.
+  if (bonus_time_ms > 0) {
+    std::cerr << "Adding bonus time " << bonus_time_ms << " to " << this_move_time << std::endl;
+    this_move_time += bonus_time_ms;
+    bonus_time_ms = 0;
   }
 
   // Make sure we don't exceed current time limit with what we calculated.
