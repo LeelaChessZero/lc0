@@ -101,8 +101,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>("Ponder", "ponder") = false;
-  options->Add<FloatOption>(kSpendSavedTime, 0.0f, 1.0f,
-                            "squander-saved-time") = 0.2f;
+  options->Add<FloatOption>(kSpendSavedTime, 0.0f, 1.0f, "immediate-time-use") =
+      0.2f;
 
   Search::PopulateUciParams(options);
   ConfigFile::PopulateOptions(options);
@@ -240,6 +240,7 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
+  time_spared_ms_ = 0;
   current_position_.reset();
   UpdateTBAndNetwork();
 }
@@ -260,7 +261,8 @@ void EngineController::SetupPosition(
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  tree_->ResetToPosition(fen, moves);
+  bool is_same_game = tree_->ResetToPosition(fen, moves);
+  if (!is_same_game) time_spared_ms_ = 0;
   UpdateTBAndNetwork();
 }
 
