@@ -312,7 +312,7 @@ void Search::UpdateRemainingMoves() {
   if (limits_.time_ms >= 0) {
     auto time_since_start = GetTimeSinceStart();
     if (time_since_start > kSmartPruningToleranceMs) {
-      auto nps = (1000LL * total_playouts_ + kSmartPruningToleranceNodes) /
+      float nps = (1000.0f * total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
       if (nps_ < 0) {
