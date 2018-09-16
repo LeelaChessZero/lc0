@@ -102,7 +102,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>("Ponder", "ponder") = false;
   options->Add<FloatOption>(kSpendSavedTime, 0.0f, 1.0f, "immediate-time-use") =
-      0.2f;
+      0.0f;
 
   Search::PopulateUciParams(options);
   ConfigFile::PopulateOptions(options);
@@ -175,6 +175,9 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   if (slowmover < 1.0 ||
       this_move_time * slowmover > kSmartPruningToleranceMs) {
     this_move_time *= slowmover;
+    // If time is planned to be overused because of slowmover, remove excess
+    // of that time from spared time.
+    time_spared_ms_ -= this_move_time * (slowmover - 1);
   }
 
   // Use `time_to_squander` time immediately.
