@@ -149,6 +149,15 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   auto total_moves_time =
       std::max(int64_t{0}, time + increment * (movestogo - 1) - move_overhead);
 
+  // If there is time spared from previous searches, the `time_to_squander` part
+  // of it will be used immediately, remove that from planning.
+  int time_to_squander = 0;
+  if (time_spared_ms_ > 0) {
+    time_to_squander = time_spared_ms_ * options_.Get<float>(kSpendSavedTime);
+    time_spared_ms_ -= time_to_squander;
+    total_moves_time -= time_to_squander;
+  }
+
   constexpr int kSmartPruningToleranceMs = 200;
   float this_move_weight = ComputeMoveWeight(
       ply, time_curve_peak, time_curve_left_width, time_curve_right_width);
@@ -168,13 +177,8 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
     this_move_time *= slowmover;
   }
 
-  // If there is time spared from previous searches, use some part of it.
-  if (time_spared_ms_ > 0) {
-    int time_to_squander =
-        time_spared_ms_ * options_.Get<float>(kSpendSavedTime);
-    time_spared_ms_ -= time_to_squander;
-    this_move_time += time_to_squander;
-  }
+  // Use `time_to_squander` time immediately.
+  this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
   limits.time_ms = std::max(
