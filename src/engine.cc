@@ -53,6 +53,7 @@ const char* kTimeCurvePeak = "Time weight curve peak ply";
 const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
 const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
 const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
+const char* kSpendSavedTime = "Fraction of saved time to use immediately";
 
 const char* kAutoDiscover = "<autodiscover>";
 
@@ -100,6 +101,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>("Ponder", "ponder") = false;
+  options->Add<FloatOption>(kSpendSavedTime, 0.0f, 1.0f,
+                            "squander-saved-time") = 0.2f;
 
   Search::PopulateUciParams(options);
   ConfigFile::PopulateOptions(options);
@@ -163,6 +166,14 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   if (slowmover < 1.0 ||
       this_move_time * slowmover > kSmartPruningToleranceMs) {
     this_move_time *= slowmover;
+  }
+
+  // If there is time spared from previous searches, use some part of it.
+  if (time_spared_ms_ > 0) {
+    int time_to_squander =
+        time_spared_ms_ * options_.Get<float>(kSpendSavedTime);
+    time_spared_ms_ -= time_to_squander;
+    this_move_time += time_to_squander;
   }
 
   // Make sure we don't exceed current time limit with what we calculated.
@@ -250,10 +261,14 @@ void EngineController::SetupPosition(
 }
 
 void EngineController::Go(const GoParams& params) {
+  auto start_time = std::chrono::steady_clock::now();
   go_params_ = params;
 
   ThinkingInfo::Callback info_callback(info_callback_);
+  BestMoveInfo::Callback best_move_callback(best_move_callback_);
 
+  // Setting up current position, now that it's known whether it's ponder or
+  // not.
   if (current_position_) {
     if (params.ponder && !current_position_->moves.empty()) {
       std::vector<std::string> moves(current_position_->moves);
@@ -290,9 +305,20 @@ void EngineController::Go(const GoParams& params) {
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
                                      tree_->IsBlackToMove(), params);
 
-  search_ = std::make_unique<Search>(*tree_, network_.get(),
-                                     best_move_callback_, info_callback, limits,
-                                     options_, &cache_, syzygy_tb_.get());
+  // If there is a time limit, also store amount of time saved.
+  if (limits.time_ms >= 0) {
+    best_move_callback = [this, start_time, limits](const BestMoveInfo& info) {
+      best_move_callback_(info);
+      auto time_spent = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start_time)
+                            .count();
+      time_spared_ms_ += limits.time_ms - time_spent;
+    };
+  }
+
+  search_ = std::make_unique<Search>(*tree_, network_.get(), best_move_callback,
+                                     info_callback, limits, options_, &cache_,
+                                     syzygy_tb_.get());
 
   search_->StartThreads(options_.Get<int>(kThreadsOption));
 }

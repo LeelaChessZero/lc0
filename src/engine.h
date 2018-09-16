@@ -114,6 +114,9 @@ class EngineController {
   // actually search the position one move earlier.
   optional<CurrentPosition> current_position_;
   GoParams go_params_;
+
+  // How much less time was used by search than what was allocated.
+  int64_t time_spared_ms_ = 0;
 };
 
 class EngineLoop : public UciLoop {
