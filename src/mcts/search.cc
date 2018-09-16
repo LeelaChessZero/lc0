@@ -570,10 +570,14 @@ void Search::WorkerThread(int thread_num) {
   SingleThreadBatchingNetwork network(network_);
 
   while (IsSearchActive()) {
+    const int epoch = epoch_.fetch_add(1, std::memory_order_acq_rel);
+    std::cerr << "Epoch " << epoch << std::endl;
     // Make batching network collect a new batch.
     network.Reset();
 
     std::vector<WorkerOverlord::LeasedWorker> workers;
+
+    worker_overlord_.DemoteIdleWorkers(epoch);
 
     if (thread_num == 0 ||
         worker_overlord_.GetTotalIdleBatchSize() >= params_.kMiniBatchSize) {
@@ -619,6 +623,8 @@ void Search::WorkerThread(int thread_num) {
       // 6. Transfer information from the root of the subtree into the subtree
       // stub.
       lease.worker->TransferCountersToStub(&candidates);
+
+      lease.worker->last_epoch_ = epoch;
     }
 
     // Pass candidates for detaching to overlord, maybe it will detach some.
@@ -626,6 +632,7 @@ void Search::WorkerThread(int thread_num) {
 
     // Release workers back to a pool for other threads to use.
     for (auto& lease : workers) {
+      lease.worker->tree_->debux2_ = epoch;
       worker_overlord_.ReleaseWorker(std::move(lease));
     }
 
@@ -704,9 +711,11 @@ void SearchWorker::InitializeIteration(
     tree_->SetTargetAheadNodes(std::min(15 + target_ahead + target_ahead / 16,
                                         params_.kMiniBatchSize));
     reached_target_ahead_ = false;
-  } else if (target_ahead > 1) {
-    tree_->SetTargetAheadNodes(target_ahead - 1);
-  }
+  } /* else if (target_ahead > 21) {
+     tree_->SetTargetAheadNodes(target_ahead - 20);
+   } else {
+     tree_->SetTargetAheadNodes(1);
+   }*/
 
   /* if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;
@@ -1169,6 +1178,19 @@ int WorkerOverlord::GetTotalIdleBatchSize() const {
     total_batch_size += worker->GetRecommendedBatch();
   }
   return total_batch_size;
+}
+
+void WorkerOverlord::DemoteIdleWorkers(int64_t current_epoch) {
+  Mutex::Lock lock(queue_mutex_);
+  for (auto& worker : idle_workers_) {
+    if (worker->GetRecommendedBatch()) continue;
+    if (worker->last_epoch_ < current_epoch - 100) {
+      worker->last_epoch_ = current_epoch;
+      int nodes = worker->tree_->GetTargetAheadNodes();
+      if (nodes > 1) nodes /= 2;
+      worker->tree_->SetTargetAheadNodes(nodes);
+    }
+  }
 }
 
 void WorkerOverlord::ReportEmptyBatch(int batch_size) {

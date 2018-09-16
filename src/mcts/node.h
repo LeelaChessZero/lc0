@@ -446,7 +446,8 @@ class SubTree {
   ~SubTree() {
     std::cerr << "~SubTree: " << debux_ << "\t([" << IsAhead() << "])\t"
               << n_at_start_ << '\t' << n_ << '\t' << parent_n_ << '\t'
-              << (n_ - parent_n_) << '\t' << target_ahead_nodes_ << std::endl;
+              << (n_ - parent_n_) << '\t' << target_ahead_nodes_ << '\t'
+              << debux2_ << std::endl;
   }
 
   // Returns a root node of the subtree.
@@ -506,6 +507,7 @@ class SubTree {
   int target_ahead_nodes_ = 1;
   uint32_t n_at_start_;
   int debux_ = 0;
+  int64_t debux2_ = 0;
 };
 
 class NodeTree {

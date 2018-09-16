@@ -109,6 +109,8 @@ class WorkerOverlord {
     int recommended_batch_size;
   };
 
+  void DemoteIdleWorkers(int64_t current_epoch);
+
   // Aquires worker to get some work.
   LeasedWorker AcquireWorker(int batch_left);
 
@@ -268,6 +270,8 @@ class Search {
   // Command line / UCI parameters that affect search.
   SearchParams params_;
 
+  std::atomic<uint64_t> epoch_{0};
+
   friend class SearchWorker;
 };
 
@@ -382,6 +386,7 @@ class SearchWorker {
   EdgeAndNode best_move_edge_;
   WorkerOverlord* const overlord_;
   bool reached_target_ahead_ = false;
+  int64_t last_epoch_ = 0;
 };
 
 }  // namespace lczero
