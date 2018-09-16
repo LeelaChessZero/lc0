@@ -309,6 +309,10 @@ void EngineController::Stop() {
   }
 }
 
+void EngineController::Wait() {
+  search_->Wait();
+}
+
 EngineLoop::EngineLoop()
     : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
@@ -322,6 +326,25 @@ EngineLoop::EngineLoop()
 void EngineLoop::RunLoop() {
   if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
   UciLoop::RunLoop();
+}
+
+void EngineLoop::Benchmark() {
+  const char* kNodesStr = "Number of nodes for benchmark";
+  options_.Add<IntOption>(kNodesStr, -1, 999999999, "nodes") = 30000;
+  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
+  try {
+    CmdIsReady();
+    GoParams go_params;
+    go_params.nodes = options_.GetOptionsDict().Get<int>(kNodesStr);
+    auto start = std::chrono::steady_clock::now();
+    CmdGo(go_params);
+    engine_.Wait();
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> time = end-start;
+    std::cout << "Benchmark time: " << time.count() << " s\n";
+  } catch (Exception& ex) {
+    std::cout << ex.what() << "\n";
+  }
 }
 
 void EngineLoop::CmdUci() {

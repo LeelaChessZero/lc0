@@ -81,6 +81,8 @@ class EngineController {
   SearchLimits PopulateSearchLimits(int ply, bool is_black,
                                     const GoParams& params);
 
+  void Wait();
+
  private:
   void UpdateTBAndNetwork();
 
@@ -131,6 +133,8 @@ class EngineLoop : public UciLoop {
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
+
+  void Benchmark();
 
  private:
   void EnsureOptionsSent();

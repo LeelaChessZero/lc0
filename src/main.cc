@@ -40,11 +40,16 @@ int main(int argc, const char** argv) {
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
   CommandLine::RegisterMode("selfplay", "Play games with itself");
+  CommandLine::RegisterMode("benchmark", "Quick benchmark");
 
   if (CommandLine::ConsumeCommand("selfplay")) {
     // Selfplay mode.
     SelfPlayLoop loop;
     loop.RunLoop();
+  } else if (CommandLine::ConsumeCommand("benchmark")) {
+    // Selfplay mode.
+    EngineLoop loop;
+    loop.Benchmark();
   } else {
     // Consuming optional "uci" mode.
     CommandLine::ConsumeCommand("uci");
