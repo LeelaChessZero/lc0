@@ -27,31 +27,31 @@ TEST(OptionsParser, IntOptionCheckValueConstraints) {
   OptionsParser options;
   options.Add<IntOption>("int-test-a", 25, 75, "int-test-a", 'a') = 50;
 
-  EXPECT_TRUE(options.SetOption("int-test-a", "25"));
-  EXPECT_TRUE(options.SetOption("int-test-a", "50"));
-  EXPECT_TRUE(options.SetOption("int-test-a", "75"));
-  EXPECT_FALSE(options.SetOption("int-test-a", "0"));
-  EXPECT_FALSE(options.SetOption("int-test-a", "100"));
+  EXPECT_NO_THROW(options.SetOption("int-test-a", "25"));
+  EXPECT_NO_THROW(options.SetOption("int-test-a", "50"));
+  EXPECT_NO_THROW(options.SetOption("int-test-a", "75"));
+  EXPECT_THROW(options.SetOption("int-test-a", "0"), Exception);
+  EXPECT_THROW(options.SetOption("int-test-a", "100"), Exception);
 }
 
 TEST(OptionsParser, FloatOptionCheckValueConstraints) {
   OptionsParser options;
   options.Add<FloatOption>("float-test-a", 25.0f, 75.0f, "float-test-a", 'a') = 50.0f;
 
-  EXPECT_TRUE(options.SetOption("float-test-a", "25.0"));
-  EXPECT_TRUE(options.SetOption("float-test-a", "50.0"));
-  EXPECT_TRUE(options.SetOption("float-test-a", "75.0"));
-  EXPECT_FALSE(options.SetOption("float-test-a", "0.0"));
-  EXPECT_FALSE(options.SetOption("float-test-a", "100.0"));
+  EXPECT_NO_THROW(options.SetOption("float-test-a", "25.0"));
+  EXPECT_NO_THROW(options.SetOption("float-test-a", "50.0"));
+  EXPECT_NO_THROW(options.SetOption("float-test-a", "75.0"));
+  EXPECT_THROW(options.SetOption("float-test-a", "0.0"), Exception);
+  EXPECT_THROW(options.SetOption("float-test-a", "100.0"), Exception);
 }
 
 TEST(OptionsParser, BoolOptionsCheckValueConstraints) {
   OptionsParser options;
   options.Add<BoolOption>("bool-test-a", "bool-test-a", 'a') = false;
 
-  EXPECT_TRUE(options.SetOption("bool-test-a", "true"));
-  EXPECT_TRUE(options.SetOption("bool-test-a", "false"));
-  EXPECT_FALSE(options.SetOption("bool-test-a", "leela"));
+  EXPECT_NO_THROW(options.SetOption("bool-test-a", "true"));
+  EXPECT_NO_THROW(options.SetOption("bool-test-a", "false"));
+  EXPECT_THROW(options.SetOption("bool-test-a", "leela"), Exception);
 }
 
 TEST(OptionsParser, ChoiceOptionCheckValueConstraints) {
@@ -62,10 +62,10 @@ TEST(OptionsParser, ChoiceOptionCheckValueConstraints) {
   choices.push_back("choice-c");
   options.Add<ChoiceOption>("choice-test-a", choices, "choice-test-a", 'a') = "choice-a";
 
-  EXPECT_TRUE(options.SetOption("choice-test-a", "choice-a"));
-  EXPECT_TRUE(options.SetOption("choice-test-a", "choice-b"));
-  EXPECT_TRUE(options.SetOption("choice-test-a", "choice-c"));
-  EXPECT_FALSE(options.SetOption("choice-test-a", "choice-d"));
+  EXPECT_NO_THROW(options.SetOption("choice-test-a", "choice-a"));
+  EXPECT_NO_THROW(options.SetOption("choice-test-a", "choice-b"));
+  EXPECT_NO_THROW(options.SetOption("choice-test-a", "choice-c"));
+  EXPECT_THROW(options.SetOption("choice-test-a", "choice-d"), Exception);
 }
 
 }  // namespace lczero

@@ -47,7 +47,7 @@ class OptionsParser {
            char short_flag);
     virtual ~Option(){};
     // Set value from string.
-    virtual bool SetValue(const std::string& value, OptionsDict* dict) = 0;
+    virtual void SetValue(const std::string& value, OptionsDict* dict) = 0;
 
    protected:
     virtual const std::string& GetName() const { return name_; }
@@ -135,7 +135,7 @@ class StringOption : public OptionsParser::Option {
                char short_flag = '\0',
                std::function<void(const std::string&)> setter = {});
 
-  bool SetValue(const std::string& value, OptionsDict* dict) override;
+  void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
@@ -147,7 +147,7 @@ class StringOption : public OptionsParser::Option {
                                  OptionsDict* dict) override;
 
   ValueType GetVal(const OptionsDict&) const;
-  bool SetVal(OptionsDict* dict, const ValueType& val) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
 
   std::function<void(const std::string&)> setter_;
 };
@@ -159,7 +159,7 @@ class IntOption : public OptionsParser::Option {
             const std::string& long_flag = {}, char short_flag = '\0',
             std::function<void(int)> setter = {});
 
-  bool SetValue(const std::string& value, OptionsDict* dict) override;
+  void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
@@ -171,7 +171,7 @@ class IntOption : public OptionsParser::Option {
                                  OptionsDict* dict) override;
 
   ValueType GetVal(const OptionsDict&) const;
-  bool SetVal(OptionsDict* dict, const ValueType& val) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
 
   int min_;
   int max_;
@@ -185,7 +185,7 @@ class FloatOption : public OptionsParser::Option {
               const std::string& long_flag = {}, char short_flag = '\0',
               std::function<void(float)> setter = {});
 
-  bool SetValue(const std::string& value, OptionsDict* dict) override;
+  void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
@@ -197,7 +197,7 @@ class FloatOption : public OptionsParser::Option {
                                  OptionsDict* dict) override;
 
   ValueType GetVal(const OptionsDict&) const;
-  bool SetVal(OptionsDict* dict, const ValueType& val) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
 
   float min_;
   float max_;
@@ -210,7 +210,7 @@ class BoolOption : public OptionsParser::Option {
   BoolOption(const std::string& name, const std::string& long_flag = {},
              char short_flag = '\0', std::function<void(bool)> setter = {});
 
-  bool SetValue(const std::string& value, OptionsDict* dict) override;
+  void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
@@ -221,9 +221,9 @@ class BoolOption : public OptionsParser::Option {
   bool ProcessShortFlag(char flag, OptionsDict* dict) override;
 
   ValueType GetVal(const OptionsDict&) const;
-  bool SetVal(OptionsDict* dict, const ValueType& val) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
   
-  bool ValidateBoolString(const std::string& val);
+  void ValidateBoolString(const std::string& val);
 
   std::function<void(bool)> setter_;
 };
@@ -235,7 +235,7 @@ class ChoiceOption : public OptionsParser::Option {
                const std::string& long_flag = {}, char short_flag = '\0',
                std::function<void(const std::string&)> setter = {});
 
-  bool SetValue(const std::string& value, OptionsDict* dict) override;
+  void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
@@ -247,7 +247,7 @@ class ChoiceOption : public OptionsParser::Option {
                                  OptionsDict* dict) override;
 
   ValueType GetVal(const OptionsDict&) const;
-  bool SetVal(OptionsDict* dict, const ValueType& val) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
 
   std::function<void(const std::string&)> setter_;
   std::vector<std::string> choices_;
