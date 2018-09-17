@@ -366,7 +366,7 @@ void NodeTree::TrimTreeAtHead() {
   current_head_->sibling_ = std::move(tmp);
 }
 
-void NodeTree::ResetToPosition(const std::string& starting_fen,
+bool NodeTree::ResetToPosition(const std::string& starting_fen,
                                const std::vector<Move>& moves) {
   ChessBoard starting_board;
   int no_capture_ply;
@@ -400,6 +400,8 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // Also, if the current_head_ is terminal, reset that as well to allow forced
   // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
   if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
+
+  return seen_old_head;
 }
 
 void NodeTree::DeallocateTree() {

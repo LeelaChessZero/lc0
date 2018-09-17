@@ -35,8 +35,40 @@ namespace lczero {
 // Try to find syzygy relative to current working directory.
 constexpr auto kPaths = "syzygy";
 
-// TODO: Tests for root_probe and root_probe_wdl. The former needs to check
-// scenarios with non-zero rule 50 count.
+void TestValidRootExpectation(SyzygyTablebase* tablebase,
+                              const std::string& fen,
+                              const MoveList& valid_moves,
+                              const MoveList& invalid_moves,
+                              const MoveList& invalid_dtz_only = {}) {
+  ChessBoard board;
+  PositionHistory history;
+  int rule50ply;
+  int gameply;
+  board.SetFromFen(fen, &rule50ply, &gameply);
+  history.Reset(board, rule50ply, gameply);
+  MoveList allowed_moves_dtz;
+  tablebase->root_probe(history.Last(), &allowed_moves_dtz);
+  MoveList allowed_moves_wdl;
+  tablebase->root_probe_wdl(history.Last(), &allowed_moves_wdl);
+  for (auto move : valid_moves) {
+    EXPECT_TRUE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
+                          move) != allowed_moves_dtz.end());
+    EXPECT_TRUE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
+                          move) != allowed_moves_wdl.end());
+  }
+  for (auto move : invalid_moves) {
+    EXPECT_FALSE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
+                           move) != allowed_moves_dtz.end());
+    EXPECT_FALSE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
+                           move) != allowed_moves_wdl.end());
+  }
+  for (auto move : invalid_dtz_only) {
+    EXPECT_FALSE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
+                           move) != allowed_moves_dtz.end());
+    EXPECT_TRUE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
+                          move) != allowed_moves_wdl.end());
+  }
+}
 
 void TestValidExpectation(SyzygyTablebase* tablebase, const std::string& fen,
                           WDLScore expected, int expected_dtz) {
@@ -91,6 +123,25 @@ TEST(Syzygy, Simple3PieceProbes) {
   // A position with a pawn that needs a few king moves before its a loss.
   TestValidExpectation(&tablebase, "8/2p5/8/8/8/5k2/8/2K5 w - - 0 1", WDL_LOSS,
                        -8);
+}
+
+TEST(Syzygy, Root3PieceProbes) {
+  SyzygyTablebase tablebase;
+  tablebase.init(kPaths);
+  if (tablebase.max_cardinality() < 3) {
+    // These probes require 3 piece tablebase.
+    return;
+  }
+  TestValidRootExpectation(&tablebase, "5Qk1/8/8/8/8/8/8/4K3 b - - 0 1",
+                           {Move("g8f8", true)}, {Move("g8h7", true)});
+  TestValidRootExpectation(&tablebase, "6k1/8/8/8/8/5p2/8/2K5 b - - 0 1",
+                           {Move("f3f2", true)}, {Move("g8h7", true)});
+  TestValidRootExpectation(&tablebase, "8/8/8/8/8/k1p5/8/3K4 b - - 0 1",
+                           {Move("a3b3", true)}, {Move("c3c2", true)});
+  // WDL doesn't know that with such a high 50 ply count this position has
+  // become a blessed loss (draw) for black.
+  TestValidRootExpectation(&tablebase, "8/8/8/8/8/8/2Rk4/1K6 b - - 69 71",
+                           {Move("d2d3", true)}, {}, {Move("d2e3", true)});
 }
 
 TEST(Syzygy, Simple4PieceProbes) {
@@ -164,6 +215,19 @@ TEST(Syzygy, Simple5PieceProbes) {
                        5);
   TestValidExpectation(&tablebase, "8/k7/8/2R5/8/4q3/8/4B2K w - - 0 1",
                        WDL_DRAW, 0);
+}
+
+TEST(Syzygy, Root5PieceProbes) {
+  SyzygyTablebase tablebase;
+  tablebase.init(kPaths);
+  if (tablebase.max_cardinality() < 5) {
+    // These probes require 5 piece tablebase.
+    return;
+  }
+  TestValidRootExpectation(&tablebase, "8/8/8/Q7/8/1k1K4/1r6/8 w - - 79 44",
+                           {Move("a5a1", false)}, {}, {Move("a5d5", false)});
+  TestValidRootExpectation(&tablebase, "8/8/8/3Q4/k7/3K4/1r6/8 w - - 81 45",
+                           {Move("d5a8", false)}, {}, {Move("d3c3", false)});
 }
 
 }  // namespace lczero

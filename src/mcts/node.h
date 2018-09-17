@@ -127,7 +127,7 @@ class Node {
   using ConstIterator = Edge_Iterator<true>;
 
   // Takes pointer to a parent node and own index in a parent.
-  Node(Node* parent, uint16_t index) : index_(index), parent_(parent) {}
+  Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -206,33 +206,44 @@ class Node {
   std::string DebugString() const;
 
  private:
-  // List of edges.
+  // To minimize the number of padding bytes and to avoid having unnecessary
+  // padding when new fields are added, we arrange the fields by size, largest
+  // to smallest.
+
+  // TODO: shrink the padding on this somehow? It takes 16 bytes even though
+  // only 10 are real! Maybe even merge it into this class??
   EdgeList edges_;
-  // Index of this node is parent's edge list.
-  uint16_t index_;
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  float q_ = 0.0f;
-  // How many completed visits this node had.
-  uint32_t n_ = 0;
-  // (aka virtual loss). How many threads currently process this node (started
-  // but not finished). This value is added to n during selection which node
-  // to pick in MCTS, and also when selecting the best move.
-  uint16_t n_in_flight_ = 0;
-  // Sum of policy priors which have had at least one playout.
-  float visited_policy_ = 0.0f;
 
-  // Does this node end game (with a winning of either sides or draw).
-  bool is_terminal_ = false;
-
+  // 8 byte fields.
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
+
+  // 4 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
+  float q_ = 0.0f;
+  // Sum of policy priors which have had at least one playout.
+  float visited_policy_ = 0.0f;
+  // How many completed visits this node had.
+  uint32_t n_ = 0;
+
+  // 2 byte fields.
+  // Index of this node is parent's edge list.
+  uint16_t index_;
+  // (AKA virtual loss.) How many threads currently process this node (started
+  // but not finished). This value is added to n during selection which node
+  // to pick in MCTS, and also when selecting the best move.
+  uint16_t n_in_flight_ = 0;
+
+  // 1 byte fields.
+  // Whether or not this node end game (with a winning of either sides or draw).
+  bool is_terminal_ = false;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -241,6 +252,9 @@ class Node {
   friend class Node_Iterator;
   friend class Edge;
 };
+
+// A basic sanity check. This must be adjusted when Node members are adjusted.
+static_assert(sizeof(Node) == 64, "Unexpected size of Node");
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
@@ -429,7 +443,10 @@ class NodeTree {
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)
-  void ResetToPosition(const std::string& starting_fen,
+  // Returns whether a new position the same game as old position (with some
+  // moves added). Returns false, if the position is completely different,
+  // or if it's shorter than before.
+  bool ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }

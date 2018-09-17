@@ -42,9 +42,14 @@ install:
 - cmd: IF NOT EXIST c:\cache\protobuf\ cmake -G "Visual Studio 14 2015 Win64" -Dprotobuf_BUILD_SHARED_LIBS=NO -Dprotobuf_MSVC_STATIC_RUNTIME=NO -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=c:/cache/protobuf ../cmake
 - cmd: IF NOT EXIST c:\cache\protobuf\ msbuild INSTALL.vcxproj /p:Configuration=Release /p:Platform=x64 /m
 - cmd: set PATH=c:\cache\protobuf\bin;%PATH%
+- cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy 
+- cmd: IF %GTEST%==true cd C:\cache\syzygy
+- cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
+- cmd: IF %GTEST%==true IF NOT EXIST KQQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}{P,N,R,B,Q}vK.rtb{w,z}
+- cmd: IF %GTEST%==true IF NOT EXIST KQvKQ.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK{P,N,R,B,Q}.rtb{w,z}
 - cmd: cd C:\projects\lc0
 cache:
-  - C:\cache -> appveyor.yml
+  - C:\cache
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2'
   - C:\projects\lc0\subprojects\packagecache
 before_build:
@@ -79,5 +84,10 @@ deploy:
 test_script:
 - cmd: cd build
 - cmd: IF %GTEST%==true copy C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
+- cmd: IF %GTEST%==true xcopy /s /i C:\cache\syzygy syzygy
 - cmd: IF %GTEST%==true meson.py test --print-errorlogs
+- cmd: cd ..
+on_finish:
+- cmd: cd build
+- cmd: IF %GTEST%==true for %%a in (*.xml) do curl -F file=@%%a https://ci.appveyor.com/api/testresults/junit/%APPVEYOR_JOB_ID%
 - cmd: cd ..
