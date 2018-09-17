@@ -306,10 +306,10 @@ bool IntOption::ProcessLongFlag(const std::string& flag,
 
 bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                           OptionsDict* dict) {
-  if (flag == GetShortFlag()) { 
+  if (flag == GetShortFlag()) {
     SetVal(dict, std::stoi(value));
     return true;
-   }
+  }
   return false;
 }
 
