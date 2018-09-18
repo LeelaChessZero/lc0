@@ -47,6 +47,7 @@ const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
 const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
+const char* Search::kTemperatureVisitOffsetStr = "Temperature visit offset";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
@@ -76,6 +77,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
+  options->Add<FloatOption>(kTemperatureVisitOffsetStr, -0.99999f, 1000.0f,
+                            "temp-visit-offset") = 0.0f;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
@@ -111,6 +114,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
       kTemperature(options.Get<float>(kTemperatureStr)),
+      kTemperatureVisitOffset(options.Get<float>(kTemperatureVisitOffsetStr)),
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
@@ -450,7 +454,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
-  uint32_t max_n = 0;
+  float max_n = 0.0;
+  float offset = kTemperatureVisitOffset;
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -458,11 +463,11 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if(edge.GetN() > max_n) {
-      max_n = edge.GetN();
+    if(edge.GetN() + offset > max_n) {
+      max_n = edge.GetN() + offset;
     }
   }
-  assert(max_n);
+  assert(max_n > 0.0);
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -470,7 +475,9 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    sum += std::pow(static_cast<float>(edge.GetN()) / max_n, 1 / temperature);
+    sum += std::pow(
+        std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
+        1 / temperature);
     cumulative_sums.push_back(sum);
   }
   assert(sum);
