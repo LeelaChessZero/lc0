@@ -443,7 +443,10 @@ class NodeTree {
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)
-  void ResetToPosition(const std::string& starting_fen,
+  // Returns whether a new position the same game as old position (with some
+  // moves added). Returns false, if the position is completely different,
+  // or if it's shorter than before.
+  bool ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
