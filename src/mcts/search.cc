@@ -47,7 +47,7 @@ const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
 const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
-const char* Search::kTemperatureVisitOffsetStr = "Delta to be applied to all visits before calculating temperature";
+const char* Search::kTemperatureVisitOffsetStr = "Temperature visit offset";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
@@ -77,7 +77,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
-  options->Add<FloatOption>(kTemperatureVisitOffsetStr, -1000.0f, 1000.0f,
+  options->Add<FloatOption>(kTemperatureVisitOffsetStr, -0.99999f, 1000.0f,
                             "temp-visit-offset") = 0.0f;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
