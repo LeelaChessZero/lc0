@@ -55,6 +55,9 @@ const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
 const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
 const char* kSpendSavedTime = "Fraction of saved time to use immediately";
 
+const char* kNodesStr = "Number of nodes for benchmark";
+const char* kFenStr = "Benchmark initial position FEN";
+
 const char* kAutoDiscover = "<autodiscover>";
 
 float ComputeMoveWeight(int ply, float peak, float left_width,
@@ -363,25 +366,6 @@ void EngineLoop::RunLoop() {
   UciLoop::RunLoop();
 }
 
-void EngineLoop::Benchmark() {
-  const char* kNodesStr = "Number of nodes for benchmark";
-  options_.Add<IntOption>(kNodesStr, -1, 999999999, "nodes") = 30000;
-  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
-  try {
-    CmdIsReady();
-    GoParams go_params;
-    go_params.nodes = options_.GetOptionsDict().Get<int>(kNodesStr);
-    auto start = std::chrono::steady_clock::now();
-    CmdGo(go_params);
-    engine_.Wait();
-    auto end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> time = end-start;
-    std::cout << "Benchmark time: " << time.count() << " s\n";
-  } catch (Exception& ex) {
-    std::cout << ex.what() << "\n";
-  }
-}
-
 void EngineLoop::CmdUci() {
   SendId();
   for (const auto& option : options_.ListOptionsUci()) {
@@ -431,5 +415,49 @@ void EngineLoop::CmdGo(const GoParams& params) {
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
+
+Benchmark::Benchmark()
+    : engine_(std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
+              std::bind(&Benchmark::OnInfo, this, std::placeholders::_1),
+              options_.GetOptionsDict()) {
+  options_.Add<IntOption>(kNodesStr, -1, 999999999, "nodes") = 30000;
+  options_.Add<StringOption>(kFenStr, "fen");
+  engine_.PopulateOptions(&options_);
+}
+
+void Benchmark::Run() {
+  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
+  try {
+    auto option_dict = options_.GetOptionsDict();
+    GoParams go_params;
+    go_params.nodes = option_dict.Get<int>(kNodesStr);
+    std::string fen = option_dict.Get<std::string>(kFenStr);
+    options_.SendAllOptions();
+    engine_.EnsureReady();
+    if (!fen.empty()) {
+      engine_.SetPosition(fen, {});
+    }
+    auto start = std::chrono::steady_clock::now();
+    engine_.Go(go_params);
+    engine_.Wait();
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> time = end - start;
+    std::cout << "Benchmark final time " << time.count() << "s" << std::endl;
+  } catch (Exception& ex) {
+    std::cerr << ex.what() << std::endl;
+  }
+}
+
+void Benchmark::OnBestMove(const BestMoveInfo& move){
+  (void) move;
+}
+
+void Benchmark::OnInfo(const ThinkingInfo& info){
+  std::string line = "Benchmark time " + std::to_string(info.time);
+  line += "ms, " + std::to_string(info.nodes) + " nodes, ";
+  line += std::to_string(info.nps) + " nps";
+  if (!info.pv.empty()) line += ", move " + info.pv[0].as_string();
+  std::cout << line << std::endl;
+}
 
 }  // namespace lczero

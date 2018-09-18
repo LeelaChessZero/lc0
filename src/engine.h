@@ -137,8 +137,6 @@ class EngineLoop : public UciLoop {
   void CmdPonderHit() override;
   void CmdStop() override;
 
-  void Benchmark();
-
  private:
   void EnsureOptionsSent();
 
@@ -146,5 +144,19 @@ class EngineLoop : public UciLoop {
   bool options_sent_ = false;
   EngineController engine_;
 };
+
+class Benchmark{
+ public:
+  Benchmark();
+
+  void Run();
+  void OnBestMove(const BestMoveInfo& move);
+  void OnInfo(const ThinkingInfo& info);
+
+ private:
+  OptionsParser options_;
+  EngineController engine_;
+};
+
 
 }  // namespace lczero

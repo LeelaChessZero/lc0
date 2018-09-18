@@ -47,9 +47,9 @@ int main(int argc, const char** argv) {
     SelfPlayLoop loop;
     loop.RunLoop();
   } else if (CommandLine::ConsumeCommand("benchmark")) {
-    // Selfplay mode.
-    EngineLoop loop;
-    loop.Benchmark();
+    // Benchmark mode.
+    Benchmark benchmark;
+    benchmark.Run();
   } else {
     // Consuming optional "uci" mode.
     CommandLine::ConsumeCommand("uci");
