@@ -144,16 +144,20 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   float time_curve_peak = options_.Get<float>(kTimeCurvePeak);
   float time_curve_left_width = options_.Get<float>(kTimeCurveLeftWidth);
   float time_curve_right_width = options_.Get<float>(kTimeCurveRightWidth);
+  float spend_saved_time = options_.Get<float>(kSpendSavedTime);
 
   // Total time till control including increments.
   auto total_moves_time =
       std::max(int64_t{0}, time + increment * (movestogo - 1) - move_overhead);
 
+  // Linearly adjust `slowmover` down to 1.0 when `spend_saved_time` is 1.0.
+  slowmover = 1.0f + (slowmover - 1.0f) * (1.0f - spend_saved_time);
+
   // If there is time spared from previous searches, the `time_to_squander` part
   // of it will be used immediately, remove that from planning.
   int time_to_squander = 0;
   if (time_spared_ms_ > 0) {
-    time_to_squander = time_spared_ms_ * options_.Get<float>(kSpendSavedTime);
+    time_to_squander = time_spared_ms_ * spend_saved_time;
     time_spared_ms_ -= time_to_squander;
     total_moves_time -= time_to_squander;
   }
