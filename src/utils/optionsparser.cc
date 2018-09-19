@@ -50,14 +50,14 @@ std::vector<std::string> OptionsParser::ListOptionsUci() const {
   return result;
 }
 
-bool OptionsParser::SetOption(const std::string& name, const std::string& value,
+void OptionsParser::SetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   auto option = FindOptionByName(name);
   if (option) {
     option->SetValue(value, GetMutableOptions(context));
-    return true;
+    return;
   }
-  return false;
+  throw Exception("Unknown option: " + name);
 }
 
 void OptionsParser::SendOption(const std::string& name) {
@@ -339,7 +339,7 @@ IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
 
 void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   if (val < min_ || val > max_) {
-    std::stringstream buf;
+    std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be between "
               << min_ << " and " << max_ << ".";
     throw Exception(buf.str());
@@ -408,7 +408,7 @@ FloatOption::ValueType FloatOption::GetVal(const OptionsDict& dict) const {
 
 void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   if (val < min_ || val > max_) {
-    std::stringstream buf;
+    std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be between "
               << min_ << " and " << max_ << ".";
     throw Exception(buf.str());
@@ -484,7 +484,7 @@ void BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 
 void BoolOption::ValidateBoolString(const std::string& val) {
   if (val != "true" && val != "false") {
-    std::stringstream buf;
+    std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be either "
               << "'true' or 'false'.";
     throw Exception(buf.str());
@@ -562,7 +562,7 @@ void ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
     }
   }
   if (!valid) {
-    std::stringstream buf;
+    std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be one of the "
               << "following values:" << choice_string << ".";
     throw Exception(buf.str());

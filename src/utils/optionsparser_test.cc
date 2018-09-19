@@ -17,11 +17,18 @@
 */
 
 #include <gtest/gtest.h>
-
 #include <iostream>
 #include "utils/optionsparser.h"
 
 namespace lczero {
+
+TEST(OptionsParser, CheckInvalidOption) {
+  OptionsParser options;
+  options.Add<StringOption>("this-is-a-valid-option", "this-is-a-valid-option", 'a') = "";
+
+  EXPECT_NO_THROW(options.SetOption("this-is-a-valid-option", "valid-value"));
+  EXPECT_THROW(options.SetOption("this-is-an-invalid-option", "0"), Exception);
+}
 
 TEST(OptionsParser, IntOptionCheckValueConstraints) {
   OptionsParser options;

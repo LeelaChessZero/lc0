@@ -94,7 +94,7 @@ class OptionsParser {
   std::vector<std::string> ListOptionsUci() const;
 
   // Set the option from string value.
-  bool SetOption(const std::string& name, const std::string& value,
+  void SetOption(const std::string& name, const std::string& value,
                  const std::string& context = "");
   // Call option setter for this option.
   void SendOption(const std::string& name);
@@ -116,7 +116,7 @@ class OptionsParser {
   void AddContext(const std::string&);
 
  private:
-  // Print help to std::cerr
+  // Prints help to std::cerr.
   void ShowHelp() const;
   // Returns an option based on the long flag.
   Option* FindOptionByLongFlag(const std::string& flag) const;
