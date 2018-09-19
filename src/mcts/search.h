@@ -97,6 +97,7 @@ class Search {
   static const char* kCpuctStr;
   static const char* kTemperatureStr;
   static const char* kTempDecayMovesStr;
+  static const char* kTemperatureVisitOffsetStr;
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
   static const char* kAggressiveTimePruningStr;
@@ -105,7 +106,6 @@ class Search {
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
   static const char* kOutOfOrderEvalStr;
-  static const char* kStickyCheckmateStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -186,6 +186,7 @@ class Search {
   const int kMaxPrefetchBatch;
   const float kCpuct;
   const float kTemperature;
+  const float kTemperatureVisitOffset;
   const int kTempDecayMoves;
   const bool kNoise;
   const bool kVerboseStats;
@@ -195,7 +196,6 @@ class Search {
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kOutOfOrderEval;
-  const bool kStickyCheckmate;
 
   friend class SearchWorker;
 };

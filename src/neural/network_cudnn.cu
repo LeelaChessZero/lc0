@@ -99,9 +99,6 @@ void CudaError(cudaError_t status, const char *file, const int &line) {
 #define ReportCUBLASErrors(status) CublasError(status, __FILE__, __LINE__)
 #define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
 
-// Hard-coded for now, no point in going above this anyway (can possibly save
-// memory by reducing this).
-static constexpr int kMaxBatchSize = 1024;
 static constexpr int kNumOutputPolicy = 1858;
 
 // The Layer objects only hold memory for weights, biases, etc
@@ -877,27 +874,27 @@ FCLayer<DataType>::~FCLayer() {
 }
 
 struct InputsOutputs {
-  InputsOutputs() {
+  InputsOutputs(int maxBatchSize) {
     ReportCUDAErrors(cudaHostAlloc(
-        &input_masks_mem_, kMaxBatchSize * kInputPlanes * sizeof(uint64_t),
+        &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
 
     ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
-                                   kMaxBatchSize * kInputPlanes * sizeof(float),
+                                   maxBatchSize * kInputPlanes * sizeof(float),
                                    cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
 
     ReportCUDAErrors(cudaHostAlloc(
-        &op_policy_mem_, kMaxBatchSize * kNumOutputPolicy * sizeof(float),
+        &op_policy_mem_, maxBatchSize * kNumOutputPolicy * sizeof(float),
         cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_policy_mem_gpu_, op_policy_mem_, 0));
 
     ReportCUDAErrors(cudaHostAlloc(
-        &op_value_mem_, kMaxBatchSize * sizeof(float), cudaHostAllocMapped));
+        &op_value_mem_, maxBatchSize * sizeof(float), cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
   }
@@ -973,6 +970,8 @@ class CudnnNetwork : public Network {
   CudnnNetwork(Weights weights, const OptionsDict &options) {
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
+    max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+
     int total_gpus;
     ReportCUDAErrors(cudaGetDeviceCount(&total_gpus));
 
@@ -1031,7 +1030,7 @@ class CudnnNetwork : public Network {
 
     ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
         xDesc, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
-        fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, kMaxBatchSize, maxChannels,
+        fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, max_batch_size_, maxChannels,
         8, 8));
 
     ReportCUDNNErrors(cudnnSetConvolution2dDescriptor(
@@ -1142,7 +1141,7 @@ class CudnnNetwork : public Network {
     // 3. allocate GPU memory for running the network
     //    - three buffers of max size are enough (one to hold input, second to
     //    hold output and third to hold skip connection's input).
-    size_t maxSize = resi_last_->GetOutputSize(kMaxBatchSize);
+    size_t maxSize = resi_last_->GetOutputSize(max_batch_size_);
     for (auto &mem : tensor_mem_) {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
@@ -1281,7 +1280,7 @@ class CudnnNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>();
+      return std::make_unique<InputsOutputs>(max_batch_size_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -1298,12 +1297,13 @@ class CudnnNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io; }
+  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0); }
 
  private:
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
   int gpu_id_;
+  int max_batch_size_;
 
   // currently only one NN Eval can happen a time (we can fix this if needed by
   // allocating more memory)

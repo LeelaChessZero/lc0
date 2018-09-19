@@ -47,6 +47,7 @@ const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
 const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
+const char* Search::kTemperatureVisitOffsetStr = "Temperature visit offset";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
@@ -58,7 +59,6 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
-const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -77,6 +77,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
+  options->Add<FloatOption>(kTemperatureVisitOffsetStr, -0.99999f, 1000.0f,
+                            "temp-visit-offset") = 0.0f;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
@@ -91,7 +93,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
-  options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -113,6 +114,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
       kTemperature(options.Get<float>(kTemperatureStr)),
+      kTemperatureVisitOffset(options.Get<float>(kTemperatureVisitOffsetStr)),
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
@@ -121,8 +123,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -453,7 +454,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
-  const float n_parent = parent->GetN();
+  float max_n = 0.0;
+  float offset = kTemperatureVisitOffset;
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -461,9 +463,24 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    sum += std::pow(edge.GetN() / n_parent, 1 / temperature);
+    if(edge.GetN() + offset > max_n) {
+      max_n = edge.GetN() + offset;
+    }
+  }
+  assert(max_n > 0.0);
+
+  for (auto edge : parent->Edges()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
+      continue;
+    }
+    sum += std::pow(
+        std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
+        1 / temperature);
     cumulative_sums.push_back(sum);
   }
+  assert(sum);
 
   float toss = Random::Get().GetFloat(cumulative_sums.back());
   int idx =
@@ -738,11 +755,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
-      if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
-        // If we find a checkmate, then the confidence is infinite, so ignore U.
-        best_edge = child;
-        break;
-      }
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;
