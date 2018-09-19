@@ -70,9 +70,6 @@ class Search {
   // Starts search with k threads and wait until it finishes.
   void RunBlocking(size_t threads);
 
-  // Runs search single-threaded, blocking.
-  void RunSingleThreaded();
-
   // Stops search. At the end bestmove will be returned. The function is not
   // blocking, so it returns before search is actually done.
   void Stop();
@@ -80,6 +77,9 @@ class Search {
   void Abort();
   // Blocks until all worker thread finish.
   void Wait();
+  // Returns whether search is active. Workers check that to see whether another
+  // search iteration is needed.
+  bool IsSearchActive() const;
 
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
@@ -97,6 +97,7 @@ class Search {
   static const char* kCpuctStr;
   static const char* kTemperatureStr;
   static const char* kTempDecayMovesStr;
+  static const char* kTemperatureVisitOffsetStr;
   static const char* kNoiseStr;
   static const char* kVerboseStatsStr;
   static const char* kAggressiveTimePruningStr;
@@ -105,7 +106,6 @@ class Search {
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
   static const char* kOutOfOrderEvalStr;
-  static const char* kStickyCheckmateStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -123,8 +123,13 @@ class Search {
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
+  // Sets stop to true and notifies watchdog thread.
+  void FireStopInternal();
 
   void SendMovesStats() const;
+  // Function which runs in a separate thread and watches for time and
+  // uci `stop` command;
+  void WatchdogThread();
 
   // Populates the given list with allowed root moves.
   // Returns true if the population came from tablebase.
@@ -136,6 +141,8 @@ class Search {
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   bool stop_ GUARDED_BY(counters_mutex_) = false;
+  // Condition variable used to watch stop_ variable.
+  std::condition_variable watchdog_cv_;
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
@@ -179,6 +186,7 @@ class Search {
   const int kMaxPrefetchBatch;
   const float kCpuct;
   const float kTemperature;
+  const float kTemperatureVisitOffset;
   const int kTempDecayMoves;
   const bool kNoise;
   const bool kVerboseStats;
@@ -188,7 +196,6 @@ class Search {
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kOutOfOrderEval;
-  const bool kStickyCheckmate;
 
   friend class SearchWorker;
 };
@@ -203,7 +210,7 @@ class SearchWorker {
 
   // Runs iterations while needed.
   void RunBlocking() {
-    while (IsSearchActive()) {
+    while (search_->IsSearchActive()) {
       ExecuteOneIteration();
     }
   }
@@ -217,9 +224,6 @@ class SearchWorker {
   // 6. Propagate the new nodes' information to all their parents in the tree.
   // 7. Update the Search's status and progress information.
   void ExecuteOneIteration();
-
-  // Returns whether another search iteration is needed (false means exit).
-  bool IsSearchActive() const;
 
   // The same operations one by one:
   // 1. Initialize internal structures.

@@ -47,6 +47,7 @@ const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
 const char* Search::kTemperatureStr = "Initial temperature";
 const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
+const char* Search::kTemperatureVisitOffsetStr = "Temperature visit offset";
 const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
 const char* Search::kVerboseStatsStr = "Display verbose move stats";
 const char* Search::kAggressiveTimePruningStr =
@@ -58,7 +59,6 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
-const char* Search::kStickyCheckmateStr = "Ignore alternatives to checkmate";
 
 namespace {
 const int kSmartPruningToleranceNodes = 100;
@@ -77,6 +77,8 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
   options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
       0.0f;
+  options->Add<FloatOption>(kTemperatureVisitOffsetStr, -0.99999f, 1000.0f,
+                            "temp-visit-offset") = 0.0f;
   options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
   options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
   options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
@@ -91,7 +93,6 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
-  options->Add<BoolOption>(kStickyCheckmateStr, "sticky-checkmate") = false;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -113,6 +114,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
       kCpuct(options.Get<float>(kCpuctStr)),
       kTemperature(options.Get<float>(kTemperatureStr)),
+      kTemperatureVisitOffset(options.Get<float>(kTemperatureVisitOffsetStr)),
       kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
       kNoise(options.Get<bool>(kNoiseStr)),
       kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
@@ -121,8 +123,7 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kStickyCheckmate(options.Get<bool>(kStickyCheckmateStr)) {}
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -275,24 +276,26 @@ NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
 void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
+  // Already responded bestmove, nothing to do here.
+  if (responded_bestmove_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
   // If smart pruning tells to stop (best move found), stop.
   if (found_best_move_) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached playouts limit.
   if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached visits limit.
   if (limits_.visits >= 0 &&
       total_playouts_ + initial_visits_ >= limits_.visits) {
-    stop_ = true;
+    FireStopInternal();
   }
   // Stop if reached time limit.
   if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
-    stop_ = true;
+    FireStopInternal();
   }
   // If we are the first to see that stop is needed.
   if (stop_ && !responded_bestmove_) {
@@ -451,7 +454,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
-  const float n_parent = parent->GetN();
+  float max_n = 0.0;
+  float offset = kTemperatureVisitOffset;
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -459,9 +463,24 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    sum += std::pow(edge.GetN() / n_parent, 1 / temperature);
+    if(edge.GetN() + offset > max_n) {
+      max_n = edge.GetN() + offset;
+    }
+  }
+  assert(max_n > 0.0);
+
+  for (auto edge : parent->Edges()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
+      continue;
+    }
+    sum += std::pow(
+        std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
+        1 / temperature);
     cumulative_sums.push_back(sum);
   }
+  assert(sum);
 
   float toss = Random::Get().GetFloat(cumulative_sums.back());
   int idx =
@@ -482,7 +501,12 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
-  while (threads_.size() < how_many) {
+  // First thread is a watchdog thread.
+  if (threads_.size() == 0) {
+    threads_.emplace_back([this]() { WatchdogThread(); });
+  }
+  // Start working threads.
+  while (threads_.size() <= how_many) {
     threads_.emplace_back([this]() {
       SearchWorker worker(this);
       worker.RunBlocking();
@@ -490,29 +514,57 @@ void Search::StartThreads(size_t how_many) {
   }
 }
 
-void Search::RunSingleThreaded() {
-  SearchWorker worker(this);
-  worker.RunBlocking();
+void Search::RunBlocking(size_t threads) {
+  StartThreads(threads);
+  Wait();
 }
 
-void Search::RunBlocking(size_t threads) {
-  if (threads == 1) {
-    RunSingleThreaded();
-  } else {
-    StartThreads(threads);
-    Wait();
+bool Search::IsSearchActive() const {
+  Mutex::Lock lock(counters_mutex_);
+  return !stop_;
+}
+
+void Search::WatchdogThread() {
+  while (IsSearchActive()) {
+    {
+      using namespace std::chrono_literals;
+      constexpr auto kMaxWaitTime = 100ms;
+      constexpr auto kMinWaitTime = 1ms;
+      Mutex::Lock lock(counters_mutex_);
+      auto remaining_time = limits_.time_ms >= 0
+                                ? (limits_.time_ms - GetTimeSinceStart()) * 1ms
+                                : kMaxWaitTime;
+      if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
+      if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
+      // There is no real need to have max wait time, and sometimes it's fine
+      // to wait without timeout at all (e.g. in `go nodes` mode), but we
+      // still limit wait time for exotic cases like when pc goes to sleep
+      // mode during thinking.
+      // Minimum wait time is there to prevent busy wait and other thread
+      // starvation.
+      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
+                            [this]()
+                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
+    }
+    MaybeTriggerStop();
   }
+  MaybeTriggerStop();
+}
+
+void Search::FireStopInternal() REQUIRES(counters_mutex_) {
+  stop_ = true;
+  watchdog_cv_.notify_all();
 }
 
 void Search::Stop() {
   Mutex::Lock lock(counters_mutex_);
-  stop_ = true;
+  FireStopInternal();
 }
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
   responded_bestmove_ = true;
-  stop_ = true;
+  FireStopInternal();
 }
 
 void Search::Wait() {
@@ -553,11 +605,6 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 7. Update the Search's status and progress information.
   UpdateCounters();
-}
-
-bool SearchWorker::IsSearchActive() const {
-  Mutex::Lock lock(search_->counters_mutex_);
-  return !search_->stop_;
 }
 
 // 1. Initialize internal structures.
@@ -708,11 +755,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         ++possible_moves;
       }
       float Q = child.GetQ(parent_q);
-      if (search_->kStickyCheckmate && Q == 1.0f && child.IsTerminal()) {
-        // If we find a checkmate, then the confidence is infinite, so ignore U.
-        best_edge = child;
-        break;
-      }
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         best = score;

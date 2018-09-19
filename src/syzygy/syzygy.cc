@@ -187,15 +187,15 @@ int count_pieces(const ChessBoard& pos, int type, bool theirs) {
     case KING:
       return 1;
     case QUEEN:
-      return (all * pos.queens()).count();
+      return (all * pos.queens()).count_few();
     case ROOK:
-      return (all * pos.rooks()).count();
+      return (all * pos.rooks()).count_few();
     case BISHOP:
-      return (all * pos.bishops()).count();
+      return (all * pos.bishops()).count_few();
     case KNIGHT:
-      return theirs ? pos.their_knights().count() : pos.our_knights().count();
+      return (theirs ? pos.their_knights() : pos.our_knights()).count_few();
     case PAWN:
-      return (all * pos.pawns()).count();
+      return (all * pos.pawns()).count_few();
     default:
       assert(false);
   }
