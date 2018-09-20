@@ -95,7 +95,7 @@ class OptionsParser {
 
   // Set the option from string value.
   // Returns false if the option doesnt exist
-  bool SetOption(const std::string& name, const std::string& value,
+  void SetOption(const std::string& name, const std::string& value,
                  const std::string& context = "");
   // Call option setter for this option.
   void SendOption(const std::string& name);

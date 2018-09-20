@@ -339,9 +339,7 @@ void EngineLoop::CmdIsReady() {
 
 void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
-  if (!options_.SetOption(name, value, context)) {
-    throw Exception("No such option: " + name);
-  }
+  options_.SetOption(name, value, context);
   
   if (options_sent_) {
     options_.SendOption(name);
