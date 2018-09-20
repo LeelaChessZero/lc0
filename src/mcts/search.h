@@ -173,6 +173,7 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int>::max();
+  float nps_ GUARDED_BY(nodes_mutex_) = -1.0f;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
