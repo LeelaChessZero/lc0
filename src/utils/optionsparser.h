@@ -116,11 +116,14 @@ class OptionsParser {
   void AddContext(const std::string&);
 
  private:
+  // Prints help to std::cerr.
   void ShowHelp() const;
-
+  // Returns an option based on the long flag.
+  Option* FindOptionByLongFlag(const std::string& flag) const;
+  // Returns an option based by its name.
   Option* FindOptionByName(const std::string& name) const;
-  std::vector<std::unique_ptr<Option>> options_;
 
+  std::vector<std::unique_ptr<Option>> options_;
   OptionsDict defaults_;
   OptionsDict& values_;
 };
@@ -219,6 +222,8 @@ class BoolOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
+  
+  void ValidateBoolString(const std::string& val);
 
   std::function<void(bool)> setter_;
 };

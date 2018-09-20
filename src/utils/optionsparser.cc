@@ -55,7 +55,9 @@ void OptionsParser::SetOption(const std::string& name, const std::string& value,
   auto option = FindOptionByName(name);
   if (option) {
     option->SetValue(value, GetMutableOptions(context));
+    return;
   }
+  throw Exception("Unknown option: " + name);
 }
 
 void OptionsParser::SendOption(const std::string& name) {
@@ -69,6 +71,15 @@ void OptionsParser::SendAllOptions() {
   for (const auto& x : options_) {
     x->SendValue(GetOptionsDict());
   }
+}
+
+OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
+    const std::string& flag) const {
+  for (const auto& val : options_) {
+    auto longflg = val->GetLongFlag();
+    if (flag == longflg || flag == ("no-" + longflg)) return val.get();
+  }
+  return nullptr;
 }
 
 OptionsParser::Option* OptionsParser::FindOptionByName(
@@ -112,11 +123,9 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         param = param.substr(0, pos);
       }
       bool processed = false;
-      for (auto& option : options_) {
-        if (option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
-          processed = true;
-          break;
-        }
+      Option* option = FindOptionByLongFlag(param);
+      if (option && option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
+        processed = true;
       }
       if (!processed) {
         std::cerr << "Unknown command line flag: " << *iter << ".\n";
@@ -329,6 +338,12 @@ IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
 }
 
 void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  if (val < min_ || val > max_) {
+    std::ostringstream buf;
+    buf << "Flag '--" << GetLongFlag() << "' must be between "
+              << min_ << " and " << max_ << ".";
+    throw Exception(buf.str());
+  }
   dict->Set<ValueType>(GetName(), val);
 }
 
@@ -392,6 +407,12 @@ FloatOption::ValueType FloatOption::GetVal(const OptionsDict& dict) const {
 }
 
 void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  if (val < min_ || val > max_) {
+    std::ostringstream buf;
+    buf << "Flag '--" << GetLongFlag() << "' must be between "
+              << min_ << " and " << max_ << ".";
+    throw Exception(buf.str());
+  }
   dict->Set<ValueType>(GetName(), val);
 }
 
@@ -404,17 +425,25 @@ BoolOption::BoolOption(const std::string& name, const std::string& long_flag,
     : Option(name, long_flag, short_flag), setter_(setter) {}
 
 void BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
+  ValidateBoolString(value);
   SetVal(dict, value == "true");
 }
 
 bool BoolOption::ProcessLongFlag(const std::string& flag,
                                  const std::string& value, OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
-    SetVal(dict, value.empty() || (value != "off" && value != "false"));
-    return true;
-  }
   if (flag == "no-" + GetLongFlag()) {
     SetVal(dict, false);
+    return true;
+  }
+  if (flag ==  GetLongFlag() && value.empty()) {
+    SetVal(dict, true);
+    return true;
+  }
+
+  ValidateBoolString(value);
+
+  if (flag == GetLongFlag()) {
+    SetVal(dict, value.empty() || (value != "false"));
     return true;
   }
   return false;
@@ -451,6 +480,15 @@ BoolOption::ValueType BoolOption::GetVal(const OptionsDict& dict) const {
 
 void BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetName(), val);
+}
+
+void BoolOption::ValidateBoolString(const std::string& val) {
+  if (val != "true" && val != "false") {
+    std::ostringstream buf;
+    buf << "Flag '--" << GetLongFlag() << "' must be either "
+              << "'true' or 'false'.";
+    throw Exception(buf.str());
+  }
 }
 
 /////////////////////////////////////////////////////////////////
@@ -514,6 +552,21 @@ std::string ChoiceOption::GetVal(const OptionsDict& dict) const {
 }
 
 void ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+  bool valid = false;
+  std::string choice_string;
+  for (const auto& choice : choices_) {
+    choice_string += " " + choice;
+    if (val == choice) {
+      valid = true;
+      break;
+    }
+  }
+  if (!valid) {
+    std::ostringstream buf;
+    buf << "Flag '--" << GetLongFlag() << "' must be one of the "
+              << "following values:" << choice_string << ".";
+    throw Exception(buf.str());
+  }
   dict->Set<ValueType>(GetName(), val);
 }
 
