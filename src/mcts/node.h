@@ -254,7 +254,11 @@ class Node {
 };
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
+#if defined(__i386__)
+static_assert(sizeof(Node) == 40, "Unexpected size of Node for 32bit compile");
+#else
 static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+#endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
