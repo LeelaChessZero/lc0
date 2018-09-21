@@ -401,7 +401,7 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
     }
   }
 
-  auto best_node = temperature && root_node_->GetChildrenVisits() > 0
+  auto best_node = temperature
                        ? GetBestChildWithTemperature(root_node_, temperature)
                        : GetBestChildNoTemperature(root_node_);
 
@@ -451,7 +451,6 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
     PopulateRootMoveLimit(&root_limit);
   }
 
-  assert(parent->GetChildrenVisits() > 0);
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   float max_n = 0.0;
@@ -467,7 +466,10 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       max_n = edge.GetN() + offset;
     }
   }
-  assert(max_n > 0.0);
+
+  // No move had enough visits for temperature, so use default child criteria
+  if (max_n <= 0.0f) return GetBestChildNoTemperature(parent);
+
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
