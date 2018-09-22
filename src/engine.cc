@@ -287,22 +287,20 @@ void EngineController::Go(const GoParams& params) {
 
       info_callback = [this,
                        ponder_move](const std::vector<ThinkingInfo>& infos) {
-        assert(infos.size() == 1);
-        ThinkingInfo ponder_info(infos.front());
-        if (!ponder_info.pv.empty() &&
-            ponder_info.pv[0].as_string() == ponder_move) {
-          ponder_info.pv.erase(ponder_info.pv.begin());
-        } else {
-          ponder_info.pv.clear();
-        }
-        if (ponder_info.score) {
-          ponder_info.score = -*ponder_info.score;
-        }
-        if (ponder_info.depth > 1) {
-          ponder_info.depth--;
-        }
-        if (ponder_info.seldepth > 1) {
-          ponder_info.seldepth--;
+        ThinkingInfo ponder_info;
+        // Output all stats from main variation (not necessary the ponder move)
+        // but PV only from ponder move.
+        for (const auto& info : infos) {
+          if (info.multipv <= 1) {
+            ponder_info = info;
+            if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+            if (ponder_info.depth > 1) ponder_info.depth--;
+            if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+            ponder_info.pv.clear();
+          }
+          if (!info.pv.empty() && info.pv[0].as_string() == ponder_move) {
+            ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
+          }
         }
         info_callback_({ponder_info});
       };
