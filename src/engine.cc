@@ -285,8 +285,10 @@ void EngineController::Go(const GoParams& params) {
       moves.pop_back();
       SetupPosition(current_position_->fen, moves);
 
-      info_callback = [this, ponder_move](const ThinkingInfo& info) {
-        ThinkingInfo ponder_info(info);
+      info_callback = [this,
+                       ponder_move](const std::vector<ThinkingInfo>& infos) {
+        assert(infos.size() == 1);
+        ThinkingInfo ponder_info(infos.front());
         if (!ponder_info.pv.empty() &&
             ponder_info.pv[0].as_string() == ponder_move) {
           ponder_info.pv.erase(ponder_info.pv.begin());
@@ -302,7 +304,7 @@ void EngineController::Go(const GoParams& params) {
         if (ponder_info.seldepth > 1) {
           ponder_info.seldepth--;
         }
-        info_callback_(ponder_info);
+        info_callback_({ponder_info});
       };
     } else {
       SetupPosition(current_position_->fen, current_position_->moves);

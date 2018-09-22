@@ -73,6 +73,8 @@ struct ThinkingInfo {
   int tb_hits = -1;
   // Best line found. Moves are from perspective of white player.
   std::vector<Move> pv;
+  // Multipv index.
+  int multipv = -1;
   // Freeform comment.
   std::string comment;
 
@@ -84,7 +86,7 @@ struct ThinkingInfo {
   // The color of the player, if known.
   optional<bool> is_black;
 
-  using Callback = std::function<void(const ThinkingInfo&)>;
+  using Callback = std::function<void(const std::vector<ThinkingInfo>&)>;
 };
 
 // Is sent when a single game is finished.

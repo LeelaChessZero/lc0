@@ -168,7 +168,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     if (!iter.node()) break;  // Last edge was dangling, cannot continue.
   }
   uci_info_.comment.clear();
-  info_callback_(uci_info_);
+  info_callback_({uci_info_});
 }
 
 // Decides whether anything important changed in stats and new info should be
@@ -212,8 +212,10 @@ void Search::SendMovesStats() const {
             });
 
   const bool is_black_to_move = played_history_.IsBlackToMove();
-  ThinkingInfo info;
+  std::vector<ThinkingInfo> infos;
   for (const auto& edge : edges) {
+    infos.emplace_back();
+    ThinkingInfo& info = infos.back();
     std::ostringstream oss;
     oss << std::fixed;
 
@@ -255,8 +257,8 @@ void Search::SendMovesStats() const {
     if (edge.IsTerminal()) oss << "(T) ";
 
     info.comment = oss.str();
-    info_callback_(info);
   }
+  info_callback_(infos);
 }
 
 NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
@@ -462,14 +464,13 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if(edge.GetN() + offset > max_n) {
+    if (edge.GetN() + offset > max_n) {
       max_n = edge.GetN() + offset;
     }
   }
 
   // No move had enough visits for temperature, so use default child criteria
   if (max_n <= 0.0f) return GetBestChildNoTemperature(parent);
-
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
