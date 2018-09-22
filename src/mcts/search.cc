@@ -61,7 +61,7 @@ const char* Search::kAllowedNodeCollisionsStr =
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
 
 namespace {
-const int kSmartPruningToleranceNodes = 100;
+const int kSmartPruningToleranceNodes = 300;
 const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
@@ -315,8 +315,8 @@ void Search::UpdateRemainingMoves() {
   // Check for how many playouts there is time remaining.
   if (limits_.time_ms >= 0) {
     auto time_since_start = GetTimeSinceStart();
-    if (time_since_start > kSmartPruningToleranceMs) {
-      auto nps = (1000LL * total_playouts_ + kSmartPruningToleranceNodes) /
+    if (time_since_start > kSmartPruningToleranceMs * 2) {
+      auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
       int64_t remaining_time = limits_.time_ms - time_since_start;
@@ -462,7 +462,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if(edge.GetN() + offset > max_n) {
+    if (edge.GetN() + offset > max_n) {
       max_n = edge.GetN() + offset;
     }
   }
