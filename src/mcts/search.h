@@ -106,6 +106,7 @@ class Search {
   static const char* kPolicySoftmaxTempStr;
   static const char* kAllowedNodeCollisionsStr;
   static const char* kOutOfOrderEvalStr;
+  static const char* kMultiPvStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -115,6 +116,8 @@ class Search {
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
   EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
+  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
+                                                        int count) const;
   EdgeAndNode GetBestChildWithTemperature(Node* parent,
                                           float temperature) const;
 
@@ -169,7 +172,7 @@ class Search {
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
-  ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
+  ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int>::max();
@@ -196,6 +199,7 @@ class Search {
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisions;
   const bool kOutOfOrderEval;
+  const int kMultiPv;
 
   friend class SearchWorker;
 };

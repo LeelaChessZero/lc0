@@ -32,6 +32,7 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 #include <thread>
 
@@ -59,6 +60,7 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
+const char* Search::kMultiPvStr = "MultiPv";
 
 namespace {
 const int kSmartPruningToleranceNodes = 300;
@@ -93,6 +95,7 @@ void Search::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
                           "allowed-node-collisions") = 0;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
+  options->Add<IntOption>(kMultiPvStr, 1, 500, "multipv") = 1;
 }
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -123,7 +126,8 @@ Search::Search(const NodeTree& tree, Network* network,
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
       kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)) {}
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
+      kMultiPv(options.Get<int>(kMultiPvStr)) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -148,27 +152,42 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_edge_) return;
-  last_outputted_best_move_edge_ = best_move_edge_.edge();
-  uci_info_.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
-  uci_info_.seldepth = max_depth_;
-  uci_info_.time = GetTimeSinceStart();
-  uci_info_.nodes = total_playouts_ + initial_visits_;
-  uci_info_.hashfull =
-      cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
-  uci_info_.nps =
-      uci_info_.time ? (total_playouts_ * 1000 / uci_info_.time) : 0;
-  uci_info_.score = 290.680623072 * tan(1.548090806 * best_move_edge_.GetQ(0));
-  uci_info_.tb_hits = tb_hits_.load(std::memory_order_acquire);
-  uci_info_.pv.clear();
 
-  bool flip = played_history_.IsBlackToMove();
-  for (auto iter = best_move_edge_; iter;
-       iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
-    uci_info_.pv.push_back(iter.GetMove(flip));
-    if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+  auto edges = GetBestChildrenNoTemperature(root_node_, kMultiPv);
+
+  std::vector<ThinkingInfo> uci_infos;
+
+  // Info common for all multipv variants.
+  ThinkingInfo common_info;
+  common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
+  common_info.seldepth = max_depth_;
+  common_info.time = GetTimeSinceStart();
+  common_info.nodes = total_playouts_ + initial_visits_;
+  common_info.hashfull =
+      cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
+  common_info.nps =
+      common_info.time ? (total_playouts_ * 1000 / common_info.time) : 0;
+  common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
+
+  int multipv = 0;
+  for (const auto& edge : edges) {
+    ++multipv;
+    uci_infos.emplace_back(common_info);
+    auto& uci_info = uci_infos.back();
+    uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+    if (kMultiPv > 1) uci_info.multipv = multipv;
+    bool flip = played_history_.IsBlackToMove();
+    for (auto iter = edge; iter;
+         iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
+      uci_info.pv.push_back(iter.GetMove(flip));
+      if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+    }
   }
-  uci_info_.comment.clear();
-  info_callback_(uci_info_);
+
+  if (!uci_infos.empty()) last_outputted_uci_info_ = uci_infos.front();
+  if (!edges.empty()) last_outputted_best_move_edge_ = best_move_edge_.edge();
+
+  info_callback_(uci_infos);
 }
 
 // Decides whether anything important changed in stats and new info should be
@@ -178,11 +197,12 @@ void Search::MaybeOutputInfo() {
   Mutex::Lock counters_lock(counters_mutex_);
   if (!responded_bestmove_ && best_move_edge_ &&
       (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
-       uci_info_.depth !=
+       last_outputted_uci_info_.depth !=
            static_cast<int>(cum_depth_ /
                             (total_playouts_ ? total_playouts_ : 1)) ||
-       uci_info_.seldepth != max_depth_ ||
-       uci_info_.time + kUciInfoMinimumFrequencyMs < GetTimeSinceStart())) {
+       last_outputted_uci_info_.seldepth != max_depth_ ||
+       last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
+           GetTimeSinceStart())) {
     SendUciInfo();
   }
 }
@@ -212,8 +232,10 @@ void Search::SendMovesStats() const {
             });
 
   const bool is_black_to_move = played_history_.IsBlackToMove();
-  ThinkingInfo info;
+  std::vector<ThinkingInfo> infos;
   for (const auto& edge : edges) {
+    infos.emplace_back();
+    ThinkingInfo& info = infos.back();
     std::ostringstream oss;
     oss << std::fixed;
 
@@ -255,8 +277,8 @@ void Search::SendMovesStats() const {
     if (edge.IsTerminal()) oss << "(T) ";
 
     info.comment = oss.str();
-    info_callback_(info);
   }
+  info_callback_(infos);
 }
 
 NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
@@ -414,33 +436,42 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
-// Returns a child with most visits.
-EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
+// Returns @count children with most visits.
+std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
+                                                              int count) const {
   MoveList root_limit;
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
   }
-  EdgeAndNode best_edge;
   // Best child is selected using the following criteria:
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  std::tuple<int, float, float> best(-1, 0.0, 0.0);
+  using El = std::tuple<int, float, float, EdgeAndNode>;
+  std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
             root_limit.end()) {
       continue;
     }
-    std::tuple<int, float, float> val(edge.GetN(), edge.GetQ(-10.0),
-                                      edge.GetP());
-    if (val > best) {
-      best = val;
-      best_edge = edge;
-    }
+    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
-  return best_edge;
+  auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
+                                                         : edges.end();
+  std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
+
+  std::vector<EdgeAndNode> res;
+  std::transform(edges.begin(), middle, std::back_inserter(res),
+                 [](const El& x) { return std::get<3>(x); });
+  return res;
+}
+
+// Returns a child with most visits.
+EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
+  auto res = GetBestChildrenNoTemperature(parent, 1);
+  return res.empty() ? EdgeAndNode() : res.front();
 }
 
 // Returns a child chosen according to weighted-by-temperature visit count.
@@ -469,7 +500,6 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
   // No move had enough visits for temperature, so use default child criteria
   if (max_n <= 0.0f) return GetBestChildNoTemperature(parent);
-
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -729,7 +759,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     // playout remains incomplete; we must go deeper.
     float puct_mult =
         search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-    float best = -100.0f;
+    float best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     float parent_q =
         ((is_root_node && search_->kNoise) || !search_->kFpuReduction)

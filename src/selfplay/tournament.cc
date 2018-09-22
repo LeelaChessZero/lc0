@@ -192,8 +192,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
   PlayerOptions options[2];
 
-  ThinkingInfo last_thinking_info;
-  last_thinking_info.depth = -1;
+  std::vector<ThinkingInfo> last_thinking_info;
   for (int pl_idx : {0, 1}) {
     const bool verbose_thinking =
         player_options_[pl_idx].Get<bool>(kVerboseThinkingStr);
@@ -209,9 +208,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
                               verbose_thinking,
                               &last_thinking_info](const BestMoveInfo& info) {
       // In non-verbose mode, output the last "info" message.
-      if (!verbose_thinking && last_thinking_info.depth >= 0) {
+      if (!verbose_thinking && !last_thinking_info.empty()) {
         info_callback_(last_thinking_info);
-        last_thinking_info.depth = -1;
+        last_thinking_info.clear();
       }
       BestMoveInfo rich_info = info;
       rich_info.player = pl_idx + 1;
@@ -220,20 +219,22 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       best_move_callback_(rich_info);
     };
 
-    opt.info_callback = [this, game_number, pl_idx, player1_black,
-                         verbose_thinking,
-                         &last_thinking_info](const ThinkingInfo& info) {
-      ThinkingInfo rich_info = info;
-      rich_info.player = pl_idx + 1;
-      rich_info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
-      rich_info.game_id = game_number;
-      if (verbose_thinking) {
-        info_callback_(rich_info);
-      } else {
-        // In non-verbose mode, remember the last "info" message.
-        last_thinking_info = rich_info;
-      }
-    };
+    opt.info_callback =
+        [this, game_number, pl_idx, player1_black, verbose_thinking,
+         &last_thinking_info](const std::vector<ThinkingInfo>& infos) {
+          std::vector<ThinkingInfo> rich_info = infos;
+          for (auto& info : rich_info) {
+            info.player = pl_idx + 1;
+            info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
+            info.game_id = game_number;
+          }
+          if (verbose_thinking) {
+            info_callback_(rich_info);
+          } else {
+            // In non-verbose mode, remember the last "info" messages.
+            last_thinking_info = std::move(rich_info);
+          }
+        };
   }
 
   // Iterator to store the game in. Have to keep it so that later we can
