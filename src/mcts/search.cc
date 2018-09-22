@@ -455,7 +455,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(-10.0), edge.GetP(), edge);
+    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
   auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
                                                          : edges.end();
@@ -758,7 +758,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     // playout remains incomplete; we must go deeper.
     float puct_mult =
         search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-    float best = -100.0f;
+    float best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     float parent_q =
         ((is_root_node && search_->kNoise) || !search_->kFpuReduction)
