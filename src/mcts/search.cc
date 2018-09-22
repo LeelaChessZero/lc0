@@ -61,8 +61,8 @@ const char* Search::kAllowedNodeCollisionsStr =
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
 
 namespace {
-const int kSmartPruningToleranceNodes = 500;
-const int kSmartPruningToleranceMs = 400;
+const int kSmartPruningToleranceNodes = 300;
+const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
@@ -315,7 +315,7 @@ void Search::UpdateRemainingMoves() {
   // Check for how many playouts there is time remaining.
   if (limits_.time_ms >= 0) {
     auto time_since_start = GetTimeSinceStart();
-    if (time_since_start > kSmartPruningToleranceMs) {
+    if (time_since_start > kSmartPruningToleranceMs * 2) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
