@@ -408,6 +408,11 @@ if get_option('gtest') and gtest.found()
     files, include_directories: includes, dependencies: test_deps
   ), args: '--gtest_output=xml:position.xml', timeout: 90)
 
+  test('OptionsParserTest',
+    executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
+    files, include_directories: includes, dependencies: test_deps
+  ), timeout: 90)
+
   test('SyzygyTest',
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
     files, include_directories: includes, dependencies: test_deps
