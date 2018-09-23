@@ -85,7 +85,7 @@ test_script:
 - cmd: cd build
 - cmd: IF %GTEST%==true copy C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
 - cmd: IF %GTEST%==true xcopy /s /i C:\cache\syzygy syzygy
-- cmd: IF %GTEST%==true meson.py test --print-errorlogs
+- cmd: IF %GTEST%==true meson test --print-errorlogs
 - cmd: cd ..
 on_finish:
 - cmd: cd build
