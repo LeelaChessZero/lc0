@@ -836,7 +836,7 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetRepetitions() >= 2) {
+    if (history_.Last().GetRepetitions() >= 1) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
