@@ -40,6 +40,9 @@ const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
 const char* kInputDirStr = "Directory with gzipped files in need of rescoring.";
 const char* kOutputDirStr = "Directory to write rescored files.";
 const char* kThreadsStr = "Number of concurrent threads to rescore with.";
+const char* kTempStr = "Additional temperature to apply to policy target.";
+const char* kDistributionOffsetStr =
+    "Additional offset to apply to policy target before temperature.";
 
 int games = 0;
 int positions = 0;
@@ -48,7 +51,7 @@ int delta = 0;
 int rescored2 = 0;
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
-                 std::string outputDir) {
+                 std::string outputDir, float distTemp, float distOffset) {
   // Scope to ensure reader and writer are closed before deleting source file.
   {
     TrainingDataReader reader(file);
@@ -134,10 +137,11 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             score_to_apply = -1;
           }
           // If the WDL result disagrees with the game outcome, make it a draw.
-          // WDL draw is always draw regardless of prior moves since zero, so that clearly works.
-          // Otherwise, the WDL result could be correct or draw, so best we can
-          // do is change scores that don't agree, to be a draw. If score was a
-          // draw this is a no-op, if it was opposite it becomes a draw.
+          // WDL draw is always draw regardless of prior moves since zero, so
+          // that clearly works. Otherwise, the WDL result could be correct or
+          // draw, so best we can do is change scores that don't agree, to be a
+          // draw. If score was a draw this is a no-op, if it was opposite it
+          // becomes a draw.
           int8_t new_score = fileContents[i + 1].result != score_to_apply
                                  ? 0
                                  : fileContents[i + 1].result;
@@ -155,19 +159,32 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
     }
+    if (distTemp != 1.0f || distOffset != 0.0f) {
+      for (auto& chunk : fileContents) {
+        float sum = 0.0;
+        for (auto& prob : chunk.probabilities) {
+          prob = std::max(0.0f, prob + distOffset);
+          prob = std::pow(prob, 1.0f / distTemp);
+          sum += prob;
+        }
+        for (auto& prob : chunk.probabilities) {
+          prob /= sum;
+        }
+      }
+    }
 
     for (auto chunk : fileContents) {
       writer.WriteChunk(chunk);
     }
   }
-  // remove(file.c_str());
+  remove(file.c_str());
 }
 
 void ProcessFiles(const std::vector<std::string>& files,
-                  SyzygyTablebase* tablebase, std::string outputDir, int offset,
-                  int mod) {
+                  SyzygyTablebase* tablebase, std::string outputDir,
+                  float distTemp, float distOffset, int offset, int mod) {
   for (int i = offset; i < files.size(); i += mod) {
-    ProcessFile(files[i], tablebase, outputDir);
+    ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset);
   }
 }
 }  // namespace
@@ -181,6 +198,11 @@ void RescoreLoop::RunLoop() {
   options_.Add<StringOption>(kInputDirStr, "input", 'i');
   options_.Add<StringOption>(kOutputDirStr, "output", 'o');
   options_.Add<IntOption>(kThreadsStr, 1, 20, "threads", 't') = 1;
+  options_.Add<FloatOption>(kTempStr, 0.001, 100, "temperature") = 1;
+  // Positive dist offset requires knowing the legal move set, so not supported
+  // for now.
+  options_.Add<FloatOption>(kDistributionOffsetStr, -0.999, 0, "dist_offset") =
+      0;
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;
@@ -202,7 +224,10 @@ void RescoreLoop::RunLoop() {
   }
   // TODO: support threads option.
   ProcessFiles(files, &tablebase,
-               options_.GetOptionsDict().Get<std::string>(kOutputDirStr), 0, 1);
+               options_.GetOptionsDict().Get<std::string>(kOutputDirStr),
+               options_.GetOptionsDict().Get<float>(kTempStr),
+               options_.GetOptionsDict().Get<float>(kDistributionOffsetStr), 0,
+               1);
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;
   std::cout << "Rescores performed: " << rescored << std::endl;
