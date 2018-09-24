@@ -89,7 +89,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.4f;
+  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 1.0f;
   options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
   options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
                             "time-curve-peak") = 26.2f;
@@ -102,7 +102,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>("Ponder", "ponder") = false;
   options->Add<FloatOption>(kSpendSavedTime, 0.0f, 1.0f, "immediate-time-use") =
-      0.0f;
+      0.6f;
 
   Search::PopulateUciParams(options);
   ConfigFile::PopulateOptions(options);
@@ -110,7 +110,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   auto defaults = options->GetMutableDefaultsOptions();
 
   defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
-  defaults->Set<float>(Search::kFpuReductionStr, 0.9f);  // FPU reduction = 0.9
+  defaults->Set<float>(Search::kFpuReductionStr, 1.2f);  // FPU reduction = 1.2
   defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
   defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
   defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
