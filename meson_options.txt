@@ -31,7 +31,7 @@ option('protobuf_libdir',
 option('openblas_libdirs',
        type: 'array',
        value: ['/usr/lib/'],
-       description: 'Paths to OpenCL libraries')
+       description: 'Paths to OpenBLAS libraries')
 
 option('opencl_libdirs',
        type: 'array',
