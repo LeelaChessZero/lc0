@@ -3,7 +3,7 @@ v0.18.0-rc1 (2018-09-24)
 
 KNOWN BUG!
 
-* It is known that in some rare cases Lc0 crashes!
+* We have credible reports that in some rare cases Lc0 crashes!
   However, we were not able to reproduce it reliably. If you see the crash,
   please report to devs! What seems to increase crash probability:
   - Very short move time (milliseconds)
@@ -58,7 +58,11 @@ Other:
 
 * Command line and UCI parameter values are now checked for validity.
 
-* 32-bit build is possible now. CPU only though.
+* You can now build for older processors that don't support the popcnt
+  instruction by passing -Dpopcnt=false to meson when building.
+
+* 32-bit build is possible now. CPU only and we were only able to build it 
+  in Linux for now, includeing Raspberry Pi.
 
 * Threading issue which caused crash in heavily multithreaded environment
   with slow backends was fixed.
