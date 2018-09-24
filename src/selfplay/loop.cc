@@ -49,6 +49,8 @@ int positions = 0;
 int rescored = 0;
 int delta = 0;
 int rescored2 = 0;
+int orig_counts[3] = {0, 0, 0};
+int fixed_counts[3] = {0, 0, 0};
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset) {
@@ -80,6 +82,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     board.SetFromFen(ChessBoard::kStartingFen, &rule50ply, &gameply);
     history.Reset(board, rule50ply, gameply);
     int last_rescore = -1;
+    orig_counts[fileContents[0].result + 1]++;
+    fixed_counts[fileContents[0].result + 1]++;
     for (int i = 0; i < moves.size(); i++) {
       history.Append(moves[i]);
       const auto& board = history.Last().GetBoard();
@@ -100,6 +104,11 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
           for (int j = i + 1; j > last_rescore; j--) {
             if (fileContents[j].result != score_to_apply) {
+              if (j == i + 1 && last_rescore == -1) {
+                fixed_counts[fileContents[0].result + 1]--;
+                bool flip = (i % 2) == 0;
+                fixed_counts[(flip ? -score_to_apply : score_to_apply) + 1]++;
+              }
               rescored += 1;
               delta += abs(fileContents[j].result - score_to_apply);
               /*
@@ -233,6 +242,10 @@ void RescoreLoop::RunLoop() {
   std::cout << "Rescores performed: " << rescored << std::endl;
   std::cout << "Cumulative outcome change: " << delta << std::endl;
   std::cout << "Secondary rescores performed: " << rescored2 << std::endl;
+  std::cout << "Original L: " << orig_counts[0] << " D: " << orig_counts[1]
+            << " W: " << orig_counts[2] << std::endl;
+  std::cout << "After L: " << fixed_counts[0] << " D: " << fixed_counts[1]
+            << " W: " << fixed_counts[2] << std::endl;
 }
 
 SelfPlayLoop::SelfPlayLoop() {}
