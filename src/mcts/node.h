@@ -253,6 +253,11 @@ class Node {
   friend class Edge;
 };
 
+// Define __i386__ also for 32 bit Windows.
+#if defined(_WIN32) && !defined(_WIN64)
+#define __i386__ 1
+#endif
+
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 40, "Unexpected size of Node for 32bit compile");
