@@ -1,3 +1,73 @@
+v0.18.0-rc1 (2018-09-24)
+~~~~~~~~~~~
+
+KNOWN BUG!
+
+* We have credible reports that in some rare cases Lc0 crashes!
+  However, we were not able to reproduce it reliably. If you see the crash,
+  please report to devs! What seems to increase crash probability:
+  - Very short move time (milliseconds)
+  - Proximity to a checkmate (happens 1-3 moves before the checkmate)
+
+
+New features:
+
+* Endgame tablebases support! Both WDL and DTZ now.
+
+* Added MultiPv support.
+
+
+Time management changes:
+
+* Introduced --immediate-time-use flag. Yes, yet another time management
+  flag. Posible values are between 0.0 and 1.0. Setting it closer to 
+  1.0 makes Leela use time saved from futile search aversion earlier.
+
+* Some time management parameters were changed:
+  - Slowmover is 1.0 now (was 2.4)
+  - Immediate-time-use is 0.6 now (didn't exist before, so was 0.0)
+
+* Fixed a bug, because of which futile search aversion tolerance was incorrectly
+  applied, which resulted in instamoves.
+
+* Now search stops immediately when it runs out of budgeted time.
+  Should help against timeouts, especially on slow backends (e.g. BLAS).
+
+* Move overhead now is a fixed time, doesn't depend on number of remaining
+  moves.
+
+
+Other:
+
+* Out of order eval is on by default. That brings slight nps improvement.
+
+* Default FPU reduction is 1.2 now (was 0.9)
+
+* Cudnn backend now has max_batch parameter.
+  (can be set for example like this --backend-opts=max_batch=100).
+  This is needed for lower end GPUs that didn't have enough VRAM for a buffer
+  of size 1024. Make sure that this setting is not lower than --minibatch-size.
+
+* Small memory usage optimizations.
+
+* Engine name in UCI response is shorter now. Fritz chess UI should be able
+  to work with Leela now
+
+* Added flag --temp-visit-offset, will allow to offset temperature during
+  training.
+
+* Command line and UCI parameter values are now checked for validity.
+
+* You can now build for older processors that don't support the popcnt
+  instruction by passing -Dpopcnt=false to meson when building.
+
+* 32-bit build is possible now. CPU only and we were only able to build it 
+  in Linux for now, including Raspberry Pi.
+
+* Threading issue which caused crash in heavily multithreaded environment
+  with slow backends was fixed.
+
+
 v0.17.0 (2018-08-27)
 ~~~~~~~
 
