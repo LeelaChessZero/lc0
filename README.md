@@ -147,6 +147,11 @@ CC=clang CXX=clang++ ./build.sh
 ```
 
 5. The resulting binary will be in build/release
+6. If you want to move the binary elsewhere you will have to copy the protobuf libraries to /usr/lib
+
+```
+sudo cp build/release/subprojects/protobuf-3.5.1/libprotobuf* /usr/lib
+```
 
 ## License
 
