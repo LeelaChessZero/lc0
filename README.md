@@ -132,9 +132,9 @@ tar -xf clang+llvm-6.0.0-armv7a-linux-gnueabihf.tar.xz
 rm clang+llvm-6.0.0-armv7a-linux-gnueabihf.tar.xz
 mv clang+llvm-6.0.0-armv7a-linux-gnueabihf clang_6.0.0
 sudo mv clang_6.0.0 /usr/local
-echo 'export PATH=/usr/local/clang_6.0.0/bin:~/.local/bin:$PATH' >> .bashrc
-echo 'export LD_LIBRARY_PATH=/usr/local/clang_6.0.0/lib:$LD_LIBRARY_PATH' >> .bashrc
-source .bashrc
+echo 'export PATH=/usr/local/clang_6.0.0/bin:~/.local/bin:$PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/usr/local/clang_6.0.0/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 4. Clone lc0 and compile
