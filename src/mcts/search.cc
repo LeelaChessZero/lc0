@@ -60,7 +60,7 @@ const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
 const char* Search::kAllowedNodeCollisionsStr =
     "Allowed node collisions, per batch";
 const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
-const char* Search::kMultiPvStr = "MultiPv";
+const char* Search::kMultiPvStr = "MultiPV";
 
 namespace {
 const int kSmartPruningToleranceNodes = 300;
