@@ -49,6 +49,7 @@ int positions = 0;
 int rescored = 0;
 int delta = 0;
 int rescored2 = 0;
+int rescored3 = 0;
 int orig_counts[3] = {0, 0, 0};
 int fixed_counts[3] = {0, 0, 0};
 
@@ -108,6 +109,12 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                 fixed_counts[fileContents[0].result + 1]--;
                 bool flip = (i % 2) == 0;
                 fixed_counts[(flip ? -score_to_apply : score_to_apply) + 1]++;
+                /*
+                std::cerr << "Rescoring: " << file << " "  <<
+                (int)fileContents[j].result << " -> "
+                          << (int)score_to_apply
+                          << std::endl;
+                          */
               }
               rescored += 1;
               delta += abs(fileContents[j].result - score_to_apply);
@@ -154,9 +161,55 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           int8_t new_score = fileContents[i + 1].result != score_to_apply
                                  ? 0
                                  : fileContents[i + 1].result;
+          bool dtz_rescored = false;
+          // if score is not already right, and the score to apply isn't 0, dtz
+          // can let us know its definitely correct.
+          if (fileContents[i + 1].result != score_to_apply &&
+              score_to_apply != 0) {
+            // Any repetitions in the history since last 50 ply makes it risky
+            // to assume dtz is still correct.
+            int steps = history.Last().GetNoCaptureNoPawnPly();
+            bool no_reps = true;
+            for (int i = 0; i < steps; i++) {
+              if (history.GetPositionAt(history.GetLength() - i - 1)
+                      .GetRepetitions() != 0) {
+                no_reps = false;
+                break;
+              }
+            }
+            if (no_reps) {
+              int depth = tablebase->probe_dtz(history.Last(), &state);
+              if (state != FAIL) {
+                // This should be able to be <= 99 safely, but I've not
+                // convinced myself thats true.
+                if (steps + std::abs(depth) < 99) {
+                  rescored3++;
+                  new_score = score_to_apply;
+                  dtz_rescored = true;
+                }
+              }
+            }
+          }
+
+          // If score is not already a draw, and its not obviously a draw, check
+          // if 50 move rule has advanced so far its obviously a draw. Obviously
+          // not needed if we've already proven with dtz that its a win/loss.
+          if (fileContents[i + 1].result != 0 && score_to_apply != 0 &&
+              !dtz_rescored) {
+            int depth = tablebase->probe_dtz(history.Last(), &state);
+            if (state != FAIL) {
+              int steps = history.Last().GetNoCaptureNoPawnPly();
+              // This should be able to be >= 101 safely, but I've not convinced
+              // myself thats true.
+              if (steps + std::abs(depth) > 101) {
+                rescored3++;
+                new_score = 0;
+                dtz_rescored = true;
+              }
+            }
+          }
           if (new_score != fileContents[i + 1].result) {
             rescored2 += 1;
-            // No point tracking deltas, they are always unity.
             /*
           std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
                     << (int)score_to_apply
@@ -242,6 +295,8 @@ void RescoreLoop::RunLoop() {
   std::cout << "Rescores performed: " << rescored << std::endl;
   std::cout << "Cumulative outcome change: " << delta << std::endl;
   std::cout << "Secondary rescores performed: " << rescored2 << std::endl;
+  std::cout << "Secondary rescores performed used dtz: " << rescored3
+            << std::endl;
   std::cout << "Original L: " << orig_counts[0] << " D: " << orig_counts[1]
             << " W: " << orig_counts[2] << std::endl;
   std::cout << "After L: " << fixed_counts[0] << " D: " << fixed_counts[1]
