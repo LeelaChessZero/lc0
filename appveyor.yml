@@ -59,24 +59,24 @@ build_script:
 - cmd: IF %APPVEYOR_REPO_TAG%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 - cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 after_build:
-- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-windows-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false IF %OPENCL%==true 7z a lc0-windows-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_92.dll" "%CUDA_PATH%\bin\cublas64_92.dll"
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-windows-%NAME%.zip "%PKG_FOLDER%\cuda\bin\cudnn64_7.dll"
+- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\OpenBLAS.0.2.14.1\lib\native\bin\x64\*.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==false IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\opencl-nug.0.777.12\build\native\bin\OpenCL.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_92.dll" "%CUDA_PATH%\bin\cublas64_92.dll"
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%PKG_FOLDER%\cuda\bin\cudnn64_7.dll"
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type COPYING |more /P > dist\COPYING
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%CUDA_PATH%\EULA.txt" dist\CUDA.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%PKG_FOLDER%\cuda\NVIDIA_SLA_cuDNN_Support.txt" dist\CUDNN.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-windows-%NAME%.zip .\dist\README.txt .\dist\COPYING .\dist\CUDA.txt .\dist\CUDNN.txt
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\COPYING .\dist\CUDA.txt .\dist\CUDNN.txt
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
-  - path: lc0-windows-$(NAME).zip
-    name: lc0-windows-$(NAME)-zip
+  - path: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
+    name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
 deploy:
   - provider: GitHub
-    artifact: lc0-windows-$(NAME).zip
+    artifact: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
     auth_token:
       secure: USFAdwQKTXqOXQjCYQfzWvzRpUhvqJLBkN4hbOg+j876vDxGZHt9bMYayb5evePp
     on:
