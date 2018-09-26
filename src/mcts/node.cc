@@ -40,7 +40,6 @@
 #include "utils/hashcat.h"
 
 namespace lczero {
-
 /////////////////////////////////////////////////////////////////////////
 // Node garbage collector
 /////////////////////////////////////////////////////////////////////////
@@ -209,19 +208,20 @@ std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
       << " Index:" << index_ << " Child:" << child_.get()
-      << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
+      << " Sibling:" << sibling_.get() << " Q:" << GetQ() << " N:" << n_
       << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
   return oss.str();
 }
 
 void Node::MakeTerminal(GameResult result) {
+  n_ = std::max<uint32_t>(n_, 1);
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
-    q_ = 0.0f;
+    total_action_ = 0.0f;
   } else if (result == GameResult::WHITE_WON) {
-    q_ = 1.0f;
+    total_action_ = n_ * k_action_value_base;
   } else if (result == GameResult::BLACK_WON) {
-    q_ = -1.0f;
+    total_action_ = -n_ * k_action_value_base;
   }
 }
 
@@ -235,7 +235,8 @@ void Node::CancelScoreUpdate() { --n_in_flight_; }
 
 void Node::FinalizeScoreUpdate(float v) {
   // Recompute Q.
-  q_ += (v - q_) / (n_ + 1);
+  int64_t value = v * k_action_value_base;
+  total_action_ += value;
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
@@ -363,6 +364,13 @@ void NodeTree::TrimTreeAtHead() {
   // Send dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
   *current_head_ = Node(current_head_->GetParent(), current_head_->index_);
+  /*
+  current_head_->total_action = 0;
+  current_head_->n_ = 0;
+  current_head_->n_in_flight_ = 0;
+  current_head_->child_ = nullptr;
+  current_head_->edges_ = EdgeList();
+  */
   current_head_->sibling_ = std::move(tmp);
 }
 
@@ -411,5 +419,4 @@ void NodeTree::DeallocateTree() {
   gamebegin_node_ = nullptr;
   current_head_ = nullptr;
 }
-
 }  // namespace lczero

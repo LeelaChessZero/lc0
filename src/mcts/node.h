@@ -38,7 +38,6 @@
 #include "utils/mutex.h"
 
 namespace lczero {
-
 // Children of a node are stored the following way:
 // * Edges and Nodes edges point to are stored separately.
 // * There may be dangling edges (which don't yet point to any Node object yet)
@@ -71,6 +70,8 @@ namespace lczero {
 //                                       | q_ = -0.2  |
 //                                       | sibling_   | -> nullptr
 //                                       +------------+
+
+const int64_t k_action_value_base = 1 << 16;
 
 class Node;
 class Edge {
@@ -127,7 +128,11 @@ class Node {
   using ConstIterator = Edge_Iterator<true>;
 
   // Takes pointer to a parent node and own index in a parent.
-  Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
+  Node(Node* parent, uint16_t index)
+      : parent_(parent),
+        index_(index),
+        total_action_(0),
+        n_(0) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -151,7 +156,13 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ() const { return q_; }
+  float GetQ() const {
+    float f = (float)total_action_ / k_action_value_base / n_;
+    if (f < -1.0f || f > 1.0f) {
+      std::cout << f << " --- " << n_ << " --- " << IsTerminal() << std::endl;
+    }
+    return f;
+  }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -223,11 +234,7 @@ class Node {
   std::unique_ptr<Node> sibling_;
 
   // 4 byte fields.
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  float q_ = 0.0f;
+  int64_t total_action_;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
@@ -469,5 +476,4 @@ class NodeTree {
   std::unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
 };
-
 }  // namespace lczero
