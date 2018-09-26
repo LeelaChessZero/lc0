@@ -96,10 +96,10 @@ class EngineController {
   RpSharedMutex busy_mutex_;
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
-  std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
+  std::unique_ptr<Search> search_;
   NNCache cache_;
 
   // Store current TB and network settings to track when they change so that
