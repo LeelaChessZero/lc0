@@ -1,3 +1,12 @@
+v0.18.0-rc2 (2018-09-26)
+~~~~~~~~~~~
+
+* Severe bug fixed: Race condition when out-of-order-eval was enabled (and it
+  was enabled by default)
+
+* Windows 32-bit builds are now possible (CPU only for now)
+
+
 v0.18.0-rc1 (2018-09-24)
 ~~~~~~~~~~~
 
