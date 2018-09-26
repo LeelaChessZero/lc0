@@ -102,7 +102,7 @@ class EngineController {
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
 
-  // Order here is important. This needs to be destructed last (see #388).
+  // Order here is important. This needs to be destructed first (see #388).
   std::unique_ptr<Search> search_;
 
   // Store current TB and network settings to track when they change so that
