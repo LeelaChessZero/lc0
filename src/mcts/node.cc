@@ -217,7 +217,7 @@ void Node::MakeTerminal(GameResult result) {
   n_ = std::max<uint32_t>(n_, 1);
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
-    total_action_ = 0.0f;
+    total_action_ = 0;
   } else if (result == GameResult::WHITE_WON) {
     total_action_ = n_ * k_action_value_base;
   } else if (result == GameResult::BLACK_WON) {

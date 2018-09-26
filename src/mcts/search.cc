@@ -623,7 +623,7 @@ void SearchWorker::ExecuteOneIteration() {
   GatherMinibatch();
 
   // 3. Prefetch into cache.
-  MaybePrefetchIntoCache();
+  //MaybePrefetchIntoCache();
 
   // 4. Run NN computation.
   RunNNComputation();
@@ -1051,9 +1051,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
-  // Nodes mutex for doing node updates.
-  // SharedMutex::Lock lock(search_->nodes_mutex_);
-
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
   }
