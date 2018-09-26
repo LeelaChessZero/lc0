@@ -253,9 +253,12 @@ class Node {
   friend class Edge;
 };
 
-// Define __i386__ also for 32 bit Windows.
-#if defined(_WIN32) && !defined(_WIN64)
-#define __i386__ 1
+// Define __i386__  or __arm__ also for 32 bit Windows.
+#if defined(_M_IX86)
+#define __i386__
+#endif
+#if defined(_M_ARM) && !defined(_M_AMD64)
+#define __arm__
 #endif
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
