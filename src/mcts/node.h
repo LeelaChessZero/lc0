@@ -234,11 +234,11 @@ class Node {
   std::unique_ptr<Node> sibling_;
 
   // 4 byte fields.
-  int64_t total_action_;
+  std::atomic<int64_t> total_action_;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
-  uint32_t n_ = 0;
+  std::atomic<uint32_t> n_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -246,11 +246,11 @@ class Node {
   // (AKA virtual loss.) How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
-  uint16_t n_in_flight_ = 0;
+  std::atomic<uint16_t> n_in_flight_ = 0;
 
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
-  bool is_terminal_ = false;
+  std::atomic<bool> is_terminal_ = false;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;

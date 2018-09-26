@@ -234,15 +234,15 @@ bool Node::TryStartScoreUpdate() {
 void Node::CancelScoreUpdate() { --n_in_flight_; }
 
 void Node::FinalizeScoreUpdate(float v) {
-  // Recompute Q.
-  int64_t value = v * k_action_value_base;
-  total_action_ += value;
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
   }
   // Increment N.
   ++n_;
+  // Recompute Q.
+  int64_t value = v * k_action_value_base;
+  total_action_ += value;
   // Decrement virtual loss.
   --n_in_flight_;
 }
@@ -363,14 +363,12 @@ void NodeTree::TrimTreeAtHead() {
   auto tmp = std::move(current_head_->sibling_);
   // Send dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
-  *current_head_ = Node(current_head_->GetParent(), current_head_->index_);
-  /*
-  current_head_->total_action = 0;
+  //*current_head_ = Node(current_head_->GetParent(), current_head_->index_);
+  current_head_->total_action_ = 0;
   current_head_->n_ = 0;
   current_head_->n_in_flight_ = 0;
   current_head_->child_ = nullptr;
   current_head_->edges_ = EdgeList();
-  */
   current_head_->sibling_ = std::move(tmp);
 }
 

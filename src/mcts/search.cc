@@ -42,7 +42,6 @@
 #include "utils/random.h"
 
 namespace lczero {
-
 const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
 const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
 const char* Search::kCpuctStr = "Cpuct MCTS option";
@@ -731,8 +730,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
 
-  SharedMutex::Lock lock(search_->nodes_mutex_);
-
   // Fetch the current best root node visits for possible smart pruning.
   int best_node_n = search_->best_move_edge_.GetN();
 
@@ -748,7 +745,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
-    if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    {
+      SharedMutex::Lock lock(search_->nodes_mutex_);
+      if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    }
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
@@ -1052,7 +1052,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
   // Nodes mutex for doing node updates.
-  SharedMutex::Lock lock(search_->nodes_mutex_);
+  // SharedMutex::Lock lock(search_->nodes_mutex_);
 
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
@@ -1060,7 +1060,7 @@ void SearchWorker::DoBackupUpdate() {
 }
 
 void SearchWorker::DoBackupUpdateSingleNode(
-    const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
+    const NodeToProcess& node_to_process) {
   Node* node = node_to_process.node;
   if (node_to_process.is_collision) {
     // If it was a collision, just undo counters.
@@ -1113,5 +1113,4 @@ void SearchWorker::UpdateCounters() {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 }
-
 }  // namespace lczero
