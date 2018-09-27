@@ -746,8 +746,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
     {
-      SharedMutex::Lock lock(search_->nodes_mutex_);
+      while (
+          search_->get_or_spawn_lock_.test_and_set(std::memory_order_acquire))
+        ; // spin
       if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+      search_->get_or_spawn_lock_.clear(std::memory_order_release);
     }
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
