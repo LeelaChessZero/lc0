@@ -169,7 +169,6 @@ class Search {
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
 
-  std::atomic_flag get_or_spawn_lock_ = ATOMIC_FLAG_INIT;
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
