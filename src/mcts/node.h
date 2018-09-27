@@ -159,11 +159,7 @@ class Node {
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetQ() const {
-    float f = (float)total_action_ / k_action_value_base / GetNStarted();
-    if (f < -1.0f || f > 1.0f) {
-      std::cout << f << " --- " << n_ << " --- " << IsTerminal() << std::endl;
-    }
-    return f;
+    return (float)total_action_ / k_action_value_base / GetNStarted();
   }
 
   // Returns whether the node is known to be draw/lose/win.
