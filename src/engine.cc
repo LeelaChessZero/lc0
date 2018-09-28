@@ -104,6 +104,11 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSpendSavedTime, 0.0f, 1.0f, "immediate-time-use") =
       0.6f;
 
+  // Hide time curve options.
+  options->HideOption(kTimeCurvePeak);
+  options->HideOption(kTimeCurveLeftWidth);
+  options->HideOption(kTimeCurveRightWidth);
+
   Search::PopulateUciParams(options);
   ConfigFile::PopulateOptions(options);
 
