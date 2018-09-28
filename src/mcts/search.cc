@@ -745,8 +745,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
+    if (!best_edge.NodeIsSpawned())
     {
-      SharedMutex::Lock lock(search_->nodes_mutex_);
+      SharedMutex::Lock lock(search_->nodes_spawn_mutex_);
+      if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    } else {
       if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
     }
     depth++;

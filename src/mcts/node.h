@@ -364,6 +364,10 @@ class Edge_Iterator : public EdgeAndNode {
   }
   Edge_Iterator& operator*() { return *this; }
 
+  bool NodeIsSpawned() {
+      return node_ != nullptr;
+  }
+
   // If there is node, return it. Otherwise spawn a new one and return it.
   Node* GetOrSpawnNode(Node* parent) {
     if (node_) return node_;  // If there is already a node, return it.
