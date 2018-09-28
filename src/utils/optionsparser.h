@@ -75,6 +75,7 @@ class OptionsParser {
     std::string name_;
     std::string long_flag_;
     char short_flag_;
+    bool hidden_;
     friend class OptionsParser;
   };
 
@@ -96,6 +97,8 @@ class OptionsParser {
   // Set the option from string value.
   void SetOption(const std::string& name, const std::string& value,
                  const std::string& context = "");
+  // Hide this option from help and UCI.
+  void HideOption(const std::string& name);
   // Call option setter for this option.
   void SendOption(const std::string& name);
   // Call option setter all options.

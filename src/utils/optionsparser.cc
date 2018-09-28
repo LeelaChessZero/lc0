@@ -44,8 +44,10 @@ OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
 std::vector<std::string> OptionsParser::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
-    result.emplace_back("option name " + iter->GetName() + " " +
-                        iter->GetOptionString(defaults_));
+    if (!iter->hidden_) {
+      result.emplace_back("option name " + iter->GetName() + " " +
+                          iter->GetOptionString(defaults_));
+    }
   }
   return result;
 }
@@ -58,6 +60,13 @@ void OptionsParser::SetOption(const std::string& name, const std::string& value,
     return;
   }
   throw Exception("Unknown option: " + name);
+}
+
+void OptionsParser::HideOption(const std::string& name) {
+  auto option = FindOptionByName(name);
+  if (option) {
+    option->hidden_ = true;
+  }
 }
 
 void OptionsParser::SendOption(const std::string& name) {
@@ -222,7 +231,9 @@ void OptionsParser::ShowHelp() const {
   }
   std::cerr << "\nAllowed command line flags for current mode:\n";
   std::cerr << FormatFlag('h', "help", "Show help and exit");
-  for (const auto& option : options_) std::cerr << option->GetHelp(defaults_);
+  for (const auto& option : options_) {
+    if (!option->hidden_) std::cerr << option->GetHelp(defaults_);
+  }
 }
 
 /////////////////////////////////////////////////////////////////
