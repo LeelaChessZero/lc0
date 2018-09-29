@@ -738,28 +738,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   uint16_t depth = 0;
 
   while (true) {
-    // First, terminate if we find collisions or leaf nodes.
-    // Set 'node' to point to the node that was picked on previous iteration,
-    // possibly spawning it.
-    // TODO(crem) This statement has to be in the end of the loop rather than
-    //            in the beginning (and there would be no need for "if
-    //            (!is_root_node)"), but that would mean extra mutex lock.
-    //            Will revisit that after rethinking locking strategy.
-    if (!best_edge.NodeIsSpawned())
-    {
-      std::atomic_flag* lock =
-          is_root_node ? &search_->root_node_expanding : &node->is_expanding;
-      if (!lock->test_and_set(
-              std::memory_order_acquire)) {
-        if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
-        lock->clear();
-      } else {
-        // Node collision
-        return {node, true, depth};
-      }
-    } else {
-      if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
-    }
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
@@ -812,6 +790,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       Mutex::Lock counters_lock(search_->counters_mutex_);
       search_->found_best_move_ = true;
     }
+
+    if (!best_edge.NodeIsSpawned()) {
+      if (!node->is_expanding.test_and_set(std::memory_order_acquire)) {
+        Node* parent = node;
+        node = best_edge.GetOrSpawnNode(/* parent */ node);
+        parent->is_expanding.clear();
+      } else {
+        return {node, true, depth};  // Node collision
+      }
+    } else {
+      node = best_edge.GetOrSpawnNode(/* parent */ node);
+    }
+
     is_root_node = false;
   }
 }

@@ -170,7 +170,6 @@ class Search {
   const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
-  std::atomic_flag root_node_expanding = ATOMIC_FLAG_INIT;
   EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
