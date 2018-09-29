@@ -128,13 +128,7 @@ class Node {
   using ConstIterator = Edge_Iterator<true>;
 
   // Takes pointer to a parent node and own index in a parent.
-  Node(Node* parent, uint16_t index)
-      : parent_(parent),
-        index_(index),
-        total_action_(0),
-        n_(0),
-        n_in_flight_(0),
-        is_terminal_(false) {}
+  Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -158,9 +152,7 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ() const {
-    return (float)total_action_ / k_action_value_base / n_;
-  }
+  float GetQ() const { return (float)total_action_ / k_action_value_base / n_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -214,6 +206,7 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
+  // If the edge list of this node is being updated
   std::atomic_flag is_expanding = ATOMIC_FLAG_INIT;
 
  private:
@@ -226,6 +219,8 @@ class Node {
   EdgeList edges_;
 
   // 8 byte fields.
+  // Sum of all V (visit) values
+  std::atomic<int64_t> total_action_ = {0};
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
@@ -234,11 +229,10 @@ class Node {
   std::unique_ptr<Node> sibling_;
 
   // 4 byte fields.
-  std::atomic<int64_t> total_action_;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
-  std::atomic<uint32_t> n_;
+  std::atomic<uint32_t> n_ = {0};
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -246,11 +240,11 @@ class Node {
   // (AKA virtual loss.) How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
-  std::atomic<uint16_t> n_in_flight_;
+  std::atomic<uint16_t> n_in_flight_ = {0};
 
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
-  std::atomic<bool> is_terminal_;
+  std::atomic<bool> is_terminal_ = {false};
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -264,7 +258,7 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 40, "Unexpected size of Node for 32bit compile");
 #else
-//static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+static_assert(sizeof(Node) == 72, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -366,9 +360,7 @@ class Edge_Iterator : public EdgeAndNode {
   }
   Edge_Iterator& operator*() { return *this; }
 
-  bool NodeIsSpawned() {
-      return node_ != nullptr;
-  }
+  bool NodeIsSpawned() { return node_ != nullptr; }
 
   // If there is node, return it. Otherwise spawn a new one and return it.
   Node* GetOrSpawnNode(Node* parent) {

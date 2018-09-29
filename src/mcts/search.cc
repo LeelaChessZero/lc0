@@ -791,16 +791,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       search_->found_best_move_ = true;
     }
 
+    Node* parent_node = node;
     if (!best_edge.NodeIsSpawned()) {
       if (!node->is_expanding.test_and_set(std::memory_order_acquire)) {
-        Node* parent = node;
-        node = best_edge.GetOrSpawnNode(/* parent */ node);
-        parent->is_expanding.clear();
+        // Spawn a new node
+        node = best_edge.GetOrSpawnNode(parent_node);
+        parent_node->is_expanding.clear();
       } else {
-        return {node, true, depth};  // Node collision
+        // The node is already being spawned, return a collision
+        return {node, true, depth};
       }
     } else {
-      node = best_edge.GetOrSpawnNode(/* parent */ node);
+      // The node was already spawned, use it
+      node = best_edge.GetOrSpawnNode(parent_node);
     }
 
     is_root_node = false;
