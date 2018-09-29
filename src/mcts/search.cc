@@ -747,8 +747,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            Will revisit that after rethinking locking strategy.
     if (!best_edge.NodeIsSpawned())
     {
-      SharedMutex::Lock lock(search_->nodes_spawn_mutex_);
-      if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+      std::atomic_flag* lock =
+          is_root_node ? &search_->root_node_expanding : &node->is_expanding;
+      if (!lock->test_and_set(
+              std::memory_order_acquire)) {
+        if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+        lock->clear();
+      } else {
+        // Node collision
+        return {node, true, depth};
+      }
     } else {
       if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
     }

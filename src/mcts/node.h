@@ -214,6 +214,8 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
+  std::atomic_flag is_expanding = ATOMIC_FLAG_INIT;
+
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
@@ -262,7 +264,7 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 40, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+//static_assert(sizeof(Node) == 64, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
