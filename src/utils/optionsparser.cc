@@ -122,6 +122,10 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
       ShowHelp();
       return false;
     }
+    if (param == "--show-hidden") {
+      ShowHidden();
+      continue;
+    }
 
     if (param.substr(0, 2) == "--") {
       param = param.substr(2);
@@ -234,6 +238,10 @@ void OptionsParser::ShowHelp() const {
   for (const auto& option : options_) {
     if (!option->hidden_) std::cerr << option->GetHelp(defaults_);
   }
+}
+
+void OptionsParser::ShowHidden() const {
+  for (const auto& option : options_) option->hidden_ = false;
 }
 
 /////////////////////////////////////////////////////////////////

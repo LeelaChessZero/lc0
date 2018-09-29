@@ -121,6 +121,8 @@ class OptionsParser {
  private:
   // Prints help to std::cerr.
   void ShowHelp() const;
+  // Make all hidden options visible.
+  void ShowHidden() const;
   // Returns an option based on the long flag.
   Option* FindOptionByLongFlag(const std::string& flag) const;
   // Returns an option based by its name.
