@@ -57,7 +57,9 @@ class Search {
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const SearchLimits& limits,
          const OptionsDict& options, NNCache* cache,
-         SyzygyTablebase* syzygy_tb);
+         SyzygyTablebase* syzygy_tb,
+         std::chrono::steady_clock::time_point start_time =
+             std::chrono::steady_clock::now());
 
   ~Search();
 
