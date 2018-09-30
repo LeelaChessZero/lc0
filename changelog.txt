@@ -1,3 +1,9 @@
+v0.18.0 (2018-09-30)
+~~~~~~~
+
+* No changes from rc2 except the version.
+
+
 v0.18.0-rc2 (2018-09-26)
 ~~~~~~~~~~~
 
