@@ -111,6 +111,7 @@ Search::Search(const NodeTree& tree, Network* network,
       network_(network),
       limits_(limits),
       start_time_(start_time),
+      nps_time_(std::chrono::steady_clock::now()),
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
@@ -337,7 +338,11 @@ void Search::UpdateRemainingMoves() {
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
   if (limits_.time_ms >= 0) {
-    auto time_since_start = GetTimeSinceStart();
+    auto time_since_start =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - nps_time_)
+        .count();
+
     if (time_since_start > kSmartPruningToleranceMs * 2) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
