@@ -1652,7 +1652,7 @@ bool SyzygyTablebase::root_probe(const Position& pos,
     {
       // Better moves are ranked higher. Certain wins are ranked equally.
       // Losing moves are ranked equally unless a 50-move draw is in sight.
-      int r = dtz > 0
+      r = dtz > 0
                   ? (dtz + cnt50 <= 99 ? 1000 : 1000 - (dtz + cnt50))
                   : dtz < 0 ? (-dtz * 2 + cnt50 < 100 ? -1000
                                                       : -1000 + (-dtz + cnt50))
