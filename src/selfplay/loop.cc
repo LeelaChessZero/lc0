@@ -235,7 +235,10 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       }
     }
 
+    int offset = 0;
     for (auto chunk : fileContents) {
+      chunk.move_count = std::min(255, (int)(fileContents.size() - offset) / 2);
+      offset++;
       writer.WriteChunk(chunk);
     }
   }
