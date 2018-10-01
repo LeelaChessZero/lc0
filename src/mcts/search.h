@@ -169,7 +169,7 @@ class Search {
   Network* const network_;
   const SearchLimits limits_;
   const std::chrono::steady_clock::time_point start_time_;
-  const std::chrono::steady_clock::time_point nps_time_;
+  const std::chrono::steady_clock::time_point nps_start_time_;
   const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
