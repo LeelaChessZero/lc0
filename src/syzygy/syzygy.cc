@@ -1647,15 +1647,17 @@ bool SyzygyTablebase::root_probe(const Position& pos,
       dtz = 1;
     }
     if (result == FAIL) return false;
-    // Better moves are ranked higher. Certain wins are ranked equally.
-    // Losing moves are ranked equally unless a 50-move draw is in sight.
-    int r = dtz > 0
-                ? (dtz + cnt50 <= 99 ? 1000 : 1000 - (dtz + cnt50))
-                : dtz < 0 ? (-dtz * 2 + cnt50 < 100 ? -1000
-                                                    : -1000 + (-dtz + cnt50))
-                          : 0;
-    if (next_pos.GetRepetitions() > 1)
-      r = 0; //draw by repetition
+    int r = 0; //draw by repetition
+    if (next_pos.GetRepetitions() < 2)
+    {
+      // Better moves are ranked higher. Certain wins are ranked equally.
+      // Losing moves are ranked equally unless a 50-move draw is in sight.
+      int r = dtz > 0
+                  ? (dtz + cnt50 <= 99 ? 1000 : 1000 - (dtz + cnt50))
+                  : dtz < 0 ? (-dtz * 2 + cnt50 < 100 ? -1000
+                                                      : -1000 + (-dtz + cnt50))
+                            : 0;
+    }
     if (r > best_rank) best_rank = r;
     ranks.push_back(r);
   }
