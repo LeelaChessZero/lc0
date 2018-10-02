@@ -1,7 +1,7 @@
 v0.18.1 (2018-10-02)
 ~~~~~~~
 
-* Fix for threefold repetitions observed when using endgame tablebases.
+* Fix for falling into threefold repetition in a winning endgame tablebase position.
 
 
 v0.18.0 (2018-09-30)
