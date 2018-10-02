@@ -84,10 +84,13 @@ class SyzygyTablebase {
   // Probes DTZ tables to determine which moves are on the optimal play path.
   // Assumes the position is one reached such that the side to move has been
   // performing optimal play moves since the last 50 move counter reset.
+  // has_repeated should be whether there are any repeats since last 50 move
+  // counter reset.
   // Thread safe.
   // Returns false if the position is not in the tablebase.
   // Safe moves are added to the safe_moves output paramater.
-  bool root_probe(const Position& pos, std::vector<Move>* safe_moves);
+  bool root_probe(const Position& pos, bool has_repeated,
+                  std::vector<Move>* safe_moves);
   // Probes WDL tables to determine which moves might be on the optimal play
   // path. If 50 move ply counter is non-zero some (or maybe even all) of the
   // returned safe moves in a 'winning' position, may actually be draws.
