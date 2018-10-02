@@ -389,38 +389,37 @@ executable('lc0', 'src/main.cc',
 ### Tests
 gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
-test_deps = deps
 if get_option('gtest') and gtest.found()
-  test_deps += gtest
+  lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:chessboard.xml', timeout: 90)
 
   test('HashCat',
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:hashcat.xml', timeout: 90)
 
   test('PositionTest',
     executable('position_test', 'src/chess/position_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:position.xml', timeout: 90)
 
   test('OptionsParserTest',
     executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), timeout: 90)
 
   test('SyzygyTest',
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
   test('EncodePositionForNN', 
     executable('encoder_test', 'src/neural/encoder_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
 endif
