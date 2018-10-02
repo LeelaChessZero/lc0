@@ -40,7 +40,7 @@ void TestValidRootExpectation(SyzygyTablebase* tablebase,
                               const MoveList& valid_moves,
                               const MoveList& invalid_moves,
                               const MoveList& invalid_dtz_only = {},
-  bool has_repeated = false) {
+                              bool has_repeated = false) {
   ChessBoard board;
   PositionHistory history;
   int rule50ply;
@@ -232,11 +232,12 @@ TEST(Syzygy, Root5PieceProbes) {
 
   // Variant of first test but with plenty of moves left.
   TestValidRootExpectation(&tablebase, "8/8/8/Q7/8/1k1K4/1r6/8 w - - 60 44",
-                           {Move("a5a1", false), Move("a5d5", false)}, {}, {}
-                           );
-  // Same, but this time there is a repetition in history, so dtz will enforce choice of equal lowest dtz.
+                           {Move("a5a1", false), Move("a5d5", false)}, {}, {});
+  // Same, but this time there is a repetition in history, so dtz will enforce
+  // choice of equal lowest dtz.
   TestValidRootExpectation(&tablebase, "8/8/8/Q7/8/1k1K4/1r6/8 w - - 60 44",
-                           {Move("a5a1", false)}, {}, {Move("a5d5", false)}, true);
+                           {Move("a5a1", false)}, {}, {Move("a5d5", false)},
+                           true);
 }
 
 }  // namespace lczero
