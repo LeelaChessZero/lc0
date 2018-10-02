@@ -122,6 +122,12 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
   return params.find(key) != params.end();
 }
 
+int64_t GetTimestamp() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
 }  // namespace
 
 void UciLoop::RunLoop() {
@@ -129,11 +135,7 @@ void UciLoop::RunLoop() {
   std::string line;
   while (std::getline(std::cin, line)) {
     if (debug_log_)
-      debug_log_ << std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now().time_since_epoch())
-                        .count()
-                 << '>' << line << std::endl
-                 << std::flush;
+      debug_log_ << GetTimestamp() << '>' << line << std::endl << std::flush;
     try {
       auto command = ParseCommand(line);
       // Ignore empty line.
@@ -229,10 +231,7 @@ void UciLoop::SendResponses(const std::vector<std::string>& responses) {
   std::lock_guard<std::mutex> lock(output_mutex);
   for (auto& response : responses) {
     if (debug_log_)
-      debug_log_ << std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now().time_since_epoch())
-                        .count()
-                 << '<' << response << std::endl
+      debug_log_ << GetTimestamp() << '<' << response << std::endl
                  << std::flush;
     std::cout << response << std::endl;
   }
