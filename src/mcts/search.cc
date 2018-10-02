@@ -402,8 +402,34 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
-  return syzygy_tb_->root_probe(played_history_.Last(), root_moves) ||
-         syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
+  bool result = syzygy_tb_->root_probe(played_history_.Last(), root_moves) ||
+                syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
+  if (root_moves->size() > 1) {
+    ProbeState state;
+    WDLScore score = syzygy_tb_->probe_wdl(played_history_.Last(), &state);
+    if (state != FAIL && score == WDL_WIN) {
+      // If winning, don't deliberately 2 (or 3) fold if it can be avoided.
+      std::vector<int> reps;
+      PositionHistory new_history = played_history_;
+      int least_reps = 10;
+      for (Move move : *root_moves) {
+        new_history.Append(move);
+        reps.push_back(new_history.Last().GetRepetitions());
+        if (reps.back() < least_reps) {
+          least_reps = reps.back();
+        }
+        new_history.Pop();
+      }
+      // Not the most efficient implementation, but the number of moves to check
+      // should be small and number to erase even smaller.
+      for (int i = root_moves->size() - 1; i >= 0; i--) {
+        if (reps[i] != least_reps) {
+          root_moves->erase(root_moves->begin() + i);
+        }
+      }
+    }
+  }
+  return result;
 }
 
 // Returns the best move, maybe with temperature (according to the settings).

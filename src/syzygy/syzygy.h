@@ -84,6 +84,9 @@ class SyzygyTablebase {
   // Probes DTZ tables to determine which moves are on the optimal play path.
   // Assumes the position is one reached such that the side to move has been
   // performing optimal play moves since the last 50 move counter reset.
+  // The returned moves may include unsafe moves if they lead to repetition
+  // and the side to move is winning. The caller should filter to avoid playing
+  // repetitions.
   // Thread safe.
   // Returns false if the position is not in the tablebase.
   // Safe moves are added to the safe_moves output paramater.
