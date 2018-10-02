@@ -118,6 +118,15 @@ int PositionHistory::ComputeLastMoveRepetitions() const {
   return 0;
 }
 
+bool PositionHistory::DidRepeatSinceLastZeroingMove() const {
+  for (auto iter = positions_.rbegin(), end = positions_.rend(); iter != end;
+       ++iter) {
+    if (iter->GetRepetitions() > 0) return true;
+    if (iter->GetNoCaptureNoPawnPly() == 0) return false;
+  }
+  return false;
+}
+
 uint64_t PositionHistory::HashLast(int positions) const {
   uint64_t hash = positions;
   for (auto iter = positions_.rbegin(), end = positions_.rend(); iter != end;

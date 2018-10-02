@@ -402,7 +402,9 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
-  return syzygy_tb_->root_probe(played_history_.Last(), root_moves) ||
+  return syzygy_tb_->root_probe(played_history_.Last(),
+                                played_history_.DidRepeatSinceLastZeroingMove(),
+                                root_moves) ||
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
