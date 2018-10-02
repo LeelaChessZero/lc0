@@ -32,6 +32,7 @@ namespace lczero {
 
 Position::Position(const Position& parent, Move m)
     : no_capture_ply_(parent.no_capture_ply_ + 1),
+      repetitions_(0),
       ply_count_(parent.ply_count_ + 1) {
   them_board_ = parent.us_board_;
   bool capture = them_board_.ApplyMove(m);

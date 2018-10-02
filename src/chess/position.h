@@ -76,7 +76,7 @@ class Position {
   // How many half-moves without capture or pawn move was there.
   int no_capture_ply_ = 0;
   // How many repetitions this position had before. For new positions it's 0.
-  int repetitions_;
+  int repetitions_ = 0;
   // number of half-moves since beginning of the game.
   int ply_count_ = 0;
 };
