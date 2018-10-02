@@ -16,9 +16,9 @@ BUILDDIR=build/${BUILDTYPE}
 
 if [ -d ${BUILDDIR} ]
 then
-  meson configure ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
+  ~/.local/bin/meson configure ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
 else
-  meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
+  ~/.local/bin/meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
 fi
 
 pushd ${BUILDDIR}
