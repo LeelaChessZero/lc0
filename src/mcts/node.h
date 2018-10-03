@@ -286,8 +286,8 @@ class EdgeAndNode {
   // Arbitrary ordering just to make it possible to use in tuples.
   bool operator<(const EdgeAndNode& other) const { return edge_ < other.edge_; }
   bool HasNode() const { return node_ != nullptr; }
-  Edge* edge() const { return edge_; }
-  Node* node() const { return node_; }
+  Edge* edge() const { return edge_.load(std::memory_order_relaxed); }
+  Node* node() const { return node_.load(std::memory_order_relaxed); }
 
   // Proxy functions for easier access to node/edge.
   float GetQ(float default_q) const {
@@ -316,9 +316,9 @@ class EdgeAndNode {
  protected:
   // nullptr means that the whole pair is "null". (E.g. when search for a node
   // didn't find anything, or as end iterator signal).
-  std::atomic<Edge*> edge_ = nullptr;
+  std::atomic<Edge*> edge_ = {nullptr};
   // nullptr means that the edge doesn't yet have node extended.
-  std::atomic<Node*> node_ = nullptr;
+  std::atomic<Node*> node_ = {nullptr};
 };
 
 // TODO(crem) Replace this with less hacky iterator once we support C++17.
