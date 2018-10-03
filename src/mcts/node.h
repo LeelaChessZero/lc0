@@ -278,13 +278,18 @@ class EdgeAndNode {
   }
   explicit operator bool() const { return edge_ != nullptr; }
   bool operator==(const EdgeAndNode& other) const {
-    return edge_ == other.edge_;
+    return edge_.load(std::memory_order_relaxed) ==
+           other.edge_.load(std::memory_order_relaxed);
   }
   bool operator!=(const EdgeAndNode& other) const {
-    return edge_ != other.edge_;
+    return edge_.load(std::memory_order_relaxed) !=
+           other.edge_.load(std::memory_order_relaxed);
   }
   // Arbitrary ordering just to make it possible to use in tuples.
-  bool operator<(const EdgeAndNode& other) const { return edge_ < other.edge_; }
+  bool operator<(const EdgeAndNode& other) const {
+    return edge_.load(std::memory_order_relaxed) <
+           other.edge_.load(std::memory_order_relaxed);
+  }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_.load(std::memory_order_relaxed); }
   Node* node() const { return node_.load(std::memory_order_relaxed); }
