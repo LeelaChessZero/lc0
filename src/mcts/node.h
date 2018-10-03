@@ -351,7 +351,7 @@ class Edge_Iterator : public EdgeAndNode {
       : EdgeAndNode(edges.size() ? edges.get() : nullptr, nullptr),
         node_ptr_(node_ptr),
         total_count_(edges.size()) {
-    if (edge_) Actualize();
+    if (edge()) Actualize();
   }
 
   Edge_Iterator(const Edge_Iterator& other)
@@ -369,9 +369,9 @@ class Edge_Iterator : public EdgeAndNode {
   void operator++() {
     // If it was the last edge in array, become end(), otherwise advance.
     if (++current_idx_ == total_count_) {
-      edge_ = nullptr;
+      edge_.store(nullptr);
     } else {
-      ++edge_;
+      edge_.fetch_add(1);
       Actualize();
     }
   }
