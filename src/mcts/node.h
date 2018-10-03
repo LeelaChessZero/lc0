@@ -382,7 +382,7 @@ class Edge_Iterator : public EdgeAndNode {
   // If there is node, return it. Otherwise spawn a new one and return it.
   Node* GetOrSpawnNode(Node* parent) {
     if (node()) return node();  // If there is already a node, return it.
-    Actualize();              // But maybe other thread already did that.
+    Actualize();                // But maybe other thread already did that.
     if (node()) return node();  // If it did, return.
     // Now we are sure we have to create a new node.
     // Suppose there are nodes with idx 3 and 7, and we want to insert one with
@@ -421,7 +421,7 @@ class Edge_Iterator : public EdgeAndNode {
     // and advance node_ptr_.
     if (*node_ptr_ && (*node_ptr_)->index_ == current_idx_) {
       node_.store((*node_ptr_).get(), std::memory_order_relaxed);
-      node_ptr_ = &(*node_).sibling_;
+      node_ptr_ = &node()->sibling_;
     } else {
       node_.store(nullptr, std::memory_order_relaxed);
     }
