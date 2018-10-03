@@ -42,7 +42,6 @@
 #include "utils/optionsparser.h"
 
 namespace lczero {
-
 struct SearchLimits {
   std::int64_t visits = -1;
   std::int64_t playouts = -1;
@@ -174,8 +173,7 @@ class Search {
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   std::atomic<int64_t> total_playouts_ = {0};
-  int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
-      std::numeric_limits<int>::max();
+  std::atomic<int64_t> remaining_playouts_ = {std::numeric_limits<int>::max()};
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
@@ -282,5 +280,4 @@ class SearchWorker {
   MoveList root_move_filter_;
   bool root_move_filter_populated_ = false;
 };
-
 }  // namespace lczero
