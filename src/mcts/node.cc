@@ -335,8 +335,8 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
 
 std::string EdgeAndNode::DebugString() const {
   if (!edge_) return "(no edge)";
-  return edge_->DebugString() + " " +
-         (node_ ? node_->DebugString() : "(no node)");
+  return (*edge_).DebugString() + " " +
+         (node_ ? (*node_).DebugString() : "(no node)");
 }
 
 /////////////////////////////////////////////////////////////////////////

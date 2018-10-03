@@ -158,7 +158,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 
   // Info common for all multipv variants.
   ThinkingInfo common_info;
-  common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
+  uint64_t total_playouts = total_playouts_;
+  common_info.depth = cum_depth_ / (total_playouts ? total_playouts : 1);
   common_info.seldepth = max_depth_;
   common_info.time = GetTimeSinceStart();
   common_info.nodes = total_playouts_ + initial_visits_;
@@ -194,11 +195,12 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 void Search::MaybeOutputInfo() {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
+  uint64_t total_playouts = total_playouts_;
   if (!responded_bestmove_ && best_move_edge_ &&
       (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
        last_outputted_uci_info_.depth !=
            static_cast<int>(cum_depth_ /
-                            (total_playouts_ ? total_playouts_ : 1)) ||
+                            (total_playouts ? total_playouts : 1)) ||
        last_outputted_uci_info_.seldepth != max_depth_ ||
        last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
            GetTimeSinceStart())) {
@@ -793,7 +795,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
 
     Node* parent_node = node;
     if (!best_edge.NodeIsSpawned()) {
-      if (!node->is_expanding.test_and_set(std::memory_order_acquire)) {
+      if (!parent_node->is_expanding.test_and_set(std::memory_order_acquire)) {
         // Spawn a new node
         node = best_edge.GetOrSpawnNode(parent_node);
         parent_node->is_expanding.clear();

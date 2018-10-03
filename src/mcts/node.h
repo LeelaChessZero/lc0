@@ -98,7 +98,7 @@ class Edge {
 
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
-  uint16_t p_ = 0;
+  std::atomic<uint16_t> p_ = {0};
 
   friend class EdgeList;
 };
@@ -267,6 +267,15 @@ class EdgeAndNode {
  public:
   EdgeAndNode() = default;
   EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
+  EdgeAndNode(const EdgeAndNode& other) {
+    edge_.store(other.edge_, std::memory_order_relaxed);
+    node_.store(other.node_, std::memory_order_relaxed);
+  }
+  EdgeAndNode& operator=(const EdgeAndNode& other) {
+    this->edge_.store(other.edge_, std::memory_order_relaxed);
+    this->node_.store(other.node_, std::memory_order_relaxed);
+    return *this;
+  }
   explicit operator bool() const { return edge_ != nullptr; }
   bool operator==(const EdgeAndNode& other) const {
     return edge_ == other.edge_;
@@ -282,19 +291,19 @@ class EdgeAndNode {
 
   // Proxy functions for easier access to node/edge.
   float GetQ(float default_q) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
+    return (node_ && (*node_).GetN() > 0) ? (*node_).GetQ() : default_q;
   }
   // N-related getters, from Node (if exists).
-  uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
-  int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
-  uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
+  uint32_t GetN() const { return node_ ? (*node_).GetN() : 0; }
+  int GetNStarted() const { return node_ ? (*node_).GetNStarted() : 0; }
+  uint32_t GetNInFlight() const { return node_ ? (*node_).GetNInFlight() : 0; }
 
   // Whether the node is known to be terminal.
-  bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
+  bool IsTerminal() const { return node_ ? (*node_).IsTerminal() : false; }
 
   // Edge related getters.
-  float GetP() const { return edge_->GetP(); }
-  Move GetMove(bool flip = false) const { return edge_->GetMove(flip); }
+  float GetP() const { return (*edge_).GetP(); }
+  Move GetMove(bool flip = false) const { return (*edge_).GetMove(flip); }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
@@ -307,9 +316,9 @@ class EdgeAndNode {
  protected:
   // nullptr means that the whole pair is "null". (E.g. when search for a node
   // didn't find anything, or as end iterator signal).
-  Edge* edge_ = nullptr;
+  std::atomic<Edge*> edge_ = nullptr;
   // nullptr means that the edge doesn't yet have node extended.
-  Node* node_ = nullptr;
+  std::atomic<Node*> node_ = nullptr;
 };
 
 // TODO(crem) Replace this with less hacky iterator once we support C++17.
@@ -342,6 +351,12 @@ class Edge_Iterator : public EdgeAndNode {
         total_count_(edges.size()) {
     if (edge_) Actualize();
   }
+
+  Edge_Iterator(const Edge_Iterator& other)
+      : EdgeAndNode(other),
+        node_ptr_(other.node_ptr_),
+        current_idx_(other.current_idx_),
+        total_count_(other.total_count_) {}
 
   // Function to support range interface.
   Edge_Iterator<is_const> begin() { return *this; }
@@ -404,7 +419,7 @@ class Edge_Iterator : public EdgeAndNode {
     // and advance node_ptr_.
     if (*node_ptr_ && (*node_ptr_)->index_ == current_idx_) {
       node_ = (*node_ptr_).get();
-      node_ptr_ = &node_->sibling_;
+      node_ptr_ = &(*node_).sibling_;
     } else {
       node_ = nullptr;
     }
