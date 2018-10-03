@@ -95,7 +95,7 @@ class NodeGarbageCollector {
   std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
-  volatile bool stop_ = false;
+  std::atomic<bool> stop_ = {false};
   std::thread gc_thread_;
 };  // namespace
 
