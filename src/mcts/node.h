@@ -287,9 +287,9 @@ class EdgeAndNode {
   bool operator<(const EdgeAndNode& other) const {
     return edge() < other.edge();
   }
-  bool HasNode() const { return node_ != nullptr; }
-  Edge* edge() const { return edge_.load(std::memory_order_relaxed); }
-  Node* node() const { return node_.load(std::memory_order_relaxed); }
+  bool HasNode() const { return node() != nullptr; }
+  inline Edge* edge() const { return edge_.load(std::memory_order_relaxed); }
+  inline Node* node() const { return node_.load(std::memory_order_relaxed); }
 
   // Proxy functions for easier access to node/edge.
   float GetQ(float default_q) const {
@@ -381,9 +381,9 @@ class Edge_Iterator : public EdgeAndNode {
 
   // If there is node, return it. Otherwise spawn a new one and return it.
   Node* GetOrSpawnNode(Node* parent) {
-    if (node_) return node_;  // If there is already a node, return it.
+    if (node()) return node();  // If there is already a node, return it.
     Actualize();              // But maybe other thread already did that.
-    if (node_) return node_;  // If it did, return.
+    if (node()) return node();  // If it did, return.
     // Now we are sure we have to create a new node.
     // Suppose there are nodes with idx 3 and 7, and we want to insert one with
     // idx 5. Here is how it looks like:
@@ -405,7 +405,7 @@ class Edge_Iterator : public EdgeAndNode {
     //    node_ -> &Node(idx_.5)
     //    node_ptr_ -> &Node(idx_.5).sibling_ -> Node(idx_.7)
     Actualize();
-    return node_;
+    return node();
   }
 
  private:
@@ -420,10 +420,10 @@ class Edge_Iterator : public EdgeAndNode {
     // If in the end node_ptr_ points to the node that we need, populate node_
     // and advance node_ptr_.
     if (*node_ptr_ && (*node_ptr_)->index_ == current_idx_) {
-      node_ = (*node_ptr_).get();
+      node_.store((*node_ptr_).get(), std::memory_order_relaxed);
       node_ptr_ = &(*node_).sibling_;
     } else {
-      node_ = nullptr;
+      node_.store(nullptr, std::memory_order_relaxed);
     }
   }
 
