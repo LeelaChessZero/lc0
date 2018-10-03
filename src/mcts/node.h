@@ -276,19 +276,16 @@ class EdgeAndNode {
     this->node_.store(other.node_, std::memory_order_relaxed);
     return *this;
   }
-  explicit operator bool() const { return edge_ != nullptr; }
+  explicit operator bool() const { return edge() != nullptr; }
   bool operator==(const EdgeAndNode& other) const {
-    return edge_.load(std::memory_order_relaxed) ==
-           other.edge_.load(std::memory_order_relaxed);
+    return edge() == other.edge();
   }
   bool operator!=(const EdgeAndNode& other) const {
-    return edge_.load(std::memory_order_relaxed) !=
-           other.edge_.load(std::memory_order_relaxed);
+    return edge() != other.edge();
   }
   // Arbitrary ordering just to make it possible to use in tuples.
   bool operator<(const EdgeAndNode& other) const {
-    return edge_.load(std::memory_order_relaxed) <
-           other.edge_.load(std::memory_order_relaxed);
+    return edge() < other.edge();
   }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_.load(std::memory_order_relaxed); }
@@ -296,19 +293,19 @@ class EdgeAndNode {
 
   // Proxy functions for easier access to node/edge.
   float GetQ(float default_q) const {
-    return (node_ && (*node_).GetN() > 0) ? (*node_).GetQ() : default_q;
+    return (node() && node()->GetN() > 0) ? node()->GetQ() : default_q;
   }
   // N-related getters, from Node (if exists).
-  uint32_t GetN() const { return node_ ? (*node_).GetN() : 0; }
-  int GetNStarted() const { return node_ ? (*node_).GetNStarted() : 0; }
-  uint32_t GetNInFlight() const { return node_ ? (*node_).GetNInFlight() : 0; }
+  uint32_t GetN() const { return node() ? node()->GetN() : 0; }
+  int GetNStarted() const { return node() ? node()->GetNStarted() : 0; }
+  uint32_t GetNInFlight() const { return node() ? node()->GetNInFlight() : 0; }
 
   // Whether the node is known to be terminal.
-  bool IsTerminal() const { return node_ ? (*node_).IsTerminal() : false; }
+  bool IsTerminal() const { return node() ? node()->IsTerminal() : false; }
 
   // Edge related getters.
-  float GetP() const { return (*edge_).GetP(); }
-  Move GetMove(bool flip = false) const { return (*edge_).GetMove(flip); }
+  float GetP() const { return edge()->GetP(); }
+  Move GetMove(bool flip = false) const { return edge()->GetMove(flip); }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
