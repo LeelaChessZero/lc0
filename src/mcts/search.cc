@@ -795,7 +795,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
 
     Node* parent_node = node;
     if (!best_edge.NodeIsSpawned()) {
-      if (!parent_node->is_expanding.test_and_set(std::memory_order_acquire)) {
+      if (!parent_node->is_expanding.test_and_set()) {
         // Spawn a new node
         node = best_edge.GetOrSpawnNode(parent_node);
         parent_node->is_expanding.clear();
