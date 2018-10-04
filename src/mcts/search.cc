@@ -918,7 +918,6 @@ void SearchWorker::MaybePrefetchIntoCache() {
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < search_->kMaxPrefetchBatch) {
     history_.Trim(search_->played_history_.GetLength());
-    SharedMutex::SharedLock lock(search_->nodes_mutex_);
     PrefetchIntoCache(search_->root_node_, search_->kMaxPrefetchBatch -
                                                computation_->GetCacheMisses());
   }
@@ -1058,9 +1057,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
-  // Nodes mutex for doing node updates.
-  // SharedMutex::Lock lock(search_->nodes_mutex_);
-
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
   }
