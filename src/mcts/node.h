@@ -268,12 +268,12 @@ class EdgeAndNode {
   EdgeAndNode() = default;
   EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
   EdgeAndNode(const EdgeAndNode& other) {
-    edge_.store(other.edge_);
-    node_.store(other.node_);
+    edge_.store(other.edge_, std::memory_order_relaxed);
+    node_.store(other.node_, std::memory_order_relaxed);
   }
   EdgeAndNode& operator=(const EdgeAndNode& other) {
-    this->edge_.store(other.edge_);
-    this->node_.store(other.node_);
+    this->edge_.store(other.edge_, std::memory_order_relaxed);
+    this->node_.store(other.node_, std::memory_order_relaxed);
     return *this;
   }
   explicit operator bool() const { return edge() != nullptr; }
@@ -288,8 +288,8 @@ class EdgeAndNode {
     return edge() < other.edge();
   }
   bool HasNode() const { return node() != nullptr; }
-  inline Edge* edge() const { return edge_.load(); }
-  inline Node* node() const { return node_.load(); }
+  inline Edge* edge() const { return edge_.load(std::memory_order_relaxed); }
+  inline Node* node() const { return node_.load(std::memory_order_relaxed); }
 
   // Proxy functions for easier access to node/edge.
   float GetQ(float default_q) const {
@@ -420,10 +420,10 @@ class Edge_Iterator : public EdgeAndNode {
     // If in the end node_ptr_ points to the node that we need, populate node_
     // and advance node_ptr_.
     if (*node_ptr_ && (*node_ptr_)->index_ == current_idx_) {
-      node_.store((*node_ptr_).get());
+      node_.store((*node_ptr_).get(), std::memory_order_relaxed);
       node_ptr_ = &node()->sibling_;
     } else {
-      node_.store(nullptr);
+      node_.store(nullptr, std::memory_order_relaxed);
     }
   }
 
