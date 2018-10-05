@@ -319,10 +319,10 @@ class Parser {
 
 OptionsDict OptionsDict::FromString(const std::string& str,
                                     const OptionsDict* parent) {
-  OptionsDict dict(parent);
+  OptionsDict *dict = new OptionsDict(parent);
   Parser parser(str);
-  parser.ParseMain(&dict);
-  return dict;
+  parser.ParseMain(dict);
+  return *dict;
 }
 
 }  // namespace lczero
