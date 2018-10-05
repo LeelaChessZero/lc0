@@ -272,8 +272,10 @@ class EdgeAndNode {
     node_.store(other.node_, std::memory_order_relaxed);
   }
   EdgeAndNode& operator=(const EdgeAndNode& other) {
-    this->edge_.store(other.edge_, std::memory_order_relaxed);
-    this->node_.store(other.node_, std::memory_order_relaxed);
+    this->edge_.store(other.edge_.load(std::memory_order_acquire),
+                      std::memory_order_release);
+    this->node_.store(other.node_.load(std::memory_order_acquire),
+                      std::memory_order_release);
     return *this;
   }
   explicit operator bool() const { return edge() != nullptr; }
