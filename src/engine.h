@@ -96,11 +96,16 @@ class EngineController {
   RpSharedMutex busy_mutex_;
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
-  std::unique_ptr<Search> search_;
+  NNCache cache_;
+
   std::unique_ptr<NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
-  NNCache cache_;
+
+  // Note that the order is important here. search_ has to be destructed before
+  // variables it depends on (e.g. tree_, syzygy_tb_, network_ and cache_), so
+  // it should be listed last. (See: #388)
+  std::unique_ptr<Search> search_;
 
   // Store current TB and network settings to track when they change so that
   // they are reloaded.
