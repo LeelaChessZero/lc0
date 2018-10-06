@@ -32,6 +32,7 @@
 #include <sstream>
 #include "utils/commandline.h"
 #include "utils/configfile.h"
+#include "utils/string.h"
 
 namespace lczero {
 
@@ -106,7 +107,6 @@ bool OptionsParser::ProcessAllFlags() {
 }
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
-  std::string context;
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
     if (param == "-h" || param == "--help") {
@@ -115,6 +115,7 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
     }
 
     if (param.substr(0, 2) == "--") {
+      std::string context;
       param = param.substr(2);
       std::string value;
       auto pos = param.find('=');
@@ -122,9 +123,15 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         value = param.substr(pos + 1);
         param = param.substr(0, pos);
       }
+      pos = param.find('.');
+      if (pos != std::string::npos) {
+        context = param.substr(0, pos);
+        param = param.substr(pos + 1);
+      }
       bool processed = false;
       Option* option = FindOptionByLongFlag(param);
-      if (option && option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
+      if (option &&
+          option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
         processed = true;
       }
       if (!processed) {
@@ -142,11 +149,11 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         value = *(iter + 1);
       }
       for (auto& option : options_) {
-        if (option->ProcessShortFlag(param[1], GetMutableOptions(context))) {
+        if (option->ProcessShortFlag(param[1], GetMutableOptions())) {
           processed = true;
           break;
-        } else if (option->ProcessShortFlagWithValue(
-                       param[1], value, GetMutableOptions(context))) {
+        } else if (option->ProcessShortFlagWithValue(param[1], value,
+                                                     GetMutableOptions())) {
           if (!value.empty()) ++iter;
           processed = true;
           break;
@@ -158,11 +165,6 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
                   << " --help" << std::endl;
         return false;
       }
-      continue;
-    }
-
-    if (!param.empty() && param[param.size() - 1] == ':') {
-      context = param.substr(0, param.size() - 1);
       continue;
     }
 
@@ -208,21 +210,27 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }  // namespace
 
 void OptionsParser::ShowHelp() const {
-  std::cerr << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]";
-  for (const auto& context : values_.ListSubdicts()) {
-    std::cerr << " [" << context << ": flags...]";
-  }
+  std::cerr << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
+            << std::endl;
 
-  std::cerr << std::endl;
   std::cerr << "\nAvailable modes. A help for a mode: "
             << CommandLine::BinaryName() << " <mode> --help\n";
   for (const auto& mode : CommandLine::GetModes()) {
     std::cerr << "  " << std::setw(10) << std::left << mode.first << " "
               << mode.second << std::endl;
   }
+
   std::cerr << "\nAllowed command line flags for current mode:\n";
   std::cerr << FormatFlag('h', "help", "Show help and exit");
   for (const auto& option : options_) std::cerr << option->GetHelp(defaults_);
+
+  auto contexts = values_.ListSubdicts();
+  if (!contexts.empty()) {
+    std::cerr << "\nFlags can be defined per context (one of: "
+              << StrJoin(contexts, ", ") << "), for example:\n";
+    std::cerr << "       --" << contexts[0] << '.'
+              << options_.back()->GetLongFlag() << "=(value)\n";
+  }
 }
 
 /////////////////////////////////////////////////////////////////
@@ -340,8 +348,8 @@ IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
 void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   if (val < min_ || val > max_) {
     std::ostringstream buf;
-    buf << "Flag '--" << GetLongFlag() << "' must be between "
-              << min_ << " and " << max_ << ".";
+    buf << "Flag '--" << GetLongFlag() << "' must be between " << min_
+        << " and " << max_ << ".";
     throw Exception(buf.str());
   }
   dict->Set<ValueType>(GetName(), val);
@@ -409,8 +417,8 @@ FloatOption::ValueType FloatOption::GetVal(const OptionsDict& dict) const {
 void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   if (val < min_ || val > max_) {
     std::ostringstream buf;
-    buf << "Flag '--" << GetLongFlag() << "' must be between "
-              << min_ << " and " << max_ << ".";
+    buf << "Flag '--" << GetLongFlag() << "' must be between " << min_
+        << " and " << max_ << ".";
     throw Exception(buf.str());
   }
   dict->Set<ValueType>(GetName(), val);
@@ -435,7 +443,7 @@ bool BoolOption::ProcessLongFlag(const std::string& flag,
     SetVal(dict, false);
     return true;
   }
-  if (flag ==  GetLongFlag() && value.empty()) {
+  if (flag == GetLongFlag() && value.empty()) {
     SetVal(dict, true);
     return true;
   }
@@ -486,7 +494,7 @@ void BoolOption::ValidateBoolString(const std::string& val) {
   if (val != "true" && val != "false") {
     std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be either "
-              << "'true' or 'false'.";
+        << "'true' or 'false'.";
     throw Exception(buf.str());
   }
 }
@@ -564,7 +572,7 @@ void ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   if (!valid) {
     std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be one of the "
-              << "following values:" << choice_string << ".";
+        << "following values:" << choice_string << ".";
     throw Exception(buf.str());
   }
   dict->Set<ValueType>(GetName(), val);
