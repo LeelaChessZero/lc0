@@ -33,13 +33,12 @@
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
+#include "mcts/params.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 #include "utils/optional.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
 
 namespace lczero {
 
@@ -60,9 +59,6 @@ class Search {
          SyzygyTablebase* syzygy_tb);
 
   ~Search();
-
-  // Populates UciOptions with search parameters.
-  static void PopulateUciParams(OptionsParser* options);
 
   // Starts worker threads and returns immediately.
   void StartThreads(size_t how_many);
@@ -88,25 +84,6 @@ class Search {
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
   float GetBestEval() const;
-
-  // Strings for UCI params. So that others can override defaults.
-  // TODO(mooskagh) There are too many options for now. Factor out that into a
-  // separate class.
-  static const char* kMiniBatchSizeStr;
-  static const char* kMaxPrefetchBatchStr;
-  static const char* kCpuctStr;
-  static const char* kTemperatureStr;
-  static const char* kTempDecayMovesStr;
-  static const char* kTemperatureVisitOffsetStr;
-  static const char* kNoiseStr;
-  static const char* kVerboseStatsStr;
-  static const char* kAggressiveTimePruningStr;
-  static const char* kFpuReductionStr;
-  static const char* kCacheHistoryLengthStr;
-  static const char* kPolicySoftmaxTempStr;
-  static const char* kAllowedNodeCollisionsStr;
-  static const char* kOutOfOrderEvalStr;
-  static const char* kMultiPvStr;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -184,22 +161,7 @@ class Search {
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
-  // External parameters.
-  const int kMiniBatchSize;
-  const int kMaxPrefetchBatch;
-  const float kCpuct;
-  const float kTemperature;
-  const float kTemperatureVisitOffset;
-  const int kTempDecayMoves;
-  const bool kNoise;
-  const bool kVerboseStats;
-  const float kAggressiveTimePruning;
-  const float kFpuReduction;
-  const int kCacheHistoryLength;
-  const float kPolicySoftmaxTemp;
-  const int kAllowedNodeCollisions;
-  const bool kOutOfOrderEval;
-  const int kMultiPv;
+  const SearchParams params_;
 
   friend class SearchWorker;
 };
@@ -209,8 +171,8 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search)
-      : search_(search), history_(search_->played_history_) {}
+  SearchWorker(Search* search, const SearchParams& params)
+      : search_(search), history_(search_->played_history_), params_(params) {}
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -281,6 +243,7 @@ class SearchWorker {
   PositionHistory history_;
   MoveList root_move_filter_;
   bool root_move_filter_populated_ = false;
+  const SearchParams& params_;
 };
 
 }  // namespace lczero

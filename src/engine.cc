@@ -104,18 +104,21 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSpendSavedTime, 0.0f, 1.0f, "immediate-time-use") =
       0.6f;
 
-  Search::PopulateUciParams(options);
+  SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
 
-  defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
-  defaults->Set<float>(Search::kFpuReductionStr, 1.2f);  // FPU reduction = 1.2
-  defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
-  defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
-  defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
-  defaults->Set<int>(Search::kCacheHistoryLengthStr, 0);
-  defaults->Set<bool>(Search::kOutOfOrderEvalStr, true);
+  defaults->Set<int>(SearchParams::kMiniBatchSizeStr, 256);  // Minibatch = 256
+  defaults->Set<float>(SearchParams::kFpuReductionStr,
+                       1.2f);                           // FPU reduction = 1.2
+  defaults->Set<float>(SearchParams::kCpuctStr, 3.4f);  // CPUCT = 3.4
+  defaults->Set<float>(SearchParams::kPolicySoftmaxTempStr,
+                       2.2f);  // Psoftmax = 2.2
+  defaults->Set<int>(SearchParams::kAllowedNodeCollisionsStr,
+                     32);  // Node collisions
+  defaults->Set<int>(SearchParams::kCacheHistoryLengthStr, 0);
+  defaults->Set<bool>(SearchParams::kOutOfOrderEvalStr, true);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
