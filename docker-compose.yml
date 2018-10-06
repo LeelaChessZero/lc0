@@ -1,0 +1,10 @@
+version: "3"
+services:
+  lc0:
+    build: .circleci
+    volumes:
+      - .:/root/lc0
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+    working_dir: /root/lc0
