@@ -601,7 +601,9 @@ void SearchWorker::InitializeIteration(
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
-  int collisions_found = 0;
+  int collision_events_left = params_.GetAllowedNodeCollisionEvents();
+  int collisions_left = params_.GetAllowedTotalNodeCollisions();
+
   // Number of nodes processed out of order.
   int number_out_of_order = 0;
 
@@ -615,14 +617,15 @@ void SearchWorker::GatherMinibatch() {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
-    minibatch_.emplace_back(PickNodeToExtend());
+    minibatch_.emplace_back(PickNodeToExtend(collisions_left));
     auto& picked_node = minibatch_.back();
     auto* node = picked_node.node;
 
     // There was a collision. If limit has been reached, return, otherwise
     // just start search of another node.
     if (picked_node.IsCollision()) {
-      if (++collisions_found > params_.GetAllowedNodeCollisions()) return;
+      if (collision_events_left-- <= 0) return;
+      if ((collisions_left -= picked_node.multivisit) <= 0) return;
       continue;
     }
     ++minibatch_size;
@@ -663,14 +666,27 @@ void SearchWorker::GatherMinibatch() {
   }
 }
 
+namespace {
+void IncrementNInFlight(Node* node, Node* root, int amount) {
+  if (amount == 0) return;
+  while (true) {
+    node->IncrementNInFlight(amount);
+    if (node == root) break;
+    node = node->GetParent();
+  }
+}
+}  // namespace
+
 // Returns node and whether there's been a search collision on the node.
-SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
+SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
+    int collision_limit) {
   // Starting from search_->root_node_, generate a playout, choosing a
   // node at each level according to the MCTS formula. n_in_flight_ is
   // incremented for each node in the playout (via TryStartScoreUpdate()).
 
   Node* node = search_->root_node_;
   Node::Iterator best_edge;
+  Node::Iterator second_best_edge;
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
 
@@ -692,20 +708,30 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    best_edge.Reset();
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
-      return NodeToProcess::Collision(node, depth, 1);
+      IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+      return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) return NodeToProcess::Extension(node, depth);
+    if (!node->HasChildren()) {
+      if (node->IsTerminal()) {
+        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+      } else {
+        return NodeToProcess::Extension(node, depth);
+      }
+    }
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
         params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
+    float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     float parent_q =
         ((is_root_node && params_.GetNoise()) || !params_.GetFpuReduction())
@@ -735,9 +761,22 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       float Q = child.GetQ(parent_q);
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
+        second_best = best;
+        second_best_edge = best_edge;
         best = score;
         best_edge = child;
+      } else if (score > second_best) {
+        second_best = score;
+        second_best_edge = child;
       }
+    }
+
+    if (second_best_edge) {
+      collision_limit = std::min(
+          collision_limit,
+          best_edge.GetVisitsToReachU(second_best, puct_mult, parent_q));
+      assert(collision_limit >= 1);
+      second_best_edge.Reset();
     }
 
     history_.Append(best_edge.GetMove());
@@ -1012,7 +1051,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // If it was a collision, just undo counters.
     for (node = node->GetParent(); node != search_->root_node_->GetParent();
          node = node->GetParent()) {
-      node->CancelScoreUpdate();
+      node->CancelScoreUpdate(node_to_process.multivisit);
     }
     return;
   }
@@ -1021,7 +1060,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.v;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v);
+    n->FinalizeScoreUpdate(v, node_to_process.multivisit);
     // Q will be flipped for opponent.
     v = -v;
 

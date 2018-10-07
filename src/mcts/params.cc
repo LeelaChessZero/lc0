@@ -44,8 +44,10 @@ const char* SearchParams::kFpuReductionStr = "First Play Urgency Reduction";
 const char* SearchParams::kCacheHistoryLengthStr =
     "Length of history to include in cache";
 const char* SearchParams::kPolicySoftmaxTempStr = "Policy softmax temperature";
-const char* SearchParams::kAllowedNodeCollisionsStr =
-    "Allowed node collisions, per batch";
+const char* SearchParams::kAllowedNodeCollisionEventsStr =
+    "Allowed node collision events, per batch";
+const char* SearchParams::kAllowedTotalNodeCollisionsStr =
+    "Total allowed node collisions, per batch";
 const char* SearchParams::kOutOfOrderEvalStr =
     "Out-of-order cache backpropagation";
 const char* SearchParams::kMultiPvStr = "MultiPV";
@@ -72,8 +74,10 @@ void SearchParams::Populate(OptionsParser* options) {
                           "cache-history-length") = 7;
   options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1f, 10.0f,
                             "policy-softmax-temp") = 1.0f;
-  options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
-                          "allowed-node-collisions") = 0;
+  options->Add<IntOption>(kAllowedNodeCollisionEventsStr, 0, 1024,
+                          "allowed-node-collision-events") = 32;
+  options->Add<IntOption>(kAllowedTotalNodeCollisionsStr, 0, 1000000,
+                          "allowed-total-node-collisions") = 10000;
   options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
   options->Add<IntOption>(kMultiPvStr, 1, 500, "multipv") = 1;
 }
@@ -86,7 +90,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kFpuReduction(options.Get<float>(kFpuReductionStr)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
+      kAllowedNodeCollisionEvents(
+          options.Get<int>(kAllowedNodeCollisionEventsStr)),
+      kAllowedTotalNodeCollisions(
+          options.Get<int>(kAllowedTotalNodeCollisionsStr)),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)) {}
 
 }  // namespace lczero

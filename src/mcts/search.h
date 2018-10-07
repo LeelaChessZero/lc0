@@ -216,10 +216,8 @@ class SearchWorker {
 
  private:
   struct NodeToProcess {
-    bool IsExtendable() const {
-      return collision_count == 0 && !node->IsTerminal();
-    }
-    bool IsCollision() const { return collision_count > 0; }
+    bool IsExtendable() const { return !is_collision && !node->IsTerminal(); }
+    bool IsCollision() const { return is_collision; }
     bool CanEvalOutOfOrder() const {
       return is_cache_hit || node->IsTerminal();
     }
@@ -228,26 +226,33 @@ class SearchWorker {
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
-    int collision_count = 0;
+    int multivisit = 0;
     uint16_t depth;
     bool nn_queried = false;
     bool is_cache_hit = false;
+    bool is_collision = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count) {
-      return NodeToProcess(node, depth, collision_count);
+      return NodeToProcess(node, depth, true, collision_count);
     }
     static NodeToProcess Extension(Node* node, uint16_t depth) {
-      return NodeToProcess(node, depth, 0);
+      return NodeToProcess(node, depth, false, 1);
+    }
+    static NodeToProcess TerminalHit(Node* node, uint16_t depth,
+                                     int visit_count) {
+      return NodeToProcess(node, depth, false, visit_count);
     }
 
    private:
-    NodeToProcess(Node* node, uint16_t depth, int collision_count)
-        : node(node), collision_count(collision_count), depth(depth) {}
+    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit)
+        : node(node),
+          multivisit(multivisit),
+          depth(depth),
+          is_collision(is_collision) {}
   };
-  //  return NodeToProcess::Collision(node, depth, node_at_root);
 
-  NodeToProcess PickNodeToExtend();
+  NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);

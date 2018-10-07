@@ -113,7 +113,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(SearchParams::kFpuReductionStr, 1.2f);
   defaults->Set<float>(SearchParams::kCpuctStr, 3.4f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempStr, 2.2f);
-  defaults->Set<int>(SearchParams::kAllowedNodeCollisionsStr, 32);
+  defaults->Set<int>(SearchParams::kAllowedTotalNodeCollisionsStr, 1024);
+  defaults->Set<int>(SearchParams::kAllowedNodeCollisionEventsStr, 32);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthStr, 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalStr, true);
 }
