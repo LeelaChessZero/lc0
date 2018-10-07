@@ -109,22 +109,11 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   auto defaults = options->GetMutableDefaultsOptions();
 
-<<<<<<< HEAD
   defaults->Set<int>(SearchParams::kMiniBatchSizeStr, 256);
   defaults->Set<float>(SearchParams::kFpuReductionStr, 1.2f);
   defaults->Set<float>(SearchParams::kCpuctStr, 3.4f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempStr, 2.2f);
   defaults->Set<int>(SearchParams::kAllowedNodeCollisionsStr, 32);
-=======
-  defaults->Set<int>(SearchParams::kMiniBatchSizeStr, 256);  // Minibatch = 256
-  defaults->Set<float>(SearchParams::kFpuReductionStr,
-                       1.2f);                           // FPU reduction = 1.2
-  defaults->Set<float>(SearchParams::kCpuctStr, 3.4f);  // CPUCT = 3.4
-  defaults->Set<float>(SearchParams::kPolicySoftmaxTempStr,
-                       2.2f);  // Psoftmax = 2.2
-  defaults->Set<int>(SearchParams::kAllowedNodeCollisionsStr,
-                     32);  // Node collisions
->>>>>>> Move search parameters to a separate class.
   defaults->Set<int>(SearchParams::kCacheHistoryLengthStr, 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalStr, true);
 }
