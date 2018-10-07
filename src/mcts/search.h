@@ -216,16 +216,36 @@ class SearchWorker {
 
  private:
   struct NodeToProcess {
-    NodeToProcess(Node* node, bool is_collision, uint16_t depth)
-        : node(node), depth(depth), is_collision(is_collision) {}
+    bool IsExtendable() const {
+      return collision_count == 0 && !node->IsTerminal();
+    }
+    bool IsCollision() const { return collision_count > 0; }
+    bool CanEvalOutOfOrder() const {
+      return is_cache_hit || node->IsTerminal();
+    }
+
+    // The node to extend.
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
+    int collision_count = 0;
     uint16_t depth;
-    bool is_collision = false;
     bool nn_queried = false;
     bool is_cache_hit = false;
+
+    static NodeToProcess Collision(Node* node, uint16_t depth,
+                                   int collision_count) {
+      return NodeToProcess(node, depth, collision_count);
+    }
+    static NodeToProcess Extension(Node* node, uint16_t depth) {
+      return NodeToProcess(node, depth, 0);
+    }
+
+   private:
+    NodeToProcess(Node* node, uint16_t depth, int collision_count)
+        : node(node), collision_count(collision_count), depth(depth) {}
   };
+  //  return NodeToProcess::Collision(node, depth, node_at_root);
 
   NodeToProcess PickNodeToExtend();
   void ExtendNode(Node* node);

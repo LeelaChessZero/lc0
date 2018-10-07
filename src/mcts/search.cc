@@ -621,7 +621,7 @@ void SearchWorker::GatherMinibatch() {
 
     // There was a collision. If limit has been reached, return, otherwise
     // just start search of another node.
-    if (picked_node.is_collision) {
+    if (picked_node.IsCollision()) {
       if (++collisions_found > params_.GetAllowedNodeCollisions()) return;
       continue;
     }
@@ -629,7 +629,7 @@ void SearchWorker::GatherMinibatch() {
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    if (!node->IsTerminal()) {
+    if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
       ExtendNode(node);
 
@@ -643,24 +643,22 @@ void SearchWorker::GatherMinibatch() {
     // If out of order eval is enabled and the node to compute we added last
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
-    if (params_.GetOutOfOrderEval()) {
-      if (node->IsTerminal() || picked_node.is_cache_hit) {
-        // Perform out of order eval for the last entry in minibatch_.
-        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
-        {
-          // Nodes mutex for doing node updates.
-          SharedMutex::Lock lock(search_->nodes_mutex_);
-          DoBackupUpdateSingleNode(picked_node);
-        }
-
-        // Remove last entry in minibatch_, as it has just been
-        // processed.
-        // If NN eval was already processed out of order, remove it.
-        if (picked_node.nn_queried) computation_->PopCacheHit();
-        minibatch_.pop_back();
-        --minibatch_size;
-        ++number_out_of_order;
+    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+      // Perform out of order eval for the last entry in minibatch_.
+      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+      {
+        // Nodes mutex for doing node updates.
+        SharedMutex::Lock lock(search_->nodes_mutex_);
+        DoBackupUpdateSingleNode(picked_node);
       }
+
+      // Remove last entry in minibatch_, as it has just been
+      // processed.
+      // If NN eval was already processed out of order, remove it.
+      if (picked_node.nn_queried) computation_->PopCacheHit();
+      minibatch_.pop_back();
+      --minibatch_size;
+      ++number_out_of_order;
     }
   }
 }
@@ -697,9 +695,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
-    if (!node->TryStartScoreUpdate()) return {node, true, depth};
+    if (!node->TryStartScoreUpdate()) {
+      return NodeToProcess::Collision(node, depth, 1);
+    }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) return {node, false, depth};
+    if (!node->HasChildren()) return NodeToProcess::Extension(node, depth);
+
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
@@ -1007,7 +1008,7 @@ void SearchWorker::DoBackupUpdate() {
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
   Node* node = node_to_process.node;
-  if (node_to_process.is_collision) {
+  if (node_to_process.IsCollision()) {
     // If it was a collision, just undo counters.
     for (node = node->GetParent(); node != search_->root_node_->GetParent();
          node = node->GetParent()) {
@@ -1049,7 +1050,7 @@ void SearchWorker::UpdateCounters() {
   // was anything done.
   bool work_done = false;
   for (NodeToProcess& node_to_process : minibatch_) {
-    if (!node_to_process.is_collision) {
+    if (!node_to_process.IsCollision()) {
       work_done = true;
       break;
     }
