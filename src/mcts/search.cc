@@ -389,7 +389,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<int, float, float, EdgeAndNode>;
+  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
