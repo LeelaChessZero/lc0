@@ -35,25 +35,31 @@
 #include "utils/string.h"
 
 namespace lczero {
+namespace {
+const int kHelpIndent = 32;
+const int kUciLineIndent = 32;
+const int kHelpWidth = 72;
+}  // namespace
 
-OptionsParser::Option::Option(const std::string& name,
-                              const std::string& long_flag, char short_flag)
-    : name_(name), long_flag_(long_flag), short_flag_(short_flag) {}
+OptionsParser::Option::Option(const OptionId& id) : id_(id) {}
 
 OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
 
 std::vector<std::string> OptionsParser::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
-    result.emplace_back("option name " + iter->GetName() + " " +
-                        iter->GetOptionString(defaults_));
+    if (!iter->GetUciOption().empty()) {
+      result.emplace_back("option name " + iter->GetUciOption() + " " +
+                          iter->GetOptionString(defaults_));
+    }
   }
   return result;
 }
 
-void OptionsParser::SetOption(const std::string& name, const std::string& value,
-                              const std::string& context) {
-  auto option = FindOptionByName(name);
+void OptionsParser::SetUciOption(const std::string& name,
+                                 const std::string& value,
+                                 const std::string& context) {
+  auto option = FindOptionByUciName(name);
   if (option) {
     option->SetValue(value, GetMutableOptions(context));
     return;
@@ -70,10 +76,10 @@ OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
   return nullptr;
 }
 
-OptionsParser::Option* OptionsParser::FindOptionByName(
+OptionsParser::Option* OptionsParser::FindOptionByUciName(
     const std::string& name) const {
   for (const auto& val : options_) {
-    if (val->GetName() == name) return val.get();
+    if (StringsEqualIgnoreCase(val->GetUciOption(), name)) return val.get();
   }
   return nullptr;
 }
@@ -169,7 +175,9 @@ void OptionsParser::AddContext(const std::string& context) {
 
 namespace {
 std ::string FormatFlag(char short_flag, const std::string& long_flag,
-                        const std::string& help, const std::string& def = {}) {
+                        const std::string& help,
+                        const std::string& uci_option = {},
+                        const std::string& def = {}) {
   std::ostringstream oss;
   oss << "  ";
   if (short_flag) {
@@ -182,16 +190,30 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
   } else {
     oss << "   ";
   }
-  oss << std::setw(30) << std::left;
+  oss << std::setw(kHelpIndent - 8) << std::left;
   if (!short_flag && long_flag.empty()) {
     oss << "(uci parameter)";
   } else {
     oss << (long_flag.empty() ? "" : "--" + long_flag);
   }
-  oss << ' ' << help << ".\n";
-  if (!def.empty()) {
-    oss << std::string(38, ' ') << "(default: " << def << ")\n";
+  auto help_lines = FlowText(help, kHelpWidth);
+  bool is_first_line = true;
+  for (const auto& line : help_lines) {
+    if (is_first_line) {
+      oss << ' ' << line << "\n";
+      is_first_line = false;
+    } else {
+      oss << std::string(kHelpIndent, ' ') << line << "\n";
+    }
   }
+  if (!def.empty() || !uci_option.empty()) {
+    oss << std::string(kUciLineIndent, ' ') << '[';
+    if (!uci_option.empty()) oss << "UCI: " << uci_option;
+    if (!uci_option.empty() && !def.empty()) oss << "  ";
+    if (!def.empty()) oss << "DEFAULT: " << def;
+    oss << "]\n";
+  }
+  oss << '\n';
   return oss.str();
 }
 }  // namespace
@@ -208,7 +230,7 @@ void OptionsParser::ShowHelp() const {
   }
 
   std::cerr << "\nAllowed command line flags for current mode:\n";
-  std::cerr << FormatFlag('h', "help", "Show help and exit");
+  std::cerr << FormatFlag('h', "help", "Show help and exit.");
   for (const auto& option : options_) std::cerr << option->GetHelp(defaults_);
 
   auto contexts = values_.ListSubdicts();
@@ -224,9 +246,7 @@ void OptionsParser::ShowHelp() const {
 // StringOption
 /////////////////////////////////////////////////////////////////
 
-StringOption::StringOption(const std::string& name,
-                           const std::string& long_flag, char short_flag)
-    : Option(name, long_flag, short_flag) {}
+StringOption::StringOption(const OptionId& id) : Option(id) {}
 
 void StringOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, value);
@@ -253,8 +273,8 @@ bool StringOption::ProcessShortFlagWithValue(char flag,
 }
 
 std::string StringOption::GetHelp(const OptionsDict& dict) const {
-  return FormatFlag(GetShortFlag(), GetLongFlag() + "=STRING", GetName(),
-                    GetVal(dict));
+  return FormatFlag(GetShortFlag(), GetLongFlag() + "=STRING", GetHelpText(),
+                    GetUciOption(), GetVal(dict));
 }
 
 std::string StringOption::GetOptionString(const OptionsDict& dict) const {
@@ -262,20 +282,19 @@ std::string StringOption::GetOptionString(const OptionsDict& dict) const {
 }
 
 std::string StringOption::GetVal(const OptionsDict& dict) const {
-  return dict.Get<ValueType>(GetName());
+  return dict.Get<ValueType>(GetId());
 }
 
 void StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
-  dict->Set<ValueType>(GetName(), val);
+  dict->Set<ValueType>(GetId(), val);
 }
 
 /////////////////////////////////////////////////////////////////
 // IntOption
 /////////////////////////////////////////////////////////////////
 
-IntOption::IntOption(const std::string& name, int min, int max,
-                     const std::string& long_flag, char short_flag)
-    : Option(name, long_flag, short_flag), min_(min), max_(max) {}
+IntOption::IntOption(const OptionId& id, int min, int max)
+    : Option(id), min_(min), max_(max) {}
 
 void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, std::stoi(value));
@@ -304,19 +323,19 @@ std::string IntOption::GetHelp(const OptionsDict& dict) const {
   if (!long_flag.empty()) {
     long_flag += "=" + std::to_string(min_) + ".." + std::to_string(max_);
   }
-  return FormatFlag(GetShortFlag(), long_flag, GetName(),
+  return FormatFlag(GetShortFlag(), long_flag, GetHelpText(), GetUciOption(),
                     std::to_string(GetVal(dict)) +
-                        "  min: " + std::to_string(min_) +
-                        "  max: " + std::to_string(max_));
+                        "  MIN: " + std::to_string(min_) +
+                        "  MAX: " + std::to_string(max_));
 }
 
 std::string IntOption::GetOptionString(const OptionsDict& dict) const {
-  return "type spin default " + std::to_string(GetVal(dict)) + " min " +
-         std::to_string(min_) + " max " + std::to_string(max_);
+  return "type spin default " + std::to_string(GetVal(dict)) + " MIN " +
+         std::to_string(min_) + " MAX " + std::to_string(max_);
 }
 
 IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
-  return dict.Get<ValueType>(GetName());
+  return dict.Get<ValueType>(GetId());
 }
 
 void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
@@ -326,16 +345,15 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
         << " and " << max_ << ".";
     throw Exception(buf.str());
   }
-  dict->Set<ValueType>(GetName(), val);
+  dict->Set<ValueType>(GetId(), val);
 }
 
 /////////////////////////////////////////////////////////////////
 // FloatOption
 /////////////////////////////////////////////////////////////////
 
-FloatOption::FloatOption(const std::string& name, float min, float max,
-                         const std::string& long_flag, char short_flag)
-    : Option(name, long_flag, short_flag), min_(min), max_(max) {}
+FloatOption::FloatOption(const OptionId& id, float min, float max)
+    : Option(id), min_(min), max_(max) {}
 
 void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, std::stof(value));
@@ -363,13 +381,14 @@ std::string FloatOption::GetHelp(const OptionsDict& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     std::ostringstream oss;
-    oss << std::setprecision(3) << min_ << ".." << max_;
+    oss << std::fixed << std::setprecision(2) << min_ << ".." << max_;
     long_flag += "=" + oss.str();
   }
   std::ostringstream oss;
-  oss << std::setprecision(3) << GetVal(dict) << "  min: " << min_
-      << "  max: " << max_;
-  return FormatFlag(GetShortFlag(), long_flag, GetName(), oss.str());
+  oss << std::fixed << std::setprecision(2) << GetVal(dict) << "  MIN: " << min_
+      << "  MAX: " << max_;
+  return FormatFlag(GetShortFlag(), long_flag, GetHelpText(), GetUciOption(),
+                    oss.str());
 }
 
 std::string FloatOption::GetOptionString(const OptionsDict& dict) const {
@@ -377,7 +396,7 @@ std::string FloatOption::GetOptionString(const OptionsDict& dict) const {
 }
 
 FloatOption::ValueType FloatOption::GetVal(const OptionsDict& dict) const {
-  return dict.Get<ValueType>(GetName());
+  return dict.Get<ValueType>(GetId());
 }
 
 void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
@@ -387,16 +406,14 @@ void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
         << " and " << max_ << ".";
     throw Exception(buf.str());
   }
-  dict->Set<ValueType>(GetName(), val);
+  dict->Set<ValueType>(GetId(), val);
 }
 
 /////////////////////////////////////////////////////////////////
 // BoolOption
 /////////////////////////////////////////////////////////////////
 
-BoolOption::BoolOption(const std::string& name, const std::string& long_flag,
-                       char short_flag)
-    : Option(name, long_flag, short_flag) {}
+BoolOption::BoolOption(const OptionId& id) : Option(id) {}
 
 void BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
   ValidateBoolString(value);
@@ -436,7 +453,7 @@ std::string BoolOption::GetHelp(const OptionsDict& dict) const {
   if (!long_flag.empty()) {
     long_flag = "[no-]" + long_flag;
   }
-  return FormatFlag(GetShortFlag(), long_flag, GetName(),
+  return FormatFlag(GetShortFlag(), long_flag, GetHelpText(), GetUciOption(),
                     GetVal(dict) ? "true" : "false");
 }
 
@@ -445,11 +462,11 @@ std::string BoolOption::GetOptionString(const OptionsDict& dict) const {
 }
 
 BoolOption::ValueType BoolOption::GetVal(const OptionsDict& dict) const {
-  return dict.Get<ValueType>(GetName());
+  return dict.Get<ValueType>(GetId());
 }
 
 void BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
-  dict->Set<ValueType>(GetName(), val);
+  dict->Set<ValueType>(GetId(), val);
 }
 
 void BoolOption::ValidateBoolString(const std::string& val) {
@@ -465,10 +482,9 @@ void BoolOption::ValidateBoolString(const std::string& val) {
 // ChoiceOption
 /////////////////////////////////////////////////////////////////
 
-ChoiceOption::ChoiceOption(const std::string& name,
-                           const std::vector<std::string>& choices,
-                           const std::string& long_flag, char short_flag)
-    : Option(name, long_flag, short_flag), choices_(choices) {}
+ChoiceOption::ChoiceOption(const OptionId& id,
+                           const std::vector<std::string>& choices)
+    : Option(id), choices_(choices) {}
 
 void ChoiceOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, value);
@@ -500,8 +516,8 @@ std::string ChoiceOption::GetHelp(const OptionsDict& dict) const {
     if (!values.empty()) values += ',';
     values += choice;
   }
-  return FormatFlag(GetShortFlag(), GetLongFlag() + "=CHOICE", GetName(),
-                    GetVal(dict) + "  values: " + values);
+  return FormatFlag(GetShortFlag(), GetLongFlag() + "=CHOICE", GetHelpText(),
+                    GetUciOption(), GetVal(dict) + "  VALUES: " + values);
 }
 
 std::string ChoiceOption::GetOptionString(const OptionsDict& dict) const {
@@ -513,7 +529,7 @@ std::string ChoiceOption::GetOptionString(const OptionsDict& dict) const {
 }
 
 std::string ChoiceOption::GetVal(const OptionsDict& dict) const {
-  return dict.Get<ValueType>(GetName());
+  return dict.Get<ValueType>(GetId());
 }
 
 void ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
@@ -532,7 +548,7 @@ void ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
         << "following values:" << choice_string << ".";
     throw Exception(buf.str());
   }
-  dict->Set<ValueType>(GetName(), val);
+  dict->Set<ValueType>(GetId(), val);
 }
 
 }  // namespace lczero

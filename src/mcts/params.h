@@ -40,20 +40,26 @@ class SearchParams {
   static void Populate(OptionsParser* options);
 
   // Parameter getters.
-  int GetMiniBatchSize() const { return options_.Get<int>(kMiniBatchSizeStr); }
+  int GetMiniBatchSize() const {
+    return options_.Get<int>(kMiniBatchSizeId.GetId());
+  }
   int GetMaxPrefetchBatch() const {
-    return options_.Get<int>(kMaxPrefetchBatchStr);
+    return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   float GetCpuct() const { return kCpuct; }
-  float GetTemperature() const { return options_.Get<float>(kTemperatureStr); }
+  float GetTemperature() const {
+    return options_.Get<float>(kTemperatureId.GetId());
+  }
   float GetTemperatureVisitOffset() const {
-    return options_.Get<float>(kTemperatureVisitOffsetStr);
+    return options_.Get<float>(kTemperatureVisitOffsetId.GetId());
   }
   int GetTempDecayMoves() const {
-    return options_.Get<int>(kTempDecayMovesStr);
+    return options_.Get<int>(kTempDecayMovesId.GetId());
   }
   bool GetNoise() const { return kNoise; }
-  bool GetVerboseStats() const { return options_.Get<bool>(kVerboseStatsStr); }
+  bool GetVerboseStats() const {
+    return options_.Get<bool>(kVerboseStatsId.GetId());
+  }
   float GetAggressiveTimePruning() const { return kAggressiveTimePruning; }
   float GetFpuReduction() const { return kFpuReduction; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
@@ -65,27 +71,25 @@ class SearchParams {
     return kAllowedTotalNodeCollisions;
   }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
-  int GetMultiPv() const { return options_.Get<int>(kMultiPvStr); }
+  int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
 
-  // Strings for UCI params. So that others can override defaults.
-  // TODO(mooskagh) There are too many options for now. Factor out that into a
-  // separate class.
-  static const char* kMiniBatchSizeStr;
-  static const char* kMaxPrefetchBatchStr;
-  static const char* kCpuctStr;
-  static const char* kTemperatureStr;
-  static const char* kTempDecayMovesStr;
-  static const char* kTemperatureVisitOffsetStr;
-  static const char* kNoiseStr;
-  static const char* kVerboseStatsStr;
-  static const char* kAggressiveTimePruningStr;
-  static const char* kFpuReductionStr;
-  static const char* kCacheHistoryLengthStr;
-  static const char* kPolicySoftmaxTempStr;
-  static const char* kAllowedNodeCollisionEventsStr;
-  static const char* kAllowedTotalNodeCollisionsStr;
-  static const char* kOutOfOrderEvalStr;
-  static const char* kMultiPvStr;
+  // Search parameter IDs.
+  static const OptionId kMiniBatchSizeId;
+  static const OptionId kMaxPrefetchBatchId;
+  static const OptionId kCpuctId;
+  static const OptionId kTemperatureId;
+  static const OptionId kTempDecayMovesId;
+  static const OptionId kTemperatureVisitOffsetId;
+  static const OptionId kNoiseId;
+  static const OptionId kVerboseStatsId;
+  static const OptionId kAggressiveTimePruningId;
+  static const OptionId kFpuReductionId;
+  static const OptionId kCacheHistoryLengthId;
+  static const OptionId kPolicySoftmaxTempId;
+  static const OptionId kAllowedNodeCollisionEventsId;
+  static const OptionId kAllowedTotalNodeCollisionsId;
+  static const OptionId kOutOfOrderEvalId;
+  static const OptionId kMultiPvId;
 
  private:
   const OptionsDict& options_;
