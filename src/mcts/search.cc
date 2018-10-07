@@ -1072,7 +1072,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
   }
-  ++search_->total_playouts_;
+  search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }  // namespace lczero
