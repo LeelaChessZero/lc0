@@ -1618,14 +1618,14 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 // Use the DTZ tables to rank root moves.
 //
 // A return value false indicates that not all probes were successful.
-bool SyzygyTablebase::root_probe(const Position& pos,
+bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
                                  std::vector<Move>* safe_moves) {
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   // Obtain 50-move counter for the root position
   int cnt50 = pos.GetNoCaptureNoPawnPly();
   // Check whether a position was repeated since the last zeroing move.
-  bool rep = pos.GetRepetitions() > 0;
+  bool rep = has_repeated;
   int dtz;
   std::vector<int> ranks;
   ranks.reserve(root_moves.size());

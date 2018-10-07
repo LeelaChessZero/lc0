@@ -73,6 +73,7 @@ files += [
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
   'src/mcts/node.cc',
+  'src/mcts/params.cc',
   'src/mcts/search.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
@@ -312,9 +313,7 @@ if get_option('build_backends')
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-  nvcc = find_program('/usr/local/cuda-9.2/bin/nvcc',
-                      '/usr/local/cuda-9.1/bin/nvcc',
-                      'nvcc', required: false)
+  nvcc = find_program('/usr/local/cuda/bin/nvcc', 'nvcc', required: false)
   cuda_files = [
     'src/neural/network_cudnn.cu',
   ]
@@ -389,38 +388,37 @@ executable('lc0', 'src/main.cc',
 ### Tests
 gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
-test_deps = deps
 if get_option('gtest') and gtest.found()
-  test_deps += gtest
+  lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:chessboard.xml', timeout: 90)
 
   test('HashCat',
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:hashcat.xml', timeout: 90)
 
   test('PositionTest',
     executable('position_test', 'src/chess/position_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:position.xml', timeout: 90)
 
   test('OptionsParserTest',
     executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), timeout: 90)
 
   test('SyzygyTest',
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
   test('EncodePositionForNN', 
     executable('encoder_test', 'src/neural/encoder_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
 endif

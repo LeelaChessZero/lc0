@@ -36,21 +36,36 @@
 namespace lczero {
 
 namespace {
-const char* kShareTreesStr = "Share game trees for two players";
-const char* kTotalGamesStr = "Number of games to play";
-const char* kParallelGamesStr = "Number of games to play in parallel";
-const char* kThreadsStr = "Number of CPU threads for every game";
-const char* kNnCacheSizeStr = "NNCache size";
-const char* kNetFileStr = "Network weights file path";
-const char* kPlayoutsStr = "Number of playouts per move to search";
-const char* kVisitsStr = "Number of visits per move to search";
-const char* kTimeMsStr = "Time per move, in milliseconds";
-const char* kTrainingStr = "Write training data";
-const char* kNnBackendStr = "NN backend to use";
-const char* kNnBackendOptionsStr = "NN backend parameters";
-const char* kVerboseThinkingStr = "Show verbose thinking messages";
-const char* kResignPlaythroughStr =
-    "The percentage of games which ignore resign";
+const OptionId kShareTreesId{"share-trees", "ShareTrees",
+                             "Share game trees for two players."};
+const OptionId kTotalGamesId{"games", "Games", "Number of games to play."};
+const OptionId kParallelGamesId{"parallelism", "Parallelism",
+                                "Number of games to play in parallel."};
+const OptionId kThreadsId{"threads", "Threads",
+                          "Number of CPU threads for every game.", 't'};
+const OptionId kNnCacheSizeId{"nncache", "NNCache",
+                              "Number of positions to store in cache."};
+const OptionId kNetFileId{"weights", "WeightsFile",
+                          "Path to load network weights from.\n"
+                          "Setting it to <autodiscover> makes it search for "
+                          "the latest (by file date) file in ./ and ./weights/ "
+                          "subdirectories which looks like weights.",
+                          'w'};
+const OptionId kPlayoutsId{"playouts", "Playouts",
+                           "Number of playouts per move to search."};
+const OptionId kVisitsId{"visits", "Visits",
+                         "Number of visits per move to search."};
+const OptionId kTimeMsId{"movetime", "MoveTime",
+                         "Time per move, in milliseconds."};
+const OptionId kTrainingId{"training", "Training", "Write training data."};
+const OptionId kNnBackendId{"backend", "backend", "NN backend to use."};
+const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
+                                   "NN backend parameters."};
+const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
+                                  "Show verbose thinking messages."};
+const OptionId kResignPlaythroughId{
+    "resign-playthrough", "ResignPlaythrough",
+    "The percentage of games which ignore resign."};
 
 // Value for network autodiscover.
 const char* kAutoDiscover = "<autodiscover>";
@@ -61,33 +76,30 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player1");
   options->AddContext("player2");
 
-  options->Add<BoolOption>(kShareTreesStr, "share-trees") = true;
-  options->Add<IntOption>(kTotalGamesStr, -1, 999999, "games") = -1;
-  options->Add<IntOption>(kParallelGamesStr, 1, 256, "parallelism") = 8;
-  options->Add<IntOption>(kThreadsStr, 1, 8, "threads", 't') = 1;
-  options->Add<IntOption>(kNnCacheSizeStr, 0, 999999999, "nncache") = 200000;
-  options->Add<StringOption>(kNetFileStr, "weights", 'w') = kAutoDiscover;
-  options->Add<IntOption>(kPlayoutsStr, -1, 999999999, "playouts", 'p') = -1;
-  options->Add<IntOption>(kVisitsStr, -1, 999999999, "visits", 'v') = -1;
-  options->Add<IntOption>(kTimeMsStr, -1, 999999999, "movetime") = -1;
-  options->Add<BoolOption>(kTrainingStr, "training") = false;
+  options->Add<BoolOption>(kShareTreesId) = true;
+  options->Add<IntOption>(kTotalGamesId, -1, 999999) = -1;
+  options->Add<IntOption>(kParallelGamesId, 1, 256) = 8;
+  options->Add<IntOption>(kThreadsId, 1, 8) = 1;
+  options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
+  options->Add<StringOption>(kNetFileId) = kAutoDiscover;
+  options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
+  options->Add<IntOption>(kVisitsId, -1, 999999999) = -1;
+  options->Add<IntOption>(kTimeMsId, -1, 999999999) = -1;
+  options->Add<BoolOption>(kTrainingId) = false;
   const auto backends = NetworkFactory::Get()->GetBackendsList();
-  options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
-      "multiplexing";
-  options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<BoolOption>(kVerboseThinkingStr, "verbose-thinking") = false;
-  options->Add<FloatOption>(kResignPlaythroughStr, 0.0f, 100.0f,
-                            "resign-playthrough") = 0.0f;
+  options->Add<ChoiceOption>(kNnBackendId, backends) = "multiplexing";
+  options->Add<StringOption>(kNnBackendOptionsId);
+  options->Add<BoolOption>(kVerboseThinkingId) = false;
+  options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
 
-  Search::PopulateUciParams(options);
+  SearchParams::Populate(options);
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
-  defaults->Set<int>(Search::kMiniBatchSizeStr, 32);  // Minibatch size
-  defaults->Set<float>(Search::kAggressiveTimePruningStr,
-                       0.0f);                            // No smart pruning
-  defaults->Set<float>(Search::kTemperatureStr, 1.0f);   // Temperature = 1.0
-  defaults->Set<bool>(Search::kNoiseStr, true);          // Dirichlet noise
-  defaults->Set<float>(Search::kFpuReductionStr, 0.0f);  // No FPU reduction.
+  defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 32);
+  defaults->Set<float>(SearchParams::kAggressiveTimePruningId.GetId(), 0.0f);
+  defaults->Set<float>(SearchParams::kTemperatureId.GetId(), 1.0f);
+  defaults->Set<bool>(SearchParams::kNoiseId.GetId(), true);
+  defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 0.0f);
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
@@ -102,14 +114,14 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       game_callback_(game_info),
       tournament_callback_(tournament_info),
       kThreads{
-          options.GetSubdict("player1").Get<int>(kThreadsStr),
-          options.GetSubdict("player2").Get<int>(kThreadsStr),
+          options.GetSubdict("player1").Get<int>(kThreadsId.GetId()),
+          options.GetSubdict("player2").Get<int>(kThreadsId.GetId()),
       },
-      kTotalGames(options.Get<int>(kTotalGamesStr)),
-      kShareTree(options.Get<bool>(kShareTreesStr)),
-      kParallelism(options.Get<int>(kParallelGamesStr)),
-      kTraining(options.Get<bool>(kTrainingStr)),
-      kResignPlaythrough(options.Get<float>(kResignPlaythroughStr)) {
+      kTotalGames(options.Get<int>(kTotalGamesId.GetId())),
+      kShareTree(options.Get<bool>(kShareTreesId.GetId())),
+      kParallelism(options.Get<int>(kParallelGamesId.GetId())),
+      kTraining(options.Get<bool>(kTrainingId.GetId())),
+      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     next_game_black_ = Random::Get().GetBool();
@@ -121,10 +133,10 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     // If two players have the same network, no need to load two.
     if (idx == 1) {
       bool network_identical = true;
-      for (const auto& option_str :
-           {kNetFileStr, kNnBackendStr, kNnBackendOptionsStr}) {
-        if (options.GetSubdict("player1").Get<std::string>(option_str) !=
-            options.GetSubdict("player2").Get<std::string>(option_str)) {
+      for (const auto& option_id : {kNetFileId.GetId(), kNnBackendId.GetId(),
+                                    kNnBackendOptionsId.GetId()}) {
+        if (options.GetSubdict("player1").Get<std::string>(option_id) !=
+            options.GetSubdict("player2").Get<std::string>(option_id)) {
           network_identical = false;
           break;
         }
@@ -135,16 +147,17 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       }
     }
 
-    std::string path =
-        options.GetSubdict(kPlayerNames[idx]).Get<std::string>(kNetFileStr);
+    std::string path = options.GetSubdict(kPlayerNames[idx])
+                           .Get<std::string>(kNetFileId.GetId());
     if (path == kAutoDiscover) {
       path = DiscoverWeightsFile();
     }
     Weights weights = LoadWeightsFromFile(path);
-    std::string backend =
-        options.GetSubdict(kPlayerNames[idx]).Get<std::string>(kNnBackendStr);
-    std::string backend_options = options.GetSubdict(kPlayerNames[idx])
-                                      .Get<std::string>(kNnBackendOptionsStr);
+    std::string backend = options.GetSubdict(kPlayerNames[idx])
+                              .Get<std::string>(kNnBackendId.GetId());
+    std::string backend_options =
+        options.GetSubdict(kPlayerNames[idx])
+            .Get<std::string>(kNnBackendOptionsId.GetId());
 
     OptionsDict network_options = OptionsDict::FromString(
         backend_options, &options.GetSubdict(kPlayerNames[idx]));
@@ -155,22 +168,22 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
 
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(
-      options.GetSubdict("player1").Get<int>(kNnCacheSizeStr));
+      options.GetSubdict("player1").Get<int>(kNnCacheSizeId.GetId()));
   if (kShareTree) {
     cache_[1] = cache_[0];
   } else {
     cache_[1] = std::make_shared<NNCache>(
-        options.GetSubdict("player2").Get<int>(kNnCacheSizeStr));
+        options.GetSubdict("player2").Get<int>(kNnCacheSizeId.GetId()));
   }
 
   // SearchLimits.
   for (int idx : {0, 1}) {
     search_limits_[idx].playouts =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kPlayoutsStr);
+        options.GetSubdict(kPlayerNames[idx]).Get<int>(kPlayoutsId.GetId());
     search_limits_[idx].visits =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kVisitsStr);
+        options.GetSubdict(kPlayerNames[idx]).Get<int>(kVisitsId.GetId());
     search_limits_[idx].time_ms =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsStr);
+        options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsId.GetId());
 
     if (search_limits_[idx].playouts == -1 &&
         search_limits_[idx].visits == -1 && search_limits_[idx].time_ms == -1) {
@@ -195,7 +208,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   std::vector<ThinkingInfo> last_thinking_info;
   for (int pl_idx : {0, 1}) {
     const bool verbose_thinking =
-        player_options_[pl_idx].Get<bool>(kVerboseThinkingStr);
+        player_options_[pl_idx].Get<bool>(kVerboseThinkingId.GetId());
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
     opt.network = networks_[pl_idx].get();

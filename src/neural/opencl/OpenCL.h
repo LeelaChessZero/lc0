@@ -21,7 +21,11 @@
 using net_t = float;
 
 #define CL_HPP_MINIMUM_OPENCL_VERSION 110
+#if defined(_WIN32) && !defined(_WIN64)
+#define CL_HPP_TARGET_OPENCL_VERSION 110
+#else
 #define CL_HPP_TARGET_OPENCL_VERSION 120
+#endif
 #define CL_HPP_ENABLE_EXCEPTIONS
 #include <cstddef>
 #include <memory>
