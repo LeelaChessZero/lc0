@@ -208,6 +208,8 @@ bool UciLoop::DispatchCommand(
 }
 
 void UciLoop::SetLogFilename(const std::string& filename) {
+  if (filename == debug_log_filename_) return;
+  debug_log_filename_ = filename;
   if (filename.empty()) {
     debug_log_.close();
   } else {

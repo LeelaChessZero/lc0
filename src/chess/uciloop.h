@@ -90,6 +90,7 @@ class UciLoop {
       const std::string& command,
       const std::unordered_map<std::string, std::string>& params);
 
+  std::string debug_log_filename_;
   std::ofstream debug_log_;
 };
 
