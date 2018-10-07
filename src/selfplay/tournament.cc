@@ -79,15 +79,14 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kResignPlaythroughStr, 0.0f, 100.0f,
                             "resign-playthrough") = 0.0f;
 
-  Search::PopulateUciParams(options);
+  SearchParams::Populate(options);
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
-  defaults->Set<int>(Search::kMiniBatchSizeStr, 32);  // Minibatch size
-  defaults->Set<float>(Search::kAggressiveTimePruningStr,
-                       0.0f);                            // No smart pruning
-  defaults->Set<float>(Search::kTemperatureStr, 1.0f);   // Temperature = 1.0
-  defaults->Set<bool>(Search::kNoiseStr, true);          // Dirichlet noise
-  defaults->Set<float>(Search::kFpuReductionStr, 0.0f);  // No FPU reduction.
+  defaults->Set<int>(SearchParams::kMiniBatchSizeStr, 32);
+  defaults->Set<float>(SearchParams::kAggressiveTimePruningStr, 0.0f);
+  defaults->Set<float>(SearchParams::kTemperatureStr, 1.0f);
+  defaults->Set<bool>(SearchParams::kNoiseStr, true);
+  defaults->Set<float>(SearchParams::kFpuReductionStr, 0.0f);
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,

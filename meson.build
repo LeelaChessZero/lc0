@@ -73,6 +73,7 @@ files += [
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
   'src/mcts/node.cc',
+  'src/mcts/params.cc',
   'src/mcts/search.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
