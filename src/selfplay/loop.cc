@@ -73,7 +73,6 @@ void SelfPlayLoop::CmdUci() {
 
 void SelfPlayLoop::CmdStart() {
   if (tournament_) return;
-  options_.SendAllOptions();
   tournament_ = std::make_unique<SelfPlayTournament>(
       options_.GetOptionsDict(),
       std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),

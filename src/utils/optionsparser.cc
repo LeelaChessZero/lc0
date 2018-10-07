@@ -61,19 +61,6 @@ void OptionsParser::SetOption(const std::string& name, const std::string& value,
   throw Exception("Unknown option: " + name);
 }
 
-void OptionsParser::SendOption(const std::string& name) {
-  auto option = FindOptionByName(name);
-  if (option) {
-    option->SendValue(GetOptionsDict());
-  }
-}
-
-void OptionsParser::SendAllOptions() {
-  for (const auto& x : options_) {
-    x->SendValue(GetOptionsDict());
-  }
-}
-
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
@@ -238,9 +225,8 @@ void OptionsParser::ShowHelp() const {
 /////////////////////////////////////////////////////////////////
 
 StringOption::StringOption(const std::string& name,
-                           const std::string& long_flag, char short_flag,
-                           std::function<void(const std::string&)> setter)
-    : Option(name, long_flag, short_flag), setter_(setter) {}
+                           const std::string& long_flag, char short_flag)
+    : Option(name, long_flag, short_flag) {}
 
 void StringOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, value);
@@ -275,10 +261,6 @@ std::string StringOption::GetOptionString(const OptionsDict& dict) const {
   return "type string default " + GetVal(dict);
 }
 
-void StringOption::SendValue(const OptionsDict& dict) const {
-  if (setter_) setter_(GetVal(dict));
-}
-
 std::string StringOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
@@ -292,12 +274,8 @@ void StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 /////////////////////////////////////////////////////////////////
 
 IntOption::IntOption(const std::string& name, int min, int max,
-                     const std::string& long_flag, char short_flag,
-                     std::function<void(int)> setter)
-    : Option(name, long_flag, short_flag),
-      min_(min),
-      max_(max),
-      setter_(setter) {}
+                     const std::string& long_flag, char short_flag)
+    : Option(name, long_flag, short_flag), min_(min), max_(max) {}
 
 void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, std::stoi(value));
@@ -337,10 +315,6 @@ std::string IntOption::GetOptionString(const OptionsDict& dict) const {
          std::to_string(min_) + " max " + std::to_string(max_);
 }
 
-void IntOption::SendValue(const OptionsDict& dict) const {
-  if (setter_) setter_(GetVal(dict));
-}
-
 IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
@@ -360,12 +334,8 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 /////////////////////////////////////////////////////////////////
 
 FloatOption::FloatOption(const std::string& name, float min, float max,
-                         const std::string& long_flag, char short_flag,
-                         std::function<void(float)> setter)
-    : Option(name, long_flag, short_flag),
-      min_(min),
-      max_(max),
-      setter_(setter) {}
+                         const std::string& long_flag, char short_flag)
+    : Option(name, long_flag, short_flag), min_(min), max_(max) {}
 
 void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, std::stof(value));
@@ -406,10 +376,6 @@ std::string FloatOption::GetOptionString(const OptionsDict& dict) const {
   return "type string default " + std::to_string(GetVal(dict));
 }
 
-void FloatOption::SendValue(const OptionsDict& dict) const {
-  if (setter_) setter_(GetVal(dict));
-}
-
 FloatOption::ValueType FloatOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
@@ -429,8 +395,8 @@ void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 /////////////////////////////////////////////////////////////////
 
 BoolOption::BoolOption(const std::string& name, const std::string& long_flag,
-                       char short_flag, std::function<void(bool)> setter)
-    : Option(name, long_flag, short_flag), setter_(setter) {}
+                       char short_flag)
+    : Option(name, long_flag, short_flag) {}
 
 void BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
   ValidateBoolString(value);
@@ -478,10 +444,6 @@ std::string BoolOption::GetOptionString(const OptionsDict& dict) const {
   return "type check default " + std::string(GetVal(dict) ? "true" : "false");
 }
 
-void BoolOption::SendValue(const OptionsDict& dict) const {
-  if (setter_) setter_(GetVal(dict));
-}
-
 BoolOption::ValueType BoolOption::GetVal(const OptionsDict& dict) const {
   return dict.Get<ValueType>(GetName());
 }
@@ -505,9 +467,8 @@ void BoolOption::ValidateBoolString(const std::string& val) {
 
 ChoiceOption::ChoiceOption(const std::string& name,
                            const std::vector<std::string>& choices,
-                           const std::string& long_flag, char short_flag,
-                           std::function<void(const std::string&)> setter)
-    : Option(name, long_flag, short_flag), setter_(setter), choices_(choices) {}
+                           const std::string& long_flag, char short_flag)
+    : Option(name, long_flag, short_flag), choices_(choices) {}
 
 void ChoiceOption::SetValue(const std::string& value, OptionsDict* dict) {
   SetVal(dict, value);
@@ -549,10 +510,6 @@ std::string ChoiceOption::GetOptionString(const OptionsDict& dict) const {
     res += " var " + choice;
   }
   return res;
-}
-
-void ChoiceOption::SendValue(const OptionsDict& dict) const {
-  if (setter_) setter_(GetVal(dict));
 }
 
 std::string ChoiceOption::GetVal(const OptionsDict& dict) const {
