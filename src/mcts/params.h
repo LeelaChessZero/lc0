@@ -68,9 +68,7 @@ class SearchParams {
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
 
-  // Strings for UCI params. So that others can override defaults.
-  // TODO(mooskagh) There are too many options for now. Factor out that into a
-  // separate class.
+  // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
