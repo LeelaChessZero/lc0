@@ -41,6 +41,7 @@ namespace {
 const int kDefaultThreads = 2;
 const char* kThreadsOption = "Number of worker threads";
 const char* kDebugLogStr = "Do debug logging into file";
+const char* kNNCacheSizeStr = "NNCache size";
 
 // TODO(mooskagh) Move weights/backend/backend-opts parameter handling to
 //                network factory.
@@ -81,9 +82,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(kWeightsStr, "weights", 'w') = kAutoDiscover;
   options->Add<IntOption>(kThreadsOption, 1, 128, "threads", 't') =
       kDefaultThreads;
-  options->Add<IntOption>(
-      "NNCache size", 0, 999999999, "nncache", '\0',
-      std::bind(&EngineController::SetCacheSize, this, _1)) = 200000;
+  options->Add<IntOption>(kNNCacheSizeStr, 0, 999999999, "nncache", '\0') =
+      200000;
 
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
@@ -190,9 +190,11 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   return limits;
 }
 
-void EngineController::UpdateTBAndNetwork() {
+// Updates values from Uci options.
+void EngineController::UpdateFromUciOptions() {
   SharedLock lock(busy_mutex_);
 
+  // Syzygy tablebases.
   std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseStr);
   if (!tb_paths.empty() && tb_paths != tb_paths_) {
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
@@ -205,6 +207,7 @@ void EngineController::UpdateTBAndNetwork() {
     }
   }
 
+  // Network.
   std::string network_path = options_.Get<std::string>(kWeightsStr);
   std::string backend = options_.Get<std::string>(kNnBackendStr);
   std::string backend_options = options_.Get<std::string>(kNnBackendOptionsStr);
@@ -229,12 +232,13 @@ void EngineController::UpdateTBAndNetwork() {
       OptionsDict::FromString(backend_options, &options_);
 
   network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
+
+  // Cache size.
+  cache_.SetCapacity(options_.Get<int>(kNNCacheSizeStr));
 }
 
-void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
-
 void EngineController::EnsureReady() {
-  UpdateTBAndNetwork();
+  UpdateFromUciOptions();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
 }
 
@@ -245,7 +249,7 @@ void EngineController::NewGame() {
   tree_.reset();
   time_spared_ms_ = 0;
   current_position_.reset();
-  UpdateTBAndNetwork();
+  UpdateFromUciOptions();
 }
 
 void EngineController::SetPosition(const std::string& fen,
@@ -266,7 +270,7 @@ void EngineController::SetupPosition(
   for (const auto& move : moves_str) moves.emplace_back(move);
   bool is_same_game = tree_->ResetToPosition(fen, moves);
   if (!is_same_game) time_spared_ms_ = 0;
-  UpdateTBAndNetwork();
+  UpdateFromUciOptions();
 }
 
 void EngineController::Go(const GoParams& params) {
@@ -349,13 +353,12 @@ EngineLoop::EngineLoop()
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
-  options_.Add<StringOption>(
-      kDebugLogStr, "debuglog", 'l',
-      [this](const std::string& filename) { SetLogFilename(filename); }) = "";
+  options_.Add<StringOption>(kDebugLogStr, "debuglog", 'l') = "";
 }
 
 void EngineLoop::RunLoop() {
   if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
+  SetLogFilename(options_.GetOptionsDict().Get<std::string>(kDebugLogStr));
   UciLoop::RunLoop();
 }
 
@@ -375,35 +378,20 @@ void EngineLoop::CmdIsReady() {
 void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   options_.SetOption(name, value, context);
-  if (options_sent_) {
-    options_.SendOption(name);
-  }
+  // Set the log filename for the case it was set in UCI option.
+  SetLogFilename(options_.GetOptionsDict().Get<std::string>(kDebugLogStr));
 }
 
-void EngineLoop::EnsureOptionsSent() {
-  if (!options_sent_) {
-    options_.SendAllOptions();
-    options_sent_ = true;
-  }
-}
-
-void EngineLoop::CmdUciNewGame() {
-  EnsureOptionsSent();
-  engine_.NewGame();
-}
+void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
 
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
-  EnsureOptionsSent();
   std::string fen = position;
   if (fen.empty()) fen = ChessBoard::kStartingFen;
   engine_.SetPosition(fen, moves);
 }
 
-void EngineLoop::CmdGo(const GoParams& params) {
-  EnsureOptionsSent();
-  engine_.Go(params);
-}
+void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
