@@ -74,7 +74,7 @@ const OptionId kTimeCurveRightWidthId{"time-curve-right-width",
                                       "TimeCurveRightWidth",
                                       "Time weight curve width right of peak."};
 const OptionId kSyzygyTablebaseId{"syzygy-paths", "SyzygyPath",
-                                  "List of Syzygy tablebase directories."};
+                                  "List of Syzygy tablebase directories.", 's'};
 const OptionId kSpendSavedTimeId{"immediate-time-use", "ImmediateTimeUse",
                                  "Fraction of saved time to use immediately."};
 const OptionId kPonderId{"ponder", "Ponder", "This option is ignored."};
