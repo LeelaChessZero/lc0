@@ -96,7 +96,7 @@ bool StringsEqualIgnoreCase(const std::string& a, const std::string& b) {
   });
 }
 
-std::vector<std::string> FlowText(const std::string& src, int width) {
+std::vector<std::string> FlowText(const std::string& src, size_t width) {
   std::vector<std::string> result;
   auto paragraphs = StrSplit(src, "\n");
   for (const auto& paragraph : paragraphs) {

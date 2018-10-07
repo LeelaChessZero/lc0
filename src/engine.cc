@@ -40,7 +40,7 @@ namespace {
 const int kDefaultThreads = 2;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
-                                "Number of (CPU) worker threads to use."};
+                                "Number of (CPU) worker threads to use.", 't'};
 const OptionId kDebugLogId{"debug-log", "DebugLog",
                            "Do debug logging into file."};
 const OptionId kNNCacheSizeId{"nncache", "NNCache",
@@ -50,7 +50,7 @@ const OptionId kWeightsId{"weights", "WeightsFile",
                           "Setting it to <autodiscover> makes it search for "
                           "the latest (by file date) file in ./ and ./weights/ "
                           "subdirectories which looks like weights.",
-                          'n'};
+                          'w'};
 const OptionId kNnBackendId{"backend", "Backend", "NN backend to use."};
 const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
                                    "NN backend parameters."};

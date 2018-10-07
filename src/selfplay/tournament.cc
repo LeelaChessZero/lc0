@@ -54,7 +54,7 @@ const OptionId kNetFileId{"weights", "WeightsFile",
 const OptionId kPlayoutsId{"playouts", "Playouts",
                            "Number of playouts per move to search."};
 const OptionId kVisitsId{"visits", "Visits",
-                         "Number of visits per move to search.", 'v'};
+                         "Number of visits per move to search."};
 const OptionId kTimeMsId{"movetime", "MoveTime",
                          "Time per move, in milliseconds."};
 const OptionId kTrainingId{"training", "Training", "Write training data."};

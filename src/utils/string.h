@@ -59,6 +59,6 @@ std::string Trim(std::string str);
 bool StringsEqualIgnoreCase(const std::string& a, const std::string& b);
 
 // Flow text into lines of width up to @width.
-std::vector<std::string> FlowText(const std::string& src, int width);
+std::vector<std::string> FlowText(const std::string& src, size_t width);
 
 }  // namespace lczero
