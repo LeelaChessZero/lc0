@@ -73,7 +73,8 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
                                    const OptionsDict& options)
     : options_(options),
       best_move_callback_(best_move_callback),
-      info_callback_(info_callback) {}
+      info_callback_(info_callback),
+      move_start_time_(std::chrono::steady_clock::now()) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -236,9 +237,15 @@ void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
 void EngineController::EnsureReady() {
   UpdateTBAndNetwork();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
+  // If a UCI host is waiting for our ready response, we can consider the move
+  // not started until we're done ensuring ready.
+  move_start_time_ = std::chrono::steady_clock::now();
 }
 
 void EngineController::NewGame() {
+  // In case anything relies upon defaulting to default position and just calls
+  // newgame and goes straight into go.
+  move_start_time_ = std::chrono::steady_clock::now();
   SharedLock lock(busy_mutex_);
   cache_.Clear();
   search_.reset();
@@ -250,6 +257,9 @@ void EngineController::NewGame() {
 
 void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
+  // Some UCI hosts just call position then immediately call go, while starting
+  // the clock on calling 'position'.
+  move_start_time_ = std::chrono::steady_clock::now();
   SharedLock lock(busy_mutex_);
   current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
@@ -270,7 +280,11 @@ void EngineController::SetupPosition(
 }
 
 void EngineController::Go(const GoParams& params) {
-  auto start_time = std::chrono::steady_clock::now();
+  // TODO: should consecutive calls to go be considered to be a continuation and
+  // hence have the same start time like this behaves, or should we check start
+  // time hasn't changed since last call to go and capture the new start time
+  // now?
+  auto start_time = move_start_time_;
   go_params_ = params;
 
   ThinkingInfo::Callback info_callback(info_callback_);
@@ -333,6 +347,7 @@ void EngineController::Go(const GoParams& params) {
 }
 
 void EngineController::PonderHit() {
+  move_start_time_ = std::chrono::steady_clock::now();
   go_params_.ponder = false;
   Go(go_params_);
 }
