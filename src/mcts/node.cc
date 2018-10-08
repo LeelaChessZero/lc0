@@ -226,8 +226,12 @@ void Node::MakeTerminal(GameResult result) {
 }
 
 bool Node::TryStartScoreUpdate() {
-  if (n_ == 0 && n_in_flight_ > 0) return false;
-  ++n_in_flight_;
+  if (n_ == 0) {
+    uint16_t zero = 0;
+    return n_in_flight_.compare_exchange_strong(zero, 1);
+  } else {
+    ++n_in_flight_;
+  }
   return true;
 }
 
