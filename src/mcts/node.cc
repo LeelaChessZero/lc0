@@ -64,13 +64,13 @@ class NodeGarbageCollector {
 
   ~NodeGarbageCollector() {
     // Flips stop flag and waits for a worker thread to stop.
-    stop_ = true;
+    stop_.store(true);
     gc_thread_.join();
   }
 
  private:
   void GarbageCollect() {
-    while (!stop_) {
+    while (!stop_.load()) {
       // Node will be released in destructor when mutex is not locked.
       std::unique_ptr<Node> node_to_gc;
       {
@@ -85,7 +85,7 @@ class NodeGarbageCollector {
   }
 
   void Worker() {
-    while (!stop_) {
+    while (!stop_.load()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
       GarbageCollect();
     };
@@ -95,7 +95,7 @@ class NodeGarbageCollector {
   std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
-  std::atomic<bool> stop_ = {false};
+  std::atomic<bool> stop_{false};
   std::thread gc_thread_;
 };  // namespace
 
