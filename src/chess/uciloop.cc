@@ -128,10 +128,9 @@ std::string GetTimestamp() {
   auto ms =
       duration_cast<milliseconds>(time_now.time_since_epoch()).count() % 1000;
   auto timer = system_clock::to_time_t(time_now);
-  std::tm bt = *std::localtime(&timer);
   std::ostringstream oss;
-  oss << std::put_time(&bt, "%F %T") << '.' << std::setfill('0') << std::setw(3)
-      << ms;
+  oss << std::put_time(std::localtime(&timer), "%F %T") << '.'
+      << std::setfill('0') << std::setw(3) << ms;
   return oss.str();
 }
 
@@ -231,8 +230,7 @@ void UciLoop::SetLogFilename(const std::string& filename) {
 void UciLoop::WriteDebugLogLine(const std::string& line) {
   static std::mutex logging_mutex;
   std::lock_guard<std::mutex> lock(logging_mutex);
-  if (debug_log_)
-    debug_log_ << GetTimestamp() << ' ' << line << std::endl << std::flush;
+  if (debug_log_) debug_log_ << GetTimestamp() << ' ' << line << std::endl;
 }
 
 void UciLoop::SendResponse(const std::string& response) {
