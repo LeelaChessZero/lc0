@@ -122,10 +122,17 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
   return params.find(key) != params.end();
 }
 
-int64_t GetTimestamp() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now().time_since_epoch())
-      .count();
+std::string GetTimestamp() {
+  using namespace std::chrono;
+  auto time_now = system_clock::now();
+  auto ms =
+      duration_cast<milliseconds>(time_now.time_since_epoch()).count() % 1000;
+  auto timer = system_clock::to_time_t(time_now);
+  std::tm bt = *std::localtime(&timer);
+  std::ostringstream oss;
+  oss << std::put_time(&bt, "%F %T") << '.' << std::setfill('0') << std::setw(3)
+      << ms;
+  return oss.str();
 }
 
 }  // namespace
@@ -134,8 +141,7 @@ void UciLoop::RunLoop() {
   std::cout.setf(std::ios::unitbuf);
   std::string line;
   while (std::getline(std::cin, line)) {
-    if (debug_log_)
-      debug_log_ << GetTimestamp() << '>' << line << std::endl << std::flush;
+    WriteDebugLogLine('>' + line);
     try {
       auto command = ParseCommand(line);
       // Ignore empty line.
@@ -222,6 +228,13 @@ void UciLoop::SetLogFilename(const std::string& filename) {
   }
 }
 
+void UciLoop::WriteDebugLogLine(const std::string& line) {
+  static std::mutex logging_mutex;
+  std::lock_guard<std::mutex> lock(logging_mutex);
+  if (debug_log_)
+    debug_log_ << GetTimestamp() << ' ' << line << std::endl << std::flush;
+}
+
 void UciLoop::SendResponse(const std::string& response) {
   SendResponses({response});
 }
@@ -230,9 +243,7 @@ void UciLoop::SendResponses(const std::vector<std::string>& responses) {
   static std::mutex output_mutex;
   std::lock_guard<std::mutex> lock(output_mutex);
   for (auto& response : responses) {
-    if (debug_log_)
-      debug_log_ << GetTimestamp() << '<' << response << std::endl
-                 << std::flush;
+    WriteDebugLogLine('<' + response);
     std::cout << response << std::endl;
   }
 }
