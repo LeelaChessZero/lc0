@@ -330,8 +330,8 @@ std::string IntOption::GetHelp(const OptionsDict& dict) const {
 }
 
 std::string IntOption::GetOptionString(const OptionsDict& dict) const {
-  return "type spin default " + std::to_string(GetVal(dict)) + " MIN " +
-         std::to_string(min_) + " MAX " + std::to_string(max_);
+  return "type spin default " + std::to_string(GetVal(dict)) + " min " +
+         std::to_string(min_) + " max " + std::to_string(max_);
 }
 
 IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
