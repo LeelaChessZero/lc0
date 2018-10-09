@@ -146,8 +146,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     std::string backend_options = options.GetSubdict(kPlayerNames[idx])
                                       .Get<std::string>(kNnBackendOptionsStr);
 
-    OptionsDict network_options = OptionsDict::FromString(
-        backend_options, &options.GetSubdict(kPlayerNames[idx]));
+   OptionsDict network_options(&options.GetSubdict(kPlayerNames[idx]));
+   network_options.AddSubdictFromString(backend_options);
 
     networks_[idx] =
         NetworkFactory::Get()->Create(backend, weights, network_options);
