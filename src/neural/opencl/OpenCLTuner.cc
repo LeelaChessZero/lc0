@@ -455,10 +455,10 @@ std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
         auto tuners = sgemm_tuners_from_line(line, m, n, k, batch_size);
         if (tuners.size() != 0) {
           if (m_params.verbose) {
-            /* batch_size argument is the number of batched sgemm calls, which
-             * equals the number of elements in one tile.
-             * Convolution batch size affects the "n" dimension of
-             * the matrix multiplication (n = WINOGRAD_P * batch_size) */
+            // batch_size argument is the number of batched sgemm calls, which
+            // equals the number of elements in one tile.
+            // Convolution batch size affects the "n" dimension of
+            // the matrix multiplication (n = WINOGRAD_P * batch_size).
             std::cerr << "Loaded existing SGEMM tuning for batch size "
                       << n / WINOGRAD_P << "." << std::endl;
           }
