@@ -317,12 +317,18 @@ class Parser {
 
 }  // namespace
 
+<<<<<<< HEAD
 OptionsDict OptionsDict::FromString(const std::string& str,
                                     const OptionsDict* parent) {
   OptionsDict *dict = new OptionsDict(parent);
   Parser parser(str);
   parser.ParseMain(dict);
   return *dict;
+=======
+void OptionsDict::AddSubdictFromString(const std::string& str) {
+  Parser parser(str);
+  parser.ParseMain(this);
+>>>>>>> master
 }
 
 }  // namespace lczero
