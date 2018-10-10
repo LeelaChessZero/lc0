@@ -72,6 +72,7 @@ void OptionsParser::HideOption(const OptionId& id) {
   if (option) {
     option->hidden_ = true;
   }
+}
 
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
     const std::string& flag) const {
