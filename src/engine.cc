@@ -46,10 +46,10 @@ const OptionId kDebugLogId{"debug-log", "DebugLog",
 const OptionId kNNCacheSizeId{"nncache", "NNCache",
                               "Number of positions to store in cache."};
 const OptionId kWeightsId{"weights", "WeightsFile",
-                          "Path to load network weights from.\n"
-                          "Setting it to <autodiscover> makes it search for "
-                          "the latest (by file date) file in ./ and ./weights/ "
-                          "subdirectories which looks like weights.",
+                          "Path from which to load network weights.\n"
+                          "Setting it to <autodiscover> makes it search "
+                          "in ./ and ./weights/ subdirectories for the latest "
+                          "(by file date) file which looks like weights.",
                           'w'};
 const OptionId kNnBackendId{"backend", "Backend", "NN backend to use."};
 const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
@@ -62,9 +62,9 @@ const OptionId kSlowMoverId{
     "allocated time."};
 const OptionId kMoveOverheadId{
     "move-overhead", "MoveOverheadMs",
-    "How much overhead should the engine allocate for every move (to "
-    "counteract things like slow connection, interprocess communication, etc), "
-    "in milliseconds."};
+    "How much overhead, in milliseconds, should the engine allocate for every "
+    "move (to counteract things like slow connection, interprocess communication, "
+    "etc)."};
 const OptionId kTimeCurvePeakId{"time-curve-peak", "TimeCurvePeakPly",
                                 "Time weight curve peak ply."};
 const OptionId kTimeCurveLeftWidthId{"time-curve-left-width",

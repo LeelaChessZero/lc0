@@ -30,13 +30,13 @@
 namespace lczero {
 const OptionId SearchParams::kMiniBatchSizeId{
     "minibatch-size", "MinibatchSize",
-    "Now many positions the engine tries to batch together for computation.\n"
-    "Theoretically larger batches may reduce strengths a bit, especially on "
-    "small number of playouts."};
+    "How many positions the engine tries to batch together for computation.\n"
+    "Theoretically, larger batches may reduce strength a bit, especially with "
+    "a small number of playouts."};
 const OptionId SearchParams::kMaxPrefetchBatchId{
     "max-prefetch", "MaxPrefetch",
-    "When engine cannot gather large enough batch for immediate use, try to "
-    "prefetch up to X positions which are likely to be useful soon, and put "
+    "When the engine cannot gather large enough batch for immediate use, try "
+    "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
@@ -56,9 +56,9 @@ const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset", "Temperature visit offset."};
 const OptionId SearchParams::kNoiseId{
     "noise", "Noise",
-    "Add noise to root node prior probabilities. That allows engine to explore "
-    "moves which are known to be very bad, which is useful to discover new "
-    "ideas during training.",
+    "Add noise to root node prior probabilities. That allows the engine to "
+    "explore moves which are known to be very bad, which is useful to discover "
+    "new ideas during training.",
     'n'};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
