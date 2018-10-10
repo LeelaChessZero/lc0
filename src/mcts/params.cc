@@ -103,7 +103,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 7;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.0f;
   options->Add<IntOption>(kAllowedNodeCollisionEventsId, 0, 1024) = 0;
-  options->Add<IntOption>(kAllowedTotalNodeCollisionsId, 0, 1000000) = 10000;
+  options->Add<IntOption>(kAllowedTotalNodeCollisionsId, 0, 1000000) = 0;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
 }
