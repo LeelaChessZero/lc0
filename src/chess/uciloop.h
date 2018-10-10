@@ -84,6 +84,7 @@ class UciLoop {
   virtual void CmdStart() { throw Exception("Not supported"); }
 
   void SetLogFilename(const std::string& filename);
+  void WriteDebugLogLine(const std::string& line);
 
  private:
   bool DispatchCommand(
