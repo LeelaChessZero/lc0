@@ -30,9 +30,9 @@
 namespace lczero {
 const OptionId SearchParams::kMiniBatchSizeId{
     "minibatch-size", "MinibatchSize",
-    "Now many positions the engine tries to batch together for computation.\n"
-    "Theoretically larger batches may reduce strengths a bit, especially on "
-    "small number of playouts."};
+    "How many positions the engine tries to batch together for computation.\n"
+    "Theoretically, larger batches may reduce strengths a bit, especially on "
+    "a small number of playouts."};
 const OptionId SearchParams::kMaxPrefetchBatchId{
     "max-prefetch", "MaxPrefetch",
     "When engine cannot gather large enough batch for immediate use, try to "
