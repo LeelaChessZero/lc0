@@ -231,19 +231,19 @@ bool Node::TryStartScoreUpdate() {
   return true;
 }
 
-void Node::CancelScoreUpdate() { --n_in_flight_; }
+void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 
-void Node::FinalizeScoreUpdate(float v) {
+void Node::FinalizeScoreUpdate(float v, int multivisit) {
   // Recompute Q.
-  q_ += (v - q_) / (n_ + 1);
+  q_ += multivisit * (v - q_) / (n_ + multivisit);
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
   }
   // Increment N.
-  ++n_;
+  n_ += multivisit;
   // Decrement virtual loss.
-  --n_in_flight_;
+  n_in_flight_ -= multivisit;
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }

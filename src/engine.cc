@@ -130,7 +130,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
-  defaults->Set<int>(SearchParams::kAllowedNodeCollisionsId.GetId(), 32);
+  defaults->Set<int>(SearchParams::kAllowedTotalNodeCollisionsId.GetId(), 9999);
+  defaults->Set<int>(SearchParams::kAllowedNodeCollisionEventsId.GetId(), 32);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }

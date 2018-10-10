@@ -73,9 +73,12 @@ const OptionId SearchParams::kCacheHistoryLengthId{
     "Length of history to include in cache."};
 const OptionId SearchParams::kPolicySoftmaxTempId{
     "policy-softmax-temp", "PolicySoftMaxTemp", "Policy softmax temperature."};
-const OptionId SearchParams::kAllowedNodeCollisionsId{
-    "allowed-node-collisions", "AllowedNodeCollisions",
-    "Allowed node collisions, per batch."};
+const OptionId SearchParams::kAllowedTotalNodeCollisionsId{
+    "allowed-total-node-collisions", "AllowedTotalNodeCollisions",
+    "Total allowed node collisions, per batch."};
+const OptionId SearchParams::kAllowedNodeCollisionEventsId{
+    "allowed-node-collision-events", "AllowedNodeCollisionEvents",
+    "Allowed node collision events, per batch."};
 const OptionId SearchParams::kOutOfOrderEvalId{
     "out-of-order-eval", "OutOfOrderEval",
     "Out-of-order cache backpropagation."};
@@ -99,7 +102,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 7;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.0f;
-  options->Add<IntOption>(kAllowedNodeCollisionsId, 0, 1024) = 0;
+  options->Add<IntOption>(kAllowedNodeCollisionEventsId, 0, 1024) = 0;
+  options->Add<IntOption>(kAllowedTotalNodeCollisionsId, 0, 1000000) = 0;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
 }
@@ -113,8 +117,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
-      kAllowedNodeCollisions(
-          options.Get<int>(kAllowedNodeCollisionsId.GetId())),
+      kAllowedNodeCollisionEvents(
+          options.Get<int>(kAllowedNodeCollisionEventsId.GetId())),
+      kAllowedTotalNodeCollisions(
+          options.Get<int>(kAllowedTotalNodeCollisionsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())) {}
 
 }  // namespace lczero

@@ -389,7 +389,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<int, float, float, EdgeAndNode>;
+  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -601,7 +601,9 @@ void SearchWorker::InitializeIteration(
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
-  int collisions_found = 0;
+  int collision_events_left = params_.GetAllowedNodeCollisionEvents();
+  int collisions_left = params_.GetAllowedTotalNodeCollisions();
+
   // Number of nodes processed out of order.
   int number_out_of_order = 0;
 
@@ -615,21 +617,22 @@ void SearchWorker::GatherMinibatch() {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
-    minibatch_.emplace_back(PickNodeToExtend());
+    minibatch_.emplace_back(PickNodeToExtend(collisions_left));
     auto& picked_node = minibatch_.back();
     auto* node = picked_node.node;
 
     // There was a collision. If limit has been reached, return, otherwise
     // just start search of another node.
-    if (picked_node.is_collision) {
-      if (++collisions_found > params_.GetAllowedNodeCollisions()) return;
+    if (picked_node.IsCollision()) {
+      if (collision_events_left-- <= 0) return;
+      if ((collisions_left -= picked_node.multivisit) <= 0) return;
       continue;
     }
     ++minibatch_size;
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    if (!node->IsTerminal()) {
+    if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
       ExtendNode(node);
 
@@ -643,36 +646,47 @@ void SearchWorker::GatherMinibatch() {
     // If out of order eval is enabled and the node to compute we added last
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
-    if (params_.GetOutOfOrderEval()) {
-      if (node->IsTerminal() || picked_node.is_cache_hit) {
-        // Perform out of order eval for the last entry in minibatch_.
-        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
-        {
-          // Nodes mutex for doing node updates.
-          SharedMutex::Lock lock(search_->nodes_mutex_);
-          DoBackupUpdateSingleNode(picked_node);
-        }
-
-        // Remove last entry in minibatch_, as it has just been
-        // processed.
-        // If NN eval was already processed out of order, remove it.
-        if (picked_node.nn_queried) computation_->PopCacheHit();
-        minibatch_.pop_back();
-        --minibatch_size;
-        ++number_out_of_order;
+    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+      // Perform out of order eval for the last entry in minibatch_.
+      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+      {
+        // Nodes mutex for doing node updates.
+        SharedMutex::Lock lock(search_->nodes_mutex_);
+        DoBackupUpdateSingleNode(picked_node);
       }
+
+      // Remove last entry in minibatch_, as it has just been
+      // processed.
+      // If NN eval was already processed out of order, remove it.
+      if (picked_node.nn_queried) computation_->PopCacheHit();
+      minibatch_.pop_back();
+      --minibatch_size;
+      ++number_out_of_order;
     }
   }
 }
 
+namespace {
+void IncrementNInFlight(Node* node, Node* root, int amount) {
+  if (amount == 0) return;
+  while (true) {
+    node->IncrementNInFlight(amount);
+    if (node == root) break;
+    node = node->GetParent();
+  }
+}
+}  // namespace
+
 // Returns node and whether there's been a search collision on the node.
-SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
+SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
+    int collision_limit) {
   // Starting from search_->root_node_, generate a playout, choosing a
   // node at each level according to the MCTS formula. n_in_flight_ is
   // incremented for each node in the playout (via TryStartScoreUpdate()).
 
   Node* node = search_->root_node_;
   Node::Iterator best_edge;
+  Node::Iterator second_best_edge;
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
 
@@ -694,17 +708,30 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    best_edge.Reset();
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
-    if (!node->TryStartScoreUpdate()) return {node, true, depth};
+    if (!node->TryStartScoreUpdate()) {
+      IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+      return NodeToProcess::Collision(node, depth, collision_limit);
+    }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) return {node, false, depth};
+    if (!node->HasChildren()) {
+      if (node->IsTerminal()) {
+        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+      } else {
+        return NodeToProcess::Extension(node, depth);
+      }
+    }
+
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
         params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
+    float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     float parent_q =
         ((is_root_node && params_.GetNoise()) || !params_.GetFpuReduction())
@@ -734,9 +761,22 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       float Q = child.GetQ(parent_q);
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
+        second_best = best;
+        second_best_edge = best_edge;
         best = score;
         best_edge = child;
+      } else if (score > second_best) {
+        second_best = score;
+        second_best_edge = child;
       }
+    }
+
+    if (second_best_edge) {
+      collision_limit = std::min(
+          collision_limit,
+          best_edge.GetVisitsToReachU(second_best, puct_mult, parent_q));
+      assert(collision_limit >= 1);
+      second_best_edge.Reset();
     }
 
     history_.Append(best_edge.GetMove());
@@ -1007,11 +1047,11 @@ void SearchWorker::DoBackupUpdate() {
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
   Node* node = node_to_process.node;
-  if (node_to_process.is_collision) {
+  if (node_to_process.IsCollision()) {
     // If it was a collision, just undo counters.
     for (node = node->GetParent(); node != search_->root_node_->GetParent();
          node = node->GetParent()) {
-      node->CancelScoreUpdate();
+      node->CancelScoreUpdate(node_to_process.multivisit);
     }
     return;
   }
@@ -1020,7 +1060,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.v;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v);
+    n->FinalizeScoreUpdate(v, node_to_process.multivisit);
     // Q will be flipped for opponent.
     v = -v;
 
@@ -1032,7 +1072,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
   }
-  ++search_->total_playouts_;
+  search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }  // namespace lczero
@@ -1049,7 +1089,7 @@ void SearchWorker::UpdateCounters() {
   // was anything done.
   bool work_done = false;
   for (NodeToProcess& node_to_process : minibatch_) {
-    if (!node_to_process.is_collision) {
+    if (!node_to_process.IsCollision()) {
       work_done = true;
       break;
     }
