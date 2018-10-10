@@ -48,7 +48,7 @@ const OptionId kNNCacheSizeId{"nncache", "NNCache",
 const OptionId kWeightsId{"weights", "WeightsFile",
                           "Path from which to load network weights.\n"
                           "Setting it to <autodiscover> makes it search "
-                           "in ./ and ./weights/ subdirectories for the latest "
+                          "in ./ and ./weights/ subdirectories for the latest "
                           "(by file date) file which looks like weights.",
                           'w'};
 const OptionId kNnBackendId{"backend", "Backend", "NN backend to use."};
