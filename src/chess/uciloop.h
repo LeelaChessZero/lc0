@@ -60,7 +60,7 @@ class UciLoop {
   // Sends responses to host ensuring they are received as a block.
   virtual void SendResponses(const std::vector<std::string>& responses);
   void SendBestMove(const BestMoveInfo& move);
-  void SendInfo(const ThinkingInfo& info);
+  void SendInfo(const std::vector<ThinkingInfo>& infos);
   void SendId();
 
   // Command handlers.
@@ -90,6 +90,7 @@ class UciLoop {
       const std::string& command,
       const std::unordered_map<std::string, std::string>& params);
 
+  std::string debug_log_filename_;
   std::ofstream debug_log_;
 };
 

@@ -1,6 +1,6 @@
 # Modes
 
-`lc0` supports several operating modes, each on which has different set of 
+`lc0` supports several operating modes, each of which has a different set of 
 command line flags (although there are common ones).
 
 Currently `lc0` has the following modes:
@@ -19,7 +19,7 @@ $ ./lc0 selfplay ...    # for selfplay mode
 $ ./lc0 ...             # for uci mode
 ```
 
-In any of those modes it's possible to get help using `--help` command line argument:
+In any of those modes it's possible to get help using the `--help` command line argument:
 
 ```bash
 $ ./lc0 --help            # help for uci mode
@@ -53,6 +53,21 @@ List of command line flags:
 | --cache-history-length=NUM | Length of history to include in cache | Default: `7` |
 | --extra-virtual-loss=NUM | Extra virtual loss | Default: `0` |
 | -l,<br>--debuglog=FILENAME | Do debug logging into file | Default if off. (empty string) |
+
+
+## Configuration Files
+`lc0` supports using a configuration file instead of passing flags on the command line.  The default configuration file is `lc0.config` but it can be changed with the `--config` command line flag.  `lc0` configuration files only support the long flags that begin with `--` and there must be only 1 flag per line.  Example:
+```
+# Lines beginning with a # is a comment
+--threads=1
+--minibatch-size=32
+--sticky-checkmate
+# The -- is optional.  The following flags will work as well:
+weights=10445.txt.gz
+syzygy-paths=syzygy
+debuglog=lc0.log
+```
+You can tell `lc0` to ignore the default configuration file by passing `--config=` on the command line.  Command line arguments will override any arguments that also exist in the configuration file.
 
 
 ## Backend configuration

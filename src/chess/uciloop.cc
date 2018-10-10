@@ -56,6 +56,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"stop"}, {}},
         {{"ponderhit"}, {}},
         {{"quit"}, {}},
+        {{"xyzzy"}, {}},
 };
 
 std::pair<std::string, std::unordered_map<std::string, std::string>>
@@ -196,6 +197,8 @@ bool UciLoop::DispatchCommand(
     CmdPonderHit();
   } else if (command == "start") {
     CmdStart();
+  } else if (command == "xyzzy") {
+    SendResponse("Nothing happens.");
   } else if (command == "quit") {
     return false;
   } else {
@@ -205,6 +208,8 @@ bool UciLoop::DispatchCommand(
 }
 
 void UciLoop::SetLogFilename(const std::string& filename) {
+  if (filename == debug_log_filename_) return;
+  debug_log_filename_ = filename;
   if (filename.empty()) {
     debug_log_.close();
   } else {
@@ -240,27 +245,32 @@ void UciLoop::SendBestMove(const BestMoveInfo& move) {
   SendResponse(res);
 }
 
-void UciLoop::SendInfo(const ThinkingInfo& info) {
-  std::string res = "info";
-  if (info.player != -1) res += " player " + std::to_string(info.player);
-  if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
-  if (info.is_black)
-    res += " side " + std::string(*info.is_black ? "black" : "white");
-  if (info.depth >= 0) res += " depth " + std::to_string(info.depth);
-  if (info.seldepth >= 0) res += " seldepth " + std::to_string(info.seldepth);
-  if (info.time >= 0) res += " time " + std::to_string(info.time);
-  if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
-  if (info.score) res += " score cp " + std::to_string(*info.score);
-  if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
-  if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
-  if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
+void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
+  std::vector<std::string> reses;
+  for (const auto& info : infos) {
+    std::string res = "info";
+    if (info.player != -1) res += " player " + std::to_string(info.player);
+    if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
+    if (info.is_black)
+      res += " side " + std::string(*info.is_black ? "black" : "white");
+    if (info.depth >= 0) res += " depth " + std::to_string(info.depth);
+    if (info.seldepth >= 0) res += " seldepth " + std::to_string(info.seldepth);
+    if (info.time >= 0) res += " time " + std::to_string(info.time);
+    if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
+    if (info.score) res += " score cp " + std::to_string(*info.score);
+    if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
+    if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
+    if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
+    if (info.multipv >= 0) res += " multipv " + std::to_string(info.multipv);
 
-  if (!info.pv.empty()) {
-    res += " pv";
-    for (const auto& move : info.pv) res += " " + move.as_string();
+    if (!info.pv.empty()) {
+      res += " pv";
+      for (const auto& move : info.pv) res += " " + move.as_string();
+    }
+    if (!info.comment.empty()) res += " string " + info.comment;
+    reses.push_back(std::move(res));
   }
-  if (!info.comment.empty()) res += " string " + info.comment;
-  SendResponse(res);
+  SendResponses(reses);
 }
 
 }  // namespace lczero

@@ -58,7 +58,7 @@ std::vector<std::string> StrSplit(const std::string& str,
   for (std::string::size_type pos = 0, next = 0; pos != std::string::npos;
        pos = next) {
     next = str.find(delim, pos);
-    result.push_back(str.substr(pos, next));
+    result.push_back(str.substr(pos, next - pos));
     if (next != std::string::npos) next += delim.size();
   }
   return result;
@@ -88,6 +88,34 @@ std::string RightTrim(std::string str) {
 
 std::string Trim(std::string str) {
   return LeftTrim(RightTrim(std::move(str)));
+}
+
+bool StringsEqualIgnoreCase(const std::string& a, const std::string& b) {
+  return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](char a, char b) {
+    return std::tolower(a) == std::tolower(b);
+  });
+}
+
+std::vector<std::string> FlowText(const std::string& src, size_t width) {
+  std::vector<std::string> result;
+  auto paragraphs = StrSplit(src, "\n");
+  for (const auto& paragraph : paragraphs) {
+    result.emplace_back();
+    auto words = StrSplit(paragraph, " ");
+    for (const auto& word : words) {
+      if (result.back().empty()) {
+        // First word in line, always add.
+      } else if (result.back().size() + word.size() + 1 > width) {
+        // The line doesn't have space for a new word.
+        result.emplace_back();
+      } else {
+        // Appending to the current line.
+        result.back() += " ";
+      }
+      result.back() += word;
+    }
+  }
+  return result;
 }
 
 }  // namespace lczero

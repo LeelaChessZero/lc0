@@ -76,7 +76,6 @@ class EngineController {
   void PonderHit();
   // Must not block.
   void Stop();
-  void SetCacheSize(int size);
 
   SearchLimits PopulateSearchLimits(int ply, bool is_black,
                                     const GoParams& params);
@@ -84,7 +83,7 @@ class EngineController {
   void Wait();
 
  private:
-  void UpdateTBAndNetwork();
+  void UpdateFromUciOptions();
 
   void SetupPosition(const std::string& fen,
                      const std::vector<std::string>& moves);
@@ -138,10 +137,7 @@ class EngineLoop : public UciLoop {
   void CmdStop() override;
 
  private:
-  void EnsureOptionsSent();
-
   OptionsParser options_;
-  bool options_sent_ = false;
   EngineController engine_;
 };
 

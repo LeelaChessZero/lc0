@@ -187,15 +187,15 @@ int count_pieces(const ChessBoard& pos, int type, bool theirs) {
     case KING:
       return 1;
     case QUEEN:
-      return (all * pos.queens()).count();
+      return (all * pos.queens()).count_few();
     case ROOK:
-      return (all * pos.rooks()).count();
+      return (all * pos.rooks()).count_few();
     case BISHOP:
-      return (all * pos.bishops()).count();
+      return (all * pos.bishops()).count_few();
     case KNIGHT:
-      return theirs ? pos.their_knights().count() : pos.our_knights().count();
+      return (theirs ? pos.their_knights() : pos.our_knights()).count_few();
     case PAWN:
-      return (all * pos.pawns()).count();
+      return (all * pos.pawns()).count_few();
     default:
       assert(false);
   }
@@ -1618,14 +1618,14 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 // Use the DTZ tables to rank root moves.
 //
 // A return value false indicates that not all probes were successful.
-bool SyzygyTablebase::root_probe(const Position& pos,
+bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
                                  std::vector<Move>* safe_moves) {
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   // Obtain 50-move counter for the root position
   int cnt50 = pos.GetNoCaptureNoPawnPly();
   // Check whether a position was repeated since the last zeroing move.
-  bool rep = pos.GetRepetitions() > 0;
+  bool rep = has_repeated;
   int dtz;
   std::vector<int> ranks;
   ranks.reserve(root_moves.size());

@@ -253,8 +253,20 @@ class Node {
   friend class Edge;
 };
 
+// Define __i386__  or __arm__ also for 32 bit Windows.
+#if defined(_M_IX86)
+#define __i386__
+#endif
+#if defined(_M_ARM) && !defined(_M_AMD64)
+#define __arm__
+#endif
+
 // A basic sanity check. This must be adjusted when Node members are adjusted.
+#if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
+static_assert(sizeof(Node) == 40, "Unexpected size of Node for 32bit compile");
+#else
 static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+#endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
@@ -269,6 +281,8 @@ class EdgeAndNode {
   bool operator!=(const EdgeAndNode& other) const {
     return edge_ != other.edge_;
   }
+  // Arbitrary ordering just to make it possible to use in tuples.
+  bool operator<(const EdgeAndNode& other) const { return edge_ < other.edge_; }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }

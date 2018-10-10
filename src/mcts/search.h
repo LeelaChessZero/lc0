@@ -33,13 +33,12 @@
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
+#include "mcts/params.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 #include "utils/optional.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
 
 namespace lczero {
 
@@ -60,9 +59,6 @@ class Search {
          SyzygyTablebase* syzygy_tb);
 
   ~Search();
-
-  // Populates UciOptions with search parameters.
-  static void PopulateUciParams(OptionsParser* options);
 
   // Starts worker threads and returns immediately.
   void StartThreads(size_t how_many);
@@ -89,24 +85,6 @@ class Search {
   // return results from different possible moves.
   float GetBestEval() const;
 
-  // Strings for UCI params. So that others can override defaults.
-  // TODO(mooskagh) There are too many options for now. Factor out that into a
-  // separate class.
-  static const char* kMiniBatchSizeStr;
-  static const char* kMaxPrefetchBatchStr;
-  static const char* kCpuctStr;
-  static const char* kTemperatureStr;
-  static const char* kTempDecayMovesStr;
-  static const char* kTemperatureVisitOffsetStr;
-  static const char* kNoiseStr;
-  static const char* kVerboseStatsStr;
-  static const char* kAggressiveTimePruningStr;
-  static const char* kFpuReductionStr;
-  static const char* kCacheHistoryLengthStr;
-  static const char* kPolicySoftmaxTempStr;
-  static const char* kAllowedNodeCollisionsStr;
-  static const char* kOutOfOrderEvalStr;
-
  private:
   // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
@@ -115,6 +93,8 @@ class Search {
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
   EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
+  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
+                                                        int count) const;
   EdgeAndNode GetBestChildWithTemperature(Node* parent,
                                           float temperature) const;
 
@@ -169,7 +149,7 @@ class Search {
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
-  ThinkingInfo uci_info_ GUARDED_BY(nodes_mutex_);
+  ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int>::max();
@@ -181,21 +161,7 @@ class Search {
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
-  // External parameters.
-  const int kMiniBatchSize;
-  const int kMaxPrefetchBatch;
-  const float kCpuct;
-  const float kTemperature;
-  const float kTemperatureVisitOffset;
-  const int kTempDecayMoves;
-  const bool kNoise;
-  const bool kVerboseStats;
-  const float kAggressiveTimePruning;
-  const float kFpuReduction;
-  const int kCacheHistoryLength;
-  const float kPolicySoftmaxTemp;
-  const int kAllowedNodeCollisions;
-  const bool kOutOfOrderEval;
+  const SearchParams params_;
 
   friend class SearchWorker;
 };
@@ -205,8 +171,8 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search)
-      : search_(search), history_(search_->played_history_) {}
+  SearchWorker(Search* search, const SearchParams& params)
+      : search_(search), history_(search_->played_history_), params_(params) {}
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -277,6 +243,7 @@ class SearchWorker {
   PositionHistory history_;
   MoveList root_move_filter_;
   bool root_move_filter_populated_ = false;
+  const SearchParams& params_;
 };
 
 }  // namespace lczero

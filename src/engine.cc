@@ -37,23 +37,47 @@
 
 namespace lczero {
 namespace {
-// TODO(mooskagh) Move threads parameter handling to search.
 const int kDefaultThreads = 2;
-const char* kThreadsOption = "Number of worker threads";
-const char* kDebugLogStr = "Do debug logging into file";
 
-// TODO(mooskagh) Move weights/backend/backend-opts parameter handling to
-//                network factory.
-const char* kWeightsStr = "Network weights file path";
-const char* kNnBackendStr = "NN backend to use";
-const char* kNnBackendOptionsStr = "NN backend parameters";
-const char* kSlowMoverStr = "Scale thinking time";
-const char* kMoveOverheadStr = "Move time overhead in milliseconds";
-const char* kTimeCurvePeak = "Time weight curve peak ply";
-const char* kTimeCurveRightWidth = "Time weight curve width right of peak";
-const char* kTimeCurveLeftWidth = "Time weight curve width left of peak";
-const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
-const char* kSpendSavedTime = "Fraction of saved time to use immediately";
+const OptionId kThreadsOptionId{"threads", "Threads",
+                                "Number of (CPU) worker threads to use.", 't'};
+const OptionId kDebugLogId{"debug-log", "DebugLog",
+                           "Do debug logging into file."};
+const OptionId kNNCacheSizeId{"nncache", "NNCache",
+                              "Number of positions to store in cache."};
+const OptionId kWeightsId{"weights", "WeightsFile",
+                          "Path to load network weights from.\n"
+                          "Setting it to <autodiscover> makes it search for "
+                          "the latest (by file date) file in ./ and ./weights/ "
+                          "subdirectories which looks like weights.",
+                          'w'};
+const OptionId kNnBackendId{"backend", "Backend", "NN backend to use."};
+const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
+                                   "NN backend parameters."};
+const OptionId kSlowMoverId{
+    "slowmover", "Slowmover",
+    "Parameter value X means that whole remaining time is split in such a way "
+    "that current move gets X*Y seconds, and next moves will get 1*Y seconds. "
+    "However, due to smart pruning, the engine usually doesn't use all "
+    "allocated time."};
+const OptionId kMoveOverheadId{
+    "move-overhead", "MoveOverheadMs",
+    "How much overhead should the engine allocate for every move (to "
+    "counteract things like slow connection, interprocess communication, etc), "
+    "in milliseconds."};
+const OptionId kTimeCurvePeakId{"time-curve-peak", "TimeCurvePeakPly",
+                                "Time weight curve peak ply."};
+const OptionId kTimeCurveLeftWidthId{"time-curve-left-width",
+                                     "TimeCurveLeftWidth",
+                                     "Time weight curve width left of peak."};
+const OptionId kTimeCurveRightWidthId{"time-curve-right-width",
+                                      "TimeCurveRightWidth",
+                                      "Time weight curve width right of peak."};
+const OptionId kSyzygyTablebaseId{"syzygy-paths", "SyzygyPath",
+                                  "List of Syzygy tablebase directories.", 's'};
+const OptionId kSpendSavedTimeId{"immediate-time-use", "ImmediateTimeUse",
+                                 "Fraction of saved time to use immediately."};
+const OptionId kPonderId{"ponder", "Ponder", "This option is ignored."};
 
 const char* kNodesStr = "Number of nodes for benchmark";
 const char* kFenStr = "Benchmark initial position FEN";
@@ -81,44 +105,37 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
-  options->Add<StringOption>(kWeightsStr, "weights", 'w') = kAutoDiscover;
-  options->Add<IntOption>(kThreadsOption, 1, 128, "threads", 't') =
-      kDefaultThreads;
-  options->Add<IntOption>(
-      "NNCache size", 0, 999999999, "nncache", '\0',
-      std::bind(&EngineController::SetCacheSize, this, _1)) = 200000;
+  options->Add<StringOption>(kWeightsId) = kAutoDiscover;
+  options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
 
   const auto backends = NetworkFactory::Get()->GetBackendsList();
-  options->Add<ChoiceOption>(kNnBackendStr, backends, "backend") =
+  options->Add<ChoiceOption>(kNnBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
-  options->Add<StringOption>(kNnBackendOptionsStr, "backend-opts");
-  options->Add<FloatOption>(kSlowMoverStr, 0.0f, 100.0f, "slowmover") = 2.4f;
-  options->Add<IntOption>(kMoveOverheadStr, 0, 10000, "move-overhead") = 100;
-  options->Add<FloatOption>(kTimeCurvePeak, -1000.0f, 1000.0f,
-                            "time-curve-peak") = 26.2f;
-  options->Add<FloatOption>(kTimeCurveLeftWidth, 0.0f, 1000.0f,
-                            "time-curve-left-width") = 82.0f;
-  options->Add<FloatOption>(kTimeCurveRightWidth, 0.0f, 1000.0f,
-                            "time-curve-right-width") = 74.0f;
-  options->Add<StringOption>(kSyzygyTablebaseStr, "syzygy-paths", 's');
+  options->Add<StringOption>(kNnBackendOptionsId);
+  options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
+  options->Add<IntOption>(kMoveOverheadId, 0, 10000) = 100;
+  options->Add<FloatOption>(kTimeCurvePeakId, -1000.0f, 1000.0f) = 26.2f;
+  options->Add<FloatOption>(kTimeCurveLeftWidthId, 0.0f, 1000.0f) = 82.0f;
+  options->Add<FloatOption>(kTimeCurveRightWidthId, 0.0f, 1000.0f) = 74.0f;
+  options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
-  options->Add<BoolOption>("Ponder", "ponder") = false;
-  options->Add<FloatOption>(kSpendSavedTime, 0.0f, 1.0f, "immediate-time-use") =
-      0.0f;
+  options->Add<BoolOption>(kPonderId) = true;
+  options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 0.6f;
 
-  Search::PopulateUciParams(options);
+  SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
 
-  defaults->Set<int>(Search::kMiniBatchSizeStr, 256);    // Minibatch = 256
-  defaults->Set<float>(Search::kFpuReductionStr, 0.9f);  // FPU reduction = 0.9
-  defaults->Set<float>(Search::kCpuctStr, 3.4f);         // CPUCT = 3.4
-  defaults->Set<float>(Search::kPolicySoftmaxTempStr, 2.2f);  // Psoftmax = 2.2
-  defaults->Set<int>(Search::kAllowedNodeCollisionsStr, 32);  // Node collisions
-  defaults->Set<int>(Search::kCacheHistoryLengthStr, 0);
-  defaults->Set<bool>(Search::kOutOfOrderEvalStr, true);
+  defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 256);
+  defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
+  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
+  defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
+  defaults->Set<int>(SearchParams::kAllowedNodeCollisionsId.GetId(), 32);
+  defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
+  defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
@@ -142,11 +159,13 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   if (movestogo == 0) movestogo = 1;
 
   // How to scale moves time.
-  float slowmover = options_.Get<float>(kSlowMoverStr);
-  int64_t move_overhead = options_.Get<int>(kMoveOverheadStr);
-  float time_curve_peak = options_.Get<float>(kTimeCurvePeak);
-  float time_curve_left_width = options_.Get<float>(kTimeCurveLeftWidth);
-  float time_curve_right_width = options_.Get<float>(kTimeCurveRightWidth);
+  float slowmover = options_.Get<float>(kSlowMoverId.GetId());
+  int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
+  float time_curve_peak = options_.Get<float>(kTimeCurvePeakId.GetId());
+  float time_curve_left_width =
+      options_.Get<float>(kTimeCurveLeftWidthId.GetId());
+  float time_curve_right_width =
+      options_.Get<float>(kTimeCurveRightWidthId.GetId());
 
   // Total time till control including increments.
   auto total_moves_time =
@@ -156,7 +175,8 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // of it will be used immediately, remove that from planning.
   int time_to_squander = 0;
   if (time_spared_ms_ > 0) {
-    time_to_squander = time_spared_ms_ * options_.Get<float>(kSpendSavedTime);
+    time_to_squander =
+        time_spared_ms_ * options_.Get<float>(kSpendSavedTimeId.GetId());
     time_spared_ms_ -= time_to_squander;
     total_moves_time -= time_to_squander;
   }
@@ -193,10 +213,12 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   return limits;
 }
 
-void EngineController::UpdateTBAndNetwork() {
+// Updates values from Uci options.
+void EngineController::UpdateFromUciOptions() {
   SharedLock lock(busy_mutex_);
 
-  std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseStr);
+  // Syzygy tablebases.
+  std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId.GetId());
   if (!tb_paths.empty() && tb_paths != tb_paths_) {
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
     std::cerr << "Loading Syzygy tablebases from " << tb_paths << std::endl;
@@ -208,9 +230,11 @@ void EngineController::UpdateTBAndNetwork() {
     }
   }
 
-  std::string network_path = options_.Get<std::string>(kWeightsStr);
-  std::string backend = options_.Get<std::string>(kNnBackendStr);
-  std::string backend_options = options_.Get<std::string>(kNnBackendOptionsStr);
+  // Network.
+  std::string network_path = options_.Get<std::string>(kWeightsId.GetId());
+  std::string backend = options_.Get<std::string>(kNnBackendId.GetId());
+  std::string backend_options =
+      options_.Get<std::string>(kNnBackendOptionsId.GetId());
 
   if (network_path == network_path_ && backend == backend_ &&
       backend_options == backend_options_)
@@ -232,12 +256,13 @@ void EngineController::UpdateTBAndNetwork() {
       OptionsDict::FromString(backend_options, &options_);
 
   network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
+
+  // Cache size.
+  cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));
 }
 
-void EngineController::SetCacheSize(int size) { cache_.SetCapacity(size); }
-
 void EngineController::EnsureReady() {
-  UpdateTBAndNetwork();
+  UpdateFromUciOptions();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
 }
 
@@ -248,7 +273,7 @@ void EngineController::NewGame() {
   tree_.reset();
   time_spared_ms_ = 0;
   current_position_.reset();
-  UpdateTBAndNetwork();
+  UpdateFromUciOptions();
 }
 
 void EngineController::SetPosition(const std::string& fen,
@@ -269,7 +294,7 @@ void EngineController::SetupPosition(
   for (const auto& move : moves_str) moves.emplace_back(move);
   bool is_same_game = tree_->ResetToPosition(fen, moves);
   if (!is_same_game) time_spared_ms_ = 0;
-  UpdateTBAndNetwork();
+  UpdateFromUciOptions();
 }
 
 void EngineController::Go(const GoParams& params) {
@@ -288,24 +313,24 @@ void EngineController::Go(const GoParams& params) {
       moves.pop_back();
       SetupPosition(current_position_->fen, moves);
 
-      info_callback = [this, ponder_move](const ThinkingInfo& info) {
-        ThinkingInfo ponder_info(info);
-        if (!ponder_info.pv.empty() &&
-            ponder_info.pv[0].as_string() == ponder_move) {
-          ponder_info.pv.erase(ponder_info.pv.begin());
-        } else {
-          ponder_info.pv.clear();
+      info_callback = [this,
+                       ponder_move](const std::vector<ThinkingInfo>& infos) {
+        ThinkingInfo ponder_info;
+        // Output all stats from main variation (not necessary the ponder move)
+        // but PV only from ponder move.
+        for (const auto& info : infos) {
+          if (info.multipv <= 1) {
+            ponder_info = info;
+            if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+            if (ponder_info.depth > 1) ponder_info.depth--;
+            if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+            ponder_info.pv.clear();
+          }
+          if (!info.pv.empty() && info.pv[0].as_string() == ponder_move) {
+            ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
+          }
         }
-        if (ponder_info.score) {
-          ponder_info.score = -*ponder_info.score;
-        }
-        if (ponder_info.depth > 1) {
-          ponder_info.depth--;
-        }
-        if (ponder_info.seldepth > 1) {
-          ponder_info.seldepth--;
-        }
-        info_callback_(ponder_info);
+        info_callback_({ponder_info});
       };
     } else {
       SetupPosition(current_position_->fen, current_position_->moves);
@@ -332,7 +357,7 @@ void EngineController::Go(const GoParams& params) {
                                      info_callback, limits, options_, &cache_,
                                      syzygy_tb_.get());
 
-  search_->StartThreads(options_.Get<int>(kThreadsOption));
+  search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 
 void EngineController::PonderHit() {
@@ -356,13 +381,13 @@ EngineLoop::EngineLoop()
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
-  options_.Add<StringOption>(
-      kDebugLogStr, "debuglog", 'l',
-      [this](const std::string& filename) { SetLogFilename(filename); }) = "";
+  options_.Add<StringOption>(kDebugLogId);
 }
 
 void EngineLoop::RunLoop() {
   if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
+  SetLogFilename(
+      options_.GetOptionsDict().Get<std::string>(kDebugLogId.GetId()));
   UciLoop::RunLoop();
 }
 
@@ -381,36 +406,22 @@ void EngineLoop::CmdIsReady() {
 
 void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
-  options_.SetOption(name, value, context);
-  if (options_sent_) {
-    options_.SendOption(name);
-  }
+  options_.SetUciOption(name, value, context);
+  // Set the log filename for the case it was set in UCI option.
+  SetLogFilename(
+      options_.GetOptionsDict().Get<std::string>(kDebugLogId.GetId()));
 }
 
-void EngineLoop::EnsureOptionsSent() {
-  if (!options_sent_) {
-    options_.SendAllOptions();
-    options_sent_ = true;
-  }
-}
-
-void EngineLoop::CmdUciNewGame() {
-  EnsureOptionsSent();
-  engine_.NewGame();
-}
+void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
 
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
-  EnsureOptionsSent();
   std::string fen = position;
   if (fen.empty()) fen = ChessBoard::kStartingFen;
   engine_.SetPosition(fen, moves);
 }
 
-void EngineLoop::CmdGo(const GoParams& params) {
-  EnsureOptionsSent();
-  engine_.Go(params);
-}
+void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
