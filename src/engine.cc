@@ -62,9 +62,9 @@ const OptionId kSlowMoverId{
     "allocated time."};
 const OptionId kMoveOverheadId{
     "move-overhead", "MoveOverheadMs",
-    "How much overhead should the engine allocate for every move (to "
-    "counteract things like slow connection, interprocess communication, etc), "
-    "in milliseconds."};
+    "How much overhead, in milliseconds, should the engine allocate for every "
+    "move (to counteract things like slow connection, interprocess communication, "
+    "etc)."};
 const OptionId kTimeCurvePeakId{"time-curve-peak", "TimeCurvePeakPly",
                                 "Time weight curve peak ply."};
 const OptionId kTimeCurveLeftWidthId{"time-curve-left-width",
