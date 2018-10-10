@@ -79,8 +79,8 @@ const OptionId kSpendSavedTimeId{"immediate-time-use", "ImmediateTimeUse",
                                  "Fraction of saved time to use immediately."};
 const OptionId kPonderId{"ponder", "Ponder", "This option is ignored."};
 
-const char* kNodesStr = "Number of nodes for benchmark";
-const char* kFenStr = "Benchmark initial position FEN";
+const OptionId  kNodesId{"nodes", "", "Number of nodes for benchmark"};
+const OptionId  kFenId{"fen", "", "Benchmark initial position FEN"};
 
 const char* kAutoDiscover = "<autodiscover>";
 
@@ -431,8 +431,8 @@ Benchmark::Benchmark()
     : engine_(std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
               std::bind(&Benchmark::OnInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
-  options_.Add<IntOption>(kNodesStr, -1, 999999999, "nodes") = 30000;
-  options_.Add<StringOption>(kFenStr, "fen");
+  options_.Add<IntOption>(kNodesId, -1, 999999999) = 30000;
+  options_.Add<StringOption>(kFenId);
   engine_.PopulateOptions(&options_);
 }
 
@@ -441,9 +441,8 @@ void Benchmark::Run() {
   try {
     auto option_dict = options_.GetOptionsDict();
     GoParams go_params;
-    go_params.nodes = option_dict.Get<int>(kNodesStr);
-    std::string fen = option_dict.Get<std::string>(kFenStr);
-    options_.SendAllOptions();
+    go_params.nodes = option_dict.Get<int>(kNodesId.GetId());
+    std::string fen = option_dict.Get<std::string>(kFenId.GetId());
     engine_.EnsureReady();
     if (!fen.empty()) {
       engine_.SetPosition(fen, {});
@@ -463,11 +462,11 @@ void Benchmark::OnBestMove(const BestMoveInfo& move){
   (void) move;
 }
 
-void Benchmark::OnInfo(const ThinkingInfo& info){
-  std::string line = "Benchmark time " + std::to_string(info.time);
-  line += "ms, " + std::to_string(info.nodes) + " nodes, ";
-  line += std::to_string(info.nps) + " nps";
-  if (!info.pv.empty()) line += ", move " + info.pv[0].as_string();
+void Benchmark::OnInfo(const std::vector<ThinkingInfo>& infos){
+  std::string line = "Benchmark time " + std::to_string(infos[0].time);
+  line += "ms, " + std::to_string(infos[0].nodes) + " nodes, ";
+  line += std::to_string(infos[0].nps) + " nps";
+  if (!infos[0].pv.empty()) line += ", move " + infos[0].pv[0].as_string();
   std::cout << line << std::endl;
 }
 
