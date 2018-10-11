@@ -1009,7 +1009,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  node_to_process->v = -computation_->GetQVal(idx_in_computation);
+  node_to_process->v = -computation_->GetQVal(idx_in_computation) + 0.05;
   // ...and secondly, the policy data.
   float total = 0.0;
   for (auto edge : node->Edges()) {
