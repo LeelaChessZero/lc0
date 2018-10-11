@@ -131,6 +131,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   }
   limits.infinite = params.infinite || params.ponder;
   limits.visits = limits.infinite ? -1 : params.nodes;
+  limits.depth = params.depth;
   if (limits.infinite || time < 0) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 

@@ -319,6 +319,9 @@ void Search::MaybeTriggerStop() {
   if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
     FireStopInternal();
   }
+  if (limits_.depth >= 0 && cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >= (unsigned int)limits_.depth) {
+    FireStopInternal();
+  }
   // If we are the first to see that stop is needed.
   if (stop_ && !responded_bestmove_) {
     SendUciInfo();
