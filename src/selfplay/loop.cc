@@ -236,9 +236,68 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     }
 
     int offset = 0;
-    for (auto chunk : fileContents) {
+    for (auto& chunk : fileContents) {
       chunk.move_count = std::min(255, (int)(fileContents.size() - offset) / 2);
       offset++;
+    }
+    // Correct move_count using DTM. Since we don't actually have DTM, use DTZ
+    // for 3 piece no-pawn positions only.
+    board.SetFromFen(ChessBoard::kStartingFen, &rule50ply, &gameply);
+    history.Reset(board, rule50ply, gameply);
+    for (int i = 0; i < moves.size(); i++) {
+      history.Append(moves[i]);
+      const auto& board = history.Last().GetBoard();
+      if (board.castlings().no_legal_castle() &&
+          (board.ours() + board.theirs()).count() <= 3 &&
+          board.pawns().empty()) {
+        ProbeState state;
+        WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+        // Only fail state means the WDL is wrong, probe_wdl may produce correct
+        // result with a stat other than OK.
+        if (state != FAIL) {
+          int8_t score_to_apply = 0;
+          if (wdl == WDL_WIN) {
+            score_to_apply = 1;
+          } else if (wdl == WDL_LOSS) {
+            score_to_apply = -1;
+          }
+          // No point updating for draws.
+          if (score_to_apply == 0) continue;
+          // Any repetitions in the history since last 50 ply makes it risky
+          // to assume dtz is still correct.
+          int steps = history.Last().GetNoCaptureNoPawnPly();
+          bool no_reps = true;
+          for (int i = 0; i < steps; i++) {
+            if (history.GetPositionAt(history.GetLength() - i - 1)
+                    .GetRepetitions() != 0) {
+              no_reps = false;
+              break;
+            }
+          }
+          if (no_reps) {
+            int depth = tablebase->probe_dtz(history.Last(), &state);
+            if (state != FAIL) {
+              // if depth == -1 this is wrong, since that is mate and the answer should be 0, but the move before depth is -2.
+              // Since data never contains mate position, ignore that discrepency.
+              int converted_ply_remaining = std::abs(depth);
+              // This should be able to be <= 99 safely, but I've not
+              // convinced myself thats true.
+              if (steps + std::abs(depth) < 99) {
+                fileContents[i + 1].move_count = std::min(255, converted_ply_remaining / 2);
+              }
+              if (steps == 0) {
+                for (int j = i; j >= 0; j--) {
+                  fileContents[j].move_count = std::min(
+                      255, (converted_ply_remaining + (i + 1 - j)) / 2);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    for (auto chunk : fileContents) {
       writer.WriteChunk(chunk);
     }
   }
