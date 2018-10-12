@@ -138,6 +138,7 @@ class Search {
   Node* root_node_;
   NNCache* cache_;
   SyzygyTablebase* syzygy_tb_;
+  bool is_black_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
 
