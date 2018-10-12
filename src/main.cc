@@ -29,9 +29,11 @@
 #include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
+#include "utils/logging.h"
 #include "version.h"
 
 int main(int argc, const char** argv) {
+  LOGFILE << "Lc0 started.";
   std::cerr << "       _" << std::endl;
   std::cerr << "|   _ | |" << std::endl;
   std::cerr << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__

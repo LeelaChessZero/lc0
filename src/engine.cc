@@ -34,6 +34,7 @@
 #include "neural/factory.h"
 #include "neural/loader.h"
 #include "utils/configfile.h"
+#include "utils/logging.h"
 
 namespace lczero {
 namespace {
@@ -41,8 +42,7 @@ const int kDefaultThreads = 2;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
-const OptionId kDebugLogId{"debug-log", "DebugLog",
-                           "Do debug logging into file."};
+const OptionId kLogFileId{"logfile", "LogFile", "Write log to that file.", 'l'};
 const OptionId kNNCacheSizeId{"nncache", "NNCache",
                               "Number of positions to store in cache."};
 const OptionId kWeightsId{"weights", "WeightsFile",
@@ -63,7 +63,8 @@ const OptionId kSlowMoverId{
 const OptionId kMoveOverheadId{
     "move-overhead", "MoveOverheadMs",
     "How much overhead, in milliseconds, should the engine allocate for every "
-    "move (to counteract things like slow connection, interprocess communication, "
+    "move (to counteract things like slow connection, interprocess "
+    "communication, "
     "etc)."};
 const OptionId kTimeCurvePeakId{"time-curve-peak", "TimeCurvePeakPly",
                                 "Time weight curve peak ply."};
@@ -375,13 +376,13 @@ EngineLoop::EngineLoop()
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
-  options_.Add<StringOption>(kDebugLogId);
+  options_.Add<StringOption>(kLogFileId);
 }
 
 void EngineLoop::RunLoop() {
   if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
-  SetLogFilename(
-      options_.GetOptionsDict().Get<std::string>(kDebugLogId.GetId()));
+  Logging::Get().SetFilename(
+      options_.GetOptionsDict().Get<std::string>(kLogFileId.GetId()));
   UciLoop::RunLoop();
 }
 
@@ -402,8 +403,8 @@ void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   options_.SetUciOption(name, value, context);
   // Set the log filename for the case it was set in UCI option.
-  SetLogFilename(
-      options_.GetOptionsDict().Get<std::string>(kDebugLogId.GetId()));
+  Logging::Get().SetFilename(
+      options_.GetOptionsDict().Get<std::string>(kLogFileId.GetId()));
 }
 
 void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
