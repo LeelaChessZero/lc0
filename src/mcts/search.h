@@ -56,7 +56,7 @@ class Search {
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const SearchLimits& limits,
          const OptionsDict& options, NNCache* cache,
-         SyzygyTablebase* syzygy_tb);
+         SyzygyTablebase* syzygy_tb, bool is_black);
 
   ~Search();
 
