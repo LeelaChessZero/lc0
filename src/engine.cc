@@ -353,7 +353,7 @@ void EngineController::Go(const GoParams& params) {
 
   search_ = std::make_unique<Search>(*tree_, network_.get(), best_move_callback,
                                      info_callback, limits, options_, &cache_,
-                                     syzygy_tb_.get());
+                                     syzygy_tb_.get(), tree_->IsBlackToMove());
 
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
