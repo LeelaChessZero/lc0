@@ -251,8 +251,8 @@ void EngineController::UpdateFromUciOptions() {
   }
   Weights weights = LoadWeightsFromFile(net_path);
 
-  OptionsDict network_options =
-      OptionsDict::FromString(backend_options, &options_);
+  OptionsDict network_options(&options_);
+  network_options.AddSubdictFromString(backend_options);
 
   network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
 
