@@ -442,7 +442,7 @@ bool BoolOption::ProcessLongFlag(const std::string& flag,
 
 bool BoolOption::ProcessShortFlag(char flag, OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    SetVal(dict, !GetVal(*dict));
+    if (dict->IsDefault<bool>(GetId())) SetVal(dict, !GetVal(*dict));
     return true;
   }
   return false;

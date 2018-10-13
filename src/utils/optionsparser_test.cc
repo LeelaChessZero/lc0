@@ -82,6 +82,28 @@ TEST(OptionsParser, ChoiceOptionCheckValueConstraints) {
   EXPECT_THROW(options.SetUciOption("choice-test-a", "choice-d"), Exception);
 }
 
+TEST(OptionsParser, BoolOptionsVerifyToggleOnlyOnce) {
+  OptionsParser options;
+  const OptionId id1{"bool-test-a", "bool-test-a", "help", 'a'};
+  options.Add<BoolOption>(id1) = false;
+  const OptionId id2{"bool-test-b", "bool-test-b", "help", 'b'};
+  options.Add<BoolOption>(id2) = true;
+
+  std::vector<std::string> args;
+  args.emplace_back("-a");
+  args.emplace_back("-b");
+
+  EXPECT_NO_THROW(options.ProcessFlags(args));
+  OptionsDict dict1 = options.GetOptionsDict();
+  EXPECT_EQ(dict1.Get<bool>(id1.GetId()), true);
+  EXPECT_EQ(dict1.Get<bool>(id2.GetId()), false);
+
+  EXPECT_NO_THROW(options.ProcessFlags(args));
+  OptionsDict dict2 = options.GetOptionsDict();
+  EXPECT_EQ(dict2.Get<bool>(id1.GetId()), true);
+  EXPECT_EQ(dict2.Get<bool>(id2.GetId()), false);
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
