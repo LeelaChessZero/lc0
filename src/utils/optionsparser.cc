@@ -50,7 +50,7 @@ std::vector<std::string> OptionsParser::ListOptionsUci() const {
   for (const auto& iter : options_) {
     if (!iter->GetUciOption().empty()) {
       result.emplace_back("option name " + iter->GetUciOption() + " " +
-                          iter->GetOptionString(defaults_));
+                          iter->GetOptionString(values_));
     }
   }
   return result;
