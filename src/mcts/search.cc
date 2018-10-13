@@ -627,7 +627,7 @@ void SearchWorker::GatherMinibatch() {
     // There was a collision. If limit has been reached, return, otherwise
     // just start search of another node.
     if (picked_node.IsCollision()) {
-      if (collision_events_left-- <= 0) return;
+      if (--collision_events_left <= 0) return;
       if ((collisions_left -= picked_node.multivisit) <= 0) return;
       continue;
     }
