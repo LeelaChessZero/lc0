@@ -14,6 +14,15 @@ esac
 
 BUILDDIR=build/${BUILDTYPE}
 
+if [ `uname` == "Darwin" ] ; then
+  if [ -f /usr/local/lib/tensorflow_cc/libtensorflow_cc.so ]; then
+    if [ ! -f /usr/local/lib/tensorflow_cc/libtensorflow_cc.dylib ]; then
+      ln -s /usr/local/lib/tensorflow_cc/libtensorflow_cc.so /usr/local/lib/tensorflow_cc/libtensorflow_cc.dylib
+    fi
+  fi
+fi
+
+
 if [ -d ${BUILDDIR} ]
 then
   meson configure ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
