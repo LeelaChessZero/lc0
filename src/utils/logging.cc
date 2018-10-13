@@ -27,12 +27,14 @@
 
 #include "utils/logging.h"
 #include <iomanip>
+#include <iostream>
 #include <thread>
 
 namespace lczero {
 
 namespace {
 size_t kBufferSizeLines = 200;
+const char* kStderrFilename = "<stderr>";
 }  // namespace
 
 Logging& Logging::Get() {
@@ -42,7 +44,9 @@ Logging& Logging::Get() {
 
 void Logging::WriteLineRaw(const std::string& line) {
   Mutex::Lock lock_(mutex_);
-  if (!filename_.empty()) {
+  if (filename_ == kStderrFilename) {
+    std::cerr << line << std::endl;
+  } else if (!filename_.empty()) {
     file_ << line << std::endl;
   } else {
     buffer_.push_back(line);
@@ -54,7 +58,7 @@ void Logging::SetFilename(const std::string& filename) {
   Mutex::Lock lock_(mutex_);
   if (filename_ == filename) return;
   filename_ = filename;
-  if (filename.empty()) {
+  if (filename.empty() || filename == kStderrFilename) {
     file_.close();
     return;
   }
