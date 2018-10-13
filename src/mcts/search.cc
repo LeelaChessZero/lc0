@@ -1011,11 +1011,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // For NN results, we need to populate policy as well as value.
   // First the value...
   auto board = search_->played_history_.Last().GetBoard(); 
-  //assuming white player has contempt for black player (should be leela has contempt for opponent)
+  //assuming leela is searching from root
   auto contempt = 0.05;
-  if(search_->is_black_ && node_to_process->depth % 2 == 0)
-    contempt = -contempt;
-  else if (!search_->is_black_ && node_to_process->depth % 2 == 1)
+  if(node_to_process->depth % 2 == 0)
     contempt = -contempt;
   node_to_process->v = -computation_->GetQVal(idx_in_computation) + contempt;
   // ...and secondly, the policy data.
