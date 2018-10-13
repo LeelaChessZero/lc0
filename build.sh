@@ -14,6 +14,7 @@ esac
 
 BUILDDIR=build/${BUILDTYPE}
 
+# Temporary fix for Tensorflow on Darwin until meson find_library() is fixed
 if [ `uname` == "Darwin" ] ; then
   if [ -f /usr/local/lib/tensorflow_cc/libtensorflow_cc.so ]; then
     if [ ! -f /usr/local/lib/tensorflow_cc/libtensorflow_cc.dylib ]; then
