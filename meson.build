@@ -91,6 +91,7 @@ files += [
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/histogram.cc',
+  'src/utils/logging.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',

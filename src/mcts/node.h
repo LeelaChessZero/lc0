@@ -28,6 +28,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -166,13 +167,17 @@ class Node {
   // Otherwise return false.
   bool TryStartScoreUpdate();
   // Decrements n-in-flight back.
-  void CancelScoreUpdate();
+  void CancelScoreUpdate(int multivisit);
   // Updates the node with newly computed value v.
   // Updates:
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v);
+  void FinalizeScoreUpdate(float v, int multivisit);
+  // When search decides to treat one visit as several (in case of collisions
+  // or visiting terminal nodes several times), it amplifies the visit by
+  // incrementing n_in_flight.
+  void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -232,14 +237,14 @@ class Node {
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
+  // (AKA virtual loss.) How many threads currently process this node (started
+  // but not finished). This value is added to n during selection which node
+  // to pick in MCTS, and also when selecting the best move.
+  uint32_t n_in_flight_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
   uint16_t index_;
-  // (AKA virtual loss.) How many threads currently process this node (started
-  // but not finished). This value is added to n during selection which node
-  // to pick in MCTS, and also when selecting the best move.
-  uint16_t n_in_flight_ = 0;
 
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
@@ -274,6 +279,7 @@ class EdgeAndNode {
  public:
   EdgeAndNode() = default;
   EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
+  void Reset() { edge_ = nullptr; }
   explicit operator bool() const { return edge_ != nullptr; }
   bool operator==(const EdgeAndNode& other) const {
     return edge_ == other.edge_;
@@ -307,6 +313,17 @@ class EdgeAndNode {
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
     return numerator * GetP() / (1 + GetNStarted());
+  }
+
+  int GetVisitsToReachU(float target_score, float numerator,
+                        float default_q) const {
+    const auto q = GetQ(default_q);
+    if (q >= target_score) return std::numeric_limits<int>::max();
+    const auto n1 = GetNStarted() + 1;
+    return std::max(
+        1.0f,
+        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
+                 1e9f));
   }
 
   std::string DebugString() const;

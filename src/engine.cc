@@ -34,6 +34,7 @@
 #include "neural/factory.h"
 #include "neural/loader.h"
 #include "utils/configfile.h"
+#include "utils/logging.h"
 
 namespace lczero {
 namespace {
@@ -41,15 +42,14 @@ const int kDefaultThreads = 2;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
-const OptionId kDebugLogId{"debug-log", "DebugLog",
-                           "Do debug logging into file."};
+const OptionId kLogFileId{"logfile", "LogFile", "Write log to that file.", 'l'};
 const OptionId kNNCacheSizeId{"nncache", "NNCache",
                               "Number of positions to store in cache."};
 const OptionId kWeightsId{"weights", "WeightsFile",
-                          "Path to load network weights from.\n"
-                          "Setting it to <autodiscover> makes it search for "
-                          "the latest (by file date) file in ./ and ./weights/ "
-                          "subdirectories which looks like weights.",
+                          "Path from which to load network weights.\n"
+                          "Setting it to <autodiscover> makes it search "
+                          "in ./ and ./weights/ subdirectories for the latest "
+                          "(by file date) file which looks like weights.",
                           'w'};
 const OptionId kNnBackendId{"backend", "Backend", "NN backend to use."};
 const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
@@ -62,9 +62,10 @@ const OptionId kSlowMoverId{
     "allocated time."};
 const OptionId kMoveOverheadId{
     "move-overhead", "MoveOverheadMs",
-    "How much overhead should the engine allocate for every move (to "
-    "counteract things like slow connection, interprocess communication, etc), "
-    "in milliseconds."};
+    "How much overhead, in milliseconds, should the engine allocate for every "
+    "move (to counteract things like slow connection, interprocess "
+    "communication, "
+    "etc)."};
 const OptionId kTimeCurvePeakId{"time-curve-peak", "TimeCurvePeakPly",
                                 "Time weight curve peak ply."};
 const OptionId kTimeCurveLeftWidthId{"time-curve-left-width",
@@ -135,7 +136,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
-  defaults->Set<int>(SearchParams::kAllowedNodeCollisionsId.GetId(), 32);
+  defaults->Set<int>(SearchParams::kAllowedTotalNodeCollisionsId.GetId(), 9999);
+  defaults->Set<int>(SearchParams::kAllowedNodeCollisionEventsId.GetId(), 32);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }
@@ -254,8 +256,8 @@ void EngineController::UpdateFromUciOptions() {
   }
   Weights weights = LoadWeightsFromFile(net_path);
 
-  OptionsDict network_options =
-      OptionsDict::FromString(backend_options, &options_);
+  OptionsDict network_options(&options_);
+  network_options.AddSubdictFromString(backend_options);
 
   network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
 
@@ -379,13 +381,13 @@ EngineLoop::EngineLoop()
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
-  options_.Add<StringOption>(kDebugLogId);
+  options_.Add<StringOption>(kLogFileId);
 }
 
 void EngineLoop::RunLoop() {
   if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
-  SetLogFilename(
-      options_.GetOptionsDict().Get<std::string>(kDebugLogId.GetId()));
+  Logging::Get().SetFilename(
+      options_.GetOptionsDict().Get<std::string>(kLogFileId.GetId()));
   UciLoop::RunLoop();
 }
 
@@ -406,8 +408,8 @@ void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   options_.SetUciOption(name, value, context);
   // Set the log filename for the case it was set in UCI option.
-  SetLogFilename(
-      options_.GetOptionsDict().Get<std::string>(kDebugLogId.GetId()));
+  Logging::Get().SetFilename(
+      options_.GetOptionsDict().Get<std::string>(kLogFileId.GetId()));
 }
 
 void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
