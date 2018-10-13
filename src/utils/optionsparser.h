@@ -95,7 +95,7 @@ class OptionsParser {
     virtual std::string GetHelp(const OptionsDict& dict) const = 0;
 
     const OptionId& id_;
-    bool hidden_;
+    bool hidden_ = false;
     friend class OptionsParser;
   };
 

@@ -41,7 +41,7 @@ const int kUciLineIndent = 32;
 const int kHelpWidth = 72;
 }  // namespace
 
-OptionsParser::Option::Option(const OptionId& id) : id_(id), hidden_(false) {}
+OptionsParser::Option::Option(const OptionId& id) : id_(id) {}
 
 OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
 
@@ -69,9 +69,7 @@ void OptionsParser::SetUciOption(const std::string& name,
 
 void OptionsParser::HideOption(const OptionId& id) {
   auto option = FindOptionByUciName(id.uci_option);
-  if (option) {
-    option->hidden_ = true;
-  }
+  if (option) option->hidden_ = true;
 }
 
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
