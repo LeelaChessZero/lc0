@@ -498,6 +498,7 @@ bool Search::IsSearchActive() const {
 }
 
 void Search::WatchdogThread() {
+  LOGFILE << "Starting watchdog thread.";
   while (IsSearchActive()) {
     {
       using namespace std::chrono_literals;
@@ -527,6 +528,7 @@ void Search::WatchdogThread() {
 void Search::FireStopInternal() REQUIRES(counters_mutex_) {
   stop_ = true;
   watchdog_cv_.notify_all();
+  LOGFILE << "Stopping search.";
 }
 
 void Search::Stop() {
@@ -551,6 +553,7 @@ void Search::Wait() {
 Search::~Search() {
   Abort();
   Wait();
+  LOGFILE << "Search destroyed.";
 }
 
 //////////////////////////////////////////////////////////////////////////////

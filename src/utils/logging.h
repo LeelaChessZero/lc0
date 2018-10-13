@@ -25,46 +25,42 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "utils/commandline.h"
-#include "utils/logging.h"
+#pragma once
+
+#include <deque>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include "utils/mutex.h"
 
 namespace lczero {
 
-std::string CommandLine::binary_;
-std::vector<std::string> CommandLine::arguments_;
-std::vector<std::pair<std::string, std::string>> CommandLine::modes_;
+class Logging {
+ public:
+  static Logging& Get();
 
-void CommandLine::Init(int argc, const char** argv) {
-  binary_ = argv[0];
-  arguments_.clear();
-  std::ostringstream params;
-  for (int i = 1; i < argc; ++i) {
-    params << ' ' << argv[i];
-    arguments_.push_back(argv[i]);
-  }
-  LOGFILE << "Command line: " << binary_ << params.str();
-}
+  // Sets the name of the log. Empty name disables logging.
+  void SetFilename(const std::string& filename);
 
-bool CommandLine::ConsumeCommand(const std::string& command) {
-  if (arguments_.empty()) return false;
-  if (arguments_[0] != command) return false;
-  arguments_.erase(arguments_.begin());
-  return true;
-}
+ private:
+  // Writes line to the log, and appends new line character.
+  void WriteLineRaw(const std::string& line);
 
-void CommandLine::RegisterMode(const std::string& mode,
-                               const std::string& description) {
-  modes_.emplace_back(mode, description);
-}
+  Mutex mutex_;
+  std::string filename_ GUARDED_BY(mutex_);
+  std::ofstream file_ GUARDED_BY(mutex_);
+  std::deque<std::string> buffer_ GUARDED_BY(mutex_);
 
-std::string CommandLine::BinaryDirectory() {
-  std::string path = binary_;
-  auto pos = path.find_last_of("\\/");
-  if (pos == std::string::npos) {
-    return ".";
-  }
-  path.resize(pos);
-  return path;
-}
+  Logging() = default;
+  friend class LogMessage;
+};
+
+class LogMessage : public std::ostringstream {
+ public:
+  LogMessage(const char* file, int line);
+  ~LogMessage();
+};
 
 }  // namespace lczero
+
+#define LOGFILE ::lczero::LogMessage(__FILE__, __LINE__)

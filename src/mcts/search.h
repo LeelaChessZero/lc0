@@ -37,6 +37,7 @@
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
+#include "utils/logging.h"
 #include "utils/mutex.h"
 #include "utils/optional.h"
 
@@ -176,6 +177,7 @@ class SearchWorker {
 
   // Runs iterations while needed.
   void RunBlocking() {
+    LOGFILE << "Started search thread.";
     while (search_->IsSearchActive()) {
       ExecuteOneIteration();
     }
