@@ -7,7 +7,7 @@ Currently, `lc0` has the following modes:
 
 | Mode |   Description |
 |------|---------------|
-| uci (*default*) | Acts as an UCI chess engine |
+| uci (*default*) | Acts as a UCI chess engine |
 | selfplay | Plays one or multiple games with itself and optionally generates training data |
 | debug | Generates debug data for a position |
 
