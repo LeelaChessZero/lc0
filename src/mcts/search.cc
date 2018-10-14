@@ -151,6 +151,12 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
+int64_t Search::GetTimeToDeadline() const {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             *limits_.search_deadline - std::chrono::steady_clock::now())
+      .count();
+}
+
 void Search::SendMovesStats() const {
   const float parent_q =
       -root_node_->GetQ() -
@@ -255,7 +261,7 @@ void Search::MaybeTriggerStop() {
     FireStopInternal();
   }
   // Stop if reached time limit.
-  if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
+  if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
     FireStopInternal();
   }
   // If we are the first to see that stop is needed.
@@ -274,13 +280,13 @@ void Search::UpdateRemainingMoves() {
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
-  if (limits_.time_ms >= 0) {
+  if (limits_.search_deadline) {
     auto time_since_start = GetTimeSinceStart();
     if (time_since_start > kSmartPruningToleranceMs * 2) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
                      (time_since_start - kSmartPruningToleranceMs) +
                  1;
-      int64_t remaining_time = limits_.time_ms - time_since_start;
+      int64_t remaining_time = GetTimeToDeadline();
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
@@ -505,8 +511,8 @@ void Search::WatchdogThread() {
       constexpr auto kMaxWaitTime = 100ms;
       constexpr auto kMinWaitTime = 1ms;
       Mutex::Lock lock(counters_mutex_);
-      auto remaining_time = limits_.time_ms >= 0
-                                ? (limits_.time_ms - GetTimeSinceStart()) * 1ms
+      auto remaining_time = limits_.search_deadline
+                                ? std::chrono::milliseconds(GetTimeToDeadline())
                                 : kMaxWaitTime;
       if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
       if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;

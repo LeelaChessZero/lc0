@@ -46,7 +46,7 @@ namespace lczero {
 struct SearchLimits {
   std::int64_t visits = -1;
   std::int64_t playouts = -1;
-  std::int64_t time_ms = -1;
+  optional<std::chrono::steady_clock::time_point> search_deadline;
   bool infinite = false;
   MoveList searchmoves;
 };
@@ -85,6 +85,8 @@ class Search {
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
   float GetBestEval() const;
+
+  int64_t GetTimeToDeadline() const;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
