@@ -289,11 +289,16 @@ void Search::UpdateRemainingMoves() {
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
-  if (search_deadline_) {
-    auto time_since_start = GetTimeSinceStart();
-    if (time_since_start > kSmartPruningToleranceMs * 2) {
+  if (search_deadline_ && !nps_start_time_) {
+    nps_start_time_ = std::chrono::steady_clock::now();
+  } else if (search_deadline_) {
+    auto time_since_start =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - *nps_start_time_)
+        .count();
+    if (time_since_start > kSmartPruningToleranceMs) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
-                     (time_since_start - kSmartPruningToleranceMs) +
+                     time_since_start +
                  1;
       int64_t remaining_time = GetTimeToDeadline();
       // Put early_exit scaler here so calculation doesn't have to be done on
