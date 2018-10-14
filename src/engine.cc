@@ -140,10 +140,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
     const GoParams& params, std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
-  if (params.movetime >= 0) {
-    limits.search_deadline =
-        start_time + std::chrono::milliseconds(params.movetime);
-  }
+  limits.movetime = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());

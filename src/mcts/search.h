@@ -46,6 +46,7 @@ namespace lczero {
 struct SearchLimits {
   std::int64_t visits = -1;
   std::int64_t playouts = -1;
+  std::int64_t movetime = -1;
   optional<std::chrono::steady_clock::time_point> search_deadline;
   bool infinite = false;
   MoveList searchmoves;
@@ -146,6 +147,7 @@ class Search {
 
   Network* const network_;
   const SearchLimits limits_;
+  optional<std::chrono::steady_clock::time_point> search_deadline_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
 

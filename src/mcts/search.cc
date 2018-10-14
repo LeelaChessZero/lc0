@@ -65,7 +65,15 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      params_(options) {}
+      params_(options) {
+  if (limits_.movetime >= 0) {
+    search_deadline_ =
+        std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(limits_.movetime);
+  } else {
+    search_deadline_ = limits_.search_deadline;
+  }
+}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -152,8 +160,9 @@ int64_t Search::GetTimeSinceStart() const {
 }
 
 int64_t Search::GetTimeToDeadline() const {
+  if (!search_deadline_) return 0;
   return std::chrono::duration_cast<std::chrono::milliseconds>(
-             *limits_.search_deadline - std::chrono::steady_clock::now())
+             *search_deadline_ - std::chrono::steady_clock::now())
       .count();
 }
 
@@ -261,7 +270,7 @@ void Search::MaybeTriggerStop() {
     FireStopInternal();
   }
   // Stop if reached time limit.
-  if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
+  if (search_deadline_ && GetTimeToDeadline() <= 0) {
     FireStopInternal();
   }
   // If we are the first to see that stop is needed.
@@ -280,7 +289,7 @@ void Search::UpdateRemainingMoves() {
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
-  if (limits_.search_deadline) {
+  if (search_deadline_) {
     auto time_since_start = GetTimeSinceStart();
     if (time_since_start > kSmartPruningToleranceMs * 2) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
@@ -511,7 +520,7 @@ void Search::WatchdogThread() {
       constexpr auto kMaxWaitTime = 100ms;
       constexpr auto kMinWaitTime = 1ms;
       Mutex::Lock lock(counters_mutex_);
-      auto remaining_time = limits_.search_deadline
+      auto remaining_time = search_deadline_
                                 ? std::chrono::milliseconds(GetTimeToDeadline())
                                 : kMaxWaitTime;
       if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
