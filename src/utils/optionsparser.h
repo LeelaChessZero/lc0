@@ -131,6 +131,11 @@ class OptionsParser {
   // Adds a subdictionary for a given context.
   void AddContext(const std::string&);
 
+  // Adds an old long flag name for compatibility.
+  void AddDeprecatedFlag(const std::string& name, const std::string& flag) {
+    deprecated_flags_[flag] = name;
+  }
+
  private:
   // Prints help to std::cerr.
   void ShowHelp() const;
@@ -142,6 +147,7 @@ class OptionsParser {
   Option* FindOptionById(const std::string& name) const;
 
   std::vector<std::unique_ptr<Option>> options_;
+  std::unordered_map<std::string, std::string> deprecated_flags_;
   OptionsDict defaults_;
   OptionsDict& values_;
 };

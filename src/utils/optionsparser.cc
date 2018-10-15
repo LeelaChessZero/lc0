@@ -84,6 +84,14 @@ OptionsParser::Option* OptionsParser::FindOptionByUciName(
   return nullptr;
 }
 
+OptionsParser::Option* OptionsParser::FindOptionById(
+    const std::string& name) const {
+  for (const auto& val : options_) {
+    if (name == val->GetId()) return val.get();
+  }
+  return nullptr;
+}
+
 OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) {
   if (context == "") return &values_;
   return values_.GetMutableSubdict(context);
@@ -123,6 +131,20 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
       }
       bool processed = false;
       Option* option = FindOptionByLongFlag(param);
+      if (!option) {
+        auto tmp_param = (param.substr(0, 3) == "no-") ? param.substr(3)
+                                                       : param;
+        auto entry = deprecated_flags_.find(tmp_param);
+        if (entry != deprecated_flags_.end()) {
+          option = FindOptionById(entry->second);
+          if (option) {
+            std::cerr << "Option '" << tmp_param << "' is deprecated, use '"
+                      <<  option->GetLongFlag() << "'.\n";
+            param = ((param.substr(0, 3) == "no-") ? "no-" : "") +
+                        option->GetLongFlag();
+          }
+        }
+      }
       if (option &&
           option->ProcessLongFlag(param, value, GetMutableOptions(context))) {
         processed = true;
