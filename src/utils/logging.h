@@ -25,38 +25,42 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <iostream>
-#include "engine.h"
-#include "selfplay/loop.h"
-#include "utils/commandline.h"
-#include "utils/logging.h"
-#include "version.h"
+#pragma once
 
-int main(int argc, const char** argv) {
-  LOGFILE << "Lc0 started.";
-  std::cerr << "       _" << std::endl;
-  std::cerr << "|   _ | |" << std::endl;
-  std::cerr << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__
-            << std::endl;
-  using namespace lczero;
-  CommandLine::Init(argc, argv);
-  CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
-  CommandLine::RegisterMode("selfplay", "Play games with itself");
-  CommandLine::RegisterMode("benchmark", "Quick benchmark");
+#include <deque>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include "utils/mutex.h"
 
-  if (CommandLine::ConsumeCommand("selfplay")) {
-    // Selfplay mode.
-    SelfPlayLoop loop;
-    loop.RunLoop();
-  } else if (CommandLine::ConsumeCommand("benchmark")) {
-    // Benchmark mode.
-    Benchmark benchmark;
-    benchmark.Run();
-  } else {
-    // Consuming optional "uci" mode.
-    CommandLine::ConsumeCommand("uci");
-    // Ordinary UCI engine.
-    EngineLoop loop;
-    loop.RunLoop();
-  }
-}
+namespace lczero {
+
+class Logging {
+ public:
+  static Logging& Get();
+
+  // Sets the name of the log. Empty name disables logging.
+  void SetFilename(const std::string& filename);
+
+ private:
+  // Writes line to the log, and appends new line character.
+  void WriteLineRaw(const std::string& line);
+
+  Mutex mutex_;
+  std::string filename_ GUARDED_BY(mutex_);
+  std::ofstream file_ GUARDED_BY(mutex_);
+  std::deque<std::string> buffer_ GUARDED_BY(mutex_);
+
+  Logging() = default;
+  friend class LogMessage;
+};
+
+class LogMessage : public std::ostringstream {
+ public:
+  LogMessage(const char* file, int line);
+  ~LogMessage();
+};
+
+}  // namespace lczero
+
+#define LOGFILE ::lczero::LogMessage(__FILE__, __LINE__)

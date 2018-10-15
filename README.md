@@ -57,6 +57,36 @@ If you want to build with a different compiler, pass the `CC` and `CXX` environm
 
     CC=clang-6.0 CXX=clang++-6.0 ./build.sh
 
+#### Note on installing CUDA on Ubuntu
+
+Nvidia provides .deb packages. CUDA will be installed in `/usr/local/cuda-10.0` and requires 3GB of diskspace.
+If your `/usr/local` partition doesn't have that much space left you can create a symbolic link before
+doing the install; for example: `sudo ln -s /opt/cuda-10.0 /usr/local/cuda-10.0`
+
+The instructions given on the nvidia website tell you to finish with `apt install cuda`. However, this
+might not work (missing dependencies). In that case use `apt install cuda-10-0`. Afterwards you can
+install the meta package `cuda` which will cause an automatic upgrade to a newer version when that
+comes available (assuming you use `Installer Type deb (network)`, if you'd want that (just cuda-10-0 will
+stay at version 10). If you don't know what to do, only install cuda-10-0.
+
+cuDNN exists of two packages, the Runtime Library and the Developer Library (both a .deb package).
+
+Before you can download the latter you need to create a (free) "developer" account with nvidia for
+which at least a legit email address is required (their website says: The e-mail address is not made public
+and will only be used if you wish to receive a new password or wish to receive certain news or notifications
+by e-mail.). Further they ask for a name, date of birth (not visible later on), country, organisation ("LeelaZero"
+if you have none), primary industry segment ("Other"/none) and which development areas you are interested
+in ("Deep Learning").
+
+#### Ubuntu 18.04
+
+For Ubuntu 18.04 you need the latest version of meson and clang-6.0 before performing the steps above:
+
+    sudo apt-get install clang-6.0 ninja-build protobuf-compiler libprotobuf-dev meson
+    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
+
+Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
+
 #### Ubuntu 16.04
 
 For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before performing the steps above:

@@ -64,7 +64,12 @@ class SearchParams {
   float GetFpuReduction() const { return kFpuReduction; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
-  int GetAllowedNodeCollisions() const { return kAllowedNodeCollisions; }
+  int GetAllowedNodeCollisionEvents() const {
+    return kAllowedNodeCollisionEvents;
+  }
+  int GetAllowedTotalNodeCollisions() const {
+    return kAllowedTotalNodeCollisions;
+  }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
 
@@ -81,7 +86,8 @@ class SearchParams {
   static const OptionId kFpuReductionId;
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
-  static const OptionId kAllowedNodeCollisionsId;
+  static const OptionId kAllowedNodeCollisionEventsId;
+  static const OptionId kAllowedTotalNodeCollisionsId;
   static const OptionId kOutOfOrderEvalId;
   static const OptionId kMultiPvId;
 
@@ -99,7 +105,8 @@ class SearchParams {
   const float kFpuReduction;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
-  const int kAllowedNodeCollisions;
+  const int kAllowedNodeCollisionEvents;
+  const int kAllowedTotalNodeCollisions;
   const bool kOutOfOrderEval;
 };
 

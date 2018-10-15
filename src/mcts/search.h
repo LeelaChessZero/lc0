@@ -37,6 +37,7 @@
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
+#include "utils/logging.h"
 #include "utils/mutex.h"
 #include "utils/optional.h"
 
@@ -176,6 +177,7 @@ class SearchWorker {
 
   // Runs iterations while needed.
   void RunBlocking() {
+    LOGFILE << "Started search thread.";
     while (search_->IsSearchActive()) {
       ExecuteOneIteration();
     }
@@ -216,18 +218,43 @@ class SearchWorker {
 
  private:
   struct NodeToProcess {
-    NodeToProcess(Node* node, bool is_collision, uint16_t depth)
-        : node(node), depth(depth), is_collision(is_collision) {}
+    bool IsExtendable() const { return !is_collision && !node->IsTerminal(); }
+    bool IsCollision() const { return is_collision; }
+    bool CanEvalOutOfOrder() const {
+      return is_cache_hit || node->IsTerminal();
+    }
+
+    // The node to extend.
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
+    int multivisit = 0;
     uint16_t depth;
-    bool is_collision = false;
     bool nn_queried = false;
     bool is_cache_hit = false;
+    bool is_collision = false;
+
+    static NodeToProcess Collision(Node* node, uint16_t depth,
+                                   int collision_count) {
+      return NodeToProcess(node, depth, true, collision_count);
+    }
+    static NodeToProcess Extension(Node* node, uint16_t depth) {
+      return NodeToProcess(node, depth, false, 1);
+    }
+    static NodeToProcess TerminalHit(Node* node, uint16_t depth,
+                                     int visit_count) {
+      return NodeToProcess(node, depth, false, visit_count);
+    }
+
+   private:
+    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit)
+        : node(node),
+          multivisit(multivisit),
+          depth(depth),
+          is_collision(is_collision) {}
   };
 
-  NodeToProcess PickNodeToExtend();
+  NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);

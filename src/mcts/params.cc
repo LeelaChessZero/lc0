@@ -30,13 +30,13 @@
 namespace lczero {
 const OptionId SearchParams::kMiniBatchSizeId{
     "minibatch-size", "MinibatchSize",
-    "Now many positions the engine tries to batch together for computation.\n"
-    "Theoretically larger batches may reduce strengths a bit, especially on "
-    "small number of playouts."};
+    "How many positions the engine tries to batch together for computation.\n"
+    "Theoretically, larger batches may reduce strength a bit, especially with "
+    "a small number of playouts."};
 const OptionId SearchParams::kMaxPrefetchBatchId{
     "max-prefetch", "MaxPrefetch",
-    "When engine cannot gather large enough batch for immediate use, try to "
-    "prefetch up to X positions which are likely to be useful soon, and put "
+    "When the engine cannot gather large enough batch for immediate use, try "
+    "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
@@ -56,9 +56,9 @@ const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset", "Temperature visit offset."};
 const OptionId SearchParams::kNoiseId{
     "noise", "Noise",
-    "Add noise to root node prior probabilities. That allows engine to explore "
-    "moves which are known to be very bad, which is useful to discover new "
-    "ideas during training.",
+    "Add noise to root node prior probabilities. That allows the engine to "
+    "explore moves which are known to be very bad, which is useful to discover "
+    "new ideas during training.",
     'n'};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
@@ -73,9 +73,12 @@ const OptionId SearchParams::kCacheHistoryLengthId{
     "Length of history to include in cache."};
 const OptionId SearchParams::kPolicySoftmaxTempId{
     "policy-softmax-temp", "PolicySoftMaxTemp", "Policy softmax temperature."};
-const OptionId SearchParams::kAllowedNodeCollisionsId{
-    "allowed-node-collisions", "AllowedNodeCollisions",
-    "Allowed node collisions, per batch."};
+const OptionId SearchParams::kAllowedTotalNodeCollisionsId{
+    "allowed-total-node-collisions", "AllowedTotalNodeCollisions",
+    "Total allowed node collisions, per batch."};
+const OptionId SearchParams::kAllowedNodeCollisionEventsId{
+    "allowed-node-collision-events", "AllowedNodeCollisionEvents",
+    "Allowed node collision events, per batch."};
 const OptionId SearchParams::kOutOfOrderEvalId{
     "out-of-order-eval", "OutOfOrderEval",
     "Out-of-order cache backpropagation."};
@@ -99,7 +102,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 7;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.0f;
-  options->Add<IntOption>(kAllowedNodeCollisionsId, 0, 1024) = 0;
+  options->Add<IntOption>(kAllowedNodeCollisionEventsId, 1, 1024) = 1;
+  options->Add<IntOption>(kAllowedTotalNodeCollisionsId, 1, 1000000) = 1;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
 }
@@ -113,8 +117,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
-      kAllowedNodeCollisions(
-          options.Get<int>(kAllowedNodeCollisionsId.GetId())),
+      kAllowedNodeCollisionEvents(
+          options.Get<int>(kAllowedNodeCollisionEventsId.GetId())),
+      kAllowedTotalNodeCollisions(
+          options.Get<int>(kAllowedTotalNodeCollisionsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())) {}
 
 }  // namespace lczero

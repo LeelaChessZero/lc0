@@ -64,13 +64,13 @@ class NodeGarbageCollector {
 
   ~NodeGarbageCollector() {
     // Flips stop flag and waits for a worker thread to stop.
-    stop_ = true;
+    stop_.store(true);
     gc_thread_.join();
   }
 
  private:
   void GarbageCollect() {
-    while (!stop_) {
+    while (!stop_.load()) {
       // Node will be released in destructor when mutex is not locked.
       std::unique_ptr<Node> node_to_gc;
       {
@@ -85,7 +85,7 @@ class NodeGarbageCollector {
   }
 
   void Worker() {
-    while (!stop_) {
+    while (!stop_.load()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
       GarbageCollect();
     };
@@ -95,7 +95,7 @@ class NodeGarbageCollector {
   std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
-  volatile bool stop_ = false;
+  std::atomic<bool> stop_{false};
   std::thread gc_thread_;
 };  // namespace
 
@@ -231,19 +231,19 @@ bool Node::TryStartScoreUpdate() {
   return true;
 }
 
-void Node::CancelScoreUpdate() { --n_in_flight_; }
+void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 
-void Node::FinalizeScoreUpdate(float v) {
+void Node::FinalizeScoreUpdate(float v, int multivisit) {
   // Recompute Q.
-  q_ += (v - q_) / (n_ + 1);
+  q_ += multivisit * (v - q_) / (n_ + multivisit);
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
   }
   // Increment N.
-  ++n_;
+  n_ += multivisit;
   // Decrement virtual loss.
-  --n_in_flight_;
+  n_in_flight_ -= multivisit;
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
