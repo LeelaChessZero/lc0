@@ -106,6 +106,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kAllowedTotalNodeCollisionsId, 1, 1000000) = 1;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
+
+  options->AddDeprecatedFlag(kAggressiveTimePruningId.GetId(),
+                             "futile-search-aversion");
+  options->AddDeprecatedFlag(kAllowedNodeCollisionEventsId.GetId(),
+                             "allowed-node-collisions");
 }
 
 SearchParams::SearchParams(const OptionsDict& options)

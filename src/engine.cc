@@ -377,6 +377,7 @@ EngineLoop::EngineLoop()
               options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
   options_.Add<StringOption>(kLogFileId);
+  options_.AddDeprecatedFlag(kLogFileId.GetId(), "debuglog");
 }
 
 void EngineLoop::RunLoop() {
