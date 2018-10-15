@@ -68,7 +68,7 @@ void OptionsParser::SetUciOption(const std::string& name,
 }
 
 void OptionsParser::HideOption(const OptionId& id) {
-  auto option = FindOptionByUciName(id.uci_option);
+  auto option = FindOptionById(id.GetId());
   if (option) option->hidden_ = true;
 }
 
@@ -85,6 +85,14 @@ OptionsParser::Option* OptionsParser::FindOptionByUciName(
     const std::string& name) const {
   for (const auto& val : options_) {
     if (StringsEqualIgnoreCase(val->GetUciOption(), name)) return val.get();
+  }
+  return nullptr;
+}
+
+OptionsParser::Option* OptionsParser::FindOptionById(
+    const std::string& name) const {
+  for (const auto& val : options_) {
+    if (name == val->GetId()) return val.get();
   }
   return nullptr;
 }
