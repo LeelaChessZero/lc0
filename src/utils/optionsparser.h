@@ -27,7 +27,6 @@
 
 #pragma once
 
-#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -37,26 +36,49 @@
 
 namespace lczero {
 
+struct OptionId {
+  OptionId(const char* long_flag = "", const char* uci_option = "",
+           const char* help_text = "", const char short_flag = '\0')
+      : long_flag(long_flag),
+        uci_option(uci_option),
+        help_text(help_text),
+        short_flag(short_flag) {}
+
+  OptionId(const OptionId& other) = delete;
+
+  const char* const long_flag;
+  const char* const uci_option;
+  const char* const help_text;
+  const char short_flag;
+
+  // Returns Option's own address as string.
+  // TODO(crem) Generalize OptionsDict to have a version which has OptionId*
+  //            as keys instead of std::string.
+  std::string GetId() const {
+    return std::to_string(reinterpret_cast<intptr_t>(this));
+  }
+};
+
 class OptionsParser {
  public:
   OptionsParser();
 
   class Option {
    public:
-    Option(const std::string& name, const std::string& long_flag,
-           char short_flag);
+    Option(const OptionId& id);
     virtual ~Option(){};
     // Set value from string.
     virtual void SetValue(const std::string& value, OptionsDict* dict) = 0;
 
    protected:
-    virtual const std::string& GetName() const { return name_; }
-    const std::string& GetLongFlag() const { return long_flag_; }
-    char GetShortFlag() const { return short_flag_; }
+    std::string GetId() const { return id_.GetId(); }
+    std::string GetUciOption() const { return id_.uci_option; }
+    std::string GetHelpText() const { return id_.help_text; }
+    std::string GetLongFlag() const { return id_.long_flag; }
+    char GetShortFlag() const { return id_.short_flag; }
 
    private:
     virtual std::string GetOptionString(const OptionsDict& dict) const = 0;
-    virtual void SendValue(const OptionsDict& dict) const = 0;
     virtual bool ProcessLongFlag(const std::string& /*flag*/,
                                  const std::string& /*value*/,
                                  OptionsDict* /*dict*/) {
@@ -72,9 +94,7 @@ class OptionsParser {
     }
     virtual std::string GetHelp(const OptionsDict& dict) const = 0;
 
-    std::string name_;
-    std::string long_flag_;
-    char short_flag_;
+    const OptionId& id_;
     friend class OptionsParser;
   };
 
@@ -87,19 +107,15 @@ class OptionsParser {
     options_.emplace_back(
         std::make_unique<Option>(std::forward<Args>(args)...));
     return defaults_.GetRef<typename Option::ValueType>(
-        options_.back()->GetName());
+        options_.back()->GetId());
   }
 
   // Returns list of options in UCI format.
   std::vector<std::string> ListOptionsUci() const;
 
-  // Set the option from string value.
-  void SetOption(const std::string& name, const std::string& value,
-                 const std::string& context = "");
-  // Call option setter for this option.
-  void SendOption(const std::string& name);
-  // Call option setter all options.
-  void SendAllOptions();
+  // Set the UCI option from string value.
+  void SetUciOption(const std::string& name, const std::string& value,
+                    const std::string& context = "");
   // Processes all flags from the command line and an optional
   // configuration file. Returns false if there is an invalid flag.
   bool ProcessAllFlags();
@@ -120,8 +136,10 @@ class OptionsParser {
   void ShowHelp() const;
   // Returns an option based on the long flag.
   Option* FindOptionByLongFlag(const std::string& flag) const;
-  // Returns an option based by its name.
-  Option* FindOptionByName(const std::string& name) const;
+  // Returns an option based by its uci name.
+  Option* FindOptionByUciName(const std::string& name) const;
+  // Returns an option based by its id.
+  Option* FindOptionById(const std::string& name) const;
 
   std::vector<std::unique_ptr<Option>> options_;
   OptionsDict defaults_;
@@ -131,15 +149,12 @@ class OptionsParser {
 class StringOption : public OptionsParser::Option {
  public:
   using ValueType = std::string;
-  StringOption(const std::string& name, const std::string& long_flag = {},
-               char short_flag = '\0',
-               std::function<void(const std::string&)> setter = {});
+  StringOption(const OptionId& id);
 
   void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
-  void SendValue(const OptionsDict& dict) const override;
   bool ProcessLongFlag(const std::string& flag, const std::string& value,
                        OptionsDict* dict) override;
   std::string GetHelp(const OptionsDict& dict) const override;
@@ -148,22 +163,17 @@ class StringOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
-
-  std::function<void(const std::string&)> setter_;
 };
 
 class IntOption : public OptionsParser::Option {
  public:
   using ValueType = int;
-  IntOption(const std::string& name, int min, int max,
-            const std::string& long_flag = {}, char short_flag = '\0',
-            std::function<void(int)> setter = {});
+  IntOption(const OptionId& id, int min, int max);
 
   void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
-  void SendValue(const OptionsDict& dict) const override;
   bool ProcessLongFlag(const std::string& flag, const std::string& value,
                        OptionsDict* dict) override;
   std::string GetHelp(const OptionsDict& dict) const override;
@@ -175,21 +185,17 @@ class IntOption : public OptionsParser::Option {
 
   int min_;
   int max_;
-  std::function<void(int)> setter_;
 };
 
 class FloatOption : public OptionsParser::Option {
  public:
   using ValueType = float;
-  FloatOption(const std::string& name, float min, float max,
-              const std::string& long_flag = {}, char short_flag = '\0',
-              std::function<void(float)> setter = {});
+  FloatOption(const OptionId& id, float min, float max);
 
   void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
-  void SendValue(const OptionsDict& dict) const override;
   bool ProcessLongFlag(const std::string& flag, const std::string& value,
                        OptionsDict* dict) override;
   std::string GetHelp(const OptionsDict& dict) const override;
@@ -201,20 +207,17 @@ class FloatOption : public OptionsParser::Option {
 
   float min_;
   float max_;
-  std::function<void(int)> setter_;
 };
 
 class BoolOption : public OptionsParser::Option {
  public:
   using ValueType = bool;
-  BoolOption(const std::string& name, const std::string& long_flag = {},
-             char short_flag = '\0', std::function<void(bool)> setter = {});
+  BoolOption(const OptionId& id);
 
   void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
-  void SendValue(const OptionsDict& dict) const override;
   bool ProcessLongFlag(const std::string& flag, const std::string& value,
                        OptionsDict* dict) override;
   std::string GetHelp(const OptionsDict& dict) const override;
@@ -222,24 +225,18 @@ class BoolOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
-  
   void ValidateBoolString(const std::string& val);
-
-  std::function<void(bool)> setter_;
 };
 
 class ChoiceOption : public OptionsParser::Option {
  public:
   using ValueType = std::string;
-  ChoiceOption(const std::string& name, const std::vector<std::string>& choices,
-               const std::string& long_flag = {}, char short_flag = '\0',
-               std::function<void(const std::string&)> setter = {});
+  ChoiceOption(const OptionId& id, const std::vector<std::string>& choices);
 
   void SetValue(const std::string& value, OptionsDict* dict) override;
 
  private:
   std::string GetOptionString(const OptionsDict& dict) const override;
-  void SendValue(const OptionsDict& dict) const override;
   bool ProcessLongFlag(const std::string& flag, const std::string& value,
                        OptionsDict* dict) override;
   std::string GetHelp(const OptionsDict& dict) const override;
@@ -249,7 +246,6 @@ class ChoiceOption : public OptionsParser::Option {
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
 
-  std::function<void(const std::string&)> setter_;
   std::vector<std::string> choices_;
 };
 

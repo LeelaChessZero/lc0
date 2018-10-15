@@ -83,14 +83,10 @@ class UciLoop {
   virtual void CmdPonderHit() { throw Exception("Not supported"); }
   virtual void CmdStart() { throw Exception("Not supported"); }
 
-  void SetLogFilename(const std::string& filename);
-
  private:
   bool DispatchCommand(
       const std::string& command,
       const std::unordered_map<std::string, std::string>& params);
-
-  std::ofstream debug_log_;
 };
 
 }  // namespace lczero

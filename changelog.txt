@@ -1,3 +1,24 @@
+v0.18.1 (2018-10-02)
+~~~~~~~
+
+* Fix for falling into threefold repetition in a winning endgame tablebase position.
+
+
+v0.18.0 (2018-09-30)
+~~~~~~~
+
+* No changes from rc2 except the version.
+
+
+v0.18.0-rc2 (2018-09-26)
+~~~~~~~~~~~
+
+* Severe bug fixed: Race condition when out-of-order-eval was enabled (and it
+  was enabled by default)
+
+* Windows 32-bit builds are now possible (CPU only for now)
+
+
 v0.18.0-rc1 (2018-09-24)
 ~~~~~~~~~~~
 

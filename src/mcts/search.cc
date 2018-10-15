@@ -42,60 +42,12 @@
 #include "utils/random.h"
 
 namespace lczero {
-const char* Search::kMiniBatchSizeStr = "Minibatch size for NN inference";
-const char* Search::kMaxPrefetchBatchStr = "Max prefetch nodes, per NN call";
-const char* Search::kCpuctStr = "Cpuct MCTS option";
-const char* Search::kTemperatureStr = "Initial temperature";
-const char* Search::kTempDecayMovesStr = "Moves with temperature decay";
-const char* Search::kTemperatureVisitOffsetStr = "Temperature visit offset";
-const char* Search::kNoiseStr = "Add Dirichlet noise at root node";
-const char* Search::kVerboseStatsStr = "Display verbose move stats";
-const char* Search::kAggressiveTimePruningStr =
-    "Aversion to search if change unlikely";
-const char* Search::kFpuReductionStr = "First Play Urgency Reduction";
-const char* Search::kCacheHistoryLengthStr =
-    "Length of history to include in cache";
-const char* Search::kPolicySoftmaxTempStr = "Policy softmax temperature";
-const char* Search::kAllowedNodeCollisionsStr =
-    "Allowed node collisions, per batch";
-const char* Search::kOutOfOrderEvalStr = "Out-of-order cache backpropagation";
-const char* Search::kMultiPvStr = "MultiPV";
-
 namespace {
 const int kSmartPruningToleranceNodes = 300;
 const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
-
-void Search::PopulateUciParams(OptionsParser* options) {
-  // Here the "safe defaults" are listed.
-  // Many of them are overridden with optimized defaults in engine.cc and
-  // tournament.cc
-
-  options->Add<IntOption>(kMiniBatchSizeStr, 1, 1024, "minibatch-size") = 1;
-  options->Add<IntOption>(kMaxPrefetchBatchStr, 0, 1024, "max-prefetch") = 32;
-  options->Add<FloatOption>(kCpuctStr, 0.0f, 100.0f, "cpuct") = 1.2f;
-  options->Add<FloatOption>(kTemperatureStr, 0.0f, 100.0f, "temperature") =
-      0.0f;
-  options->Add<FloatOption>(kTemperatureVisitOffsetStr, -0.99999f, 1000.0f,
-                            "temp-visit-offset") = 0.0f;
-  options->Add<IntOption>(kTempDecayMovesStr, 0, 100, "tempdecay-moves") = 0;
-  options->Add<BoolOption>(kNoiseStr, "noise", 'n') = false;
-  options->Add<BoolOption>(kVerboseStatsStr, "verbose-move-stats") = false;
-  options->Add<FloatOption>(kAggressiveTimePruningStr, 0.0f, 10.0f,
-                            "futile-search-aversion") = 1.33f;
-  options->Add<FloatOption>(kFpuReductionStr, -100.0f, 100.0f,
-                            "fpu-reduction") = 0.0f;
-  options->Add<IntOption>(kCacheHistoryLengthStr, 0, 7,
-                          "cache-history-length") = 7;
-  options->Add<FloatOption>(kPolicySoftmaxTempStr, 0.1f, 10.0f,
-                            "policy-softmax-temp") = 1.0f;
-  options->Add<IntOption>(kAllowedNodeCollisionsStr, 0, 1024,
-                          "allowed-node-collisions") = 0;
-  options->Add<BoolOption>(kOutOfOrderEvalStr, "out-of-order-eval") = false;
-  options->Add<IntOption>(kMultiPvStr, 1, 500, "multipv") = 1;
-}
 
 Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
@@ -112,21 +64,7 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeStr)),
-      kMaxPrefetchBatch(options.Get<int>(kMaxPrefetchBatchStr)),
-      kCpuct(options.Get<float>(kCpuctStr)),
-      kTemperature(options.Get<float>(kTemperatureStr)),
-      kTemperatureVisitOffset(options.Get<float>(kTemperatureVisitOffsetStr)),
-      kTempDecayMoves(options.Get<int>(kTempDecayMovesStr)),
-      kNoise(options.Get<bool>(kNoiseStr)),
-      kVerboseStats(options.Get<bool>(kVerboseStatsStr)),
-      kAggressiveTimePruning(options.Get<float>(kAggressiveTimePruningStr)),
-      kFpuReduction(options.Get<float>(kFpuReductionStr)),
-      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthStr)),
-      kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempStr)),
-      kAllowedNodeCollisions(options.Get<int>(kAllowedNodeCollisionsStr)),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalStr)),
-      kMultiPv(options.Get<int>(kMultiPvStr)) {}
+      params_(options) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -152,7 +90,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_edge_) return;
 
-  auto edges = GetBestChildrenNoTemperature(root_node_, kMultiPv);
+  auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -175,7 +113,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
-    if (kMultiPv > 1) uci_info.multipv = multipv;
+    if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
     for (auto iter = edge; iter;
          iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
@@ -217,9 +155,10 @@ int64_t Search::GetTimeSinceStart() const {
 void Search::SendMovesStats() const {
   const float parent_q =
       -root_node_->GetQ() -
-      kFpuReduction * std::sqrt(root_node_->GetVisitedPolicy());
+      params_.GetFpuReduction() * std::sqrt(root_node_->GetVisitedPolicy());
   const float U_coeff =
-      kCpuct * std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+      params_.GetCpuct() *
+      std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : root_node_->Edges()) edges.push_back(edge);
@@ -291,7 +230,7 @@ NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
   PositionHistory history(played_history_);  // Is it worth it to move this
   // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
   history.Append(edge.GetMove());
-  auto hash = history.HashLast(kCacheHistoryLength + 1);
+  auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
   NNCacheLock nneval(cache_, hash);
   return nneval;
 }
@@ -323,7 +262,7 @@ void Search::MaybeTriggerStop() {
   // If we are the first to see that stop is needed.
   if (stop_ && !responded_bestmove_) {
     SendUciInfo();
-    if (kVerboseStats) SendMovesStats();
+    if (params_.GetVerboseStats()) SendMovesStats();
     best_move_ = GetBestMoveInternal();
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
@@ -332,7 +271,7 @@ void Search::MaybeTriggerStop() {
 }
 
 void Search::UpdateRemainingMoves() {
-  if (kAggressiveTimePruning <= 0.0f) return;
+  if (params_.GetAggressiveTimePruning() <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
@@ -346,7 +285,7 @@ void Search::UpdateRemainingMoves() {
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
-          remaining_time * nps / kAggressiveTimePruning / 1000;
+          remaining_time * nps / params_.GetAggressiveTimePruning() / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -356,8 +295,8 @@ void Search::UpdateRemainingMoves() {
   if (limits_.visits >= 0) {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
-    auto remaining_visits =
-        limits_.visits - total_playouts_ - initial_visits_ + kMiniBatchSize - 1;
+    auto remaining_visits = limits_.visits - total_playouts_ - initial_visits_ +
+                            params_.GetMiniBatchSize() - 1;
 
     if (remaining_visits < remaining_playouts_)
       remaining_playouts_ = remaining_visits;
@@ -366,7 +305,7 @@ void Search::UpdateRemainingMoves() {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     auto remaining_playouts =
-        limits_.visits - total_playouts_ + kMiniBatchSize + 1;
+        limits_.visits - total_playouts_ + params_.GetMiniBatchSize() + 1;
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
   }
@@ -403,7 +342,9 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
-  return syzygy_tb_->root_probe(played_history_.Last(), root_moves) ||
+  return syzygy_tb_->root_probe(played_history_.Last(),
+                                played_history_.DidRepeatSinceLastZeroingMove(),
+                                root_moves) ||
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
@@ -413,14 +354,14 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
   if (responded_bestmove_) return best_move_;
   if (!root_node_->HasChildren()) return {};
 
-  float temperature = kTemperature;
-  if (temperature && kTempDecayMoves) {
+  float temperature = params_.GetTemperature();
+  if (temperature && params_.GetTempDecayMoves()) {
     int moves = played_history_.Last().GetGamePly() / 2;
-    if (moves >= kTempDecayMoves) {
+    if (moves >= params_.GetTempDecayMoves()) {
       temperature = 0.0;
     } else {
-      temperature *=
-          static_cast<float>(kTempDecayMoves - moves) / kTempDecayMoves;
+      temperature *= static_cast<float>(params_.GetTempDecayMoves() - moves) /
+                     params_.GetTempDecayMoves();
     }
   }
 
@@ -449,7 +390,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<int, float, float, EdgeAndNode>;
+  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -486,7 +427,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   float max_n = 0.0;
-  float offset = kTemperatureVisitOffset;
+  float offset = params_.GetTemperatureVisitOffset();
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -541,7 +482,7 @@ void Search::StartThreads(size_t how_many) {
   // Start working threads.
   while (threads_.size() <= how_many) {
     threads_.emplace_back([this]() {
-      SearchWorker worker(this);
+      SearchWorker worker(this, params_);
       worker.RunBlocking();
     });
   }
@@ -558,6 +499,7 @@ bool Search::IsSearchActive() const {
 }
 
 void Search::WatchdogThread() {
+  LOGFILE << "Starting watchdog thread.";
   while (IsSearchActive()) {
     {
       using namespace std::chrono_literals;
@@ -587,6 +529,7 @@ void Search::WatchdogThread() {
 void Search::FireStopInternal() REQUIRES(counters_mutex_) {
   stop_ = true;
   watchdog_cv_.notify_all();
+  LOGFILE << "Stopping search.";
 }
 
 void Search::Stop() {
@@ -611,6 +554,7 @@ void Search::Wait() {
 Search::~Search() {
   Abort();
   Wait();
+  LOGFILE << "Search destroyed.";
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -661,7 +605,9 @@ void SearchWorker::InitializeIteration(
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
-  int collisions_found = 0;
+  int collision_events_left = params_.GetAllowedNodeCollisionEvents();
+  int collisions_left = params_.GetAllowedTotalNodeCollisions();
+
   // Number of nodes processed out of order.
   int number_out_of_order = 0;
 
@@ -670,26 +616,27 @@ void SearchWorker::GatherMinibatch() {
   // iteration so that search can exit.
   // TODO(crem) change that to checking search_->stop_ when bestmove reporting
   // is in a separate thread.
-  while (minibatch_size < search_->kMiniBatchSize &&
-         number_out_of_order < search_->kMiniBatchSize) {
+  while (minibatch_size < params_.GetMiniBatchSize() &&
+         number_out_of_order < params_.GetMiniBatchSize()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
-    minibatch_.emplace_back(PickNodeToExtend());
+    minibatch_.emplace_back(PickNodeToExtend(collisions_left));
     auto& picked_node = minibatch_.back();
     auto* node = picked_node.node;
 
     // There was a collision. If limit has been reached, return, otherwise
     // just start search of another node.
-    if (picked_node.is_collision) {
-      if (++collisions_found > search_->kAllowedNodeCollisions) return;
+    if (picked_node.IsCollision()) {
+      if (--collision_events_left <= 0) return;
+      if ((collisions_left -= picked_node.multivisit) <= 0) return;
       continue;
     }
     ++minibatch_size;
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    if (!node->IsTerminal()) {
+    if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
       ExtendNode(node);
 
@@ -703,32 +650,47 @@ void SearchWorker::GatherMinibatch() {
     // If out of order eval is enabled and the node to compute we added last
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
-    if (search_->kOutOfOrderEval) {
-      if (node->IsTerminal() || picked_node.is_cache_hit) {
-        // Perform out of order eval for the last entry in minibatch_.
-        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+      // Perform out of order eval for the last entry in minibatch_.
+      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+      {
+        // Nodes mutex for doing node updates.
+        SharedMutex::Lock lock(search_->nodes_mutex_);
         DoBackupUpdateSingleNode(picked_node);
-
-        // Remove last entry in minibatch_, as it has just been
-        // processed.
-        // If NN eval was already processed out of order, remove it.
-        if (picked_node.nn_queried) computation_->PopCacheHit();
-        minibatch_.pop_back();
-        --minibatch_size;
-        ++number_out_of_order;
       }
+
+      // Remove last entry in minibatch_, as it has just been
+      // processed.
+      // If NN eval was already processed out of order, remove it.
+      if (picked_node.nn_queried) computation_->PopCacheHit();
+      minibatch_.pop_back();
+      --minibatch_size;
+      ++number_out_of_order;
     }
   }
 }
 
+namespace {
+void IncrementNInFlight(Node* node, Node* root, int amount) {
+  if (amount == 0) return;
+  while (true) {
+    node->IncrementNInFlight(amount);
+    if (node == root) break;
+    node = node->GetParent();
+  }
+}
+}  // namespace
+
 // Returns node and whether there's been a search collision on the node.
-SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
+SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
+    int collision_limit) {
   // Starting from search_->root_node_, generate a playout, choosing a
   // node at each level according to the MCTS formula. n_in_flight_ is
   // incremented for each node in the playout (via TryStartScoreUpdate()).
 
   Node* node = search_->root_node_;
   Node::Iterator best_edge;
+  Node::Iterator second_best_edge;
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
 
@@ -740,23 +702,36 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
   uint16_t depth = 0;
 
   while (true) {
+    best_edge.Reset();
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
-    if (!node->TryStartScoreUpdate()) return {node, true, depth};
+    if (!node->TryStartScoreUpdate()) {
+      IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+      return NodeToProcess::Collision(node, depth, collision_limit);
+    }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) return {node, false, depth};
+    if (!node->HasChildren()) {
+      if (node->IsTerminal()) {
+        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+      } else {
+        return NodeToProcess::Extension(node, depth);
+      }
+    }
+
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
-        search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+        params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
+    float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     float parent_q =
-        ((is_root_node && search_->kNoise) || !search_->kFpuReduction)
+        ((is_root_node && params_.GetNoise()) || !params_.GetFpuReduction())
             ? -node->GetQ()
-            : -node->GetQ() -
-                  search_->kFpuReduction * std::sqrt(node->GetVisitedPolicy());
+            : -node->GetQ() - params_.GetFpuReduction() *
+                                  std::sqrt(node->GetVisitedPolicy());
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -780,9 +755,22 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
       float Q = child.GetQ(parent_q);
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
+        second_best = best;
+        second_best_edge = best_edge;
         best = score;
         best_edge = child;
+      } else if (score > second_best) {
+        second_best = score;
+        second_best_edge = child;
       }
+    }
+
+    if (second_best_edge) {
+      collision_limit = std::min(
+          collision_limit,
+          best_edge.GetVisitsToReachU(second_best, puct_mult, parent_q));
+      assert(collision_limit >= 1);
+      second_best_edge.Reset();
     }
 
     history_.Append(best_edge.GetMove());
@@ -801,7 +789,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend() {
         parent_node->is_expanding.clear();
       } else {
         // The node is already being spawned, return a collision
-        return {node, true, depth};
+        return NodeToProcess::Collision(node, depth, collision_limit);
       }
     } else {
       // The node was already spawned, use it
@@ -878,7 +866,7 @@ void SearchWorker::ExtendNode(Node* node) {
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
-  auto hash = history_.HashLast(search_->kCacheHistoryLength + 1);
+  auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) return true;
@@ -916,9 +904,9 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
   if (computation_->GetCacheMisses() > 0 &&
-      computation_->GetCacheMisses() < search_->kMaxPrefetchBatch) {
+      computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
-    PrefetchIntoCache(search_->root_node_, search_->kMaxPrefetchBatch -
+    PrefetchIntoCache(search_->root_node_, params_.GetMaxPrefetchBatch() -
                                                computation_->GetCacheMisses());
   }
 }
@@ -950,7 +938,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
   float puct_mult =
-      search_->kCpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
   const float parent_q = -node->GetQ();
   for (auto edge : node->Edges()) {
@@ -1036,8 +1024,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
-    if (search_->kPolicySoftmaxTemp != 1.0f) {
-      p = pow(p, 1 / search_->kPolicySoftmaxTemp);
+    if (params_.GetPolicySoftmaxTemp() != 1.0f) {
+      p = pow(p, 1 / params_.GetPolicySoftmaxTemp());
     }
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
@@ -1049,7 +1037,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (search_->kNoise && node == search_->root_node_) {
+  if (params_.GetNoise() && node == search_->root_node_) {
     ApplyDirichletNoise(node, 0.25, 0.3);
   }
 }
@@ -1065,11 +1053,11 @@ void SearchWorker::DoBackupUpdate() {
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) {
   Node* node = node_to_process.node;
-  if (node_to_process.is_collision) {
+  if (node_to_process.IsCollision()) {
     // If it was a collision, just undo counters.
     for (node = node->GetParent(); node != search_->root_node_->GetParent();
          node = node->GetParent()) {
-      node->CancelScoreUpdate();
+      node->CancelScoreUpdate(node_to_process.multivisit);
     }
     return;
   }
@@ -1078,7 +1066,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.v;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v);
+    n->FinalizeScoreUpdate(v, node_to_process.multivisit);
     // Q will be flipped for opponent.
     v = -v;
 
@@ -1090,7 +1078,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
   }
-  ++search_->total_playouts_;
+  search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }  // namespace lczero
@@ -1107,7 +1095,7 @@ void SearchWorker::UpdateCounters() {
   // was anything done.
   bool work_done = false;
   for (NodeToProcess& node_to_process : minibatch_) {
-    if (!node_to_process.is_collision) {
+    if (!node_to_process.IsCollision()) {
       work_done = true;
       break;
     }
