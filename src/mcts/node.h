@@ -227,7 +227,7 @@ class Node {
   // Sum of all V (visit) values
   std::atomic<int64_t> total_action_ = {0};
   // Pointer to a parent node. nullptr for the root.
-  std::atomic<Node*> parent_ = nullptr;
+  std::atomic<Node*> parent_ = { nullptr };
   // Pointer to a first child. nullptr for a leaf node.
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
