@@ -152,11 +152,8 @@ void Edge::SetP(float p) {
 }
 
 float Edge::GetP() const {
-  // Reshift into place and set the assumed-set exponent bits.
   uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
-  float ret;
-  std::memcpy(&ret, &tmp, sizeof(uint32_t));
-  return ret;
+  return *reinterpret_cast<float*>(&tmp);
 }
 
 std::string Edge::DebugString() const {
