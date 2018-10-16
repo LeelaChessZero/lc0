@@ -237,7 +237,7 @@ void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 void Node::FinalizeScoreUpdate(float v, int multivisit) {
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
-    parent_->visited_policy_ += parent_->edges_[index_].GetP();
+    (*parent_).visited_policy_ += (*parent_).edges_[index_].GetP();
   }
   // Increment N.
   n_ += multivisit;
