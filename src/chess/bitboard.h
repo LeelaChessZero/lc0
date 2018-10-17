@@ -41,7 +41,7 @@ class BoardSquare {
  public:
   constexpr BoardSquare() {}
   // As a single number, 0 to 63, bottom to top, left to right.
-  // 0 is a1, 8 is b1, 63 is h8.
+  // 0 is a1, 8 is a2, 63 is h8.
   constexpr BoardSquare(std::uint8_t num) : square_(num) {}
   // From row(bottom to top), and col(left to right), 0-based.
   constexpr BoardSquare(int row, int col) : BoardSquare(row * 8 + col) {}

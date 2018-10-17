@@ -273,6 +273,12 @@ void Search::MaybeTriggerStop() {
   if (search_deadline_ && GetTimeToDeadline() <= 0) {
     FireStopInternal();
   }
+  // Stop if average depth reached requested depth.
+  if (limits_.depth >= 0 &&
+      cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
+          static_cast<unsigned int>(limits_.depth)) {
+    FireStopInternal();
+  }
   // If we are the first to see that stop is needed.
   if (stop_ && !responded_bestmove_) {
     SendUciInfo();
