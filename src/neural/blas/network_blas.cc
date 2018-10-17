@@ -16,13 +16,13 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/network.h"
 #include "neural/blas/batchnorm.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/convolution1.h"
 #include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
+#include "neural/network.h"
 
 #include <algorithm>
 #include <cassert>
@@ -249,9 +249,8 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
 
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;
-    fprintf(stderr, "BLAS warning, maximum batch size set to %ld.",
-            max_batch_size_);
   }
+  fprintf(stderr, "BLAS, maximum batch size set to %ld.\n", max_batch_size_);
 
   const auto inputChannels = kInputPlanes;
   const auto channels = static_cast<int>(weights.input.biases.size());

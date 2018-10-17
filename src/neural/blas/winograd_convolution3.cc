@@ -108,8 +108,6 @@ void WinogradConvolution3::Forward(const size_t batch_size,
   TransformOut(batch_size, output, output_channels);
 }
 
-
-
 void WinogradConvolution3::TransformIn(const size_t batch_size,
                                        const float* input,
                                        const size_t channels) {
@@ -149,7 +147,6 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
                 }
               }
             }
-          
 
             // Calculates transpose(B).x.B
             // B = [[ 1.0,  0.0,  0.0,  0.0],
@@ -191,7 +188,6 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
             R[14][ch] = T1[3][2] - T1[3][1];
             R[15][ch] = T1[3][1] - T1[3][3];
           }
-          const size_t channel = channel_long;
           float* V_channel = V_batch + channel_long;
           const auto V_incr = channels * kTiles * batch_size;
           float* wTile_V = V_channel + channels * (block_y * kWtiles + block_x);
@@ -206,15 +202,12 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
     }
   }
 
-#else // USE_ISPC
+#else  // USE_ISPC
 
-  ispc::winograd_TransformIn_ispc( batch_size, input,channels,&V_[0]);
+  ispc::winograd_TransformIn_ispc(batch_size, input, channels, &V_[0]);
 
-#endif // USE_ISPC
-
+#endif  // USE_ISPC
 }
-
-
 
 void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                                  const size_t input_channels,
@@ -293,7 +286,6 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
 #endif
 }
 
-
 void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
                                         const size_t channels) {
 #ifndef USE_ISPC
@@ -353,11 +345,11 @@ void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
     }
   }
 
-#else // USE_ISPC
+#else  // USE_ISPC
 
-  ispc::winograd_TransformOut_ispc( batch_size, &M_[0],channels,output);
+  ispc::winograd_TransformOut_ispc(batch_size, &M_[0], channels, output);
 
-#endif // USE_ISPC
+#endif  // USE_ISPC
 }
 
 }  // namespace lczero

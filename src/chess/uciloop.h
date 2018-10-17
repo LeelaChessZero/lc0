@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -47,6 +47,7 @@ struct GoParams {
   std::int64_t movetime = -1;
   bool infinite = false;
   std::vector<std::string> searchmoves;
+  bool ponder = false;
 };
 
 class UciLoop {
@@ -59,7 +60,7 @@ class UciLoop {
   // Sends responses to host ensuring they are received as a block.
   virtual void SendResponses(const std::vector<std::string>& responses);
   void SendBestMove(const BestMoveInfo& move);
-  void SendInfo(const ThinkingInfo& info);
+  void SendInfo(const std::vector<ThinkingInfo>& infos);
   void SendId();
 
   // Command handlers.
@@ -79,16 +80,13 @@ class UciLoop {
     throw Exception("Not supported");
   }
   virtual void CmdStop() { throw Exception("Not supported"); }
+  virtual void CmdPonderHit() { throw Exception("Not supported"); }
   virtual void CmdStart() { throw Exception("Not supported"); }
-
-  void SetLogFilename(const std::string& filename);
 
  private:
   bool DispatchCommand(
       const std::string& command,
       const std::unordered_map<std::string, std::string>& params);
-
-  std::ofstream debug_log_;
 };
 
 }  // namespace lczero

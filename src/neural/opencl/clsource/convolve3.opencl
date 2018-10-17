@@ -21,6 +21,8 @@ void __in_transform_eq(float x[4][4], __global float * restrict V, int offset, i
   T1[3][1] = x[1][1] - x[3][1];
   T1[3][2] = x[1][2] - x[3][2];
   T1[3][3] = x[1][3] - x[3][3];
+
+  // Scatter each sub element in tile to separate matrices
   
   V[(0*4 + 0)*CPpad + offset] = T1[0][0] - T1[0][2];
   V[(0*4 + 1)*CPpad + offset] = T1[0][1] + T1[0][2];
@@ -43,16 +45,16 @@ void __in_transform_eq(float x[4][4], __global float * restrict V, int offset, i
 __kernel void in_transform(__global net_t * restrict in, __global float * restrict V,
                            const int C, const int Cpad,
                            const int Ppad) {
-  const int W = 8;
-  const int H = 8;
-  const int T = W*H;
-  const int WTILES = (W + 1) / 2;
+  const int width = 8;
+  const int height = 8;
+  const int boardsize = width * height;
+  const int WTILES = (width + 1) / 2;
   const int P = WTILES*WTILES;
   const int CPpad = Ppad * Cpad;
   
   const int block = get_global_id(0);
   const int ch = get_global_id(1);
-  const int chT = ch*(T);
+  const int batch = get_global_id(2);
   
   const int block_x = block % WTILES;
   const int block_y = block / WTILES;
@@ -68,31 +70,40 @@ __kernel void in_transform(__global net_t * restrict in, __global float * restri
       for (int j = 0; j < 4; j++) {
         int a = xin + j;
         int b = yin + i;
-        if (b >= 0 && a >= 0 && b < H && a < W) {
-          x[i][j] = vload_net_t(chT + b*W + a, in);
+        if (b >= 0 && a >= 0 && b < height && a < width) {
+          x[i][j] = vload_net_t(batch * C * boardsize +
+		      ch * boardsize + b * width + a, in);
         } else {
           x[i][j] = 0.0f;
         }
       }
     }
-    
-    const int offset = ch*Ppad + block;
+  
+    // V dimensions are [16, input_channels, batch_size * tiles].
+	// Padded with zeros as necessary for SGEMM
+	// = [16, Cpad, Ppad]
+
+    const int offset = ch * Ppad + P * batch + block;
     __in_transform_eq(x, V, offset, CPpad);
   }
 }
 
 void __out_transform_eq(__global const float * restrict M, float o[4],
-                        int Kpad, int Ppad, int block_x, int block_y)
+                        int Kpad, int Ppad, int block, int batch)
 {
   const int W = 8;
   const int H = 8;
   const int WTILES = (W + 1) / 2;
-  const int b = block_y * WTILES + block_x;
-  const int KPpad = Kpad * Ppad;
+  const int P = WTILES * WTILES;
+  const int b = P * batch + block;
   const int k = get_global_id(0);
   float temp_m[16];
-  for (int xn = 0, xnKPpad = b*Kpad + k; xn < 16; xn++, xnKPpad += KPpad) {
-    temp_m[xn] = M[xnKPpad];
+  // M dimensions are [16, outputs, batch_size * tiles].
+  // Plus zero padding from SGEMM.
+
+  const int offset = b * Kpad + k;
+  for (int xn = 0; xn < 16; xn++) {
+      temp_m[xn] = vload_net_t(xn * Kpad * Ppad + offset, M);
   }
   
   o[0] = temp_m[0*4 + 0] + temp_m[0*4 + 1] + temp_m[0*4 + 2] +
@@ -121,22 +132,24 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
                                      __constant const net_t * restrict stddivs) {
   const int W = 8;
   const int H = 8;
+  const int BOARD_SQUARES = W * H;
   const int WTILES = (W + 1) / 2;
   const int P = WTILES * WTILES;
   
-  int k = get_global_id(0);
-  int block = get_global_id(1);
-  
+  const int k = get_global_id(0);
+  const int block = get_global_id(1);
+  const int batch = get_global_id(2);
+
   const int block_x = block % WTILES;
   const int block_y = block / WTILES;
   
   int x = 2*block_x;
   int y = 2*block_y;
-  int a_ind = (y)*W + (x);
+  int a_ind = y * W + x;
   if (k < K && block < P) {
-    const int kHW = k * W * H;
+    const int kHW = batch * Kpad * BOARD_SQUARES + k * BOARD_SQUARES;
     float o[4];
-    __out_transform_eq(M, o, Kpad, Ppad, block_x, block_y);
+    __out_transform_eq(M, o, Kpad, Ppad, block, batch);
     
     const float mean = vload_net_t(k, means);
     const float scale_stddiv = vload_net_t(k, stddivs);
@@ -170,14 +183,14 @@ __kernel void out_transform_fused_bn_in(
                                         __local float * ybuf) {
   const int W = 8;
   const int H = 8;
-  const int T = W*H;
+  const int BOARD_SQUARES = W * H;
   const int WTILES = (W + 1) / 2;
   const int P = WTILES * WTILES;
-  const int KPpad = Kpad * Ppad;
   
   const int k = get_global_id(0);
   const int kg = get_local_id(0);
   const int block = get_global_id(1);
+  const int batch = get_global_id(2);
   
   const int block_x = block % WTILES;
   const int block_y = block / WTILES;
@@ -188,16 +201,16 @@ __kernel void out_transform_fused_bn_in(
   
   const int x = 2*block_x;
   const int y = 2*block_y;
-  int a_ind = (y)*W + (x);
+  int a_ind = y * W + x;
   
   
   if (k < K && block < P) {
     const int a[4] = {a_ind, a_ind+1, a_ind+W, a_ind+W+1};
     const bool pred[4] = { 1, x+1 < W, y+1 < H, x+1 < W & y+1 < H};
-    const int kHW = k * W * H;
+    const int kHW = batch * K * BOARD_SQUARES + k * BOARD_SQUARES;
     
     float o[4];
-    __out_transform_eq(M, o, Kpad, Ppad, block_x, block_y);
+    __out_transform_eq(M, o, Kpad, Ppad, block, batch);
     
     const float mean = vload_net_t(k, means);
     const float scale_stddiv = vload_net_t(k, stddivs);
@@ -209,7 +222,7 @@ __kernel void out_transform_fused_bn_in(
           o[i] += vload_net_t(kHW + a[i], residual);
         }
         o[i] = o[i] > 0 ? o[i] : 0.0f;
-        ybuf[kg * T + a[i]] = o[i];
+        ybuf[kg * BOARD_SQUARES + a[i]] = o[i];
         if (Y) {
           vstore_net_t(o[i], kHW + a[i], Y);
         }
@@ -228,14 +241,14 @@ __kernel void out_transform_fused_bn_in(
       for (int j = 0; j < 4; j++) {
         int a = xin + j;
         if (b >= 0 && a >= 0 && b < H && a < W) {
-          xx[i][j] = ybuf[kg * T + b*W + a];
+          xx[i][j] = ybuf[kg * BOARD_SQUARES + b * W + a];
         } else {
           xx[i][j] = 0.0f;
         }
       }
     }
     
-    const int offset = k*Ppad + block;
+    const int offset = k * Ppad + P * batch + block;
     __in_transform_eq(xx, V, offset, CPpad);
   }
 }

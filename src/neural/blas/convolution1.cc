@@ -59,7 +59,6 @@ void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
                 0.0f,                  // beta
                 batch_output,          // C
                 kSquares);             // ldc, leading rank of B
-
   }
 }
 

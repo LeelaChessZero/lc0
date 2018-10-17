@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -50,8 +50,8 @@ class ChessBoard {
   // Nullifies the whole structure.
   void Clear();
   // Swaps black and white pieces and mirrors them relative to the
-  // middle of the board. (what was on file 1 appears on file 8, what was
-  // on rank b remains on b).
+  // middle of the board. (what was on rank 1 appears on rank 8, what was
+  // on file b remains on file b).
   void Mirror();
 
   // Generates list of possible moves for "ours" (white), but may leave king
@@ -97,6 +97,7 @@ class ChessBoard {
     bool we_can_000() const { return data_ & 2; }
     bool they_can_00() const { return data_ & 4; }
     bool they_can_000() const { return data_ & 8; }
+    bool no_legal_castle() const { return data_ == 0; }
 
     void Mirror() { data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2); }
 

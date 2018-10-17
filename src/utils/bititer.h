@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -43,9 +43,18 @@ class BitIterator {
 
   void operator++() { value_ &= (value_ - 1); }
   T operator*() const {
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && defined(_WIN64)
     unsigned long result;
     _BitScanForward64(&result, value_);
+    return result;
+#elif defined(_MSC_VER)
+    unsigned long result;
+    if (value_ & 0xFFFFFFFF) {
+      _BitScanForward(&result, value_);
+    } else {
+      _BitScanForward(&result, value_ >> 32);
+      result += 32;
+    }
     return result;
 #else
     return __builtin_ctzll(value_);
