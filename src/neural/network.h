@@ -39,13 +39,24 @@ struct Weights {
   struct ConvBlock {
     Vec weights;
     Vec biases;
+    Vec bn_gammas;
+    Vec bn_betas;
     Vec bn_means;
     Vec bn_stddivs;
+  };
+
+  struct SEUnit {
+    Vec w1;
+    Vec b1;
+    Vec w2;
+    Vec b2;
   };
 
   struct Residual {
     ConvBlock conv1;
     ConvBlock conv2;
+    SEUnit se;
+    bool has_se;
   };
 
   // Input convnet.

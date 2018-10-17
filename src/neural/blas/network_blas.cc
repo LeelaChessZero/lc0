@@ -164,6 +164,10 @@ void BlasComputation::ComputeBlocking() {
       auto& conv1 = residual.conv1;
       auto& conv2 = residual.conv2;
 
+      if (residual.has_se) {
+          throw Exception("SE-units unsupported by BLAS backend.");
+      }
+
       std::swap(conv_out, conv_in);
 
       convolve3.Forward(batch_size, output_channels, output_channels, conv_in,

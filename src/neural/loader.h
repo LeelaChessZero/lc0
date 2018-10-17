@@ -38,7 +38,7 @@ using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
 
 // Read from protobuf.
-FloatVectors LoadFloatsFromPbFile(const std::string& buffer);
+std::pair<FloatVectors, int> LoadFloatsFromPbFile(const std::string& buffer);
 
 // Read space separated file of floats and return it as a vector of vectors.
 FloatVectors LoadFloatsFromFile(std::string* buffer);
