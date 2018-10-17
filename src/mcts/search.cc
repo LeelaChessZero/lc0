@@ -754,9 +754,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // best_move_node_ could have changed since best_node_n was retrieved.
         // To ensure we have at least one node to expand, always include
         // current best node.
+	// However, if given a certain node count to evaluate with `go nodes X`,
+	// then do not make this shortcut.
         if (child != search_->best_move_edge_ &&
             search_->remaining_playouts_ <
-                best_node_n - static_cast<int>(child.GetN())) {
+                best_node_n - static_cast<int>(child.GetN()) &&
+	    search_->limits_.visits == 0) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
