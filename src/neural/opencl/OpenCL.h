@@ -52,11 +52,13 @@ class Layer {
  private:
   unsigned int channels{0};
   unsigned int outputs{0};
+  unsigned int se_fc_outputs{0};
   unsigned int filter_size{0};
   unsigned int ip_in_size{0};
   unsigned int ip_out_size{0};
   bool is_input_convolution{false};
   bool is_residual_block{false};
+  bool is_se_unit{false};
   bool is_policy{false};
   bool is_value{false};
   std::vector<cl::Buffer> weights;
@@ -76,10 +78,13 @@ class ThreadData {
   cl::Kernel m_sgemv_kernel;
   cl::Kernel m_out_transform_bn_kernel;
   cl::Kernel m_out_transform_bn_in_kernel;
+  cl::Kernel m_global_avg_pooling_kernel;
+  cl::Kernel m_apply_se_kernel;
   cl::Buffer m_inBuffer;
   cl::Buffer m_inBuffer2;
   cl::Buffer m_VBuffer;
   cl::Buffer m_MBuffer;
+  cl::Buffer m_pool_buffer;
   cl::Buffer m_pinnedOutBuffer_pol;
   cl::Buffer m_pinnedOutBuffer_val;
   bool m_buffers_allocated{false};
@@ -128,6 +133,23 @@ class OpenCL_Network {
     m_layers[layer].outputs = outputs;
     m_layers[layer].filter_size = filter_size;
     m_layers[layer].channels = channels;
+  }
+
+  void push_se(unsigned int channels,
+               unsigned int se_fc_outputs,
+               const std::vector<float>& weights_1,
+               const std::vector<float>& biases_1,
+               const std::vector<float>& weights_2,
+               const std::vector<float>& biases_2) {
+    size_t layer = get_layer_count();
+    push_weights(layer, weights_1);
+    push_weights(layer, biases_1);
+    push_weights(layer, weights_2);
+    push_weights(layer, biases_2);
+    m_layers[layer].is_se_unit = true;
+    m_layers[layer].channels = channels;
+    m_layers[layer].se_fc_outputs = se_fc_outputs;
+    m_layers[layer].outputs = channels;
   }
 
   void push_policy(unsigned int channels, unsigned int outputs,
@@ -188,7 +210,7 @@ class OpenCL_Network {
                  cl::Buffer& bufferM, weight_slice_t weights,
                  cl::Buffer* bufferResidual, weight_slice_t bn_weights,
                  bool skip_in_transform, bool fuse_in_transform,
-                 bool store_inout, int batch_size) const;
+                 bool store_inout, bool relu, int batch_size) const;
 
   void convolve1(int channels, int outputs, cl::Buffer& bufferInput,
                  cl::Buffer& bufferOutput, cl::Buffer& bufferMerge,
@@ -197,6 +219,15 @@ class OpenCL_Network {
   void innerproduct(cl::Buffer& input, weight_slice_t weights,
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
                     const int outputs, const int relu, int batch_size) const;
+
+  void squeeze_excitation(int channels,
+                          int fc_outputs,
+                          cl::Buffer& bufferIn,
+                          cl::Buffer& bufferTemp1,
+                          cl::Buffer& bufferTemp2,
+                          weight_slice_t weights,
+                          cl::Buffer& bufferResidual,
+                          int batch_size) const;
 
   OpenCL& m_opencl;
   size_t m_max_batch_size;

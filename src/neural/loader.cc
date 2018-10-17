@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -51,10 +52,39 @@ void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
 }
 
 void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
-  PopulateLastIntoVector(vecs, &block->bn_stddivs);
-  PopulateLastIntoVector(vecs, &block->bn_means);
-  PopulateLastIntoVector(vecs, &block->biases);
-  PopulateLastIntoVector(vecs, &block->weights);
+  int version = 3;
+
+  if (version == 3) {
+      PopulateLastIntoVector(vecs, &block->bn_stddivs);
+      PopulateLastIntoVector(vecs, &block->bn_means);
+      PopulateLastIntoVector(vecs, &block->bn_betas);
+      PopulateLastIntoVector(vecs, &block->bn_gammas);
+      PopulateLastIntoVector(vecs, &block->weights);
+
+      // Merge gammas to stddivs and beta to means for backwards compatibility
+      auto channels = block->bn_betas.size();
+      auto epsilon = 1e-5;
+      for (auto i = size_t{0}; i < channels; i++) {
+        auto s = block->bn_gammas[i] / std::sqrt(block->bn_stddivs[i] + epsilon);
+        block->bn_stddivs[i] = 1.0f/(s*s) - epsilon;
+        block->bn_means[i] -= block->bn_betas[i] / s;
+        block->bn_gammas[i] = 1.0f;
+        block->biases.emplace_back(0.0f);
+      }
+
+  } else {
+      PopulateLastIntoVector(vecs, &block->bn_stddivs);
+      PopulateLastIntoVector(vecs, &block->bn_means);
+      PopulateLastIntoVector(vecs, &block->biases);
+      PopulateLastIntoVector(vecs, &block->weights);
+  }
+}
+
+void PopulateSEUnitWeights(FloatVectors* vecs, Weights::SEUnit* block) {
+  PopulateLastIntoVector(vecs, &block->b2);
+  PopulateLastIntoVector(vecs, &block->w2);
+  PopulateLastIntoVector(vecs, &block->b1);
+  PopulateLastIntoVector(vecs, &block->w1);
 }
 
 std::string DecompressGzip(const std::string& filename) {
@@ -181,14 +211,20 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
 
+  char v_ch = buffer[0];
+
   if (buffer.size() < 2)
     throw Exception("Invalid weight file: too small.");
   else if (buffer[0] == '1' && buffer[1] == '\n')
     throw Exception("Invalid weight file: no longer supported.");
-  else if (buffer[0] == '2' && buffer[1] == '\n')
+  else if ((buffer[0] == '2' || buffer[0] == '3') && buffer[1] == '\n')
     vecs = LoadFloatsFromFile(&buffer);
   else
-    vecs = LoadFloatsFromPbFile(buffer);
+    throw Exception("pb not supported.");
+    //vecs = LoadFloatsFromPbFile(buffer);
+
+  int version = v_ch - '0';
+  printf("Version: %d\n", version);
 
   Weights result;
   // Populating backwards.
@@ -203,12 +239,18 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   PopulateConvBlockWeights(&vecs, &result.policy);
 
   // Input + all the residual should be left.
-  if ((vecs.size() - 4) % 8 != 0)
+  if ((vecs.size() - 5) % 14 != 0)
     throw Exception("Invalid weight file: parse error.");
 
-  const int num_residual = (vecs.size() - 4) / 8;
+  const int num_residual = (vecs.size() - 5) / 14;
   result.residual.resize(num_residual);
   for (int i = num_residual - 1; i >= 0; --i) {
+    if (version == 3) {
+        PopulateSEUnitWeights(&vecs, &result.residual[i].se);
+        result.residual[i].has_se = true;
+    } else {
+        result.residual[i].has_se = false;
+    }
     PopulateConvBlockWeights(&vecs, &result.residual[i].conv2);
     PopulateConvBlockWeights(&vecs, &result.residual[i].conv1);
   }

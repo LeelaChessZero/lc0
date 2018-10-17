@@ -39,13 +39,24 @@ struct Weights {
   struct ConvBlock {
     Vec weights;
     Vec biases;
+    Vec bn_gammas;
+    Vec bn_betas;
     Vec bn_means;
     Vec bn_stddivs;
+  };
+
+  struct SEUnit {
+    Vec w1;
+    Vec b1;
+    Vec w2;
+    Vec b2;
   };
 
   struct Residual {
     ConvBlock conv1;
     ConvBlock conv2;
+    SEUnit se;
+    int has_se;
   };
 
   // Input convnet.
@@ -65,6 +76,8 @@ struct Weights {
   Vec ip1_val_b;
   Vec ip2_val_w;
   Vec ip2_val_b;
+
+  int version;
 };
 
 // All input planes are 64 value vectors, every element of which is either
