@@ -240,6 +240,7 @@ class Move {
               (static_cast<uint8_t>(promotion) << 12)) {}
   Move(const std::string& str, bool black = false);
   Move(const char* str, bool black = false) : Move(std::string(str), black) {}
+  Move(const uint16_t data) : data_(data) {}
 
   BoardSquare to() const { return BoardSquare(data_ & kToMask); }
   BoardSquare from() const { return BoardSquare((data_ & kFromMask) >> 6); }
@@ -259,6 +260,8 @@ class Move {
 
   // 0 .. 1857, to use in neural networks.
   uint16_t as_nn_index() const;
+
+  uint16_t get_data() const { return data_; }
 
   // We ignore the castling bit, because UCI's `position moves ...` commands
   // specify squares and promotions, but NOT whether or not a move is castling.

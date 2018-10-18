@@ -122,7 +122,7 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
   bool flip = !tree_[0]->IsBlackToMove();
   for (Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
-    moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove(flip));
+    moves.push_back(node->GetParent()->GetEdgeToNode(node).GetMove(flip));
     flip = !flip;
   }
   std::reverse(moves.begin(), moves.end());

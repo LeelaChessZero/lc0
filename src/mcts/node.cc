@@ -106,8 +106,8 @@ NodeGarbageCollector gNodeGc;
 /////////////////////////////////////////////////////////////////////////
 
 Move Edge::GetMove(bool as_opponent) const {
-  if (!as_opponent) return move_;
-  Move m = move_;
+  Move m(data_ >> 16);
+  if (!as_opponent) return m;
   m.Mirror();
   return m;
 }
@@ -148,12 +148,13 @@ void Edge::SetP(float p) {
   int32_t tmp;
   std::memcpy(&tmp, &p, sizeof(float));
   tmp += roundings;
-  p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
+  data_ &= 0xffff0000;
+  data_ |= (tmp < 0) ? 0 : tmp >> 12;
 }
 
 float Edge::GetP() const {
   // Reshift into place and set the assumed-set exponent bits.
-  uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
+  uint32_t tmp = ((data_ & 0xffff) << 12) | (3 << 28);
   float ret;
   std::memcpy(&ret, &tmp, sizeof(uint32_t));
   return ret;
@@ -161,7 +162,7 @@ float Edge::GetP() const {
 
 std::string Edge::DebugString() const {
   std::ostringstream oss;
-  oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
+  oss << "Move: " << GetMove().as_string() << " GetP: " << GetP();
   return oss.str();
 }
 
@@ -198,10 +199,10 @@ Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
 float Node::GetVisitedPolicy() const { return visited_policy_; }
 
-Edge* Node::GetEdgeToNode(const Node* node) const {
+Edge Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
   assert(node->index_ < edges_.size());
-  return &edges_[node->index_];
+  return edges_[node->index_];
 }
 
 std::string Node::DebugString() const {

@@ -90,16 +90,23 @@ class Edge {
   std::string DebugString() const;
 
  private:
-  void SetMove(Move move) { move_ = move; }
+  void SetMove(Move move) {
+    data_ &= 0xffff;
+    data_ |= move.get_data() << 16;
+  }
 
   // Move corresponding to this node. From the point of view of a player,
   // i.e. black's e7e5 is stored as e2e4.
   // Root node contains move a1a1.
-  Move move_;
+  // Move move_;
 
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
-  std::atomic<uint16_t> p_ = {0};
+  // uint16_t p_ = {0};
+
+  // 31...16: move_
+  // 15...0: p_
+  uint32_t data_ = {0};
 
   friend class EdgeList;
 };
@@ -206,7 +213,7 @@ class Node {
   void ReleaseChildrenExceptOne(Node* node);
 
   // For a child node, returns corresponding edge.
-  Edge* GetEdgeToNode(const Node* node) const;
+  Edge GetEdgeToNode(const Node* node) const;
 
   // Debug information about the node.
   std::string DebugString() const;
