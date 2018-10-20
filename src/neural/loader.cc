@@ -51,9 +51,7 @@ void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
   vecs->pop_back();
 }
 
-void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
-  int version = 3;
-
+void PopulateConvBlockWeights(int version, FloatVectors* vecs, Weights::ConvBlock* block) {
   if (version == 3) {
       PopulateLastIntoVector(vecs, &block->bn_stddivs);
       PopulateLastIntoVector(vecs, &block->bn_means);
@@ -136,7 +134,7 @@ void DenormConvBlock(const pblczero::Weights_ConvBlock& conv,
 
 }  // namespace
 
-FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
+std::pair<FloatVectors, int> LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
   FloatVectors vecs;
   if (!net.ParseFromString(buffer))
@@ -178,7 +176,8 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   vecs.emplace_back(DenormLayer(w.ip2_val_w()));
   vecs.emplace_back(DenormLayer(w.ip2_val_b()));
 
-  return vecs;
+  // FIXME: New version field to pb for identifying SE-units
+  return {vecs, net_ver};
 }
 
 FloatVectors LoadFloatsFromFile(std::string* buffer) {
@@ -212,18 +211,21 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   auto buffer = DecompressGzip(filename);
 
   char v_ch = buffer[0];
+  int version = 0;
 
-  if (buffer.size() < 2)
+  if (buffer.size() < 2) {
     throw Exception("Invalid weight file: too small.");
-  else if (buffer[0] == '1' && buffer[1] == '\n')
+  } else if (buffer[0] == '1' && buffer[1] == '\n') {
     throw Exception("Invalid weight file: no longer supported.");
-  else if ((buffer[0] == '2' || buffer[0] == '3') && buffer[1] == '\n')
+  } else if ((buffer[0] == '2' || buffer[0] == '3') && buffer[1] == '\n') {
     vecs = LoadFloatsFromFile(&buffer);
-  else
-    throw Exception("pb not supported.");
-    //vecs = LoadFloatsFromPbFile(buffer);
+    version = v_ch - '0';
+  } else {
+    auto pb_vecs = LoadFloatsFromPbFile(buffer);
+    vecs = pb_vecs.first;
+    version = pb_vecs.second;
+  }
 
-  int version = v_ch - '0';
   printf("Version: %d\n", version);
 
   Weights result;
@@ -232,17 +234,20 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   PopulateLastIntoVector(&vecs, &result.ip2_val_w);
   PopulateLastIntoVector(&vecs, &result.ip1_val_b);
   PopulateLastIntoVector(&vecs, &result.ip1_val_w);
-  PopulateConvBlockWeights(&vecs, &result.value);
+  PopulateConvBlockWeights(version, &vecs, &result.value);
 
   PopulateLastIntoVector(&vecs, &result.ip_pol_b);
   PopulateLastIntoVector(&vecs, &result.ip_pol_w);
-  PopulateConvBlockWeights(&vecs, &result.policy);
+  PopulateConvBlockWeights(version, &vecs, &result.policy);
+
+  auto input_weights = (version == 3) ? 5 : 4;
+  auto residual_weights = (version == 3) ? 14 : 8;
 
   // Input + all the residual should be left.
-  if ((vecs.size() - 5) % 14 != 0)
+  if ((vecs.size() - input_weights) % residual_weights != 0)
     throw Exception("Invalid weight file: parse error.");
 
-  const int num_residual = (vecs.size() - 5) / 14;
+  const int num_residual = (vecs.size() - input_weights) / residual_weights;
   result.residual.resize(num_residual);
   for (int i = num_residual - 1; i >= 0; --i) {
     if (version == 3) {
@@ -251,11 +256,11 @@ Weights LoadWeightsFromFile(const std::string& filename) {
     } else {
         result.residual[i].has_se = false;
     }
-    PopulateConvBlockWeights(&vecs, &result.residual[i].conv2);
-    PopulateConvBlockWeights(&vecs, &result.residual[i].conv1);
+    PopulateConvBlockWeights(version, &vecs, &result.residual[i].conv2);
+    PopulateConvBlockWeights(version, &vecs, &result.residual[i].conv1);
   }
 
-  PopulateConvBlockWeights(&vecs, &result.input);
+  PopulateConvBlockWeights(version, &vecs, &result.input);
   return result;
 }
 
