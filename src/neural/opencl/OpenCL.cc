@@ -479,8 +479,6 @@ void OpenCL_Network::squeeze_excitation(int channels,
                                         int batch_size) const {
 
   constexpr int width = 8;
-  constexpr int height = 8;
-  constexpr int boardsize = width * height;
 
     cl::Kernel & pooling_kernel = opencl_thread_data.m_global_avg_pooling_kernel;
     cl::Kernel & apply_se_kernel = opencl_thread_data.m_apply_se_kernel;
@@ -492,8 +490,8 @@ void OpenCL_Network::squeeze_excitation(int channels,
         pooling_kernel.setArg(2, bufferTemp1);
 
         queue.enqueueNDRangeKernel(pooling_kernel, cl::NullRange,
-                                   cl::NDRange(boardsize, batch_size * channels),
-                                   cl::NDRange(boardsize, 1));
+                                   cl::NDRange(width, batch_size * channels),
+                                   cl::NDRange(width, 1));
     } catch (const cl::Error &e) {
         std::cerr << "Error in squeeze_excitation/pooling: " << e.what() << ": "
             << e.err() << std::endl;
@@ -525,7 +523,7 @@ void OpenCL_Network::squeeze_excitation(int channels,
         apply_se_kernel.setArg(3, bufferTemp1);
 
         queue.enqueueNDRangeKernel(apply_se_kernel, cl::NullRange,
-                                   cl::NDRange(boardsize, batch_size * channels));
+                                   cl::NDRange(width, batch_size * channels));
     } catch (const cl::Error &e) {
         std::cerr << "Error in squeeze_excitation/apply_se: " << e.what() << ": "
             << e.err() << std::endl;
