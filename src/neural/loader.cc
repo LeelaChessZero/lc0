@@ -67,6 +67,7 @@ void PopulateConvBlockWeights(int version, FloatVectors* vecs, Weights::ConvBloc
         block->bn_stddivs[i] = 1.0f/(s*s) - epsilon;
         block->bn_means[i] -= block->bn_betas[i] / s;
         block->bn_gammas[i] = 1.0f;
+        block->bn_betas[i] = 0.0f;
         block->biases.emplace_back(0.0f);
       }
 

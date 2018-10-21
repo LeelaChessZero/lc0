@@ -177,7 +177,7 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
         alloc_vm_size, v_zeros.data(), nullptr);
     opencl_thread_data.m_MBuffer =
         cl::Buffer(m_opencl.m_context,
-                   CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, alloc_vm_size);
+        CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS, alloc_vm_size);
 
     opencl_thread_data.m_pinnedOutBuffer_pol = cl::Buffer(
         m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
@@ -250,13 +250,16 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
       auto relu = true;
       auto residual = &inBuffer;
       auto out_buffer = inBuffer;
+      auto store_inout = true;
 
       if (niter->is_se_unit) {
         // SE unit does relu
         relu = false;
         residual = nullptr;
         out_buffer = inBuffer2;
+        store_inout = false;
       }
+
       convolve3(layer.channels, // channels
                 layer.outputs, // outputs
                 inBuffer2, // bufferIn
@@ -268,13 +271,14 @@ void OpenCL_Network::forward(const std::vector<net_t>& input,
                 bn2_weights, //bn_weights
                 true, // skip_in_transform
                 skip_next_in_trans, // fuse_in_transform
-                true, // store_inout
+                store_inout, // store_inout
                 relu, // relu
                 batch_size); // batch_size
       skip_in_trans = skip_next_in_trans;
     } else if (layer.is_se_unit) {
       // inBuffer: residual connection from start of the residual block
       // inBuffer2: Last block output
+      // Output will be written in inBuffer
       assert(niter != cend(m_layers));
       auto se_weights = begin(layer.weights);
       squeeze_excitation(layer.outputs, // channels
@@ -480,55 +484,55 @@ void OpenCL_Network::squeeze_excitation(int channels,
 
   constexpr int width = 8;
 
-    cl::Kernel & pooling_kernel = opencl_thread_data.m_global_avg_pooling_kernel;
-    cl::Kernel & apply_se_kernel = opencl_thread_data.m_apply_se_kernel;
-    cl::CommandQueue & queue = opencl_thread_data.m_commandqueue;
+  cl::Kernel & pooling_kernel = opencl_thread_data.m_global_avg_pooling_kernel;
+  cl::Kernel & apply_se_kernel = opencl_thread_data.m_apply_se_kernel;
+  cl::CommandQueue & queue = opencl_thread_data.m_commandqueue;
 
-    try {
-        pooling_kernel.setArg(0, channels);
-        pooling_kernel.setArg(1, bufferIn);
-        pooling_kernel.setArg(2, bufferTemp1);
+  try {
+    pooling_kernel.setArg(0, batch_size * channels);
+    pooling_kernel.setArg(1, bufferIn);
+    pooling_kernel.setArg(2, bufferTemp1);
 
-        queue.enqueueNDRangeKernel(pooling_kernel, cl::NullRange,
-                                   cl::NDRange(width, batch_size * channels),
-                                   cl::NDRange(width, 1));
-    } catch (const cl::Error &e) {
-        std::cerr << "Error in squeeze_excitation/pooling: " << e.what() << ": "
-            << e.err() << std::endl;
-        throw;
-    }
+    queue.enqueueNDRangeKernel(pooling_kernel, cl::NullRange,
+                               cl::NDRange(width, batch_size * channels),
+                               cl::NDRange(width, 1));
+  } catch (const cl::Error &e) {
+    std::cerr << "Error in squeeze_excitation/pooling: " << e.what() << ": "
+        << e.err() << std::endl;
+    throw;
+  }
 
-    innerproduct(bufferTemp1,
-            weights,
-            weights + 1,
-            bufferTemp2,
-            channels,
-            fc_outputs,
-            true,
-            batch_size);
+  innerproduct(bufferTemp1,
+               weights,
+               weights + 1,
+               bufferTemp2,
+               channels,
+               fc_outputs,
+               true,
+               batch_size);
 
-    innerproduct(bufferTemp2,
-            weights + 2,
-            weights + 3,
-            bufferTemp1,
-            fc_outputs,
-            channels,
-            false,
-            batch_size);
+  innerproduct(bufferTemp2,
+               weights + 2,
+               weights + 3,
+               bufferTemp1,
+               fc_outputs,
+               channels,
+               false,
+               batch_size);
 
-    try {
-        apply_se_kernel.setArg(0, channels);
-        apply_se_kernel.setArg(1, bufferIn);
-        apply_se_kernel.setArg(2, bufferResidual);
-        apply_se_kernel.setArg(3, bufferTemp1);
+  try {
+    apply_se_kernel.setArg(0, batch_size * channels);
+    apply_se_kernel.setArg(1, bufferIn);
+    apply_se_kernel.setArg(2, bufferResidual);
+    apply_se_kernel.setArg(3, bufferTemp1);
 
-        queue.enqueueNDRangeKernel(apply_se_kernel, cl::NullRange,
-                                   cl::NDRange(width, batch_size * channels));
-    } catch (const cl::Error &e) {
-        std::cerr << "Error in squeeze_excitation/apply_se: " << e.what() << ": "
-            << e.err() << std::endl;
-        throw;
-    }
+    queue.enqueueNDRangeKernel(apply_se_kernel, cl::NullRange,
+                               cl::NDRange(width, batch_size * channels));
+  } catch (const cl::Error &e) {
+    std::cerr << "Error in squeeze_excitation/apply_se: " << e.what() << ": "
+        << e.err() << std::endl;
+    throw;
+  }
 
 }
 
