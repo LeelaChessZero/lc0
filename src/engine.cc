@@ -123,6 +123,11 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 0.6f;
 
+  // Hide time curve options.
+  options->HideOption(kTimeCurvePeakId);
+  options->HideOption(kTimeCurveLeftWidthId);
+  options->HideOption(kTimeCurveRightWidthId);
+
   SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
 
