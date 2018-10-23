@@ -47,6 +47,7 @@ struct SearchLimits {
   std::int64_t visits = -1;
   std::int64_t playouts = -1;
   std::int64_t time_ms = -1;
+  int depth = -1;
   bool infinite = false;
   MoveList searchmoves;
 };
