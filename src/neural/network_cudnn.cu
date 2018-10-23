@@ -1044,7 +1044,7 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
 
   if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
-               num_outputs, num_outputs * N, use_relu_, use_tanh_, use_tanh_);
+               num_outputs, num_outputs * N, use_relu_, use_tanh_, use_sigmoid_);
   }
 }
 
@@ -1064,7 +1064,7 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
 
   if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
-               num_outputs, num_outputs * N, use_relu_, use_tanh_, use_tanh_);
+               num_outputs, num_outputs * N, use_relu_, use_tanh_, use_sigmoid_);
   }
 }
 
@@ -1302,10 +1302,14 @@ class CudnnNetwork : public Network {
         int numFCOut = weights.residual[block].se.b1.size();
         auto fc1 = std::make_unique<FCLayer<DataType>>(
             getLastLayer(), numFCOut, 1, 1, true, true, false, false);
+        fc1->LoadWeights(&weights.residual[block].se.w1[0],
+                         &weights.residual[block].se.b1[0], scratch_mem_);
         network_.emplace_back(std::move(fc1));
 
         auto fc2 = std::make_unique<FCLayer<DataType>>(
             getLastLayer(), kNumFilters, 1, 1, false, true, false, true);
+        fc2->LoadWeights(&weights.residual[block].se.w2[0],
+                         &weights.residual[block].se.b2[0], scratch_mem_);
         network_.emplace_back(std::move(fc2));
 
         auto globalScale =
@@ -1439,7 +1443,7 @@ class CudnnNetwork : public Network {
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // se.fc2
 
-        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[2],
+        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
                             tensor_mem_[0], scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // global scale + skip connection add
       }
