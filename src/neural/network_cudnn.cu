@@ -297,7 +297,7 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
 // activation.
 template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
-                bool use_tanh, bool use_sigmoid = false) {
+                bool use_tanh, bool use_sigmoid) {
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
@@ -501,7 +501,7 @@ __global__ void globalScale_kernel(float* output, const float* input,
   int sIndex = tid / kPlaneSize;
   float s = scale[sIndex];
 
-  output[tid] = val1 + val2 * s;
+  output[tid] = val1 * s + val2;
 }
 
 __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
@@ -519,7 +519,7 @@ __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
   int sIndex = n * C + c;
   float s = scale[sIndex];
 
-  output[tid] = val1 + val2 * s;
+  output[tid] = val1 * s + val2;
 }
 
 // N blocks
