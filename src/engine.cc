@@ -363,9 +363,14 @@ void EngineController::Go(const GoParams& params) {
 
   // If there is a time limit, also store amount of time saved.
   if (limits.search_deadline) {
-    best_move_callback = [this](const BestMoveInfo& info) {
+    best_move_callback = [this, limits](const BestMoveInfo& info) {
       best_move_callback_(info);
-      time_spared_ms_ += search_->GetTimeToDeadline();
+      if (limits.search_deadline) {
+        time_spared_ms_ +=
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                *limits.search_deadline - std::chrono::steady_clock::now())
+                .count();
+      }
     };
   }
 

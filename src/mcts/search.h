@@ -88,8 +88,6 @@ class Search {
   // return results from different possible moves.
   float GetBestEval() const;
 
-  int64_t GetTimeToDeadline() const;
-
  private:
   // Returns the best move, maybe with temperature (according to the settings).
   std::pair<Move, Move> GetBestMoveInternal() const;
@@ -104,6 +102,7 @@ class Search {
                                           float temperature) const;
 
   int64_t GetTimeSinceStart() const;
+  int64_t GetTimeToDeadline() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
