@@ -306,6 +306,34 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+template <typename T>
+__global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H, int W) {
+  int i = threadIdx.x + blockDim.x * blockIdx.x;
+  int size = N * C * H * W;
+  if (i < size) {
+    float aVal = (float) a[i];
+
+	// All this math can be optimized, but the kernel is memory bound anyway
+	int biasIndex = (i / (H * W)) % C;
+    float bVal = (float) b[biasIndex];
+
+	float cVal = aVal + bVal;
+    c[i] = (T)cVal;
+  }
+}
+
+// add bias to convolution's output
+template <typename T>
+void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W) {
+  int size = N * C * H * W;
+  const int kBlockSize = 256;
+  int blocks = DivUp(size, kBlockSize);
+
+  addBias_NCHW_kernel<<<blocks, kBlockSize>>>(c, a, b, N, C, H, W);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+
 __device__ half readNCHW(float* input_tensor, int n, int c, int h, int w,
                          int Nin, int Cin, int H, int W) {
   if (n >= Nin || c >= Cin) return 0;
@@ -501,7 +529,9 @@ __global__ void globalScale_kernel(float* output, const float* input,
   int sIndex = tid / kPlaneSize;
   float s = scale[sIndex];
 
-  output[tid] = val1 * s + val2;
+  float op = val1 * s + val2;
+  if (op < 0) op = 0;
+  output[tid] = op;
 }
 
 __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
@@ -519,7 +549,10 @@ __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
   int sIndex = n * C + c;
   float s = scale[sIndex];
 
-  output[tid] = val1 * s + val2;
+  float op = val1 * s + val2;
+  if (op < 0) op = 0;
+
+  output[tid] = (half)op;
 }
 
 // N blocks
@@ -744,10 +777,21 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
         conv_desc_, conv_algo_, scratch, scratch_size, &alpha, out_tensor_desc_,
         input2, bias_desc_, biases, activation_, out_tensor_desc_, output));
   } else {
-    ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
+    // For some reason cudnn doesn't support just Convolution + Bias with fp32 (winograd algorithm)
+    // it works fine when RELU is also needed which is somewhat strange.
+    if ((std::is_same<float, DataType>::value) && (!use_relu_)) {
+      ReportCUDNNErrors(cudnnConvolutionForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, conv_algo_, scratch, scratch_size, &beta,
+          out_tensor_desc_, output));
+	  // add bias
+      addBias_NCHW(output, output, biases, N, C, H, W);
+    } else {
+     ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
         output, bias_desc_, biases, activation_, out_tensor_desc_, output));
+    }
   }
 }
 
@@ -1044,7 +1088,8 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
 
   if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
-               num_outputs, num_outputs * N, use_relu_, use_tanh_, use_sigmoid_);
+               num_outputs, num_outputs * N, use_relu_, use_tanh_,
+               use_sigmoid_);
   }
 }
 
@@ -1064,7 +1109,8 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
 
   if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
-               num_outputs, num_outputs * N, use_relu_, use_tanh_, use_sigmoid_);
+               num_outputs, num_outputs * N, use_relu_, use_tanh_,
+               use_sigmoid_);
   }
 }
 
@@ -1189,12 +1235,12 @@ class CudnnNetwork : public Network {
       // Check if the GPU support fp16 (Volta+).
       cudaDeviceProp deviceProp = {};
       cudaGetDeviceProperties(&deviceProp, gpu_id_);
-      // if (deviceProp.major >= 7) {
-      // Enable Tensor cores!
-      ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
-      //} else {
-      //  throw Exception("Your GPU doesn't support FP16");
-      //}
+      if (deviceProp.major >= 7) {
+        // Enable Tensor cores!
+        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+      } else {
+        throw Exception("Your GPU doesn't support FP16");
+      }
     }
 
     const int kNumInputPlanes = kInputPlanes;
@@ -1208,8 +1254,6 @@ class CudnnNetwork : public Network {
     processConvBlock(weights.input, true);
     for (auto i = size_t{0}; i < numBlocks_; i++) {
       if (weights.residual[i].has_se) {
-        //printf("weight file has SE\n");
-        // throw Exception("SE-units unsupported by cudnn backend.");
         has_se_ = true;
       }
       processConvBlock(weights.residual[i].conv1, true);
@@ -1286,8 +1330,9 @@ class CudnnNetwork : public Network {
                          scratch_mem_);
       network_.emplace_back(std::move(conv1));
 
+      bool useRelu = weights.residual[block].has_se ? false : true;
       auto conv2 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
+          getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, useRelu, true);
       conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                          &weights.residual[block].conv2.biases[0],
                          scratch_mem_);
@@ -1445,7 +1490,7 @@ class CudnnNetwork : public Network {
 
         network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
                             tensor_mem_[0], scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // global scale + skip connection add
+                            cublas_);  // global scale + skip connection add + relu
       }
     }
 
