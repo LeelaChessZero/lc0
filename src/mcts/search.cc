@@ -280,7 +280,7 @@ void Search::MaybeTriggerStop() {
     FireStopInternal();
   }
   // If we are the first to see that stop is needed.
-  if (stop_ && !responded_bestmove_) {
+  if (stop_.load(std::memory_order_acquire) && !responded_bestmove_) {
     SendUciInfo();
     if (params_.GetVerboseStats()) SendMovesStats();
     best_move_ = GetBestMoveInternal();
@@ -519,7 +519,7 @@ void Search::RunBlocking(size_t threads) {
 }
 
 bool Search::IsSearchActive() const {
-  return !stop_;
+  return !stop_.load(std::memory_order_acquire);
 }
 
 void Search::WatchdogThread() {
@@ -541,8 +541,9 @@ void Search::WatchdogThread() {
       // mode during thinking.
       // Minimum wait time is there to prevent busy wait and other thread
       // starvation.
-      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
-                            [this]() { return stop_.load(); });
+      watchdog_cv_.wait_for(lock.get_raw(), remaining_time, [this]() {
+        return stop_.load(std::memory_order_acquire);
+      });
     }
     MaybeTriggerStop();
   }
@@ -550,7 +551,7 @@ void Search::WatchdogThread() {
 }
 
 void Search::FireStopInternal() REQUIRES(counters_mutex_) {
-  stop_ = true;
+  stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
   LOGFILE << "Stopping search.";
 }
@@ -689,7 +690,7 @@ void SearchWorker::GatherMinibatch() {
       ++number_out_of_order;
     }
     // Check for stop at the end so we have at least one node.
-    if (search_->stop_) return;
+    if (search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
 
