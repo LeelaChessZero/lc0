@@ -124,7 +124,7 @@ class Search {
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
-  bool stop_ GUARDED_BY(counters_mutex_) = false;
+  std::atomic<bool> stop_{false};
   // Condition variable used to watch stop_ variable.
   std::condition_variable watchdog_cv_;
   // There is already one thread that responded bestmove, other threads

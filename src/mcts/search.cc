@@ -519,7 +519,6 @@ void Search::RunBlocking(size_t threads) {
 }
 
 bool Search::IsSearchActive() const {
-  Mutex::Lock lock(counters_mutex_);
   return !stop_;
 }
 
@@ -543,8 +542,7 @@ void Search::WatchdogThread() {
       // Minimum wait time is there to prevent busy wait and other thread
       // starvation.
       watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
-                            [this]()
-                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
+                            [this]() { return stop_.load(); });
     }
     MaybeTriggerStop();
   }
@@ -639,8 +637,6 @@ void SearchWorker::GatherMinibatch() {
   // Gather nodes to process in the current batch.
   // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
   // iteration so that search can exit.
-  // TODO(crem) change that to checking search_->stop_ when bestmove reporting
-  // is in a separate thread.
   while (minibatch_size < params_.GetMiniBatchSize() &&
          number_out_of_order < params_.GetMiniBatchSize()) {
     // If there's something to process without touching slow neural net, do it.
@@ -692,6 +688,8 @@ void SearchWorker::GatherMinibatch() {
       --minibatch_size;
       ++number_out_of_order;
     }
+    // Check for stop at the end so we have at least one node.
+    if (search_->stop_) return;
   }
 }
 
