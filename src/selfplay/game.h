@@ -49,6 +49,8 @@ struct PlayerOptions {
   const OptionsDict* uci_options;
   // Limits to use for every move.
   SearchLimits search_limits;
+  // Movetime
+  int movetime;
 };
 
 // Plays a single game vs itself.

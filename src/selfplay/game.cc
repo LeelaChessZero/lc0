@@ -75,6 +75,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
       tree_[idx]->TrimTreeAtHead();
     }
+    if (options_[idx].movetime > -1) {
+      options_[idx].search_limits.search_deadline =
+          std::chrono::steady_clock::now() +
+          std::chrono::milliseconds(options_[idx].movetime);
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;

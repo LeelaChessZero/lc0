@@ -146,7 +146,12 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
     const GoParams& params, std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
-  limits.movetime = params.movetime;
+  int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
+  if (params.movetime >= 0) {
+    limits.search_deadline =
+        start_time + std::chrono::milliseconds(params.movetime - move_overhead);
+  }
+
   int64_t time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
@@ -166,7 +171,6 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
 
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
   float time_curve_peak = options_.Get<float>(kTimeCurvePeakId.GetId());
   float time_curve_left_width =
       options_.Get<float>(kTimeCurveLeftWidthId.GetId());
