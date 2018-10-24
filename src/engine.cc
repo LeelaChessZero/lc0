@@ -144,9 +144,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
-                                                    const GoParams& params) {
+    const GoParams& params, std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
-  limits.time_ms = params.movetime;
+  limits.movetime = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
@@ -213,8 +213,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms = std::max(
-      int64_t{0},
+  limits.search_deadline = start_time + std::chrono::milliseconds(
       std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
   return limits;
 }
@@ -359,16 +358,19 @@ void EngineController::Go(const GoParams& params) {
   }
 
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
-                                     tree_->IsBlackToMove(), params);
+                                     tree_->IsBlackToMove(), params,
+                                     start_time);
 
   // If there is a time limit, also store amount of time saved.
-  if (limits.time_ms >= 0) {
-    best_move_callback = [this, start_time, limits](const BestMoveInfo& info) {
+  if (limits.search_deadline) {
+    best_move_callback = [this, limits](const BestMoveInfo& info) {
       best_move_callback_(info);
-      auto time_spent = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - start_time)
-                            .count();
-      time_spared_ms_ += limits.time_ms - time_spent;
+      if (limits.search_deadline) {
+        time_spared_ms_ +=
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                *limits.search_deadline - std::chrono::steady_clock::now())
+                .count();
+      }
     };
   }
 

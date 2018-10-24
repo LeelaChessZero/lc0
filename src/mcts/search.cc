@@ -65,7 +65,15 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      params_(options) {}
+      params_(options) {
+  if (limits_.movetime >= 0) {
+    search_deadline_ =
+        std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(limits_.movetime);
+  } else {
+    search_deadline_ = limits_.search_deadline;
+  }
+}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -148,6 +156,13 @@ void Search::MaybeOutputInfo() {
 int64_t Search::GetTimeSinceStart() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - start_time_)
+      .count();
+}
+
+int64_t Search::GetTimeToDeadline() const {
+  if (!search_deadline_) return 0;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             *search_deadline_ - std::chrono::steady_clock::now())
       .count();
 }
 
@@ -255,7 +270,7 @@ void Search::MaybeTriggerStop() {
     FireStopInternal();
   }
   // Stop if reached time limit.
-  if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
+  if (search_deadline_ && GetTimeToDeadline() <= 0) {
     FireStopInternal();
   }
   // Stop if average depth reached requested depth.
@@ -280,13 +295,18 @@ void Search::UpdateRemainingMoves() {
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
-  if (limits_.time_ms >= 0) {
-    auto time_since_start = GetTimeSinceStart();
-    if (time_since_start > kSmartPruningToleranceMs * 2) {
+  if (search_deadline_ && !nps_start_time_) {
+    nps_start_time_ = std::chrono::steady_clock::now();
+  } else if (search_deadline_) {
+    auto time_since_start =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - *nps_start_time_)
+        .count();
+    if (time_since_start > kSmartPruningToleranceMs) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
-                     (time_since_start - kSmartPruningToleranceMs) +
+                     time_since_start +
                  1;
-      int64_t remaining_time = limits_.time_ms - time_since_start;
+      int64_t remaining_time = GetTimeToDeadline();
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
@@ -511,8 +531,8 @@ void Search::WatchdogThread() {
       constexpr auto kMaxWaitTime = 100ms;
       constexpr auto kMinWaitTime = 1ms;
       Mutex::Lock lock(counters_mutex_);
-      auto remaining_time = limits_.time_ms >= 0
-                                ? (limits_.time_ms - GetTimeSinceStart()) * 1ms
+      auto remaining_time = search_deadline_
+                                ? std::chrono::milliseconds(GetTimeToDeadline())
                                 : kMaxWaitTime;
       if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
       if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
