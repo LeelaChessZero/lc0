@@ -1550,8 +1550,9 @@ class CudnnNetwork : public Network {
     totalTime += dt;
     if (numCalls == reportingCalls) {
       double avgBatchSize = ((double)sumBatchSize) / numCalls;
-      printf("\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals\n",
-             avgBatchSize, totalTime, sumBatchSize);
+      double nps = sumBatchSize / totalTime;
+      printf("\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals. NPS: %g\n",
+             avgBatchSize, totalTime, sumBatchSize, nps);
       sumBatchSize = 0;
       totalTime = 0;
       numCalls = 0;
