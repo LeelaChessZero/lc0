@@ -652,6 +652,7 @@ void SearchWorker::GatherMinibatch() {
     if (picked_node.IsCollision()) {
       if (--collision_events_left <= 0) return;
       if ((collisions_left -= picked_node.multivisit) <= 0) return;
+      if (search_->stop_.load(std::memory_order_acquire)) return;
       continue;
     }
     ++minibatch_size;
@@ -921,6 +922,7 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
+  if (search_->stop_.load(std::memory_order_acquire)) return;
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
@@ -971,6 +973,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   int budget_to_spend = budget;  // Initialize for the case where there's only
                                  // one child.
   for (size_t i = 0; i < scores.size(); ++i) {
+    if (search_->stop_.load(std::memory_order_acquire)) break;
     if (budget <= 0) break;
 
     // Sort next chunk of a vector. 3 at a time. Most of the time it's fine.
