@@ -276,17 +276,12 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
 
     if (relu && (cVal < 0)) cVal = 0;
 
-    if (useTanh || useSigmoid) {
-      // Ankan: actually it's sigmoid in leela-zero main branch??
-      // see code in Network.cpp
-      //    auto winrate_sig = (1.0f + std::tanh(winrate_out[0])) / 2.0f;
-      // Different from lc0 branch? WHY ???
-      // cVal = (1.0f + tanh(cVal)) / 2.0f;
+    if (useTanh) {
       cVal = tanh(cVal);
     }
 
     if (useSigmoid) {
-      cVal = (1.0f + cVal) / 2.0f;
+      cVal = 1.0f / (1.0f + exp(-cVal));
     }
 
     c[i] = (T)cVal;
@@ -601,7 +596,6 @@ __global__ void globalAvgPool_kernel(float* output, const float* input,
   }
 
     // compute warp wide sum (for entire plane - elementsPerWarp elements)
-    // warp wide sum
 #pragma unroll
   for (int offset = 1; offset < 32; offset *= 2) {
     S += __shfl_down_sync(0xFFFFFFFF, S, offset);
