@@ -1012,7 +1012,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto board = search_->played_history_.Last().GetBoard(); 
   //assuming leela is searching from root
-  auto contempt = 0.005 * (board.ours() + board.theirs()).count();
+  auto contempt = 0.005 * (board.ours() + board.theirs()).count() - 0.005 * 3;
   if(node_to_process->depth % 2 == 0)
     contempt = -contempt;
   node_to_process->v = -computation_->GetQVal(idx_in_computation) + contempt;
