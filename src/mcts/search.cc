@@ -54,10 +54,11 @@ Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache,
-               SyzygyTablebase* syzygy_tb)
+               SyzygyTablebase* syzygy_tb, bool is_black)
     : root_node_(tree.GetCurrentHead()),
       cache_(cache),
       syzygy_tb_(syzygy_tb),
+      is_black_(is_black),
       played_history_(tree.GetPositionHistory()),
       network_(network),
       limits_(limits),
@@ -1038,7 +1039,13 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  node_to_process->v = -computation_->GetQVal(idx_in_computation);
+  auto board = search_->played_history_.Last().GetBoard(); 
+  //assuming leela is searching from root
+  auto contempt = params_.GetContempt() * 
+               (board.ours() + board.theirs()).count() - params_.GetContempt2();
+  if(node_to_process->depth % 2 == 0)
+    contempt = -contempt;
+  node_to_process->v = -computation_->GetQVal(idx_in_computation) + contempt;
   // ...and secondly, the policy data.
   float total = 0.0;
   for (auto edge : node->Edges()) {
