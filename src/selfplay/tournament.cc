@@ -45,12 +45,6 @@ const OptionId kThreadsId{"threads", "Threads",
                           "Number of CPU threads for every game.", 't'};
 const OptionId kNnCacheSizeId{"nncache", "NNCache",
                               "Number of positions to store in cache."};
-const OptionId kNetFileId{"weights", "WeightsFile",
-                          "Path to load network weights from.\n"
-                          "Setting it to <autodiscover> makes it search for "
-                          "the latest (by file date) file in ./ and ./weights/ "
-                          "subdirectories which looks like weights.",
-                          'w'};
 const OptionId kPlayoutsId{"playouts", "Playouts",
                            "Number of playouts per move to search."};
 const OptionId kVisitsId{"visits", "Visits",
@@ -58,17 +52,11 @@ const OptionId kVisitsId{"visits", "Visits",
 const OptionId kTimeMsId{"movetime", "MoveTime",
                          "Time per move, in milliseconds."};
 const OptionId kTrainingId{"training", "Training", "Write training data."};
-const OptionId kNnBackendId{"backend", "backend", "NN backend to use."};
-const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
-                                   "NN backend parameters."};
 const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
                                   "Show verbose thinking messages."};
 const OptionId kResignPlaythroughId{
     "resign-playthrough", "ResignPlaythrough",
     "The percentage of games which ignore resign."};
-
-// Value for network autodiscover.
-const char* kAutoDiscover = "<autodiscover>";
 
 }  // namespace
 
@@ -81,17 +69,14 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kParallelGamesId, 1, 256) = 8;
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
   options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
-  options->Add<StringOption>(kNetFileId) = kAutoDiscover;
   options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
   options->Add<IntOption>(kVisitsId, -1, 999999999) = -1;
   options->Add<IntOption>(kTimeMsId, -1, 999999999) = -1;
   options->Add<BoolOption>(kTrainingId) = false;
-  const auto backends = NetworkFactory::Get()->GetBackendsList();
-  options->Add<ChoiceOption>(kNnBackendId, backends) = "multiplexing";
-  options->Add<StringOption>(kNnBackendOptionsId);
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
 
+  NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
@@ -100,6 +85,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(SearchParams::kTemperatureId.GetId(), 1.0f);
   defaults->Set<bool>(SearchParams::kNoiseId.GetId(), true);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 0.0f);
+  defaults->Set<std::string>(NetworkFactory::kBackendId.GetId(),
+                             "multiplexing");
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
@@ -129,42 +116,11 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
 
   static const char* kPlayerNames[2] = {"player1", "player2"};
   // Initializing networks.
-  for (int idx : {0, 1}) {
-    // If two players have the same network, no need to load two.
-    if (idx == 1) {
-      bool network_identical = true;
-      for (const auto& option_id : {kNetFileId.GetId(), kNnBackendId.GetId(),
-                                    kNnBackendOptionsId.GetId()}) {
-        if (options.GetSubdict("player1").Get<std::string>(option_id) !=
-            options.GetSubdict("player2").Get<std::string>(option_id)) {
-          network_identical = false;
-          break;
-        }
-      }
-      if (network_identical) {
-        networks_[1] = networks_[0];
-        break;
-      }
-    }
-
-    std::string path = options.GetSubdict(kPlayerNames[idx])
-                           .Get<std::string>(kNetFileId.GetId());
-    if (path == kAutoDiscover) {
-      path = DiscoverWeightsFile();
-    }
-    Weights weights = LoadWeightsFromFile(path);
-    std::string backend = options.GetSubdict(kPlayerNames[idx])
-                              .Get<std::string>(kNnBackendId.GetId());
-    std::string backend_options =
-        options.GetSubdict(kPlayerNames[idx])
-            .Get<std::string>(kNnBackendOptionsId.GetId());
-
-   OptionsDict network_options(&options.GetSubdict(kPlayerNames[idx]));
-   network_options.AddSubdictFromString(backend_options);
-
-    networks_[idx] =
-        NetworkFactory::Get()->Create(backend, weights, network_options);
-  }
+  networks_[0] =
+      NetworkFactory::LoadNetwork(options.GetSubdict(kPlayerNames[0]));
+  networks_[1] =
+      NetworkFactory::LoadNetwork(options.GetSubdict(kPlayerNames[1]));
+  if (!networks_[1]) networks_[1] = networks_[0];
 
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(

@@ -26,11 +26,28 @@
 */
 
 #include "neural/factory.h"
+#include "neural/loader.h"
 
 #include <algorithm>
 #include <iostream>
 
 namespace lczero {
+
+const OptionId NetworkFactory::kWeightsId{
+    "weights", "WeightsFile",
+    "Path from which to load network weights.\n"
+    "Setting it to <autodiscover> makes it search in ./ and ./weights/ "
+    "subdirectories for the latest (by file date) file which looks like "
+    "weights.", 'w'};
+const OptionId NetworkFactory::kBackendId{
+    "backend", "Backend", "NN backend to use."};
+const OptionId NetworkFactory::kBackendOptionsId{
+    "backend-opts", "BackendOptions", "NN backend parameters."};
+const char* kAutoDiscover = "<autodiscover>";
+
+std::string NetworkFactory::network_path_;
+std::string NetworkFactory::backend_;
+std::string NetworkFactory::backend_options_;
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
@@ -40,6 +57,14 @@ NetworkFactory* NetworkFactory::Get() {
 NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
                                    int priority) {
   NetworkFactory::Get()->RegisterNetwork(name, factory, priority);
+}
+
+void NetworkFactory::PopulateOptions(OptionsParser* options) {
+  options->Add<StringOption>(NetworkFactory::kWeightsId) = kAutoDiscover;
+  const auto backends = NetworkFactory::Get()->GetBackendsList();
+  options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
+      backends.empty() ? "<none>" : backends[0];
+  options->Add<StringOption>(NetworkFactory::kBackendOptionsId);
 }
 
 void NetworkFactory::RegisterNetwork(const std::string& name,
@@ -64,6 +89,35 @@ std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
     }
   }
   throw Exception("Unknown backend: " + network);
+}
+
+std::unique_ptr<Network> NetworkFactory::LoadNetwork(
+    const OptionsDict& options) {
+  std::string network_path = options.Get<std::string>(kWeightsId.GetId());
+  std::string backend = options.Get<std::string>(kBackendId.GetId());
+  std::string backend_options =
+      options.Get<std::string>(kBackendOptionsId.GetId());
+
+  if (network_path == network_path_ && backend == backend_ &&
+      backend_options == backend_options_)
+    return nullptr;
+
+  network_path_ = network_path;
+  backend_ = backend;
+  backend_options_ = backend_options;
+
+  std::string net_path = network_path;
+  if (net_path == kAutoDiscover) {
+    net_path = DiscoverWeightsFile();
+  } else {
+    std::cerr << "Loading weights file from: " << net_path << std::endl;
+  }
+  Weights weights = LoadWeightsFromFile(net_path);
+
+  OptionsDict network_options(&options);
+  network_options.AddSubdictFromString(backend_options);
+
+  return NetworkFactory::Get()->Create(backend, weights, network_options);
 }
 
 }  // namespace lczero

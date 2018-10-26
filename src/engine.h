@@ -102,12 +102,8 @@ class EngineController {
   std::unique_ptr<Network> network_;
   NNCache cache_;
 
-  // Store current TB and network settings to track when they change so that
-  // they are reloaded.
+  // Store current TB paths to track if they need to be reloaded.
   std::string tb_paths_;
-  std::string network_path_;
-  std::string backend_;
-  std::string backend_options_;
 
   // The current position as given with SetPosition. For normal (ie. non-ponder)
   // search, the tree is set up with this position, however, during ponder we

@@ -31,6 +31,7 @@
 #include <string>
 #include "neural/network.h"
 #include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
@@ -51,12 +52,24 @@ class NetworkFactory {
     Register(const std::string& name, FactoryFunc factory, int priority = 0);
   };
 
+  // Add the network/backend parameters to the options dictionary.
+  static void PopulateOptions(OptionsParser* options);
+
   // Returns list of backend names, sorted by priority (higher priority first).
   std::vector<std::string> GetBackendsList() const;
 
   // Creates a backend given name and config.
   std::unique_ptr<Network> Create(const std::string& network, const Weights&,
                                   const OptionsDict& options);
+
+  // Helper function to load the network from the options. Returns nullptr
+  // if no network options changed since the previous call.
+  static std::unique_ptr<Network> LoadNetwork(const OptionsDict& options);
+
+  // Parameter IDs.
+  static const OptionId kWeightsId;
+  static const OptionId kBackendId;
+  static const OptionId kBackendOptionsId;
 
  private:
   void RegisterNetwork(const std::string& name, FactoryFunc factory,
@@ -80,6 +93,11 @@ class NetworkFactory {
 
   std::vector<Factory> factories_;
   friend class Register;
+
+  // Cached values.
+  static std::string network_path_;
+  static std::string backend_;
+  static std::string backend_options_;
 };
 
 #define REGISTER_NETWORK_WITH_COUNTER2(name, cls, priority, counter) \

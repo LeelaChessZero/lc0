@@ -45,15 +45,6 @@ const OptionId kThreadsOptionId{"threads", "Threads",
 const OptionId kLogFileId{"logfile", "LogFile", "Write log to that file.", 'l'};
 const OptionId kNNCacheSizeId{"nncache", "NNCache",
                               "Number of positions to store in cache."};
-const OptionId kWeightsId{"weights", "WeightsFile",
-                          "Path from which to load network weights.\n"
-                          "Setting it to <autodiscover> makes it search "
-                          "in ./ and ./weights/ subdirectories for the latest "
-                          "(by file date) file which looks like weights.",
-                          'w'};
-const OptionId kNnBackendId{"backend", "Backend", "NN backend to use."};
-const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
-                                   "NN backend parameters."};
 const OptionId kSlowMoverId{
     "slowmover", "Slowmover",
     "Parameter value X means that whole remaining time is split in such a way "
@@ -80,8 +71,6 @@ const OptionId kSpendSavedTimeId{"immediate-time-use", "ImmediateTimeUse",
                                  "Fraction of saved time to use immediately."};
 const OptionId kPonderId{"ponder", "Ponder", "This option is ignored."};
 
-const char* kAutoDiscover = "<autodiscover>";
-
 float ComputeMoveWeight(int ply, float peak, float left_width,
                         float right_width) {
   // Inflection points of the function are at ply = peak +/- width.
@@ -104,14 +93,8 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
-  options->Add<StringOption>(kWeightsId) = kAutoDiscover;
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
-
-  const auto backends = NetworkFactory::Get()->GetBackendsList();
-  options->Add<ChoiceOption>(kNnBackendId, backends) =
-      backends.empty() ? "<none>" : backends[0];
-  options->Add<StringOption>(kNnBackendOptionsId);
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 10000) = 100;
   options->Add<FloatOption>(kTimeCurvePeakId, -1000.0f, 1000.0f) = 26.2f;
@@ -128,6 +111,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->HideOption(kTimeCurveLeftWidthId);
   options->HideOption(kTimeCurveRightWidthId);
 
+  NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
 
@@ -236,31 +220,8 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Network.
-  std::string network_path = options_.Get<std::string>(kWeightsId.GetId());
-  std::string backend = options_.Get<std::string>(kNnBackendId.GetId());
-  std::string backend_options =
-      options_.Get<std::string>(kNnBackendOptionsId.GetId());
-
-  if (network_path == network_path_ && backend == backend_ &&
-      backend_options == backend_options_)
-    return;
-
-  network_path_ = network_path;
-  backend_ = backend;
-  backend_options_ = backend_options;
-
-  std::string net_path = network_path;
-  if (net_path == kAutoDiscover) {
-    net_path = DiscoverWeightsFile();
-  } else {
-    std::cerr << "Loading weights file from: " << net_path << std::endl;
-  }
-  Weights weights = LoadWeightsFromFile(net_path);
-
-  OptionsDict network_options(&options_);
-  network_options.AddSubdictFromString(backend_options);
-
-  network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
+  std::unique_ptr<Network> tmp_net = NetworkFactory::LoadNetwork(options_);
+  if (tmp_net) network_.swap(tmp_net);
 
   // Cache size.
   cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));
