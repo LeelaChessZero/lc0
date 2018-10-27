@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <iostream>
 
 #include "neural/blas/batchnorm.h"
 #include "neural/blas/blas.h"
