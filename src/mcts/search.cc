@@ -550,7 +550,7 @@ void Search::WatchdogThread() {
   MaybeTriggerStop();
 }
 
-void Search::FireStopInternal() REQUIRES(counters_mutex_) {
+void Search::FireStopInternal() {
   stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
   LOGFILE << "Stopping search.";
