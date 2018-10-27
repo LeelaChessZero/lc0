@@ -152,15 +152,15 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     if (path == kAutoDiscover) {
       path = DiscoverWeightsFile();
     }
-    Weights weights = LoadWeightsFromFile(path);
+    WeightsFile weights = LoadWeightsFromFile(path);
     std::string backend = options.GetSubdict(kPlayerNames[idx])
                               .Get<std::string>(kNnBackendId.GetId());
     std::string backend_options =
         options.GetSubdict(kPlayerNames[idx])
             .Get<std::string>(kNnBackendOptionsId.GetId());
 
-   OptionsDict network_options(&options.GetSubdict(kPlayerNames[idx]));
-   network_options.AddSubdictFromString(backend_options);
+    OptionsDict network_options(&options.GetSubdict(kPlayerNames[idx]));
+    network_options.AddSubdictFromString(backend_options);
 
     networks_[idx] =
         NetworkFactory::Get()->Create(backend, weights, network_options);
@@ -186,7 +186,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
         options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsId.GetId());
 
     if (search_limits_[idx].playouts == -1 &&
-        search_limits_[idx].visits == -1 && search_limits_[idx].movetime == -1) {
+        search_limits_[idx].visits == -1 &&
+        search_limits_[idx].movetime == -1) {
       throw Exception(
           "Please define --visits, --playouts or --movetime, otherwise it's "
           "not clear when to stop search.");

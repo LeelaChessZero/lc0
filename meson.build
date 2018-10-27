@@ -80,6 +80,7 @@ files += [
   'src/neural/factory.cc',
   'src/neural/loader.cc',
   'src/neural/network_check.cc',
+  'src/neural/network_legacy.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
   'src/neural/network_st_batch.cc',
@@ -97,6 +98,7 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/transpose.cc',
+  'src/utils/weights_adapter.cc',
 ]
 includes += include_directories('src')
 
@@ -322,7 +324,8 @@ if get_option('build_backends')
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
   cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
-                    '-I', meson.current_source_dir() + '/src']
+                    '-I', meson.current_source_dir() + '/src',
+                    '-I', '@BUILD_DIR@']
   if host_machine.system() == 'windows'
     cuda_arguments += ['-Xcompiler', '-MD']
   else

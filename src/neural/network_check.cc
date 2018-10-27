@@ -232,7 +232,7 @@ class CheckNetwork : public Network {
   static constexpr double kDefaultAbsoluteTolerance = 1e-5;
   static constexpr double kDefaultRelativeTolerance = 1e-4;
 
-  CheckNetwork(const Weights& weights, const OptionsDict& options) {
+  CheckNetwork(const WeightsFile& weights, const OptionsDict& options) {
     params_.mode = kDefaultMode;
     params_.absolute_tolerance = kDefaultAbsoluteTolerance;
     params_.relative_tolerance = kDefaultRelativeTolerance;
@@ -329,7 +329,7 @@ class CheckNetwork : public Network {
   std::unique_ptr<Network> check_net_;
 };
 
-std::unique_ptr<Network> MakeCheckNetwork(const Weights& weights,
+std::unique_ptr<Network> MakeCheckNetwork(const WeightsFile& weights,
                                           const OptionsDict& options) {
   return std::make_unique<CheckNetwork>(weights, options);
 }

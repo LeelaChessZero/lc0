@@ -30,6 +30,7 @@
 #include <memory>
 #include <mutex>
 #include "neural/factory.h"
+#include "neural/network_legacy.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
@@ -963,7 +964,8 @@ class CudnnNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudnnNetwork : public Network {
  public:
-  CudnnNetwork(Weights weights, const OptionsDict &options) {
+  CudnnNetwork(const WeightsFile &file, const OptionsDict &options) {
+    LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
@@ -1315,7 +1317,8 @@ class CudnnNetwork : public Network {
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void processConvBlock(Weights::ConvBlock &block, bool foldBNLayer = false) {
+  void processConvBlock(LegacyWeights::ConvBlock &block,
+                        bool foldBNLayer = false) {
     const float epsilon = 1e-5f;
 
     // Compute reciprocal of std-dev from the variances (so that it can be just
@@ -1378,7 +1381,7 @@ void CudnnNetworkComputation<DataType>::ComputeBlocking() {
 }
 
 template <typename DataType>
-std::unique_ptr<Network> MakeCudnnNetwork(const Weights &weights,
+std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile &weights,
                                           const OptionsDict &options) {
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }

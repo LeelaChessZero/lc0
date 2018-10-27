@@ -55,7 +55,7 @@ std::vector<std::string> NetworkFactory::GetBackendsList() const {
 }
 
 std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
-                                                const Weights& weights,
+                                                const WeightsFile& weights,
                                                 const OptionsDict& options) {
   std::cerr << "Creating backend [" << network << "]..." << std::endl;
   for (const auto& factory : factories_) {

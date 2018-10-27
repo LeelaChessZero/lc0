@@ -18,13 +18,16 @@
 
 #include "neural/blas/batchnorm.h"
 
-#include <cmath>
-
 namespace lczero {
+namespace {
+constexpr int kWidth = 8;
+constexpr int kHeight = 8;
+constexpr int kSquares = kWidth * kHeight;
+}  // namespace
 
-void Batchnorm::Apply(const size_t batch_size, const size_t channels,
-                      float* data, const float* means, const float* stddivs,
-                      const float* eltwise) {
+void ApplyBatchNormalization(const size_t batch_size, const size_t channels,
+                             float* data, const float* means,
+                             const float* stddivs, const float* eltwise) {
   for (size_t i = 0; i < batch_size; i++) {
     for (size_t c = 0; c < channels; ++c) {
       auto mean = means[c];
@@ -50,40 +53,6 @@ void Batchnorm::Apply(const size_t batch_size, const size_t channels,
     data += channels * kSquares;
     if (eltwise != nullptr) eltwise += channels * kSquares;
   }
-}
-
-void Batchnorm::InvertStddev(Weights::ConvBlock* conv) {
-  std::vector<float>& stddivs = conv->bn_stddivs;
-  InvertStddev(stddivs.size(), stddivs.data());
-}
-
-void Batchnorm::OffsetMeans(Weights::ConvBlock* conv) {
-  std::vector<float>& means = conv->bn_means;
-  const std::vector<float>& biases = conv->biases;
-  OffsetMeans(means.size(), means.data(), biases.data());
-}
-
-std::vector<float> Batchnorm::InvertStddev(const Weights::ConvBlock& conv) {
-  std::vector<float> stddivs = conv.bn_stddivs;  // copy
-  InvertStddev(stddivs.size(), stddivs.data());
-  return stddivs;
-}
-
-std::vector<float> Batchnorm::OffsetMeans(const Weights::ConvBlock& conv) {
-  std::vector<float> means = conv.bn_means;  // copy
-  const std::vector<float>& biases = conv.biases;
-  OffsetMeans(means.size(), means.data(), biases.data());
-  return means;
-}
-
-void Batchnorm::InvertStddev(const size_t size, float* array) {
-  for (size_t i = 0; i < size; i++)
-    array[i] = 1.0f / std::sqrt(array[i] + kEpsilon);
-}
-
-void Batchnorm::OffsetMeans(const size_t size, float* means,
-                            const float* biases) {
-  for (size_t i = 0; i < size; i++) means[i] -= biases[i];
 }
 
 }  // namespace lczero

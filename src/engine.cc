@@ -143,8 +143,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }
 
-SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
-    const GoParams& params, std::chrono::steady_clock::time_point start_time) {
+SearchLimits EngineController::PopulateSearchLimits(
+    int ply, bool is_black, const GoParams& params,
+    std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
   limits.movetime = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
@@ -213,8 +214,10 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.search_deadline = start_time + std::chrono::milliseconds(
-      std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
+  limits.search_deadline =
+      start_time +
+      std::chrono::milliseconds(
+          std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
   return limits;
 }
 
@@ -255,7 +258,7 @@ void EngineController::UpdateFromUciOptions() {
   } else {
     std::cerr << "Loading weights file from: " << net_path << std::endl;
   }
-  Weights weights = LoadWeightsFromFile(net_path);
+  WeightsFile weights = LoadWeightsFromFile(net_path);
 
   OptionsDict network_options(&options_);
   network_options.AddSubdictFromString(backend_options);
@@ -357,9 +360,8 @@ void EngineController::Go(const GoParams& params) {
     SetupPosition(ChessBoard::kStartingFen, {});
   }
 
-  auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
-                                     tree_->IsBlackToMove(), params,
-                                     start_time);
+  auto limits = PopulateSearchLimits(
+      tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
 
   // If there is a time limit, also store amount of time saved.
   if (limits.search_deadline) {

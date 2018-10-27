@@ -85,7 +85,7 @@ class RandomNetwork : public Network {
 };
 }  // namespace
 
-std::unique_ptr<Network> MakeRandomNetwork(const Weights& /*weights*/,
+std::unique_ptr<Network> MakeRandomNetwork(const WeightsFile& /*weights*/,
                                            const OptionsDict& options) {
   return std::make_unique<RandomNetwork>(options);
 }
