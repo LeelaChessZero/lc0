@@ -1383,6 +1383,13 @@ void CudnnNetworkComputation<DataType>::ComputeBlocking() {
 template <typename DataType>
 std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile &weights,
                                           const OptionsDict &options) {
+  if (weights.format().network_format().network() !=
+      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    throw Exception(
+        "Network format " +
+        std::to_string(weights.format().network_format().network()) +
+        " is not supported by CuDNN backend.");
+  }
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }
 

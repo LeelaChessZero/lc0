@@ -328,6 +328,13 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
 
 std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                                          const OptionsDict& options) {
+  if (weights.format().network_format().network() !=
+      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    throw Exception(
+        "Network format " +
+        std::to_string(weights.format().network_format().network()) +
+        " is not supported by BLAS backend.");
+  }
   return std::make_unique<BlasNetwork>(weights, options);
 }
 

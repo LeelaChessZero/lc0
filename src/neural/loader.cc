@@ -93,6 +93,16 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
     throw Exception("Invalid weight file: unsupported encoding.");
 
+  // Older protobufs don't have format definition.
+  // Populate format fields with legacy (or "classical") formats.
+  if (!net.format().has_network_format()) {
+    auto net_format = net.mutable_format()->mutable_network_format();
+    using nf = pblczero::NetworkFormat;
+    net_format->set_input(nf::INPUT_CLASSICAL_112_PLANE);
+    net_format->set_output(nf::OUTPUT_CLASSICAL);
+    net_format->set_network(nf::NETWORK_CLASSICAL);
+  }
+
   return net;
 }
 

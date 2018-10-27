@@ -292,6 +292,13 @@ class OpenCLNetwork : public Network {
 
 std::unique_ptr<Network> MakeOpenCLNetwork(const WeightsFile& weights,
                                            const OptionsDict& options) {
+  if (weights.format().network_format().network() !=
+      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    throw Exception(
+        "Network format " +
+        std::to_string(weights.format().network_format().network()) +
+        " is not supported by OpenCL backend.");
+  }
   return std::make_unique<OpenCLNetwork>(weights, options);
 }
 
