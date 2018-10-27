@@ -29,6 +29,7 @@
 #include <cmath>
 
 namespace lczero {
+namespace {
 
 class BlasComputation : public NetworkComputation {
  public:
@@ -331,6 +332,12 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
   fprintf(stderr, "BLAS max batch size is %ld.\n", max_batch_size_);
 }
 
-REGISTER_NETWORK("blas", BlasNetwork, 50)
+std::unique_ptr<Network> MakeBlasNetwork(const Weights& weights,
+                                         const OptionsDict& options) {
+  return std::make_unique<BlasNetwork>(weights, options);
+}
 
+REGISTER_NETWORK("blas", MakeBlasNetwork, 50)
+
+}  // namespace
 }  // namespace lczero

@@ -893,8 +893,8 @@ struct InputsOutputs {
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_policy_mem_gpu_, op_policy_mem_, 0));
 
-    ReportCUDAErrors(cudaHostAlloc(
-        &op_value_mem_, maxBatchSize * sizeof(float), cudaHostAllocMapped));
+    ReportCUDAErrors(cudaHostAlloc(&op_value_mem_, maxBatchSize * sizeof(float),
+                                   cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
   }
@@ -915,10 +915,6 @@ struct InputsOutputs {
   float *op_policy_mem_gpu_;
   float *op_value_mem_gpu_;
 };
-
-// This namespace should be closed at the very end of file, but otherwise
-// there are nvcc warnings. Weird way to silence warnings.
-}  // namespace
 
 template <typename DataType>
 class CudnnNetwork;
@@ -1294,11 +1290,6 @@ class CudnnNetwork : public Network {
     free_inputs_outputs_.push_back(std::move(resource));
   }
 
-  // Apparently nvcc doesn't see constructor invocations through make_unique.
-  // This function invokes constructor just to please complier and silence
-  // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0); }
-
  private:
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
@@ -1386,7 +1377,14 @@ void CudnnNetworkComputation<DataType>::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
-REGISTER_NETWORK("cudnn", CudnnNetwork<float>, 110)
-REGISTER_NETWORK("cudnn-fp16", CudnnNetwork<half>, 105)
+template <typename DataType>
+std::unique_ptr<Network> MakeCudnnNetwork(const Weights &weights,
+                                          const OptionsDict &options) {
+  return std::make_unique<CudnnNetwork<DataType>>(weights, options);
+}
 
+REGISTER_NETWORK("cudnn", MakeCudnnNetwork<float>, 110)
+REGISTER_NETWORK("cudnn-fp16", MakeCudnnNetwork<half>, 105)
+
+}  // namespace
 }  // namespace lczero

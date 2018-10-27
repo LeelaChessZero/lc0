@@ -203,8 +203,12 @@ void MuxingComputation::ComputeBlocking() {
   dataready_cv_.wait(lock, [this]() { return dataready_; });
 }
 
+std::unique_ptr<Network> MakeMuxingNetwork(const Weights& weights,
+                                           const OptionsDict& options) {
+  return std::make_unique<MuxingNetwork>(weights, options);
+}
+
+REGISTER_NETWORK("multiplexing", MakeMuxingNetwork, -1000)
+
 }  // namespace
-
-REGISTER_NETWORK("multiplexing", MuxingNetwork, -1000)
-
 }  // namespace lczero

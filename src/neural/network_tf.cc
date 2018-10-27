@@ -308,9 +308,14 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
   return std::make_unique<TFNetworkComputation<CPU>>(this);
 }
 
+template <bool CPU>
+std::unique_ptr<Network> MakeTFNetwork(const Weights& weights,
+                                       const OptionsDict& options) {
+  return std::make_unique<TFNetwork<CPU>>(weights, options);
+}
+
+REGISTER_NETWORK("tensorflow-cpu", MakeTFNetwork<true>, 90)
+REGISTER_NETWORK("tensorflow", MakeTFNetwork<false>, 80)
+
 }  // namespace
-
-REGISTER_NETWORK("tensorflow-cpu", TFNetwork<true>, 90)
-REGISTER_NETWORK("tensorflow", TFNetwork<false>, 80)
-
 }  // namespace lczero

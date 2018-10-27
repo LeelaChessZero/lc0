@@ -329,8 +329,12 @@ class CheckNetwork : public Network {
   std::unique_ptr<Network> check_net_;
 };
 
+std::unique_ptr<Network> MakeCheckNetwork(const Weights& weights,
+                                          const OptionsDict& options) {
+  return std::make_unique<CheckNetwork>(weights, options);
+}
+
+REGISTER_NETWORK("check", MakeCheckNetwork, -800)
+
 }  // namespace
-
-REGISTER_NETWORK("check", CheckNetwork, -800)
-
 }  // namespace lczero

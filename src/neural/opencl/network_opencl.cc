@@ -289,8 +289,12 @@ class OpenCLNetwork : public Network {
   OpenCL_Network opencl_net_;
 };
 
+std::unique_ptr<Network> MakeOpenCLNetwork(const Weights& weights,
+                                           const OptionsDict& options) {
+  return std::make_unique<OpenCLNetwork>(weights, options);
+}
+
+REGISTER_NETWORK("opencl", MakeOpenCLNetwork, 100)
+
 }  // namespace
-
-REGISTER_NETWORK("opencl", OpenCLNetwork, 100)
-
 }  // namespace lczero
