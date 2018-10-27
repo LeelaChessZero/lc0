@@ -19,6 +19,7 @@
 #include "neural/network_legacy.h"
 
 #include <cmath>
+#include <algorithm>
 #include "utils/weights_adapter.h"
 
 namespace lczero {

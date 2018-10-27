@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <memory>
 #include "proto/net.pb.h"
 
 namespace lczero {
