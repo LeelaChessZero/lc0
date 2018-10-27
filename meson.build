@@ -394,6 +394,7 @@ gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
 if get_option('gtest') and gtest.found()
   lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
+  includes += lc0_lib.private_dir_include()
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
