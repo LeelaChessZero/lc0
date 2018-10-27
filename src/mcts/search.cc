@@ -1043,8 +1043,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   //assuming leela is searching from root
   auto contempt = params_.GetContempt() * 
                (board.ours() + board.theirs()).count() - params_.GetContempt2();
-  if(node_to_process->depth % 2 == 0)
-    contempt = -contempt;
+  // if(node_to_process->depth % 2 == 0)
+  //   contempt = -contempt;
   node_to_process->v = -computation_->GetQVal(idx_in_computation) + contempt;
   // ...and secondly, the policy data.
   float total = 0.0;
