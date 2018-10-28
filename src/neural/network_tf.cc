@@ -311,14 +311,14 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 }
 
 template <bool CPU>
-std::unique_ptr<Network> MakeTFNetwork(const WeightsFile &weights,
+std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
                                        const OptionsDict& options) {
   if (weights.format().network_format().network() !=
       pblczero::NetworkFormat::NETWORK_CLASSICAL) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
-        " is not supported by CuDNN backend.");
+        " is not supported by Tensorflow backend.");
   }
   return std::make_unique<TFNetwork<CPU>>(weights, options);
 }

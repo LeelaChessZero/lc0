@@ -46,7 +46,7 @@ else
   protobuf_dep = protobuf_lib
 endif
 protoc = find_program('protoc', required : false)
-# For tensorflow skip system protobuf, chances are it will not work
+# For tensorflow skip system protobuf, chances are it will not work.
 if not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
   deps += subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
