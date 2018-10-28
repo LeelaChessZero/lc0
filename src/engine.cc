@@ -210,9 +210,13 @@ SearchLimits EngineController::PopulateSearchLimits(
     time_spared_ms_ -= this_move_time * (slowmover - 1);
   }
 
-  LOGFILE << "Budgeted time for the move: " << this_move_time << "(+"
-          << time_to_squander << " to squander). Remaining time " << time
-          << "(-" << move_overhead << " overhead)";
+  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
+          << time_to_squander << "ms to squander -"
+          << std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - start_time)
+                 .count()
+          << "ms already passed). Remaining time " << time << "ms(-"
+          << move_overhead << "ms overhead)";
   // Use `time_to_squander` time immediately.
   this_move_time += time_to_squander;
 
@@ -384,6 +388,12 @@ void EngineController::Go(const GoParams& params) {
                                      info_callback, limits, options_, &cache_,
                                      syzygy_tb_.get());
 
+  if (limits.search_deadline) {
+    LOGFILE << "Timer started at "
+            << FormatTime(SteadyClockToSystemClock(move_start_time_))
+            << ", deadline at "
+            << FormatTime(SteadyClockToSystemClock(*limits.search_deadline));
+  }
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 

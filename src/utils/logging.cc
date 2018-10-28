@@ -26,7 +26,6 @@
 */
 
 #include "utils/logging.h"
-#include <iomanip>
 #include <iostream>
 #include <thread>
 
@@ -66,15 +65,9 @@ void Logging::SetFilename(const std::string& filename) {
 }
 
 LogMessage::LogMessage(const char* file, int line) {
-  using namespace std::chrono;
-  auto time_now = system_clock::now();
-  auto ms =
-      duration_cast<milliseconds>(time_now.time_since_epoch()).count() % 1000;
-  auto timer = system_clock::to_time_t(time_now);
-  *this << std::put_time(std::localtime(&timer), "%m%d %T") << '.'
-        << std::setfill('0') << std::setw(3) << ms << ' ' << std::setfill(' ')
-        << std::this_thread::get_id() << std::setfill('0') << ' ' << file << ':'
-        << line << "] ";
+  *this << FormatTime(std::chrono::system_clock::now()) << ' '
+        << std::setfill(' ') << std::this_thread::get_id() << std::setfill('0')
+        << ' ' << file << ':' << line << "] ";
 }
 
 LogMessage::~LogMessage() { Logging::Get().WriteLineRaw(str()); }
@@ -85,6 +78,23 @@ StderrLogMessage::StderrLogMessage(const char* file, int line)
 StderrLogMessage::~StderrLogMessage() {
   std::cerr << str() << std::endl;
   log_ << str();
+}
+
+std::chrono::time_point<std::chrono::system_clock> SteadyClockToSystemClock(
+    std::chrono::time_point<std::chrono::steady_clock> time) {
+  return std::chrono::system_clock::now() +
+         (time - std::chrono::steady_clock::now());
+}
+
+std::string FormatTime(
+    std::chrono::time_point<std::chrono::system_clock> time) {
+  std::ostringstream ss;
+  using namespace std::chrono;
+  auto ms = duration_cast<milliseconds>(time.time_since_epoch()).count() % 1000;
+  auto timer = std::chrono::system_clock::to_time_t(time);
+  ss << std::put_time(std::localtime(&timer), "%m%d %T") << '.'
+     << std::setfill('0') << std::setw(3) << ms;
+  return ss.str();
 }
 
 }  // namespace lczero
