@@ -210,6 +210,9 @@ SearchLimits EngineController::PopulateSearchLimits(
     time_spared_ms_ -= this_move_time * (slowmover - 1);
   }
 
+  LOGFILE << "Budgeted time for the move: " << this_move_time << "(+"
+          << time_to_squander << " to squander). Remaining time " << time
+          << "(-" << move_overhead << " overhead)";
   // Use `time_to_squander` time immediately.
   this_move_time += time_to_squander;
 
@@ -362,6 +365,7 @@ void EngineController::Go(const GoParams& params) {
 
   auto limits = PopulateSearchLimits(
       tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
+  LOGFILE << "Limits: " << limits.DebugString();
 
   // If there is a time limit, also store amount of time saved.
   if (limits.search_deadline) {

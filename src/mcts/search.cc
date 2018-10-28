@@ -48,7 +48,17 @@ const int kSmartPruningToleranceNodes = 300;
 const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
+using std::literals::chrono_literals::operator""ms;
+const auto kNNComputationWarningTime = 500ms;
 }  // namespace
+
+std::string SearchLimits::DebugString() const {
+  std::ostringstream ss;
+  ss << "visits:" << visits << " playouts:" << playouts
+     << " movetime:" << movetime << " depth:" << depth
+     << " infinite:" << infinite;
+  return ss.str();
+}
 
 Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
@@ -67,9 +77,8 @@ Search::Search(const NodeTree& tree, Network* network,
       info_callback_(info_callback),
       params_(options) {
   if (limits_.movetime >= 0) {
-    search_deadline_ =
-        std::chrono::steady_clock::now() +
-        std::chrono::milliseconds(limits_.movetime);
+    search_deadline_ = std::chrono::steady_clock::now() +
+                       std::chrono::milliseconds(limits_.movetime);
   } else {
     search_deadline_ = limits_.search_deadline;
   }
@@ -259,18 +268,24 @@ void Search::MaybeTriggerStop() {
   // If smart pruning tells to stop (best move found), stop.
   if (found_best_move_) {
     FireStopInternal();
+    LOGFILE << "Stopped search: Only one move candidate left.";
   }
   // Stop if reached playouts limit.
   if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
     FireStopInternal();
+    LOGFILE << "Stopped search: Reached playouts limit: " << total_playouts_
+            << ">=" << limits_.playouts;
   }
   // Stop if reached visits limit.
   if (limits_.visits >= 0 &&
       total_playouts_ + initial_visits_ >= limits_.visits) {
     FireStopInternal();
+    LOGFILE << "Stopped search: Reached visits limit: "
+            << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
   }
   // Stop if reached time limit.
   if (search_deadline_ && GetTimeToDeadline() <= 0) {
+    LOGFILE << "Stopped search: Ran out of time.";
     FireStopInternal();
   }
   // Stop if average depth reached requested depth.
@@ -278,6 +293,7 @@ void Search::MaybeTriggerStop() {
       cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
           static_cast<unsigned int>(limits_.depth)) {
     FireStopInternal();
+    LOGFILE << "Stopped search: Reached depth.";
   }
   // If we are the first to see that stop is needed.
   if (stop_.load(std::memory_order_acquire) && !responded_bestmove_) {
@@ -301,7 +317,7 @@ void Search::UpdateRemainingMoves() {
     auto time_since_start =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - *nps_start_time_)
-        .count();
+            .count();
     if (time_since_start > kSmartPruningToleranceMs) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
                      time_since_start +
@@ -526,7 +542,6 @@ void Search::WatchdogThread() {
   LOGFILE << "Starting watchdog thread.";
   while (IsSearchActive()) {
     {
-      using namespace std::chrono_literals;
       constexpr auto kMaxWaitTime = 100ms;
       constexpr auto kMinWaitTime = 1ms;
       Mutex::Lock lock(counters_mutex_);
@@ -553,18 +568,19 @@ void Search::WatchdogThread() {
 void Search::FireStopInternal() {
   stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
-  LOGFILE << "Stopping search.";
 }
 
 void Search::Stop() {
   Mutex::Lock lock(counters_mutex_);
   FireStopInternal();
+  LOGFILE << "Stopping search due to `stop` uci command.";
 }
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
   responded_bestmove_ = true;
   FireStopInternal();
+  LOGFILE << "Aborting search, if it is still active.";
 }
 
 void Search::Wait() {
@@ -1016,7 +1032,18 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() {
+  const auto start_time = std::chrono::steady_clock::now();
+  computation_->ComputeBlocking();
+  const auto end_time = std::chrono::steady_clock::now();
+  if (end_time - start_time > kNNComputationWarningTime) {
+    CERR << "Warning: too long computation: "
+         << std::chrono::duration_cast<std::chrono::milliseconds>(end_time -
+                                                                  start_time)
+                .count()
+         << "ms";
+  }
+}
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
