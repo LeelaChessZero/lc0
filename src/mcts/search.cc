@@ -150,6 +150,12 @@ void Search::MaybeOutputInfo() {
        last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
            GetTimeSinceStart())) {
     SendUciInfo();
+    if (stop_.load(std::memory_order_acquire) && !ok_to_respond_bestmove_) {
+      ThinkingInfo info;
+      info.comment =
+          "WARNING: Search has reached limit and does not make any progress.";
+      info_callback_({info});
+    }
   }
 }
 
