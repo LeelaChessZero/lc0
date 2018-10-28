@@ -280,7 +280,7 @@ void Search::MaybeTriggerStop() {
     FireStopInternal();
   }
   // If we are the first to see that stop is needed.
-  if (stop_ && !responded_bestmove_) {
+  if (stop_.load(std::memory_order_acquire) && !responded_bestmove_) {
     SendUciInfo();
     if (params_.GetVerboseStats()) SendMovesStats();
     best_move_ = GetBestMoveInternal();
@@ -519,8 +519,7 @@ void Search::RunBlocking(size_t threads) {
 }
 
 bool Search::IsSearchActive() const {
-  Mutex::Lock lock(counters_mutex_);
-  return !stop_;
+  return !stop_.load(std::memory_order_acquire);
 }
 
 void Search::WatchdogThread() {
@@ -542,17 +541,17 @@ void Search::WatchdogThread() {
       // mode during thinking.
       // Minimum wait time is there to prevent busy wait and other thread
       // starvation.
-      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
-                            [this]()
-                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
+      watchdog_cv_.wait_for(lock.get_raw(), remaining_time, [this]() {
+        return stop_.load(std::memory_order_acquire);
+      });
     }
     MaybeTriggerStop();
   }
   MaybeTriggerStop();
 }
 
-void Search::FireStopInternal() REQUIRES(counters_mutex_) {
-  stop_ = true;
+void Search::FireStopInternal() {
+  stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
   LOGFILE << "Stopping search.";
 }
@@ -639,8 +638,6 @@ void SearchWorker::GatherMinibatch() {
   // Gather nodes to process in the current batch.
   // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
   // iteration so that search can exit.
-  // TODO(crem) change that to checking search_->stop_ when bestmove reporting
-  // is in a separate thread.
   while (minibatch_size < params_.GetMiniBatchSize() &&
          number_out_of_order < params_.GetMiniBatchSize()) {
     // If there's something to process without touching slow neural net, do it.
@@ -655,6 +652,7 @@ void SearchWorker::GatherMinibatch() {
     if (picked_node.IsCollision()) {
       if (--collision_events_left <= 0) return;
       if ((collisions_left -= picked_node.multivisit) <= 0) return;
+      if (search_->stop_.load(std::memory_order_acquire)) return;
       continue;
     }
     ++minibatch_size;
@@ -692,6 +690,8 @@ void SearchWorker::GatherMinibatch() {
       --minibatch_size;
       ++number_out_of_order;
     }
+    // Check for stop at the end so we have at least one node.
+    if (search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
 
@@ -922,6 +922,7 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
+  if (search_->stop_.load(std::memory_order_acquire)) return;
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
@@ -972,6 +973,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   int budget_to_spend = budget;  // Initialize for the case where there's only
                                  // one child.
   for (size_t i = 0; i < scores.size(); ++i) {
+    if (search_->stop_.load(std::memory_order_acquire)) break;
     if (budget <= 0) break;
 
     // Sort next chunk of a vector. 3 at a time. Most of the time it's fine.
