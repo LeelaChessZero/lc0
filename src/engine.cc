@@ -132,7 +132,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsId);
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
-  options->Add<IntOption>(kMoveOverheadId, 0, 10000000) = 200;
+  options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
   options->Add<FloatOption>(kTimePeakPlyId, -1000.0f, 1000.0f) = 26.2f;
   options->Add<FloatOption>(kTimeLeftWidthId, 0.0f, 1000.0f) = 82.0f;
   options->Add<FloatOption>(kTimeRightWidthId, 0.0f, 1000.0f) = 74.0f;
