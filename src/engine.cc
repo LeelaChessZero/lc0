@@ -143,8 +143,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }
 
-SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
-    const GoParams& params, std::chrono::steady_clock::time_point start_time) {
+SearchLimits EngineController::PopulateSearchLimits(
+    int ply, bool is_black, const GoParams& params,
+    std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
   limits.movetime = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
@@ -213,8 +214,10 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.search_deadline = start_time + std::chrono::milliseconds(
-      std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
+  limits.search_deadline =
+      start_time +
+      std::chrono::milliseconds(
+          std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
   return limits;
 }
 
@@ -226,9 +229,9 @@ void EngineController::UpdateFromUciOptions() {
   std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId.GetId());
   if (!tb_paths.empty() && tb_paths != tb_paths_) {
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-    std::cerr << "Loading Syzygy tablebases from " << tb_paths << std::endl;
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
     if (!syzygy_tb_->init(tb_paths)) {
-      std::cerr << "Failed to load Syzygy tablebases!" << std::endl;
+      CERR << "Failed to load Syzygy tablebases!";
       syzygy_tb_ = nullptr;
     } else {
       tb_paths_ = tb_paths;
@@ -253,7 +256,7 @@ void EngineController::UpdateFromUciOptions() {
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
   } else {
-    std::cerr << "Loading weights file from: " << net_path << std::endl;
+    CERR << "Loading weights file from: " << net_path;
   }
   Weights weights = LoadWeightsFromFile(net_path);
 
@@ -357,9 +360,8 @@ void EngineController::Go(const GoParams& params) {
     SetupPosition(ChessBoard::kStartingFen, {});
   }
 
-  auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
-                                     tree_->IsBlackToMove(), params,
-                                     start_time);
+  auto limits = PopulateSearchLimits(
+      tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
 
   // If there is a time limit, also store amount of time saved.
   if (limits.search_deadline) {

@@ -61,6 +61,16 @@ class LogMessage : public std::ostringstream {
   ~LogMessage();
 };
 
+class StderrLogMessage : public std::ostringstream {
+ public:
+  StderrLogMessage(const char* file, int line);
+  ~StderrLogMessage();
+
+ private:
+  LogMessage log_;
+};
+
 }  // namespace lczero
 
 #define LOGFILE ::lczero::LogMessage(__FILE__, __LINE__)
+#define CERR ::lczero::StderrLogMessage(__FILE__, __LINE__)

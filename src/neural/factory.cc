@@ -28,7 +28,7 @@
 #include "neural/factory.h"
 
 #include <algorithm>
-#include <iostream>
+#include "utils/logging.h"
 
 namespace lczero {
 
@@ -57,7 +57,7 @@ std::vector<std::string> NetworkFactory::GetBackendsList() const {
 std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
                                                 const Weights& weights,
                                                 const OptionsDict& options) {
-  std::cerr << "Creating backend [" << network << "]..." << std::endl;
+  CERR << "Creating backend [" << network << "]...";
   for (const auto& factory : factories_) {
     if (factory.name == network) {
       return factory.factory(weights, options);

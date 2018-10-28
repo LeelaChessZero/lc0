@@ -28,12 +28,16 @@
 #pragma once
 
 #include <stdexcept>
+#include "utils/logging.h"
 
 namespace lczero {
 
 // Exception to throw around.
 class Exception : public std::runtime_error {
-  using std::runtime_error::runtime_error;
+ public:
+  Exception(const std::string& what) : std::runtime_error(what) {
+    LOGFILE << "Exception: " << what;
+  }
 };
 
 }  // namespace lczero

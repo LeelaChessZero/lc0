@@ -32,6 +32,7 @@
 #include <sstream>
 #include "utils/commandline.h"
 #include "utils/configfile.h"
+#include "utils/logging.h"
 #include "utils/string.h"
 
 namespace lczero {
@@ -145,9 +146,8 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         processed = true;
       }
       if (!processed) {
-        std::cerr << "Unknown command line flag: " << *iter << ".\n";
-        std::cerr << "For help run:\n  " << CommandLine::BinaryName()
-                  << " --help" << std::endl;
+        CERR << "Unknown command line flag: " << *iter << ".";
+        CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
         return false;
       }
       continue;
@@ -170,17 +170,15 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         }
       }
       if (!processed) {
-        std::cerr << "Unknown command line flag: " << *iter << ".\n";
-        std::cerr << "For help run:\n  " << CommandLine::BinaryName()
-                  << " --help" << std::endl;
+        CERR << "Unknown command line flag: " << *iter << ".";
+        CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
         return false;
       }
       continue;
     }
 
-    std::cerr << "Unknown command line argument: " << *iter << ".\n";
-    std::cerr << "For help run:\n  " << CommandLine::BinaryName() << " --help"
-              << std::endl;
+    CERR << "Unknown command line argument: " << *iter << ".\n";
+    CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
     return false;
   }
   return true;

@@ -31,13 +31,13 @@
 #include <cctype>
 #include <cstdio>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <string>
 #include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "utils/logging.h"
 #include "version.h"
 
 namespace lczero {
@@ -252,7 +252,7 @@ std::string DiscoverWeightsFile() {
     int val = 0;
     data >> val;
     if (!data.fail() && val == 2) {
-      std::cerr << "Found txt network file: " << candidate.second << std::endl;
+      CERR << "Found txt network file: " << candidate.second;
       return candidate.second;
     }
 
@@ -260,7 +260,7 @@ std::string DiscoverWeightsFile() {
     // our own magic should suffice.
     auto magic = reinterpret_cast<std::uint32_t*>(buf + 1);
     if (*magic == kWeightMagic) {
-      std::cerr << "Found pb network file: " << candidate.second << std::endl;
+      CERR << "Found pb network file: " << candidate.second;
       return candidate.second;
     }
   }

@@ -27,6 +27,7 @@
 
 #include "utils/logging.h"
 #include <iomanip>
+#include <iostream>
 #include <thread>
 
 namespace lczero {
@@ -77,5 +78,13 @@ LogMessage::LogMessage(const char* file, int line) {
 }
 
 LogMessage::~LogMessage() { Logging::Get().WriteLineRaw(str()); }
+
+StderrLogMessage::StderrLogMessage(const char* file, int line)
+    : log_(file, line) {}
+
+StderrLogMessage::~StderrLogMessage() {
+  std::cerr << str() << std::endl;
+  log_ << str();
+}
 
 }  // namespace lczero
