@@ -42,43 +42,62 @@ const int kDefaultThreads = 2;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
-const OptionId kLogFileId{"logfile", "LogFile", "Write log to that file.", 'l'};
-const OptionId kNNCacheSizeId{"nncache", "NNCache",
-                              "Number of positions to store in cache."};
-const OptionId kWeightsId{"weights", "WeightsFile",
-                          "Path from which to load network weights.\n"
-                          "Setting it to <autodiscover> makes it search "
-                          "in ./ and ./weights/ subdirectories for the latest "
-                          "(by file date) file which looks like weights.",
-                          'w'};
-const OptionId kNnBackendId{"backend", "Backend", "NN backend to use."};
+const OptionId kLogFileId{"logfile", "LogFile",
+                          "Write log to that file. Special value <stderr> to "
+                          "output the log to the console.",
+                          'l'};
+const OptionId kNNCacheSizeId{
+    "nncache", "NNCacheSize",
+    "Number of positions to store in a memory cache. A large cache can speed "
+    "up searching, but takes memory."};
+const OptionId kWeightsId{
+    "weights", "WeightsFile",
+    "Path from which to load network weights.\nSetting it to <autodiscover> "
+    "makes it search in ./ and ./weights/ subdirectories for the latest (by "
+    "file date) file which looks like weights.",
+    'w'};
+const OptionId kNnBackendId{
+    "backend", "Backend", "Neural network computational backend to use.", 'b'};
 const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
-                                   "NN backend parameters."};
+                                   "Parameters of neural network backend. "
+                                   "Exact parameters differ per backend.",
+                                   'o'};
 const OptionId kSlowMoverId{
     "slowmover", "Slowmover",
-    "Parameter value X means that whole remaining time is split in such a way "
-    "that current move gets X*Y seconds, and next moves will get 1*Y seconds. "
-    "However, due to smart pruning, the engine usually doesn't use all "
-    "allocated time."};
+    "Budgeted time for a move is multiplied by this value, causing the engine "
+    "to spend more time (if value is greater than 1) or less time (if the "
+    "value is less than 1)."};
 const OptionId kMoveOverheadId{
     "move-overhead", "MoveOverheadMs",
-    "How much overhead, in milliseconds, should the engine allocate for every "
-    "move (to counteract things like slow connection, interprocess "
-    "communication, "
-    "etc)."};
-const OptionId kTimeCurvePeakId{"time-curve-peak", "TimeCurvePeakPly",
-                                "Time weight curve peak ply."};
-const OptionId kTimeCurveLeftWidthId{"time-curve-left-width",
-                                     "TimeCurveLeftWidth",
-                                     "Time weight curve width left of peak."};
-const OptionId kTimeCurveRightWidthId{"time-curve-right-width",
-                                      "TimeCurveRightWidth",
-                                      "Time weight curve width right of peak."};
-const OptionId kSyzygyTablebaseId{"syzygy-paths", "SyzygyPath",
-                                  "List of Syzygy tablebase directories.", 's'};
-const OptionId kSpendSavedTimeId{"immediate-time-use", "ImmediateTimeUse",
-                                 "Fraction of saved time to use immediately."};
-const OptionId kPonderId{"ponder", "Ponder", "This option is ignored."};
+    "Amount of time, in milliseconds, that the engine subtracts from it's "
+    "total available time (to compensate for slow connection, interprocess "
+    "communication, etc)."};
+const OptionId kTimePeakPlyId{"time-peak-halfmove", "TimePeakHalfmove",
+                              "For which halfmove the time budgeting algorithm "
+                              "should allocate the maximum amount of time."};
+const OptionId kTimeLeftWidthId{
+    "time-left-width", "TimeLeftWidth",
+    "\"Width\" of time budget graph to the left of the peak value. For small "
+    "values, moves far from the peak will get little time; for larger values, "
+    "they will get almost the same time as the peak move."};
+const OptionId kTimeRightWidthId{
+    "time-right-width", "TimeRightWidth",
+    "\"Width\" of time budget graph to the right of the peak value. For small "
+    "values, moves far from the peak will get little time; for larger values, "
+    "they will get almost the same time as the peak move."};
+const OptionId kSyzygyTablebaseId{
+    "syzygy-paths", "SyzygyPath",
+    "List of Syzygy tablebase directories, list entries separated by system "
+    "separator (\";\" for Windows, \":\" for Linux).",
+    's'};
+const OptionId kSpendSavedTimeId{
+    "immediate-time-use", "ImmediateTimeUse",
+    "Fraction of time saved by smart pruning, which is added to the budget to "
+    "the next move rather than to the entire game. When 1, all saved time is "
+    "added to the next move's budget; when 0, saved time is distributed among "
+    "all future moves."};
+const OptionId kPonderId{"ponder", "Ponder",
+                         "This option is ignored. Here to please chess GUIs."};
 
 const char* kAutoDiscover = "<autodiscover>";
 
@@ -113,10 +132,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(kNnBackendOptionsId);
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
-  options->Add<IntOption>(kMoveOverheadId, 0, 10000) = 100;
-  options->Add<FloatOption>(kTimeCurvePeakId, -1000.0f, 1000.0f) = 26.2f;
-  options->Add<FloatOption>(kTimeCurveLeftWidthId, 0.0f, 1000.0f) = 82.0f;
-  options->Add<FloatOption>(kTimeCurveRightWidthId, 0.0f, 1000.0f) = 74.0f;
+  options->Add<IntOption>(kMoveOverheadId, 0, 10000000) = 200;
+  options->Add<FloatOption>(kTimePeakPlyId, -1000.0f, 1000.0f) = 26.2f;
+  options->Add<FloatOption>(kTimeLeftWidthId, 0.0f, 1000.0f) = 82.0f;
+  options->Add<FloatOption>(kTimeRightWidthId, 0.0f, 1000.0f) = 74.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
@@ -124,9 +143,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 0.6f;
 
   // Hide time curve options.
-  options->HideOption(kTimeCurvePeakId);
-  options->HideOption(kTimeCurveLeftWidthId);
-  options->HideOption(kTimeCurveRightWidthId);
+  options->HideOption(kTimePeakPlyId);
+  options->HideOption(kTimeLeftWidthId);
+  options->HideOption(kTimeRightWidthId);
 
   SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
@@ -137,14 +156,15 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
-  defaults->Set<int>(SearchParams::kAllowedTotalNodeCollisionsId.GetId(), 9999);
-  defaults->Set<int>(SearchParams::kAllowedNodeCollisionEventsId.GetId(), 32);
+  defaults->Set<int>(SearchParams::kMaxCollisionVisitsId.GetId(), 9999);
+  defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }
 
-SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
-    const GoParams& params, std::chrono::steady_clock::time_point start_time) {
+SearchLimits EngineController::PopulateSearchLimits(
+    int ply, bool is_black, const GoParams& params,
+    std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
   limits.movetime = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
@@ -167,11 +187,9 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverId.GetId());
   int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
-  float time_curve_peak = options_.Get<float>(kTimeCurvePeakId.GetId());
-  float time_curve_left_width =
-      options_.Get<float>(kTimeCurveLeftWidthId.GetId());
-  float time_curve_right_width =
-      options_.Get<float>(kTimeCurveRightWidthId.GetId());
+  float time_curve_peak = options_.Get<float>(kTimePeakPlyId.GetId());
+  float time_curve_left_width = options_.Get<float>(kTimeLeftWidthId.GetId());
+  float time_curve_right_width = options_.Get<float>(kTimeRightWidthId.GetId());
 
   // Total time till control including increments.
   auto total_moves_time =
@@ -213,8 +231,10 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.search_deadline = start_time + std::chrono::milliseconds(
-      std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
+  limits.search_deadline =
+      start_time +
+      std::chrono::milliseconds(
+          std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
   return limits;
 }
 
@@ -357,9 +377,8 @@ void EngineController::Go(const GoParams& params) {
     SetupPosition(ChessBoard::kStartingFen, {});
   }
 
-  auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
-                                     tree_->IsBlackToMove(), params,
-                                     start_time);
+  auto limits = PopulateSearchLimits(
+      tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
 
   // If there is a time limit, also store amount of time saved.
   if (limits.search_deadline) {

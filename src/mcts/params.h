@@ -60,16 +60,12 @@ class SearchParams {
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
-  float GetAggressiveTimePruning() const { return kAggressiveTimePruning; }
+  float GetSmartPruningFactor() const { return kSmartPruningFactor; }
   float GetFpuReduction() const { return kFpuReduction; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
-  int GetAllowedNodeCollisionEvents() const {
-    return kAllowedNodeCollisionEvents;
-  }
-  int GetAllowedTotalNodeCollisions() const {
-    return kAllowedTotalNodeCollisions;
-  }
+  int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
+  int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
 
@@ -82,12 +78,12 @@ class SearchParams {
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
   static const OptionId kVerboseStatsId;
-  static const OptionId kAggressiveTimePruningId;
+  static const OptionId kSmartPruningFactorId;
   static const OptionId kFpuReductionId;
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
-  static const OptionId kAllowedNodeCollisionEventsId;
-  static const OptionId kAllowedTotalNodeCollisionsId;
+  static const OptionId kMaxCollisionEventsId;
+  static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
   static const OptionId kMultiPvId;
 
@@ -101,12 +97,12 @@ class SearchParams {
   //            trivial search optimiations.
   const float kCpuct;
   const bool kNoise;
-  const float kAggressiveTimePruning;
+  const float kSmartPruningFactor;
   const float kFpuReduction;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
-  const int kAllowedNodeCollisionEvents;
-  const int kAllowedTotalNodeCollisions;
+  const int kMaxCollisionEvents;
+  const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
 };
 

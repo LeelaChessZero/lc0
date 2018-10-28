@@ -28,62 +28,87 @@
 #include "mcts/params.h"
 
 namespace lczero {
+
 const OptionId SearchParams::kMiniBatchSizeId{
     "minibatch-size", "MinibatchSize",
-    "How many positions the engine tries to batch together for computation.\n"
-    "Theoretically, larger batches may reduce strength a bit, especially with "
-    "a small number of playouts."};
+    "How many positions the engine tries to batch together for parallel NN "
+    "computation. Larger batches may reduce strength a bit, especially with a "
+    "small number of playouts."};
 const OptionId SearchParams::kMaxPrefetchBatchId{
     "max-prefetch", "MaxPrefetch",
-    "When the engine cannot gather large enough batch for immediate use, try "
+    "When the engine cannot gather a large enough batch for immediate use, try "
     "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
-    "C_puct constant from \"Upper confidence trees search\" "
-    "algorithm. Higher values promote more exploration/wider search, lower "
-    "values promote more confidence/deeper search."};
+    "Cpuct constant from \"UCT search\" algorithm. Higher values promote more "
+    "exploration/wider search, lower values promote more confidence/deeper "
+    "search."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
-    "engine also picks the best move to make. Larger values increase "
-    "randomness while making the move."};
+    "engine picks the best move to make. Larger values increase randomness "
+    "while making the move."};
 const OptionId SearchParams::kTempDecayMovesId{
-    "tempdecay-moves", "TempDecayMoves",
-    "Reduce temperature for every move linearly from initial temperature to 0, "
-    "during this number of moves since game start. 0 disables tempdecay."};
+    "temp-decay-moves", "TempDecayMoves",
+    "Reduce temperature for every move from the game start to this number of "
+    "moves, decreasing linearly from initial temperature to 0. A value of 0 "
+    "disables tempdecay."};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
-    "temp-visit-offset", "TempVisitOffset", "Temperature visit offset."};
+    "temp-visit-offset", "TempVisitOffset",
+    "Reduces visits by this value when picking a move with a temperature. When "
+    "the offset is less than number of visits for a particular move, that move "
+    "is not picked at all."};
 const OptionId SearchParams::kNoiseId{
-    "noise", "Noise",
-    "Add noise to root node prior probabilities. That allows the engine to "
-    "explore moves which are known to be very bad, which is useful to discover "
-    "new ideas during training.",
+    "noise", "DirichletNoise",
+    "Add Dirichlet noise to root node prior probabilities. This allows the "
+    "engine to discover new ideas during training by exploring moves which are "
+    "known to be bad. Not normally used during play.",
     'n'};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move."};
-const OptionId SearchParams::kAggressiveTimePruningId{
+const OptionId SearchParams::kSmartPruningFactorId{
     "smart-pruning-factor", "SmartPruningFactor",
-    "Aversion to search if change unlikely."};
-const OptionId SearchParams::kFpuReductionId{"fpu-reduction", "FpuReduction",
-                                             "First Play Urgency Reduction."};
+    "Do not spend time on the moves which cannot become bestmove given the "
+    "remaining time to search. When no other move can overtake the current "
+    "best, the search stops, saving the time. Values greater than 1 stop less "
+    "promising moves from being considered even earlier. Values less than 1 "
+    "causes hopeless moves still have some attention. When set to 0, smart "
+    "pruning is deactivated."};
+const OptionId SearchParams::kFpuReductionId{
+    "fpu-reduction", "FpuReduction",
+    "\"First Play Urgency\" reduction. Normally when a move has no visits, "
+    "it's eval is assumed to be equal to parent's eval. With non-zero FPU "
+    "reduction, eval of unvisited move is decreased by that value, "
+    "discouraging visits of unvisited moves, and saving those visits to "
+    "(hopefully) more promising moves."};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
-    "Length of history to include in cache."};
+    "Length of history, in half-moves, to include into the cache key. When "
+    "this value is less than history that NN uses to eval a position, it's "
+    "possble that the search will use eval of the same position with different "
+    "history taken from cache."};
 const OptionId SearchParams::kPolicySoftmaxTempId{
-    "policy-softmax-temp", "PolicySoftMaxTemp", "Policy softmax temperature."};
-const OptionId SearchParams::kAllowedTotalNodeCollisionsId{
-    "allowed-total-node-collisions", "AllowedTotalNodeCollisions",
-    "Total allowed node collisions, per batch."};
-const OptionId SearchParams::kAllowedNodeCollisionEventsId{
-    "allowed-node-collision-events", "AllowedNodeCollisionEvents",
+    "policy-softmax-temp", "PolicyTemperature",
+    "Policy softmax temperature. Higher values make priors of move candidates "
+    "closer to each other, widening the search."};
+const OptionId SearchParams::kMaxCollisionVisitsId{
+    "max-collision-visits", "MaxCollisionVisits",
+    "Total allowed node collision visits, per batch."};
+const OptionId SearchParams::kMaxCollisionEventsId{
+    "max-collision-events", "MaxCollisionEvents",
     "Allowed node collision events, per batch."};
 const OptionId SearchParams::kOutOfOrderEvalId{
     "out-of-order-eval", "OutOfOrderEval",
-    "Out-of-order cache backpropagation."};
+    "During the gathering of a batch for NN to eval, if position happens to be "
+    "in a cache or is terminal, evaluate it right away without sending the "
+    "batch for NN to eval. When off, this only may happen with the very first "
+    "node of a batch; when on, this can happen with any node."};
 const OptionId SearchParams::kMultiPvId{
-    "multipv", "MultiPV", "Number of moves to show in UCI info output."};
+    "multipv", "MultiPV",
+    "Number of game play lines (principal variations) to show in UCI info "
+    "output."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the "safe defaults" are listed.
@@ -98,12 +123,12 @@ void SearchParams::Populate(OptionsParser* options) {
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
-  options->Add<FloatOption>(kAggressiveTimePruningId, 0.0f, 10.0f) = 1.33f;
+  options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 7;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.0f;
-  options->Add<IntOption>(kAllowedNodeCollisionEventsId, 1, 1024) = 1;
-  options->Add<IntOption>(kAllowedTotalNodeCollisionsId, 1, 1000000) = 1;
+  options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 1;
+  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 1;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
 }
@@ -112,15 +137,12 @@ SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
-      kAggressiveTimePruning(
-          options.Get<float>(kAggressiveTimePruningId.GetId())),
+      kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
-      kAllowedNodeCollisionEvents(
-          options.Get<int>(kAllowedNodeCollisionEventsId.GetId())),
-      kAllowedTotalNodeCollisions(
-          options.Get<int>(kAllowedTotalNodeCollisionsId.GetId())),
+      kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
+      kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())) {}
 
 }  // namespace lczero

@@ -36,8 +36,11 @@
 
 namespace lczero {
 namespace {
-const OptionId kConfigFileId{"config", "ConfigFile",
-                             "Path to a configuration file.", 'c'};
+const OptionId kConfigFileId{
+    "config", "ConfigFile",
+    "Path to a configuration file. The format of the file is one command line "
+    "parameter per line, e.g.:\nweights=/path/to/weights",
+    'c'};
 const char* kDefaultConfigFile = "lc0.config";
 }  // namespace
 
@@ -50,7 +53,7 @@ void ConfigFile::PopulateOptions(OptionsParser* options) {
 // This is needed to get the config file from the parameters without calling
 // ProcessAllFlags() that should be called only once, and needs the config file.
 std::string ConfigFile::ProcessConfigFlag(
-     const std::vector<std::string>& args) {
+    const std::vector<std::string>& args) {
   std::string filename = kDefaultConfigFile;
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;

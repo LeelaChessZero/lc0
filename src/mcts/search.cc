@@ -67,9 +67,8 @@ Search::Search(const NodeTree& tree, Network* network,
       info_callback_(info_callback),
       params_(options) {
   if (limits_.movetime >= 0) {
-    search_deadline_ =
-        std::chrono::steady_clock::now() +
-        std::chrono::milliseconds(limits_.movetime);
+    search_deadline_ = std::chrono::steady_clock::now() +
+                       std::chrono::milliseconds(limits_.movetime);
   } else {
     search_deadline_ = limits_.search_deadline;
   }
@@ -291,7 +290,7 @@ void Search::MaybeTriggerStop() {
 }
 
 void Search::UpdateRemainingMoves() {
-  if (params_.GetAggressiveTimePruning() <= 0.0f) return;
+  if (params_.GetSmartPruningFactor() <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
@@ -301,7 +300,7 @@ void Search::UpdateRemainingMoves() {
     auto time_since_start =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - *nps_start_time_)
-        .count();
+            .count();
     if (time_since_start > kSmartPruningToleranceMs) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
                      time_since_start +
@@ -310,7 +309,7 @@ void Search::UpdateRemainingMoves() {
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
-          remaining_time * nps / params_.GetAggressiveTimePruning() / 1000;
+          remaining_time * nps / params_.GetSmartPruningFactor() / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -629,8 +628,8 @@ void SearchWorker::InitializeIteration(
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
-  int collision_events_left = params_.GetAllowedNodeCollisionEvents();
-  int collisions_left = params_.GetAllowedTotalNodeCollisions();
+  int collision_events_left = params_.GetMaxCollisionEvents();
+  int collisions_left = params_.GetMaxCollisionVisitsId();
 
   // Number of nodes processed out of order.
   int number_out_of_order = 0;
