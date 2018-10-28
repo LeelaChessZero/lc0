@@ -207,7 +207,6 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
   } else {
     oss << "   ";
   }
-  // oss << std::setw(kHelpIndent - 8) << std::left;
   std::string long_flag_str = "";
   if (!short_flag && long_flag.empty()) {
     long_flag_str = "(uci parameter)";
