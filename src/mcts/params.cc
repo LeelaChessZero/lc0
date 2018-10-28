@@ -50,7 +50,7 @@ const OptionId SearchParams::kTemperatureId{
     "engine picks the best move to make. Larger values increase randomness "
     "while making the move."};
 const OptionId SearchParams::kTempDecayMovesId{
-    "temp-decay-moves", "TempDecayMoves",
+    "tempdecay-moves", "TempDecayMoves",
     "Reduce temperature for every move from the game start to this number of "
     "moves, decreasing linearly from initial temperature to 0. A value of 0 "
     "disables tempdecay."};
@@ -74,14 +74,14 @@ const OptionId SearchParams::kSmartPruningFactorId{
     "remaining time to search. When no other move can overtake the current "
     "best, the search stops, saving the time. Values greater than 1 stop less "
     "promising moves from being considered even earlier. Values less than 1 "
-    "causes hopeless moves still have some attention. When set to 0, smart "
+    "causes hopeless moves to still have some attention. When set to 0, smart "
     "pruning is deactivated."};
 const OptionId SearchParams::kFpuReductionId{
     "fpu-reduction", "FpuReduction",
     "\"First Play Urgency\" reduction. Normally when a move has no visits, "
     "it's eval is assumed to be equal to parent's eval. With non-zero FPU "
     "reduction, eval of unvisited move is decreased by that value, "
-    "discouraging visits of unvisited moves, and saving those visits to "
+    "discouraging visits of unvisited moves, and saving those visits for "
     "(hopefully) more promising moves."};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
@@ -102,9 +102,9 @@ const OptionId SearchParams::kMaxCollisionEventsId{
 const OptionId SearchParams::kOutOfOrderEvalId{
     "out-of-order-eval", "OutOfOrderEval",
     "During the gathering of a batch for NN to eval, if position happens to be "
-    "in a cache or is terminal, evaluate it right away without sending the "
-    "batch for NN to eval. When off, this only may happen with the very first "
-    "node of a batch; when on, this can happen with any node."};
+    "in the cache or is terminal, evaluate it right away without sending the "
+    "batch to the NN. When off, this may only happen with the very first node "
+    "of a batch; when on, this can happen with any node."};
 const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV",
     "Number of game play lines (principal variations) to show in UCI info "
