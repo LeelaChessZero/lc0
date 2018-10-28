@@ -27,12 +27,14 @@
 
 #include "utils/logging.h"
 #include <iomanip>
+#include <iostream>
 #include <thread>
 
 namespace lczero {
 
 namespace {
 size_t kBufferSizeLines = 200;
+const char* kStderrFilename = "<stderr>";
 }  // namespace
 
 Logging& Logging::Get() {
@@ -42,11 +44,12 @@ Logging& Logging::Get() {
 
 void Logging::WriteLineRaw(const std::string& line) {
   Mutex::Lock lock_(mutex_);
-  if (!filename_.empty()) {
-    file_ << line << std::endl;
-  } else {
+  if (filename_.empty()) {
     buffer_.push_back(line);
     if (buffer_.size() > kBufferSizeLines) buffer_.pop_front();
+  } else {
+    auto& file = (filename_ == kStderrFilename) ? std::cerr : file_;
+    file << line << std::endl;
   }
 }
 
@@ -54,13 +57,13 @@ void Logging::SetFilename(const std::string& filename) {
   Mutex::Lock lock_(mutex_);
   if (filename_ == filename) return;
   filename_ = filename;
-  if (filename.empty()) {
+  if (filename.empty() || filename == kStderrFilename) {
     file_.close();
-    return;
   }
-  file_.open(filename, std::ios_base::app);
-  file_ << "\n\n============= Log started. =============" << std::endl;
-  for (const auto& line : buffer_) file_ << line << std::endl;
+  if (filename.empty()) return;
+  auto& file = (filename == kStderrFilename) ? std::cerr : file_;
+  file << "\n\n============= Log started. =============" << std::endl;
+  for (const auto& line : buffer_) file << line << std::endl;
   buffer_.clear();
 }
 
