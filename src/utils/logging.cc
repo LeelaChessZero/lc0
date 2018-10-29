@@ -61,6 +61,7 @@ void Logging::SetFilename(const std::string& filename) {
     file_.close();
   }
   if (filename.empty()) return;
+  if (filename != kStderrFilename) file_.open(filename, std::ios_base::app);
   auto& file = (filename == kStderrFilename) ? std::cerr : file_;
   file << "\n\n============= Log started. =============" << std::endl;
   for (const auto& line : buffer_) file << line << std::endl;
