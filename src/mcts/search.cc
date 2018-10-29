@@ -48,8 +48,7 @@ const int kSmartPruningToleranceNodes = 300;
 const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
-using std::literals::chrono_literals::operator""ms;
-const auto kNNComputationWarningTime = 500ms;
+const auto kNNComputationWarningTime = std::chrono::milliseconds(500);
 }  // namespace
 
 std::string SearchLimits::DebugString() const {
@@ -542,8 +541,8 @@ void Search::WatchdogThread() {
   LOGFILE << "Starting watchdog thread.";
   while (IsSearchActive()) {
     {
-      constexpr auto kMaxWaitTime = 100ms;
-      constexpr auto kMinWaitTime = 1ms;
+      constexpr auto kMaxWaitTime = std::chrono::milliseconds(100);
+      constexpr auto kMinWaitTime = std::chrono::milliseconds(1);
       Mutex::Lock lock(counters_mutex_);
       auto remaining_time = search_deadline_
                                 ? std::chrono::milliseconds(GetTimeToDeadline())
