@@ -735,7 +735,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
-  int best_node_n = search_->best_move_edge_.GetN();
+  int64_t best_node_n = search_->best_move_edge_.GetN();
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;

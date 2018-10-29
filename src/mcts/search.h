@@ -163,8 +163,8 @@ class Search {
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
-  uint32_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
-      std::numeric_limits<uint32_t>::max();
+  int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
+      std::numeric_limits<int64_t>::max();
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
