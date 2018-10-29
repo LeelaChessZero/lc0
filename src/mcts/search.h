@@ -43,9 +43,13 @@
 
 namespace lczero {
 struct SearchLimits {
-  std::int64_t visits = -1;
+  // Type for N in nodes is currently uint32_t, so set limit in order not to
+  // overflow it.
+  std::int64_t visits = 4000000000;
   std::int64_t playouts = -1;
-  std::int64_t time_ms = -1;
+  std::int64_t movetime = -1;
+  int depth = -1;
+  optional<std::chrono::steady_clock::time_point> search_deadline;
   bool infinite = false;
   MoveList searchmoves;
 };
@@ -99,6 +103,7 @@ class Search {
                                           float temperature) const;
 
   int64_t GetTimeSinceStart() const;
+  int64_t GetTimeToDeadline() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
@@ -120,9 +125,13 @@ class Search {
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
-  bool stop_ GUARDED_BY(counters_mutex_) = false;
+  std::atomic<bool> stop_{false};
   // Condition variable used to watch stop_ variable.
   std::condition_variable watchdog_cv_;
+  // Tells whether it's ok to respond bestmove when limits are reached.
+  // If false (e.g. during ponder or `go infinite`) the search stops but nothing
+  // is responded until `stop` uci command.
+  bool ok_to_respond_bestmove_ GUARDED_BY(counters_mutex_) = true;
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
@@ -143,8 +152,10 @@ class Search {
 
   Network* const network_;
   const SearchLimits limits_;
+  optional<std::chrono::steady_clock::time_point> search_deadline_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
+  optional<std::chrono::steady_clock::time_point> nps_start_time_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);

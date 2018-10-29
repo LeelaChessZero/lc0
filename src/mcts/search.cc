@@ -54,7 +54,8 @@ Search::Search(const NodeTree& tree, Network* network,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb)
-    : root_node_(tree.GetCurrentHead()),
+    : ok_to_respond_bestmove_(!limits.infinite),
+      root_node_(tree.GetCurrentHead()),
       cache_(cache),
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
@@ -64,7 +65,14 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      params_(options) {}
+      params_(options) {
+  if (limits_.movetime >= 0) {
+    search_deadline_ = std::chrono::steady_clock::now() +
+                       std::chrono::milliseconds(limits_.movetime);
+  } else {
+    search_deadline_ = limits_.search_deadline;
+  }
+}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -143,12 +151,25 @@ void Search::MaybeOutputInfo() {
        last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
            GetTimeSinceStart())) {
     SendUciInfo();
+    if (stop_.load(std::memory_order_acquire) && !ok_to_respond_bestmove_) {
+      ThinkingInfo info;
+      info.comment =
+          "WARNING: Search has reached limit and does not make any progress.";
+      info_callback_({info});
+    }
   }
 }
 
 int64_t Search::GetTimeSinceStart() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - start_time_)
+      .count();
+}
+
+int64_t Search::GetTimeToDeadline() const {
+  if (!search_deadline_) return 0;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             *search_deadline_ - std::chrono::steady_clock::now())
       .count();
 }
 
@@ -256,11 +277,18 @@ void Search::MaybeTriggerStop() {
     FireStopInternal();
   }
   // Stop if reached time limit.
-  if (limits_.time_ms >= 0 && GetTimeSinceStart() >= limits_.time_ms) {
+  if (search_deadline_ && GetTimeToDeadline() <= 0) {
+    FireStopInternal();
+  }
+  // Stop if average depth reached requested depth.
+  if (limits_.depth >= 0 &&
+      cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
+          static_cast<unsigned int>(limits_.depth)) {
     FireStopInternal();
   }
   // If we are the first to see that stop is needed.
-  if (stop_ && !responded_bestmove_) {
+  if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
+      !responded_bestmove_) {
     SendUciInfo();
     if (params_.GetVerboseStats()) SendMovesStats();
     best_move_ = GetBestMoveInternal();
@@ -271,21 +299,26 @@ void Search::MaybeTriggerStop() {
 }
 
 void Search::UpdateRemainingMoves() {
-  if (params_.GetAggressiveTimePruning() <= 0.0f) return;
+  if (params_.GetSmartPruningFactor() <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
-  if (limits_.time_ms >= 0) {
-    auto time_since_start = GetTimeSinceStart();
-    if (time_since_start > kSmartPruningToleranceMs * 2) {
+  if (search_deadline_ && !nps_start_time_) {
+    nps_start_time_ = std::chrono::steady_clock::now();
+  } else if (search_deadline_) {
+    auto time_since_start =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - *nps_start_time_)
+            .count();
+    if (time_since_start > kSmartPruningToleranceMs) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
-                     (time_since_start - kSmartPruningToleranceMs) +
+                     time_since_start +
                  1;
-      int64_t remaining_time = limits_.time_ms - time_since_start;
+      int64_t remaining_time = GetTimeToDeadline();
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
-          remaining_time * nps / params_.GetAggressiveTimePruning() / 1000;
+          remaining_time * nps / params_.GetSmartPruningFactor() / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -494,46 +527,51 @@ void Search::RunBlocking(size_t threads) {
 }
 
 bool Search::IsSearchActive() const {
-  Mutex::Lock lock(counters_mutex_);
-  return !stop_;
+  return !stop_.load(std::memory_order_acquire);
 }
 
 void Search::WatchdogThread() {
-  LOGFILE << "Starting watchdog thread.";
-  while (IsSearchActive()) {
-    {
-      using namespace std::chrono_literals;
-      constexpr auto kMaxWaitTime = 100ms;
-      constexpr auto kMinWaitTime = 1ms;
-      Mutex::Lock lock(counters_mutex_);
-      auto remaining_time = limits_.time_ms >= 0
-                                ? (limits_.time_ms - GetTimeSinceStart()) * 1ms
-                                : kMaxWaitTime;
-      if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
-      if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
-      // There is no real need to have max wait time, and sometimes it's fine
-      // to wait without timeout at all (e.g. in `go nodes` mode), but we
-      // still limit wait time for exotic cases like when pc goes to sleep
-      // mode during thinking.
-      // Minimum wait time is there to prevent busy wait and other thread
-      // starvation.
-      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
-                            [this]()
-                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
-    }
+  LOGFILE << "Start a watchdog thread.";
+  while (true) {
     MaybeTriggerStop();
+    MaybeOutputInfo();
+
+    using namespace std::chrono_literals;
+    constexpr auto kMaxWaitTime = 100ms;
+    constexpr auto kMinWaitTime = 1ms;
+
+    Mutex::Lock lock(counters_mutex_);
+    // Only exit when bestmove is responded. It may happen that search threads
+    // already all exited, and we need at least one thread that can do that.
+    if (responded_bestmove_) break;
+
+    auto remaining_time = search_deadline_
+                              ? std::chrono::milliseconds(GetTimeToDeadline())
+                              : kMaxWaitTime;
+    if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
+    if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
+    // There is no real need to have max wait time, and sometimes it's fine
+    // to wait without timeout at all (e.g. in `go nodes` mode), but we
+    // still limit wait time for exotic cases like when pc goes to sleep
+    // mode during thinking.
+    // Minimum wait time is there to prevent busy wait and other threads
+    // starvation.
+    watchdog_cv_.wait_for(lock.get_raw(), remaining_time, [this]() {
+      return stop_.load(std::memory_order_acquire);
+    });
   }
-  MaybeTriggerStop();
+  LOGFILE << "End a watchdog thread.";
 }
 
-void Search::FireStopInternal() REQUIRES(counters_mutex_) {
-  stop_ = true;
+void Search::FireStopInternal() {
+  stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
-  LOGFILE << "Stopping search.";
+  LOGFILE << "Stop search.";
 }
 
 void Search::Stop() {
   Mutex::Lock lock(counters_mutex_);
+  ok_to_respond_bestmove_ = true;
   FireStopInternal();
 }
 
@@ -605,8 +643,8 @@ void SearchWorker::InitializeIteration(
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
-  int collision_events_left = params_.GetAllowedNodeCollisionEvents();
-  int collisions_left = params_.GetAllowedTotalNodeCollisions();
+  int collision_events_left = params_.GetMaxCollisionEvents();
+  int collisions_left = params_.GetMaxCollisionVisitsId();
 
   // Number of nodes processed out of order.
   int number_out_of_order = 0;
@@ -614,8 +652,6 @@ void SearchWorker::GatherMinibatch() {
   // Gather nodes to process in the current batch.
   // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
   // iteration so that search can exit.
-  // TODO(crem) change that to checking search_->stop_ when bestmove reporting
-  // is in a separate thread.
   while (minibatch_size < params_.GetMiniBatchSize() &&
          number_out_of_order < params_.GetMiniBatchSize()) {
     // If there's something to process without touching slow neural net, do it.
@@ -630,6 +666,7 @@ void SearchWorker::GatherMinibatch() {
     if (picked_node.IsCollision()) {
       if (--collision_events_left <= 0) return;
       if ((collisions_left -= picked_node.multivisit) <= 0) return;
+      if (search_->stop_.load(std::memory_order_acquire)) return;
       continue;
     }
     ++minibatch_size;
@@ -667,6 +704,8 @@ void SearchWorker::GatherMinibatch() {
       --minibatch_size;
       ++number_out_of_order;
     }
+    // Check for stop at the end so we have at least one node.
+    if (search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
 
@@ -740,8 +779,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // To ensure we have at least one node to expand, always include
         // current best node.
         if (child != search_->best_move_edge_ &&
-            search_->remaining_playouts_ <
-                best_node_n - static_cast<int>(child.GetN())) {
+            search_->remaining_playouts_ < best_node_n - child.GetN()) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
@@ -903,6 +941,7 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
+  if (search_->stop_.load(std::memory_order_acquire)) return;
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
@@ -952,6 +991,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   int budget_to_spend = budget;  // Initialize for the case where there's only
                                  // one child.
   for (size_t i = 0; i < scores.size(); ++i) {
+    if (search_->stop_.load(std::memory_order_acquire)) break;
     if (budget <= 0) break;
 
     // Sort next chunk of a vector. 3 at a time. Most of the time it's fine.
@@ -1087,8 +1127,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.
-  search_->MaybeOutputInfo();
   search_->MaybeTriggerStop();
+  search_->MaybeOutputInfo();
 
   // If this thread had no work, sleep for some milliseconds.
   // Collisions don't count as work, so have to enumerate to find out if there
