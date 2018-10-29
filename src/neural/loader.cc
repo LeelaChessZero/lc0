@@ -26,6 +26,9 @@
 */
 
 #include "neural/loader.h"
+
+#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
+#include <google/protobuf/io/coded_stream.h>
 #include <zlib.h>
 #include <algorithm>
 #include <cctype>
@@ -33,6 +36,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+
 #include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
@@ -108,8 +112,14 @@ void DenormConvBlock(const pblczero::Weights_ConvBlock& conv,
 
 FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
-  FloatVectors vecs;
-  if (!net.ParseFromString(buffer))
+  using namespace google::protobuf::io;
+
+  ArrayInputStream raw_input_stream(buffer.data(), buffer.size());
+  CodedInputStream input_stream(&raw_input_stream);
+  // Set protobuf limit to 2GB, print warning at 500MB.
+  input_stream.SetTotalBytesLimit(2000 * 1000000, 500 * 1000000);
+
+  if (!net.ParseFromCodedStream(&input_stream))
     throw Exception("Invalid weight file: parse error.");
 
   if (net.magic() != kWeightMagic)
@@ -132,6 +142,7 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
 
   const auto& w = net.weights();
 
+  FloatVectors vecs;
   DenormConvBlock(w.input(), &vecs);
 
   for (int i = 0, n = w.residual_size(); i < n; i++) {
