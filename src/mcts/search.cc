@@ -281,8 +281,9 @@ void Search::MaybeTriggerStop() {
     FireStopInternal();
   }
   // Stop if average depth reached requested depth.
+  uint64_t total_playouts = total_playouts_;
   if (limits_.depth >= 0 &&
-      cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
+      cum_depth_ / (total_playouts ? total_playouts : 1) >=
           static_cast<unsigned int>(limits_.depth)) {
     FireStopInternal();
   }
