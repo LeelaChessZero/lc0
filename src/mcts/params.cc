@@ -45,14 +45,12 @@ const OptionId SearchParams::kCpuctId{
     "values promote more confidence/deeper search."};
 const OptionId SearchParams::kContemptId{
     "contempt", "Contempt",
-    "C_puct constant from \"Upper confidence trees search\" "
-    "algorithm. Higher values promote more exploration/wider search, lower "
-    "values promote more confidence/deeper search."};
+    "Value is multiplied with number of pieces on the board and added to "
+    "current evaluation."};
 const OptionId SearchParams::kContempt2Id{
     "contempt2", "Contempt2",
-    "C_puct constant from \"Upper confidence trees search\" "
-    "algorithm. Higher values promote more exploration/wider search, lower "
-    "values promote more confidence/deeper search."};
+    "Fixed value getting subtracted from current evaluation. To use in "
+    "combination with \"Contempt\"."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -102,8 +100,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 1;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.2f;
-  options->Add<FloatOption>(kContemptId, -1.0f, 1.0f) = 0.005f;
-  options->Add<FloatOption>(kContempt2Id, -1.0f, 1.0f) = 0.015f;
+  options->Add<FloatOption>(kContemptId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kContempt2Id, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
