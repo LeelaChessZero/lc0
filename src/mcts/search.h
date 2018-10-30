@@ -44,7 +44,9 @@
 namespace lczero {
 
 struct SearchLimits {
-  std::int64_t visits = -1;
+  // Type for N in nodes is currently uint32_t, so set limit in order not to
+  // overflow it.
+  std::int64_t visits = 4000000000;
   std::int64_t playouts = -1;
   std::int64_t movetime = -1;
   int depth = -1;
@@ -124,9 +126,13 @@ class Search {
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
-  bool stop_ GUARDED_BY(counters_mutex_) = false;
+  std::atomic<bool> stop_{false};
   // Condition variable used to watch stop_ variable.
   std::condition_variable watchdog_cv_;
+  // Tells whether it's ok to respond bestmove when limits are reached.
+  // If false (e.g. during ponder or `go infinite`) the search stops but nothing
+  // is responded until `stop` uci command.
+  bool ok_to_respond_bestmove_ GUARDED_BY(counters_mutex_) = true;
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
@@ -157,8 +163,8 @@ class Search {
   Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
-  int remaining_playouts_ GUARDED_BY(nodes_mutex_) =
-      std::numeric_limits<int>::max();
+  int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
+      std::numeric_limits<int64_t>::max();
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.

@@ -34,10 +34,10 @@ namespace lczero {
 
 namespace {
 const OptionId kReuseTreeId{"reuse-tree", "ReuseTree",
-                            "Reuse the node statistics between moves."};
+                            "Reuse the search tree between moves."};
 const OptionId kResignPercentageId{
     "resign-percentage", "ResignPercentage",
-    "Resign when win percentage drops below specified value.", 'r'};
+    "Resign when win percentage drops below specified value."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {

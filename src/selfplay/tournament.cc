@@ -34,24 +34,30 @@
 #include "utils/random.h"
 
 namespace lczero {
-
 namespace {
 const OptionId kShareTreesId{"share-trees", "ShareTrees",
-                             "Share game trees for two players."};
+                             "When on, game tree is shared for two players; "
+                             "when off, each side has a separate tree."};
 const OptionId kTotalGamesId{"games", "Games", "Number of games to play."};
 const OptionId kParallelGamesId{"parallelism", "Parallelism",
                                 "Number of games to play in parallel."};
-const OptionId kThreadsId{"threads", "Threads",
-                          "Number of CPU threads for every game.", 't'};
-const OptionId kNnCacheSizeId{"nncache", "NNCache",
-                              "Number of positions to store in cache."};
+const OptionId kThreadsId{
+    "threads", "Threads",
+    "Number of (CPU) worker threads to use for every game,", 't'};
+const OptionId kNnCacheSizeId{
+    "nncache", "NNCache",
+    "Number of positions to store in a memory cache. A large cache can speed "
+    "up searching, but takes memory."};
 const OptionId kPlayoutsId{"playouts", "Playouts",
                            "Number of playouts per move to search."};
 const OptionId kVisitsId{"visits", "Visits",
                          "Number of visits per move to search."};
 const OptionId kTimeMsId{"movetime", "MoveTime",
                          "Time per move, in milliseconds."};
-const OptionId kTrainingId{"training", "Training", "Write training data."};
+const OptionId kTrainingId{
+    "training", "Training",
+    "Enables writing training data. The training data is stored into a "
+    "temporary subdirectory that the engine creates."};
 const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
                                   "Show verbose thinking messages."};
 const OptionId kResignPlaythroughId{
@@ -81,7 +87,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 32);
-  defaults->Set<float>(SearchParams::kAggressiveTimePruningId.GetId(), 0.0f);
+  defaults->Set<float>(SearchParams::kSmartPruningFactorId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kTemperatureId.GetId(), 1.0f);
   defaults->Set<bool>(SearchParams::kNoiseId.GetId(), true);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 0.0f);
@@ -142,7 +148,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
         options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsId.GetId());
 
     if (search_limits_[idx].playouts == -1 &&
-        search_limits_[idx].visits == -1 && search_limits_[idx].movetime == -1) {
+        search_limits_[idx].visits == -1 &&
+        search_limits_[idx].movetime == -1) {
       throw Exception(
           "Please define --visits, --playouts or --movetime, otherwise it's "
           "not clear when to stop search.");

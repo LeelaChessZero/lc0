@@ -14,7 +14,7 @@ esac
 
 BUILDDIR=build/${BUILDTYPE}
 
-if [ -d ${BUILDDIR} ]
+if [ -f ${BUILDDIR}/build.ninja ]
 then
   meson configure ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
 else

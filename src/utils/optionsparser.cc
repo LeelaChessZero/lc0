@@ -36,9 +36,9 @@
 
 namespace lczero {
 namespace {
-const int kHelpIndent = 32;
-const int kUciLineIndent = 32;
-const int kHelpWidth = 72;
+const int kHelpIndent = 15;
+const int kUciLineIndent = 15;
+const int kHelpWidth = 80;
 }  // namespace
 
 OptionsParser::Option::Option(const OptionId& id) : id_(id) {}
@@ -207,21 +207,26 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
   } else {
     oss << "   ";
   }
-  oss << std::setw(kHelpIndent - 8) << std::left;
+  std::string long_flag_str = "";
   if (!short_flag && long_flag.empty()) {
-    oss << "(uci parameter)";
+    long_flag_str = "(uci parameter)";
   } else {
-    oss << (long_flag.empty() ? "" : "--" + long_flag);
+    long_flag_str = long_flag.empty() ? "" : "--" + long_flag;
   }
+  oss << long_flag_str;
   auto help_lines = FlowText(help, kHelpWidth);
   bool is_first_line = true;
   for (const auto& line : help_lines) {
     if (is_first_line) {
-      oss << ' ' << line << "\n";
       is_first_line = false;
-    } else {
-      oss << std::string(kHelpIndent, ' ') << line << "\n";
+      if (long_flag_str.size() < kHelpIndent - 7) {
+        oss << std::string(kHelpIndent - 7 - long_flag_str.size(), ' ') << line
+            << "\n";
+        continue;
+      }
+      oss << "\n";
     }
+    oss << std::string(kHelpIndent, ' ') << line << "\n";
   }
   if (!def.empty() || !uci_option.empty()) {
     oss << std::string(kUciLineIndent, ' ') << '[';
