@@ -31,8 +31,6 @@
 
 #include "engine.h"
 #include "mcts/search.h"
-#include "neural/factory.h"
-#include "neural/loader.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
 
@@ -50,18 +48,6 @@ const OptionId kNNCacheSizeId{
     "nncache", "NNCacheSize",
     "Number of positions to store in a memory cache. A large cache can speed "
     "up searching, but takes memory."};
-const OptionId kWeightsId{
-    "weights", "WeightsFile",
-    "Path from which to load network weights.\nSetting it to <autodiscover> "
-    "makes it search in ./ and ./weights/ subdirectories for the latest (by "
-    "file date) file which looks like weights.",
-    'w'};
-const OptionId kNnBackendId{
-    "backend", "Backend", "Neural network computational backend to use.", 'b'};
-const OptionId kNnBackendOptionsId{"backend-opts", "BackendOptions",
-                                   "Parameters of neural network backend. "
-                                   "Exact parameters differ per backend.",
-                                   'o'};
 const OptionId kSlowMoverId{
     "slowmover", "Slowmover",
     "Budgeted time for a move is multiplied by this value, causing the engine "
@@ -99,8 +85,6 @@ const OptionId kSpendSavedTimeId{
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
 
-const char* kAutoDiscover = "<autodiscover>";
-
 float ComputeMoveWeight(int ply, float peak, float left_width,
                         float right_width) {
   // Inflection points of the function are at ply = peak +/- width.
@@ -123,14 +107,8 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
-  options->Add<StringOption>(kWeightsId) = kAutoDiscover;
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
-
-  const auto backends = NetworkFactory::Get()->GetBackendsList();
-  options->Add<ChoiceOption>(kNnBackendId, backends) =
-      backends.empty() ? "<none>" : backends[0];
-  options->Add<StringOption>(kNnBackendOptionsId);
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
   options->Add<FloatOption>(kTimePeakPlyId, -1000.0f, 1000.0f) = 26.2f;
@@ -147,6 +125,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->HideOption(kTimeLeftWidthId);
   options->HideOption(kTimeRightWidthId);
 
+  NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
 
@@ -263,31 +242,11 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Network.
-  std::string network_path = options_.Get<std::string>(kWeightsId.GetId());
-  std::string backend = options_.Get<std::string>(kNnBackendId.GetId());
-  std::string backend_options =
-      options_.Get<std::string>(kNnBackendOptionsId.GetId());
-
-  if (network_path == network_path_ && backend == backend_ &&
-      backend_options == backend_options_)
-    return;
-
-  network_path_ = network_path;
-  backend_ = backend;
-  backend_options_ = backend_options;
-
-  std::string net_path = network_path;
-  if (net_path == kAutoDiscover) {
-    net_path = DiscoverWeightsFile();
-  } else {
-    CERR << "Loading weights file from: " << net_path;
+  auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+  if (network_configuration_ != network_configuration) {
+    network_ = NetworkFactory::LoadNetwork(options_);
+    network_configuration_ = network_configuration;
   }
-  Weights weights = LoadWeightsFromFile(net_path);
-
-  OptionsDict network_options(&options_);
-  network_options.AddSubdictFromString(backend_options);
-
-  network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
 
   // Cache size.
   cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));

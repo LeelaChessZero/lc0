@@ -30,6 +30,7 @@
 #include "chess/uciloop.h"
 #include "mcts/search.h"
 #include "neural/cache.h"
+#include "neural/factory.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
@@ -105,9 +106,7 @@ class EngineController {
   // Store current TB and network settings to track when they change so that
   // they are reloaded.
   std::string tb_paths_;
-  std::string network_path_;
-  std::string backend_;
-  std::string backend_options_;
+  NetworkFactory::BackendConfiguration network_configuration_;
 
   // The current position as given with SetPosition. For normal (ie. non-ponder)
   // search, the tree is set up with this position, however, during ponder we
