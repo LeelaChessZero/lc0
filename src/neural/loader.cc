@@ -28,6 +28,7 @@
 #include "neural/loader.h"
 
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
+#include <google/protobuf/io/coded_stream.h>
 #include <zlib.h>
 #include <algorithm>
 #include <cctype>
