@@ -37,7 +37,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -45,6 +44,7 @@
 
 #include "syzygy/syzygy.h"
 
+#include "utils/logging.h"
 #include "utils/mutex.h"
 
 #ifndef _WIN32
@@ -988,8 +988,8 @@ class SyzygyTablebaseImpl {
     }
 
   finished:
-    std::cerr << "Found " << num_wdl_ << "WDL, " << num_dtm_ << " DTM and "
-              << num_dtz_ << " DTZ tablebase files." << std::endl;
+    CERR << "Found " << num_wdl_ << "WDL, " << num_dtm_ << " DTM and "
+         << num_dtz_ << " DTZ tablebase files.";
   }
 
   ~SyzygyTablebaseImpl() {
@@ -1045,7 +1045,7 @@ class SyzygyTablebaseImpl {
     base_address = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
     ::close(fd);
     if (base_address == MAP_FAILED) {
-      std::cerr << "Could not mmap() " << fname << std::endl;
+      CERR << "Could not mmap() " << fname;
       exit(1);
     }
 #else
@@ -1059,14 +1059,14 @@ class SyzygyTablebaseImpl {
                                     size_low, nullptr);
     CloseHandle(fd);
     if (!mmap) {
-      std::cerr << "CreateFileMapping() failed" << std::endl;
+      CERR << "CreateFileMapping() failed";
       exit(1);
     }
     *mapping = mmap;
     base_address = MapViewOfFile(mmap, FILE_MAP_READ, 0, 0, 0);
     if (!base_address) {
-      std::cerr << "MapViewOfFile() failed, name = " << fname
-                << ", error = " << GetLastError() << std::endl;
+      CERR << "MapViewOfFile() failed, name = " << fname
+           << ", error = " << GetLastError();
       exit(1);
     }
 #endif

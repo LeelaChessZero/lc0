@@ -227,6 +227,13 @@ SearchLimits EngineController::PopulateSearchLimits(
     time_spared_ms_ -= this_move_time * (slowmover - 1);
   }
 
+  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
+          << time_to_squander << "ms to squander -"
+          << std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - start_time)
+                 .count()
+          << "ms already passed). Remaining time " << time << "ms(-"
+          << move_overhead << "ms overhead)";
   // Use `time_to_squander` time immediately.
   this_move_time += time_to_squander;
 
@@ -246,9 +253,9 @@ void EngineController::UpdateFromUciOptions() {
   std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId.GetId());
   if (!tb_paths.empty() && tb_paths != tb_paths_) {
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-    std::cerr << "Loading Syzygy tablebases from " << tb_paths << std::endl;
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
     if (!syzygy_tb_->init(tb_paths)) {
-      std::cerr << "Failed to load Syzygy tablebases!" << std::endl;
+      CERR << "Failed to load Syzygy tablebases!";
       syzygy_tb_ = nullptr;
     } else {
       tb_paths_ = tb_paths;
@@ -273,7 +280,7 @@ void EngineController::UpdateFromUciOptions() {
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
   } else {
-    std::cerr << "Loading weights file from: " << net_path << std::endl;
+    CERR << "Loading weights file from: " << net_path;
   }
   Weights weights = LoadWeightsFromFile(net_path);
 
@@ -379,6 +386,7 @@ void EngineController::Go(const GoParams& params) {
 
   auto limits = PopulateSearchLimits(
       tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
+  LOGFILE << "Limits: " << limits.DebugString();
 
   // If there is a time limit, also store amount of time saved.
   if (limits.search_deadline) {
@@ -397,6 +405,12 @@ void EngineController::Go(const GoParams& params) {
                                      info_callback, limits, options_, &cache_,
                                      syzygy_tb_.get());
 
+  if (limits.search_deadline) {
+    LOGFILE << "Timer started at "
+            << FormatTime(SteadyClockToSystemClock(move_start_time_))
+            << ", deadline at "
+            << FormatTime(SteadyClockToSystemClock(*limits.search_deadline));
+  }
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 
