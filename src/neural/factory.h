@@ -71,6 +71,18 @@ class NetworkFactory {
   static const OptionId kBackendId;
   static const OptionId kBackendOptionsId;
 
+  struct BackendConfiguration {
+    BackendConfiguration() {}
+    BackendConfiguration(const OptionsDict& options);
+    std::string weights_path;
+    std::string backend;
+    std::string backend_options;
+    bool operator==(const BackendConfiguration& other);
+    bool operator!=(const BackendConfiguration& other) {
+      return !operator==(other);
+    }
+  };
+
  private:
   void RegisterNetwork(const std::string& name, FactoryFunc factory,
                        int priority);
@@ -93,11 +105,6 @@ class NetworkFactory {
 
   std::vector<Factory> factories_;
   friend class Register;
-
-  // Cached values.
-  static std::string network_path_;
-  static std::string backend_;
-  static std::string backend_options_;
 };
 
 #define REGISTER_NETWORK_WITH_COUNTER2(name, cls, priority, counter) \

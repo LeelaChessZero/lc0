@@ -31,8 +31,6 @@
 
 #include "engine.h"
 #include "mcts/search.h"
-#include "neural/factory.h"
-#include "neural/loader.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
 
@@ -237,8 +235,11 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Network.
-  std::unique_ptr<Network> tmp_net = NetworkFactory::LoadNetwork(options_);
-  if (tmp_net) network_.swap(tmp_net);
+  auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+  if (network_configuration_ != network_configuration) {
+    network_ = NetworkFactory::LoadNetwork(options_);
+    network_configuration_ = network_configuration;
+  }
 
   // Cache size.
   cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));

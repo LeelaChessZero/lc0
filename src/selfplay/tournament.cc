@@ -28,7 +28,6 @@
 #include "selfplay/tournament.h"
 #include "mcts/search.h"
 #include "neural/factory.h"
-#include "neural/loader.h"
 #include "selfplay/game.h"
 #include "utils/optionsparser.h"
 #include "utils/random.h"
@@ -122,11 +121,13 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
 
   static const char* kPlayerNames[2] = {"player1", "player2"};
   // Initializing networks.
-  networks_[0] =
-      NetworkFactory::LoadNetwork(options.GetSubdict(kPlayerNames[0]));
-  networks_[1] =
-      NetworkFactory::LoadNetwork(options.GetSubdict(kPlayerNames[1]));
-  if (!networks_[1]) networks_[1] = networks_[0];
+  const auto& player1_opts = options.GetSubdict(kPlayerNames[0]);
+  const auto& player2_opts = options.GetSubdict(kPlayerNames[1]);
+  networks_[0] = NetworkFactory::LoadNetwork(player1_opts);
+  networks_[1] = NetworkFactory::BackendConfiguration(player1_opts) ==
+                         NetworkFactory::BackendConfiguration(player2_opts)
+                     ? networks_[0]
+                     : NetworkFactory::LoadNetwork(player2_opts);
 
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(

@@ -35,19 +35,18 @@ namespace lczero {
 
 const OptionId NetworkFactory::kWeightsId{
     "weights", "WeightsFile",
-    "Path from which to load network weights.\n"
-    "Setting it to <autodiscover> makes it search in ./ and ./weights/ "
-    "subdirectories for the latest (by file date) file which looks like "
-    "weights.", 'w'};
+    "Path from which to load network weights.\nSetting it to <autodiscover> "
+    "makes it search in ./ and ./weights/ subdirectories for the latest (by "
+    "file date) file which looks like weights.",
+    'w'};
 const OptionId NetworkFactory::kBackendId{
-    "backend", "Backend", "NN backend to use."};
+    "backend", "Backend", "Neural network computational backend to use.", 'b'};
 const OptionId NetworkFactory::kBackendOptionsId{
-    "backend-opts", "BackendOptions", "NN backend parameters."};
+    "backend-opts", "BackendOptions",
+    "Parameters of neural network backend. "
+    "Exact parameters differ per backend.",
+    'o'};
 const char* kAutoDiscover = "<autodiscover>";
-
-std::string NetworkFactory::network_path_;
-std::string NetworkFactory::backend_;
-std::string NetworkFactory::backend_options_;
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
@@ -91,22 +90,25 @@ std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
   throw Exception("Unknown backend: " + network);
 }
 
+NetworkFactory::BackendConfiguration::BackendConfiguration(
+    const OptionsDict& options)
+    : weights_path(options.Get<std::string>(kWeightsId.GetId())),
+      backend(options.Get<std::string>(kBackendId.GetId())),
+      backend_options(options.Get<std::string>(kBackendOptionsId.GetId())) {}
+
+bool NetworkFactory::BackendConfiguration::operator==(
+    const BackendConfiguration& other) {
+  return (weights_path == other.weights_path && backend == other.backend &&
+          backend_options == other.backend_options);
+}
+
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
-  std::string network_path = options.Get<std::string>(kWeightsId.GetId());
+  std::string net_path = options.Get<std::string>(kWeightsId.GetId());
   std::string backend = options.Get<std::string>(kBackendId.GetId());
   std::string backend_options =
       options.Get<std::string>(kBackendOptionsId.GetId());
 
-  if (network_path == network_path_ && backend == backend_ &&
-      backend_options == backend_options_)
-    return nullptr;
-
-  network_path_ = network_path;
-  backend_ = backend;
-  backend_options_ = backend_options;
-
-  std::string net_path = network_path;
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
   } else {
