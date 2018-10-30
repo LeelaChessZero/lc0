@@ -26,11 +26,11 @@
 */
 
 #include <fstream>
-#include <iostream>
 #include <sstream>
 
 #include "utils/commandline.h"
 #include "utils/configfile.h"
+#include "utils/logging.h"
 #include "utils/optionsparser.h"
 #include "utils/string.h"
 
@@ -109,11 +109,11 @@ bool ConfigFile::ParseFile(const std::string& filename,
     // for it to not exist.
     if (using_default_config) return true;
 
-    std::cerr << "Could not open configuration file: " << filename << std::endl;
+    CERR << "Could not open configuration file: " << filename;
     return false;
   }
 
-  std::cerr << "Found configuration file: " << filename << std::endl;
+  CERR << "Found configuration file: " << filename;
 
   for (std::string line; getline(input, line);) {
     // Remove all leading and trailing whitespace.
@@ -128,8 +128,8 @@ bool ConfigFile::ParseFile(const std::string& filename,
     }
     // Fail now if the argument does not begin with '--'.
     if (line.substr(0, 2) != "--") {
-      std::cerr << "Only '--' arguments are supported in the "
-                << "configuration file: '" << line << "'." << std::endl;
+      CERR << "Only '--' arguments are supported in the "
+           << "configuration file: '" << line << "'.";
       return false;
     }
     // Add the line to the arguments list.

@@ -53,6 +53,8 @@ struct SearchLimits {
   optional<std::chrono::steady_clock::time_point> search_deadline;
   bool infinite = false;
   MoveList searchmoves;
+
+  std::string DebugString() const;
 };
 
 class Search {
