@@ -188,10 +188,12 @@ SearchLimits EngineController::PopulateSearchLimits(
   if (params.nodes >= 0) limits.visits = params.nodes;
   float ram_limit = options_.Get<float>(kRamLimitMbId.GetId());
   if (ram_limit) {
-    int64_t limit =
-        (ram_limit * 1000000 -
-         options_.Get<int>(kNNCacheSizeId.GetId()) * kAvgCacheItemSize) /
-        kAvgNodeSize;
+    const auto cache_size =
+        options_.Get<int>(kNNCacheSizeId.GetId()) * kAvgCacheItemSize;
+    int64_t limit = (ram_limit * 1000000 - cache_size) / kAvgNodeSize;
+    LOGFILE << "RAM limit " << ram_limit << "MB. Cache takes "
+            << cache_size / 1000000 << "MB. Remaining memory is enough for "
+            << limit << " nodes.";
     if (limit < 0) limit = 0;
     if (limit < limits.visits) limits.visits = limit;
   }
