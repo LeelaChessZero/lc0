@@ -87,7 +87,8 @@ StderrLogMessage::~StderrLogMessage() {
 std::chrono::time_point<std::chrono::system_clock> SteadyClockToSystemClock(
     std::chrono::time_point<std::chrono::steady_clock> time) {
   return std::chrono::system_clock::now() +
-         (time - std::chrono::steady_clock::now());
+         std::chrono::duration_cast<std::chrono::system_clock::duration>(
+             time - std::chrono::steady_clock::now());
 }
 
 std::string FormatTime(
