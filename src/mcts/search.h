@@ -283,6 +283,7 @@ class SearchWorker {
   PositionHistory history_;
   MoveList root_move_filter_;
   bool root_move_filter_populated_ = false;
+  int number_out_of_order_ = 0;
   const SearchParams& params_;
 };
 
