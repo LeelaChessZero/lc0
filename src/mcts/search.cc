@@ -667,13 +667,13 @@ void SearchWorker::GatherMinibatch() {
   int collisions_left = params_.GetMaxCollisionVisitsId();
 
   // Number of nodes processed out of order.
-  int number_out_of_order = 0;
+  number_out_of_order_ = 0;
 
   // Gather nodes to process in the current batch.
   // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
   // iteration so that search can exit.
   while (minibatch_size < params_.GetMiniBatchSize() &&
-         number_out_of_order < params_.GetMiniBatchSize()) {
+         number_out_of_order_ < params_.GetMiniBatchSize()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
@@ -722,7 +722,7 @@ void SearchWorker::GatherMinibatch() {
       if (picked_node.nn_queried) computation_->PopCacheHit();
       minibatch_.pop_back();
       --minibatch_size;
-      ++number_out_of_order;
+      ++number_out_of_order_;
     }
     // Check for stop at the end so we have at least one node.
     if (search_->stop_.load(std::memory_order_acquire)) return;
@@ -1159,14 +1159,16 @@ void SearchWorker::UpdateCounters() {
   search_->MaybeTriggerStop();
   search_->MaybeOutputInfo();
 
-  // If this thread had no work, sleep for some milliseconds.
-  // Collisions don't count as work, so have to enumerate to find out if there
-  // was anything done.
-  bool work_done = false;
-  for (NodeToProcess& node_to_process : minibatch_) {
-    if (!node_to_process.IsCollision()) {
-      work_done = true;
-      break;
+  // If this thread had no work, not even out of order, then sleep for some
+  // milliseconds. Collisions don't count as work, so have to enumerate to find
+  // out if there was anything done.
+  bool work_done = number_out_of_order_ > 0;
+  if (!work_done) {
+    for (NodeToProcess& node_to_process : minibatch_) {
+      if (!node_to_process.IsCollision()) {
+        work_done = true;
+        break;
+      }
     }
   }
   if (!work_done) {
