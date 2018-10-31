@@ -72,13 +72,13 @@ class NetworkFactory {
   static const OptionId kBackendOptionsId;
 
   struct BackendConfiguration {
-    BackendConfiguration() {}
+    BackendConfiguration() = default;
     BackendConfiguration(const OptionsDict& options);
     std::string weights_path;
     std::string backend;
     std::string backend_options;
-    bool operator==(const BackendConfiguration& other);
-    bool operator!=(const BackendConfiguration& other) {
+    bool operator==(const BackendConfiguration& other) const;
+    bool operator!=(const BackendConfiguration& other) const {
       return !operator==(other);
     }
   };

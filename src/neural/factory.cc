@@ -97,7 +97,7 @@ NetworkFactory::BackendConfiguration::BackendConfiguration(
       backend_options(options.Get<std::string>(kBackendOptionsId.GetId())) {}
 
 bool NetworkFactory::BackendConfiguration::operator==(
-    const BackendConfiguration& other) {
+    const BackendConfiguration& other) const {
   return (weights_path == other.weights_path && backend == other.backend &&
           backend_options == other.backend_options);
 }
