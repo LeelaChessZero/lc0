@@ -84,8 +84,6 @@ const OptionId kSpendSavedTimeId{
     "all future moves."};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
-const OptionId  kNodesId{"nodes", "", "Number of nodes for benchmark"};
-const OptionId  kFenId{"fen", "", "Benchmark initial position FEN"};
 
 float ComputeMoveWeight(int ply, float peak, float left_width,
                         float right_width) {
@@ -388,10 +386,6 @@ void EngineController::Stop() {
   }
 }
 
-void EngineController::Wait() {
-  search_->Wait();
-}
-
 EngineLoop::EngineLoop()
     : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
@@ -442,48 +436,5 @@ void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
-
-Benchmark::Benchmark()
-    : engine_(std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
-              std::bind(&Benchmark::OnInfo, this, std::placeholders::_1),
-              options_.GetOptionsDict()) {
-  options_.Add<IntOption>(kNodesId, -1, 999999999) = 30000;
-  options_.Add<StringOption>(kFenId);
-  engine_.PopulateOptions(&options_);
-}
-
-void Benchmark::Run() {
-  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
-  try {
-    auto option_dict = options_.GetOptionsDict();
-    GoParams go_params;
-    go_params.nodes = option_dict.Get<int>(kNodesId.GetId());
-    std::string fen = option_dict.Get<std::string>(kFenId.GetId());
-    engine_.EnsureReady();
-    if (!fen.empty()) {
-      engine_.SetPosition(fen, {});
-    }
-    auto start = std::chrono::steady_clock::now();
-    engine_.Go(go_params);
-    engine_.Wait();
-    auto end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> time = end - start;
-    std::cout << "Benchmark final time " << time.count() << "s" << std::endl;
-  } catch (Exception& ex) {
-    std::cerr << ex.what() << std::endl;
-  }
-}
-
-void Benchmark::OnBestMove(const BestMoveInfo& move){
-  (void) move;
-}
-
-void Benchmark::OnInfo(const std::vector<ThinkingInfo>& infos){
-  std::string line = "Benchmark time " + std::to_string(infos[0].time);
-  line += "ms, " + std::to_string(infos[0].nodes) + " nodes, ";
-  line += std::to_string(infos[0].nps) + " nps";
-  if (!infos[0].pv.empty()) line += ", move " + infos[0].pv[0].as_string();
-  std::cout << line << std::endl;
-}
 
 }  // namespace lczero

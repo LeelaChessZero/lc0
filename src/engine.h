@@ -82,8 +82,6 @@ class EngineController {
       const GoParams& params,
       std::chrono::steady_clock::time_point start_time);
 
-  void Wait();
-
  private:
   void UpdateFromUciOptions();
 
@@ -141,19 +139,5 @@ class EngineLoop : public UciLoop {
   OptionsParser options_;
   EngineController engine_;
 };
-
-class Benchmark{
- public:
-  Benchmark();
-
-  void Run();
-  void OnBestMove(const BestMoveInfo& move);
-  void OnInfo(const std::vector<ThinkingInfo>& infos);
-
- private:
-  OptionsParser options_;
-  EngineController engine_;
-};
-
 
 }  // namespace lczero
