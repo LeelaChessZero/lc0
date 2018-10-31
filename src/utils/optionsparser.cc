@@ -32,13 +32,14 @@
 #include <sstream>
 #include "utils/commandline.h"
 #include "utils/configfile.h"
+#include "utils/logging.h"
 #include "utils/string.h"
 
 namespace lczero {
 namespace {
-const int kHelpIndent = 32;
-const int kUciLineIndent = 32;
-const int kHelpWidth = 72;
+const int kHelpIndent = 15;
+const int kUciLineIndent = 15;
+const int kHelpWidth = 80;
 }  // namespace
 
 OptionsParser::Option::Option(const OptionId& id) : id_(id) {}
@@ -48,7 +49,7 @@ OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
 std::vector<std::string> OptionsParser::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
-    if (!iter->GetUciOption().empty()) {
+    if (!iter->GetUciOption().empty() && !iter->hidden_) {
       result.emplace_back("option name " + iter->GetUciOption() + " " +
                           iter->GetOptionString(values_));
     }
@@ -67,6 +68,11 @@ void OptionsParser::SetUciOption(const std::string& name,
   throw Exception("Unknown option: " + name);
 }
 
+void OptionsParser::HideOption(const OptionId& id) {
+  auto option = FindOptionById(id.GetId());
+  if (option) option->hidden_ = true;
+}
+
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
@@ -80,6 +86,14 @@ OptionsParser::Option* OptionsParser::FindOptionByUciName(
     const std::string& name) const {
   for (const auto& val : options_) {
     if (StringsEqualIgnoreCase(val->GetUciOption(), name)) return val.get();
+  }
+  return nullptr;
+}
+
+OptionsParser::Option* OptionsParser::FindOptionById(
+    const std::string& name) const {
+  for (const auto& val : options_) {
+    if (name == val->GetId()) return val.get();
   }
   return nullptr;
 }
@@ -106,6 +120,10 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
       ShowHelp();
       return false;
     }
+    if (param == "--show-hidden") {
+      ShowHidden();
+      continue;
+    }
 
     if (param.substr(0, 2) == "--") {
       std::string context;
@@ -128,9 +146,8 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         processed = true;
       }
       if (!processed) {
-        std::cerr << "Unknown command line flag: " << *iter << ".\n";
-        std::cerr << "For help run:\n  " << CommandLine::BinaryName()
-                  << " --help" << std::endl;
+        CERR << "Unknown command line flag: " << *iter << ".";
+        CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
         return false;
       }
       continue;
@@ -153,17 +170,15 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         }
       }
       if (!processed) {
-        std::cerr << "Unknown command line flag: " << *iter << ".\n";
-        std::cerr << "For help run:\n  " << CommandLine::BinaryName()
-                  << " --help" << std::endl;
+        CERR << "Unknown command line flag: " << *iter << ".";
+        CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
         return false;
       }
       continue;
     }
 
-    std::cerr << "Unknown command line argument: " << *iter << ".\n";
-    std::cerr << "For help run:\n  " << CommandLine::BinaryName() << " --help"
-              << std::endl;
+    CERR << "Unknown command line argument: " << *iter << ".\n";
+    CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
     return false;
   }
   return true;
@@ -190,21 +205,26 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
   } else {
     oss << "   ";
   }
-  oss << std::setw(kHelpIndent - 8) << std::left;
+  std::string long_flag_str = "";
   if (!short_flag && long_flag.empty()) {
-    oss << "(uci parameter)";
+    long_flag_str = "(uci parameter)";
   } else {
-    oss << (long_flag.empty() ? "" : "--" + long_flag);
+    long_flag_str = long_flag.empty() ? "" : "--" + long_flag;
   }
+  oss << long_flag_str;
   auto help_lines = FlowText(help, kHelpWidth);
   bool is_first_line = true;
   for (const auto& line : help_lines) {
     if (is_first_line) {
-      oss << ' ' << line << "\n";
       is_first_line = false;
-    } else {
-      oss << std::string(kHelpIndent, ' ') << line << "\n";
+      if (long_flag_str.size() < kHelpIndent - 7) {
+        oss << std::string(kHelpIndent - 7 - long_flag_str.size(), ' ') << line
+            << "\n";
+        continue;
+      }
+      oss << "\n";
     }
+    oss << std::string(kHelpIndent, ' ') << line << "\n";
   }
   if (!def.empty() || !uci_option.empty()) {
     oss << std::string(kUciLineIndent, ' ') << '[';
@@ -231,7 +251,9 @@ void OptionsParser::ShowHelp() const {
 
   std::cerr << "\nAllowed command line flags for current mode:\n";
   std::cerr << FormatFlag('h', "help", "Show help and exit.");
-  for (const auto& option : options_) std::cerr << option->GetHelp(defaults_);
+  for (const auto& option : options_) {
+    if (!option->hidden_) std::cerr << option->GetHelp(defaults_);
+  }
 
   auto contexts = values_.ListSubdicts();
   if (!contexts.empty()) {
@@ -240,6 +262,10 @@ void OptionsParser::ShowHelp() const {
     std::cerr << "       --" << contexts[0] << '.'
               << options_.back()->GetLongFlag() << "=(value)\n";
   }
+}
+
+void OptionsParser::ShowHidden() const {
+  for (const auto& option : options_) option->hidden_ = false;
 }
 
 /////////////////////////////////////////////////////////////////

@@ -25,7 +25,6 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <iostream>
 #include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
@@ -34,10 +33,9 @@
 
 int main(int argc, const char** argv) {
   LOGFILE << "Lc0 started.";
-  std::cerr << "       _" << std::endl;
-  std::cerr << "|   _ | |" << std::endl;
-  std::cerr << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__
-            << std::endl;
+  CERR << "       _";
+  CERR << "|   _ | |";
+  CERR << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__;
   using namespace lczero;
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
