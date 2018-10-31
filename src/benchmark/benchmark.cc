@@ -48,10 +48,10 @@ void Benchmark::Run() {
   NetworkFactory::PopulateOptions(&options);
   SearchParams::Populate(&options);
 
-  options_.Add<IntOption>(kNodesId, -1, 999999999) = 30000;
-  options_.Add<StringOption>(kFenId) = ChessBoard::kStartingFen;
-  options_.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
-  options_.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options.Add<IntOption>(kNodesId, -1, 999999999) = 30000;
+  options.Add<StringOption>(kFenId) = ChessBoard::kStartingFen;
+  options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
+  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   if (!options.ProcessAllFlags()) return;
 
