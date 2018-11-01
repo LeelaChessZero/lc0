@@ -63,8 +63,8 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
         history.GetPositionAt(history_idx < 0 ? 0 : history_idx);
     const ChessBoard& board =
         flip ? position.GetThemBoard() : position.GetBoard();
-    if (history_idx < 0 && fill_empty_history == NO) break;
-    if (history_idx < 0 && fill_empty_history == FEN_ONLY &&
+    if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
+    if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
         (board.ours() + board.theirs()).as_int() == 0xFFFF00000000FFFFULL) {
       break;
     }
@@ -87,6 +87,8 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     const int repetitions = position.GetRepetitions();
     if (repetitions >= 1) result[base + 12].SetAll();
 
+    // If en passant flag is set, undo last pawn move by removing the pawn from
+    // the new square and putting into pre-move square.
     if (history_idx < 0 && !board.en_passant().empty()) {
       const auto idx = GetLowestBit(board.en_passant().as_int());
       if (idx < 8) {  // "Us" board

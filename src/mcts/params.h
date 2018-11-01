@@ -69,7 +69,7 @@ class SearchParams {
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
-  FillEmptyHistory GetHistoryFill() const;
+  FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -107,7 +107,7 @@ class SearchParams {
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
-  const std::string kHistoryFill;
+  const FillEmptyHistory kHistoryFill;
 };
 
 }  // namespace lczero

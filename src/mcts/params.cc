@@ -29,6 +29,16 @@
 
 namespace lczero {
 
+namespace {
+FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
+  if (history_fill == "fen_only") return FillEmptyHistory::FEN_ONLY;
+  if (history_fill == "always") return FillEmptyHistory::ALWAYS;
+  assert(history_fill == "no");
+  return FillEmptyHistory::NO;
+}
+
+}  // namespace
+
 const OptionId SearchParams::kMiniBatchSizeId{
     "minibatch-size", "MinibatchSize",
     "How many positions the engine tries to batch together for parallel NN "
@@ -111,13 +121,10 @@ const OptionId SearchParams::kMultiPvId{
     "output."};
 const OptionId SearchParams::kHistoryFillId{
     "history-fill", "HistoryFill",
-    "When to fill unknown history by repeating the earliest known position."};
-
-FillEmptyHistory SearchParams::GetHistoryFill() const {
-  if (kHistoryFill == "fen_only") return FEN_ONLY;
-  if (kHistoryFill == "always") return ALWAYS;
-  return NO;
-}
+    "Neural network uses 7 previous board positions in addition to the current "
+    "one. During the first moves of the game such historical positions don't "
+    "exist, but they can be synthesized. This parameter defines when to "
+    "synthesize them (always, never, or only at non-standard fen position)."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the "safe defaults" are listed.
@@ -140,10 +147,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 1;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
-  std::vector<std::string> history_fill_opt;
-  history_fill_opt.push_back("no");
-  history_fill_opt.push_back("fen_only");
-  history_fill_opt.push_back("always");
+  std::vector<std::string> history_fill_opt {"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
 }
 
@@ -158,6 +162,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
-      kHistoryFill(options.Get<std::string>(kHistoryFillId.GetId())) {}
+      kHistoryFill(
+          EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))) {
+}
 
 }  // namespace lczero

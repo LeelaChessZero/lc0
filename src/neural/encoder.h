@@ -32,11 +32,11 @@
 
 namespace lczero {
 
-enum FillEmptyHistory {NO, FEN_ONLY, ALWAYS};
+enum class FillEmptyHistory {NO, FEN_ONLY, ALWAYS};
 
 // Encodes the last position in history for the neural network request.
 InputPlanes EncodePositionForNN(const PositionHistory& history,
                                 int history_planes,
-                                FillEmptyHistory fill_empty_history = NO);
+                                FillEmptyHistory fill_empty_history);
 
 }  // namespace lczero
