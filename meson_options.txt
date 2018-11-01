@@ -31,7 +31,7 @@ option('protobuf_libdir',
 option('openblas_libdirs',
        type: 'array',
        value: ['/usr/lib/'],
-       description: 'Paths to OpenCL libraries')
+       description: 'Paths to OpenBLAS libraries')
 
 option('opencl_libdirs',
        type: 'array',
@@ -55,7 +55,7 @@ option('mkl_include',
 
 option('cudnn_include', 
        type: 'array',
-       value: [],
+       value: ['/usr/local/cuda/include/'],
        description: 'Paths to cudnn include directory')
 
 option('build_backends',
@@ -107,6 +107,11 @@ option('accelerate',
        type: 'boolean',
        value: true,
        description: 'Enable Accelerate BLAS support')
+
+option('popcnt',
+       type: 'boolean',
+       value: true,
+       description: 'Use the popcnt instruction')
 
 option('gtest',
        type: 'boolean',

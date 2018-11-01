@@ -50,8 +50,8 @@ class ChessBoard {
   // Nullifies the whole structure.
   void Clear();
   // Swaps black and white pieces and mirrors them relative to the
-  // middle of the board. (what was on file 1 appears on file 8, what was
-  // on rank b remains on b).
+  // middle of the board. (what was on rank 1 appears on rank 8, what was
+  // on file b remains on file b).
   void Mirror();
 
   // Generates list of possible moves for "ours" (white), but may leave king

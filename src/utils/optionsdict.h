@@ -46,10 +46,6 @@ class OptionsDict : TypeDict<bool>,
                     TypeDict<std::string>,
                     TypeDict<float> {
  public:
-  // Creates options dict from string. Example of a string:
-  // option1=1, option_two = "string val", subdict(option3=3.14)
-  static OptionsDict FromString(const std::string& str,
-                                const OptionsDict* parent = nullptr);
 
   OptionsDict(const OptionsDict* parent = nullptr) : parent_(parent) {}
 
@@ -90,6 +86,14 @@ class OptionsDict : TypeDict<bool>,
 
   // Returns list of subdictionaries.
   std::vector<std::string> ListSubdicts() const;
+
+  // Creates options dict from string. Example of a string:
+  // option1=1, option_two = "string val", subdict(option3=3.14)
+  //
+  // the sub dictionary is containing a parent pointer refering 
+  // back to this object. You need to ensure, that this object
+  // is still in scope, when the parent pointer is used
+  void AddSubdictFromString(const std::string& str);
 
   bool HasSubdict(const std::string& name) const;
 

@@ -68,11 +68,13 @@ files += gen.process('libs/lczero-common/proto/net.proto',
 files += [
   'src/engine.cc',
   'src/version.cc',
+  'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
   'src/mcts/node.cc',
+  'src/mcts/params.cc',
   'src/mcts/search.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
@@ -90,6 +92,7 @@ files += [
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/histogram.cc',
+  'src/utils/logging.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
@@ -127,10 +130,8 @@ if get_option('build_backends')
   tf_dl_lib = cc.find_library('dl', required: false)
   tf_tensorflow_lib = cc.find_library('libtensorflow_cc',
             dirs: tensorflow_libdir, required: false)
-  tf_protobuf_lib = cc.find_library('libprotobuf',
-            dirs: tensorflow_libdir, required: false)
 
-  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found() and tf_protobuf_lib.found()
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found()
     includes += include_directories(
       tensorflow_include,
       tensorflow_include[0] + '/bazel-genfiles',
@@ -141,7 +142,7 @@ if get_option('build_backends')
       tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
       is_system: true
     )
-    deps += [tf_dl_lib, tf_tensorflow_lib, tf_protobuf_lib]
+    deps += [tf_dl_lib, tf_tensorflow_lib]
     files += 'src/neural/network_tf.cc'
     has_backends = true
   endif
@@ -198,7 +199,14 @@ if get_option('build_backends')
 
       deps += [ openblas_lib ]
       has_blas = true
+    endif
 
+    if has_blas
+      blas_files = [
+      'src/neural/blas/batchnorm.cc',
+      'src/neural/blas/fully_connected_layer.cc',
+      'src/neural/blas/winograd_convolution3.cc'
+      ]
     endif
 
     ispc = find_program('ispc', required: false)
@@ -239,11 +247,8 @@ if get_option('build_backends')
 
   if get_option('blas') and has_blas
 
-    blas_files = [
-    'src/neural/blas/batchnorm.cc',
+    blas_files += [
     'src/neural/blas/convolution1.cc',
-    'src/neural/blas/fully_connected_layer.cc',
-    'src/neural/blas/winograd_convolution3.cc',
     'src/neural/blas/network_blas.cc'
     ]
 
@@ -290,7 +295,7 @@ if get_option('build_backends')
       ]
 
       if not get_option('blas')
-        opencl_files += 'src/neural/blas/transforms.cc'
+        opencl_files += blas_files
       endif
 
       includes += include_directories(get_option('opencl_include'))
@@ -310,15 +315,12 @@ if get_option('build_backends')
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-  nvcc = find_program('/usr/local/cuda-9.2/bin/nvcc',
-                      '/usr/local/cuda-9.1/bin/nvcc',
-                      'nvcc', required: false)
+  nvcc = find_program('/usr/local/cuda/bin/nvcc', 'nvcc', required: false)
   cuda_files = [
     'src/neural/network_cudnn.cu',
   ]
 
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
-    includes += include_directories(get_option('cudnn_include'))
     deps += [cu_blas, cu_dnn, cu_dart]
   cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                     '-I', meson.current_source_dir() + '/src']
@@ -377,6 +379,10 @@ endif
 ## Main Executable
 #############################################################################
 
+if not get_option('popcnt')
+  add_project_arguments('-DNO_POPCNT', language : 'cpp')
+endif
+
 executable('lc0', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
@@ -384,28 +390,37 @@ executable('lc0', 'src/main.cc',
 ### Tests
 gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
-test_deps = deps
 if get_option('gtest') and gtest.found()
-  test_deps += gtest
+  lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
-    files, include_directories: includes, dependencies: test_deps
-  ), timeout: 90)
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+  ), args: '--gtest_output=xml:chessboard.xml', timeout: 90)
 
   test('HashCat',
     executable('hashcat_test', 'src/utils/hashcat_test.cc',
-    files, include_directories: includes, dependencies: test_deps
-  ), timeout: 90)
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+  ), args: '--gtest_output=xml:hashcat.xml', timeout: 90)
 
   test('PositionTest',
     executable('position_test', 'src/chess/position_test.cc',
-    files, include_directories: includes, dependencies: test_deps
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+  ), args: '--gtest_output=xml:position.xml', timeout: 90)
+
+  test('OptionsParserTest',
+    executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), timeout: 90)
 
   test('SyzygyTest',
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
-    files, include_directories: includes, dependencies: test_deps
-  ), timeout: 90)
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+  ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
+
+  test('EncodePositionForNN', 
+    executable('encoder_test', 'src/neural/encoder_test.cc',
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+  ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
 endif

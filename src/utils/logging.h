@@ -27,38 +27,56 @@
 
 #pragma once
 
+#include <deque>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <string>
-#include <vector>
+
+#include "utils/mutex.h"
 
 namespace lczero {
 
-// Joins strings using @delim as delimiter.
-std::string StrJoin(const std::vector<std::string>& strings,
-                    const std::string& delim = " ");
+class Logging {
+ public:
+  static Logging& Get();
 
-// Splits strings at whitespace.
-std::vector<std::string> StrSplitAtWhitespace(const std::string& str);
+  // Sets the name of the log. Empty name disables logging.
+  void SetFilename(const std::string& filename);
 
-// Split string by delimiter.
-std::vector<std::string> StrSplit(const std::string& str,
-                                  const std::string& delim);
+ private:
+  // Writes line to the log, and appends new line character.
+  void WriteLineRaw(const std::string& line);
 
-// Parses comma-separated list of integers.
-std::vector<int> ParseIntList(const std::string& str);
+  Mutex mutex_;
+  std::string filename_ GUARDED_BY(mutex_);
+  std::ofstream file_ GUARDED_BY(mutex_);
+  std::deque<std::string> buffer_ GUARDED_BY(mutex_);
 
-// Trims a string of whitespace from the start.
-std::string LeftTrim(std::string str);
+  Logging() = default;
+  friend class LogMessage;
+};
 
-// Trims a string of whitespace from the end.
-std::string RightTrim(std::string str);
+class LogMessage : public std::ostringstream {
+ public:
+  LogMessage(const char* file, int line);
+  ~LogMessage();
+};
 
-// Trims a string of whitespace from both ends.
-std::string Trim(std::string str);
+class StderrLogMessage : public std::ostringstream {
+ public:
+  StderrLogMessage(const char* file, int line);
+  ~StderrLogMessage();
 
-// Returns whether strings are equal, ignoring case.
-bool StringsEqualIgnoreCase(const std::string& a, const std::string& b);
+ private:
+  LogMessage log_;
+};
 
-// Flow text into lines of width up to @width.
-std::vector<std::string> FlowText(const std::string& src, size_t width);
+std::chrono::time_point<std::chrono::system_clock> SteadyClockToSystemClock(
+    std::chrono::time_point<std::chrono::steady_clock> time);
 
+std::string FormatTime(std::chrono::time_point<std::chrono::system_clock> time);
 }  // namespace lczero
+
+#define LOGFILE ::lczero::LogMessage(__FILE__, __LINE__)
+#define CERR ::lczero::StderrLogMessage(__FILE__, __LINE__)

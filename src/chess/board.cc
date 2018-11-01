@@ -738,14 +738,7 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-  // Count the total pieces on the board.
-  uint64_t x = our_pieces_.as_int() | their_pieces_.as_int();
-  // x &= x - 1 clears the rigthmost set bit (if any).
-  x &= x - 1;
-  x &= x - 1;
-  x &= x - 1;
-  // If x is zero we started with 3 or less bits set.
-  if (x == 0) {
+  if ((our_pieces_ + their_pieces_).count() < 4) {
     // K v K, K+B v K, K+N v K.
     return false;
   }
