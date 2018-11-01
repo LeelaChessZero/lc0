@@ -181,16 +181,16 @@ int64_t Search::GetTimeToDeadline() const {
       .count();
 }
 
-void Search::SendMovesStats() const {
+std::vector<std::string> Search::GetVerboseStats(Node* node,
+                                                 bool is_black_to_move) const {
   const float parent_q =
-      -root_node_->GetQ() -
-      params_.GetFpuReduction() * std::sqrt(root_node_->GetVisitedPolicy());
+      -node->GetQ() -
+      params_.GetFpuReduction() * std::sqrt(node->GetVisitedPolicy());
   const float U_coeff =
-      params_.GetCpuct() *
-      std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+      params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
 
   std::vector<EdgeAndNode> edges;
-  for (const auto& edge : root_node_->Edges()) edges.push_back(edge);
+  for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
             [&parent_q, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
@@ -200,11 +200,8 @@ void Search::SendMovesStats() const {
                                            b.GetQ(parent_q) + b.GetU(U_coeff));
             });
 
-  const bool is_black_to_move = played_history_.IsBlackToMove();
-  std::vector<ThinkingInfo> infos;
+  std::vector<std::string> infos;
   for (const auto& edge : edges) {
-    infos.emplace_back();
-    ThinkingInfo& info = infos.back();
     std::ostringstream oss;
     oss << std::fixed;
 
@@ -233,7 +230,7 @@ void Search::SendMovesStats() const {
     if (edge.IsTerminal()) {
       v = edge.node()->GetQ();
     } else {
-      NNCacheLock nneval = GetCachedFirstPlyResult(edge);
+      NNCacheLock nneval = GetCachedNNEval(edge.node());
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -244,21 +241,41 @@ void Search::SendMovesStats() const {
     oss << ") ";
 
     if (edge.IsTerminal()) oss << "(T) ";
-
-    info.comment = oss.str();
+    infos.emplace_back(oss.str());
   }
-  info_callback_(infos);
+  return infos;
 }
 
-NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
-  if (!edge.HasNode()) return {};
-  assert(edge.node()->GetParent() == root_node_);
-  // It would be relatively straightforward to generalize this to fetch NN
-  // results for an abitrary move.
-  optional<float> retval;
-  PositionHistory history(played_history_);  // Is it worth it to move this
-  // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
-  history.Append(edge.GetMove());
+void Search::SendMovesStats() const {
+  const bool is_black_to_move = played_history_.IsBlackToMove();
+  auto move_stats = GetVerboseStats(root_node_, is_black_to_move);
+
+  if (params_.GetVerboseStats()) {
+    std::vector<ThinkingInfo> infos;
+    std::transform(move_stats.begin(), move_stats.end(),
+                   std::back_inserter(infos), [](const std::string& line) {
+                     ThinkingInfo info;
+                     info.comment = line;
+                     return info;
+                   });
+    info_callback_(infos);
+  } else {
+    LOGFILE << "=== Move stats:";
+    for (const auto& line : move_stats) LOGFILE << line;
+  }
+}
+
+NNCacheLock Search::GetCachedNNEval(Node* node) const {
+  if (!node) return {};
+
+  std::vector<Move> moves;
+  for (; node != root_node_; node = node->GetParent()) {
+    moves.push_back(node->GetOwnEdge()->GetMove());
+  }
+  PositionHistory history(played_history_);
+  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
+    history.Append(*iter);
+  }
   auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
   NNCacheLock nneval(cache_, hash);
   return nneval;
@@ -309,8 +326,8 @@ void Search::MaybeTriggerStop() {
   if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
       !responded_bestmove_) {
     SendUciInfo();
-    if (params_.GetVerboseStats()) SendMovesStats();
     best_move_ = GetBestMoveInternal();
+    SendMovesStats();
     best_move_callback_({best_move_.first, best_move_.second});
     responded_bestmove_ = true;
     best_move_edge_ = EdgeAndNode();

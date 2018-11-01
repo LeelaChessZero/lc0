@@ -125,8 +125,12 @@ class Search {
   // Returns true if the population came from tablebase.
   bool PopulateRootMoveLimit(MoveList* root_moves) const;
 
-  // We only need first ply for debug output, but could be easily generalized.
-  NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
+  // Returns verbose information about given node, as vector of strings.
+  std::vector<std::string> GetVerboseStats(Node* node,
+                                           bool is_black_to_move) const;
+
+  // Returns NN eval for a given node from cache, if that node is cached.
+  NNCacheLock GetCachedNNEval(Node* node) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.

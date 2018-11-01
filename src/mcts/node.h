@@ -207,6 +207,9 @@ class Node {
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
 
+  // Returns edge to the own node.
+  Edge* GetOwnEdge() const;
+
   // Debug information about the node.
   std::string DebugString() const;
 

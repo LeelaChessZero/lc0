@@ -205,6 +205,8 @@ Edge* Node::GetEdgeToNode(const Node* node) const {
   return &edges_[node->index_];
 }
 
+Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
+
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
