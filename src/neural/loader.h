@@ -31,14 +31,16 @@
 #include <vector>
 
 #include "neural/network.h"
+#include "proto/net.pb.h"
 
 namespace lczero {
 
 using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
+using nf = pblczero::NetworkFormat;
 
 // Read from protobuf.
-std::pair<FloatVectors, int> LoadFloatsFromPbFile(const std::string& buffer);
+std::pair<FloatVectors, nf::NetworkStructure> LoadFloatsFromPbFile(const std::string& buffer);
 
 // Read space separated file of floats and return it as a vector of vectors.
 FloatVectors LoadFloatsFromFile(std::string* buffer);
