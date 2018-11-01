@@ -109,6 +109,15 @@ const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV",
     "Number of game play lines (principal variations) to show in UCI info "
     "output."};
+const OptionId SearchParams::kHistoryFillId{
+    "history-fill", "HistoryFill",
+    "When to fill unknown history by repeating the earliest known position."};
+
+FillEmptyHistory SearchParams::GetHistoryFill() const {
+  if (kHistoryFill == "fen_only") return FEN_ONLY;
+  if (kHistoryFill == "always") return ALWAYS;
+  return NO;
+}
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the "safe defaults" are listed.
@@ -131,6 +140,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 1;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
+  std::vector<std::string> history_fill_opt;
+  history_fill_opt.push_back("no");
+  history_fill_opt.push_back("fen_only");
+  history_fill_opt.push_back("always");
+  options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -143,6 +157,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())) {}
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
+      kHistoryFill(options.Get<std::string>(kHistoryFillId.GetId())) {}
 
 }  // namespace lczero

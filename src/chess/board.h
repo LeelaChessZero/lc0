@@ -60,9 +60,6 @@ class ChessBoard {
   // Applies the move. (Only for "ours" (white)). Returns true if 50 moves
   // counter should be removed.
   bool ApplyMove(Move move);
-  // Attempts to revert board to state prior to last move, if possible.
-  bool UndoMoveToPriorBoardIfPossible();
-
   // Checks if the square is under attack from "theirs" (black).
   bool IsUnderAttack(BoardSquare square) const;
   // Checks if "our" (white) king is under check.
@@ -129,6 +126,7 @@ class ChessBoard {
   BitBoard ours() const { return our_pieces_; }
   BitBoard theirs() const { return their_pieces_; }
   BitBoard pawns() const;
+  BitBoard en_passant() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
   BitBoard queens() const { return rooks_ * bishops_; }
