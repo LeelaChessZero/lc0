@@ -271,35 +271,39 @@ void Search::MaybeTriggerStop() {
   if (responded_bestmove_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
-  // If smart pruning tells to stop (best move found), stop.
-  if (found_best_move_) {
-    FireStopInternal();
-    LOGFILE << "Stopped search: Only one move candidate left.";
-  }
-  // Stop if reached playouts limit.
-  if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
-    FireStopInternal();
-    LOGFILE << "Stopped search: Reached playouts limit: " << total_playouts_
-            << ">=" << limits_.playouts;
-  }
-  // Stop if reached visits limit.
-  if (limits_.visits >= 0 &&
-      total_playouts_ + initial_visits_ >= limits_.visits) {
-    FireStopInternal();
-    LOGFILE << "Stopped search: Reached visits limit: "
-            << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
-  }
-  // Stop if reached time limit.
-  if (search_deadline_ && GetTimeToDeadline() <= 0) {
-    LOGFILE << "Stopped search: Ran out of time.";
-    FireStopInternal();
-  }
-  // Stop if average depth reached requested depth.
-  if (limits_.depth >= 0 &&
-      cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
-          static_cast<unsigned int>(limits_.depth)) {
-    FireStopInternal();
-    LOGFILE << "Stopped search: Reached depth.";
+
+  // If not yet stopped, try to stop for different reasons.
+  if (!stop_.load(std::memory_order_acquire)) {
+    // If smart pruning tells to stop (best move found), stop.
+    if (found_best_move_) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Only one move candidate left.";
+    }
+    // Stop if reached playouts limit.
+    if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Reached playouts limit: " << total_playouts_
+              << ">=" << limits_.playouts;
+    }
+    // Stop if reached visits limit.
+    if (limits_.visits >= 0 &&
+        total_playouts_ + initial_visits_ >= limits_.visits) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Reached visits limit: "
+              << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
+    }
+    // Stop if reached time limit.
+    if (search_deadline_ && GetTimeToDeadline() <= 0) {
+      LOGFILE << "Stopped search: Ran out of time.";
+      FireStopInternal();
+    }
+    // Stop if average depth reached requested depth.
+    if (limits_.depth >= 0 &&
+        cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
+            static_cast<unsigned int>(limits_.depth)) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Reached depth.";
+    }
   }
   // If we are the first to see that stop is needed.
   if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
