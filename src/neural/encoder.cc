@@ -26,6 +26,7 @@
 */
 
 #include "neural/encoder.h"
+#include "utils/optional.h"
 #include <algorithm>
 
 namespace lczero {
@@ -34,6 +35,8 @@ namespace {
 const int kMoveHistory = 8;
 const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
+optional<ChessBoard> startpos;
+
 }  // namespace
 
 InputPlanes EncodePositionForNN(const PositionHistory& history,
@@ -64,9 +67,13 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     const ChessBoard& board =
         flip ? position.GetThemBoard() : position.GetBoard();
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
-    if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
-        (board.ours() + board.theirs()).as_int() == 0xFFFF00000000FFFFULL) {
-      break;
+    if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY) {
+      if (!startpos) {
+        ChessBoard tmp;
+        tmp.SetFromFen(ChessBoard::kStartingFen);
+        startpos = tmp;
+      }
+      if (board == *startpos) break;
     }
 
     const int base = i * kPlanesPerBoard;
