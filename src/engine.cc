@@ -84,6 +84,20 @@ const OptionId kSpendSavedTimeId{
     "all future moves."};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
+// Warning! When changed, also change number 30 in the help below!
+const size_t kAvgMovesPerPosition = 30;
+const OptionId kRamLimitMbId{
+    "ramlimit-mb", "RamLimitMb",
+    "Maximum memory usage for the engine, in megabytes. The estimation is very "
+    "rough, and can be off by a lot. For example, multiple visits to a "
+    "terminal node counted several times, and the estimation assumes that all "
+    "positions have 30 possible moves. When set to 0, no RAM limit is "
+    "enforced."};
+
+const size_t kAvgNodeSize = sizeof(Node) + kAvgMovesPerPosition * sizeof(Edge);
+const size_t kAvgCacheItemSize =
+    NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
+    sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
 
 float ComputeMoveWeight(int ply, float peak, float left_width,
                         float right_width) {
@@ -119,6 +133,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 0.6f;
+  options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
   // Hide time curve options.
   options->HideOption(kTimePeakPlyId);
@@ -155,6 +170,17 @@ SearchLimits EngineController::PopulateSearchLimits(
   }
   limits.infinite = params.infinite || params.ponder;
   if (params.nodes >= 0) limits.visits = params.nodes;
+  int ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
+  if (ram_limit) {
+    const auto cache_size =
+        options_.Get<int>(kNNCacheSizeId.GetId()) * kAvgCacheItemSize;
+    int64_t limit = (ram_limit * 1000000LL - cache_size) / kAvgNodeSize;
+    LOGFILE << "RAM limit " << ram_limit << "MB. Cache takes "
+            << cache_size / 1000000 << "MB. Remaining memory is enough for "
+            << limit << " nodes.";
+    if (limit < 0) limit = 0;
+    if (limit < limits.visits) limits.visits = limit;
+  }
   limits.depth = params.depth;
   if (limits.infinite || time < 0) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
