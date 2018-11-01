@@ -83,13 +83,15 @@ void Benchmark::Run() {
 
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> time = end - start;
-    std::cout << "Benchmark final time " << time.count() << "s" << std::endl;
+    std::cout << "Benchmark final time " << time.count() << "s calculating "
+              << search->GetTotalPlayouts() / time.count()
+              << " nodes per second." << std::endl;
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;
   }
 }
 
-void Benchmark::OnBestMove(const BestMoveInfo& move) { (void)move; }
+void Benchmark::OnBestMove(const BestMoveInfo& /*move*/) {}
 
 void Benchmark::OnInfo(const std::vector<ThinkingInfo>& infos) {
   std::string line = "Benchmark time " + std::to_string(infos[0].time);

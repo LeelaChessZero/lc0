@@ -91,6 +91,8 @@ class Search {
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
   float GetBestEval() const;
+  // Returns the total number of playouts in the search.
+  std::int64_t GetTotalPlayouts() const;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).

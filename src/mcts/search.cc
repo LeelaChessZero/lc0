@@ -383,6 +383,11 @@ std::pair<Move, Move> Search::GetBestMove() const {
   return GetBestMoveInternal();
 }
 
+std::int64_t Search::GetTotalPlayouts() const {
+  SharedMutex::SharedLock lock(nodes_mutex_);
+  return total_playouts_;
+}
+
 bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   // Search moves overrides tablebase.
   if (!limits_.searchmoves.empty()) {
