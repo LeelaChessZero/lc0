@@ -68,6 +68,7 @@ files += gen.process('libs/lczero-common/proto/net.proto',
 files += [
   'src/engine.cc',
   'src/version.cc',
+  'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
