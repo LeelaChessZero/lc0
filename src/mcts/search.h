@@ -94,7 +94,7 @@ class Search {
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
-  const SearchParams GetParams() const { return params_; }
+  const SearchParams& GetParams() const { return params_; }
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).

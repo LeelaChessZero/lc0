@@ -36,6 +36,7 @@ namespace lczero {
 class SearchParams {
  public:
   SearchParams(const OptionsDict& options);
+  SearchParams(const SearchParams&) = delete;
 
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);
