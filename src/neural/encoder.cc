@@ -36,7 +36,7 @@ const int kMoveHistory = 8;
 const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 
-const ChessBoard startpos(ChessBoard::kStartingFen);
+static const ChessBoard kStartBoardPos(ChessBoard::kStartingFen);
 
 }  // namespace
 
@@ -70,14 +70,14 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
     // Board may be flipped so can't compare directly.
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
-        board.pawns() == startpos.pawns() &&
-        board.bishops() == startpos.bishops() &&
-        board.rooks() == startpos.rooks() &&
-        board.queens() == startpos.queens() &&
+        board.pawns() == kStartBoardPos.pawns() &&
+        board.bishops() == kStartBoardPos.bishops() &&
+        board.rooks() == kStartBoardPos.rooks() &&
+        board.queens() == kStartBoardPos.queens() &&
         (board.our_knights() + board.their_knights()) ==
-            (startpos.our_knights() + startpos.their_knights()) &&
+            (kStartBoardPos.our_knights() + kStartBoardPos.their_knights()) &&
         (board.our_king() + board.their_king()) ==
-            (startpos.our_king() + startpos.their_king())) {
+            (kStartBoardPos.our_king() + kStartBoardPos.their_king())) {
       break;
     }
 
