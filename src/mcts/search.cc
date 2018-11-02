@@ -53,9 +53,12 @@ const auto kNNComputationWarningTime = std::chrono::milliseconds(500);
 
 std::string SearchLimits::DebugString() const {
   std::ostringstream ss;
-  ss << "visits:" << visits << " playouts:" << playouts
-     << " movetime:" << movetime << " depth:" << depth
+  ss << "visits:" << visits << " playouts:" << playouts << " depth:" << depth
      << " infinite:" << infinite;
+  if (search_deadline) {
+    ss << " search_deadline:"
+       << FormatTime(SteadyClockToSystemClock(*search_deadline));
+  }
   return ss.str();
 }
 
@@ -75,14 +78,7 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      params_(options) {
-  if (limits_.movetime >= 0) {
-    search_deadline_ = std::chrono::steady_clock::now() +
-                       std::chrono::milliseconds(limits_.movetime);
-  } else {
-    search_deadline_ = limits_.search_deadline;
-  }
-}
+      params_(options) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -175,9 +171,9 @@ int64_t Search::GetTimeSinceStart() const {
 }
 
 int64_t Search::GetTimeToDeadline() const {
-  if (!search_deadline_) return 0;
+  if (!limits_.search_deadline) return 0;
   return std::chrono::duration_cast<std::chrono::milliseconds>(
-             *search_deadline_ - std::chrono::steady_clock::now())
+             *limits_.search_deadline - std::chrono::steady_clock::now())
       .count();
 }
 
@@ -293,7 +289,7 @@ void Search::MaybeTriggerStop() {
               << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
     }
     // Stop if reached time limit.
-    if (search_deadline_ && GetTimeToDeadline() <= 0) {
+    if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
       LOGFILE << "Stopped search: Ran out of time.";
       FireStopInternal();
     }
@@ -322,9 +318,9 @@ void Search::UpdateRemainingMoves() {
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
-  if (search_deadline_ && !nps_start_time_) {
+  if (limits_.search_deadline && !nps_start_time_) {
     nps_start_time_ = std::chrono::steady_clock::now();
-  } else if (search_deadline_) {
+  } else if (limits_.search_deadline) {
     auto time_since_start =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - *nps_start_time_)
@@ -569,7 +565,7 @@ void Search::WatchdogThread() {
     // already all exited, and we need at least one thread that can do that.
     if (responded_bestmove_) break;
 
-    auto remaining_time = search_deadline_
+    auto remaining_time = limits_.search_deadline
                               ? std::chrono::milliseconds(GetTimeToDeadline())
                               : kMaxWaitTime;
     if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
