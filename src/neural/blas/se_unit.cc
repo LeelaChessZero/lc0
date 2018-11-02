@@ -37,6 +37,7 @@ void SEUnit::global_avg_pooling(const size_t channels,
 }
 
 void SEUnit::apply_se(const size_t channels,
+                      const size_t batch_size,
                       const float* input,
                       const float* res,
                       const float* scale,
@@ -46,11 +47,13 @@ void SEUnit::apply_se(const size_t channels,
 
   const auto lambda_sigmoid = [](const auto val) { return 1.0f/(1.0f + exp(-val)); };
 
-  for (auto c = size_t{0}; c < channels; c++) {
-    auto sig_scale = lambda_sigmoid(scale[c]);
+  for (auto c = size_t{0}; c < channels * batch_size; c++) {
+    auto batch = c / channels;
+    auto gamma = lambda_sigmoid(scale[c + batch * channels]);
+    auto beta = scale[c + batch * channels + channels];
     for (auto i = size_t{0}; i < kSquares; i++) {
-      output[c * kSquares + i] = lambda_ReLU(sig_scale * input[c * kSquares + i]
-          + res[c * kSquares + i]);
+      output[c * kSquares + i] = lambda_ReLU(gamma * input[c * kSquares + i]
+          + beta + res[c * kSquares + i]);
     }
   }
 }
@@ -65,7 +68,7 @@ void SEUnit::Forward(const size_t batch_size, const size_t channels,
                      const float* weights_b2,
                      float* output) {
 
-    std::vector<float> pool(channels * batch_size);
+    std::vector<float> pool(2 * channels * batch_size);
     std::vector<float> fc_out1(batch_size * se_fc_outputs);
 
     global_avg_pooling(channels * batch_size, input, pool.data());
@@ -78,14 +81,14 @@ void SEUnit::Forward(const size_t batch_size, const size_t channels,
         fc_out1.data());
 
     FullyConnectedLayer::Forward1D(
-        batch_size, se_fc_outputs, channels,
+        batch_size, se_fc_outputs, 2 * channels,
         fc_out1.data(), weights_w2,
         weights_b2,
         false,  // Relu Off
         pool.data());
 
     // Sigmoid, scale and add residual
-    apply_se(channels * batch_size, input, residual, pool.data(), output);
+    apply_se(channels, batch_size, input, residual, pool.data(), output);
 }
 
 }  // namespace lczero

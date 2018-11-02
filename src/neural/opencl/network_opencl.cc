@@ -251,6 +251,9 @@ class OpenCLNetwork : public Network {
                                 batchnorm_means_2, batchnorm_stddivs_2);
       if (residual.has_se) {
           auto se_fc_outputs = se.w1.size() / channels;
+          if (se.b2.size() != 2 * channels) {
+              throw Exception("SE-unit output bias is not right size.");
+          }
           opencl_net_.push_se(channels, se_fc_outputs, se.w1, se.b1, se.w2, se.b2);
       }
     }
