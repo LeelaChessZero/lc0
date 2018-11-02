@@ -35,6 +35,7 @@
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
+#include "neural/encoder.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
 
@@ -187,7 +188,8 @@ class Node {
   bool UpdateFullDepth(uint16_t* depth);
 
   V3TrainingData GetV3TrainingData(GameResult result,
-                                   const PositionHistory& history) const;
+                                   const PositionHistory& history,
+                                   FillEmptyHistory fill_empty_history) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
