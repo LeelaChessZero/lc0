@@ -30,7 +30,9 @@ TEST(EncodePositionForNN, EncodeStartPosition) {
   board.SetFromFen(ChessBoard::kStartingFen);
   history.Reset(board, 0, 1);
 
-  InputPlanes encoded_planes = EncodePositionForNN(history, 8);
+
+  InputPlanes encoded_planes =
+      EncodePositionForNN(history, 8, FillEmptyHistory::NO);
 
   InputPlane our_pawns_plane = encoded_planes[0];
   auto our_pawns_mask = 0ull;
@@ -103,7 +105,8 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
   // 1. Nf3
   history.Append(Move("g1f3", false));
 
-  InputPlanes encoded_planes = EncodePositionForNN(history, 8);
+  InputPlanes encoded_planes =
+      EncodePositionForNN(history, 8, FillEmptyHistory::NO);
 
   InputPlane we_are_black_plane = encoded_planes[13*8 + 4];
   EXPECT_EQ(we_are_black_plane.mask, kAllSquaresMask);
@@ -116,7 +119,7 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
   // 1. Nf3 Nf6
   history.Append(Move("g8f6", true));
 
-  encoded_planes = EncodePositionForNN(history, 8);
+  encoded_planes = EncodePositionForNN(history, 8, FillEmptyHistory::NO);
 
   we_are_black_plane = encoded_planes[13*8 + 4];
   EXPECT_EQ(we_are_black_plane.mask, 0ull);

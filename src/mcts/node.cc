@@ -280,8 +280,9 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V3TrainingData Node::GetV3TrainingData(GameResult game_result,
-                                       const PositionHistory& history) const {
+V3TrainingData Node::GetV3TrainingData(
+    GameResult game_result, const PositionHistory& history,
+    FillEmptyHistory fill_empty_history) const {
   V3TrainingData result;
 
   // Set version.
@@ -298,7 +299,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   }
 
   // Populate planes.
-  InputPlanes planes = EncodePositionForNN(history, 8);
+  InputPlanes planes = EncodePositionForNN(history, 8, fill_empty_history);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);

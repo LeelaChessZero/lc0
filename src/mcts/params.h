@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "neural/encoder.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
@@ -35,6 +36,7 @@ namespace lczero {
 class SearchParams {
  public:
   SearchParams(const OptionsDict& options);
+  SearchParams(const SearchParams&) = delete;
 
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);
@@ -68,6 +70,7 @@ class SearchParams {
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
+  FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -86,6 +89,7 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
   static const OptionId kMultiPvId;
+  static const OptionId kHistoryFillId;
 
  private:
   const OptionsDict& options_;
@@ -104,6 +108,7 @@ class SearchParams {
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
+  const FillEmptyHistory kHistoryFill;
 };
 
 }  // namespace lczero

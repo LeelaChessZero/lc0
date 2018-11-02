@@ -39,6 +39,9 @@ struct MoveExecution;
 // Unlike most chess engines, the board is mirrored for black.
 class ChessBoard {
  public:
+  ChessBoard() = default;
+  ChessBoard(const std::string& fen) { SetFromFen(fen); }
+
   static const std::string kStartingFen;
 
   // Sets position from FEN string.
@@ -126,6 +129,7 @@ class ChessBoard {
   BitBoard ours() const { return our_pieces_; }
   BitBoard theirs() const { return their_pieces_; }
   BitBoard pawns() const;
+  BitBoard en_passant() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
   BitBoard queens() const { return rooks_ * bishops_; }
