@@ -39,6 +39,9 @@ struct MoveExecution;
 // Unlike most chess engines, the board is mirrored for black.
 class ChessBoard {
  public:
+  ChessBoard() = default;
+  ChessBoard(std::string fen) { SetFromFen(fen); }
+
   static const std::string kStartingFen;
 
   // Sets position from FEN string.
