@@ -210,14 +210,15 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
+  // TODO: shrink the padding on this somehow? It takes 16 bytes even though
+  // only 10 are real! Maybe even merge it into this class??
+  EdgeList edges_;
+
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
-  // TODO: shrink the padding on this somehow? It takes 16 bytes even though
-  // only 10 are real! Maybe even merge it into this class??
-  EdgeList edges_;
 
   // 8 byte fields.
   // Pointer to a parent node. nullptr for the root.
