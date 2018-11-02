@@ -36,6 +36,8 @@
 #include <sstream>
 #include <thread>
 
+#include <cstdlib>
+
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
@@ -747,7 +749,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             ? -node->GetQ()
             : -node->GetQ() - params_.GetFpuReduction() *
                                   std::sqrt(node->GetVisitedPolicy());
-    for (auto child : node->Edges()) {
+
+    int r = rand() % node->Edges()->size();
+    auto child = node->Edges()[r];
+
+//    for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
         // remaining playouts, don't consider it.
@@ -781,7 +787,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         second_best = score;
         second_best_edge = child;
       }
-    }
+//    }
 
     if (second_best_edge) {
       collision_limit = std::min(
