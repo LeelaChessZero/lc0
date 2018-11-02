@@ -53,8 +53,12 @@ const auto kNNComputationWarningTime = std::chrono::milliseconds(500);
 
 std::string SearchLimits::DebugString() const {
   std::ostringstream ss;
-  ss << "visits:" << visits << " playouts:" << playouts
-     << " depth:" << depth << " infinite:" << infinite;
+  ss << "visits:" << visits << " playouts:" << playouts << " depth:" << depth
+     << " infinite:" << infinite;
+  if (search_deadline) {
+    ss << " search_deadline:"
+       << FormatTime(SteadyClockToSystemClock(*search_deadline));
+  }
   return ss.str();
 }
 

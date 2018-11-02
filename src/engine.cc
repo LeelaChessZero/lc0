@@ -396,9 +396,7 @@ void EngineController::Go(const GoParams& params) {
 
   if (limits.search_deadline) {
     LOGFILE << "Timer started at "
-            << FormatTime(SteadyClockToSystemClock(move_start_time_))
-            << ", deadline at "
-            << FormatTime(SteadyClockToSystemClock(*limits.search_deadline));
+            << FormatTime(SteadyClockToSystemClock(move_start_time_));
   }
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
