@@ -40,7 +40,7 @@ struct MoveExecution;
 class ChessBoard {
  public:
   ChessBoard() = default;
-  ChessBoard(const std::string fen) { SetFromFen(fen); }
+  ChessBoard(const std::string& fen) { SetFromFen(fen); }
 
   static const std::string kStartingFen;
 
