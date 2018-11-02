@@ -119,6 +119,10 @@ const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV",
     "Number of game play lines (principal variations) to show in UCI info "
     "output."};
+const OptionId SearchParams::kScoreTypeId{
+    "score-type", "ScoreType",
+    "What to display as score. Either centipawns (the UCI default), win "
+    "percentage or Q (the actual internal score) multiplied by 100."};
 const OptionId SearchParams::kHistoryFillId{
     "history-fill", "HistoryFill",
     "Neural network uses 7 previous board positions in addition to the current "
@@ -147,6 +151,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 1;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
+  std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
+  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt {"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
 }

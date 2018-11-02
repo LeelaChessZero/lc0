@@ -105,6 +105,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!best_move_edge_) return;
 
   auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
+  auto score_type = params_.GetScoreType();
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -125,7 +126,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+    if (score_type == "centipawn") {
+      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+    } else if (score_type == "win_percentage") {
+      uci_info.score = edge.GetQ(0) * 5000 + 5000;
+    } else if (score_type == "Q") {
+      uci_info.score = edge.GetQ(0) * 10000;
+    }
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
     for (auto iter = edge; iter;
