@@ -70,6 +70,9 @@ class SearchParams {
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
+  std::string GetScoreType() const {
+    return options_.Get<std::string>(kScoreTypeId.GetId());
+  }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
 
   // Search parameter IDs.
@@ -89,6 +92,7 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
   static const OptionId kMultiPvId;
+  static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
 
  private:
