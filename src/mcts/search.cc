@@ -130,10 +130,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
     } else if (score_type == "win_percentage") {
       uci_info.score = edge.GetQ(0) * 5000 + 5000;
-      uci_info.comment = "Score is win percentage";
     } else if (score_type == "Q") {
       uci_info.score = edge.GetQ(0) * 10000;
-      uci_info.comment = "Score is Q * 100";
     }
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
