@@ -68,16 +68,9 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     const ChessBoard& board =
         flip ? position.GetThemBoard() : position.GetBoard();
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
-    // Board may be flipped so can't compare directly.
+    // Board may be flipped so compare with position.GetBoard().
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
-        board.pawns() == kStartBoardPos.pawns() &&
-        board.bishops() == kStartBoardPos.bishops() &&
-        board.rooks() == kStartBoardPos.rooks() &&
-        board.queens() == kStartBoardPos.queens() &&
-        (board.our_knights() + board.their_knights()) ==
-            (kStartBoardPos.our_knights() + kStartBoardPos.their_knights()) &&
-        (board.our_king() + board.their_king()) ==
-            (kStartBoardPos.our_king() + kStartBoardPos.their_king())) {
+        position.GetBoard() == kStartBoardPos) {
       break;
     }
 
