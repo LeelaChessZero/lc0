@@ -188,7 +188,7 @@ void BlasComputation::ComputeBlocking() {
 
           std::swap(conv_out, conv_in);
 
-          auto se_fc_outputs = se.w1.size() / output_channels;
+          auto se_fc_outputs = se.b1.size();
           SEUnit::Forward(batch_size, output_channels, se_fc_outputs,
                           conv_in, res, se.w1.data(), se.b1.data(),
                           se.w2.data(), se.b2.data(), conv_out);

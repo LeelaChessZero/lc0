@@ -44,6 +44,7 @@ class SEUnit {
                                  float* output);
 
   static void apply_se(const size_t channels,
+                       const size_t batch_size,
                        const float* input,
                        const float* res,
                        const float* scale,
