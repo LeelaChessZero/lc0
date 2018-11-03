@@ -750,8 +750,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             : -node->GetQ() - params_.GetFpuReduction() *
                                   std::sqrt(node->GetVisitedPolicy());
 
-    int r = rand() % node->edges_.size();
-    auto child = node->edges_[r];
+    int r = rand() % node->Edges()->size();
+    auto child = node->Edges()[r];
 
 //    for (auto child : node->Edges()) {
       if (is_root_node) {
