@@ -246,7 +246,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   return infos;
 }
 
-void Search::SendMovesStats() const {
+void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
   const bool is_black_to_move = played_history_.IsBlackToMove();
   auto move_stats = GetVerboseStats(root_node_, is_black_to_move);
 
@@ -262,6 +262,15 @@ void Search::SendMovesStats() const {
   } else {
     LOGFILE << "=== Move stats:";
     for (const auto& line : move_stats) LOGFILE << line;
+  }
+  if (final_bestmove_.HasNode()) {
+    LOGFILE
+        << "--- Opponent moves after: "
+        << final_bestmove_.GetMove(played_history_.IsBlackToMove()).as_string();
+    for (const auto& line :
+         GetVerboseStats(final_bestmove_.node(), !is_black_to_move)) {
+      LOGFILE << line;
+    }
   }
 }
 
