@@ -1,3 +1,9 @@
+v0.19.0-rc2 (2018-11-03)
+~~~~~~~~~~~
+
+* Version v0.19.0-rc1 reported it's version as v0.19.0-dev
+  Therefore v0.19.0-rc2 is released with this issue fixed.
+
 v0.19.0-rc1 (2018-11-03)
 ~~~~~~~~~~~
 
