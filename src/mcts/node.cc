@@ -280,13 +280,13 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V3TrainingData Node::GetV3TrainingData(
+V4TrainingData Node::GetV4TrainingData(
     GameResult game_result, const PositionHistory& history,
     FillEmptyHistory fill_empty_history) const {
-  V3TrainingData result;
+  V4TrainingData result;
 
   // Set version.
-  result.version = 3;
+  result.version = 4;
 
   // Populate probabilities.
   float total_n = static_cast<float>(GetChildrenVisits());
@@ -325,6 +325,9 @@ V3TrainingData Node::GetV3TrainingData(
   } else {
     result.result = 0;
   }
+  
+  // Aggregate evaluation Q.
+  result.q = GetQ();
 
   return result;
 }
