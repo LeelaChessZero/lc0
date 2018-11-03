@@ -327,7 +327,7 @@ V4TrainingData Node::GetV4TrainingData(
   }
   
   // Aggregate evaluation Q.
-  result.q = GetQ();
+  result.q = -GetQ();
 
   return result;
 }
