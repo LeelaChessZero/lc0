@@ -80,6 +80,8 @@ const OptionId kSpendSavedTimeId{"immediate-time-use", "ImmediateTimeUse",
                                  "Fraction of saved time to use immediately."};
 const OptionId kPonderId{"ponder", "Ponder", "This option is ignored."};
 
+const OptionId kCertaintyPropagationId{"certainty-propagation", "CertaintyPropagation", "Level of certainty propagation."};
+
 const char* kAutoDiscover = "<autodiscover>";
 
 float ComputeMoveWeight(int ply, float peak, float left_width,
@@ -133,6 +135,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
   defaults->Set<int>(SearchParams::kAllowedTotalNodeCollisionsId.GetId(), 9999);
   defaults->Set<int>(SearchParams::kAllowedNodeCollisionEventsId.GetId(), 32);
+  defaults->Set<int>(SearchParams::kCertaintyPropagationId.GetId(), 2);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }
@@ -422,5 +425,8 @@ void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
+
+void EngineLoop::CmdStats() { engine_.Stats();  }
+
 
 }  // namespace lczero

@@ -72,6 +72,7 @@ class SearchParams {
   }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
+  int GetCertaintyPropagation() const { return options_.Get<int>(kCertaintyPropagationId.GetId()); }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -90,6 +91,7 @@ class SearchParams {
   static const OptionId kAllowedTotalNodeCollisionsId;
   static const OptionId kOutOfOrderEvalId;
   static const OptionId kMultiPvId;
+  static const OptionId kCertaintyPropagationId;
 
  private:
   const OptionsDict& options_;
@@ -107,6 +109,7 @@ class SearchParams {
   const float kPolicySoftmaxTemp;
   const int kAllowedNodeCollisionEvents;
   const int kAllowedTotalNodeCollisions;
+  const int kCertaintyPropagation;
   const bool kOutOfOrderEval;
 };
 

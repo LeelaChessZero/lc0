@@ -76,6 +76,11 @@ class EngineController {
   void PonderHit();
   // Must not block.
   void Stop();
+  // Prints verbose move stats of current root
+  void Stats() {
+    SetupPosition(current_position_->fen, current_position_->moves);
+    tree_ ? info_callback_(tree_->GetCurrentHead()->SendMovesStats(tree_->IsBlackToMove())) : false;
+  };
 
   SearchLimits PopulateSearchLimits(int ply, bool is_black,
                                     const GoParams& params);
@@ -133,6 +138,7 @@ class EngineLoop : public UciLoop {
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
+  void CmdStats() override;
 
  private:
   OptionsParser options_;

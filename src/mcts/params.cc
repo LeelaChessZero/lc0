@@ -84,6 +84,10 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "Out-of-order cache backpropagation."};
 const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV", "Number of moves to show in UCI info output."};
+const OptionId SearchParams::kCertaintyPropagationId{
+    "certainty-propagation", "CertaintyPropagation", "Enables level of certainty propagation."};
+
+
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the "safe defaults" are listed.
@@ -106,7 +110,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kAllowedTotalNodeCollisionsId, 1, 1000000) = 1;
   options->Add<BoolOption>(kOutOfOrderEvalId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
+  options->Add<IntOption>(kCertaintyPropagationId, 0, 3) = 1;
 }
+
+
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
@@ -121,6 +128,8 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kAllowedNodeCollisionEventsId.GetId())),
       kAllowedTotalNodeCollisions(
           options.Get<int>(kAllowedTotalNodeCollisionsId.GetId())),
+      kCertaintyPropagation(
+          options.Get<int>(kCertaintyPropagationId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())) {}
 
 }  // namespace lczero

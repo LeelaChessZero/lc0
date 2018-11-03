@@ -1618,7 +1618,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 // Use the DTZ tables to rank root moves.
 //
 // A return value false indicates that not all probes were successful.
-bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
+int SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
                                  std::vector<Move>* safe_moves) {
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
@@ -1648,14 +1648,14 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
         next_pos.GetBoard().GenerateLegalMoves().size() == 0) {
       dtz = 1;
     }
-    if (result == FAIL) return false;
+    if (result == FAIL) return 0;
     // Better moves are ranked higher. Certain wins are ranked equally.
     // Losing moves are ranked equally unless a 50-move draw is in sight.
     int r = dtz > 0
                 ? (dtz + cnt50 <= 99 && !rep ? 1000 : 1000 - (dtz + cnt50))
                 : dtz < 0 ? (-dtz * 2 + cnt50 < 100 ? -1000
                                                     : -1000 + (-dtz + cnt50))
-                          : 0;
+                          : 1;
     if (r > best_rank) best_rank = r;
     ranks.push_back(r);
   }
@@ -1667,16 +1667,16 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
     }
     counter++;
   }
-  return true;
+  return best_rank;
 }
 
 // Use the WDL tables to rank root moves.
 // This is a fallback for the case that some or all DTZ tables are missing.
 //
 // A return value false indicates that not all probes were successful.
-bool SyzygyTablebase::root_probe_wdl(const Position& pos,
+int SyzygyTablebase::root_probe_wdl(const Position& pos,
                                      std::vector<Move>* safe_moves) {
-  static const int WDL_to_rank[] = {-1000, -899, 0, 899, 1000};
+  static const int WDL_to_rank[] = {-1000, -899, 1, 899, 1000};
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   ProbeState result;
   std::vector<int> ranks;
@@ -1686,7 +1686,7 @@ bool SyzygyTablebase::root_probe_wdl(const Position& pos,
   for (auto& m : root_moves) {
     Position nextPos = Position(pos, m);
     WDLScore wdl = static_cast<WDLScore>(-probe_wdl(nextPos, &result));
-    if (result == FAIL) return false;
+    if (result == FAIL) return 0;
     ranks.push_back(WDL_to_rank[wdl + 2]);
     if (ranks.back() > best_rank) best_rank = ranks.back();
   }
@@ -1698,6 +1698,6 @@ bool SyzygyTablebase::root_probe_wdl(const Position& pos,
     }
     counter++;
   }
-  return true;
+  return best_rank;
 }
 }  // namespace lczero

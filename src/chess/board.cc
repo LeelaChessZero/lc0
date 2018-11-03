@@ -184,6 +184,7 @@ BitBoard ChessBoard::pawns() const { return pawns_ * kPawnMask; }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
+  result.reserve(100);
   for (auto source : our_pieces_) {
     // King
     if (source == our_king_) {

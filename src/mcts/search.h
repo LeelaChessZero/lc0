@@ -30,6 +30,7 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
+#include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
@@ -86,6 +87,7 @@ class Search {
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
   float GetBestEval() const;
+  void SendMovesStats() const;
 
  private:
   // Returns the best move, maybe with temperature (according to the settings).
@@ -108,14 +110,14 @@ class Search {
   // Sets stop to true and notifies watchdog thread.
   void FireStopInternal();
 
-  void SendMovesStats() const;
   // Function which runs in a separate thread and watches for time and
   // uci `stop` command;
   void WatchdogThread();
 
   // Populates the given list with allowed root moves.
-  // Returns true if the population came from tablebase.
-  bool PopulateRootMoveLimit(MoveList* root_moves) const;
+  // Returns best_rank != 0 if the population came from tablebase.
+  // 1 for draw, > 1 for win and < 1 for loss
+  int PopulateRootMoveLimit(MoveList* root_moves) const;
 
   // We only need first ply for debug output, but could be easily generalized.
   NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
@@ -160,6 +162,9 @@ class Search {
   // Cummulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
   std::atomic<int> tb_hits_{0};
+  std::atomic<int> certain_{0};
+  std::atomic<int> bounds_{0};
+  std::atomic<int> root_syzygy_rank_{0};
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
@@ -217,13 +222,17 @@ class SearchWorker {
   // 7. Update the Search's status and progress information.
   void UpdateCounters();
 
+  struct Bounds {
+    int lowerbound;
+    int upperbound;
+    bool based_on_tbhit = false;
+  };
+
  private:
   struct NodeToProcess {
-    bool IsExtendable() const { return !is_collision && !node->IsTerminal(); }
+    bool IsExtendable() const { return !is_collision && !node->IsCertain(); }
     bool IsCollision() const { return is_collision; }
-    bool CanEvalOutOfOrder() const {
-      return is_cache_hit || node->IsTerminal();
-    }
+    bool CanEvalOutOfOrder() const { return is_cache_hit || node->IsCertain(); }
 
     // The node to extend.
     Node* node;
@@ -255,8 +264,12 @@ class SearchWorker {
           is_collision(is_collision) {}
   };
 
+  
   NodeToProcess PickNodeToExtend(int collision_limit);
+  void EvalPosition(Node* node, MoveList& legal_moves, const ChessBoard& board,
+                    GameResult& result, CertaintyTrigger& trigger);
   void ExtendNode(Node* node);
+  struct Bounds NegaBoundSearch( int depth, int lowerbound, int upperbound);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
