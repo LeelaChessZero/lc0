@@ -184,7 +184,7 @@ class Node {
   bool HasChildren() const { return edges_; }
 
   // Recalculate n_ from real children visits.
-  void Node::ReComputeN(); 
+  void ReComputeN(); 
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
@@ -201,15 +201,15 @@ class Node {
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return GetEdgeToMe() ? GetEdgeToMe()->IsTerminal() : false; }
   bool IsCertain() const { return GetEdgeToMe() ? GetEdgeToMe()->IsCertain() : false; }
-  void UBound(float eq) const { GetEdgeToMe() ? GetEdgeToMe()->UBound(eq) : false; }
-  void LBound(float eq) const { GetEdgeToMe() ? GetEdgeToMe()->LBound(eq) : false; }
+  void UBound(float eq) const { if (GetEdgeToMe()) GetEdgeToMe()->UBound(eq); }
+  void LBound(float eq) const { if (GetEdgeToMe()) GetEdgeToMe()->LBound(eq); }
   bool IsBounded() const { return GetEdgeToMe() ? GetEdgeToMe()->IsLBounded() || GetEdgeToMe()->IsUBounded() : false;}
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result) { GetEdgeToMe() ? GetEdgeToMe()->MakeTerminal(result) : false; }
-  void MakeCertain(GameResult result, CertaintyTrigger trigger) { GetEdgeToMe() ? GetEdgeToMe()->MakeCertain(result, trigger) : false; }
-  void MakeCertain(float q, CertaintyTrigger trigger) { GetEdgeToMe() ? GetEdgeToMe()->MakeCertain(q, trigger) : false; }
+  void MakeTerminal(GameResult result) { if (GetEdgeToMe()) GetEdgeToMe()->MakeTerminal(result); }
+  void MakeCertain(GameResult result, CertaintyTrigger trigger) { if (GetEdgeToMe()) GetEdgeToMe()->MakeCertain(result, trigger); }
+  void MakeCertain(float q, CertaintyTrigger trigger) { if (GetEdgeToMe()) GetEdgeToMe()->MakeCertain(q, trigger); }
   
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -256,7 +256,7 @@ class Node {
   }
   
   // Outputs all Node and Movesstats
-  std::vector<ThinkingInfo> Node::SendMovesStats(bool is_black_to_move) const;
+  std::vector<ThinkingInfo> SendMovesStats(bool is_black_to_move) const;
   // Debug information about the node.
   std::string DebugString() const;
 

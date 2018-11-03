@@ -252,13 +252,14 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
     if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
     // Mate display. If abs(score) > 20000 its a certain win (or loss).
     // Length to mate (or tbwin) is then (+ or -) abs(score)-20000. 
-    if (info.score)
+    if (info.score) {
       if (abs(*info.score) >= 20000)
         res +=
             " score mate " +
             std::to_string(*info.score + ((*info.score > 0) ? -20000 : 20000));
       else
-        res += " score cp " + std::to_string(*info.score);
+        res += " score cp " + std::to_string(*info.score); 
+    }
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
     if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
     if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
