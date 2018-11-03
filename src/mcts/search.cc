@@ -106,7 +106,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  if (!best_move_edge_) return;
+  if (!current_best_edge_) return;
 
   auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
 
@@ -140,7 +140,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   }
 
   if (!uci_infos.empty()) last_outputted_uci_info_ = uci_infos.front();
-  if (!edges.empty()) last_outputted_best_move_edge_ = best_move_edge_.edge();
+  if (!edges.empty()) last_outputted_info_edge_ = current_best_edge_.edge();
 
   info_callback_(uci_infos);
 }
@@ -150,8 +150,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 void Search::MaybeOutputInfo() {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  if (!responded_bestmove_ && best_move_edge_ &&
-      (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
+  if (!bestmove_is_sent_ && current_best_edge_ &&
+      (current_best_edge_.edge() != last_outputted_info_edge_ ||
        last_outputted_uci_info_.depth !=
            static_cast<int>(cum_depth_ /
                             (total_playouts_ ? total_playouts_ : 1)) ||
@@ -285,14 +285,14 @@ void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
   // Already responded bestmove, nothing to do here.
-  if (responded_bestmove_) return;
+  if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
 
   // If not yet stopped, try to stop for different reasons.
   if (!stop_.load(std::memory_order_acquire)) {
     // If smart pruning tells to stop (best move found), stop.
-    if (found_best_move_) {
+    if (only_one_possible_move_left_) {
       FireStopInternal();
       LOGFILE << "Stopped search: Only one move candidate left.";
     }
@@ -324,13 +324,15 @@ void Search::MaybeTriggerStop() {
   }
   // If we are the first to see that stop is needed.
   if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
-      !responded_bestmove_) {
+      !bestmove_is_sent_) {
     SendUciInfo();
-    best_move_ = GetBestMoveInternal();
+    EnsureBestMoveKnown();
     SendMovesStats();
-    best_move_callback_({best_move_.first, best_move_.second});
-    responded_bestmove_ = true;
-    best_move_edge_ = EdgeAndNode();
+    best_move_callback_(
+        {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
+         final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
+    bestmove_is_sent_ = true;
+    current_best_edge_ = EdgeAndNode();
   }
 }
 
@@ -394,10 +396,12 @@ float Search::GetBestEval() const {
   return best_edge.GetQ(parent_q);
 }
 
-std::pair<Move, Move> Search::GetBestMove() const {
-  SharedMutex::SharedLock lock(nodes_mutex_);
+std::pair<Move, Move> Search::GetBestMove() {
+  SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  return GetBestMoveInternal();
+  EnsureBestMoveKnown();
+  return {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
+          final_pondermove_.GetMove(!played_history_.IsBlackToMove())};
 }
 
 std::int64_t Search::GetTotalPlayouts() const {
@@ -422,11 +426,11 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
-// Returns the best move, maybe with temperature (according to the settings).
-std::pair<Move, Move> Search::GetBestMoveInternal() const
-    REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) {
-  if (responded_bestmove_) return best_move_;
-  if (!root_node_->HasChildren()) return {};
+// Computes the best move, maybe with temperature (according to the settings).
+void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
+    REQUIRES(counters_mutex_) {
+  if (bestmove_is_sent_) return;
+  if (!root_node_->HasChildren()) return;
 
   float temperature = params_.GetTemperature();
   if (temperature && params_.GetTempDecayMoves()) {
@@ -439,17 +443,13 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
     }
   }
 
-  auto best_node = temperature
-                       ? GetBestChildWithTemperature(root_node_, temperature)
-                       : GetBestChildNoTemperature(root_node_);
+  final_bestmove_ = temperature
+                        ? GetBestChildWithTemperature(root_node_, temperature)
+                        : GetBestChildNoTemperature(root_node_);
 
-  Move ponder_move;  // Default is "null move" which means "don't display
-                     // anything".
-  if (best_node.HasNode() && best_node.node()->HasChildren()) {
-    ponder_move = GetBestChildNoTemperature(best_node.node())
-                      .GetMove(!played_history_.IsBlackToMove());
+  if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
+    final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node());
   }
-  return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
 // Returns @count children with most visits.
@@ -584,7 +584,7 @@ void Search::WatchdogThread() {
     Mutex::Lock lock(counters_mutex_);
     // Only exit when bestmove is responded. It may happen that search threads
     // already all exited, and we need at least one thread that can do that.
-    if (responded_bestmove_) break;
+    if (bestmove_is_sent_) break;
 
     auto remaining_time = search_deadline_
                               ? std::chrono::milliseconds(GetTimeToDeadline())
@@ -618,7 +618,7 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  responded_bestmove_ = true;
+  bestmove_is_sent_ = true;
   FireStopInternal();
   LOGFILE << "Aborting search, if it is still active.";
 }
@@ -778,7 +778,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
-  int64_t best_node_n = search_->best_move_edge_.GetN();
+  int64_t best_node_n = search_->current_best_edge_.GetN();
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
@@ -830,7 +830,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // best_move_node_ could have changed since best_node_n was retrieved.
         // To ensure we have at least one node to expand, always include
         // current best node.
-        if (child != search_->best_move_edge_ &&
+        if (child != search_->current_best_edge_ &&
             search_->remaining_playouts_ < best_node_n - child.GetN()) {
           continue;
         }
@@ -868,7 +868,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       // If there is only one move theoretically possible within remaining time,
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
-      search_->found_best_move_ = true;
+      search_->only_one_possible_move_left_ = true;
     }
     is_root_node = false;
   }
@@ -1164,8 +1164,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Update the stats.
     // Best move.
     if (n->GetParent() == search_->root_node_ &&
-        search_->best_move_edge_.GetN() <= n->GetN()) {
-      search_->best_move_edge_ =
+        search_->current_best_edge_.GetN() <= n->GetN()) {
+      search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
   }

@@ -310,7 +310,9 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
-  Move GetMove(bool flip = false) const { return edge_->GetMove(flip); }
+  Move GetMove(bool flip = false) const {
+    return edge_ ? edge_->GetMove(flip) : Move();
+  }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
