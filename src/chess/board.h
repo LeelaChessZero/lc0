@@ -42,7 +42,7 @@ class ChessBoard {
   ChessBoard() = default;
   ChessBoard(const std::string& fen) { SetFromFen(fen); }
 
-  static const std::string kStartingFen;
+  static const char* kStartingFen;
   static const ChessBoard kStartBoardPos;
 
   // Sets position from FEN string.
