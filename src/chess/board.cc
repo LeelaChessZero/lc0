@@ -40,6 +40,8 @@ using std::string;
 const string ChessBoard::kStartingFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+const ChessBoard ChessBoard::kStartBoardPos(ChessBoard::kStartingFen);
+
 void ChessBoard::Clear() {
   std::memset(reinterpret_cast<void*>(this), 0, sizeof(ChessBoard));
 }
