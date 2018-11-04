@@ -295,10 +295,6 @@ class Node {
   // Index of this node is parent's edge list.
   uint16_t index_;
 
-  // 1 byte fields.
-  // Whether or not this node end game (with a winning of either sides or draw).
- //  bool is_terminal_ = false;
-
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
   friend class Edge_Iterator<true>;

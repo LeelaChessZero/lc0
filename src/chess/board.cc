@@ -186,7 +186,6 @@ BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
-  result.reserve(100);
   for (auto source : our_pieces_) {
     // King
     if (source == our_king_) {

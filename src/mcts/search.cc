@@ -732,7 +732,7 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
   minibatch_.clear();
-
+ 
   if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;
     int best_rank = search_->PopulateRootMoveLimit(&root_move_filter_);

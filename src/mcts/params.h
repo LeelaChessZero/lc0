@@ -74,7 +74,7 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  int GetCertaintyPropagation() const { return options_.Get<int>(kCertaintyPropagationId.GetId()); }
+  int GetCertaintyPropagation() const { return kCertaintyPropagation; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
