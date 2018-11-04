@@ -95,6 +95,7 @@ class OptionsParser {
     virtual std::string GetHelp(const OptionsDict& dict) const = 0;
 
     const OptionId& id_;
+    bool hidden_ = false;
     friend class OptionsParser;
   };
 
@@ -116,6 +117,8 @@ class OptionsParser {
   // Set the UCI option from string value.
   void SetUciOption(const std::string& name, const std::string& value,
                     const std::string& context = "");
+  // Hide this option from help and UCI.
+  void HideOption(const OptionId& id);
   // Processes all flags from the command line and an optional
   // configuration file. Returns false if there is an invalid flag.
   bool ProcessAllFlags();
@@ -134,6 +137,8 @@ class OptionsParser {
  private:
   // Prints help to std::cerr.
   void ShowHelp() const;
+  // Make all hidden options visible.
+  void ShowHidden() const;
   // Returns an option based on the long flag.
   Option* FindOptionByLongFlag(const std::string& flag) const;
   // Returns an option based by its uci name.

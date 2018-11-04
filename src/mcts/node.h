@@ -35,6 +35,7 @@
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
+#include "neural/encoder.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
 
@@ -230,7 +231,8 @@ class Node {
   void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
 
   V3TrainingData GetV3TrainingData(GameResult result,
-                                   const PositionHistory& history) const;
+                                   const PositionHistory& history,
+                                   FillEmptyHistory fill_empty_history) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -250,13 +252,9 @@ class Node {
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
 
-  // Get Edge leading to this node if existing.
-  Edge* GetEdgeToMe() const {
-    return (parent_ ? parent_->GetEdgeToNode(this) : nullptr);
-  }
-  
-  // Outputs all Node and Movesstats
-  std::vector<ThinkingInfo> SendMovesStats(bool is_black_to_move) const;
+  // Returns edge to the own node.
+  Edge* GetOwnEdge() const;
+
   // Debug information about the node.
   std::string DebugString() const;
 
@@ -362,7 +360,7 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
-  Move GetMove(bool flip = false) const { return edge_->GetMove(flip); }
+  Move GetMove(bool flip = false) const { return edge_ ? edge_->GetMove(flip) : Move(); }
   bool IsTerminal() const { return edge_->IsTerminal(); }
   bool IsCertain() const  { return edge_->IsCertain(); }
   bool IsCertainWin() const { return edge_->IsCertainWin(); }

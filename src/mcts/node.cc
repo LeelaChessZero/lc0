@@ -339,6 +339,8 @@ std::vector<ThinkingInfo> Node::SendMovesStats(bool is_black_to_move) const {
   return (infos);
 }
 
+Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
+
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " This:" << this << " Parent:" << parent_
@@ -404,8 +406,9 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V3TrainingData Node::GetV3TrainingData(GameResult game_result,
-                                       const PositionHistory& history) const {
+V3TrainingData Node::GetV3TrainingData(
+    GameResult game_result, const PositionHistory& history,
+    FillEmptyHistory fill_empty_history) const {
   V3TrainingData result;
 
   // Set version.
@@ -422,7 +425,7 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
   }
 
   // Populate planes.
-  InputPlanes planes = EncodePositionForNN(history, 8);
+  InputPlanes planes = EncodePositionForNN(history, 8, fill_empty_history);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);

@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "neural/encoder.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
@@ -35,6 +36,7 @@ namespace lczero {
 class SearchParams {
  public:
   SearchParams(const OptionsDict& options);
+  SearchParams(const SearchParams&) = delete;
 
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);
@@ -60,18 +62,18 @@ class SearchParams {
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
-  float GetAggressiveTimePruning() const { return kAggressiveTimePruning; }
+  float GetSmartPruningFactor() const { return kSmartPruningFactor; }
   float GetFpuReduction() const { return kFpuReduction; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
-  int GetAllowedNodeCollisionEvents() const {
-    return kAllowedNodeCollisionEvents;
-  }
-  int GetAllowedTotalNodeCollisions() const {
-    return kAllowedTotalNodeCollisions;
-  }
+  int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
+  int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
+  std::string GetScoreType() const {
+    return options_.Get<std::string>(kScoreTypeId.GetId());
+  }
+  FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
   int GetCertaintyPropagation() const { return options_.Get<int>(kCertaintyPropagationId.GetId()); }
 
   // Search parameter IDs.
@@ -83,14 +85,16 @@ class SearchParams {
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
   static const OptionId kVerboseStatsId;
-  static const OptionId kAggressiveTimePruningId;
+  static const OptionId kSmartPruningFactorId;
   static const OptionId kFpuReductionId;
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
-  static const OptionId kAllowedNodeCollisionEventsId;
-  static const OptionId kAllowedTotalNodeCollisionsId;
+  static const OptionId kMaxCollisionEventsId;
+  static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
   static const OptionId kMultiPvId;
+  static const OptionId kScoreTypeId;
+  static const OptionId kHistoryFillId;
   static const OptionId kCertaintyPropagationId;
 
  private:
@@ -103,14 +107,15 @@ class SearchParams {
   //            trivial search optimiations.
   const float kCpuct;
   const bool kNoise;
-  const float kAggressiveTimePruning;
+  const float kSmartPruningFactor;
   const float kFpuReduction;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
-  const int kAllowedNodeCollisionEvents;
-  const int kAllowedTotalNodeCollisions;
-  const int kCertaintyPropagation;
+  const int kMaxCollisionEvents;
+  const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
+  const int kCertaintyPropagation;
+  const FillEmptyHistory kHistoryFill;
 };
 
 }  // namespace lczero

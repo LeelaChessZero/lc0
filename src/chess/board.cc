@@ -182,6 +182,8 @@ static const Move::Promotion kPromotions[] = {
 
 BitBoard ChessBoard::pawns() const { return pawns_ * kPawnMask; }
 
+BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
+
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
   result.reserve(100);

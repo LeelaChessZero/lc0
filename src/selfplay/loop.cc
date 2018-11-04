@@ -36,9 +36,7 @@ namespace lczero {
 
 namespace {
 const OptionId kInteractiveId{
-    "interactive",
-    ""
-    "Run in interactive mode with uci-like interface."};
+    "interactive", "", "Run in interactive mode with UCI-like interface."};
 }  // namespace
 
 SelfPlayLoop::SelfPlayLoop() {}

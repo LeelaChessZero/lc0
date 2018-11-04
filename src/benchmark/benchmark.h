@@ -27,16 +27,20 @@
 
 #pragma once
 
-#include "chess/position.h"
-#include "neural/network.h"
+#include "mcts/search.h"
+#include "neural/cache.h"
+#include "neural/factory.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
-enum class FillEmptyHistory {NO, FEN_ONLY, ALWAYS};
+class Benchmark{
+ public:
+  Benchmark() = default;
 
-// Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(const PositionHistory& history,
-                                int history_planes,
-                                FillEmptyHistory fill_empty_history);
+  void Run();
+  void OnBestMove(const BestMoveInfo& move);
+  void OnInfo(const std::vector<ThinkingInfo>& infos);
+};
 
 }  // namespace lczero

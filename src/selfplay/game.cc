@@ -34,10 +34,10 @@ namespace lczero {
 
 namespace {
 const OptionId kReuseTreeId{"reuse-tree", "ReuseTree",
-                            "Reuse the node statistics between moves."};
+                            "Reuse the search tree between moves."};
 const OptionId kResignPercentageId{
     "resign-percentage", "ResignPercentage",
-    "Resign when win percentage drops below specified value.", 'r'};
+    "Resign when win percentage drops below specified value."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -75,6 +75,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
       tree_[idx]->TrimTreeAtHead();
     }
+    if (options_[idx].search_limits.movetime > -1) {
+      options_[idx].search_limits.search_deadline =
+          std::chrono::steady_clock::now() +
+          std::chrono::milliseconds(options_[idx].search_limits.movetime);
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
@@ -92,7 +97,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (training) {
       // Append training data. The GameResult is later overwritten.
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
-          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
+          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
+          search_->GetParams().GetHistoryFill()));
     }
 
     float eval = search_->GetBestEval();
