@@ -27,7 +27,7 @@ auto kAllSquaresMask = std::numeric_limits<std::uint64_t>::max();
 TEST(EncodePositionForNN, EncodeStartPosition) {
   ChessBoard board;
   PositionHistory history;
-  board.SetFromFen(ChessBoard::kStartingFen);
+  board.SetFromFen(ChessBoard::kStartposFen);
   history.Reset(board, 0, 1);
 
 
@@ -99,7 +99,7 @@ TEST(EncodePositionForNN, EncodeStartPosition) {
 TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
   ChessBoard board;
   PositionHistory history;
-  board.SetFromFen(ChessBoard::kStartingFen);
+  board.SetFromFen(ChessBoard::kStartposFen);
   history.Reset(board, 0, 1);
 
   // 1. Nf3
