@@ -37,10 +37,10 @@ namespace lczero {
 
 using std::string;
 
-const char* ChessBoard::kStartingFen =
+const char* ChessBoard::kStartposFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-const ChessBoard ChessBoard::kStartBoardPos(ChessBoard::kStartingFen);
+const ChessBoard ChessBoard::kStartposBoard(ChessBoard::kStartposFen);
 
 void ChessBoard::Clear() {
   std::memset(reinterpret_cast<void*>(this), 0, sizeof(ChessBoard));

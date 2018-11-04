@@ -67,7 +67,7 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
     // Board may be flipped so compare with position.GetBoard().
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
-        position.GetBoard() == ChessBoard::kStartBoardPos) {
+        position.GetBoard() == ChessBoard::kStartposBoard) {
       break;
     }
 
