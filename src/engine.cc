@@ -94,6 +94,10 @@ const OptionId kRamLimitMbId{
     "positions have 30 possible moves. When set to 0, no RAM limit is "
     "enforced."};
 
+const size_t kAvgNodeSize = sizeof(Node) + kAvgMovesPerPosition * sizeof(Edge);
+const size_t kAvgCacheItemSize =
+    NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
+    sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
 float ComputeMoveWeight(int ply, float peak, float left_width,
                         float right_width) {
   // Inflection points of the function are at ply = peak +/- width.

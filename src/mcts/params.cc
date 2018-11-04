@@ -132,8 +132,8 @@ const OptionId SearchParams::kHistoryFillId{
 
 const OptionId SearchParams::kCertaintyPropagationId{
     "certainty-propagation", "CertaintyPropagation", 
-    "Enables level of certainty propagation:",
-    "Setting 1 is fully compatible with training",
+    "Enables level of certainty propagation: "
+    "Setting 1 is fully compatible with training "
     "Setting 2 is for playing." };
 
 void SearchParams::Populate(OptionsParser* options) {

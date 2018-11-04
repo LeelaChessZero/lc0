@@ -277,69 +277,13 @@ Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->index_ < edges_.size());
   return &edges_[node->index_];
 }
-std::vector<ThinkingInfo> Node::SendMovesStats(bool is_black_to_move) const {
-  const float parent_q = -this->GetQ();
-  
-  std::vector<EdgeAndNode> edges;
-  for (const auto& edge : this->Edges()) edges.push_back(edge);
 
-  std::sort(edges.begin(), edges.end(),
-            [&parent_q](EdgeAndNode a, EdgeAndNode b) {
-              return std::forward_as_tuple(a.GetN(),
-                                           a.GetQ(parent_q)) <
-                     std::forward_as_tuple(b.GetN(),
-                                           b.GetQ(parent_q));
-            });
-
-  std::vector<ThinkingInfo> infos;
-
-  // Root info
-  infos.emplace_back();
-  ThinkingInfo& info = infos.back();
-  std::ostringstream oss;
-  oss << std::fixed;
-  oss << "Root         N: ";
-  oss << std::right << std::setw(7) << this->GetN() << " (+"
-      << std::setw(3) << this->GetNInFlight() << ") ";
-  oss << "            (Q: " << std::setw(8) << std::setprecision(5)
-      << -this->GetQ() << ") ";
-  
-  if (parent_)
-    oss << " C:" << std::bitset<8>(this->GetEdgeToMe()->GetCertaintyStatus());
+Edge* Node::GetOwnEdge() const {
+  if (GetParent())
+    return GetParent()->GetEdgeToNode(this);
   else
-    oss << " C: No Edge";
-  
-  info.comment = oss.str();
-
-  // Move Infos
-  for (const auto& edge : edges) {
-    infos.emplace_back();
-    ThinkingInfo& info = infos.back();
-    std::ostringstream oss;
-    oss << std::fixed;
-
-    oss << std::left << std::setw(5)
-        << edge.GetMove(is_black_to_move).as_string();
-
-    oss << " (" << std::setw(4) << edge.GetMove().as_nn_index() << ")";
-
-    oss << " N: " << std::right << std::setw(7) << edge.GetN() << " (+"
-        << std::setw(3) << edge.GetNInFlight() << ") ";
-
-    oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
-        << "%) ";
-
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(parent_q)
-        << ") ";
-
-    oss << " C:" << std::bitset<8>(edge.edge()->GetCertaintyStatus());
-
-    info.comment = oss.str();
-  }
-  return (infos);
+    return nullptr;
 }
-
-Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
@@ -482,7 +426,7 @@ void NodeTree::MakeMove(Move move) {
   current_head_->ReleaseChildrenExceptOne(new_head);
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
-  if (current_head_->GetParent()) current_head_->GetEdgeToMe()->ClearEdge();
+  if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearEdge();
   current_head_->ReComputeN();
   history_.Append(move);
 }
@@ -534,7 +478,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // state and recomputing N should suffice even with WDL hits. 
   // TODO: Works, but maybe recheck if there are crititcal edge cases.
   if (current_head_->GetParent())
-    current_head_->GetEdgeToMe()->ClearEdge();
+    current_head_->GetOwnEdge()->ClearEdge();
   current_head_->ReComputeN();
   return seen_old_head;
 }

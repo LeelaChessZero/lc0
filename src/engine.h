@@ -79,8 +79,9 @@ class EngineController {
   void Stop();
   // Prints verbose move stats of current root
   void Stats() {
-    SetupPosition(current_position_->fen, current_position_->moves);
-    if (tree_) info_callback_(tree_->GetCurrentHead()->SendMovesStats(tree_->IsBlackToMove()));
+    // Reserved for debugging
+    //SetupPosition(current_position_->fen, current_position_->moves);
+    //if (tree_) info_callback_(tree_->GetCurrentHead()->SendMovesStats(tree_->IsBlackToMove()));
   };
 
   SearchLimits PopulateSearchLimits(int ply, bool is_black,

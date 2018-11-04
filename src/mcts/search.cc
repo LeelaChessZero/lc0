@@ -908,7 +908,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             best_edge = child;
             possible_moves = 1;
             break;
-          } else if (search_->currentt_best_edge_ &&
+          } else if (search_->current_best_edge_ &&
                      search_->current_best_edge_.IsCertainWin())
             continue;
         }
@@ -1435,8 +1435,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Certainty propagation: reduce error by keeping score in proven bounds.
     if (params_.GetCertaintyPropagation() > 1 && n != search_->root_node_ &&
         !n->IsCertain()) {
-      if (n->GetEdgeToMe()->IsUBounded() && v > 0.0f) v = 0.0f;
-      if (n->GetEdgeToMe()->IsLBounded() && v < 0.0f) v = 0.0f;
+      if (n->GetOwnEdge()->IsUBounded() && v > 0.0f) v = 0.0f;
+      if (n->GetOwnEdge()->IsLBounded() && v < 0.0f) v = 0.0f;
     }
 
     n->FinalizeScoreUpdate(v, node_to_process.multivisit);
