@@ -56,7 +56,7 @@ void Benchmark::Run() {
   options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
-  auto defaults = options->GetMutableDefaultsOptions();
+  auto defaults = options.GetMutableDefaultsOptions();
 
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 256);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
