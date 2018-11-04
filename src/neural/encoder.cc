@@ -35,9 +35,6 @@ namespace {
 const int kMoveHistory = 8;
 const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
-
-static const ChessBoard kStartBoardPos(ChessBoard::kStartingFen);
-
 }  // namespace
 
 InputPlanes EncodePositionForNN(const PositionHistory& history,
@@ -70,7 +67,7 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
     // Board may be flipped so compare with position.GetBoard().
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
-        position.GetBoard() == kStartBoardPos) {
+        position.GetBoard() == ChessBoard::kStartposBoard) {
       break;
     }
 

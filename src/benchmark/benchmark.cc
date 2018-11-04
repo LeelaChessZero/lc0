@@ -49,7 +49,7 @@ void Benchmark::Run() {
   SearchParams::Populate(&options);
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = 30000;
-  options.Add<StringOption>(kFenId) = ChessBoard::kStartingFen;
+  options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
