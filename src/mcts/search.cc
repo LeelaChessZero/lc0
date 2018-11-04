@@ -908,8 +908,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             best_edge = child;
             possible_moves = 1;
             break;
-          } else if (search_->current_best_edge_ &&
-                     search_->current_best_edge_.IsCertainWin())
+          } else if (search_->current_best_edge_ == child && 
+                     possible_moves > 0)
             continue;
         }
         // If root move filter exists, make sure move is in the list.
