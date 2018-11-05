@@ -38,6 +38,11 @@
 #include <algorithm>
 
 //#define DEBUG_RAW_NPS
+// single kernel for entire SE operation (right now supported only for fp16)
+// 
+// (not ready yet, needs kernel to be compiled with SM7_0 (or higher). 
+// need to refactor some fp16 specific code to make it work on all GPUs
+//#define FUSED_SE_LAYER
 
 namespace lczero {
 namespace {
@@ -223,6 +228,33 @@ class FCLayer : public BaseLayer<DataType> {
   DataType* biases_ = nullptr;
 };
 
+// fused SE layer
+// (optional bias add +) global avg -> FC1 -> FC2 -> global scale -> add skip
+// connection -> RELU
+template <typename DataType>
+class SELayer : public BaseLayer<DataType> {
+ public:
+  SELayer(BaseLayer<DataType>* ip, int numFc1Out,
+          bool addPrevLayerBias = false);
+  ~SELayer();
+
+  void LoadWeights(float* w1, float* b1, float* w2, float* b2,
+                   float* prevLayerBias, void* scratch);
+
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2, void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  DataType* w1_ = nullptr;
+  DataType* b1_ = nullptr;
+  DataType* w2_ = nullptr;
+  DataType* b2_ = nullptr;
+  DataType* bPrev_ = nullptr;
+  int numFc1Out_;
+  bool addPrevLayerBias_;
+};
+
 template <typename DataType>
 class GlobalAvgPoolLayer : public BaseLayer<DataType> {
  public:
@@ -302,17 +334,18 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
 }
 
 template <typename T>
-__global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H, int W) {
+__global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
+                                    int W) {
   int i = threadIdx.x + blockDim.x * blockIdx.x;
   int size = N * C * H * W;
   if (i < size) {
-    float aVal = (float) a[i];
+    float aVal = (float)a[i];
 
-	// All this math can be optimized, but the kernel is memory bound anyway
-	int biasIndex = (i / (H * W)) % C;
-    float bVal = (float) b[biasIndex];
+    // All this math can be optimized, but the kernel is memory bound anyway
+    int biasIndex = (i / (H * W)) % C;
+    float bVal = (float)b[biasIndex];
 
-	float cVal = aVal + bVal;
+    float cVal = aVal + bVal;
     c[i] = (T)cVal;
   }
 }
@@ -610,6 +643,121 @@ __global__ void globalAvgPool_kernel(float* output, const float* input,
   }
 }
 
+#ifdef FUSED_SE_LAYER
+// N blocks
+// C threads per block
+// 'HWC' input data processed by thread block
+// each thread processes 8x8 elements
+// K is the no. of outputs of first fully connected layer (same as no. of inputs
+// for second fully connected layer) the kernel assumes K <= C
+
+// the weights matrix are transposed in reality (K rows, and C columns for fc1,
+// and C rows and K columns for fc2)
+#define shw1(row, col) (((half*)sharedWeights1)[(col)*C + (row)])
+#define shw2(row, col) (((half*)sharedWeights2)[(col)*K + (row)])
+
+template <int C, int K>
+__global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
+                              const half* w1, const half* b1, const half* w2,
+                              const half* b2) {
+  const int elementsPerThread = 64;  // 8x8 board
+
+  int n = blockIdx.x;
+  int c = threadIdx.x;
+
+  __shared__ half sharedData[C];
+
+  half localInput[elementsPerThread];
+  half localskip[elementsPerThread];
+
+  // This acutally doesn't save on any global memory reads (each thread block
+  // still reads entire weights array redundantly :-/)
+  // TODO: can try processing multiple C (multiple planes) in single thread
+  // block to get some savings
+  //
+  // it's only to make the reads faster (better memory coleasing)
+  static_assert(((C * K) % 8) == 0, "K*C must be multiple of 8");
+
+  // don't really NEED two shared memory arrays, as the same shared memory can
+  // be re-used to hold weights for FC2 after FC1 is done, but loading all
+  // weights early seems to improve performance by about 5%
+  __shared__ uint4 sharedWeights1[C * K / 8];
+  __shared__ uint4 sharedWeights2[C * K / 8];
+
+  half S = 0;
+
+  // 1. global avg (1 avg per thread)
+  #pragma unroll
+  for (int i = 0; i < elementsPerThread; i++) {
+    int localIndex = i * C + c;
+    int inputIndex = n * C * elementsPerThread + localIndex;
+    localInput[i] = input[inputIndex];
+    localskip[i] = skip[inputIndex];
+    S += localInput[i];
+  }
+
+  half avg = S / (half)elementsPerThread;
+  sharedData[c] = avg;
+
+  // load weights for the FC layers in shared memory
+  // use uint4 loads to make it faster
+  const int numSharedReadsPerThread = K / 8;  // K * C weights, divided by C
+                                              // threads, divided by 8 halfs
+                                              // (uint4) read per thread
+  uint4* w1raw = (uint4*)w1;
+  uint4* w2raw = (uint4*)w2;
+
+  #pragma unroll
+  for (int i = 0; i < numSharedReadsPerThread; i++) {
+    sharedWeights1[c + i * C] = w1raw[c + i * C];
+    sharedWeights2[c + i * C] = w2raw[c + i * C];
+  }
+  __syncthreads();
+
+  // 2. first fully connected layer
+  if (c < K) {
+    S = 0;
+
+    #pragma unroll
+    for (int i = 0; i < C; i++) {
+      S += sharedData[i] * shw1(i, c);
+    }
+
+    S += b1[c];
+
+    // relu
+    if (S < (half)0) S = 0;
+
+    sharedData[c] = S;
+  }
+
+  __syncthreads();
+
+  // 3. second fully connected layer
+  S = 0;
+  #pragma unroll
+  for (int i = 0; i < K; i++) {
+    S += sharedData[i] * shw2(i, c);
+  }
+  S += b2[c];
+
+  // sigmoid
+  S = (half)(1.0f / (1.0f + exp(-S)));
+
+  // 4. scale, and add skip connection, perform relu, and write to output
+  #pragma unroll
+  for (int i = 0; i < elementsPerThread; i++) {
+    int localIndex = i * C + c;
+    int inputIndex = n * C * elementsPerThread + localIndex;
+    half val = localskip[i] + localInput[i] * S;
+
+    // relu
+    if (val < (half)0) val = 0;
+
+    output[inputIndex] = val;
+  }
+}
+#endif
 template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
     : C(c), H(h), W(w), input_(ip) {}
@@ -771,20 +919,22 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
         conv_desc_, conv_algo_, scratch, scratch_size, &alpha, out_tensor_desc_,
         input2, bias_desc_, biases, activation_, out_tensor_desc_, output));
   } else {
-    // For some reason cudnn doesn't support just Convolution + Bias with fp32 (winograd algorithm)
-    // it works fine when RELU is also needed which is somewhat strange.
+    // For some reason cudnn doesn't support just Convolution + Bias with fp32
+    // (winograd algorithm) it works fine when RELU is also needed which is
+    // somewhat strange.
     if ((std::is_same<float, DataType>::value) && (!use_relu_)) {
       ReportCUDNNErrors(cudnnConvolutionForward(
           cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
           conv_desc_, conv_algo_, scratch, scratch_size, &beta,
           out_tensor_desc_, output));
-	  // add bias
+      // add bias
       addBias_NCHW(output, output, biases, N, C, H, W);
     } else {
-     ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
-        cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
-        conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
-        output, bias_desc_, biases, activation_, out_tensor_desc_, output));
+      ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, conv_algo_, scratch, scratch_size, &beta,
+          out_tensor_desc_, output, bias_desc_, biases, activation_,
+          out_tensor_desc_, output));
     }
   }
 }
@@ -838,6 +988,110 @@ BNLayer<DataType>::~BNLayer() {
 }
 
 template <typename DataType>
+SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
+                           bool addPrevLayerBias)
+    : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip),
+      numFc1Out_(fc1Outputs),
+      addPrevLayerBias_(addPrevLayerBias) {
+  ReportCUDAErrors(cudaMalloc(&w1_, C * numFc1Out_ * sizeof(DataType)));
+  ReportCUDAErrors(cudaMalloc(&w2_, C * numFc1Out_ * sizeof(DataType)));
+
+  ReportCUDAErrors(cudaMalloc(&b1_, numFc1Out_ * sizeof(DataType)));
+  ReportCUDAErrors(cudaMalloc(&b2_, C * sizeof(DataType)));
+
+  ReportCUDAErrors(cudaMalloc(&bPrev_, C * sizeof(DataType)));
+}
+
+template <typename DataType>
+SELayer<DataType>::~SELayer() {
+  ReportCUDAErrors(cudaFree(w1_));
+  ReportCUDAErrors(cudaFree(w2_));
+  ReportCUDAErrors(cudaFree(b1_));
+  ReportCUDAErrors(cudaFree(b2_));
+  ReportCUDAErrors(cudaFree(bPrev_));
+}
+
+template <>
+void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
+                                 float* prevLayerBias, void* scratch) {
+  // TODO!
+}
+
+template <>
+void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
+                                float* prevLayerBias, void* scratch) {
+  size_t num_weights = C * numFc1Out_;
+  size_t weight_size = sizeof(float) * num_weights;
+
+  // w1
+  ReportCUDAErrors(
+      cudaMemcpyAsync(scratch, w1, weight_size, cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)w1_, (float*)scratch, num_weights);
+
+  // w2
+  ReportCUDAErrors(
+      cudaMemcpyAsync(scratch, w2, weight_size, cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)w2_, (float*)scratch, num_weights);
+
+  // b1
+  ReportCUDAErrors(cudaMemcpyAsync(scratch, b1, numFc1Out_ * sizeof(float),
+                                   cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)b1_, (float*)scratch, numFc1Out_);
+
+  // b2
+  ReportCUDAErrors(
+      cudaMemcpyAsync(scratch, b2, C * sizeof(float), cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)b2_, (float*)scratch, C);
+
+  if (prevLayerBias) {
+    ReportCUDAErrors(cudaMemcpyAsync(scratch, prevLayerBias, C * sizeof(float),
+                                     cudaMemcpyHostToDevice));
+    copyTypeConverted((half*)bPrev_, (float*)scratch, C);
+  }
+}
+
+template <>
+void SELayer<float>::Eval(int N, float* output, const float* input,
+                          const float* input2, void* scratch,
+                          size_t scratch_size, cudnnHandle_t cudnn,
+                          cublasHandle_t cublas) {
+  // TODO!
+}
+
+template <>
+void SELayer<half>::Eval(int N, half* output, const half* input,
+                         const half* input2, void* scratch, size_t scratch_size,
+                         cudnnHandle_t cudnn, cublasHandle_t cublas) {
+#ifdef FUSED_SE_LAYER
+  // TODO: think of more elegant way to avoid this hardcoding :-/
+  if (numFc1Out_ == 32) {
+    if (C == 64) {
+      SE_Layer_NHWC<64, 32>
+          <<<N, C>>>(output, input2, input, w1_, b1_, w2_, b2_);
+    } else if (C == 128) {
+      SE_Layer_NHWC<128, 32>
+          <<<N, C>>>(output, input2, input, w1_, b1_, w2_, b2_);
+    } else if (C == 192) {
+      SE_Layer_NHWC<192, 32>
+          <<<N, C>>>(output, input2, input, w1_, b1_, w2_, b2_);
+    } else if (C == 256) {
+      SE_Layer_NHWC<256, 32>
+          <<<N, C>>>(output, input2, input, w1_, b1_, w2_, b2_);
+    } else {
+      assert(0);  // TODO: support other channel counts
+      throw Exception("channel count unsupported by SE layer");
+    }
+  } else {
+    assert(0);  // TODO: support other sizes
+    throw Exception("numOutputs unsupported by SE layer");
+  }
+  ReportCUDAErrors(cudaGetLastError());
+#else
+  assert(0);
+#endif
+}
+
+template <typename DataType>
 GlobalAvgPoolLayer<DataType>::GlobalAvgPoolLayer(BaseLayer<DataType>* ip)
     : BaseLayer<DataType>(ip->GetC(), 1, 1, ip) {}
 
@@ -847,8 +1101,8 @@ void GlobalAvgPoolLayer<float>::Eval(int N, float* output, const float* input,
                                      size_t scratch_size, cudnnHandle_t cudnn,
                                      cublasHandle_t cublas) {
   // for NCHW layout (used with fp32),
-  // each warp processes a full plane (64 elements), and writes a single average
-  // N*C warps are launched
+  // each warp processes a full plane (64 elements), and writes a single
+  // average N*C warps are launched
   const int kPlaneSize = input_->GetH() * input_->GetW();
   assert((kPlaneSize % 32) == 0);
   const int kTotalWarps = N * C;
@@ -1334,6 +1588,17 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(conv2));
 
       if (weights.residual[block].has_se) {
+#ifdef FUSED_SE_LAYER
+        int numFCOut = weights.residual[block].se.b1.size();
+        auto se = std::make_unique<SELayer<DataType>>(getLastLayer(), numFCOut,
+                                                      false);
+        se->LoadWeights(&weights.residual[block].se.w1[0],
+                        &weights.residual[block].se.b1[0],
+                        &weights.residual[block].se.w2[0],
+                        &weights.residual[block].se.b2[0], nullptr,
+                        scratch_mem_);
+        network_.emplace_back(std::move(se));
+#else
         auto globalPool =
             std::make_unique<GlobalAvgPoolLayer<DataType>>(getLastLayer());
         network_.emplace_back(std::move(globalPool));
@@ -1354,6 +1619,7 @@ class CudnnNetwork : public Network {
         auto globalScale =
             std::make_unique<GlobalScaleLayer<DataType>>(conv2Layer);
         network_.emplace_back(std::move(globalScale));
+#endif
       }
     }
 
@@ -1468,8 +1734,13 @@ class CudnnNetwork : public Network {
       }
 
       if (has_se_) {
-        // need to preserve both tensor_mem_[1] (op of residual block) and
-        // tensor_mem_[2] (skip connection)
+      // need to preserve both tensor_mem_[1] (op of residual block) and
+      // tensor_mem_[2] (skip connection)
+#ifdef FUSED_SE_LAYER
+        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
+                            tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // SE layer
+#else
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // global avg pooling
@@ -1482,9 +1753,12 @@ class CudnnNetwork : public Network {
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // se.fc2
 
-        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
-                            tensor_mem_[0], scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // global scale + skip connection add + relu
+        network_[l++]->Eval(
+            batchSize, tensor_mem_[2], tensor_mem_[1], tensor_mem_[0],
+            scratch_mem_, scratch_size_, cudnn_,
+            cublas_);  // global scale + skip connection add + relu
+
+#endif
       }
     }
 
@@ -1551,8 +1825,11 @@ class CudnnNetwork : public Network {
     if (numCalls == reportingCalls) {
       double avgBatchSize = ((double)sumBatchSize) / numCalls;
       double nps = sumBatchSize / totalTime;
-      printf("\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals. NPS: %g\n",
-             avgBatchSize, totalTime, sumBatchSize, nps);
+      printf(
+          "\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals. "
+          "NPS: "
+          "%g\n",
+          avgBatchSize, totalTime, sumBatchSize, nps);
       sumBatchSize = 0;
       totalTime = 0;
       numCalls = 0;
@@ -1604,8 +1881,8 @@ class CudnnNetwork : public Network {
   int gpu_id_;
   int max_batch_size_;
 
-  // currently only one NN Eval can happen a time (we can fix this if needed by
-  // allocating more memory)
+  // currently only one NN Eval can happen a time (we can fix this if needed
+  // by allocating more memory)
   mutable std::mutex lock_;
 
   int numBlocks_;
@@ -1627,17 +1904,16 @@ class CudnnNetwork : public Network {
   void processConvBlock(Weights::ConvBlock& block, bool foldBNLayer = false) {
     const float epsilon = 1e-5f;
 
-    // Compute reciprocal of std-dev from the variances (so that it can be just
-    // multiplied).
+    // Compute reciprocal of std-dev from the variances (so that it can be
+    // just multiplied).
     std::vector<float>& stddev = block.bn_stddivs;
     for (auto&& w : stddev) {
       w = 1.0f / std::sqrt(w + epsilon);
     }
 
-    // Biases are not calculated and are typically zero but some networks might
-    // still have non-zero biases.
-    // Move biases to batchnorm means to make the output match without having
-    // to separately add the biases.
+    // Biases are not calculated and are typically zero but some networks
+    // might still have non-zero biases. Move biases to batchnorm means to
+    // make the output match without having to separately add the biases.
     for (auto j = size_t{0}; j < block.bn_means.size(); j++) {
       block.bn_means[j] -= block.biases[j];
       block.biases[j] = 0.0f;
