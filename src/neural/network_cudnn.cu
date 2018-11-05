@@ -1153,6 +1153,7 @@ class CudnnNetwork : public Network {
 
   void forwardEval(InputsOutputs *io, int batchSize) {
     std::lock_guard<std::mutex> lock(lock_);
+    LOGFILE << "[[ Cudnn eval";
 
 #ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
@@ -1259,6 +1260,7 @@ class CudnnNetwork : public Network {
       numCalls = 0;
     }
 #endif
+    LOGFILE << "]] Cudnn eval";    
   }
 
   ~CudnnNetwork() {

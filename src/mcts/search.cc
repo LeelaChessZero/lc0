@@ -658,7 +658,9 @@ void SearchWorker::ExecuteOneIteration() {
   InitializeIteration(search_->network_->NewComputation());
 
   // 2. Gather minibatch.
+  LOGFILE << "[[ GatherMinibatch";
   GatherMinibatch();
+  LOGFILE << "]] GatherMinibatch";
 
   // 3. Prefetch into cache.
   MaybePrefetchIntoCache();
@@ -712,6 +714,7 @@ void SearchWorker::GatherMinibatch() {
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
     minibatch_.emplace_back(PickNodeToExtend(collisions_left));
+    LOGFILE << "|| PickNodeToExtend";
     auto& picked_node = minibatch_.back();
     auto* node = picked_node.node;
 
@@ -729,6 +732,7 @@ void SearchWorker::GatherMinibatch() {
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
+      LOGFILE << "|| ExtendNode";
       ExtendNode(node);
 
       // Only send non-terminal nodes to a neural network.
@@ -788,6 +792,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   history_.Trim(search_->played_history_.GetLength());
 
   SharedMutex::Lock lock(search_->nodes_mutex_);
+  LOGFILE << "|| PickNodeToExtend";
 
   // Fetch the current best root node visits for possible smart pruning.
   int64_t best_node_n = search_->current_best_edge_.GetN();
@@ -992,10 +997,12 @@ void SearchWorker::MaybePrefetchIntoCache() {
   if (search_->stop_.load(std::memory_order_acquire)) return;
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
+    LOGFILE << "[[ MaybePrefetchIntoCache";
     history_.Trim(search_->played_history_.GetLength());
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
     PrefetchIntoCache(search_->root_node_, params_.GetMaxPrefetchBatch() -
                                                computation_->GetCacheMisses());
+    LOGFILE << "]] MaybePrefetchIntoCache";
   }
 }
 
@@ -1085,6 +1092,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 // ~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::RunNNComputation() {
   const auto start_time = std::chrono::steady_clock::now();
+  LOGFILE << "|| RunNNComputation";
   computation_->ComputeBlocking();
   const auto end_time = std::chrono::steady_clock::now();
   if (end_time - start_time > kNNComputationWarningTime) {
@@ -1101,10 +1109,12 @@ void SearchWorker::RunNNComputation() {
 void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
+  LOGFILE << "[[ FetchMinibatchResults";
   for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process, idx_in_computation);
     if (node_to_process.nn_queried) ++idx_in_computation;
   }
+  LOGFILE << "]] FetchMinibatchResults";
 }
 
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
@@ -1148,9 +1158,11 @@ void SearchWorker::DoBackupUpdate() {
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
+  LOGFILE << "[[ DoBackupUpdate";
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
   }
+  LOGFILE << "]] DoBackupUpdate";
 }
 
 void SearchWorker::DoBackupUpdateSingleNode(

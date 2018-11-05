@@ -26,9 +26,9 @@
 */
 
 #include <chrono>
+#include <cstring>
 #include <functional>
 #include <thread>
-#include <cstring>
 #include "neural/factory.h"
 #include "utils/hashcat.h"
 
@@ -50,6 +50,7 @@ class RandomNetworkComputation : public NetworkComputation {
     inputs_.push_back(hash);
   }
   void ComputeBlocking() override {
+    LOGFILE << "|| RandomNetwork::ComputeBlocking";
     if (delay_ms_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
     }
