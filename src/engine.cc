@@ -136,8 +136,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 256);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
-  defaults->Set<float>(SearchParams::kContemptId.GetId(), 0.005f);
-  defaults->Set<float>(SearchParams::kContempt2Id.GetId(), 0.015f);
+  defaults->Set<float>(SearchParams::kContemptId.GetId(), 0.003f);
+  defaults->Set<float>(SearchParams::kContempt2Id.GetId(), 0.018f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
   defaults->Set<int>(SearchParams::kAllowedTotalNodeCollisionsId.GetId(), 9999);
   defaults->Set<int>(SearchParams::kAllowedNodeCollisionEventsId.GetId(), 32);
@@ -378,7 +378,7 @@ void EngineController::Go(const GoParams& params) {
 
   search_ = std::make_unique<Search>(*tree_, network_.get(), best_move_callback,
                                      info_callback, limits, options_, &cache_,
-                                     syzygy_tb_.get(), tree_->IsBlackToMove());
+                                     syzygy_tb_.get());
 
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }

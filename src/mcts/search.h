@@ -59,7 +59,7 @@ class Search {
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const SearchLimits& limits,
          const OptionsDict& options, NNCache* cache,
-         SyzygyTablebase* syzygy_tb, bool is_black);
+         SyzygyTablebase* syzygy_tb);
 
   ~Search();
 
@@ -142,7 +142,6 @@ class Search {
   Node* root_node_;
   NNCache* cache_;
   SyzygyTablebase* syzygy_tb_;
-  bool is_black_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
 
