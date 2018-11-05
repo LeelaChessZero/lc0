@@ -36,7 +36,7 @@
 
 namespace lczero {
 namespace {
-const int kDefaultThreads = 2;
+const int kDefaultThreads = 4;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
