@@ -370,7 +370,7 @@ void EngineController::Go(const GoParams& params) {
       SetupPosition(current_position_->fen, current_position_->moves);
     }
   } else if (!tree_) {
-    SetupPosition(ChessBoard::kStartingFen, {});
+    SetupPosition(ChessBoard::kStartposFen, {});
   }
 
   auto limits = PopulateSearchLimits(
@@ -455,7 +455,7 @@ void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
   std::string fen = position;
-  if (fen.empty()) fen = ChessBoard::kStartingFen;
+  if (fen.empty()) fen = ChessBoard::kStartposFen;
   engine_.SetPosition(fen, moves);
 }
 
