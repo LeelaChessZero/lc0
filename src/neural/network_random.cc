@@ -28,6 +28,7 @@
 #include <chrono>
 #include <functional>
 #include <thread>
+#include <cstring>
 #include "neural/factory.h"
 #include "utils/hashcat.h"
 
@@ -41,8 +42,9 @@ class RandomNetworkComputation : public NetworkComputation {
     std::uint64_t hash = seed_;
     for (const auto& plane : input) {
       hash = HashCat({hash, plane.mask});
-      std::uint64_t value_hash =
-          *reinterpret_cast<const std::uint32_t*>(&plane.value);
+      std::uint32_t tmp;
+      std::memcpy(&tmp, &plane.value, sizeof(float));
+      std::uint64_t value_hash = tmp;
       hash = HashCat({hash, value_hash});
     }
     inputs_.push_back(hash);
