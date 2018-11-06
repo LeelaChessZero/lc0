@@ -38,10 +38,10 @@ const OptionId kNNCacheSizeId{
     "nncache", "NNCacheSize",
     "Number of positions to store in a memory cache. A large cache can speed "
     "up searching, but takes memory."};
-const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark"};
+const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
 const OptionId kMovetimeId{"movetime", "",
                            "Benchmark time allocation, in milliseconds."};
-const OptionId kFenId{"fen", "", "Benchmark initial position FEN"};
+const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 }  // namespace
 
