@@ -233,6 +233,8 @@ class FCLayer : public BaseLayer<DataType> {
 // connection -> RELU
 template <typename DataType>
 class SELayer : public BaseLayer<DataType> {
+ using BaseLayer<DataType>::C;
+
  public:
   SELayer(BaseLayer<DataType>* ip, int numFc1Out,
           bool addPrevLayerBias = false);
