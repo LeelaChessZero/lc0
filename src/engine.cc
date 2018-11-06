@@ -98,7 +98,8 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
                                    const OptionsDict& options)
     : options_(options),
       best_move_callback_(best_move_callback),
-      info_callback_(info_callback) {}
+      info_callback_(info_callback),
+      move_start_time_(std::chrono::steady_clock::now()) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -122,6 +123,11 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 0.6f;
 
+  // Hide time curve options.
+  options->HideOption(kTimeCurvePeakId);
+  options->HideOption(kTimeCurveLeftWidthId);
+  options->HideOption(kTimeCurveRightWidthId);
+
   SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
 
@@ -138,9 +144,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 }
 
 SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
-                                                    const GoParams& params) {
+    const GoParams& params, std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
-  limits.time_ms = params.movetime;
+  limits.movetime = params.movetime;
   int64_t time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
@@ -207,8 +213,7 @@ SearchLimits EngineController::PopulateSearchLimits(int ply, bool is_black,
   this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
-  limits.time_ms = std::max(
-      int64_t{0},
+  limits.search_deadline = start_time + std::chrono::milliseconds(
       std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
   return limits;
 }
@@ -264,9 +269,15 @@ void EngineController::UpdateFromUciOptions() {
 void EngineController::EnsureReady() {
   UpdateFromUciOptions();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
+  // If a UCI host is waiting for our ready response, we can consider the move
+  // not started until we're done ensuring ready.
+  move_start_time_ = std::chrono::steady_clock::now();
 }
 
 void EngineController::NewGame() {
+  // In case anything relies upon defaulting to default position and just calls
+  // newgame and goes straight into go.
+  move_start_time_ = std::chrono::steady_clock::now();
   SharedLock lock(busy_mutex_);
   cache_.Clear();
   search_.reset();
@@ -278,6 +289,9 @@ void EngineController::NewGame() {
 
 void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
+  // Some UCI hosts just call position then immediately call go, while starting
+  // the clock on calling 'position'.
+  move_start_time_ = std::chrono::steady_clock::now();
   SharedLock lock(busy_mutex_);
   current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
@@ -298,7 +312,11 @@ void EngineController::SetupPosition(
 }
 
 void EngineController::Go(const GoParams& params) {
-  auto start_time = std::chrono::steady_clock::now();
+  // TODO: should consecutive calls to go be considered to be a continuation and
+  // hence have the same start time like this behaves, or should we check start
+  // time hasn't changed since last call to go and capture the new start time
+  // now?
+  auto start_time = move_start_time_;
   go_params_ = params;
 
   ThinkingInfo::Callback info_callback(info_callback_);
@@ -340,16 +358,19 @@ void EngineController::Go(const GoParams& params) {
   }
 
   auto limits = PopulateSearchLimits(tree_->GetPlyCount(),
-                                     tree_->IsBlackToMove(), params);
+                                     tree_->IsBlackToMove(), params,
+                                     start_time);
 
   // If there is a time limit, also store amount of time saved.
-  if (limits.time_ms >= 0) {
-    best_move_callback = [this, start_time, limits](const BestMoveInfo& info) {
+  if (limits.search_deadline) {
+    best_move_callback = [this, limits](const BestMoveInfo& info) {
       best_move_callback_(info);
-      auto time_spent = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - start_time)
-                            .count();
-      time_spared_ms_ += limits.time_ms - time_spent;
+      if (limits.search_deadline) {
+        time_spared_ms_ +=
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                *limits.search_deadline - std::chrono::steady_clock::now())
+                .count();
+      }
     };
   }
 
@@ -361,6 +382,7 @@ void EngineController::Go(const GoParams& params) {
 }
 
 void EngineController::PonderHit() {
+  move_start_time_ = std::chrono::steady_clock::now();
   go_params_.ponder = false;
   Go(go_params_);
 }

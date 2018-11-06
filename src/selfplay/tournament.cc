@@ -182,11 +182,11 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
         options.GetSubdict(kPlayerNames[idx]).Get<int>(kPlayoutsId.GetId());
     search_limits_[idx].visits =
         options.GetSubdict(kPlayerNames[idx]).Get<int>(kVisitsId.GetId());
-    search_limits_[idx].time_ms =
+    search_limits_[idx].movetime =
         options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsId.GetId());
 
     if (search_limits_[idx].playouts == -1 &&
-        search_limits_[idx].visits == -1 && search_limits_[idx].time_ms == -1) {
+        search_limits_[idx].visits == -1 && search_limits_[idx].movetime == -1) {
       throw Exception(
           "Please define --visits, --playouts or --movetime, otherwise it's "
           "not clear when to stop search.");
