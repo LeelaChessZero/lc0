@@ -544,7 +544,7 @@ void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
 }
 
 __global__ void globalScale_kernel(float* output, const float* input,
-                                   const float* scale, int inputSize) {
+                                   const float* scale, const float *bias, int inputSize) {
   const int kPlaneSize = 64;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -555,16 +555,20 @@ __global__ void globalScale_kernel(float* output, const float* input,
   float val2 = output[tid];  // output of residual block to be scaled
 
   int sIndex = tid / kPlaneSize;
-  float s = scale[sIndex];
 
-  float op = val1 * s + val2;
+  float s = scale[sIndex];
+  s = 1.0f / (1.0f + exp(-s));  // sigmoid on scale
+
+  float b = bias[sIndex];
+
+  float op = val1 * s + val2 + b;
   if (op < 0) op = 0;
   output[tid] = op;
 }
 
 __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
-                                             const half* scale, int inputSize,
-                                             int C, int HWC) {
+                                             const half* scale, const half* bias, 
+                                             int inputSize, int C, int HWC) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (tid > inputSize) return;
@@ -576,8 +580,11 @@ __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
   int n = tid / (HWC);
   int sIndex = n * C + c;
   float s = scale[sIndex];
+  s = 1.0f / (1.0f + exp(-s));  // sigmoid on scale
 
-  float op = val1 * s + val2;
+  float b = bias[sIndex];
+
+  float op = val1 * s + val2 + b;
   if (op < 0) op = 0;
 
   output[tid] = (half)op;
@@ -1142,6 +1149,7 @@ void GlobalScaleLayer<float>::Eval(int N, float* output, const float* input,
   const int kBlocks = DivUp(N * H * W * C, kBlockSize);
 
   globalScale_kernel<<<kBlocks, kBlockSize>>>(output, input, input2,
+                                              input2 + C,
                                               N * C * H * W);
 
   ReportCUDAErrors(cudaGetLastError());
@@ -1157,7 +1165,7 @@ void GlobalScaleLayer<half>::Eval(int N, half* output, const half* input,
   const int kBlocks = DivUp(N * H * W * C, kBlockSize);
 
   globalScale_kernel_fp16_nhwc<<<kBlocks, kBlockSize>>>(
-      output, input, input2, N * C * H * W, C, H * W * C);
+      output, input, input2, input2 + C, N * C * H * W, C, H * W * C);
 
   ReportCUDAErrors(cudaGetLastError());
 }
@@ -1611,7 +1619,7 @@ class CudnnNetwork : public Network {
         network_.emplace_back(std::move(fc1));
 
         auto fc2 = std::make_unique<FCLayer<DataType>>(
-            getLastLayer(), kNumFilters, 1, 1, false, true, false, true);
+            getLastLayer(), kNumFilters * 2, 1, 1, false, true, false, false);
         fc2->LoadWeights(&weights.residual[block].se.w2[0],
                          &weights.residual[block].se.b2[0], scratch_mem_);
         network_.emplace_back(std::move(fc2));
