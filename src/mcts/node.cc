@@ -282,7 +282,7 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 
 V4TrainingData Node::GetV4TrainingData(
     GameResult game_result, const PositionHistory& history,
-    FillEmptyHistory fill_empty_history) const {
+    FillEmptyHistory fill_empty_history, float best_eval) const {
   V4TrainingData result;
 
   // Set version.
@@ -327,7 +327,8 @@ V4TrainingData Node::GetV4TrainingData(
   }
   
   // Aggregate evaluation Q.
-  result.q = -GetQ();
+  result.root_q = -GetQ();
+  result.best_q = best_eval;
 
   return result;
 }

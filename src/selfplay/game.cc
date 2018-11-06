@@ -98,7 +98,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       // Append training data. The GameResult is later overwritten.
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV4TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill()));
+          search_->GetParams().GetHistoryFill(), search_->GetBestEval()));
     }
 
     float eval = search_->GetBestEval();
