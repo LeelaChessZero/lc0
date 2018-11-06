@@ -91,8 +91,9 @@ class Edge {
   void MakeCertain(float q, CertaintyTrigger trigger);
   void SetEQ(float eq);
   void ClearEdge() { certainty_state_ = 0; };
-  void UBound(float eq) {certainty_state_ |= kUpperBound; SetEQ(eq); };
-  void LBound(float eq) {certainty_state_ |= kLowerBound; SetEQ(eq); };
+  void UBound(float eq) { certainty_state_ |= kUpperBound; SetEQ(eq); };
+  void LBound(float eq) { certainty_state_ |= kLowerBound; SetEQ(eq); };
+  bool IsOnlyUBounded() { return (certainty_state_ & kUpperBound) && !(certainty_state_ & kLowerBound); };
   bool IsTerminal() const { return certainty_state_ & kTerminalMask; };
   bool IsCertain() const { return certainty_state_ & kCertainMask; };
   bool IsCertainWin() const {
@@ -204,7 +205,8 @@ class Node {
   bool IsCertain() const { return GetOwnEdge() ? GetOwnEdge()->IsCertain() : false; }
   void UBound(float eq) const { if (GetOwnEdge()) GetOwnEdge()->UBound(eq); }
   void LBound(float eq) const { if (GetOwnEdge()) GetOwnEdge()->LBound(eq); }
-  bool IsBounded() const { return GetOwnEdge() ? GetOwnEdge()->IsLBounded() || GetOwnEdge()->IsUBounded() : false;}
+  bool IsBounded() const { return GetOwnEdge() ? GetOwnEdge()->IsLBounded() || GetOwnEdge()->IsUBounded() : false; }
+  bool IsOnlyUBounded() const { return GetOwnEdge() ? GetOwnEdge()->IsOnlyUBounded() : false; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.

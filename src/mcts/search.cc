@@ -498,8 +498,6 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   // Best child is selected using the following criteria:
   // with Certainty Propagation >= 2:
   // * Prefer certain wins, avoid certain losses
-  // * certain draws are not searched and
-  // * inserted by Q over N
   // Otherwise:
   // * Largest number of playouts.
   // * If two nodes have equal number:
@@ -519,22 +517,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             : 0.0f,
         edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
-
-  // In case of certain draws (that are no longer searched CP>=2), insert
-  // these draws at first N (descending) where Q<=0
-  if (params_.GetCertaintyPropagation() >  1) {
-    std::partial_sort(edges.begin(), edges.end(), edges.end(),
-                      std::greater<El>());
-    // largest N with Q >= 0
-    uint64_t largest_N = 0;
-    for (auto it = edges.begin(); it != edges.end(); ++it) {
-      if (std::get<2>(*it) <= 0.0f && largest_N == 0)
-        largest_N = std::get<1>(*it);
-      if (std::get<4>(*it).edge()->IsCertainDraw() && largest_N > 0)
-        std::get<1>(*it) = largest_N;
-    }
-  }
-  // Final sort pass over adjusted certain draw Ns
+  // Final sort
   auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
                                                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
@@ -835,7 +818,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   Node* node = search_->root_node_;
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
-  Node::Iterator certain_draw_edge;
+  Node::Iterator out_of_bounds_edge;
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
 
@@ -858,6 +841,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     //            Will revisit that after rethinking locking strategy.
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
     best_edge.Reset();
+    out_of_bounds_edge.Reset();
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
@@ -889,6 +873,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             ? -node->GetQ()
             : -node->GetQ() - params_.GetFpuReduction() *
                                   std::sqrt(node->GetVisitedPolicy());
+    bool parent_upperbounded = (is_root_node) ? false : node->IsOnlyUBounded();
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -902,7 +887,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         // If CertaintyPropagation >= 2 play certain win and don't search other
         // moves at root. If search limit infinite continue searching other moves.
-        if (params_.GetCertaintyPropagation() > 1 &&
+        if (params_.GetCertaintyPropagation() >= 2 &&
             child.edge()->IsCertainWin()) {
           if (!search_->limits_.infinite) {
             best_edge = child;
@@ -920,16 +905,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      // Don't search certain (draw) branches (CP >= 2).
-      // Certain wins we will not encounter more than once as
-      // they are propagated to certain losses one ply up.
-      // Certain losses we still visit because if policy hits them
-      // the line might be bad already much earlier (signal).
-      // TODO:
-      // Check tighter bounds: if only Bounds(=,1) and (-1,=)
-      // never visit (-1,=) -> needs enhanced PV selection rule
-      if (params_.GetCertaintyPropagation() > 1 && node->GetNumEdges() > 1 && child.edge()->IsCertainDraw()) {
-        certain_draw_edge = child;
+      // Experimental: Don't search childs out of parents bounds branches (CP >= 3).
+      if (parent_upperbounded && (child.edge()->IsOnlyUBounded() || child.edge()->IsCertainDraw()) &&
+         params_.GetCertaintyPropagation() >= 3  ) {
+        out_of_bounds_edge = child;
         continue;
       }
 
@@ -954,9 +933,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    // SAFEGUARD: If all moves are certain draws. 
-    // Should not happen as then certainty would have propagated upward.
-    if (!best_edge && certain_draw_edge) best_edge = certain_draw_edge;
+    // SAFEGUARD: If all childs are upperbouded CP >=3
+    // Should not happen as then bounds would have been incrorrect.
+    if (!best_edge && out_of_bounds_edge) best_edge = out_of_bounds_edge;
 
     history_.Append(best_edge.GetMove());
     if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
@@ -1432,8 +1411,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
       }
     }
 
-    // Certainty propagation: reduce error by keeping score in proven bounds.
-    if (params_.GetCertaintyPropagation() > 1 && n != search_->root_node_ &&
+    // Certainty propagation: reduce error by keeping score in proven bounds CP>=3.
+    // Check if signal in these out_of_bounds v (if any) can be retained by
+    // v = v/2; or v= 0.0001; or something similar to correct score but still keep bias
+    if (params_.GetCertaintyPropagation() >= 3 && n != search_->root_node_ &&
         !n->IsCertain()) {
       if (n->GetOwnEdge()->IsUBounded() && v > 0.0f) v = 0.0f;
       if (n->GetOwnEdge()->IsLBounded() && v < 0.0f) v = 0.0f;
