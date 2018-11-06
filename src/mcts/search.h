@@ -46,8 +46,9 @@ namespace lczero {
 struct SearchLimits {
   std::int64_t visits = -1;
   std::int64_t playouts = -1;
-  std::int64_t time_ms = -1;
+  std::int64_t movetime = -1;
   int depth = -1;
+  optional<std::chrono::steady_clock::time_point> search_deadline;
   bool infinite = false;
   MoveList searchmoves;
 };
@@ -101,6 +102,7 @@ class Search {
                                           float temperature) const;
 
   int64_t GetTimeSinceStart() const;
+  int64_t GetTimeToDeadline() const;
   void UpdateRemainingMoves();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
@@ -145,8 +147,10 @@ class Search {
 
   Network* const network_;
   const SearchLimits limits_;
+  optional<std::chrono::steady_clock::time_point> search_deadline_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
+  optional<std::chrono::steady_clock::time_point> nps_start_time_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);

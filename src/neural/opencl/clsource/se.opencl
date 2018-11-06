@@ -19,7 +19,7 @@ R"(
             net_t acc = 0.0f;
 
             for ( int i = 0; i < BOARD_SIZE; i++) {
-                acc += vload_net_t(c * BOARD_SQUARES + col * BOARD_SIZE + i, in);
+                acc += vload_net_t(c * BOARD_SQUARES + i * BOARD_SIZE + col, in);
             }
             row_acc[lid] = acc;
         }
@@ -38,23 +38,27 @@ R"(
 
     __kernel void apply_se(
                   const int channels,
+                  const int batch_size,
                   __global const net_t * restrict input,
                   __global net_t * restrict residual,
-                  __constant const net_t * restrict scales) {
+                  __constant const net_t * restrict fc_out) {
 
         const int col = get_global_id(0);  // column
         const int c = get_global_id(1);  // channel
 
-        if (c < channels && col < BOARD_SIZE) {
-            net_t sig_scale = vload_net_t(c, scales);
-            sig_scale = 1.0f/(1.0f + exp(-sig_scale));
+        const int batch = c / channels;
+
+        if (c < batch_size * channels && col < BOARD_SIZE) {
+            net_t gamma = vload_net_t(c + batch * channels, fc_out);
+            gamma = 1.0f/(1.0f + exp(-gamma)); // Sigmoid
+            net_t beta = vload_net_t(c + batch * channels + channels, fc_out);
 
             for ( int i = 0; i < BOARD_SIZE; i++) {
-                const int idx = c * BOARD_SQUARES + col * BOARD_SIZE + i;
+                const int idx = c * BOARD_SQUARES + i * BOARD_SIZE + col;
                 const net_t in = vload_net_t(idx, input);
                 const net_t res = vload_net_t(idx, residual);
 
-                net_t val = sig_scale * in + res;
+                net_t val = gamma * in + res + beta;
 
                 val = val > 0.0f ? val : 0.0f;
 

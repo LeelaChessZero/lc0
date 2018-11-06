@@ -56,7 +56,7 @@ struct Weights {
     ConvBlock conv1;
     ConvBlock conv2;
     SEUnit se;
-    int has_se;
+    bool has_se;
   };
 
   // Input convnet.

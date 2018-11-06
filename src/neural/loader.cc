@@ -41,6 +41,8 @@
 #include "utils/filesystem.h"
 #include "version.h"
 
+using nf = pblczero::NetworkFormat;
+
 namespace lczero {
 
 namespace {
@@ -51,8 +53,8 @@ void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
   vecs->pop_back();
 }
 
-void PopulateConvBlockWeights(int version, FloatVectors* vecs, Weights::ConvBlock* block) {
-  if (version == 3) {
+void PopulateConvBlockWeights(const nf::NetworkStructure format, FloatVectors* vecs, Weights::ConvBlock* block) {
+  if (format == nf::NETWORK_SE) {
       PopulateLastIntoVector(vecs, &block->bn_stddivs);
       PopulateLastIntoVector(vecs, &block->bn_means);
       PopulateLastIntoVector(vecs, &block->bn_betas);
@@ -125,17 +127,34 @@ FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
   return vec;
 }
 
-void DenormConvBlock(const pblczero::Weights_ConvBlock& conv,
+void DenormConvBlock(const nf::NetworkStructure format,
+                     const pblczero::Weights_ConvBlock& conv,
                      FloatVectors* vecs) {
-  vecs->emplace_back(DenormLayer(conv.weights()));
-  vecs->emplace_back(DenormLayer(conv.biases()));
-  vecs->emplace_back(DenormLayer(conv.bn_means()));
-  vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
+  if (format == pblczero::NetworkFormat::NETWORK_SE) {
+      vecs->emplace_back(DenormLayer(conv.weights()));
+      vecs->emplace_back(DenormLayer(conv.bn_gammas()));
+      vecs->emplace_back(DenormLayer(conv.bn_betas()));
+      vecs->emplace_back(DenormLayer(conv.bn_means()));
+      vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
+  } else {
+      vecs->emplace_back(DenormLayer(conv.weights()));
+      vecs->emplace_back(DenormLayer(conv.biases()));
+      vecs->emplace_back(DenormLayer(conv.bn_means()));
+      vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
+  }
+}
+
+void DenormSEunit(const pblczero::Weights_SEunit& se,
+                  FloatVectors* vecs) {
+    vecs->emplace_back(DenormLayer(se.w1()));
+    vecs->emplace_back(DenormLayer(se.b1()));
+    vecs->emplace_back(DenormLayer(se.w2()));
+    vecs->emplace_back(DenormLayer(se.b2()));
 }
 
 }  // namespace
 
-std::pair<FloatVectors, int> LoadFloatsFromPbFile(const std::string& buffer) {
+std::pair<FloatVectors, nf::NetworkStructure> LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
   FloatVectors vecs;
   if (!net.ParseFromString(buffer))
@@ -161,24 +180,33 @@ std::pair<FloatVectors, int> LoadFloatsFromPbFile(const std::string& buffer) {
 
   const auto& w = net.weights();
 
-  DenormConvBlock(w.input(), &vecs);
+  auto net_format = net.format().network_format().network();
 
-  for (int i = 0, n = w.residual_size(); i < n; i++) {
-    DenormConvBlock(w.residual(i).conv1(), &vecs);
-    DenormConvBlock(w.residual(i).conv2(), &vecs);
+  // Old files don't have format field and default to unknown.
+  if (net_format == nf::NETWORK_UNKNOWN) {
+    net_format = nf::NETWORK_CLASSICAL;
   }
 
-  DenormConvBlock(w.policy(), &vecs);
+  DenormConvBlock(net_format, w.input(), &vecs);
+
+  for (int i = 0, n = w.residual_size(); i < n; i++) {
+    DenormConvBlock(net_format, w.residual(i).conv1(), &vecs);
+    DenormConvBlock(net_format, w.residual(i).conv2(), &vecs);
+    if (net_format == nf::NETWORK_SE) {
+      DenormSEunit(w.residual(i).se(), &vecs);
+    }
+  }
+
+  DenormConvBlock(net_format, w.policy(), &vecs);
   vecs.emplace_back(DenormLayer(w.ip_pol_w()));
   vecs.emplace_back(DenormLayer(w.ip_pol_b()));
-  DenormConvBlock(w.value(), &vecs);
+  DenormConvBlock(net_format, w.value(), &vecs);
   vecs.emplace_back(DenormLayer(w.ip1_val_w()));
   vecs.emplace_back(DenormLayer(w.ip1_val_b()));
   vecs.emplace_back(DenormLayer(w.ip2_val_w()));
   vecs.emplace_back(DenormLayer(w.ip2_val_b()));
 
-  // FIXME: New version field to pb for identifying SE-units
-  return {vecs, net_ver};
+  return {vecs, net_format};
 }
 
 FloatVectors LoadFloatsFromFile(std::string* buffer) {
@@ -210,9 +238,7 @@ FloatVectors LoadFloatsFromFile(std::string* buffer) {
 Weights LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
-
-  char v_ch = buffer[0];
-  int version = 0;
+  auto net_format = nf::NETWORK_CLASSICAL;
 
   if (buffer.size() < 2) {
     throw Exception("Invalid weight file: too small.");
@@ -220,14 +246,14 @@ Weights LoadWeightsFromFile(const std::string& filename) {
     throw Exception("Invalid weight file: no longer supported.");
   } else if ((buffer[0] == '2' || buffer[0] == '3') && buffer[1] == '\n') {
     vecs = LoadFloatsFromFile(&buffer);
-    version = v_ch - '0';
+    if (buffer[0] == '3') {
+      net_format = nf::NETWORK_SE;
+    }
   } else {
     auto pb_vecs = LoadFloatsFromPbFile(buffer);
     vecs = pb_vecs.first;
-    version = pb_vecs.second;
+    net_format = pb_vecs.second;
   }
-
-  printf("Version: %d\n", version);
 
   Weights result;
   // Populating backwards.
@@ -235,14 +261,14 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   PopulateLastIntoVector(&vecs, &result.ip2_val_w);
   PopulateLastIntoVector(&vecs, &result.ip1_val_b);
   PopulateLastIntoVector(&vecs, &result.ip1_val_w);
-  PopulateConvBlockWeights(version, &vecs, &result.value);
+  PopulateConvBlockWeights(net_format, &vecs, &result.value);
 
   PopulateLastIntoVector(&vecs, &result.ip_pol_b);
   PopulateLastIntoVector(&vecs, &result.ip_pol_w);
-  PopulateConvBlockWeights(version, &vecs, &result.policy);
+  PopulateConvBlockWeights(net_format, &vecs, &result.policy);
 
-  auto input_weights = (version == 3) ? 5 : 4;
-  auto residual_weights = (version == 3) ? 14 : 8;
+  auto input_weights = (net_format == nf::NETWORK_SE) ? 5 : 4;
+  auto residual_weights = (net_format == nf::NETWORK_SE) ? 14 : 8;
 
   // Input + all the residual should be left.
   if ((vecs.size() - input_weights) % residual_weights != 0)
@@ -251,17 +277,17 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   const int num_residual = (vecs.size() - input_weights) / residual_weights;
   result.residual.resize(num_residual);
   for (int i = num_residual - 1; i >= 0; --i) {
-    if (version == 3) {
+    if (net_format == nf::NETWORK_SE) {
         PopulateSEUnitWeights(&vecs, &result.residual[i].se);
         result.residual[i].has_se = true;
     } else {
         result.residual[i].has_se = false;
     }
-    PopulateConvBlockWeights(version, &vecs, &result.residual[i].conv2);
-    PopulateConvBlockWeights(version, &vecs, &result.residual[i].conv1);
+    PopulateConvBlockWeights(net_format, &vecs, &result.residual[i].conv2);
+    PopulateConvBlockWeights(net_format, &vecs, &result.residual[i].conv1);
   }
 
-  PopulateConvBlockWeights(version, &vecs, &result.input);
+  PopulateConvBlockWeights(net_format, &vecs, &result.input);
   return result;
 }
 

@@ -34,7 +34,8 @@ class Batchnorm {
   // connection.
   static void Apply(const size_t batch_size, const size_t channels, float* data,
                     const float* means, const float* stddivs,
-                    const float* eltwise = nullptr);
+                    const float* eltwise = nullptr,
+                    const bool relu = true);
 
   // Invert the bn_stddivs elements of a ConvBlock (in place).
   static void InvertStddev(Weights::ConvBlock* conv);
