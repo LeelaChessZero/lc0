@@ -340,7 +340,7 @@ if get_option('build_backends')
   
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
-    cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
+    cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
       cuda_arguments += ['-Xcompiler', '-MD']
@@ -359,14 +359,9 @@ if get_option('build_backends')
         output: outputname,
         arguments: cuda_arguments,
       )
-	cuda_arguments += ['-arch=compute_70', '-code=sm_70']
-	cuda_gen_fp16 = generator(nvcc,
-        output: outputname,
-        arguments: cuda_arguments,
-      )
 	files += cuda_files	  
     files += cuda_gen.process(cuda_files_nvcc_common)
-    files += cuda_gen_fp16.process(cuda_files_nvcc_fp16)	
+    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])	
     has_backends = true
   endif
 
