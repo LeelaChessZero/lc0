@@ -316,32 +316,56 @@ if get_option('build_backends')
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
   nvcc = find_program('/usr/local/cuda/bin/nvcc', 'nvcc', required: false)
+  
+  #.cc files
   cuda_files = [
-    'src/neural/network_cudnn.cu',
+    'src/neural/cuda/network_cudnn.cc',
+	'src/neural/cuda/layers.cc',
   ]
 
+  # .cu files compiled without any specific sm version
+  cuda_files_nvcc_common = [
+    'src/neural/cuda/common_kernels.cu',
+  ]
+  
+  # .cu files compiled with sm_70 (volta+). Only used by cudnn-fp16
+  cuda_files_nvcc_fp16 = [
+    'src/neural/cuda/fp16_kernels.cu',
+  ]
+  
+  includes += include_directories(get_option('cuda_include'))
+  includes += include_directories(get_option('cudnn_include'))
+  includes += include_directories('src/neural/cuda/')  
+  
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
-  cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
-                    '-I', meson.current_source_dir() + '/src']
-  if host_machine.system() == 'windows'
-    cuda_arguments += ['-Xcompiler', '-MD']
-  else
-    cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
-  endif
-  foreach x : get_option('cudnn_include')
+    cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
+                      '-I', meson.current_source_dir() + '/src']
+    if host_machine.system() == 'windows'
+      cuda_arguments += ['-Xcompiler', '-MD']
+    else
+      cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
+    endif
+    foreach x : get_option('cudnn_include')
      cuda_arguments += ['-I', x]
-  endforeach
-  if host_machine.system() == 'windows'
-    outputname = '@BASENAME@.obj'
-  else
-    outputname = '@BASENAME@.o'
-  endif
-  cuda_gen = generator(nvcc,
-      output: outputname,
-      arguments: cuda_arguments,
-  )
-    files += cuda_gen.process(cuda_files)
+    endforeach
+    if host_machine.system() == 'windows'
+      outputname = '@BASENAME@.obj'
+    else
+      outputname = '@BASENAME@.o'
+    endif
+    cuda_gen = generator(nvcc,
+        output: outputname,
+        arguments: cuda_arguments,
+      )
+	cuda_arguments += ['-arch=compute_75', '-code=sm_75']
+	cuda_gen_fp16 = generator(nvcc,
+        output: outputname,
+        arguments: cuda_arguments,
+      )
+	files += cuda_files	  
+    files += cuda_gen.process(cuda_files_nvcc_common)
+    files += cuda_gen_fp16.process(cuda_files_nvcc_fp16)	
     has_backends = true
   endif
 
