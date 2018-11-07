@@ -26,19 +26,23 @@
 */
 
 #include "neural/loader.h"
+
+#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
+#include <google/protobuf/io/coded_stream.h>
 #include <zlib.h>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cmath>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <string>
+
 #include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "utils/logging.h"
 #include "version.h"
 
 using nf = pblczero::NetworkFormat;
@@ -156,8 +160,14 @@ void DenormSEunit(const pblczero::Weights_SEunit& se,
 
 std::pair<FloatVectors, nf::NetworkStructure> LoadFloatsFromPbFile(const std::string& buffer) {
   auto net = pblczero::Net();
-  FloatVectors vecs;
-  if (!net.ParseFromString(buffer))
+  using namespace google::protobuf::io;
+
+  ArrayInputStream raw_input_stream(buffer.data(), buffer.size());
+  CodedInputStream input_stream(&raw_input_stream);
+  // Set protobuf limit to 2GB, print warning at 500MB.
+  input_stream.SetTotalBytesLimit(2000 * 1000000, 500 * 1000000);
+
+  if (!net.ParseFromCodedStream(&input_stream))
     throw Exception("Invalid weight file: parse error.");
 
   if (net.magic() != kWeightMagic)
@@ -186,7 +196,8 @@ std::pair<FloatVectors, nf::NetworkStructure> LoadFloatsFromPbFile(const std::st
   if (net_format == nf::NETWORK_UNKNOWN) {
     net_format = nf::NETWORK_CLASSICAL;
   }
-
+  
+  FloatVectors vecs;
   DenormConvBlock(net_format, w.input(), &vecs);
 
   for (int i = 0, n = w.residual_size(); i < n; i++) {
@@ -326,7 +337,7 @@ std::string DiscoverWeightsFile() {
     int val = 0;
     data >> val;
     if (!data.fail() && val == 2) {
-      std::cerr << "Found txt network file: " << candidate.second << std::endl;
+      CERR << "Found txt network file: " << candidate.second;
       return candidate.second;
     }
 
@@ -334,7 +345,7 @@ std::string DiscoverWeightsFile() {
     // our own magic should suffice.
     auto magic = reinterpret_cast<std::uint32_t*>(buf + 1);
     if (*magic == kWeightMagic) {
-      std::cerr << "Found pb network file: " << candidate.second << std::endl;
+      CERR << "Found pb network file: " << candidate.second;
       return candidate.second;
     }
   }

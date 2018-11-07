@@ -50,12 +50,24 @@ const int kSmartPruningToleranceMs = 200;
 const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
 
+std::string SearchLimits::DebugString() const {
+  std::ostringstream ss;
+  ss << "visits:" << visits << " playouts:" << playouts << " depth:" << depth
+     << " infinite:" << infinite;
+  if (search_deadline) {
+    ss << " search_deadline:"
+       << FormatTime(SteadyClockToSystemClock(*search_deadline));
+  }
+  return ss.str();
+}
+
 Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb)
-    : root_node_(tree.GetCurrentHead()),
+    : ok_to_respond_bestmove_(!limits.infinite),
+      root_node_(tree.GetCurrentHead()),
       cache_(cache),
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
@@ -65,15 +77,7 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      params_(options) {
-  if (limits_.movetime >= 0) {
-    search_deadline_ =
-        std::chrono::steady_clock::now() +
-        std::chrono::milliseconds(limits_.movetime);
-  } else {
-    search_deadline_ = limits_.search_deadline;
-  }
-}
+      params_(options) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -97,9 +101,10 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  if (!best_move_edge_) return;
+  if (!current_best_edge_) return;
 
   auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
+  auto score_type = params_.GetScoreType();
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -120,7 +125,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+    if (score_type == "centipawn") {
+      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+    } else if (score_type == "win_percentage") {
+      uci_info.score = edge.GetQ(0) * 5000 + 5000;
+    } else if (score_type == "Q") {
+      uci_info.score = edge.GetQ(0) * 10000;
+    }
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
     for (auto iter = edge; iter;
@@ -131,7 +142,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   }
 
   if (!uci_infos.empty()) last_outputted_uci_info_ = uci_infos.front();
-  if (!edges.empty()) last_outputted_best_move_edge_ = best_move_edge_.edge();
+  if (!edges.empty()) last_outputted_info_edge_ = current_best_edge_.edge();
 
   info_callback_(uci_infos);
 }
@@ -141,8 +152,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 void Search::MaybeOutputInfo() {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  if (!responded_bestmove_ && best_move_edge_ &&
-      (best_move_edge_.edge() != last_outputted_best_move_edge_ ||
+  if (!bestmove_is_sent_ && current_best_edge_ &&
+      (current_best_edge_.edge() != last_outputted_info_edge_ ||
        last_outputted_uci_info_.depth !=
            static_cast<int>(cum_depth_ /
                             (total_playouts_ ? total_playouts_ : 1)) ||
@@ -150,6 +161,12 @@ void Search::MaybeOutputInfo() {
        last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
            GetTimeSinceStart())) {
     SendUciInfo();
+    if (stop_.load(std::memory_order_acquire) && !ok_to_respond_bestmove_) {
+      ThinkingInfo info;
+      info.comment =
+          "WARNING: Search has reached limit and does not make any progress.";
+      info_callback_({info});
+    }
   }
 }
 
@@ -160,22 +177,22 @@ int64_t Search::GetTimeSinceStart() const {
 }
 
 int64_t Search::GetTimeToDeadline() const {
-  if (!search_deadline_) return 0;
+  if (!limits_.search_deadline) return 0;
   return std::chrono::duration_cast<std::chrono::milliseconds>(
-             *search_deadline_ - std::chrono::steady_clock::now())
+             *limits_.search_deadline - std::chrono::steady_clock::now())
       .count();
 }
 
-void Search::SendMovesStats() const {
+std::vector<std::string> Search::GetVerboseStats(Node* node,
+                                                 bool is_black_to_move) const {
   const float parent_q =
-      -root_node_->GetQ() -
-      params_.GetFpuReduction() * std::sqrt(root_node_->GetVisitedPolicy());
+      -node->GetQ() -
+      params_.GetFpuReduction() * std::sqrt(node->GetVisitedPolicy());
   const float U_coeff =
-      params_.GetCpuct() *
-      std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+      params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
 
   std::vector<EdgeAndNode> edges;
-  for (const auto& edge : root_node_->Edges()) edges.push_back(edge);
+  for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
             [&parent_q, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
@@ -185,11 +202,8 @@ void Search::SendMovesStats() const {
                                            b.GetQ(parent_q) + b.GetU(U_coeff));
             });
 
-  const bool is_black_to_move = played_history_.IsBlackToMove();
-  std::vector<ThinkingInfo> infos;
+  std::vector<std::string> infos;
   for (const auto& edge : edges) {
-    infos.emplace_back();
-    ThinkingInfo& info = infos.back();
     std::ostringstream oss;
     oss << std::fixed;
 
@@ -218,7 +232,7 @@ void Search::SendMovesStats() const {
     if (edge.IsTerminal()) {
       v = edge.node()->GetQ();
     } else {
-      NNCacheLock nneval = GetCachedFirstPlyResult(edge);
+      NNCacheLock nneval = GetCachedNNEval(edge.node());
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -229,21 +243,50 @@ void Search::SendMovesStats() const {
     oss << ") ";
 
     if (edge.IsTerminal()) oss << "(T) ";
-
-    info.comment = oss.str();
+    infos.emplace_back(oss.str());
   }
-  info_callback_(infos);
+  return infos;
 }
 
-NNCacheLock Search::GetCachedFirstPlyResult(EdgeAndNode edge) const {
-  if (!edge.HasNode()) return {};
-  assert(edge.node()->GetParent() == root_node_);
-  // It would be relatively straightforward to generalize this to fetch NN
-  // results for an abitrary move.
-  optional<float> retval;
-  PositionHistory history(played_history_);  // Is it worth it to move this
-  // initialization to SendMoveStats, reducing n memcpys to 1? Probably not.
-  history.Append(edge.GetMove());
+void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
+  const bool is_black_to_move = played_history_.IsBlackToMove();
+  auto move_stats = GetVerboseStats(root_node_, is_black_to_move);
+
+  if (params_.GetVerboseStats()) {
+    std::vector<ThinkingInfo> infos;
+    std::transform(move_stats.begin(), move_stats.end(),
+                   std::back_inserter(infos), [](const std::string& line) {
+                     ThinkingInfo info;
+                     info.comment = line;
+                     return info;
+                   });
+    info_callback_(infos);
+  } else {
+    LOGFILE << "=== Move stats:";
+    for (const auto& line : move_stats) LOGFILE << line;
+  }
+  if (final_bestmove_.HasNode()) {
+    LOGFILE
+        << "--- Opponent moves after: "
+        << final_bestmove_.GetMove(played_history_.IsBlackToMove()).as_string();
+    for (const auto& line :
+         GetVerboseStats(final_bestmove_.node(), !is_black_to_move)) {
+      LOGFILE << line;
+    }
+  }
+}
+
+NNCacheLock Search::GetCachedNNEval(Node* node) const {
+  if (!node) return {};
+
+  std::vector<Move> moves;
+  for (; node != root_node_; node = node->GetParent()) {
+    moves.push_back(node->GetOwnEdge()->GetMove());
+  }
+  PositionHistory history(played_history_);
+  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
+    history.Append(*iter);
+  }
   auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
   NNCacheLock nneval(cache_, hash);
   return nneval;
@@ -253,55 +296,69 @@ void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
   // Already responded bestmove, nothing to do here.
-  if (responded_bestmove_) return;
+  if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
-  // If smart pruning tells to stop (best move found), stop.
-  if (found_best_move_) {
-    FireStopInternal();
-  }
-  // Stop if reached playouts limit.
-  if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
-    FireStopInternal();
-  }
-  // Stop if reached visits limit.
-  if (limits_.visits >= 0 &&
-      total_playouts_ + initial_visits_ >= limits_.visits) {
-    FireStopInternal();
-  }
-  // Stop if reached time limit.
-  if (search_deadline_ && GetTimeToDeadline() <= 0) {
-    FireStopInternal();
-  }
-  // Stop if average depth reached requested depth.
-  if (limits_.depth >= 0 &&
-      cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
-          static_cast<unsigned int>(limits_.depth)) {
-    FireStopInternal();
+
+  // If not yet stopped, try to stop for different reasons.
+  if (!stop_.load(std::memory_order_acquire)) {
+    // If smart pruning tells to stop (best move found), stop.
+    if (only_one_possible_move_left_) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Only one move candidate left.";
+    }
+    // Stop if reached playouts limit.
+    if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Reached playouts limit: " << total_playouts_
+              << ">=" << limits_.playouts;
+    }
+    // Stop if reached visits limit.
+    if (limits_.visits >= 0 &&
+        total_playouts_ + initial_visits_ >= limits_.visits) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Reached visits limit: "
+              << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
+    }
+    // Stop if reached time limit.
+    if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
+      LOGFILE << "Stopped search: Ran out of time.";
+      FireStopInternal();
+    }
+    // Stop if average depth reached requested depth.
+    if (limits_.depth >= 0 &&
+        cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
+            static_cast<unsigned int>(limits_.depth)) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Reached depth.";
+    }
   }
   // If we are the first to see that stop is needed.
-  if (stop_ && !responded_bestmove_) {
+  if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
+      !bestmove_is_sent_) {
     SendUciInfo();
-    if (params_.GetVerboseStats()) SendMovesStats();
-    best_move_ = GetBestMoveInternal();
-    best_move_callback_({best_move_.first, best_move_.second});
-    responded_bestmove_ = true;
-    best_move_edge_ = EdgeAndNode();
+    EnsureBestMoveKnown();
+    SendMovesStats();
+    best_move_callback_(
+        {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
+         final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
+    bestmove_is_sent_ = true;
+    current_best_edge_ = EdgeAndNode();
   }
 }
 
 void Search::UpdateRemainingMoves() {
-  if (params_.GetAggressiveTimePruning() <= 0.0f) return;
+  if (params_.GetSmartPruningFactor() <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
   remaining_playouts_ = std::numeric_limits<int>::max();
   // Check for how many playouts there is time remaining.
-  if (search_deadline_ && !nps_start_time_) {
+  if (limits_.search_deadline && !nps_start_time_) {
     nps_start_time_ = std::chrono::steady_clock::now();
-  } else if (search_deadline_) {
+  } else if (limits_.search_deadline) {
     auto time_since_start =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - *nps_start_time_)
-        .count();
+            .count();
     if (time_since_start > kSmartPruningToleranceMs) {
       auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
                      time_since_start +
@@ -310,7 +367,7 @@ void Search::UpdateRemainingMoves() {
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
       int64_t remaining_playouts =
-          remaining_time * nps / params_.GetAggressiveTimePruning() / 1000;
+          remaining_time * nps / params_.GetSmartPruningFactor() / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
         remaining_playouts_ = remaining_playouts;
@@ -350,10 +407,17 @@ float Search::GetBestEval() const {
   return best_edge.GetQ(parent_q);
 }
 
-std::pair<Move, Move> Search::GetBestMove() const {
-  SharedMutex::SharedLock lock(nodes_mutex_);
+std::pair<Move, Move> Search::GetBestMove() {
+  SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  return GetBestMoveInternal();
+  EnsureBestMoveKnown();
+  return {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
+          final_pondermove_.GetMove(!played_history_.IsBlackToMove())};
+}
+
+std::int64_t Search::GetTotalPlayouts() const {
+  SharedMutex::SharedLock lock(nodes_mutex_);
+  return total_playouts_;
 }
 
 bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
@@ -373,11 +437,11 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
-// Returns the best move, maybe with temperature (according to the settings).
-std::pair<Move, Move> Search::GetBestMoveInternal() const
-    REQUIRES_SHARED(nodes_mutex_) REQUIRES_SHARED(counters_mutex_) {
-  if (responded_bestmove_) return best_move_;
-  if (!root_node_->HasChildren()) return {};
+// Computes the best move, maybe with temperature (according to the settings).
+void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
+    REQUIRES(counters_mutex_) {
+  if (bestmove_is_sent_) return;
+  if (!root_node_->HasChildren()) return;
 
   float temperature = params_.GetTemperature();
   if (temperature && params_.GetTempDecayMoves()) {
@@ -390,17 +454,13 @@ std::pair<Move, Move> Search::GetBestMoveInternal() const
     }
   }
 
-  auto best_node = temperature
-                       ? GetBestChildWithTemperature(root_node_, temperature)
-                       : GetBestChildNoTemperature(root_node_);
+  final_bestmove_ = temperature
+                        ? GetBestChildWithTemperature(root_node_, temperature)
+                        : GetBestChildNoTemperature(root_node_);
 
-  Move ponder_move;  // Default is "null move" which means "don't display
-                     // anything".
-  if (best_node.HasNode() && best_node.node()->HasChildren()) {
-    ponder_move = GetBestChildNoTemperature(best_node.node())
-                      .GetMove(!played_history_.IsBlackToMove());
+  if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
+    final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node());
   }
-  return {best_node.GetMove(played_history_.IsBlackToMove()), ponder_move};
 }
 
 // Returns @count children with most visits.
@@ -519,53 +579,59 @@ void Search::RunBlocking(size_t threads) {
 }
 
 bool Search::IsSearchActive() const {
-  Mutex::Lock lock(counters_mutex_);
-  return !stop_;
+  return !stop_.load(std::memory_order_acquire);
 }
 
 void Search::WatchdogThread() {
-  LOGFILE << "Starting watchdog thread.";
-  while (IsSearchActive()) {
-    {
-      using namespace std::chrono_literals;
-      constexpr auto kMaxWaitTime = 100ms;
-      constexpr auto kMinWaitTime = 1ms;
-      Mutex::Lock lock(counters_mutex_);
-      auto remaining_time = search_deadline_
-                                ? std::chrono::milliseconds(GetTimeToDeadline())
-                                : kMaxWaitTime;
-      if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
-      if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
-      // There is no real need to have max wait time, and sometimes it's fine
-      // to wait without timeout at all (e.g. in `go nodes` mode), but we
-      // still limit wait time for exotic cases like when pc goes to sleep
-      // mode during thinking.
-      // Minimum wait time is there to prevent busy wait and other thread
-      // starvation.
-      watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
-                            [this]()
-                                NO_THREAD_SAFETY_ANALYSIS { return stop_; });
-    }
+  LOGFILE << "Start a watchdog thread.";
+  while (true) {
     MaybeTriggerStop();
+    MaybeOutputInfo();
+
+    using namespace std::chrono_literals;
+    constexpr auto kMaxWaitTime = std::chrono::milliseconds(100);
+    constexpr auto kMinWaitTime = std::chrono::milliseconds(1);
+
+    Mutex::Lock lock(counters_mutex_);
+    // Only exit when bestmove is responded. It may happen that search threads
+    // already all exited, and we need at least one thread that can do that.
+    if (bestmove_is_sent_) break;
+
+    auto remaining_time = limits_.search_deadline
+                              ? std::chrono::milliseconds(GetTimeToDeadline())
+                              : kMaxWaitTime;
+    if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
+    if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
+    // There is no real need to have max wait time, and sometimes it's fine
+    // to wait without timeout at all (e.g. in `go nodes` mode), but we
+    // still limit wait time for exotic cases like when pc goes to sleep
+    // mode during thinking.
+    // Minimum wait time is there to prevent busy wait and other threads
+    // starvation.
+    watchdog_cv_.wait_for(lock.get_raw(), remaining_time, [this]() {
+      return stop_.load(std::memory_order_acquire);
+    });
   }
-  MaybeTriggerStop();
+  LOGFILE << "End a watchdog thread.";
 }
 
-void Search::FireStopInternal() REQUIRES(counters_mutex_) {
-  stop_ = true;
+void Search::FireStopInternal() {
+  stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
-  LOGFILE << "Stopping search.";
 }
 
 void Search::Stop() {
   Mutex::Lock lock(counters_mutex_);
+  ok_to_respond_bestmove_ = true;
   FireStopInternal();
+  LOGFILE << "Stopping search due to `stop` uci command.";
 }
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  responded_bestmove_ = true;
+  bestmove_is_sent_ = true;
   FireStopInternal();
+  LOGFILE << "Aborting search, if it is still active.";
 }
 
 void Search::Wait() {
@@ -630,19 +696,17 @@ void SearchWorker::InitializeIteration(
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
-  int collision_events_left = params_.GetAllowedNodeCollisionEvents();
-  int collisions_left = params_.GetAllowedTotalNodeCollisions();
+  int collision_events_left = params_.GetMaxCollisionEvents();
+  int collisions_left = params_.GetMaxCollisionVisitsId();
 
   // Number of nodes processed out of order.
-  int number_out_of_order = 0;
+  number_out_of_order_ = 0;
 
   // Gather nodes to process in the current batch.
   // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
   // iteration so that search can exit.
-  // TODO(crem) change that to checking search_->stop_ when bestmove reporting
-  // is in a separate thread.
   while (minibatch_size < params_.GetMiniBatchSize() &&
-         number_out_of_order < params_.GetMiniBatchSize()) {
+         number_out_of_order_ < params_.GetMiniBatchSize()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
@@ -655,6 +719,7 @@ void SearchWorker::GatherMinibatch() {
     if (picked_node.IsCollision()) {
       if (--collision_events_left <= 0) return;
       if ((collisions_left -= picked_node.multivisit) <= 0) return;
+      if (search_->stop_.load(std::memory_order_acquire)) return;
       continue;
     }
     ++minibatch_size;
@@ -690,8 +755,10 @@ void SearchWorker::GatherMinibatch() {
       if (picked_node.nn_queried) computation_->PopCacheHit();
       minibatch_.pop_back();
       --minibatch_size;
-      ++number_out_of_order;
+      ++number_out_of_order_;
     }
+    // Check for stop at the end so we have at least one node.
+    if (search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
 
@@ -722,7 +789,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
-  int best_node_n = search_->best_move_edge_.GetN();
+  int64_t best_node_n = search_->current_best_edge_.GetN();
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
@@ -774,9 +841,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // best_move_node_ could have changed since best_node_n was retrieved.
         // To ensure we have at least one node to expand, always include
         // current best node.
-        if (child != search_->best_move_edge_ &&
-            search_->remaining_playouts_ <
-                best_node_n - static_cast<int>(child.GetN())) {
+        if (child != search_->current_best_edge_ &&
+            search_->remaining_playouts_ < best_node_n - child.GetN()) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
@@ -813,7 +879,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       // If there is only one move theoretically possible within remaining time,
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
-      search_->found_best_move_ = true;
+      search_->only_one_possible_move_left_ = true;
     }
     is_root_node = false;
   }
@@ -892,7 +958,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   } else {
     if (search_->cache_->ContainsKey(hash)) return true;
   }
-  auto planes = EncodePositionForNN(history_, 8);
+  auto planes = EncodePositionForNN(history_, 8, params_.GetHistoryFill());
 
   std::vector<uint16_t> moves;
 
@@ -922,6 +988,7 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
+  if (search_->stop_.load(std::memory_order_acquire)) return;
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
@@ -972,6 +1039,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   int budget_to_spend = budget;  // Initialize for the case where there's only
                                  // one child.
   for (size_t i = 0; i < scores.size(); ++i) {
+    if (search_->stop_.load(std::memory_order_acquire)) break;
     if (budget <= 0) break;
 
     // Sort next chunk of a vector. 3 at a time. Most of the time it's fine.
@@ -1096,8 +1164,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Update the stats.
     // Best move.
     if (n->GetParent() == search_->root_node_ &&
-        search_->best_move_edge_.GetN() <= n->GetN()) {
-      search_->best_move_edge_ =
+        search_->current_best_edge_.GetN() <= n->GetN()) {
+      search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
   }
@@ -1110,17 +1178,19 @@ void SearchWorker::DoBackupUpdateSingleNode(
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.
-  search_->MaybeOutputInfo();
   search_->MaybeTriggerStop();
+  search_->MaybeOutputInfo();
 
-  // If this thread had no work, sleep for some milliseconds.
-  // Collisions don't count as work, so have to enumerate to find out if there
-  // was anything done.
-  bool work_done = false;
-  for (NodeToProcess& node_to_process : minibatch_) {
-    if (!node_to_process.IsCollision()) {
-      work_done = true;
-      break;
+  // If this thread had no work, not even out of order, then sleep for some
+  // milliseconds. Collisions don't count as work, so have to enumerate to find
+  // out if there was anything done.
+  bool work_done = number_out_of_order_ > 0;
+  if (!work_done) {
+    for (NodeToProcess& node_to_process : minibatch_) {
+      if (!node_to_process.IsCollision()) {
+        work_done = true;
+        break;
+      }
     }
   }
   if (!work_done) {

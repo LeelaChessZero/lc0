@@ -25,8 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <iostream>
 #include "engine.h"
+#include "benchmark/benchmark.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
 #include "utils/logging.h"
@@ -34,19 +34,23 @@
 
 int main(int argc, const char** argv) {
   LOGFILE << "Lc0 started.";
-  std::cerr << "       _" << std::endl;
-  std::cerr << "|   _ | |" << std::endl;
-  std::cerr << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__
-            << std::endl;
+  CERR << "       _";
+  CERR << "|   _ | |";
+  CERR << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__;
   using namespace lczero;
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
   CommandLine::RegisterMode("selfplay", "Play games with itself");
+  CommandLine::RegisterMode("benchmark", "Quick benchmark");
 
   if (CommandLine::ConsumeCommand("selfplay")) {
     // Selfplay mode.
     SelfPlayLoop loop;
     loop.RunLoop();
+  } else if (CommandLine::ConsumeCommand("benchmark")) {
+    // Benchmark mode.
+    Benchmark benchmark;
+    benchmark.Run();
   } else {
     // Consuming optional "uci" mode.
     CommandLine::ConsumeCommand("uci");
