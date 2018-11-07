@@ -48,7 +48,6 @@ const int kSmartPruningToleranceNodes = 300;
 const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
-const auto kNNComputationWarningTime = std::chrono::milliseconds(500);
 }  // namespace
 
 std::string SearchLimits::DebugString() const {
@@ -1083,18 +1082,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() {
-  const auto start_time = std::chrono::steady_clock::now();
-  computation_->ComputeBlocking();
-  const auto end_time = std::chrono::steady_clock::now();
-  if (end_time - start_time > kNNComputationWarningTime) {
-    CERR << "Warning: too long computation: "
-         << std::chrono::duration_cast<std::chrono::milliseconds>(end_time -
-                                                                  start_time)
-                .count()
-         << "ms";
-  }
-}
+void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
