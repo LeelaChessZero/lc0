@@ -359,7 +359,7 @@ if get_option('build_backends')
         output: outputname,
         arguments: cuda_arguments,
       )
-	cuda_arguments += ['-arch=compute_75', '-code=sm_75']
+	cuda_arguments += ['-arch=compute_70', '-code=sm_70']
 	cuda_gen_fp16 = generator(nvcc,
         output: outputname,
         arguments: cuda_arguments,
