@@ -32,6 +32,12 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   endif
 endif
 
+if build_machine.system() == 'windows'
+  dirsep = '\\'
+else
+  dirsep = '/'
+endif
+
 # Files to compile.
 deps = []
 files = []
@@ -50,10 +56,24 @@ protoc = find_program('protoc', required : false)
 if not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
   deps += subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
+  includes += subproject('protobuf').get_variable('libprotobuf').private_dir_include()
+  # Find protobuf subproject directory (with version number).
+  xx = subproject('protobuf').get_variable('libprotobuf').full_path().split(dirsep)
+  foreach x : xx
+    if x.startswith('protobuf')
+      protobuf_inc = meson.current_source_dir() + '/subprojects/' + x + '/src'
+    endif
+  endforeach
 else
   deps += protobuf_dep
+  protobuf_inc = []
   if protobuf_lib.found()
     includes += include_directories(get_option('protobuf_include'))
+  elif protobuf_dep.type_name() == 'pkgconfig'
+    protobuf_inc = protobuf_dep.get_pkgconfig_variable('includedir')
+  endif
+  if protobuf_inc == []
+    protobuf_inc = get_option('protobuf_include')[0]
   endif
 endif
 
@@ -327,7 +347,7 @@ if get_option('build_backends')
     deps += [cu_blas, cu_dnn, cu_dart]
   cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                     '-I', meson.current_source_dir() + '/src',
-                    '-I', '@BUILD_DIR@']
+                    '-I', '@BUILD_DIR@', '-I', protobuf_inc]
   if host_machine.system() == 'windows'
     cuda_arguments += ['-Xcompiler', '-MD']
   else
