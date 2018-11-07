@@ -333,13 +333,13 @@ if get_option('build_backends')
   cuda_files_nvcc_fp16 = [
     'src/neural/cuda/fp16_kernels.cu',
   ]
-  
-  includes += include_directories(get_option('cuda_include'))
-  includes += include_directories(get_option('cudnn_include'))
-  includes += include_directories('src/neural/cuda/')  
-  
+
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
+    includes += include_directories(get_option('cuda_include'))
+    includes += include_directories(get_option('cudnn_include'))
+    includes += include_directories('src/neural/cuda/')
+
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
@@ -359,9 +359,9 @@ if get_option('build_backends')
         output: outputname,
         arguments: cuda_arguments,
       )
-	files += cuda_files	  
+	 files += cuda_files
     files += cuda_gen.process(cuda_files_nvcc_common)
-    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])	
+    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])
     has_backends = true
   endif
 
