@@ -33,6 +33,25 @@
 
 namespace lczero {
 
+inline unsigned long GetLowestBit(std::uint64_t value) {
+#if defined(_MSC_VER) && defined(_WIN64)
+    unsigned long result;
+    _BitScanForward64(&result, value);
+    return result;
+#elif defined(_MSC_VER)
+    unsigned long result;
+    if (value_ & 0xFFFFFFFF) {
+      _BitScanForward(&result, value);
+    } else {
+      _BitScanForward(&result, value >> 32);
+      result += 32;
+    }
+    return result;
+#else
+    return __builtin_ctzll(value);
+#endif
+}
+
 // Iterates over all set bits of the value, lower to upper. The value of
 // dereferenced iterator is bit number (lower to upper, 0 bazed)
 template <typename T>
@@ -42,24 +61,7 @@ class BitIterator {
   bool operator!=(const BitIterator& other) { return value_ != other.value_; }
 
   void operator++() { value_ &= (value_ - 1); }
-  T operator*() const {
-#if defined(_MSC_VER) && defined(_WIN64)
-    unsigned long result;
-    _BitScanForward64(&result, value_);
-    return result;
-#elif defined(_MSC_VER)
-    unsigned long result;
-    if (value_ & 0xFFFFFFFF) {
-      _BitScanForward(&result, value_);
-    } else {
-      _BitScanForward(&result, value_ >> 32);
-      result += 32;
-    }
-    return result;
-#else
-    return __builtin_ctzll(value_);
-#endif
-  }
+  T operator*() const { return GetLowestBit(value_); }
 
  private:
   std::uint64_t value_;

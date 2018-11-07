@@ -53,7 +53,7 @@ TEST(BoardSquare, BoardSquare) {
 
 TEST(ChessBoard, PseudolegalMovesStartingPos) {
   ChessBoard board;
-  board.SetFromFen(ChessBoard::kStartingFen);
+  board.SetFromFen(ChessBoard::kStartposFen);
   board.Mirror();
   auto moves = board.GeneratePseudolegalMoves();
 
@@ -96,7 +96,7 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
 
 /* TEST(ChessBoard, MoveGenStartingPos) {
   ChessBoard board;
-  board.SetFromFen(ChessBoard::kStartingFen);
+  board.SetFromFen(ChessBoard::kStartposFen);
 
   EXPECT_EQ(Perft(board, 0), 1);
   EXPECT_EQ(Perft(board, 1), 20);
@@ -168,7 +168,7 @@ TEST(ChessBoard, MoveGenPosition6) {
 
 TEST(ChessBoard, HasMatingMaterialStartPosition) {
   ChessBoard board;
-  board.SetFromFen(ChessBoard::kStartingFen);
+  board.SetFromFen(ChessBoard::kStartposFen);
   EXPECT_TRUE(board.HasMatingMaterial());
 }
 

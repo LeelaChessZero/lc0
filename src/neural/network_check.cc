@@ -25,15 +25,15 @@
   Program grant you additional permission to convey the resulting work.
  */
 
-#include "neural/factory.h"
-#include "neural/network.h"
-#include "utils/histogram.h"
-#include "utils/random.h"
-
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
-#include <iostream>
+
+#include "neural/factory.h"
+#include "neural/network.h"
+#include "utils/histogram.h"
+#include "utils/logging.h"
+#include "utils/random.h"
 
 namespace lczero {
 
@@ -120,24 +120,24 @@ class CheckComputation : public NetworkComputation {
     }
 
     if (valueAlmostEqual && policyAlmostEqual) {
-      std::cerr << "Check passed for a batch of " << size << "." << std::endl;
+      CERR << "Check passed for a batch of " << size << ".";
       return;
     }
 
     if (!valueAlmostEqual && !policyAlmostEqual) {
-      std::cerr << "*** ERROR check failed for a batch of " << size
-                << " both value and policy incorrect." << std::endl;
+      CERR << "*** ERROR check failed for a batch of " << size
+           << " both value and policy incorrect.";
       return;
     }
 
     if (!valueAlmostEqual) {
-      std::cerr << "*** ERROR check failed for a batch of " << size
-                << " value incorrect (but policy ok)." << std::endl;
+      CERR << "*** ERROR check failed for a batch of " << size
+           << " value incorrect (but policy ok).";
       return;
     }
 
-    std::cerr << "*** ERROR check failed for a batch of " << size
-              << " policy incorrect (but value ok)." << std::endl;
+    CERR << "*** ERROR check failed for a batch of " << size
+         << " policy incorrect (but value ok).";
   }
 
   bool IsAlmostEqual(double a, double b) const {
@@ -160,8 +160,7 @@ class CheckComputation : public NetworkComputation {
         histogram.Add(pv2 - pv1);
       }
     }
-    std::cerr << "Absolute error histogram for a batch of " << size
-              << std::endl;
+    CERR << "Absolute error histogram for a batch of " << size;
     histogram.Dump();
   }
 
@@ -182,9 +181,9 @@ class CheckComputation : public NetworkComputation {
     }
 
     void Dump(const char* name) {
-      std::cerr << std::scientific << std::setprecision(1) << name
-                << ": absolute: " << max_absolute_error
-                << ", relative: " << max_relative_error << "." << std::endl;
+      CERR << std::scientific << std::setprecision(1) << name
+           << ": absolute: " << max_absolute_error
+           << ", relative: " << max_relative_error << ".";
     }
 
     static double GetRelativeError(double a, double b) {
@@ -215,7 +214,7 @@ class CheckComputation : public NetworkComputation {
       }
     }
 
-    std::cerr << "maximum error for a batch of " << size << ":" << std::endl;
+    CERR << "maximum error for a batch of " << size << ":";
 
     value_error.Dump("  value");
     policy_error.Dump("  policy");
@@ -274,12 +273,11 @@ class CheckNetwork : public Network {
           backend2_dict.GetOrDefault<std::string>("backend", backendName2);
     }
     if (parents.size() > 2) {
-      std::cerr << "Warning, cannot check more than two backends" << std::endl;
+      CERR << "Warning, cannot check more than two backends";
     }
 
-    std::cerr << "Working backend set to " << backendName1 << "." << std::endl;
-    std::cerr << "Reference backend set to " << backendName2 << "."
-              << std::endl;
+    CERR << "Working backend set to " << backendName1 << ".";
+    CERR << "Reference backend set to " << backendName2 << ".";
 
     work_net_ =
         NetworkFactory::Get()->Create(backendName1, weights, backend1_dict);
@@ -290,20 +288,20 @@ class CheckNetwork : public Network {
         options.GetOrDefault<float>("freq", kDefaultCheckFrequency);
     switch (params_.mode) {
       case kCheckOnly:
-        std::cerr << std::scientific << std::setprecision(1)
-                  << "Check mode: check only with relative tolerance "
-                  << params_.absolute_tolerance << ", absolute tolerance "
-                  << params_.relative_tolerance << "." << std::endl;
+        CERR << std::scientific << std::setprecision(1)
+             << "Check mode: check only with relative tolerance "
+             << params_.absolute_tolerance << ", absolute tolerance "
+             << params_.relative_tolerance << ".";
         break;
       case kErrorDisplay:
-        std::cerr << "Check mode: error display." << std::endl;
+        CERR << "Check mode: error display.";
         break;
       case kHistogram:
-        std::cerr << "Check mode: histogram." << std::endl;
+        CERR << "Check mode: histogram.";
         break;
     }
-    std::cerr << "Check rate: " << std::fixed << std::setprecision(0)
-              << 100 * check_frequency_ << "%." << std::endl;
+    CERR << "Check rate: " << std::fixed << std::setprecision(0)
+         << 100 * check_frequency_ << "%.";
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {

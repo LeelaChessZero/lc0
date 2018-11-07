@@ -183,6 +183,7 @@ class LruCache {
     Mutex::Lock lock(mutex_);
     return capacity_;
   }
+  static constexpr size_t GetItemStructSize() { return sizeof(Item); }
 
  private:
   struct Item {

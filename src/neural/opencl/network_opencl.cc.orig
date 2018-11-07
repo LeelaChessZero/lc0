@@ -34,8 +34,11 @@
 #include "neural/network_legacy.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
-#include "utils/logging.h"
+<<<<<<< HEAD
 #include "utils/weights_adapter.h"
+=======
+#include "utils/logging.h"
+>>>>>>> upstream/master
 
 namespace lczero {
 

@@ -277,6 +277,15 @@ void EngineController::UpdateFromUciOptions() {
     network_ = NetworkFactory::LoadNetwork(options_);
     network_configuration_ = network_configuration;
   }
+<<<<<<< HEAD
+  WeightsFile weights = LoadWeightsFromFile(net_path);
+
+  OptionsDict network_options(&options_);
+  network_options.AddSubdictFromString(backend_options);
+
+  network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
+=======
+>>>>>>> upstream/master
 
   // Cache size.
   cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));
@@ -375,7 +384,10 @@ void EngineController::Go(const GoParams& params) {
 
   auto limits = PopulateSearchLimits(
       tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
+<<<<<<< HEAD
+=======
   LOGFILE << "Limits: " << limits.DebugString();
+>>>>>>> upstream/master
 
   // If there is a time limit, also store amount of time saved.
   if (limits.search_deadline) {
