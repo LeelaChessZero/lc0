@@ -463,6 +463,9 @@ template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
                                   int H, int W);
 
+template void addBias_NCHW<half>(half* c, half* a, half* b, int N, int C,
+                                  int H, int W);
+
 template void globalAvgPool<float>(int N, int C, float* output,
                                    const float* input);
 template void globalAvgPool<half>(int N, int C, half* output,
