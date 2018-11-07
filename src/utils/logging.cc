@@ -95,7 +95,8 @@ std::string FormatTime(
     std::chrono::time_point<std::chrono::system_clock> time) {
   std::ostringstream ss;
   using namespace std::chrono;
-  auto ms = duration_cast<milliseconds>(time.time_since_epoch()).count() % 1000;
+  auto ms =
+      duration_cast<microseconds>(time.time_since_epoch()).count() % 1000000;
   auto timer = std::chrono::system_clock::to_time_t(time);
   ss << std::put_time(std::localtime(&timer), "%m%d %T") << '.'
      << std::setfill('0') << std::setw(3) << ms;
