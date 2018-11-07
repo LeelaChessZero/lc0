@@ -181,6 +181,7 @@ class SELayer : public BaseLayer<DataType> {
 
 template <typename DataType>
 class GlobalAvgPoolLayer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
  public:
   // does averaging of all inputs across W and H dimensions
   // basically get 1 value from the entire 8x8 board plane (squeeze step for SE)
@@ -194,6 +195,7 @@ class GlobalAvgPoolLayer : public BaseLayer<DataType> {
 
 template <typename DataType>
 class GlobalScaleLayer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
  public:
   // scales output (NCHW) with per-channel scaling factors in input2 (NC)
   // also adds input (NCHW)
