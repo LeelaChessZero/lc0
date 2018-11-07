@@ -40,13 +40,13 @@ void OffsetVector(std::vector<float>* means, const std::vector<float>& biases) {
 LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
     : input(weights.input()),
       policy(weights.policy()),
-      ip_pol_w(LayerAdapter<float>(weights.ip_pol_w()).as_vector()),
-      ip_pol_b(LayerAdapter<float>(weights.ip_pol_b()).as_vector()),
+      ip_pol_w(LayerAdapter(weights.ip_pol_w()).as_vector()),
+      ip_pol_b(LayerAdapter(weights.ip_pol_b()).as_vector()),
       value(weights.value()),
-      ip1_val_w(LayerAdapter<float>(weights.ip1_val_w()).as_vector()),
-      ip1_val_b(LayerAdapter<float>(weights.ip1_val_b()).as_vector()),
-      ip2_val_w(LayerAdapter<float>(weights.ip2_val_w()).as_vector()),
-      ip2_val_b(LayerAdapter<float>(weights.ip2_val_b()).as_vector()) {
+      ip1_val_w(LayerAdapter(weights.ip1_val_w()).as_vector()),
+      ip1_val_b(LayerAdapter(weights.ip1_val_b()).as_vector()),
+      ip2_val_w(LayerAdapter(weights.ip2_val_w()).as_vector()),
+      ip2_val_b(LayerAdapter(weights.ip2_val_b()).as_vector()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
@@ -56,10 +56,10 @@ LegacyWeights::Residual::Residual(const pblczero::Weights::Residual& residual)
     : conv1(residual.conv1()), conv2(residual.conv2()) {}
 
 LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
-    : weights(LayerAdapter<float>(block.weights()).as_vector()),
-      biases(LayerAdapter<float>(block.biases()).as_vector()),
-      bn_means(LayerAdapter<float>(block.bn_means()).as_vector()),
-      bn_stddivs(LayerAdapter<float>(block.bn_stddivs()).as_vector()) {}
+    : weights(LayerAdapter(block.weights()).as_vector()),
+      biases(LayerAdapter(block.biases()).as_vector()),
+      bn_means(LayerAdapter(block.bn_means()).as_vector()),
+      bn_stddivs(LayerAdapter(block.bn_stddivs()).as_vector()) {}
 
 void LegacyWeights::ConvBlock::InvertStddev() { InvertVector(&bn_stddivs); }
 
