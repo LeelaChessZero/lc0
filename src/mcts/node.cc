@@ -327,7 +327,6 @@ V4TrainingData Node::GetV4TrainingData(
   }
   
   // Aggregate evaluation Q.
-  result.root_q = -GetQ();
   result.best_q = best_eval;
 
   return result;
