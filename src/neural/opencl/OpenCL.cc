@@ -497,7 +497,7 @@ void OpenCL_Network::squeeze_excitation(int channels,
                                cl::NDRange(width, batch_size * channels),
                                cl::NDRange(width, 1));
   } catch (const cl::Error &e) {
-    std::cerr << "Error in squeeze_excitation/pooling: " << e.what() << ": "
+    CERR << "Error in squeeze_excitation/pooling: " << e.what() << ": "
         << e.err() << std::endl;
     throw;
   }
@@ -530,7 +530,7 @@ void OpenCL_Network::squeeze_excitation(int channels,
     queue.enqueueNDRangeKernel(apply_se_kernel, cl::NullRange,
                                cl::NDRange(width, batch_size * channels));
   } catch (const cl::Error &e) {
-    std::cerr << "Error in squeeze_excitation/apply_se: " << e.what() << ": "
+    CERR << "Error in squeeze_excitation/apply_se: " << e.what() << ": "
         << e.err() << std::endl;
     throw;
   }
