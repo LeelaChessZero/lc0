@@ -3,7 +3,7 @@
   Copyright (C) 2018 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
+  it under the terms of the GNU General Public License as published b
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
@@ -823,9 +823,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     // If we fall through, then n_in_flight_ has been incremented but this
-    // playout remains incomplete; we must go deeper.
+    // playout remains incomplete; we must go deeper. 
     float puct_mult =
         params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+    if (remaining_playouts_ % 100 == 0)
+      puct_mult*=5;
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
