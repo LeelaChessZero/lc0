@@ -66,22 +66,21 @@ if not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
   endforeach
 else
   deps += protobuf_dep
-  protobuf_inc = []
+  protobuf_inc = get_option('protobuf_include')[0]
   if protobuf_lib.found()
     includes += include_directories(get_option('protobuf_include'))
   elif protobuf_dep.type_name() == 'pkgconfig'
     protobuf_inc = protobuf_dep.get_pkgconfig_variable('includedir')
-  endif
-  if protobuf_inc == []
-    protobuf_inc = get_option('protobuf_include')[0]
   endif
 endif
 
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
-files += gen.process('libs/lczero-common/proto/net.proto',
+proto_files = gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+
+files += proto_files
 
 #############################################################################
 ## Main files
@@ -345,6 +344,9 @@ if get_option('build_backends')
 
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
+
+    deps += declare_dependency(sources: [cuda_files, proto_files])
+
   cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                     '-I', meson.current_source_dir() + '/src',
                     '-I', '@BUILD_DIR@', '-I', protobuf_inc]
