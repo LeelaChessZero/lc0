@@ -39,7 +39,11 @@ struct MoveExecution;
 // Unlike most chess engines, the board is mirrored for black.
 class ChessBoard {
  public:
-  static const std::string kStartingFen;
+  ChessBoard() = default;
+  ChessBoard(const std::string& fen) { SetFromFen(fen); }
+
+  static const char* kStartposFen;
+  static const ChessBoard kStartposBoard;
 
   // Sets position from FEN string.
   // If @no_capture_ply and @moves are not nullptr, they are filled with number
@@ -126,6 +130,7 @@ class ChessBoard {
   BitBoard ours() const { return our_pieces_; }
   BitBoard theirs() const { return their_pieces_; }
   BitBoard pawns() const;
+  BitBoard en_passant() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
   BitBoard queens() const { return rooks_ * bishops_; }

@@ -36,6 +36,7 @@
 #include <unordered_set>
 #include <utility>
 #include "utils/exception.h"
+#include "utils/logging.h"
 #include "utils/string.h"
 #include "version.h"
 
@@ -121,26 +122,13 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
                  const std::string& key) {
   return params.find(key) != params.end();
 }
-
-std::string GetTimestamp() {
-  using namespace std::chrono;
-  auto time_now = system_clock::now();
-  auto ms =
-      duration_cast<milliseconds>(time_now.time_since_epoch()).count() % 1000;
-  auto timer = system_clock::to_time_t(time_now);
-  std::ostringstream oss;
-  oss << std::put_time(std::localtime(&timer), "%F %T") << '.'
-      << std::setfill('0') << std::setw(3) << ms;
-  return oss.str();
-}
-
 }  // namespace
 
 void UciLoop::RunLoop() {
   std::cout.setf(std::ios::unitbuf);
   std::string line;
   while (std::getline(std::cin, line)) {
-    WriteDebugLogLine('>' + line);
+    LOGFILE << ">> " << line;
     try {
       auto command = ParseCommand(line);
       // Ignore empty line.
@@ -219,22 +207,6 @@ bool UciLoop::DispatchCommand(
   return true;
 }
 
-void UciLoop::SetLogFilename(const std::string& filename) {
-  if (filename == debug_log_filename_) return;
-  debug_log_filename_ = filename;
-  if (filename.empty()) {
-    debug_log_.close();
-  } else {
-    debug_log_.open(filename.c_str(), std::ios::app);
-  }
-}
-
-void UciLoop::WriteDebugLogLine(const std::string& line) {
-  static std::mutex logging_mutex;
-  std::lock_guard<std::mutex> lock(logging_mutex);
-  if (debug_log_) debug_log_ << GetTimestamp() << ' ' << line << std::endl;
-}
-
 void UciLoop::SendResponse(const std::string& response) {
   SendResponses({response});
 }
@@ -243,7 +215,7 @@ void UciLoop::SendResponses(const std::vector<std::string>& responses) {
   static std::mutex output_mutex;
   std::lock_guard<std::mutex> lock(output_mutex);
   for (auto& response : responses) {
-    WriteDebugLogLine('<' + response);
+    LOGFILE << "<< " << response;
     std::cout << response << std::endl;
   }
 }

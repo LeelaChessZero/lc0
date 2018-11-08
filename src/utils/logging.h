@@ -27,16 +27,56 @@
 
 #pragma once
 
-#include "chess/position.h"
-#include "neural/network.h"
+#include <deque>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <string>
+
+#include "utils/mutex.h"
 
 namespace lczero {
 
-enum class FillEmptyHistory {NO, FEN_ONLY, ALWAYS};
+class Logging {
+ public:
+  static Logging& Get();
 
-// Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(const PositionHistory& history,
-                                int history_planes,
-                                FillEmptyHistory fill_empty_history);
+  // Sets the name of the log. Empty name disables logging.
+  void SetFilename(const std::string& filename);
 
+ private:
+  // Writes line to the log, and appends new line character.
+  void WriteLineRaw(const std::string& line);
+
+  Mutex mutex_;
+  std::string filename_ GUARDED_BY(mutex_);
+  std::ofstream file_ GUARDED_BY(mutex_);
+  std::deque<std::string> buffer_ GUARDED_BY(mutex_);
+
+  Logging() = default;
+  friend class LogMessage;
+};
+
+class LogMessage : public std::ostringstream {
+ public:
+  LogMessage(const char* file, int line);
+  ~LogMessage();
+};
+
+class StderrLogMessage : public std::ostringstream {
+ public:
+  StderrLogMessage(const char* file, int line);
+  ~StderrLogMessage();
+
+ private:
+  LogMessage log_;
+};
+
+std::chrono::time_point<std::chrono::system_clock> SteadyClockToSystemClock(
+    std::chrono::time_point<std::chrono::steady_clock> time);
+
+std::string FormatTime(std::chrono::time_point<std::chrono::system_clock> time);
 }  // namespace lczero
+
+#define LOGFILE ::lczero::LogMessage(__FILE__, __LINE__)
+#define CERR ::lczero::StderrLogMessage(__FILE__, __LINE__)
