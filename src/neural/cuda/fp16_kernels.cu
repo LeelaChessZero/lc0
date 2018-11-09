@@ -47,10 +47,8 @@ namespace cudnn_backend {
 // K is the no. of outputs of first fully connected layer (same as no. of inputs
 // for second fully connected layer) the kernel assumes K <= C
 
-// the weights matrix are transposed in reality (K rows, and C columns for fc1,
-// and C rows and K columns for fc2)
-#define shw1(row, col) (((half*)sharedWeights1)[(col)*C + (row)])
-#define shw2(row, col) (((half*)sharedWeights2)[(col)*K + (row)])
+#define readw1(row, col) (w1[(row)*K + (col)])
+#define readw2(row, col) (w2[(row)*2 * C + (col)])
 
 template <int C, int K>
 __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
@@ -65,20 +63,6 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
   half localInput[elementsPerThread];
   half localskip[elementsPerThread];
-
-  // This acutally doesn't save on any global memory reads (each thread block
-  // still reads entire weights array redundantly :-/)
-  // TODO: can try processing multiple C (multiple planes) in single thread
-  // block to get some savings
-  //
-  // it's only to make the reads faster (better memory coleasing)
-  static_assert(((C * K) % 8) == 0, "K*C must be multiple of 8");
-
-  // don't really NEED two shared memory arrays, as the same shared memory can
-  // be re-used to hold weights for FC2 after FC1 is done, but loading all
-  // weights early seems to improve performance by about 5%
-  __shared__ uint4 sharedWeights1[C * K / 8];
-  __shared__ uint4 sharedWeights2[C * K / 8];
 
   half S = 0;
 
@@ -95,19 +79,6 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   half avg = S / (half)elementsPerThread;
   sharedData[c] = avg;
 
-  // load weights for the FC layers in shared memory
-  // use uint4 loads to make it faster
-  const int numSharedReadsPerThread = K / 8;  // K * C weights, divided by C
-                                              // threads, divided by 8 halfs
-                                              // (uint4) read per thread
-  uint4* w1raw = (uint4*)w1;
-  uint4* w2raw = (uint4*)w2;
-
-  #pragma unroll
-  for (int i = 0; i < numSharedReadsPerThread; i++) {
-    sharedWeights1[c + i * C] = w1raw[c + i * C];
-    sharedWeights2[c + i * C] = w2raw[c + i * C];
-  }
   __syncthreads();
 
   // 2. first fully connected layer
@@ -116,7 +87,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
     #pragma unroll
     for (int i = 0; i < C; i++) {
-      S += sharedData[i] * shw1(i, c);
+      S += sharedData[i] * readw1(i, c);
     }
 
     S += b1[c];
@@ -131,11 +102,15 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
   // 3. second fully connected layer
   S = 0;
+  half B = 0;
   #pragma unroll
   for (int i = 0; i < K; i++) {
-    S += sharedData[i] * shw2(i, c);
+    half val = sharedData[i];
+    S += val * readw2(i, c);
+    B += val * readw2(i, c + C);
   }
   S += b2[c];
+  B += b2[c + C];
 
   // sigmoid
   S = (half)(1.0f / (1.0f + exp(-(float)(S))));
@@ -145,7 +120,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   for (int i = 0; i < elementsPerThread; i++) {
     int localIndex = i * C + c;
     int inputIndex = n * C * elementsPerThread + localIndex;
-    half val = localskip[i] + localInput[i] * S;
+    half val = localskip[i] + localInput[i] * S + B;
 
     // relu
     if (val < (half)0) val = 0;
@@ -167,6 +142,19 @@ void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
       SE_Layer_NHWC<192, 32><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
     } else if (C == 256) {
       SE_Layer_NHWC<256, 32><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+    } else {
+      // TODO: support other channel counts
+      throw Exception("channel count unsupported by SE layer");
+    }
+  } else if (numFc1Out == 64) {
+    if (C == 64) {
+      SE_Layer_NHWC<64, 64><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+    } else if (C == 128) {
+      SE_Layer_NHWC<128, 64><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+    } else if (C == 192) {
+      SE_Layer_NHWC<192, 64><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+    } else if (C == 256) {
+      SE_Layer_NHWC<256, 64><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
     } else {
       // TODO: support other channel counts
       throw Exception("channel count unsupported by SE layer");

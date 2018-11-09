@@ -40,8 +40,7 @@
 //#define DEBUG_RAW_NPS
 
 // single kernel for entire SE operation (right now supported only for fp16)
-// NOT ready yet, doesn't support SE-FiLM
-//#define FUSED_SE_LAYER
+#define FUSED_SE_LAYER
 
 namespace lczero {
 using namespace cudnn_backend;
@@ -265,37 +264,40 @@ class CudnnNetwork : public Network {
 
       if (weights.residual[block].has_se) {
 #ifdef FUSED_SE_LAYER
-        int numFCOut = weights.residual[block].se.b1.size();
-        auto se = std::make_unique<SELayer<DataType>>(getLastLayer(), numFCOut,
-                                                      false);
-        se->LoadWeights(&weights.residual[block].se.w1[0],
-                        &weights.residual[block].se.b1[0],
-                        &weights.residual[block].se.w2[0],
-                        &weights.residual[block].se.b2[0], nullptr,
-                        scratch_mem_);
-        network_.emplace_back(std::move(se));
-#else
-        auto globalPool =
-            std::make_unique<GlobalAvgPoolLayer<DataType>>(getLastLayer());
-        network_.emplace_back(std::move(globalPool));
-
-        int numFCOut = weights.residual[block].se.b1.size();
-        auto fc1 = std::make_unique<FCLayer<DataType>>(
-            getLastLayer(), numFCOut, 1, 1, true, true, false, false);
-        fc1->LoadWeights(&weights.residual[block].se.w1[0],
-                         &weights.residual[block].se.b1[0], scratch_mem_);
-        network_.emplace_back(std::move(fc1));
-
-        auto fc2 = std::make_unique<FCLayer<DataType>>(
-            getLastLayer(), kNumFilters * 2, 1, 1, false, true, false, false);
-        fc2->LoadWeights(&weights.residual[block].se.w2[0],
-                         &weights.residual[block].se.b2[0], scratch_mem_);
-        network_.emplace_back(std::move(fc2));
-
-        auto globalScale =
-            std::make_unique<GlobalScaleLayer<DataType>>(conv2Layer);
-        network_.emplace_back(std::move(globalScale));
+        if (fp16) {
+          int numFCOut = weights.residual[block].se.b1.size();
+          auto se = std::make_unique<SELayer<DataType>>(getLastLayer(),
+                                                        numFCOut, false);
+          se->LoadWeights(&weights.residual[block].se.w1[0],
+                          &weights.residual[block].se.b1[0],
+                          &weights.residual[block].se.w2[0],
+                          &weights.residual[block].se.b2[0], nullptr,
+                          scratch_mem_);
+          network_.emplace_back(std::move(se));
+        } else
 #endif
+        {
+          auto globalPool =
+              std::make_unique<GlobalAvgPoolLayer<DataType>>(getLastLayer());
+          network_.emplace_back(std::move(globalPool));
+
+          int numFCOut = weights.residual[block].se.b1.size();
+          auto fc1 = std::make_unique<FCLayer<DataType>>(
+              getLastLayer(), numFCOut, 1, 1, true, true, false, false);
+          fc1->LoadWeights(&weights.residual[block].se.w1[0],
+                           &weights.residual[block].se.b1[0], scratch_mem_);
+          network_.emplace_back(std::move(fc1));
+
+          auto fc2 = std::make_unique<FCLayer<DataType>>(
+              getLastLayer(), kNumFilters * 2, 1, 1, false, true, false, false);
+          fc2->LoadWeights(&weights.residual[block].se.w2[0],
+                           &weights.residual[block].se.b2[0], scratch_mem_);
+          network_.emplace_back(std::move(fc2));
+
+          auto globalScale =
+              std::make_unique<GlobalScaleLayer<DataType>>(conv2Layer);
+          network_.emplace_back(std::move(globalScale));
+        }
       }
     }
 
@@ -398,7 +400,7 @@ class CudnnNetwork : public Network {
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // conv1
 
-      // for SE Resnet, skip connection is added after SE
+      // For SE Resnet, skip connection is added after SE.
       if (has_se_) {
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
@@ -410,31 +412,36 @@ class CudnnNetwork : public Network {
       }
 
       if (has_se_) {
-      // need to preserve both tensor_mem_[1] (op of residual block) and
-      // tensor_mem_[2] (skip connection)
+      // Need to preserve both tensor_mem_[1] (op of residual block) and
+      // tensor_mem_[2] (skip connection).
 #ifdef FUSED_SE_LAYER
-        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
-                            tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // SE layer
-#else
-        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // global avg pooling
-
-        network_[l++]->Eval(batchSize, (DataType*)scratch_mem_, tensor_mem_[0],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // se.fc1
-
-        network_[l++]->Eval(batchSize, tensor_mem_[0], (DataType*)scratch_mem_,
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // se.fc2
-
-        network_[l++]->Eval(
-            batchSize, tensor_mem_[2], tensor_mem_[1], tensor_mem_[0],
-            scratch_mem_, scratch_size_, cudnn_,
-            cublas_);  // global scale + skip connection add + relu
-
+        if (std::is_same<half, DataType>::value) {
+          network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
+                              tensor_mem_[2], scratch_mem_, scratch_size_,
+                              cudnn_,
+                              cublas_);  // SE layer
+        } else
 #endif
+        {
+          network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1],
+                              nullptr, scratch_mem_, scratch_size_, cudnn_,
+                              cublas_);  // global avg pooling
+
+          network_[l++]->Eval(batchSize, (DataType*)scratch_mem_,
+                              tensor_mem_[0], nullptr, scratch_mem_,
+                              scratch_size_, cudnn_,
+                              cublas_);  // se.fc1
+
+          network_[l++]->Eval(batchSize, tensor_mem_[0],
+                              (DataType*)scratch_mem_, nullptr, scratch_mem_,
+                              scratch_size_, cudnn_,
+                              cublas_);  // se.fc2
+
+          network_[l++]->Eval(
+              batchSize, tensor_mem_[2], tensor_mem_[1], tensor_mem_[0],
+              scratch_mem_, scratch_size_, cudnn_,
+              cublas_);  // global scale + skip connection add + relu
+        }
       }
     }
 

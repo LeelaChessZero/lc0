@@ -268,10 +268,10 @@ SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
       numFc1Out_(fc1Outputs),
       addPrevLayerBias_(addPrevLayerBias) {
   ReportCUDAErrors(cudaMalloc(&w1_, C * numFc1Out_ * sizeof(DataType)));
-  ReportCUDAErrors(cudaMalloc(&w2_, C * numFc1Out_ * sizeof(DataType)));
+  ReportCUDAErrors(cudaMalloc(&w2_, 2*C * numFc1Out_ * sizeof(DataType)));
 
   ReportCUDAErrors(cudaMalloc(&b1_, numFc1Out_ * sizeof(DataType)));
-  ReportCUDAErrors(cudaMalloc(&b2_, C * sizeof(DataType)));
+  ReportCUDAErrors(cudaMalloc(&b2_, 2*C * sizeof(DataType)));
 
   ReportCUDAErrors(cudaMalloc(&bPrev_, C * sizeof(DataType)));
 }
@@ -288,24 +288,39 @@ SELayer<DataType>::~SELayer() {
 template <>
 void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
                                  float* prevLayerBias, void* scratch) {
-  // TODO!
+  assert(0); // TODO!
+}
+
+void cpuTranspose(float* op, float* ip, int rows, int cols) {
+  for (int i = 0; i < rows; i++)
+    for (int j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
 }
 
 template <>
 void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
                                 float* prevLayerBias, void* scratch) {
-  size_t num_weights = C * numFc1Out_;
-  size_t weight_size = sizeof(float) * num_weights;
+  size_t num_weights1 = C * numFc1Out_;
+  size_t weight_size1 = sizeof(float) * num_weights1;
 
+  size_t num_weights2 = 2 * num_weights1;
+  size_t weight_size2 = 2 * weight_size1;
+
+  // transpose the weight matrices
+  float* temp = new float[weight_size2];
+  
   // w1
+  cpuTranspose(temp, w1, numFc1Out_, C);
   ReportCUDAErrors(
-      cudaMemcpyAsync(scratch, w1, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)w1_, (float*)scratch, num_weights);
+      cudaMemcpyAsync(scratch, temp, weight_size1, cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)w1_, (float*)scratch, num_weights1);
 
   // w2
+  cpuTranspose(temp, w2, 2 * C, numFc1Out_);
   ReportCUDAErrors(
-      cudaMemcpyAsync(scratch, w2, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)w2_, (float*)scratch, num_weights);
+      cudaMemcpyAsync(scratch, temp, weight_size2, cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)w2_, (float*)scratch, num_weights2);
+
+  delete []temp;
 
   // b1
   ReportCUDAErrors(cudaMemcpyAsync(scratch, b1, numFc1Out_ * sizeof(float),
@@ -314,8 +329,8 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
 
   // b2
   ReportCUDAErrors(
-      cudaMemcpyAsync(scratch, b2, C * sizeof(float), cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)b2_, (float*)scratch, C);
+      cudaMemcpyAsync(scratch, b2, 2 * C * sizeof(float), cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)b2_, (float*)scratch, 2*C);
 
   if (prevLayerBias) {
     ReportCUDAErrors(cudaMemcpyAsync(scratch, prevLayerBias, C * sizeof(float),
