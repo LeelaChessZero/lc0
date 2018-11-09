@@ -36,9 +36,8 @@ namespace cudnn_backend {
 /////////////////////////////////////////////////////////////////////////////
 
 
-// This kernel is for OLD plain SE, doesn't work with SE-SiLK
-// TODO: modify the kernel to support SE-SiLK 
-// (need a different strategy as we can't fit the entire weight matrix in shared memory)
+
+// SE layer implementation using single fused kernel
 
 // N blocks
 // C threads per block
