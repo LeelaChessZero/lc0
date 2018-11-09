@@ -60,8 +60,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
   __shared__ half sharedData[C];
 
-  half localInput[elementsPerThread];
-  half localskip[elementsPerThread];
+  half2 localData[elementsPerThread];
 
   half S = 0;
 
@@ -70,9 +69,9 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   for (int i = 0; i < elementsPerThread; i++) {
     int localIndex = i * C + c;
     int inputIndex = n * C * elementsPerThread + localIndex;
-    localInput[i] = input[inputIndex];
-    localskip[i] = skip[inputIndex];
-    S += localInput[i];
+    localData[i].x = input[inputIndex];
+    localData[i].y = skip[inputIndex];
+    S += localData[i].x;
   }
 
   half avg = S / (half)elementsPerThread;
@@ -119,7 +118,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   for (int i = 0; i < elementsPerThread; i++) {
     int localIndex = i * C + c;
     int inputIndex = n * C * elementsPerThread + localIndex;
-    half val = localskip[i] + localInput[i] * S + B;
+    half val = localData[i].y + localData[i].x * S + B;
 
     // relu
     if (val < (half)0) val = 0;
