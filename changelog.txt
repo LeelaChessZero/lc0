@@ -1,3 +1,9 @@
+v0.19.0-rc4 (2018-11-12)
+~~~~~~~~~~~
+
+* Microseconds have 6 digits, not 3! (#505)
+* use bestmove_is_sent_ for Search::IsSearchActive() (#502)
+
 v0.19.0-rc3 (2018-11-07)
 ~~~~~~~~~~~
 
