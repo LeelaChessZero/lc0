@@ -16,12 +16,12 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "neural/network.h"
 #include "neural/blas/batchnorm.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
-#include "neural/network.h"
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
 
@@ -57,11 +57,10 @@ struct OpenCLWeights {
 
 class OpenCLComputation : public NetworkComputation {
  public:
-  OpenCLComputation(OpenCL_Network& opencl_net,
-                    const OpenCLWeights& weights)
+  OpenCLComputation(OpenCL_Network& opencl_net, const OpenCLWeights& weights)
       : opencl_net_(opencl_net), weights_(weights), policies_(), q_values_() {
-        buffers_= opencl_net.acquire_buffers();
-      }
+    buffers_ = opencl_net.acquire_buffers();
+  }
 
   virtual ~OpenCLComputation() {
     opencl_net_.release_buffers(std::move(buffers_));
@@ -143,7 +142,7 @@ class OpenCLComputation : public NetworkComputation {
 
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
-  
+
   std::unique_ptr<OpenCLBuffers> buffers_;
 };
 

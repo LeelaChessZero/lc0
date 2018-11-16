@@ -246,7 +246,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
       p.getDevices(CL_DEVICE_TYPE_ALL, &devices);
     } catch (const cl::Error& e) {
       CERR << "Error getting device(s): " << e.what() << ": " << e.err()
-                << std::endl;
+           << std::endl;
       devices.clear();
     }
     for (auto& d : devices) {
@@ -257,10 +257,10 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
            << opencl_dev_type_to_string(d.getInfo<CL_DEVICE_TYPE>());
       CERR << "Device vendor:  " << d.getInfo<CL_DEVICE_VENDOR>();
       CERR << "Device driver:  " << d.getInfo<CL_DRIVER_VERSION>();
-      CERR << "Device speed:   "
-                << d.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>() << " MHZ";
-      CERR << "Device cores:   "
-                << d.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << " CU";
+      CERR << "Device speed:   " << d.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>()
+           << " MHZ";
+      CERR << "Device cores:   " << d.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>()
+           << " CU";
 
       // assign score, try to find best device
       int this_score = 0;
@@ -300,9 +300,9 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
 
   CERR << "Selected platform: " << best_platform.getInfo<CL_PLATFORM_NAME>();
   CERR << "Selected device: "
-            << trim_left(best_device.getInfo<CL_DEVICE_NAME>().c_str());
-  CERR << "with OpenCL " << std::fixed << std::setprecision(1)
-            << best_version << " capability.";
+       << trim_left(best_device.getInfo<CL_DEVICE_NAME>().c_str());
+  CERR << "with OpenCL " << std::fixed << std::setprecision(1) << best_version
+       << " capability.";
   cl::Context context;
   try {
     context = cl::Context(best_device);
@@ -337,15 +337,16 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
     m_program.build(args.c_str());
   } catch (const cl::Error&) {
     CERR << "Error building kernels: "
-              << m_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device) << ".";
+         << m_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device) << ".";
     throw std::runtime_error("Error building OpenCL kernels.");
   }
 
   process_tuners(sgemm_tuners);
 
   auto sgemm_kernel = cl::Kernel(m_program, "Xgemv");
-             
-  m_wavefront_size = sgemm_kernel
+
+  m_wavefront_size =
+      sgemm_kernel
           .getWorkGroupInfo<CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE>(
               best_device);
   CERR << "Wavefront/Warp size: " << m_wavefront_size << std::endl;
@@ -362,8 +363,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
 
 std::unique_ptr<OpenCLBuffers> OpenCL_Network::acquire_buffers() {
   std::lock_guard<std::mutex> lock(m_pool_mutex);
-  if (m_buffers_pool.empty())
-    return std::make_unique<OpenCLBuffers>(*this);
+  if (m_buffers_pool.empty()) return std::make_unique<OpenCLBuffers>(*this);
   auto result = std::move(m_buffers_pool.back());
   m_buffers_pool.pop_back();
   return result;
@@ -371,10 +371,8 @@ std::unique_ptr<OpenCLBuffers> OpenCL_Network::acquire_buffers() {
 
 void OpenCL_Network::release_buffers(std::unique_ptr<OpenCLBuffers> buffers) {
   std::lock_guard<std::mutex> lock(m_pool_mutex);
-m_buffers_pool.push_back(std::move(buffers));
+  m_buffers_pool.push_back(std::move(buffers));
 }
-
-
 
 std::string OpenCL::get_device_name() {
   std::stringstream ss;
@@ -386,5 +384,3 @@ std::string OpenCL::get_device_name() {
 
   return ss.str();
 }
-
-

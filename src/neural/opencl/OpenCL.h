@@ -34,8 +34,8 @@ using net_t = float;
 #include <vector>
 #include "cl2.hpp"
 
-#include "neural/opencl/OpenCLParams.h"
 #include "neural/opencl/OpenCLBuffers.h"
+#include "neural/opencl/OpenCLParams.h"
 
 inline size_t ceilMultiple(size_t a, size_t b) {
   if (a % b == 0) return a;
@@ -65,9 +65,7 @@ class Layer {
   std::vector<cl::Buffer> weights;
 };
 
-
 class OpenCL_Network {
-  
   friend class OpenCLBuffers;
 
  public:
@@ -76,7 +74,6 @@ class OpenCL_Network {
   std::unique_ptr<OpenCLBuffers> acquire_buffers();
   void release_buffers(std::unique_ptr<OpenCLBuffers>);
 
-  
   OpenCL& getOpenCL() { return m_opencl; }
 
   size_t getMaxMatchSize() const { return m_max_batch_size; }
@@ -161,7 +158,6 @@ class OpenCL_Network {
   size_t get_layer_count() const { return m_layers.size(); }
 
  private:
-
   void push_weights(size_t layer, const std::vector<float>& weights) {
     add_weights(layer, weights.size(), weights.data());
   }
@@ -171,10 +167,9 @@ class OpenCL_Network {
   size_t m_max_batch_size;
 
   std::vector<Layer> m_layers;
-  
+
   std::mutex m_pool_mutex;
   std::vector<std::unique_ptr<OpenCLBuffers>> m_buffers_pool;
-
 };
 
 class OpenCL {
