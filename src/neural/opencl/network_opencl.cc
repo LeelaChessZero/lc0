@@ -57,11 +57,15 @@ struct OpenCLWeights {
 
 class OpenCLComputation : public NetworkComputation {
  public:
-  OpenCLComputation(const OpenCL_Network& opencl_net,
+  OpenCLComputation(OpenCL_Network& opencl_net,
                     const OpenCLWeights& weights)
-      : opencl_net_(opencl_net), weights_(weights), policies_(), q_values_() {}
+      : opencl_net_(opencl_net), weights_(weights), policies_(), q_values_() {
+        buffers_= opencl_net.acquire_buffers();
+      }
 
-  virtual ~OpenCLComputation() {}
+  virtual ~OpenCLComputation() {
+    opencl_net_.release_buffers(std::move(buffers_));
+  }
 
   // Adds a sample to the batch.
   void AddInput(InputPlanes&& input) override { planes_.emplace_back(input); }
@@ -91,7 +95,7 @@ class OpenCLComputation : public NetworkComputation {
         EncodePlanes(planes_[i + j], &input_data[j * kSquares * kInputPlanes]);
       }
 
-      opencl_net_.forward(input_data, output_pol, output_val, batch_size);
+      buffers_->forward(input_data, output_pol, output_val, batch_size);
 
       for (size_t j = 0; j < batch_size; j++) {
         std::vector<float> policy(weights_.num_output_policies);
@@ -132,13 +136,15 @@ class OpenCLComputation : public NetworkComputation {
 
   void EncodePlanes(const InputPlanes& sample, float* buffer);
 
-  const OpenCL_Network& opencl_net_;
+  OpenCL_Network& opencl_net_;
   const OpenCLWeights& weights_;
 
   std::vector<InputPlanes> planes_;
 
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
+  
+  std::unique_ptr<OpenCLBuffers> buffers_;
 };
 
 void OpenCLComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
