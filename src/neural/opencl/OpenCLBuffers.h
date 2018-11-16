@@ -66,8 +66,8 @@ class OpenCLBuffers {
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
                     const int outputs, const int relu, int batch_size);
 
-  OpenCL& m_opencl;
   OpenCL_Network& m_opencl_net;
+  OpenCL& m_opencl;
 
   cl::CommandQueue m_commandqueue;
   cl::Kernel m_convolve1_kernel;

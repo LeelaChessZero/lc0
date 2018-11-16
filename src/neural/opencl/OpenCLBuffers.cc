@@ -88,10 +88,7 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
                             std::vector<net_t>& output_pol,
                             std::vector<net_t>& output_val,
                             const int batch_size) {
-  constexpr auto tiles = WINOGRAD_P;
-  constexpr auto width = 8;
-  constexpr auto height = 8;
-
+ 
   auto& m_layers = m_opencl_net.m_layers;
 
   auto finalSize_pol =
