@@ -18,23 +18,21 @@
 
 #include "neural/opencl/OpenCLBuffers.h"
 
-
-
 OpenCLBuffers::OpenCLBuffers(OpenCL_Network& opencl_net):
 m_opencl_net(opencl_net), m_opencl(opencl_net.getOpenCL()) {
   
-  auto& m_program = m_opencl.m_program;
-  auto& m_context =m_opencl.m_context;
-  auto& m_device =m_opencl.m_device;
+  auto& program = m_opencl.m_program;
+  auto& context =m_opencl.m_context;
+  auto& device =m_opencl.m_device;
   
-  m_convolve1_kernel = cl::Kernel(m_program, "convolve1");
-  m_merge_kernel = cl::Kernel(m_program, "merge_bn");
-  m_in_transform_kernel = cl::Kernel(m_program, "in_transform");
-  m_sgemm_kernel = cl::Kernel(m_program, "XgemmBatched");
-  m_out_transform_bn_kernel = cl::Kernel(m_program, "out_transform_fused_bn");
-  m_out_transform_bn_in_kernel = cl::Kernel(m_program, "out_transform_fused_bn_in");
-  m_sgemv_kernel = cl::Kernel(m_program, "Xgemv");
-  m_commandqueue = cl::CommandQueue(m_context, m_device);
+  m_convolve1_kernel = cl::Kernel(program, "convolve1");
+  m_merge_kernel = cl::Kernel(program, "merge_bn");
+  m_in_transform_kernel = cl::Kernel(program, "in_transform");
+  m_sgemm_kernel = cl::Kernel(program, "XgemmBatched");
+  m_out_transform_bn_kernel = cl::Kernel(program, "out_transform_fused_bn");
+  m_out_transform_bn_in_kernel = cl::Kernel(program, "out_transform_fused_bn_in");
+  m_sgemv_kernel = cl::Kernel(program, "Xgemv");
+  m_commandqueue = cl::CommandQueue(context, device);
   
   auto& m_layers=m_opencl_net.m_layers;
   
@@ -89,13 +87,6 @@ m_opencl_net(opencl_net), m_opencl(opencl_net.getOpenCL()) {
   
   
 }
-
-OpenCLBuffers::~OpenCLBuffers() {
-  
-  
-}
-
-
 
 
 void OpenCLBuffers::forward(const std::vector<net_t>& input,

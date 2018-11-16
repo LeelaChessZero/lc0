@@ -40,13 +40,13 @@
 class OpenCL_Network;
 
 class OpenCLBuffers {
+  
   friend class OpenCL;
   friend class OpenCL_Network;
   
 public:
   
   OpenCLBuffers(OpenCL_Network& opencl_net);
-  ~OpenCLBuffers();
   
   void forward(const std::vector<net_t>& input, std::vector<net_t>& output_pol,
                std::vector<net_t>& output_val, const int batch_size);
