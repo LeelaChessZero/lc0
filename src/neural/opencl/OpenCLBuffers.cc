@@ -89,23 +89,23 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
                             std::vector<net_t>& output_val,
                             const int batch_size) {
  
-  auto& m_layers = m_opencl_net.m_layers;
+  auto& layers = m_opencl_net.m_layers;
 
   auto finalSize_pol =
-      m_layers[m_layers.size() - 2].ip_out_size * sizeof(net_t);
-  auto finalSize_val = m_layers.back().ip_out_size * sizeof(net_t);
+      layers[layers.size() - 2].ip_out_size * sizeof(net_t);
+  auto finalSize_val = layers.back().ip_out_size * sizeof(net_t);
 
   const auto inSize = sizeof(net_t) * input.size();
   m_commandqueue.enqueueWriteBuffer(m_inBuffer, CL_FALSE, 0, inSize,
                                     input.data());
 
   auto skip_in_trans = false;
-  for (auto iter = cbegin(m_layers); iter != cend(m_layers); iter++) {
+  for (auto iter = cbegin(layers); iter != cend(layers); iter++) {
     const auto& layer = *iter;
     const auto niter = std::next(iter);
 
     if (layer.is_input_convolution) {
-      assert(niter != cend(m_layers));
+      assert(niter != cend(layers));
       auto conv_weights = begin(layer.weights);
       auto bn_weights = begin(layer.weights) + 1;
       auto skip_next_in_trans = false;
@@ -118,7 +118,7 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
       skip_in_trans = skip_next_in_trans;
     } else if (layer.is_residual_block) {
       assert(layer.channels == layer.outputs);
-      assert(niter != cend(m_layers));
+      assert(niter != cend(layers));
       auto conv1_weights = begin(layer.weights);
       auto bn1_weights = begin(layer.weights) + 1;
       auto conv2_weights = begin(layer.weights) + 3;
