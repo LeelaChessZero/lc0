@@ -421,7 +421,8 @@ void OpenCL_Network::convolve1(int channels, int outputs,
   constexpr int channelGroup = 8;
   constexpr int channelShift = 3;
   constexpr int rowGroup = 1;
-  size_t outputGroup = std::min(outputs, 32);
+  // Assumes that if outputs > 16, then outputs is divisible by 16.
+  size_t outputGroup = std::min(outputs, 16);
 
   auto m_convolve_kernel = &opencl_thread_data.m_convolve1_kernel;
 
