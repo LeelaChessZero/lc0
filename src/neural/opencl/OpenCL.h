@@ -71,8 +71,8 @@ class OpenCL_Network {
  public:
   OpenCL_Network(OpenCL& opencl) : m_opencl(opencl), m_max_batch_size(1) {}
 
-  std::unique_ptr<OpenCLBuffers> acquire_buffers();
-  void release_buffers(std::unique_ptr<OpenCLBuffers>);
+  std::unique_ptr<OpenCLBuffers> acquire_buffers() const;
+  void release_buffers(std::unique_ptr<OpenCLBuffers>) const;
 
   OpenCL& getOpenCL() const { return m_opencl; }
 
@@ -168,8 +168,8 @@ class OpenCL_Network {
 
   std::vector<Layer> m_layers;
 
-  std::mutex m_pool_mutex;
-  std::vector<std::unique_ptr<OpenCLBuffers>> m_buffers_pool;
+  mutable std::mutex m_pool_mutex;
+  mutable std::vector<std::unique_ptr<OpenCLBuffers>> m_buffers_pool;
 };
 
 class OpenCL {

@@ -361,7 +361,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   m_init_ok = true;
 }
 
-std::unique_ptr<OpenCLBuffers> OpenCL_Network::acquire_buffers() {
+std::unique_ptr<OpenCLBuffers> OpenCL_Network::acquire_buffers() const {
   std::lock_guard<std::mutex> lock(m_pool_mutex);
   if (m_buffers_pool.empty()) return std::make_unique<OpenCLBuffers>(*this);
   auto result = std::move(m_buffers_pool.back());
@@ -369,7 +369,7 @@ std::unique_ptr<OpenCLBuffers> OpenCL_Network::acquire_buffers() {
   return result;
 }
 
-void OpenCL_Network::release_buffers(std::unique_ptr<OpenCLBuffers> buffers) {
+void OpenCL_Network::release_buffers(std::unique_ptr<OpenCLBuffers> buffers) const {
   std::lock_guard<std::mutex> lock(m_pool_mutex);
   m_buffers_pool.push_back(std::move(buffers));
 }

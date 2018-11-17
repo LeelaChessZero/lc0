@@ -57,7 +57,7 @@ struct OpenCLWeights {
 
 class OpenCLComputation : public NetworkComputation {
  public:
-  OpenCLComputation(OpenCL_Network& opencl_net, const OpenCLWeights& weights)
+  OpenCLComputation(const OpenCL_Network& opencl_net, const OpenCLWeights& weights)
       : opencl_net_(opencl_net), weights_(weights), policies_(), q_values_() {
     buffers_ = opencl_net.acquire_buffers();
   }
@@ -135,7 +135,7 @@ class OpenCLComputation : public NetworkComputation {
 
   void EncodePlanes(const InputPlanes& sample, float* buffer);
 
-  OpenCL_Network& opencl_net_;
+  const OpenCL_Network& opencl_net_;
   const OpenCLWeights& weights_;
 
   std::vector<InputPlanes> planes_;
