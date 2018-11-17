@@ -343,7 +343,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
 
   process_tuners(sgemm_tuners);
 
-  auto sgemm_kernel = cl::Kernel(m_program, "Xgemv");
+  auto sgemm_kernel = cl::Kernel(m_program, "XgemmBatched");
 
   m_wavefront_size =
       sgemm_kernel
