@@ -34,18 +34,18 @@ OpenCLBuffers::OpenCLBuffers(OpenCL_Network& opencl_net)
   m_sgemv_kernel = cl::Kernel(program, "Xgemv");
   m_commandqueue = cl::CommandQueue(context, device);
 
-  auto& m_layers = m_opencl_net.m_layers;
+  auto& layers = m_opencl_net.m_layers;
 
   constexpr auto tiles = WINOGRAD_P;
   constexpr auto width = 8;
   constexpr auto height = 8;
 
   auto finalSize_pol =
-      m_layers[m_layers.size() - 2].ip_out_size * sizeof(net_t);
-  auto finalSize_val = m_layers.back().ip_out_size * sizeof(net_t);
+      layers[layers.size() - 2].ip_out_size * sizeof(net_t);
+  auto finalSize_val = layers.back().ip_out_size * sizeof(net_t);
 
   auto max_channels = unsigned{0};
-  for (const auto& layer : m_layers) {
+  for (const auto& layer : layers) {
     max_channels =
         std::max(max_channels, std::max(layer.channels, layer.outputs));
   }
@@ -163,12 +163,7 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
       m_pinnedOutBuffer_val, CL_FALSE, CL_MAP_READ, 0,
       batch_size * finalSize_val);
 
-  {
-    // Finish call is usually a busy wait. When using multiple threads,
-    // use the lock to avoid busy waiting with all threads.
-    std::lock_guard<std::mutex> lock(m_queue_finish_mutex);
-    m_commandqueue.finish();
-  }
+  m_commandqueue.finish();
 
   std::memcpy(output_pol.data(), pinnedOutBufferHost_pol,
               batch_size * finalSize_pol);

@@ -83,10 +83,4 @@ class OpenCLBuffers {
   cl::Buffer m_MBuffer;
   cl::Buffer m_pinnedOutBuffer_pol;
   cl::Buffer m_pinnedOutBuffer_val;
-
-  // this mutex is not required for correctness, but this exists simply
-  // because queue.finish() is a busy wait and having a lot of threads
-  // waiting here is counterproductive CPU-wise.  At least std::mutex
-  // isn't busy wait so it should be better.
-  std::mutex m_queue_finish_mutex;
 };
