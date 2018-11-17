@@ -43,7 +43,7 @@ class OpenCLBuffers {
   friend class OpenCL_Network;
 
  public:
-  OpenCLBuffers(OpenCL_Network& opencl_net);
+  OpenCLBuffers(const OpenCL_Network& opencl_net);
 
   void forward(const std::vector<net_t>& input, std::vector<net_t>& output_pol,
                std::vector<net_t>& output_val, const int batch_size);
@@ -66,8 +66,8 @@ class OpenCLBuffers {
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
                     const int outputs, const int relu, int batch_size);
 
-  OpenCL_Network& m_opencl_net;
-  OpenCL& m_opencl;
+  const OpenCL_Network& m_opencl_net;
+  const OpenCL& m_opencl;
 
   cl::CommandQueue m_commandqueue;
   cl::Kernel m_convolve1_kernel;

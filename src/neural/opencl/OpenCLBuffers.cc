@@ -18,7 +18,7 @@
 
 #include "neural/opencl/OpenCLBuffers.h"
 
-OpenCLBuffers::OpenCLBuffers(OpenCL_Network& opencl_net)
+OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
     : m_opencl_net(opencl_net), m_opencl(opencl_net.getOpenCL()) {
   auto& program = m_opencl.m_program;
   auto& context = m_opencl.m_context;

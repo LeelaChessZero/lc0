@@ -74,7 +74,7 @@ class OpenCL_Network {
   std::unique_ptr<OpenCLBuffers> acquire_buffers();
   void release_buffers(std::unique_ptr<OpenCLBuffers>);
 
-  OpenCL& getOpenCL() { return m_opencl; }
+  OpenCL& getOpenCL() const { return m_opencl; }
 
   size_t getMaxMatchSize() const { return m_max_batch_size; }
 
