@@ -316,7 +316,8 @@ void OpenCLBuffers::convolve1(int channels, int outputs,
   constexpr int channelGroup = 8;
   constexpr int channelShift = 3;
   constexpr int rowGroup = 1;
-  size_t outputGroup = std::min(outputs, 32);
+  // Assumes that if outputs > 16, then outputs is divisible by 16.
+  size_t outputGroup = std::min(outputs, 16);
 
 #ifndef NDEBUG
   // Total output size after reducing.
