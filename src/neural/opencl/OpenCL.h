@@ -34,7 +34,8 @@ using net_t = float;
 #include <vector>
 #include "cl2.hpp"
 
-#include "OpenCLParams.h"
+#include "neural/opencl/OpenCLBuffers.h"
+#include "neural/opencl/OpenCLParams.h"
 
 inline size_t ceilMultiple(size_t a, size_t b) {
   if (a % b == 0) return a;
@@ -45,9 +46,11 @@ static constexpr auto WINOGRAD_P = 8 * 8 / 4;
 static constexpr auto WINOGRAD_TILE = 4 * 4;
 
 class OpenCL;
+class OpenCLBuffers;
 
 class Layer {
   friend class OpenCL_Network;
+  friend class OpenCLBuffers;
 
  private:
   unsigned int channels{0};
@@ -62,34 +65,16 @@ class Layer {
   std::vector<cl::Buffer> weights;
 };
 
-class ThreadData {
-  friend class OpenCL;
-  friend class OpenCL_Network;
-
- private:
-  bool m_is_initialized{false};
-  cl::CommandQueue m_commandqueue;
-  cl::Kernel m_convolve1_kernel;
-  cl::Kernel m_merge_kernel;
-  cl::Kernel m_in_transform_kernel;
-  cl::Kernel m_sgemm_kernel;
-  cl::Kernel m_sgemv_kernel;
-  cl::Kernel m_out_transform_bn_kernel;
-  cl::Kernel m_out_transform_bn_in_kernel;
-  cl::Buffer m_inBuffer;
-  cl::Buffer m_inBuffer2;
-  cl::Buffer m_VBuffer;
-  cl::Buffer m_MBuffer;
-  cl::Buffer m_pinnedOutBuffer_pol;
-  cl::Buffer m_pinnedOutBuffer_val;
-  bool m_buffers_allocated{false};
-};
-
 class OpenCL_Network {
+  friend class OpenCLBuffers;
+
  public:
   OpenCL_Network(OpenCL& opencl) : m_opencl(opencl), m_max_batch_size(1) {}
 
-  OpenCL& getOpenCL() { return m_opencl; }
+  std::unique_ptr<OpenCLBuffers> acquire_buffers() const;
+  void release_buffers(std::unique_ptr<OpenCLBuffers>) const;
+
+  OpenCL& getOpenCL() const { return m_opencl; }
 
   size_t getMaxMatchSize() const { return m_max_batch_size; }
 
@@ -172,50 +157,28 @@ class OpenCL_Network {
 
   size_t get_layer_count() const { return m_layers.size(); }
 
-  void forward(const std::vector<net_t>& input, std::vector<net_t>& output_pol,
-               std::vector<net_t>& output_val, const int batch_size) const;
-
  private:
-  using weight_slice_t = std::vector<cl::Buffer>::const_iterator;
-
   void push_weights(size_t layer, const std::vector<float>& weights) {
     add_weights(layer, weights.size(), weights.data());
   }
   void add_weights(size_t layer, size_t size, const float* weights);
 
-  void convolve3(int channels, int outputs, cl::Buffer& bufferIn,
-                 cl::Buffer& bufferOut, cl::Buffer& bufferV,
-                 cl::Buffer& bufferM, weight_slice_t weights,
-                 cl::Buffer* bufferResidual, weight_slice_t bn_weights,
-                 bool skip_in_transform, bool fuse_in_transform,
-                 bool store_inout, int batch_size) const;
-
-  void convolve1(int channels, int outputs, cl::Buffer& bufferInput,
-                 cl::Buffer& bufferOutput, cl::Buffer& bufferMerge,
-                 weight_slice_t weights, int batch_size) const;
-
-  void innerproduct(cl::Buffer& input, weight_slice_t weights,
-                    weight_slice_t biases, cl::Buffer& output, const int inputs,
-                    const int outputs, const int relu, int batch_size) const;
-
   OpenCL& m_opencl;
   size_t m_max_batch_size;
 
-  // this mutex is not required for correctness, but this exists simply
-  // because queue.finish() is a busy wait and having a lot of threads
-  // waiting here is counterproductive CPU-wise.  At least std::mutex
-  // isn't busy wait so it should be better.
-  mutable std::mutex m_queue_finish_mutex;
   std::vector<Layer> m_layers;
+
+  mutable std::mutex m_pool_mutex;
+  mutable std::vector<std::unique_ptr<OpenCLBuffers>> m_buffers_pool;
 };
 
 class OpenCL {
   friend class OpenCL_Network;
+  friend class OpenCLBuffers;
   friend class Tuner;
 
  public:
   void initialize(const int channels, const OpenCLParams& params);
-  void ensure_thread_initialized(void);
   std::string get_device_name();
 
   std::vector<size_t> get_sgemm_tuners(void);
