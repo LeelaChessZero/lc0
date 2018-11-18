@@ -76,6 +76,10 @@ files += [
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/neural/shared/activation.cc',
+  'src/neural/shared/batchnorm.cc',
+  'src/neural/shared/winograd_filter.cc',
+  'src/neural/cache.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
@@ -165,7 +169,7 @@ if get_option('build_backends')
     openblas_lib = cc.find_library('openblas', dirs: openblas_libdirs, required: false)
   endif
 
-  if get_option('blas') or get_option('opencl')
+  if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
@@ -199,14 +203,6 @@ if get_option('build_backends')
 
       deps += [ openblas_lib ]
       has_blas = true
-    endif
-
-    if has_blas
-      blas_files = [
-      'src/neural/blas/batchnorm.cc',
-      'src/neural/blas/fully_connected_layer.cc',
-      'src/neural/blas/winograd_convolution3.cc'
-      ]
     endif
 
     ispc = find_program('ispc', required: false)
@@ -247,7 +243,9 @@ if get_option('build_backends')
 
   if get_option('blas') and has_blas
 
-    blas_files += [
+    blas_files = [
+    'src/neural/blas/fully_connected_layer.cc',
+    'src/neural/blas/winograd_convolution3.cc',
     'src/neural/blas/convolution1.cc',
     'src/neural/blas/network_blas.cc'
     ]
@@ -284,27 +282,18 @@ if get_option('build_backends')
 
   endif
 
-
   if get_option('opencl') and has_opencl
 
-    if has_blas
-      opencl_files = [
+    opencl_files = [
       'src/neural/opencl/OpenCL.cc',
       'src/neural/opencl/OpenCLTuner.cc',
       'src/neural/opencl/OpenCLBuffers.cc',
       'src/neural/opencl/network_opencl.cc',
-      ]
+    ]
 
-      if not get_option('blas')
-        opencl_files += blas_files
-      endif
-
-      includes += include_directories(get_option('opencl_include'))
-      files += opencl_files
-      has_backends = true
-    else
-      warning('The OpenCL backend requires a BLAS library')
-    endif
+    includes += include_directories(get_option('opencl_include'))
+    files += opencl_files
+    has_backends = true
 
   endif
 

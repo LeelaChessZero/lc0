@@ -16,13 +16,14 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/blas/batchnorm.h"
+#include "neural/network.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/convolution1.h"
 #include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
-#include "neural/network.h"
+#include "neural/shared/batchnorm.h"
+#include "neural/shared/winograd_filter.h"
 
 #include <algorithm>
 #include <cassert>
@@ -256,8 +257,8 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
   const auto channels = static_cast<int>(weights.input.biases.size());
   const auto residual_blocks = weights.residual.size();
 
-  weights_.input.weights = WinogradConvolution3::TransformF(
-      weights_.input.weights, channels, inputChannels);
+  weights_.input.weights = WinogradFilter::TransformF(weights_.input.weights,
+                                                      channels, inputChannels);
 
   Batchnorm::OffsetMeans(&weights_.input);
   Batchnorm::InvertStddev(&weights_.input);
@@ -269,9 +270,9 @@ BlasNetwork::BlasNetwork(const Weights& weights, const OptionsDict& options)
     auto& conv2 = residual.conv2;
 
     conv1.weights =
-        WinogradConvolution3::TransformF(conv1.weights, channels, channels);
+        WinogradFilter::TransformF(conv1.weights, channels, channels);
     conv2.weights =
-        WinogradConvolution3::TransformF(conv2.weights, channels, channels);
+        WinogradFilter::TransformF(conv2.weights, channels, channels);
 
     Batchnorm::OffsetMeans(&conv1);
     Batchnorm::OffsetMeans(&conv2);

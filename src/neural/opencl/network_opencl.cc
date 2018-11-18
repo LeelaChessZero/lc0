@@ -17,13 +17,12 @@
  */
 
 #include "neural/network.h"
-#include "neural/blas/batchnorm.h"
-#include "neural/blas/blas.h"
-#include "neural/blas/fully_connected_layer.h"
-#include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
+#include "neural/shared/activation.h"
+#include "neural/shared/batchnorm.h"
+#include "neural/shared/winograd_filter.h"
 
 #include <algorithm>
 #include <cassert>
@@ -57,7 +56,8 @@ struct OpenCLWeights {
 
 class OpenCLComputation : public NetworkComputation {
  public:
-  OpenCLComputation(const OpenCL_Network& opencl_net, const OpenCLWeights& weights)
+  OpenCLComputation(const OpenCL_Network& opencl_net,
+                    const OpenCLWeights& weights)
       : opencl_net_(opencl_net), weights_(weights), policies_(), q_values_() {
     buffers_ = opencl_net.acquire_buffers();
   }
@@ -100,17 +100,18 @@ class OpenCLComputation : public NetworkComputation {
         std::vector<float> policy(weights_.num_output_policies);
 
         // Get the moves.
-        FullyConnectedLayer::Softmax(num_output_policies,
-                                     &output_pol[j * num_output_policies],
-                                     policy.data());
+        Activation::Softmax(num_output_policies,
+                            &output_pol[j * num_output_policies],
+                            policy.data());
 
         policies_.emplace_back(std::move(policy));
 
         // Now get the score.
-        auto winrate = FullyConnectedLayer::Forward0D(
-                           num_value_channels, weights_.ip2_val_w.data(),
-                           &output_val[j * num_value_channels]) +
-                       weights_.ip2_val_b[0];
+        auto winrate = weights_.ip2_val_b[0];
+        auto ptr1 = weights_.ip2_val_w.data();
+        auto ptr2 = &output_val[j * num_value_channels];
+        for (auto i = 0; i < num_value_channels; i++)
+          winrate += ptr1[i] * ptr2[i];
 
         q_values_.emplace_back(std::tanh(winrate));
       }
@@ -212,11 +213,11 @@ class OpenCLNetwork : public Network {
     size_t m_ceil = ceilMultiple(ceilMultiple(channels, mwg), vwm);
     size_t k_ceil = ceilMultiple(ceilMultiple(inputChannels, kwg), vwm);
 
-    std::vector<float> input_conv_weights = WinogradConvolution3::TransformF(
+    std::vector<float> input_conv_weights = WinogradFilter::TransformF(
         weights.input.weights, channels, inputChannels);
 
-    auto Upad = WinogradConvolution3::ZeropadU(input_conv_weights, channels,
-                                               inputChannels, m_ceil, k_ceil);
+    auto Upad = WinogradFilter::ZeropadU(input_conv_weights, channels,
+                                         inputChannels, m_ceil, k_ceil);
 
     std::vector<float> input_batchnorm_means =
         Batchnorm::OffsetMeans(weights.input);
@@ -235,14 +236,14 @@ class OpenCLNetwork : public Network {
       auto& conv2 = residual.conv2;
 
       std::vector<float> conv_weights_1 =
-          WinogradConvolution3::TransformF(conv1.weights, channels, channels);
+          WinogradFilter::TransformF(conv1.weights, channels, channels);
       std::vector<float> conv_weights_2 =
-          WinogradConvolution3::TransformF(conv2.weights, channels, channels);
+          WinogradFilter::TransformF(conv2.weights, channels, channels);
 
-      auto Upad1 = WinogradConvolution3::ZeropadU(conv_weights_1, channels,
-                                                  channels, m_ceil, m_ceil);
-      auto Upad2 = WinogradConvolution3::ZeropadU(conv_weights_2, channels,
-                                                  channels, m_ceil, m_ceil);
+      auto Upad1 = WinogradFilter::ZeropadU(conv_weights_1, channels, channels,
+                                            m_ceil, m_ceil);
+      auto Upad2 = WinogradFilter::ZeropadU(conv_weights_2, channels, channels,
+                                            m_ceil, m_ceil);
 
       std::vector<float> batchnorm_means_1 = Batchnorm::OffsetMeans(conv1);
       std::vector<float> batchnorm_means_2 = Batchnorm::OffsetMeans(conv2);

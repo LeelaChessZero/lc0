@@ -369,7 +369,8 @@ std::unique_ptr<OpenCLBuffers> OpenCL_Network::acquire_buffers() const {
   return result;
 }
 
-void OpenCL_Network::release_buffers(std::unique_ptr<OpenCLBuffers> buffers) const {
+void OpenCL_Network::release_buffers(
+    std::unique_ptr<OpenCLBuffers> buffers) const {
   std::lock_guard<std::mutex> lock(m_pool_mutex);
   m_buffers_pool.push_back(std::move(buffers));
 }

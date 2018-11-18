@@ -16,7 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/blas/batchnorm.h"
+#include "neural/shared/batchnorm.h"
 
 #include <cmath>
 

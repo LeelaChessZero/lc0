@@ -23,7 +23,8 @@
 
 namespace lczero {
 
-// Convolution 3x3 on a 8x8 board using the Winograd algorithm.
+// Here are BLAS-free methods to setup the filter
+// for the 3x3 winograd convolution algorithm.
 //
 // Ref:
 //
@@ -33,31 +34,24 @@ namespace lczero {
 // https://ai.intel.com/winograd/
 // https://ai.intel.com/winograd-2/
 
-// Convolution 3x3 using the Winograd algorithm
-class WinogradConvolution3 {
+// Convolution filter for 3x3 Winograd algorithm
+class WinogradFilter {
  public:
-  // The instance will allocate memory resources for the
-  // largest batch size, and the largest input and output
-  // layers.
-  WinogradConvolution3(const size_t max_batch_size,
-                       const size_t max_input_layers,
-                       const size_t max_output_layers);
+  WinogradFilter() = delete;
 
-  // Forward inference, batched.
-  void Forward(const size_t batch_size, const size_t input_channels,
-               const size_t output_channels, const float* input,
-               const float* weights, float* output);
+  // Create the zero-padded U matrix.
+  static std::vector<float> ZeropadU(const std::vector<float>& U,
+                                     const size_t outputs,
+                                     const size_t channels,
+                                     const size_t outputs_pad,
+                                     const size_t channels_pad);
+
+  // Create the filter transform matrix.
+  static std::vector<float> TransformF(const std::vector<float>& f,
+                                       const size_t outputs,
+                                       const size_t channels);
 
  private:
-  void TransformIn(const size_t batch_size, const float* input,
-                   const size_t channels);
-
-  void Sgemm(const size_t batch_size, const float* weights,
-             const size_t input_channels, const size_t output_channels);
-
-  void TransformOut(const size_t batch_size, float* output,
-                    const size_t channels);
-
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
@@ -67,8 +61,5 @@ class WinogradConvolution3 {
 
   static constexpr auto kWinogradAlpha = 4;
   static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
-
-  std::vector<float> V_;
-  std::vector<float> M_;
 };
 }  // namespace lczero
