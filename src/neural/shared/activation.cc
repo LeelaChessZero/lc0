@@ -18,6 +18,7 @@
 
 #include "neural/shared/activation.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace lczero {

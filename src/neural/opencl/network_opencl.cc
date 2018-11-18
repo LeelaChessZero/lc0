@@ -108,10 +108,10 @@ class OpenCLComputation : public NetworkComputation {
 
         // Now get the score.
         auto winrate = weights_.ip2_val_b[0];
-        auto ptr1 = weights_.ip2_val_w.data();
-        auto ptr2 = &output_val[j * num_value_channels];
-        for (auto i = 0; i < num_value_channels; i++)
-          winrate += ptr1[i] * ptr2[i];
+        auto ptr_weights = weights_.ip2_val_w.data();
+        auto ptr_outputs = &output_val[j * num_value_channels];
+        for (size_t i = 0; i < num_value_channels; i++)
+          winrate += ptr_weights[i] * ptr_outputs[i];
 
         q_values_.emplace_back(std::tanh(winrate));
       }
