@@ -26,7 +26,6 @@
 #include <sstream>
 #include <string>
 
-#include "neural/blas/blas.h"
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/opencl/OpenCLTuner.h"
@@ -45,10 +44,10 @@ static void sgemmBatched_ref(const std::vector<float>& a,
     auto offset_v = batch * n * k;
     auto offset_m = batch * m * n;
 
+/*
     cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, k, 1.0f,
                 &a[offset_u], m, &b[offset_v], n, 0.0f, &c[offset_m], n);
-
-    /*
+*/
        // Calculates C = transpose(tranpose(A) * B) in row major, or
        // C = A * transpose(B) in column major.
        for (auto i = 0; i < m; i++) {
@@ -60,7 +59,6 @@ static void sgemmBatched_ref(const std::vector<float>& a,
            c[j * m + i + offset_m] = acc;
          }
        }
-       */
   }
 }
 
