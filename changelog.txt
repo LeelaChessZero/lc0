@@ -1,3 +1,9 @@
+
+v0.19.0 (2018-11-19)
+~~~~~~~
+
+* remove Wait() from EngineController::Stop() (#522)
+
 v0.19.0-rc5 (2018-11-17)
 ~~~~~~~~~~~
 
