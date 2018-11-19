@@ -457,8 +457,8 @@ std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
           // the matrix multiplication (n = WINOGRAD_P * batch_size).
           CERR << "Loaded existing SGEMM tuning for batch size "
                << n / WINOGRAD_P << ".";
+          return tuners;
         }
-        return tuners;
       }
     }
   }

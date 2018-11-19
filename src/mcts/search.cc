@@ -48,7 +48,6 @@ const int kSmartPruningToleranceNodes = 300;
 const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
-const auto kNNComputationWarningTime = std::chrono::milliseconds(500);
 }  // namespace
 
 std::string SearchLimits::DebugString() const {
@@ -580,7 +579,8 @@ void Search::RunBlocking(size_t threads) {
 }
 
 bool Search::IsSearchActive() const {
-  return !stop_.load(std::memory_order_acquire);
+  Mutex::Lock lock(counters_mutex_);
+  return !bestmove_is_sent_;
 }
 
 void Search::WatchdogThread() {
@@ -1083,18 +1083,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() {
-  const auto start_time = std::chrono::steady_clock::now();
-  computation_->ComputeBlocking();
-  const auto end_time = std::chrono::steady_clock::now();
-  if (end_time - start_time > kNNComputationWarningTime) {
-    CERR << "Warning: too long computation: "
-         << std::chrono::duration_cast<std::chrono::milliseconds>(end_time -
-                                                                  start_time)
-                .count()
-         << "ms";
-  }
-}
+void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1182,7 +1171,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
-  search_->cum_depth_ += node_to_process.depth;
+  search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }  // namespace lczero
 
