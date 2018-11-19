@@ -31,11 +31,14 @@
 #include <vector>
 
 #include "neural/network.h"
+#include "proto/net.pb.h"
 
 namespace lczero {
 
 using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
+
+using WeightsFile = pblczero::Net;
 
 // Read weights file and fill the weights structure.
 WeightsFile LoadWeightsFromFile(const std::string& filename);

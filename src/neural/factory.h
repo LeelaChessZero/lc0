@@ -30,6 +30,7 @@
 #include <functional>
 #include <string>
 #include "neural/network.h"
+#include "neural/loader.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
