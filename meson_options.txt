@@ -18,6 +18,11 @@ option('opencl_include',
        value: ['/usr/include/'],
        description: 'Paths to OpenCL include directories')
 
+option('cuda_include',
+       type: 'array',
+       value: ['/usr/local/cuda/include/'],
+       description: 'Paths to CUDA include directories')
+
 option('tensorflow_libdir',
        type: 'array',
        value: ['/usr/local/lib/tensorflow_cc/'],
