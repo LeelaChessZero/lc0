@@ -408,10 +408,7 @@ void EngineController::PonderHit() {
 }
 
 void EngineController::Stop() {
-  if (search_) {
-    search_->Stop();
-    search_->Wait();
-  }
+  if (search_) search_->Stop();
 }
 
 EngineLoop::EngineLoop()
