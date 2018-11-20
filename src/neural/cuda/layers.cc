@@ -28,6 +28,7 @@
 #include "kernels.h"
 #include "layers.h"
 #include <cassert>
+#include <cstring>
 
 namespace lczero {
 namespace cudnn_backend {
@@ -330,8 +331,12 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   // half alpha = float2half_rn(1.0f), beta = float2half_rn(0.0f);
-  half alpha = (half)1.0f;
-  half beta = (half)0.0f;
+  std::uint16_t one_h = 0x3c00;
+  std::uint16_t zero_h = 0;
+  half alpha;
+  half beta;
+  memcpy(&alpha, &one_h, sizeof(half));
+  memcpy(&beta, &zero_h, sizeof(half));
   ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
                                  N, num_inputs, &alpha, weights_, num_inputs,
                                  input_tensor, num_inputs, &beta, output_tensor,
