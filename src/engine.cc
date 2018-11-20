@@ -305,6 +305,7 @@ void EngineController::NewGame() {
 
 void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
+  if (search_ && search_->IsSearchActive()) return;
   // Some UCI hosts just call position then immediately call go, while starting
   // the clock on calling 'position'.
   move_start_time_ = std::chrono::steady_clock::now();
