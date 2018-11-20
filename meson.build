@@ -334,13 +334,10 @@ if get_option('build_backends')
     'src/neural/cuda/fp16_kernels.cu',
   ]
 
-
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
-    required_cudnn_header = 'cudnn.h'
-    required_cuda_header = 'cuda.h'
     foreach d : get_option('cudnn_include')
-      if cc.has_header(required_cudnn_header, args: '-I' + d) or cc.has_header(required_cuda_header, args: '-I' + d)
+      if run_command('checkdir.py', d).returncode() == 0
         includes += include_directories(d)
       endif
     endforeach
