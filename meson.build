@@ -32,12 +32,6 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   endif
 endif
 
-if build_machine.system() == 'windows'
-  dirsep = '\\'
-else
-  dirsep = '/'
-endif
-
 # Files to compile.
 deps = []
 files = []
@@ -56,31 +50,18 @@ protoc = find_program('protoc', required : false)
 if not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
   deps += subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
-  includes += subproject('protobuf').get_variable('libprotobuf').private_dir_include()
-  # Find protobuf subproject directory (with version number).
-  xx = subproject('protobuf').get_variable('libprotobuf').full_path().split(dirsep)
-  foreach x : xx
-    if x.startswith('protobuf')
-      protobuf_inc = meson.current_source_dir() + '/subprojects/' + x + '/src'
-    endif
-  endforeach
 else
   deps += protobuf_dep
-  protobuf_inc = get_option('protobuf_include')[0]
   if protobuf_lib.found()
     includes += include_directories(get_option('protobuf_include'))
-  elif protobuf_dep.type_name() == 'pkgconfig'
-    protobuf_inc = protobuf_dep.get_pkgconfig_variable('includedir')
   endif
 endif
 
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
-proto_files = gen.process('libs/lczero-common/proto/net.proto',
+files += gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
-
-files += proto_files
 
 #############################################################################
 ## Main files
@@ -363,8 +344,7 @@ if get_option('build_backends')
     includes += include_directories('src/neural/cuda/')
 
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
-                      '-I', meson.current_source_dir() + '/src',
-                      '-I', '@BUILD_DIR@', '-I', protobuf_inc]
+                      '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
       cuda_arguments += ['-Xcompiler', '-MD']
     else
@@ -435,7 +415,6 @@ gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
 if get_option('gtest') and gtest.found()
   lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
-  includes += lc0_lib.private_dir_include()
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
