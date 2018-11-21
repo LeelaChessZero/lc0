@@ -55,7 +55,7 @@ cache:
   - C:\projects\lc0\subprojects\packagecache
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: meson build --backend vs2015 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
+- cmd: meson build --backend vs2015 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcuda_include="%CUDA_PATH%\include" -Dcudnn_include="%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS.0.2.14.1\lib\native\lib\x64" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.12\build\native\lib\x64" -Ddefault_library=static
 build_script:
 - cmd: msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 after_build:
