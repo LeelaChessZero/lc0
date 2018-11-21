@@ -318,13 +318,14 @@ void EngineController::SetupPosition(
   SharedLock lock(busy_mutex_);
   search_.reset();
 
+  UpdateFromUciOptions();
+
   if (!tree_) tree_ = std::make_unique<NodeTree>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   bool is_same_game = tree_->ResetToPosition(fen, moves);
   if (!is_same_game) time_spared_ms_ = 0;
-  UpdateFromUciOptions();
 }
 
 void EngineController::Go(const GoParams& params) {
