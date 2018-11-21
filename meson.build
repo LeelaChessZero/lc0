@@ -76,10 +76,6 @@ files += [
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
-  'src/neural/shared/activation.cc',
-  'src/neural/shared/batchnorm.cc',
-  'src/neural/shared/winograd_filter.cc',
-  'src/neural/cache.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
@@ -155,6 +151,8 @@ if get_option('build_backends')
   ## ~~~~~
   ## Blas
   ## ~~~~~
+
+  shared_files = []
 
   has_blas = false
 
@@ -250,6 +248,12 @@ if get_option('build_backends')
     'src/neural/blas/network_blas.cc'
     ]
 
+    shared_files = [
+    'src/neural/shared/activation.cc',
+    'src/neural/shared/batchnorm.cc',
+    'src/neural/shared/winograd_filter.cc',
+    ]
+
     files += blas_files
     has_backends = true
 
@@ -291,12 +295,19 @@ if get_option('build_backends')
       'src/neural/opencl/network_opencl.cc',
     ]
 
+    shared_files = [
+    'src/neural/shared/activation.cc',
+    'src/neural/shared/batchnorm.cc',
+    'src/neural/shared/winograd_filter.cc',
+    ]
+
     includes += include_directories(get_option('opencl_include'))
     files += opencl_files
     has_backends = true
 
   endif
 
+  files += shared_files
 
   ## ~~~~~
   ## cuDNN
