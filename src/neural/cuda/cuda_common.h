@@ -25,27 +25,25 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+#include <cublas_v2.h>
+#include <cudnn.h>
 
-#include <string>
-#include <vector>
-
-#include "neural/network.h"
-#include "proto/net.pb.h"
+#include "utils/exception.h"
 
 namespace lczero {
+namespace cudnn_backend {
 
-using FloatVector = std::vector<float>;
-using FloatVectors = std::vector<FloatVector>;
+void CudnnError(cudnnStatus_t status, const char* file, const int& line);
+void CublasError(cublasStatus_t status, const char* file, const int& line);
+void CudaError(cudaError_t status, const char* file, const int& line);
 
-using WeightsFile = pblczero::Net;
+#define ReportCUDNNErrors(status) CudnnError(status, __FILE__, __LINE__)
+#define ReportCUBLASErrors(status) CublasError(status, __FILE__, __LINE__)
+#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
 
-// Read weights file and fill the weights structure.
-WeightsFile LoadWeightsFromFile(const std::string& filename);
+inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 
-// Tries to find a file which looks like a weights file, and located in
-// directory of binary_name or one of subdirectories. If there are several such
-// files, returns one which has the latest modification date.
-std::string DiscoverWeightsFile();
-
+}  // namespace cudnn_backend
 }  // namespace lczero

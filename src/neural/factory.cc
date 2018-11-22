@@ -79,7 +79,7 @@ std::vector<std::string> NetworkFactory::GetBackendsList() const {
 }
 
 std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
-                                                const Weights& weights,
+                                                const WeightsFile& weights,
                                                 const OptionsDict& options) {
   CERR << "Creating backend [" << network << "]...";
   for (const auto& factory : factories_) {
@@ -114,7 +114,7 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
-  Weights weights = LoadWeightsFromFile(net_path);
+  WeightsFile weights = LoadWeightsFromFile(net_path);
 
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
