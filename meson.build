@@ -46,7 +46,8 @@ else
   protobuf_dep = protobuf_lib
 endif
 protoc = find_program('protoc', required : false)
-if not protobuf_dep.found() or not protoc.found()
+# For tensorflow skip system protobuf, chances are it will not work.
+if not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
   deps += subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
 else
@@ -81,6 +82,7 @@ files += [
   'src/neural/factory.cc',
   'src/neural/loader.cc',
   'src/neural/network_check.cc',
+  'src/neural/network_legacy.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
   'src/neural/network_st_batch.cc',
@@ -98,6 +100,7 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/transpose.cc',
+  'src/utils/weights_adapter.cc',
 ]
 includes += include_directories('src')
 
@@ -317,7 +320,7 @@ if get_option('build_backends')
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
   nvcc = find_program('/usr/local/cuda/bin/nvcc', 'nvcc', required: false)
-  
+
   #.cc files
   cuda_files = [
     'src/neural/cuda/network_cudnn.cc',
@@ -328,7 +331,7 @@ if get_option('build_backends')
   cuda_files_nvcc_common = [
     'src/neural/cuda/common_kernels.cu',
   ]
-  
+
   # .cu files compiled with sm_70 (volta+). Only used by cudnn-fp16
   cuda_files_nvcc_fp16 = [
     'src/neural/cuda/fp16_kernels.cu',
@@ -348,7 +351,7 @@ if get_option('build_backends')
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
     foreach x : get_option('cudnn_include')
-     cuda_arguments += ['-I', x]
+      cuda_arguments += ['-I', x]
     endforeach
     if host_machine.system() == 'windows'
       outputname = '@BASENAME@.obj'
