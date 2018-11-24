@@ -189,7 +189,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
       -node->GetQ() -
       params_.GetFpuReduction() * std::sqrt(node->GetVisitedPolicy());
   const float U_coeff =
-      params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      params_.GetCpuct() * std::pow(std::max(node->GetChildrenVisits(), 1u),
+                                    params_.GetPolicyPersistence());
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
@@ -826,7 +827,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     float puct_mult =
-        params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+        params_.GetCpuct() * std::pow(std::max(node->GetChildrenVisits(), 1u),
+                                      params_.GetPolicyPersistence());
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
@@ -1026,7 +1028,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
   float puct_mult =
-      params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      params_.GetCpuct() * std::pow(std::max(node->GetChildrenVisits(), 1u),
+                                    params_.GetPolicyPersistence());
   // FPU reduction is not taken into account.
   const float parent_q = -node->GetQ();
   for (auto edge : node->Edges()) {

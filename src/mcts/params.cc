@@ -129,6 +129,10 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SearchParams::kPolicyPersistenceId(
+    "policy-persistence", "PolicyPersistence",
+    "Yet another parameter. Experimental. Better desc to be written if this is "
+    "to be merged.");
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the "safe defaults" are listed.
@@ -153,8 +157,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
-  std::vector<std::string> history_fill_opt {"no", "fen_only", "always"};
+  std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<FloatOption>(kPolicyPersistenceId, 0.0f, 1.0f) = 0.5f;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -169,7 +174,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
       kHistoryFill(
-          EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))) {
-}
+          EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
+      kPolicyPersistence(options.Get<float>(kPolicyPersistenceId.GetId())) {}
 
 }  // namespace lczero
