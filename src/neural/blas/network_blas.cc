@@ -25,8 +25,8 @@
 #include "neural/blas/blas.h"
 #include "neural/blas/convolution1.h"
 #include "neural/blas/fully_connected_layer.h"
-#include "neural/blas/winograd_convolution3.h"
 #include "neural/blas/se_unit.h"
+#include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "neural/network_legacy.h"
@@ -165,9 +165,9 @@ void BlasComputation::ComputeBlocking() {
     // Residual tower
 
     for (auto& residual : weights_.residual) {
-      auto& conv1 = residual.conv1;
-      auto& conv2 = residual.conv2;
-      auto& se = residual.se;
+      const auto& conv1 = residual.conv1;
+      const auto& conv2 = residual.conv2;
+      const auto& se = residual.se;
 
       std::swap(conv_out, conv_in);
 
@@ -192,9 +192,9 @@ void BlasComputation::ComputeBlocking() {
         std::swap(conv_out, conv_in);
 
         auto se_fc_outputs = se.b1.size();
-        SEUnit::Forward(batch_size, output_channels, se_fc_outputs, conv_in,
-                        res, se.w1.data(), se.b1.data(), se.w2.data(),
-                        se.b2.data(), conv_out);
+        ApplySEUnit(batch_size, output_channels, se_fc_outputs, conv_in, res,
+                    se.w1.data(), se.b1.data(), se.w2.data(), se.b2.data(),
+                    conv_out);
       } else {
         ApplyBatchNormalization(batch_size, output_channels, conv_out,
                                 conv2.bn_means.data(), conv2.bn_stddivs.data(),

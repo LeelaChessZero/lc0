@@ -21,7 +21,6 @@
 #include <cmath>
 #include <algorithm>
 #include "utils/weights_adapter.h"
-#include "utils/logging.h"
 
 namespace lczero {
 namespace {

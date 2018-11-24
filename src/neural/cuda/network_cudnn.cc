@@ -173,9 +173,6 @@ class CudnnNetwork : public Network {
     // 0. Process weights.
     processConvBlock(weights.input, true);
     for (auto i = size_t{0}; i < numBlocks_; i++) {
-      if (weights.residual[i].has_se) {
-          throw Exception("SE-units unsupported by cudnn backend.");
-      }
       processConvBlock(weights.residual[i].conv1, true);
       processConvBlock(weights.residual[i].conv2, true);
     }
