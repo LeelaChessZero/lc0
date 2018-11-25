@@ -172,7 +172,7 @@ class CudnnNetwork : public Network {
 
     // 0. Process weights.
     processConvBlock(weights.input, true);
-    for (auto i = size_t{0}; i < numBlocks_; i++) {
+    for (int i = 0; i < numBlocks_; i++) {
       processConvBlock(weights.residual[i].conv1, true);
       processConvBlock(weights.residual[i].conv2, true);
     }
@@ -239,7 +239,7 @@ class CudnnNetwork : public Network {
     }
 
     // residual block
-    for (int block = 0; block < weights.residual.size(); block++) {
+    for (size_t block = 0; block < weights.residual.size(); block++) {
       auto conv1 = std::make_unique<ConvLayer<DataType>>(
           getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
       conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
