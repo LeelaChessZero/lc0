@@ -41,10 +41,10 @@ class LayerAdapter {
 
     float operator*() const;
     float operator[](size_t idx) const;
-    bool operator==(LayerAdapter::Iterator& other) const {
+    bool operator==(const LayerAdapter::Iterator& other) const {
       return data_ == other.data_;;
     }
-    bool operator!=(LayerAdapter::Iterator& other) const {
+    bool operator!=(const LayerAdapter::Iterator& other) const {
       return data_ != other.data_;;
     }
     Iterator& operator++() {
@@ -55,7 +55,9 @@ class LayerAdapter {
       --data_;
       return *this;
     }
-    ptrdiff_t operator-(const Iterator& other) { return data_ - other.data_; }
+    ptrdiff_t operator-(const Iterator& other) const {
+      return data_ - other.data_;
+    }
 
     // TODO(crem) implement other iterator functions when they are needed.
 
