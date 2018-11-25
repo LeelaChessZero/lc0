@@ -208,6 +208,7 @@ if get_option('build_backends')
       blas_files = [
       'src/neural/blas/batchnorm.cc',
       'src/neural/blas/fully_connected_layer.cc',
+      'src/neural/blas/se_unit.cc',
       'src/neural/blas/winograd_convolution3.cc'
       ]
     endif

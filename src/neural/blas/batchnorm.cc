@@ -27,7 +27,8 @@ constexpr int kSquares = kWidth * kHeight;
 
 void ApplyBatchNormalization(const size_t batch_size, const size_t channels,
                              float* data, const float* means,
-                             const float* stddivs, const float* eltwise) {
+                             const float* stddivs, const float* eltwise,
+                             const bool relu) {
   for (size_t i = 0; i < batch_size; i++) {
     for (size_t c = 0; c < channels; ++c) {
       auto mean = means[c];
@@ -38,7 +39,10 @@ void ApplyBatchNormalization(const size_t batch_size, const size_t channels,
         auto arr = &data[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = scale_stddiv * (arr[b] - mean);
-          arr[b] = val > 0 ? val : 0;
+          if (relu) {
+            val = val > 0 ? val : 0;
+          }
+          arr[b] = val;
         }
       } else {
         // BN + residual add
@@ -46,7 +50,10 @@ void ApplyBatchNormalization(const size_t batch_size, const size_t channels,
         auto res = &eltwise[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + (scale_stddiv * (arr[b] - mean));
-          arr[b] = val > 0 ? val : 0;
+          if (relu) {
+            val = val > 0 ? val : 0;
+          }
+          arr[b] = val;
         }
       }
     }

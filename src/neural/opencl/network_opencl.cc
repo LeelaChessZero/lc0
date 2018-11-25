@@ -235,6 +235,7 @@ class OpenCLNetwork : public Network {
       auto& residual = weights.residual[i];
       auto& conv1 = residual.conv1;
       auto& conv2 = residual.conv2;
+      auto& se = residual.se;
 
       std::vector<float> conv_weights_1 =
           WinogradConvolution3::TransformF(conv1.weights, channels, channels);
@@ -254,6 +255,13 @@ class OpenCLNetwork : public Network {
       opencl_net_.push_residual(kWinogradAlpha, channels, channels, Upad1,
                                 batchnorm_means_1, batchnorm_stddivs_1, Upad2,
                                 batchnorm_means_2, batchnorm_stddivs_2);
+      if (residual.has_se) {
+          auto se_fc_outputs = se.w1.size() / channels;
+          if (se.b2.size() != 2 * channels) {
+              throw Exception("SE-unit output bias is not right size.");
+          }
+          opencl_net_.push_se(channels, se_fc_outputs, se.w1, se.b1, se.w2, se.b2);
+      }
     }
 
     constexpr unsigned int width = 8;
@@ -296,7 +304,9 @@ class OpenCLNetwork : public Network {
 std::unique_ptr<Network> MakeOpenCLNetwork(const WeightsFile& weights,
                                            const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+      weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_SE) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +

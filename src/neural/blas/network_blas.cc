@@ -25,6 +25,7 @@
 #include "neural/blas/blas.h"
 #include "neural/blas/convolution1.h"
 #include "neural/blas/fully_connected_layer.h"
+#include "neural/blas/se_unit.h"
 #include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
 #include "neural/network.h"
@@ -164,8 +165,9 @@ void BlasComputation::ComputeBlocking() {
     // Residual tower
 
     for (auto& residual : weights_.residual) {
-      auto& conv1 = residual.conv1;
-      auto& conv2 = residual.conv2;
+      const auto& conv1 = residual.conv1;
+      const auto& conv2 = residual.conv2;
+      const auto& se = residual.se;
 
       std::swap(conv_out, conv_in);
 
@@ -181,9 +183,23 @@ void BlasComputation::ComputeBlocking() {
       convolve3.Forward(batch_size, output_channels, output_channels, conv_in,
                         &conv2.weights[0], conv_out);
 
-      ApplyBatchNormalization(batch_size, output_channels, conv_out,
-                              conv2.bn_means.data(), conv2.bn_stddivs.data(),
-                              res);
+      if (residual.has_se) {
+        // No relu if followed by SE-unit and residual is added later
+        ApplyBatchNormalization(batch_size, output_channels, conv_out,
+                                conv2.bn_means.data(), conv2.bn_stddivs.data(),
+                                nullptr, false);
+
+        std::swap(conv_out, conv_in);
+
+        auto se_fc_outputs = se.b1.size();
+        ApplySEUnit(batch_size, output_channels, se_fc_outputs, conv_in, res,
+                    se.w1.data(), se.b1.data(), se.w2.data(), se.b2.data(),
+                    conv_out);
+      } else {
+        ApplyBatchNormalization(batch_size, output_channels, conv_out,
+                                conv2.bn_means.data(), conv2.bn_stddivs.data(),
+                                res);
+      }
     }
 
     Convolution1::Forward(batch_size, output_channels, num_policy_input_planes,
@@ -330,7 +346,9 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
 std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                                          const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+      weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_SE) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +

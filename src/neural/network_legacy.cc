@@ -52,14 +52,37 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
   }
 }
 
+LegacyWeights::SEunit::SEunit(const pblczero::Weights::SEunit& se)
+    : w1(LayerAdapter(se.w1()).as_vector()),
+      b1(LayerAdapter(se.b1()).as_vector()),
+      w2(LayerAdapter(se.w2()).as_vector()),
+      b2(LayerAdapter(se.b2()).as_vector()) {}
+
 LegacyWeights::Residual::Residual(const pblczero::Weights::Residual& residual)
-    : conv1(residual.conv1()), conv2(residual.conv2()) {}
+    : conv1(residual.conv1()),
+      conv2(residual.conv2()),
+      se(residual.se()),
+      has_se(residual.has_se()) {}
 
 LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
     : weights(LayerAdapter(block.weights()).as_vector()),
       biases(LayerAdapter(block.biases()).as_vector()),
+      bn_gammas(LayerAdapter(block.bn_gammas()).as_vector()),
+      bn_betas(LayerAdapter(block.bn_betas()).as_vector()),
       bn_means(LayerAdapter(block.bn_means()).as_vector()),
-      bn_stddivs(LayerAdapter(block.bn_stddivs()).as_vector()) {}
+      bn_stddivs(LayerAdapter(block.bn_stddivs()).as_vector()) {
+  // Merge gammas to stddivs and beta to means for backwards compatibility
+  auto channels = bn_betas.size();
+  auto epsilon = 1e-5;
+  for (auto i = size_t{0}; i < channels; i++) {
+    auto s = bn_gammas[i] / std::sqrt(bn_stddivs[i] + epsilon);
+    bn_stddivs[i] = 1.0f / (s * s) - epsilon;
+    bn_means[i] -= bn_betas[i] / s;
+    bn_gammas[i] = 1.0f;
+    bn_betas[i] = 0.0f;
+    biases.emplace_back(0.0f);
+  }
+}
 
 void LegacyWeights::ConvBlock::InvertStddev() { InvertVector(&bn_stddivs); }
 

@@ -56,7 +56,7 @@ class OpenCLBuffers {
                  cl::Buffer& bufferM, weight_slice_t weights,
                  cl::Buffer* bufferResidual, weight_slice_t bn_weights,
                  bool skip_in_transform, bool fuse_in_transform,
-                 bool store_inout, int batch_size);
+                 bool store_inout, bool relu, int batch_size);
 
   void convolve1(int channels, int outputs, cl::Buffer& bufferInput,
                  cl::Buffer& bufferOutput, cl::Buffer& bufferMerge,
@@ -65,6 +65,15 @@ class OpenCLBuffers {
   void innerproduct(cl::Buffer& input, weight_slice_t weights,
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
                     const int outputs, const int relu, int batch_size);
+
+  void squeeze_excitation(int channels,
+                          int fc_outputs,
+                          cl::Buffer& bufferIn,
+                          cl::Buffer& bufferTemp1,
+                          cl::Buffer& bufferTemp2,
+                          weight_slice_t weights,
+                          cl::Buffer& bufferResidual,
+                          int batch_size);
 
   const OpenCL_Network& m_opencl_net;
   const OpenCL& m_opencl;
@@ -77,10 +86,13 @@ class OpenCLBuffers {
   cl::Kernel m_sgemv_kernel;
   cl::Kernel m_out_transform_bn_kernel;
   cl::Kernel m_out_transform_bn_in_kernel;
+  cl::Kernel m_global_avg_pooling_kernel;
+  cl::Kernel m_apply_se_kernel;
   cl::Buffer m_inBuffer;
   cl::Buffer m_inBuffer2;
   cl::Buffer m_VBuffer;
   cl::Buffer m_MBuffer;
+  cl::Buffer m_pool_buffer;
   cl::Buffer m_pinnedOutBuffer_pol;
   cl::Buffer m_pinnedOutBuffer_val;
 };

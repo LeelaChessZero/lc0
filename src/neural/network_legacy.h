@@ -45,14 +45,26 @@ struct LegacyWeights {
 
     Vec weights;
     Vec biases;
+    Vec bn_gammas;
+    Vec bn_betas;
     Vec bn_means;
     Vec bn_stddivs;
+  };
+
+  struct SEunit {
+    explicit SEunit(const pblczero::Weights::SEunit& se);
+    Vec w1;
+    Vec b1;
+    Vec w2;
+    Vec b2;
   };
 
   struct Residual {
     explicit Residual(const pblczero::Weights::Residual& residual);
     ConvBlock conv1;
     ConvBlock conv2;
+    SEunit se;
+    bool has_se;
   };
 
   // Input convnet.
