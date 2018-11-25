@@ -28,13 +28,14 @@
 #include "kernels.h"
 #include "layers.h"
 #include <cassert>
+#include <cstring>
 
 namespace lczero {
 namespace cudnn_backend {
 
 template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
-    : C(c), H(h), W(w), input_(ip) {}
+    : input_(ip), C(c), H(h), W(w) {}
 
 template <typename DataType>
 SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType>* ip)
@@ -44,9 +45,10 @@ SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType>* ip)
 
 template <typename DataType>
 void SoftMaxLayer<DataType>::Eval(int N, DataType* output,
-                                  const DataType* input, const DataType* input2,
-                                  void* scratch, size_t scratch_size,
-                                  cudnnHandle_t cudnn, cublasHandle_t cublas) {
+                                  const DataType* input,
+                                  const DataType* /*input2*/, void* /*scratch*/,
+                                  size_t /*scratch_size*/, cudnnHandle_t cudnn,
+                                  cublasHandle_t /*cublas*/) {
   float alpha = 1.0f, beta = 0.0f;
 
   // Need to call this at Eval as 'N' changes :-/
@@ -67,8 +69,8 @@ template <typename DataType>
 ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
                                int filter, int Cin, bool relu, bool bias)
     : BaseLayer<DataType>(C, H, W, ip),
-      filter_size_(filter),
       c_input_(Cin),
+      filter_size_(filter),
       use_relu_(relu),
       use_bias_(bias) {
   // Allocate memory for weights (filter tensor) and biases.
@@ -149,7 +151,7 @@ void ConvLayer<half>::LoadWeights(float* pfilter, float* pBias, void* scratch) {
 
 template <>
 void ConvLayer<float>::LoadWeights(float* pfilter, float* pBias,
-                                   void* scratch) {
+                                   void* /*scratch*/) {
   size_t weight_size =
       sizeof(float) * c_input_ * C * filter_size_ * filter_size_;
   size_t blas_size = sizeof(float) * C;
@@ -168,7 +170,7 @@ template <typename DataType>
 void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                const DataType* input2, void* scratch,
                                size_t scratch_size, cudnnHandle_t cudnn,
-                               cublasHandle_t cublas) {
+                               cublasHandle_t /*cublas*/) {
   const bool fp16 = std::is_same<half, DataType>::value;
 
   ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
@@ -240,17 +242,17 @@ void BNLayer<DataType>::LoadWeights(float* cpuMeans, float* cpuVar) {
 
 template <>
 void BNLayer<half>::Eval(int N, half* output, const half* input,
-                         const half* input2, void* scratch, size_t scratch_size,
-                         cudnnHandle_t cudnn, cublasHandle_t cublas) {
-  batchNorm(output, input, input2, N, C, H, W, means_, variances_,
-                   use_relu_);
+                         const half* input2, void* /*scratch*/,
+                         size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
+                         cublasHandle_t /*cublas*/) {
+  batchNorm(output, input, input2, N, C, H, W, means_, variances_, use_relu_);
 }
 
 template <>
 void BNLayer<float>::Eval(int N, float* output, const float* input,
-                          const float* input2, void* scratch,
-                          size_t scratch_size, cudnnHandle_t cudnn,
-                          cublasHandle_t cublas) {
+                          const float* input2, void* /*scratch*/,
+                          size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
+                          cublasHandle_t /*cublas*/) {
   batchNorm(output, input, input2, N, C, H, W, means_, variances_,
                    use_relu_);
 }
@@ -385,8 +387,8 @@ template <typename DataType>
 FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
                            bool relu, bool bias, bool tanh, bool sigmoid)
     : BaseLayer<DataType>(C, H, W, ip),
-      use_relu_(relu),
       use_bias_(bias),
+      use_relu_(relu),
       use_tanh_(tanh),
       use_sigmoid_(sigmoid) {
   size_t weight_size =
@@ -427,7 +429,7 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
 
 template <>
 void FCLayer<float>::LoadWeights(float* cpuWeight, float* cpuBias,
-                                 void* scratch) {
+                                 void* /*scratch*/) {
   size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
   size_t weight_size = sizeof(float) * num_weights;
@@ -444,14 +446,19 @@ void FCLayer<float>::LoadWeights(float* cpuWeight, float* cpuBias,
 
 template <>
 void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
-                         const half* input2, void* scratch, size_t scratch_size,
-                         cudnnHandle_t cudnn, cublasHandle_t cublas) {
+                         const half* /*input2*/, void* /*scratch*/,
+                         size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
+                         cublasHandle_t cublas) {
   int num_outputs = C * H * W;
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   // half alpha = float2half_rn(1.0f), beta = float2half_rn(0.0f);
-  half alpha = (half)1.0f;
-  half beta = (half)0.0f;
+  std::uint16_t one_h = 0x3c00;
+  std::uint16_t zero_h = 0;
+  half alpha;
+  half beta;
+  memcpy(&alpha, &one_h, sizeof(half));
+  memcpy(&beta, &zero_h, sizeof(half));
   ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
                                  N, num_inputs, &alpha, weights_, num_inputs,
                                  input_tensor, num_inputs, &beta, output_tensor,
@@ -466,9 +473,9 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
 
 template <>
 void FCLayer<float>::Eval(int N, float* output_tensor,
-                          const float* input_tensor, const float* input2,
-                          void* scratch, size_t scratch_size,
-                          cudnnHandle_t cudnn, cublasHandle_t cublas) {
+                          const float* input_tensor, const float* /*input2*/,
+                          void* /*scratch*/, size_t /*scratch_size*/,
+                          cudnnHandle_t /*cudnn*/, cublasHandle_t cublas) {
   int num_outputs = C * H * W;
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 

@@ -22,73 +22,67 @@
 #include <cmath>
 
 namespace lczero {
+namespace {
+constexpr int kWidth = 8;
+constexpr int kHeight = 8;
+constexpr int kSquares = kWidth * kHeight;
+}  // namespace
 
-void SEUnit::global_avg_pooling(const size_t channels,
-                                const float* input,
-                                float* output) {
-
+static void global_avg_pooling(const size_t channels, const float* input,
+                               float* output) {
   for (auto c = size_t{0}; c < channels; c++) {
     auto acc = 0.0f;
     for (auto i = size_t{0}; i < kSquares; i++) {
       acc += input[c * kSquares + i];
     }
-    output[c] = acc/kSquares;
+    output[c] = acc / kSquares;
   }
 }
 
-void SEUnit::apply_se(const size_t channels,
-                      const size_t batch_size,
-                      const float* input,
-                      const float* res,
-                      const float* scale,
-                      float* output) {
+static void apply_se(const size_t channels, const size_t batch_size,
+                     const float* input, const float* res, const float* scale,
+                     float* output) {
+  const auto lambda_ReLU = [](const auto val) {
+    return (val > 0.0f) ? val : 0;
+  };
 
-  const auto lambda_ReLU = [](const auto val) { return (val > 0.0f) ? val : 0; };
-
-  const auto lambda_sigmoid = [](const auto val) { return 1.0f/(1.0f + exp(-val)); };
+  const auto lambda_sigmoid = [](const auto val) {
+    return 1.0f / (1.0f + exp(-val));
+  };
 
   for (auto c = size_t{0}; c < channels * batch_size; c++) {
     auto batch = c / channels;
     auto gamma = lambda_sigmoid(scale[c + batch * channels]);
     auto beta = scale[c + batch * channels + channels];
     for (auto i = size_t{0}; i < kSquares; i++) {
-      output[c * kSquares + i] = lambda_ReLU(gamma * input[c * kSquares + i]
-          + beta + res[c * kSquares + i]);
+      output[c * kSquares + i] = lambda_ReLU(gamma * input[c * kSquares + i] +
+                                             beta + res[c * kSquares + i]);
     }
   }
 }
 
-void SEUnit::Forward(const size_t batch_size, const size_t channels,
-                     const size_t se_fc_outputs,
-                     const float* input,
-                     const float* residual,
-                     const float* weights_w1,
-                     const float* weights_b1,
-                     const float* weights_w2,
-                     const float* weights_b2,
-                     float* output) {
+void ApplySEUnit(const size_t batch_size, const size_t channels,
+                 const size_t se_fc_outputs, const float* input,
+                 const float* residual, const float* weights_w1,
+                 const float* weights_b1, const float* weights_w2,
+                 const float* weights_b2, float* output) {
+  std::vector<float> pool(2 * channels * batch_size);
+  std::vector<float> fc_out1(batch_size * se_fc_outputs);
 
-    std::vector<float> pool(2 * channels * batch_size);
-    std::vector<float> fc_out1(batch_size * se_fc_outputs);
+  global_avg_pooling(channels * batch_size, input, pool.data());
 
-    global_avg_pooling(channels * batch_size, input, pool.data());
+  FullyConnectedLayer::Forward1D(batch_size, channels, se_fc_outputs,
+                                 pool.data(), weights_w1, weights_b1,
+                                 true,  // Relu On
+                                 fc_out1.data());
 
-    FullyConnectedLayer::Forward1D(
-        batch_size, channels, se_fc_outputs,
-        pool.data(), weights_w1,
-        weights_b1,
-        true,  // Relu On
-        fc_out1.data());
+  FullyConnectedLayer::Forward1D(batch_size, se_fc_outputs, 2 * channels,
+                                 fc_out1.data(), weights_w2, weights_b2,
+                                 false,  // Relu Off
+                                 pool.data());
 
-    FullyConnectedLayer::Forward1D(
-        batch_size, se_fc_outputs, 2 * channels,
-        fc_out1.data(), weights_w2,
-        weights_b2,
-        false,  // Relu Off
-        pool.data());
-
-    // Sigmoid, scale and add residual
-    apply_se(channels, batch_size, input, residual, pool.data(), output);
+  // Sigmoid, scale and add residual
+  apply_se(channels, batch_size, input, residual, pool.data(), output);
 }
 
 }  // namespace lczero

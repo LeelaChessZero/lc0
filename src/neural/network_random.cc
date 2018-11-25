@@ -33,6 +33,7 @@
 #include "utils/hashcat.h"
 
 namespace lczero {
+namespace {
 
 class RandomNetworkComputation : public NetworkComputation {
  public:
@@ -73,7 +74,7 @@ class RandomNetworkComputation : public NetworkComputation {
 
 class RandomNetwork : public Network {
  public:
-  RandomNetwork(const Weights& /*weights*/, const OptionsDict& options)
+  RandomNetwork(const OptionsDict& options)
       : delay_ms_(options.GetOrDefault<int>("delay", 0)),
         seed_(options.GetOrDefault<int>("seed", 0)) {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -84,7 +85,13 @@ class RandomNetwork : public Network {
   int delay_ms_ = 0;
   int seed_ = 0;
 };
+}  // namespace
 
-REGISTER_NETWORK("random", RandomNetwork, -900)
+std::unique_ptr<Network> MakeRandomNetwork(const WeightsFile& /*weights*/,
+                                           const OptionsDict& options) {
+  return std::make_unique<RandomNetwork>(options);
+}
+
+REGISTER_NETWORK("random", MakeRandomNetwork, -900)
 
 }  // namespace lczero

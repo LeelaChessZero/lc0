@@ -25,27 +25,28 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
-
-#include <string>
-#include <vector>
-
-#include "neural/network.h"
-#include "proto/net.pb.h"
+#include "src/utils/weights_adapter.h"
 
 namespace lczero {
+float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
+                                           const LayerAdapter* adapter) {
+  return *ptr / static_cast<float>(0xffff) * adapter->range_ + adapter->min_;
+}
 
-using FloatVector = std::vector<float>;
-using FloatVectors = std::vector<FloatVector>;
+LayerAdapter::LayerAdapter(const pblczero::Weights_Layer& layer)
+    : data_(reinterpret_cast<const uint16_t*>(layer.params().data())),
+      size_(layer.params().size() / sizeof(uint16_t)),
+      min_(layer.min_val()),
+      range_(layer.max_val() - min_) {}
 
-using WeightsFile = pblczero::Net;
-
-// Read weights file and fill the weights structure.
-WeightsFile LoadWeightsFromFile(const std::string& filename);
-
-// Tries to find a file which looks like a weights file, and located in
-// directory of binary_name or one of subdirectories. If there are several such
-// files, returns one which has the latest modification date.
-std::string DiscoverWeightsFile();
+std::vector<float> LayerAdapter::as_vector() const {
+  return std::vector<float>(begin(), end());
+}
+float LayerAdapter::Iterator::operator*() const {
+  return ExtractValue(data_, adapter_);
+}
+float LayerAdapter::Iterator::operator[](size_t idx) const {
+  return ExtractValue(data_ + idx, adapter_);
+}
 
 }  // namespace lczero

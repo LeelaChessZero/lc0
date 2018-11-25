@@ -22,37 +22,10 @@
 
 namespace lczero {
 
-// Squeeze-excitation unit
-class SEUnit {
- public:
-  SEUnit() = delete;
-
-  // Batched forward inference.
-  static void Forward(const size_t batch_size, const size_t channels,
-                      const size_t se_fc_outputs,
-                      const float* input,
-                      const float* residual,
-                      const float* weights_w1,
-                      const float* weights_b1,
-                      const float* weights_w2,
-                      const float* weights_b2,
-                      float* output);
-
- private:
-  static void global_avg_pooling(const size_t channels,
-                                 const float* input,
-                                 float* output);
-
-  static void apply_se(const size_t channels,
-                       const size_t batch_size,
-                       const float* input,
-                       const float* res,
-                       const float* scale,
-                       float* output);
-
-  static constexpr auto kWidth = 8;
-  static constexpr auto kHeight = 8;
-  static constexpr auto kSquares = kWidth * kHeight;
-};
+void ApplySEUnit(const size_t batch_size, const size_t channels,
+                 const size_t se_fc_outputs, const float* input,
+                 const float* residual, const float* weights_w1,
+                 const float* weights_b1, const float* weights_w2,
+                 const float* weights_b2, float* output);
 
 }  // namespace lczero

@@ -39,6 +39,7 @@ class BaseLayer {
   int GetW() const { return W; }
 
   BaseLayer(int c, int h, int w, BaseLayer* ip);
+  virtual ~BaseLayer() = default;
   size_t GetOutputSize(int N) const { return sizeof(DataType) * N * C * H * W; }
 
   // input2 is optional (skip connection).
@@ -207,7 +208,6 @@ class GlobalScaleLayer : public BaseLayer<DataType> {
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 };
-
 
 
 }  // namespace cudnn_backend
