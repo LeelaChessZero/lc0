@@ -39,6 +39,7 @@ class BaseLayer {
   int GetW() const { return W; }
 
   BaseLayer(int c, int h, int w, BaseLayer* ip);
+  virtual ~BaseLayer() {}
   size_t GetOutputSize(int N) const { return sizeof(DataType) * N * C * H * W; }
 
   // input2 is optional (skip connection).
