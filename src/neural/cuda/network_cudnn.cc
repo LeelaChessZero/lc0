@@ -651,7 +651,9 @@ template <typename DataType>
 std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile &weights,
                                           const OptionsDict &options) {
   if (weights.format().network_format().network() !=
-      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+      weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_SE) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
