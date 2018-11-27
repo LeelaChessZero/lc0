@@ -630,6 +630,10 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
+  if (ok_to_respond_bestmove_ && !bestmove_is_sent_) {
+    best_move_callback_(GetBestChildNoTemperature(root_node_)
+                            .GetMove(played_history_.IsBlackToMove()));
+  }
   bestmove_is_sent_ = true;
   FireStopInternal();
   LOGFILE << "Aborting search, if it is still active.";
