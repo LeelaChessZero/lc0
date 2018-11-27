@@ -34,6 +34,7 @@
 #include "layers.h"
 #include "kernels.h"
 #include "neural/factory.h"
+#include "neural/network_legacy.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
@@ -134,7 +135,8 @@ class CudnnNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudnnNetwork : public Network {
  public:
-  CudnnNetwork(Weights weights, const OptionsDict& options) {
+  CudnnNetwork(const WeightsFile &file, const OptionsDict& options) {
+    LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
@@ -170,7 +172,7 @@ class CudnnNetwork : public Network {
 
     // 0. Process weights.
     processConvBlock(weights.input, true);
-    for (auto i = size_t{0}; i < numBlocks_; i++) {
+    for (int i = 0; i < numBlocks_; i++) {
       processConvBlock(weights.residual[i].conv1, true);
       processConvBlock(weights.residual[i].conv2, true);
     }
@@ -237,7 +239,7 @@ class CudnnNetwork : public Network {
     }
 
     // residual block
-    for (int block = 0; block < weights.residual.size(); block++) {
+    for (size_t block = 0; block < weights.residual.size(); block++) {
       auto conv1 = std::make_unique<ConvLayer<DataType>>(
           getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
       conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
@@ -495,7 +497,7 @@ class CudnnNetwork : public Network {
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void processConvBlock(Weights::ConvBlock& block, bool foldBNLayer = false) {
+  void processConvBlock(LegacyWeights::ConvBlock& block, bool foldBNLayer = false) {
     const float epsilon = 1e-5f;
 
     // Compute reciprocal of std-dev from the variances (so that it can be
@@ -556,7 +558,20 @@ void CudnnNetworkComputation<DataType>::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
-REGISTER_NETWORK("cudnn", CudnnNetwork<float>, 110)
-REGISTER_NETWORK("cudnn-fp16", CudnnNetwork<half>, 105)
+template <typename DataType>
+std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile &weights,
+                                          const OptionsDict &options) {
+  if (weights.format().network_format().network() !=
+      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    throw Exception(
+        "Network format " +
+        std::to_string(weights.format().network_format().network()) +
+        " is not supported by CuDNN backend.");
+  }
+  return std::make_unique<CudnnNetwork<DataType>>(weights, options);
+}
+
+REGISTER_NETWORK("cudnn", MakeCudnnNetwork<float>, 110)
+REGISTER_NETWORK("cudnn-fp16", MakeCudnnNetwork<half>, 105)
 
 }  // namespace lczero

@@ -30,9 +30,11 @@
 #include <condition_variable>
 #include <thread>
 
+#include "neural/network_legacy.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 #include "utils/logging.h"
+#include "utils/weights_adapter.h"
 
 namespace lczero {
 
@@ -47,11 +49,11 @@ struct OpenCLWeights {
   const size_t num_output_policies;
   const size_t num_value_channels;
 
-  OpenCLWeights(const Weights& weights)
-      : ip2_val_w(weights.ip2_val_w),
-        ip2_val_b(weights.ip2_val_b),
-        num_output_policies(weights.ip_pol_b.size()),
-        num_value_channels(weights.ip1_val_b.size()) {}
+  OpenCLWeights(const WeightsFile& file)
+      : ip2_val_w(LayerAdapter(file.weights().ip2_val_w()).as_vector()),
+        ip2_val_b(LayerAdapter(file.weights().ip2_val_b()).as_vector()),
+        num_output_policies(LayerAdapter(file.weights().ip_pol_b()).size()),
+        num_value_channels(LayerAdapter(file.weights().ip1_val_b()).size()) {}
 };
 
 class OpenCLComputation : public NetworkComputation {
@@ -160,8 +162,9 @@ class OpenCLNetwork : public Network {
  public:
   virtual ~OpenCLNetwork(){};
 
-  OpenCLNetwork(const Weights& weights, const OptionsDict& options)
-      : weights_(weights), params_(), opencl_(), opencl_net_(opencl_) {
+  OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
+      : weights_(file), params_(), opencl_(), opencl_net_(opencl_) {
+    const LegacyWeights weights(file.weights());
     params_.gpuId = options.GetOrDefault<int>("gpu", -1);
     params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
@@ -219,10 +222,9 @@ class OpenCLNetwork : public Network {
     auto Upad = WinogradFilter::ZeropadU(input_conv_weights, channels,
                                          inputChannels, m_ceil, k_ceil);
 
-    std::vector<float> input_batchnorm_means =
-        Batchnorm::OffsetMeans(weights.input);
+    std::vector<float> input_batchnorm_means = weights.input.GetOffsetMeans();
     std::vector<float> input_batchnorm_stddivs =
-        Batchnorm::InvertStddev(weights.input);
+        weights.input.GetInvertedStddev();
 
     // Winograd filter transformation changes filter size to 4x4.
     opencl_net_.push_input_convolution(kWinogradAlpha, inputChannels, channels,
@@ -234,6 +236,7 @@ class OpenCLNetwork : public Network {
       auto& residual = weights.residual[i];
       auto& conv1 = residual.conv1;
       auto& conv2 = residual.conv2;
+      auto& se = residual.se;
 
       std::vector<float> conv_weights_1 =
           WinogradFilter::TransformF(conv1.weights, channels, channels);
@@ -245,22 +248,28 @@ class OpenCLNetwork : public Network {
       auto Upad2 = WinogradFilter::ZeropadU(conv_weights_2, channels, channels,
                                             m_ceil, m_ceil);
 
-      std::vector<float> batchnorm_means_1 = Batchnorm::OffsetMeans(conv1);
-      std::vector<float> batchnorm_means_2 = Batchnorm::OffsetMeans(conv2);
+      std::vector<float> batchnorm_means_1 = conv1.GetOffsetMeans();
+      std::vector<float> batchnorm_means_2 = conv2.GetOffsetMeans();
 
-      std::vector<float> batchnorm_stddivs_1 = Batchnorm::InvertStddev(conv1);
-      std::vector<float> batchnorm_stddivs_2 = Batchnorm::InvertStddev(conv2);
-
+      std::vector<float> batchnorm_stddivs_1 = conv1.GetInvertedStddev();
+      std::vector<float> batchnorm_stddivs_2 = conv2.GetInvertedStddev();
       opencl_net_.push_residual(kWinogradAlpha, channels, channels, Upad1,
                                 batchnorm_means_1, batchnorm_stddivs_1, Upad2,
                                 batchnorm_means_2, batchnorm_stddivs_2);
+      if (residual.has_se) {
+          auto se_fc_outputs = se.w1.size() / channels;
+          if (se.b2.size() != 2 * channels) {
+              throw Exception("SE-unit output bias is not right size.");
+          }
+          opencl_net_.push_se(channels, se_fc_outputs, se.w1, se.b1, se.w2, se.b2);
+      }
     }
 
     constexpr unsigned int width = 8;
     constexpr unsigned int height = 8;
 
-    std::vector<float> bn_pol_means = Batchnorm::OffsetMeans(weights.policy);
-    std::vector<float> bn_pol_stddivs = Batchnorm::InvertStddev(weights.policy);
+    std::vector<float> bn_pol_means = weights.policy.GetOffsetMeans();
+    std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
 
     opencl_net_.push_policy(channels, num_policy_input_planes,
                             num_policy_input_planes * width * height,
@@ -268,8 +277,8 @@ class OpenCLNetwork : public Network {
                             bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
                             weights.ip_pol_b);
 
-    std::vector<float> bn_val_means = Batchnorm::OffsetMeans(weights.value);
-    std::vector<float> bn_val_stddivs = Batchnorm::InvertStddev(weights.value);
+    std::vector<float> bn_val_means = weights.value.GetOffsetMeans();
+    std::vector<float> bn_val_stddivs = weights.value.GetInvertedStddev();
 
     opencl_net_.push_value(channels, num_value_input_planes,
                            num_value_input_planes * width * height,
@@ -293,8 +302,21 @@ class OpenCLNetwork : public Network {
   OpenCL_Network opencl_net_;
 };
 
+std::unique_ptr<Network> MakeOpenCLNetwork(const WeightsFile& weights,
+                                           const OptionsDict& options) {
+  if (weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+      weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_SE) {
+    throw Exception(
+        "Network format " +
+        std::to_string(weights.format().network_format().network()) +
+        " is not supported by OpenCL backend.");
+  }
+  return std::make_unique<OpenCLNetwork>(weights, options);
+}
+
+REGISTER_NETWORK("opencl", MakeOpenCLNetwork, 100)
+
 }  // namespace
-
-REGISTER_NETWORK("opencl", OpenCLNetwork, 100)
-
 }  // namespace lczero

@@ -19,18 +19,13 @@
 #pragma once
 
 #include <cstddef>
-#include <vector>
-
-#include "neural/network.h"
 
 namespace lczero {
 
-// Apply batch normalization, along with a Relu and add a possible skip
-// connection.
-void ApplyBatchNormalization(const size_t batch_size, const size_t channels,
-                             float* data, const float* means,
-                             const float* stddivs,
-                             const float* eltwise = nullptr,
-                             const bool relu = true);
+void ApplySEUnit(const size_t batch_size, const size_t channels,
+                 const size_t se_fc_outputs, const float* input,
+                 const float* residual, const float* weights_w1,
+                 const float* weights_b1, const float* weights_w2,
+                 const float* weights_b2, float* output);
 
 }  // namespace lczero
