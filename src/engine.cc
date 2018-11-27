@@ -191,7 +191,7 @@ SearchLimits EngineController::PopulateSearchLimits(
   const optional<int64_t>& inc = is_black ? params.binc : params.winc;
   int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
-  int movestogo = !params.movestogo ? 50 : *params.movestogo;
+  int movestogo = params.movestogo.value_or(50);
   // Fix non-standard uci command.
   if (movestogo == 0) movestogo = 1;
 
