@@ -288,9 +288,10 @@ SELayer<DataType>::~SELayer() {
 }
 
 template <>
-void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
-                                 float* prevLayerBias, void* scratch) {
-  assert(0); // TODO!
+void SELayer<float>::LoadWeights(float* /*w1*/, float* /*b1*/, float* /*w2*/,
+                                 float* /*b2*/, float* /*prevLayerBias*/,
+                                 void* /*scratch*/) {
+  assert(0);  // TODO!
 }
 
 void cpuTranspose(float* op, float* ip, int rows, int cols) {
@@ -342,17 +343,18 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
 }
 
 template <>
-void SELayer<float>::Eval(int N, float* output, const float* input,
-                          const float* input2, void* scratch,
-                          size_t scratch_size, cudnnHandle_t cudnn,
-                          cublasHandle_t cublas) {
+void SELayer<float>::Eval(int /*N*/, float* /*output*/,
+                          const float* /*input*/, const float* /*input2*/,
+                          void* /*scratch*/, size_t /*scratch_size*/,
+                          cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/) {
   // TODO!
 }
 
 template <>
 void SELayer<half>::Eval(int N, half* output, const half* input,
-                         const half* input2, void* scratch, size_t scratch_size,
-                         cudnnHandle_t cudnn, cublasHandle_t cublas) {
+                         const half* input2, void* /*scratch*/,
+                         size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
+                         cublasHandle_t /*cublas*/) {
   Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_, b1_, w2_, b2_);
 }
 
@@ -361,12 +363,10 @@ GlobalAvgPoolLayer<DataType>::GlobalAvgPoolLayer(BaseLayer<DataType>* ip)
     : BaseLayer<DataType>(ip->GetC(), 1, 1, ip) {}
 
 template <typename DataType>
-void GlobalAvgPoolLayer<DataType>::Eval(int N, DataType* output,
-                                        const DataType* input,
-                                        const DataType* input2, void* scratch,
-                                        size_t scratch_size,
-                                        cudnnHandle_t cudnn,
-                                        cublasHandle_t cublas) {
+void GlobalAvgPoolLayer<DataType>::Eval(
+    int N, DataType* output, const DataType* input, const DataType* /*input2*/,
+    void* /*scratch*/, size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
+    cublasHandle_t /*cublas*/) {
   globalAvgPool(N, C, output, input);
 }
 
@@ -377,11 +377,13 @@ GlobalScaleLayer<DataType>::GlobalScaleLayer(BaseLayer<DataType>* ip)
 template <typename DataType>
 void GlobalScaleLayer<DataType>::Eval(int N, DataType* output,
                                       const DataType* input,
-                                      const DataType* input2, void* scratch,
-                                      size_t scratch_size, cudnnHandle_t cudnn,
-                                      cublasHandle_t cublas) {
+                                      const DataType* input2, void* /*scratch*/,
+                                      size_t /*scratch_size*/,
+                                      cudnnHandle_t /*cudnn*/,
+                                      cublasHandle_t /*cublas*/) {
   globalScale(N, C, output, input, input2);
 }
+
 
 template <typename DataType>
 FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,

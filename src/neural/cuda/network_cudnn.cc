@@ -177,7 +177,7 @@ class CudnnNetwork : public Network {
 
     // 0. Process weights.
     processConvBlock(weights.input, true);
-    for (auto i = size_t{0}; i < numBlocks_; i++) {
+    for (int i = 0; i < numBlocks_; i++) {
       if (weights.residual[i].has_se) {
         has_se_ = true;
       }
