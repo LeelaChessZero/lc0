@@ -232,7 +232,7 @@ class CudnnNetwork : public Network {
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 #ifdef DEBUG_RAW_NPS
-    printf("\nallocated %d bytes for scratch memory\n", (int)scratch_size_);
+    CERR << "allocated " << scratch_size_ << " bytes for scratch memory";
 #endif
 
     // 2. Build the network, and copy the weights to GPU memory.
@@ -364,8 +364,10 @@ class CudnnNetwork : public Network {
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
     }
 
-    // printf("Allocated %d bytes of GPU memory to run the network\n", 3 *
-    // maxSize);
+#ifdef DEBUG_RAW_NPS
+    CERR << "allocated " << 3 * maxSize
+         << " bytes of GPU memory to run the network";
+#endif
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
@@ -510,11 +512,9 @@ class CudnnNetwork : public Network {
     if (numCalls == reportingCalls) {
       double avgBatchSize = ((double)sumBatchSize) / numCalls;
       double nps = sumBatchSize / totalTime;
-      printf(
-          "\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals. "
-          "NPS: "
-          "%g\n",
-          avgBatchSize, totalTime, sumBatchSize, nps);
+      CERR << "Avg batch size: " << avgBatchSize
+           << ", NN eval time: " << totalTime << " seconds per " << sumBatchSize
+           << " evals. NPS: " << nps;
       sumBatchSize = 0;
       totalTime = 0;
       numCalls = 0;
