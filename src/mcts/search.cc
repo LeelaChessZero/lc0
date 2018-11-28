@@ -101,8 +101,6 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  if (!current_best_edge_) return;
-
   auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
   auto score_type = params_.GetScoreType();
 
@@ -142,7 +140,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   }
 
   if (!uci_infos.empty()) last_outputted_uci_info_ = uci_infos.front();
-  if (!edges.empty()) last_outputted_info_edge_ = current_best_edge_.edge();
+  if (current_best_edge_ && !edges.empty()) {
+    last_outputted_info_edge_ = current_best_edge_.edge();
+  }
 
   info_callback_(uci_infos);
 }
