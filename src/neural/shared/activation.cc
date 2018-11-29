@@ -23,7 +23,7 @@
 
 namespace lczero {
 
-void Activation::Softmax(const size_t size, const float* input, float* output) {
+void SoftmaxActivation(const size_t size, const float* input, float* output) {
   auto alpha = *std::max_element(input, input + size);
 
   auto denom = 0.0f;

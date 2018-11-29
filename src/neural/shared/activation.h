@@ -23,12 +23,7 @@
 
 namespace lczero {
 
-class Activation {
- public:
-  Activation() = delete;
-
   // Softmax activation
-  static void Softmax(const size_t size, const float* input, float* output);
-};
+void SoftmaxActivation(const size_t size, const float* input, float* output);
 
 }  // namespace lczero

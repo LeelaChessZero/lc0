@@ -21,12 +21,18 @@
 #include <array>
 
 namespace lczero {
+namespace {
 
-std::vector<float> WinogradFilter::ZeropadU(const std::vector<float>& U,
-                                            const size_t outputs,
-                                            const size_t channels,
-                                            const size_t outputs_pad,
-                                            const size_t channels_pad) {
+static constexpr auto kWinogradAlpha = 4;
+static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
+
+}  // namespace
+
+std::vector<float> WinogradFilterZeropadU(const std::vector<float>& U,
+                                          const size_t outputs,
+                                          const size_t channels,
+                                          const size_t outputs_pad,
+                                          const size_t channels_pad) {
   // Fill with zeroes.
   auto Upad = std::vector<float>(kWinogradTile * outputs_pad * channels_pad);
 
@@ -45,9 +51,9 @@ std::vector<float> WinogradFilter::ZeropadU(const std::vector<float>& U,
   return Upad;
 }
 
-std::vector<float> WinogradFilter::TransformF(const std::vector<float>& f,
-                                              const size_t outputs,
-                                              const size_t channels) {
+std::vector<float> WinogradFilterTransformF(const std::vector<float>& f,
+                                            const size_t outputs,
+                                            const size_t channels) {
   // F(2x2, 3x3) Winograd filter transformation
   // transpose(G.dot(f).dot(G.transpose()))
   // U matrix is transposed for better memory layout in SGEMM

@@ -35,31 +35,17 @@ namespace lczero {
 // https://ai.intel.com/winograd-2/
 
 // Convolution filter for 3x3 Winograd algorithm
-class WinogradFilter {
- public:
-  WinogradFilter() = delete;
 
-  // Create the zero-padded U matrix.
-  static std::vector<float> ZeropadU(const std::vector<float>& U,
-                                     const size_t outputs,
-                                     const size_t channels,
-                                     const size_t outputs_pad,
-                                     const size_t channels_pad);
+// Create the zero-padded U matrix.
+std::vector<float> WinogradFilterZeropadU(const std::vector<float>& U,
+                                          const size_t outputs,
+                                          const size_t channels,
+                                          const size_t outputs_pad,
+                                          const size_t channels_pad);
 
-  // Create the filter transform matrix.
-  static std::vector<float> TransformF(const std::vector<float>& f,
-                                       const size_t outputs,
-                                       const size_t channels);
+// Create the filter transform matrix.
+std::vector<float> WinogradFilterTransformF(const std::vector<float>& f,
+                                            const size_t outputs,
+                                            const size_t channels);
 
- private:
-  static constexpr auto kWidth = 8;
-  static constexpr auto kHeight = 8;
-  static constexpr auto kSquares = kWidth * kHeight;
-
-  static constexpr auto kWtiles = (kWidth + 1) / 2;  // 4
-  static constexpr auto kTiles = kWtiles * kWtiles;  // 16
-
-  static constexpr auto kWinogradAlpha = 4;
-  static constexpr auto kWinogradTile = kWinogradAlpha * kWinogradAlpha;
-};
 }  // namespace lczero
