@@ -42,8 +42,7 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
   constexpr auto width = 8;
   constexpr auto height = 8;
 
-  auto finalSize_pol =
-      layers[layers.size() - 2].ip_out_size * sizeof(net_t);
+  auto finalSize_pol = layers[layers.size() - 2].ip_out_size * sizeof(net_t);
   auto finalSize_val = layers.back().ip_out_size * sizeof(net_t);
 
   auto max_channels = unsigned{0};
@@ -95,11 +94,9 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
                             std::vector<net_t>& output_pol,
                             std::vector<net_t>& output_val,
                             const int batch_size) {
- 
   auto& layers = m_opencl_net.m_layers;
 
-  auto finalSize_pol =
-      layers[layers.size() - 2].ip_out_size * sizeof(net_t);
+  auto finalSize_pol = layers[layers.size() - 2].ip_out_size * sizeof(net_t);
   auto finalSize_val = layers.back().ip_out_size * sizeof(net_t);
 
   const auto inSize = sizeof(net_t) * input.size();
@@ -180,7 +177,7 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
       // inBuffer: residual connection from start of the residual block
       // inBuffer2: Last block output
       // Output will be written in inBuffer
-      assert(niter != cend(m_layers));
+      assert(niter != cend(layers));
       auto se_weights = begin(layer.weights);
       squeeze_excitation(layer.outputs, // channels
                          layer.se_fc_outputs, // fc_outputs

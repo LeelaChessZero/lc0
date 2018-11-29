@@ -16,12 +16,6 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <algorithm>
-#include <cassert>
-#include <cmath>
-#include <iostream>
-
-#include "neural/blas/batchnorm.h"
 #include "neural/blas/blas.h"
 #include "neural/blas/convolution1.h"
 #include "neural/blas/fully_connected_layer.h"
@@ -30,6 +24,14 @@
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "neural/network_legacy.h"
+#include "neural/shared/activation.h"
+#include "neural/shared/batchnorm.h"
+#include "neural/shared/winograd_filter.h"
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <iostream>
 
 namespace lczero {
 namespace {
@@ -236,7 +238,7 @@ void BlasComputation::ComputeBlocking() {
       std::vector<float> policy(num_output_policy);
 
       // Get the moves
-      FullyConnectedLayer::Softmax(
+      SoftmaxActivation(
           num_output_policy, &output_pol[j * num_output_policy], policy.data());
 
       policies_.emplace_back(std::move(policy));
@@ -275,8 +277,8 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   const auto channels = static_cast<int>(weights_.input.biases.size());
   const auto residual_blocks = weights_.residual.size();
 
-  weights_.input.weights = WinogradConvolution3::TransformF(
-      weights_.input.weights, channels, inputChannels);
+  weights_.input.weights =
+      WinogradFilterTransformF(weights_.input.weights, channels, inputChannels);
 
   weights_.input.OffsetMeans();
   weights_.input.InvertStddev();
@@ -287,10 +289,8 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     auto& conv1 = residual.conv1;
     auto& conv2 = residual.conv2;
 
-    conv1.weights =
-        WinogradConvolution3::TransformF(conv1.weights, channels, channels);
-    conv2.weights =
-        WinogradConvolution3::TransformF(conv2.weights, channels, channels);
+    conv1.weights = WinogradFilterTransformF(conv1.weights, channels, channels);
+    conv2.weights = WinogradFilterTransformF(conv2.weights, channels, channels);
 
     conv1.OffsetMeans();
     conv2.OffsetMeans();
@@ -341,7 +341,7 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
 #endif
 
   std::cerr << "BLAS max batch size is " << max_batch_size_ << ".\n";
-}  // namespace
+}
 
 std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                                          const OptionsDict& options) {
