@@ -245,11 +245,11 @@ if get_option('build_backends')
   if get_option('blas') and has_blas
 
     blas_files = [
-    'src/neural/blas/fully_connected_layer.cc',
-    'src/neural/blas/winograd_convolution3.cc',
     'src/neural/blas/convolution1.cc',
+    'src/neural/blas/fully_connected_layer.cc',
     'src/neural/blas/se_unit.cc',
-    'src/neural/blas/network_blas.cc'
+    'src/neural/blas/network_blas.cc',
+    'src/neural/blas/winograd_convolution3.cc'
     ]
 
     shared_files = [
@@ -293,10 +293,10 @@ if get_option('build_backends')
   if get_option('opencl') and has_opencl
 
     opencl_files = [
+      'src/neural/opencl/network_opencl.cc',
       'src/neural/opencl/OpenCL.cc',
       'src/neural/opencl/OpenCLTuner.cc',
       'src/neural/opencl/OpenCLBuffers.cc',
-      'src/neural/opencl/network_opencl.cc',
     ]
 
     shared_files = [
