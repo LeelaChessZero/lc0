@@ -630,8 +630,10 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  bestmove_is_sent_ = true;
-  FireStopInternal();
+  if (!stop_.load(std::memory_order_acquire)) {
+    bestmove_is_sent_ = true;
+    FireStopInternal();
+  }
   LOGFILE << "Aborting search, if it is still active.";
 }
 
@@ -644,7 +646,7 @@ void Search::Wait() {
 }
 
 Search::~Search() {
-  if (!stop_.load(std::memory_order_acquire)) Abort();
+  Abort();
   Wait();
   LOGFILE << "Search destroyed.";
 }
