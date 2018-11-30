@@ -166,7 +166,7 @@ SearchLimits EngineController::PopulateSearchLimits(
         start_time + std::chrono::milliseconds(params.movetime - move_overhead);
   }
 
-  int64_t time = (is_black ? params.btime : params.wtime);
+  const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
     for (const auto& move : params.searchmoves) {
@@ -187,7 +187,7 @@ SearchLimits EngineController::PopulateSearchLimits(
     if (limit < limits.visits) limits.visits = limit;
   }
   limits.depth = params.depth;
-  if (limits.infinite || time < 0) return limits;
+  if (limits.infinite || !time) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
   int movestogo = params.movestogo < 0 ? 50 : params.movestogo;
@@ -202,7 +202,7 @@ SearchLimits EngineController::PopulateSearchLimits(
 
   // Total time till control including increments.
   auto total_moves_time =
-      std::max(int64_t{0}, time + increment * (movestogo - 1) - move_overhead);
+      std::max(int64_t{0}, *time + increment * (movestogo - 1) - move_overhead);
 
   // If there is time spared from previous searches, the `time_to_squander` part
   // of it will be used immediately, remove that from planning.
@@ -241,7 +241,7 @@ SearchLimits EngineController::PopulateSearchLimits(
           << std::chrono::duration_cast<std::chrono::milliseconds>(
                  std::chrono::steady_clock::now() - start_time)
                  .count()
-          << "ms already passed). Remaining time " << time << "ms(-"
+          << "ms already passed). Remaining time " << *time << "ms(-"
           << move_overhead << "ms overhead)";
   // Use `time_to_squander` time immediately.
   this_move_time += time_to_squander;
@@ -249,8 +249,8 @@ SearchLimits EngineController::PopulateSearchLimits(
   // Make sure we don't exceed current time limit with what we calculated.
   limits.search_deadline =
       start_time +
-      std::chrono::milliseconds(
-          std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
+      std::chrono::milliseconds(std::min(static_cast<int64_t>(this_move_time),
+                                         *time - move_overhead));
   return limits;
 }
 
@@ -318,13 +318,14 @@ void EngineController::SetupPosition(
   SharedLock lock(busy_mutex_);
   search_.reset();
 
+  UpdateFromUciOptions();
+
   if (!tree_) tree_ = std::make_unique<NodeTree>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   bool is_same_game = tree_->ResetToPosition(fen, moves);
   if (!is_same_game) time_spared_ms_ = 0;
-  UpdateFromUciOptions();
 }
 
 void EngineController::Go(const GoParams& params) {
@@ -408,10 +409,7 @@ void EngineController::PonderHit() {
 }
 
 void EngineController::Stop() {
-  if (search_) {
-    search_->Stop();
-    search_->Wait();
-  }
+  if (search_) search_->Stop();
 }
 
 EngineLoop::EngineLoop()

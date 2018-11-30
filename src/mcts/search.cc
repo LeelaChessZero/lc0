@@ -101,8 +101,6 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  if (!current_best_edge_) return;
-
   auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
   auto score_type = params_.GetScoreType();
 
@@ -142,7 +140,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   }
 
   if (!uci_infos.empty()) last_outputted_uci_info_ = uci_infos.front();
-  if (!edges.empty()) last_outputted_info_edge_ = current_best_edge_.edge();
+  if (current_best_edge_ && !edges.empty()) {
+    last_outputted_info_edge_ = current_best_edge_.edge();
+  }
 
   info_callback_(uci_infos);
 }
@@ -579,7 +579,8 @@ void Search::RunBlocking(size_t threads) {
 }
 
 bool Search::IsSearchActive() const {
-  return !stop_.load(std::memory_order_acquire);
+  Mutex::Lock lock(counters_mutex_);
+  return !bestmove_is_sent_;
 }
 
 void Search::WatchdogThread() {
@@ -629,8 +630,10 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  bestmove_is_sent_ = true;
-  FireStopInternal();
+  if (!stop_.load(std::memory_order_acquire)) {
+    bestmove_is_sent_ = true;
+    FireStopInternal();
+  }
   LOGFILE << "Aborting search, if it is still active.";
 }
 
@@ -1170,7 +1173,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
-  search_->cum_depth_ += node_to_process.depth;
+  search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }  // namespace lczero
 
