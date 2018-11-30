@@ -38,6 +38,9 @@ files = []
 includes = []
 has_backends = false
 
+# Third party files.
+includes += include_directories('third_party', is_system: true)
+
 # Both protobuf and protoc must be the same version, so couple them together.
 protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
 if not protobuf_lib.found()
@@ -233,7 +236,7 @@ if get_option('build_backends')
       endif
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
-        arguments: [ '-O2', '--arch=x86-64',
+        arguments: [ '-O2', '--wno-perf', '--arch=x86-64',
                      '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
                      + ispc_extra_args
