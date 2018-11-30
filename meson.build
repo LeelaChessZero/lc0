@@ -233,7 +233,7 @@ if get_option('build_backends')
       endif
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
-        arguments: [ '-O2', '--arch=x86-64',
+        arguments: [ '-O2', '--wno-perf', '--arch=x86-64',
                      '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
                      + ispc_extra_args
@@ -306,6 +306,7 @@ if get_option('build_backends')
     ]
 
     includes += include_directories(get_option('opencl_include'))
+    includes += include_directories('src/neural/opencl/include', is_system: true)
     files += opencl_files
     has_backends = true
 
