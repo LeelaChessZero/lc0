@@ -97,7 +97,7 @@ class Edge {
   // Sets edge-Q: win = 1; draw = 0; loss = -1.
   void SetEQ(int eq);
   // Clears Certainty but keeps bounds.
-  void ClearEdge() {
+  void ClearCertaintyState() {
     (certainty_state_ & kCertainMask) ? certainty_state_ = 0
                                       : certainty_state_ &= kClearKeepBounds;
   };

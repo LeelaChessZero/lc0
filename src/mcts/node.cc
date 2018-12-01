@@ -423,7 +423,7 @@ void NodeTree::MakeMove(Move move) {
   current_head_->ReleaseChildrenExceptOne(new_head);
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
-  if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearEdge();
+  if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearCertaintyState();
   current_head_->RecomputeNfromChildren();
   history_.Append(move);
 }
@@ -474,7 +474,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // Certainty Propagation: No need to trim the head, just resetting certainty
   // state and recomputing N should suffice even with WDL hits.
   // TODO: Works, but maybe recheck if there are crititcal edge cases.
-  if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearEdge();
+  if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearCertaintyState();
   current_head_->RecomputeNfromChildren();
   return seen_old_head;
 }
