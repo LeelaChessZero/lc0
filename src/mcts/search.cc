@@ -655,6 +655,13 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
+SearchWorker::SearchWorker(Search* search, const SearchParams& params)
+    : search_(search),
+      history_(search_->played_history_),
+      params_(params),
+      visit_sampler_(
+          MakeSoftmaxSampler<Node::Iterator>(params.GetVisitSoftmax())) {}
+
 void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
   InitializeIteration(search_->network_->NewComputation());
@@ -784,6 +791,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   // incremented for each node in the playout (via TryStartScoreUpdate()).
 
   Node* node = search_->root_node_;
+  Node::Iterator edge_to_visit;
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
   // Initialize position sequence with pre-move position.
@@ -806,8 +814,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
-    if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
-    best_edge.Reset();
+    if (!is_root_node) node = edge_to_visit.GetOrSpawnNode(/* parent */ node);
+    edge_to_visit.Reset();
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
@@ -837,6 +845,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             ? -node->GetQ()
             : -node->GetQ() - params_.GetFpuReduction() *
                                   std::sqrt(node->GetVisitedPolicy());
+    visit_sampler_->Reset();
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -858,6 +867,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       float Q = child.GetQ(parent_q);
       const float score = child.GetU(puct_mult) + Q;
+      visit_sampler_->Add(score, child);
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -869,7 +879,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
     }
 
-    if (second_best_edge) {
+    edge_to_visit = visit_sampler_->Toss();
+
+    if (edge_to_visit != best_edge) {
+      // We only allow collisions on best
+      collision_limit = 1;
+    } else if (second_best_edge) {
       collision_limit = std::min(
           collision_limit,
           best_edge.GetVisitsToReachU(second_best, puct_mult, parent_q));
@@ -877,7 +892,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    history_.Append(best_edge.GetMove());
+    history_.Append(edge_to_visit.GetMove());
     if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
       // If there is only one move theoretically possible within remaining time,
       // output it.

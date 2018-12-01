@@ -40,6 +40,7 @@
 #include "utils/logging.h"
 #include "utils/mutex.h"
 #include "utils/optional.h"
+#include "utils/samplers.h"
 
 namespace lczero {
 
@@ -192,8 +193,7 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search, const SearchParams& params)
-      : search_(search), history_(search_->played_history_), params_(params) {}
+  SearchWorker(Search* search, const SearchParams& params);
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -292,6 +292,7 @@ class SearchWorker {
   bool root_move_filter_populated_ = false;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
+  std::unique_ptr<Sampler<Node::Iterator>> visit_sampler_;
 };
 
 }  // namespace lczero

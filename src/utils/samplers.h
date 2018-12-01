@@ -30,6 +30,7 @@
 
 namespace lczero {
 
+template <class T>
 class Sampler {
  public:
   virtual ~Sampler() = default;
@@ -37,48 +38,89 @@ class Sampler {
   // Resets sampler to it can start fresh.
   virtual void Reset() = 0;
   // Adds one sample.
-  virtual void Add(double val) = 0;
-  // Adds one sample which should never be returned as a result of Toss() (but
-  // still consumes sample index).
-  virtual void AddImprobable() = 0;
+  virtual void Add(double weight, const T& val) = 0;
   // Picks a random sample according to sampler's distribution and returns its
-  // index.
-  virtual int Toss() const = 0;
+  // value.
+  virtual T Toss() const = 0;
 };
 
 // Returns random sample proportional to
 // P(x) = exp(x / theta) / sum{over all y}(exp(y / theta))
 // Not thread safe! (has own RNG without mutex).
-class SoftmaxSampler : public Sampler {
+template <class T>
+class SoftmaxSampler : public Sampler<T> {
  public:
-  // Initializes softmaxer with a given beta parameter.
-  SoftmaxSampler(double theta);
-  void Reset() override;
-  void Add(double val) override;
-  void AddImprobable() override;
-  int Toss() const override;
+  SoftmaxSampler(double theta)
+      : base_(std::exp(1.0 / theta)),
+        gen_(Random::Get().GetInt(0, std::numeric_limits<int>::max())) {
+    Reset();
+  }
+
+  void Reset() override {
+    cumulative_weights_.clear();
+    cumulative_weights_.push_back(0.0);
+    values_.clear();
+  }
+
+  void Add(double weight, const T& val) override {
+    cumulative_weights_.push_back(cumulative_weights_.back() +
+                                  std::pow(base_, weight));
+    values_.push_back(val);
+  }
+
+  T Toss() const override {
+    const double rnd = std::uniform_real_distribution<double>(
+        0.0, cumulative_weights_.back())(gen_);
+    int idx = std::upper_bound(cumulative_weights_.begin(),
+                               cumulative_weights_.end(), rnd) -
+              cumulative_weights_.begin() - 1;
+    return values_[idx];
+  }
 
  private:
   const double base_;
-  std::vector<double> cumulative_values_;
+  std::vector<double> cumulative_weights_;
+  std::vector<T> values_;
   mutable std::mt19937 gen_;
 };
 
 // Returns random sample proportional to
 // P(x) = x ^ (1/theta) / sum{over all y}(y ^ (1/theta))
 // Not thread safe! (has own RNG without mutex).
-class PowSampler : public Sampler {
+template <class T>
+class PowSampler : public Sampler<T> {
  public:
-  // Initializes softmaxer with a given beta parameter.
-  PowSampler(double theta);
-  void Reset() override;
-  void Add(double val) override;
-  void AddImprobable() override;
-  int Toss() const override;
+  PowSampler(double theta)
+      : exponent_(1.0 / theta),
+        gen_(Random::Get().GetInt(0, std::numeric_limits<int>::max())) {
+    Reset();
+  }
+
+  void Reset() override {
+    cumulative_weights_.clear();
+    cumulative_weights_.push_back(0.0);
+    values_.clear();
+  }
+
+  void Add(double weight, const T& val) override {
+    cumulative_weights_.push_back(cumulative_weights_.back() +
+                                  std::pow(weight, exponent_));
+    values_.push_back(val);
+  }
+
+  T Toss() const override {
+    const double rnd = std::uniform_real_distribution<double>(
+        0.0, cumulative_weights_.back())(gen_);
+    int idx = std::upper_bound(cumulative_weights_.begin(),
+                               cumulative_weights_.end(), rnd) -
+              cumulative_weights_.begin() - 1;
+    return values_[idx];
+  }
 
  private:
   const double exponent_;
-  std::vector<double> cumulative_values_;
+  std::vector<double> cumulative_weights_;
+  std::vector<T> values_;
   mutable std::mt19937 gen_;
 };
 
@@ -86,26 +128,59 @@ class PowSampler : public Sampler {
 // If several samples have the same maximum value, random index of them is
 // returned.
 // Not thread safe! (has own RNG without mutex).
-class MaxSampler : public Sampler {
+template <class T>
+class MaxSampler : public Sampler<T> {
  public:
-  MaxSampler();
-  void Reset() override;
-  void Add(double val) override;
-  void AddImprobable() override;
-  int Toss() const override;
+  MaxSampler()
+      : gen_(Random::Get().GetInt(0, std::numeric_limits<int>::max())) {
+    Reset();
+  }
+
+  void Reset() override { have_value_ = false; }
+  void Add(double weight, const T& val) override {
+    if (!have_value_ || best_weight_ < weight) {
+      have_value_ = true;
+      best_value_ = val;
+      best_weight_ = weight;
+      best_count_ = 1;
+    } else if (best_weight_ == weight) {
+      if (std::uniform_int_distribution<int>(0, best_count_)(gen_) == 0) {
+        best_value_ = val;
+      }
+      ++best_count_;
+    }
+  }
+
+  T Toss() const override { return best_value_; }
 
  private:
-  int num_;
-  int best_idx_;
+  // TODO(crem): Replace it with std::optional when we have proper
+  // std::optional.
+  bool have_value_;
+  T best_value_;
   int best_count_;
-  double best_val_;
+  double best_weight_;
   mutable std::mt19937 gen_;
 };
 
 // Creates SoftmaxSampler or MaxSampler, depending on whether theta is 0.
-std::unique_ptr<Sampler> MakeSoftmaxSampler(double theta);
+template <class T>
+std::unique_ptr<Sampler<T>> MakeSoftmaxSampler(double theta) {
+  if (theta > 0) {
+    return std::make_unique<SoftmaxSampler<T>>(theta);
+  } else {
+    return std::make_unique<MaxSampler<T>>();
+  }
+}
 
 // Creates PowSampler or MaxSampler, depending on whether theta is 0.
-std::unique_ptr<Sampler> MakePowSampler(double theta);
+template <class T>
+std::unique_ptr<Sampler<T>> MakePowSampler(double theta) {
+  if (theta > 0) {
+    return std::make_unique<PowSampler<T>>(theta);
+  } else {
+    return std::make_unique<MaxSampler<T>>();
+  }
+}
 
 }  // namespace lczero
