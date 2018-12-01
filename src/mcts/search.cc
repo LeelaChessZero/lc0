@@ -121,20 +121,21 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.nps =
       common_info.time ? (total_playouts_ * 1000 / common_info.time) : 0;
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
-  common_info.certain = certain_.load(std::memory_order_acquire);
-  common_info.bounds = bounds_.load(std::memory_order_acquire);
-
   int multipv = 0;
   for (const auto& edge : edges) {
+    float score = (edge.HasNode() && edge.node()->GetParent())
+                      ? edge.GetQ(-edge.node()->GetParent()->GetQ())
+                      : edge.GetQ(0);
+
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     if (score_type == "centipawn") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+      uci_info.score = 290.680623072 * tan(1.548090806 * score);
     } else if (score_type == "win_percentage") {
-      uci_info.score = edge.GetQ(0) * 5000 + 5000;
+      uci_info.score = score * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = edge.GetQ(0) * 10000;
+      uci_info.score = score * 10000;
     }
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
@@ -147,8 +148,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     // mate). Length of mate is +1000 if winning certain score is based on a
     // propagated TBHit. For root filtered TB search, use best_rank (mate +500)
     // TODO: include proper mate scores in uci_info structure
-    if (params_.GetCertaintyPropagation() > 0) {
-      if (edge.IsCertain() && edge.GetEQ() != 0.0f)
+    if (params_.GetCertaintyPropagation()) {
+      if (edge.IsCertain() && edge.GetEQ() != 0)
         uci_info.score =
             edge.GetEQ() * (20000 + ((uci_info.pv.size() + 1) / 2) + 1 +
                             (edge.IsPropagatedTBHit() ? 1000 : 0));
@@ -248,7 +249,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(V: ";
     optional<float> v;
     if (edge.IsCertain()) {
-      v = edge.edge()->GetEQ();
+      v = (float)edge.edge()->GetEQ();
     } else {
       NNCacheLock nneval = GetCachedNNEval(edge.node());
       if (nneval) v = -nneval->q;
@@ -503,7 +504,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<float, uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<int, uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -512,12 +513,26 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
       continue;
     }
     edges.emplace_back(
-        (params_.GetCertaintyPropagation() > 1 || parent != root_node_)
+        (params_.GetCertaintyPropagation() >= 2 || parent != root_node_)
             ? edge.edge()->GetEQ()
-            : 0.0f,
+            : 0,
         edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
-  // Final sort
+  // In case of certain draws, insert
+  // these draws at first N (descending) where Q<=0
+  if (params_.GetCertaintyPropagation() >= 2) {
+    std::partial_sort(edges.begin(), edges.end(), edges.end(),
+                      std::greater<El>());
+    // largest N with Q >= 0
+    uint64_t largest_N = 0;
+    for (auto it = edges.begin(); it != edges.end(); ++it) {
+      if (std::get<2>(*it) <= 0.0f && largest_N == 0)
+        largest_N = std::get<1>(*it);
+      if (std::get<4>(*it).edge()->IsCertainDraw() && largest_N > 0)
+        std::get<1>(*it) = largest_N;
+    }
+  }
+  // Final sort pass
   auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
                                                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
@@ -715,7 +730,7 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
   minibatch_.clear();
- 
+
   if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;
     int best_rank = search_->PopulateRootMoveLimit(&root_move_filter_);
@@ -852,9 +867,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (node->IsCertain()) {
       int multivisit =
-          (params_.GetCertaintyPropagation()==3 && params_.GetOutOfOrderEval())
-              ? 1
-              : collision_limit;
+          (params_.GetCertaintyPropagation()) ? 1 : collision_limit;
       IncrementNInFlight(node, search_->root_node_, multivisit - 1);
       return NodeToProcess::TerminalHit(node, depth, multivisit);
     } else if (!node->HasChildren()) {
@@ -873,7 +886,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             ? -node->GetQ()
             : -node->GetQ() - params_.GetFpuReduction() *
                                   std::sqrt(node->GetVisitedPolicy());
-    bool parent_upperbounded = (is_root_node) ? false : node->IsOnlyUBounded();
+    bool parent_upperbounded = node->IsOnlyUBounded();
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -885,16 +898,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             search_->remaining_playouts_ < best_node_n - child.GetN()) {
           continue;
         }
-        // If CertaintyPropagation >= 2 play certain win and don't search other
-        // moves at root. If search limit infinite continue searching other moves.
+        // If CertaintyPropagation >= 1 play certain win and don't search other
+        // moves at root. If search limit infinite continue searching other
+        // moves.
         if (params_.GetCertaintyPropagation() >= 2 &&
             child.edge()->IsCertainWin()) {
           if (!search_->limits_.infinite) {
             best_edge = child;
             possible_moves = 1;
             break;
-          } else if (search_->current_best_edge_ == child && 
-                     possible_moves > 0)
+          } else if (search_->current_best_edge_ == child && possible_moves > 0)
             continue;
         }
         // If root move filter exists, make sure move is in the list.
@@ -905,14 +918,27 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      // Experimental: Don't search childs out of parents bounds branches (CP >= 3).
-      if (parent_upperbounded && (child.edge()->IsOnlyUBounded() || child.edge()->IsCertainDraw()) &&
-         params_.GetCertaintyPropagation() >= 3  ) {
-        out_of_bounds_edge = child;
-        continue;
-      }
 
       float Q = child.GetQ(parent_q);
+
+      // Certainty Propagation. Avoid suboptimal childs.
+      if (params_.GetCertaintyPropagation()) {
+        // Correct Q for childs that are bounded.
+        // Prefers lower bounded childs over drawing children.
+        if (child.edge()->IsOnlyLBounded() && child.GetQ(0) <= 0.0f) Q = 0.01f;
+        // Perfers drawing children over upper bounded childs.
+        if (child.edge()->IsOnlyUBounded() && child.GetQ(0) >= 0.0f) Q = -0.01f;
+        // Penalize exploring suboptimal childs throughout the tree,
+        // except for training at root.
+        if (parent_upperbounded &&
+            !(params_.GetCertaintyPropagation() == 1 && is_root_node)) {
+          if (child.edge()->IsOnlyUBounded()) Q -= child.GetN() * 0.1f;
+          // We do not really need to visit certain nodes, but
+          // we do initially to yield information quickly.
+          if (child.edge()->IsCertain()) Q -= child.GetN() * 0.01f;
+        }
+      }
+
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
@@ -932,10 +958,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       assert(collision_limit >= 1);
       second_best_edge.Reset();
     }
-
-    // SAFEGUARD: If all childs are upperbouded CP >=3
-    // Should not happen as then bounds would have been incrorrect.
-    if (!best_edge && out_of_bounds_edge) best_edge = out_of_bounds_edge;
 
     history_.Append(best_edge.GetMove());
     if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
@@ -1058,7 +1080,8 @@ void SearchWorker::ExtendNode(Node* node) {
   // TODO: Move ordering.
   // TODO: Optimize for speed (move generator) to search
   // three plys deep to catch all Q+,K,Q+,K two-folds.
-  if (params_.GetCertaintyPropagation()) {
+  if (params_.GetCertaintyPropagation() &&
+      params_.GetCertaintyPropagationDepth() > 0) {
     int node_lowerbound = -1;
     int node_upperbound = -1;
     bool based_on_propagated_tbhit = false;
@@ -1068,7 +1091,8 @@ void SearchWorker::ExtendNode(Node* node) {
       history_.Append(iter.GetMove());
       // Search with depth, lower bound and upper bound.
       // Currently depth = 1, as move generator is slow.
-      struct Bounds bounds = SearchWorker::NegaBoundSearch(0, -1, 1);
+      struct Bounds bounds = SearchWorker::NegaBoundSearch(
+          params_.GetCertaintyPropagationDepth() - 1, -1, 1);
       history_.Pop();
       if (bounds.lowerbound == bounds.upperbound) {
         iter.edge()->MakeCertain(-bounds.lowerbound,
@@ -1076,14 +1100,9 @@ void SearchWorker::ExtendNode(Node* node) {
                                      ? CertaintyTrigger::TB_HIT
                                      : CertaintyTrigger::NORMAL);
         based_on_propagated_tbhit |= bounds.based_on_tbhit;
-        search_->certain_.fetch_add(1, std::memory_order_acq_rel);
       } else {
-        if (bounds.lowerbound > -1)
-          iter.edge()->UBound((float)-bounds.lowerbound);
-        if (bounds.upperbound < 1)
-          iter.edge()->LBound((float)-bounds.upperbound);
-        if (bounds.lowerbound > -1 || bounds.upperbound < 1)
-          search_->bounds_.fetch_add(1, std::memory_order_acq_rel);
+        if (bounds.lowerbound > -1) iter.edge()->UBound(-bounds.lowerbound);
+        if (bounds.upperbound < 1) iter.edge()->LBound(-bounds.upperbound);
       }
       if (-bounds.upperbound > node_lowerbound)
         node_lowerbound = -bounds.upperbound;
@@ -1092,15 +1111,12 @@ void SearchWorker::ExtendNode(Node* node) {
     }
     if (node != search_->root_node_) {
       if (node_lowerbound == node_upperbound) {
-        node->MakeCertain((float)-node_lowerbound,
-                          based_on_propagated_tbhit ? CertaintyTrigger::TB_HIT
-                                                    : CertaintyTrigger::NORMAL);
-        search_->certain_.fetch_add(1, std::memory_order_acq_rel);
+        node->MakeCertain(-node_lowerbound, based_on_propagated_tbhit
+                                                ? CertaintyTrigger::TB_HIT
+                                                : CertaintyTrigger::NORMAL);
       } else {
-        if (node_lowerbound > -1) node->UBound((float)-node_lowerbound);
-        if (node_upperbound < 1) node->LBound((float)-node_upperbound);
-        if (node_lowerbound > -1 || node_upperbound < 1)
-          search_->bounds_.fetch_add(1, std::memory_order_acq_rel);
+        if (node_lowerbound > -1) node->UBound(-node_lowerbound);
+        if (node_upperbound < 1) node->LBound(-node_upperbound);
       }
     }
   }
@@ -1193,7 +1209,7 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // nodes which are likely useful in future.
   // TODO(Videodr0me) Maybe use bounds here to more efficiently select nodes.
   if (search_->stop_.load(std::memory_order_acquire)) return;
-  
+
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
@@ -1377,11 +1393,12 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Certainty Propagation:
     // If update could affect bounds (origin_bounded),
     // check all childs, and update bounds/certainty.
-    if (n != search_->root_node_ && params_.GetCertaintyPropagation() &&
-        n != node && (origin_bounded) && !n->IsCertain()) {
+    float prev_q = -100.0f;
+    if (params_.GetCertaintyPropagation() && n != node && (origin_bounded) &&
+        !n->IsCertain()) {
       bool based_on_propagated_tbhit = false;
-      float lower_bound = -1.0f;
-      float upper_bound = -1.0f;
+      int lower_bound = -1;
+      int upper_bound = -1;
       for (auto iter : n->Edges()) {
         if (iter.IsLBounded() && iter.GetEQ() > lower_bound)
           lower_bound = iter.GetEQ();
@@ -1389,8 +1406,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
           upper_bound = iter.GetEQ();
         // Only checking !UBounded so that lower bounded
         // edges, also get the correct upper_bound
-        if (!iter.IsUBounded()) upper_bound = 1.0f;
-        if (lower_bound == upper_bound && lower_bound == 1.0f) {
+        if (!iter.IsUBounded()) upper_bound = 1;
+        if (lower_bound == upper_bound && lower_bound == 1) {
           based_on_propagated_tbhit = iter.IsPropagatedTBHit();
           break;
         }
@@ -1399,28 +1416,34 @@ void SearchWorker::DoBackupUpdateSingleNode(
       // Exact scores are certain and propagate certainty.
       // Inexact scores propagate their bounds.
       if (lower_bound == upper_bound) {
-        v = -lower_bound;
-        n->MakeCertain(v, based_on_propagated_tbhit ? CertaintyTrigger::TB_HIT
-                                                    : CertaintyTrigger::NORMAL);
-        search_->certain_.fetch_add(1, std::memory_order_acq_rel);
+        if (n != search_->root_node_) {
+          prev_q = n->GetQ();
+          n->MakeCertain(-lower_bound, based_on_propagated_tbhit
+                                           ? CertaintyTrigger::TB_HIT
+                                           : CertaintyTrigger::NORMAL);
+          v = (float)-lower_bound;
+        }
       } else {
-        if (lower_bound > -1.0f) n->UBound(-lower_bound);
-        if (upper_bound < 1.0f) n->LBound(-upper_bound);
-        if (lower_bound > -1.0f || upper_bound < 1.0f)
-          search_->bounds_.fetch_add(1, std::memory_order_acq_rel);
+        if (lower_bound > -1) n->UBound(-lower_bound);
+        if (upper_bound < 1) n->LBound(-upper_bound);
       }
     }
 
-    // Certainty propagation: reduce error by keeping score in proven bounds CP>=3.
-    // Check if signal in these out_of_bounds v (if any) can be retained by
-    // v = v/2; or v= 0.0001; or something similar to correct score but still keep bias
-    if (params_.GetCertaintyPropagation() >= 3 && n != search_->root_node_ &&
+    // Certainty propagation: reduce error by keeping score in proven bounds
+    if (params_.GetCertaintyPropagation() >= 2 && n->GetParent() &&
         !n->IsCertain()) {
-      if (n->GetOwnEdge()->IsUBounded() && v > 0.0f) v = 0.0f;
-      if (n->GetOwnEdge()->IsLBounded() && v < 0.0f) v = 0.0f;
+      if (n->GetOwnEdge()->IsUBounded() && v > 0.0f) v = 0.00f;
+      if (n->GetOwnEdge()->IsLBounded() && v < 0.0f) v = 0.00f;
     }
 
     n->FinalizeScoreUpdate(v, node_to_process.multivisit);
+
+    // Certainty Prop - adjust Qs along the path as if all visits already had
+    // propagated the certain result
+    if (params_.GetCertaintyPropagation() && (prev_q != -100.0f) &&
+        (prev_q != v) && n->IsCertain())
+      v = v + (v - prev_q) * (n->GetN() - 1);
+
     // Q will be flipped for opponent.
     v = -v;
 
@@ -1433,7 +1456,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
-  search_->cum_depth_ += node_to_process.depth;
+  search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }  // namespace lczero
 

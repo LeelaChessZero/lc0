@@ -78,12 +78,7 @@ class EngineController {
   // Must not block.
   void Stop();
   // Prints verbose move stats of current root
-  void Stats() {
-    // Reserved for debugging
-    //SetupPosition(current_position_->fen, current_position_->moves);
-    //if (tree_) info_callback_(tree_->GetCurrentHead()->SendMovesStats(tree_->IsBlackToMove()));
-  };
-
+ 
   SearchLimits PopulateSearchLimits(int ply, bool is_black,
       const GoParams& params,
       std::chrono::steady_clock::time_point start_time);
@@ -140,7 +135,6 @@ class EngineLoop : public UciLoop {
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
-  void CmdStats() override;
 
  private:
   OptionsParser options_;

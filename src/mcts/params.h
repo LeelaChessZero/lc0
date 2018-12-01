@@ -75,6 +75,7 @@ class SearchParams {
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
   int GetCertaintyPropagation() const { return kCertaintyPropagation; }
+  int GetCertaintyPropagationDepth() const { return kCertaintyPropagationDepth; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -96,6 +97,7 @@ class SearchParams {
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
   static const OptionId kCertaintyPropagationId;
+  static const OptionId kCertaintyPropagationDepthId;
 
  private:
   const OptionsDict& options_;
@@ -115,6 +117,7 @@ class SearchParams {
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
   const int kCertaintyPropagation;
+  const int kCertaintyPropagationDepth; 
   const FillEmptyHistory kHistoryFill;
 };
 

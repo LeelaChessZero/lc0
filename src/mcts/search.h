@@ -95,7 +95,6 @@ class Search {
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
   const SearchParams& GetParams() const { return params_; }
-  void SendMovesStats() const;
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
@@ -118,7 +117,7 @@ class Search {
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
   // Sets stop to true and notifies watchdog thread.
   void FireStopInternal();
-
+  void SendMovesStats() const;
   // Function which runs in a separate thread and watches for time and
   // uci `stop` command;
   void WatchdogThread();
@@ -181,8 +180,6 @@ class Search {
   // Cummulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
   std::atomic<int> tb_hits_{0};
-  std::atomic<int> certain_{0};
-  std::atomic<int> bounds_{0};
   std::atomic<int> root_syzygy_rank_{0};
 
   BestMoveInfo::Callback best_move_callback_;
@@ -241,13 +238,13 @@ class SearchWorker {
   // 7. Update the Search's status and progress information.
   void UpdateCounters();
 
+ private:
   struct Bounds {
     int lowerbound;
     int upperbound;
     bool based_on_tbhit = false;
   };
 
- private:
   struct NodeToProcess {
     bool IsExtendable() const { return !is_collision && !node->IsCertain(); }
     bool IsCollision() const { return is_collision; }
@@ -283,12 +280,11 @@ class SearchWorker {
           is_collision(is_collision) {}
   };
 
-  
   NodeToProcess PickNodeToExtend(int collision_limit);
   void EvalPosition(Node* node, MoveList& legal_moves, const ChessBoard& board,
                     GameResult& result, CertaintyTrigger& trigger);
   void ExtendNode(Node* node);
-  struct Bounds NegaBoundSearch( int depth, int lowerbound, int upperbound);
+  struct Bounds NegaBoundSearch(int depth, int lowerbound, int upperbound);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,

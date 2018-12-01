@@ -57,7 +57,6 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"stop"}, {}},
         {{"ponderhit"}, {}},
         {{"quit"}, {}},
-        {{"stats"}, {}},
         {{"xyzzy"}, {}},
 };
 
@@ -198,8 +197,6 @@ bool UciLoop::DispatchCommand(
     CmdPonderHit();
   } else if (command == "start") {
     CmdStart();
-  } else if (command == "stats") {
-    CmdStats();
   } else if (command == "xyzzy") {
     SendResponse("Nothing happens.");
   } else if (command == "quit") {
@@ -263,8 +260,6 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
     if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
     if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
-    if (info.certain >= 0) res += " certain " + std::to_string(info.certain);
-    if (info.bounds >= 0) res += " bounds " + std::to_string(info.bounds);
     if (info.multipv >= 0) res += " multipv " + std::to_string(info.multipv);
 
     if (!info.pv.empty()) {

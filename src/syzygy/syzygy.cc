@@ -1616,8 +1616,8 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 }
 
 // Use the DTZ tables to rank root moves.
-//
-// A return value false indicates that not all probes were successful.
+// A return value 0 indicates that not all probes were successful.
+// Otherwise best rank is returned, with rank 1 = draw.
 int SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
                                  std::vector<Move>* safe_moves) {
   ProbeState result;
@@ -1673,7 +1673,8 @@ int SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
 // Use the WDL tables to rank root moves.
 // This is a fallback for the case that some or all DTZ tables are missing.
 //
-// A return value false indicates that not all probes were successful.
+// A return value 0 indicates that not all probes were successful.
+// Otherwise best rank is returned with rank 1 = draw.
 int SyzygyTablebase::root_probe_wdl(const Position& pos,
                                      std::vector<Move>* safe_moves) {
   static const int WDL_to_rank[] = {-1000, -899, 1, 899, 1000};

@@ -126,14 +126,24 @@ void SelfPlayLoop::CmdSetOption(const std::string& name,
 }
 
 void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
-  int winp1   = info.results[0][0] + info.results[0][1];
-  int loosep1 = info.results[2][0] + info.results[2][1];
-  int draws   = info.results[1][0] + info.results[1][1];
-  float perct = -1, elo = 99999;
-  float los   = 99999;
+  const int winp1 = info.results[0][0] + info.results[0][1];
+  const int loosep1 = info.results[2][0] + info.results[2][1];
+  const int draws = info.results[1][0] + info.results[1][1];
+
+  // Initialize variables
+  float percentage = -1;
+  float elo = 10000;
+  float los = 10000;
+
+  // Only caculate percentage if any games at all (avoid divide by 0).
   if ((winp1 + loosep1 + draws) > 0)
-    perct = (((float)draws) / 2 + winp1) / (winp1 + loosep1 + draws);
-  if ((perct < 1) && (perct > 0)) elo = -400 * log(1 / perct - 1) / log(10);
+    percentage =
+        (static_cast<float>(draws) / 2 + winp1) / (winp1 + loosep1 + draws);
+
+  // Calculate elo and los if percentage strictly between 0 and 1 (avoids divide
+  // by 0 or overflow).
+  if ((percentage < 1) && (percentage > 0))
+    elo = -400 * log(1 / percentage - 1) / log(10);
   if ((winp1 + loosep1) > 0)
     los = .5 +
           .5 * std::erf((winp1 - loosep1) / std::sqrt(2.0 * (winp1 + loosep1)));
@@ -143,18 +153,18 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   res += " P1: +" + std::to_string(winp1) + " -" + std::to_string(loosep1) +
          " =" + std::to_string(draws);
 
-  if (perct > 0) {
+  if (percentage > 0) {
     std::ostringstream oss;
-    oss << std::fixed << std::setw(5) << std::setprecision(2) << (perct * 100)
-        << "%";
+    oss << std::fixed << std::setw(5) << std::setprecision(2)
+        << (percentage * 100) << "%";
     res += " Win: " + oss.str();
   }
-  if (elo < 99998) {
+  if (elo < 10000) {
     std::ostringstream oss;
     oss << std::fixed << std::setw(5) << std::setprecision(2) << (elo);
     res += " Elo: " + oss.str();
   }
-  if (los < 99998) {
+  if (los < 10000) {
     std::ostringstream oss;
     oss << std::fixed << std::setw(5) << std::setprecision(2) << (los * 100)
         << "%";

@@ -28,18 +28,18 @@
 #include "mcts/node.h"
 
 #include <algorithm>
+#include <bitset>
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <thread>
-#include <iomanip>
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
 #include "utils/hashcat.h"
-#include <bitset>
 
 namespace lczero {
 
@@ -172,43 +172,42 @@ void Edge::MakeTerminal(GameResult result) {
   }
 }
 
-
 void Edge::MakeCertain(GameResult result, CertaintyTrigger trigger) {
   certainty_state_ |= kCertainMask | kUpperBound | kLowerBound;
   certainty_state_ &= kGameResultClear;
   if (result == GameResult::WHITE_WON) {
     certainty_state_ |= kGameResultWin;
   } else if (result == GameResult::BLACK_WON) {
-    certainty_state_ |= kGameResultLoss;  
+    certainty_state_ |= kGameResultLoss;
   }
   if (trigger == CertaintyTrigger::TB_HIT) certainty_state_ |= kTBHit;
   if (trigger == CertaintyTrigger::TWO_FOLD) certainty_state_ |= kTwoFold;
 }
 
-void Edge::MakeCertain(float q, CertaintyTrigger trigger) {
+void Edge::MakeCertain(int q, CertaintyTrigger trigger) {
   certainty_state_ |= kCertainMask | kUpperBound | kLowerBound;
   certainty_state_ &= kGameResultClear;
-  if (q == 1.0f) {
+  if (q == 1) {
     certainty_state_ |= kGameResultWin;
-  } else if (q == -1.0f) {
+  } else if (q == -1) {
     certainty_state_ |= kGameResultLoss;
   }
   if (trigger == CertaintyTrigger::TB_HIT) certainty_state_ |= kTBHit;
   if (trigger == CertaintyTrigger::TWO_FOLD) certainty_state_ |= kTwoFold;
 }
-void Edge::SetEQ(float eq){
+void Edge::SetEQ(int eq) {
   certainty_state_ &= kGameResultClear;
-  if (eq == 1.0f) {
+  if (eq == 1) {
     certainty_state_ |= kGameResultWin;
-  } else if (eq == -1.0f) {
+  } else if (eq == -1) {
     certainty_state_ |= kGameResultLoss;
   }
 }
 
-float Edge::GetEQ() const {
-  if (certainty_state_ & kGameResultLoss) return -1.0f;
-  if (certainty_state_ & kGameResultWin) return 1.0f;
-  return 0.0f;
+int Edge::GetEQ() const {
+  if (certainty_state_ & kGameResultLoss) return -1;
+  if (certainty_state_ & kGameResultWin) return 1;
+  return 0;
 }
 
 std::string Edge::DebugString() const {
@@ -252,24 +251,23 @@ Node::Iterator Node::Edges() { return {edges_, &child_}; }
 // Recalculate n_ from real children visits.
 // This is needed if a node was proved to be certain in a prior
 // search and later gets to be root of search.
-void Node::ReComputeN() {
+void Node::RecomputeNfromChildren() {
   if (n_ > 1) {
     uint32_t visits = 1;
     for (const auto& child : Edges()) visits += child.GetN();
     n_ = visits;
-    }
-  n_in_flight_ = 0;
+  }
+  assert(n_in_flight_ == 0);
 }
-
 
 float Node::GetVisitedPolicy() const { return visited_policy_; }
 
 float Node::GetQ() const {
   if (parent_) {
     auto edge = parent_->GetEdgeToNode(this);
-    if (edge->IsCertain()) return edge->GetEQ();
-    }
-    return q_; 
+    if (edge->IsCertain()) return (float)edge->GetEQ();
+  }
+  return q_;
 }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
@@ -279,21 +277,20 @@ Edge* Node::GetEdgeToNode(const Node* node) const {
 }
 
 Edge* Node::GetOwnEdge() const {
-  if (GetParent())
+  if (GetParent()) {
     return GetParent()->GetEdgeToNode(this);
-  else
+  } else
     return nullptr;
 }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << " This:" << this << " Parent:" << parent_
-      << " Index:" << index_ << " Child:" << child_.get()
-      << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
-      << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
+  oss << " This:" << this << " Parent:" << parent_ << " Index:" << index_
+      << " Child:" << child_.get() << " Sibling:" << sibling_.get()
+      << " Q:" << q_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " Edges:" << edges_.size();
   return oss.str();
 }
-
 
 bool Node::TryStartScoreUpdate() {
   if (n_ == 0 && n_in_flight_ > 0) return false;
@@ -427,7 +424,7 @@ void NodeTree::MakeMove(Move move) {
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
   if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearEdge();
-  current_head_->ReComputeN();
+  current_head_->RecomputeNfromChildren();
   history_.Append(move);
 }
 
@@ -472,14 +469,13 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously trimmed; we need to reset current_head_ in that case.
   // Also, if the current_head_ is terminal, reset that as well to allow forced
   // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  if (!seen_old_head) TrimTreeAtHead(); // must check if edges are created
+  if (!seen_old_head) TrimTreeAtHead();  // must check if edges are created
 
-  // Certainty Propagation: No need to trim the head, just resetting certainty 
-  // state and recomputing N should suffice even with WDL hits. 
+  // Certainty Propagation: No need to trim the head, just resetting certainty
+  // state and recomputing N should suffice even with WDL hits.
   // TODO: Works, but maybe recheck if there are crititcal edge cases.
-  if (current_head_->GetParent())
-    current_head_->GetOwnEdge()->ClearEdge();
-  current_head_->ReComputeN();
+  if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearEdge();
+  current_head_->RecomputeNfromChildren();
   return seen_old_head;
 }
 

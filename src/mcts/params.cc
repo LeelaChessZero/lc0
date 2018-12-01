@@ -134,7 +134,15 @@ const OptionId SearchParams::kCertaintyPropagationId{
     "certainty-propagation", "CertaintyPropagation", 
     "Enables level of certainty propagation: "
     "Setting 1 is fully compatible with training "
-    "Setting 2 is for playing." };
+    "Setting 2 is for playing "
+    "Setting 3 is experimental "
+    "Setting 4 is experimantal + 2 fold draw."};
+
+const OptionId SearchParams::kCertaintyPropagationDepthId{
+    "certainty-propagation-depth", "CertaintyPropagationDepth",
+    "Depth of look-ahead-search: "
+    "Warning, settings larger than 0 are currently not "
+    "recommended."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the "safe defaults" are listed.
@@ -161,7 +169,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt {"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<IntOption>(kCertaintyPropagationId, 0, 3) = 1;
+  options->Add<IntOption>(kCertaintyPropagationId, 0, 4) = 1;
+  options->Add<IntOption>(kCertaintyPropagationDepthId, 0, 4) = 0;
 }
 
 
@@ -178,6 +187,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
       kCertaintyPropagation(options.Get<int>(kCertaintyPropagationId.GetId())),
+      kCertaintyPropagationDepth(options.Get<int>(kCertaintyPropagationDepthId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))) {
 }
