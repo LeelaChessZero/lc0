@@ -337,8 +337,14 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
   std::uint16_t zero_h = 0;
   half alpha;
   half beta;
+#if __CUDA_API_VERSION < 9020
   memcpy(&alpha, &one_h, sizeof(half));
   memcpy(&beta, &zero_h, sizeof(half));
+#else
+  alpha = one_h;
+  beta = zero_h;
+#endif
+
   ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
                                  N, num_inputs, &alpha, weights_, num_inputs,
                                  input_tensor, num_inputs, &beta, output_tensor,
