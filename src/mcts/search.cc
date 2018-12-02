@@ -455,7 +455,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
       temperature = tempmin;
     } else if (moves > params_.GetTempDecayOffset()){
       temperature = static_cast<float>(tempdiff*((decayrange - (moves -
-                         params_.GetTempDecayOffset())) / decayrange) + tempmin);
+                    params_.GetTempDecayOffset())) / decayrange) + tempmin);
     }
   }
 
