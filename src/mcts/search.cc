@@ -1405,7 +1405,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
         if (iter.IsUBounded() && iter.GetEQ() > upper_bound)
           upper_bound = iter.GetEQ();
         // Only checking !UBounded so that lower bounded
-        // edges, also get the correct upper_bound
+        // edges, also get the correct upper_bound.
         if (!iter.IsUBounded()) upper_bound = 1;
         if (lower_bound == upper_bound && lower_bound == 1) {
           based_on_propagated_tbhit = iter.IsPropagatedTBHit();
@@ -1429,7 +1429,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       }
     }
 
-    // Certainty propagation: reduce error by keeping score in proven bounds
+    // Certainty propagation: reduce error by keeping score in proven bounds.
     if (params_.GetCertaintyPropagation() >= 2 && n->GetParent() &&
         !n->IsCertain()) {
       if (n->GetOwnEdge()->IsUBounded() && v > 0.0f) v = 0.00f;
@@ -1439,7 +1439,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     n->FinalizeScoreUpdate(v, node_to_process.multivisit);
 
     // Certainty Prop - adjust Qs along the path as if all visits already had
-    // propagated the certain result
+    // propagated the certain result.
     if (params_.GetCertaintyPropagation() && (prev_q != -100.0f) &&
         (prev_q != v) && n->IsCertain())
       v = v + (v - prev_q) * (n->GetN() - 1);
@@ -1448,7 +1448,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     v = -v;
 
     // Update best move if new N > best N or
-    // if the node is a certain child of root
+    // if the node is a certain child of root.
     if (n->GetParent() == search_->root_node_ &&
         (search_->current_best_edge_.GetN() <= n->GetN() || n->IsCertain())) {
       search_->current_best_edge_ =

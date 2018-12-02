@@ -132,16 +132,15 @@ const OptionId SearchParams::kHistoryFillId{
 
 const OptionId SearchParams::kCertaintyPropagationId{
     "certainty-propagation", "CertaintyPropagation", 
-    "Enables level of certainty propagation: "
-    "Setting 1 is fully compatible with training "
-    "Setting 2 is for playing "
-    "Setting 3 is experimental "
-    "Setting 4 is experimantal + 2 fold draw."};
+    "Level of certainty propagation: off (default), training or play. "
+    "If set to play root moves are pruned, certain wins are "
+    "played immediately and certain losses are avoided regardless of "
+    "visits. Training chooses root moves according to visits only."};
 
 const OptionId SearchParams::kCertaintyPropagationDepthId{
     "certainty-propagation-depth", "CertaintyPropagationDepth",
     "Depth of look-ahead-search: "
-    "Warning, settings larger than 0 are currently not "
+    "Warning, settings larger than 1 are currently not "
     "recommended."};
 
 void SearchParams::Populate(OptionsParser* options) {
