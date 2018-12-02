@@ -52,35 +52,44 @@ class SoftmaxSampler : public Sampler<T> {
  public:
   SoftmaxSampler(double theta)
       : base_(std::exp(1.0 / theta)),
-        gen_(Random::Get().GetInt(0, std::numeric_limits<int>::max())) {
-    Reset();
-  }
+        gen_(Random::Get().GetInt(0, std::numeric_limits<int>::max())) {}
 
   void Reset() override {
-    cumulative_weights_.clear();
-    cumulative_weights_.push_back(0.0);
+    weights_.clear();
     values_.clear();
+    cumulative_weights_.clear();
   }
 
   void Add(double weight, const T& val) override {
-    cumulative_weights_.push_back(cumulative_weights_.back() +
-                                  std::pow(base_, weight));
+    if (weights_.empty() || weight > max_weight_) max_weight_ = weight;
+    weights_.push_back(weight);
     values_.push_back(val);
   }
 
   T Toss() const override {
+    if (weights_.size() != cumulative_weights_.size()) {
+      cumulative_weights_.clear();
+      double sum = 0.0;
+      for (auto weight : weights_) {
+        sum += std::pow(base_, weight - max_weight_);
+        cumulative_weights_.push_back(sum);
+      }
+    }
+
     const double rnd = std::uniform_real_distribution<double>(
         0.0, cumulative_weights_.back())(gen_);
-    int idx = std::upper_bound(cumulative_weights_.begin(),
+    int idx = std::lower_bound(cumulative_weights_.begin(),
                                cumulative_weights_.end(), rnd) -
-              cumulative_weights_.begin() - 1;
+              cumulative_weights_.begin();
     return values_[idx];
   }
 
  private:
   const double base_;
-  std::vector<double> cumulative_weights_;
+  std::vector<double> weights_;
   std::vector<T> values_;
+  mutable std::vector<double> cumulative_weights_;
+  double max_weight_;
   mutable std::mt19937 gen_;
 };
 
@@ -131,23 +140,12 @@ class PowSampler : public Sampler<T> {
 template <class T>
 class MaxSampler : public Sampler<T> {
  public:
-  MaxSampler()
-      : gen_(Random::Get().GetInt(0, std::numeric_limits<int>::max())) {
-    Reset();
-  }
-
   void Reset() override { have_value_ = false; }
   void Add(double weight, const T& val) override {
     if (!have_value_ || best_weight_ < weight) {
       have_value_ = true;
       best_value_ = val;
       best_weight_ = weight;
-      best_count_ = 1;
-    } else if (best_weight_ == weight) {
-      if (std::uniform_int_distribution<int>(0, best_count_)(gen_) == 0) {
-        best_value_ = val;
-      }
-      ++best_count_;
     }
   }
 
@@ -156,12 +154,10 @@ class MaxSampler : public Sampler<T> {
  private:
   // TODO(crem): Replace it with std::optional when we have proper
   // std::optional.
-  bool have_value_;
+  bool have_value_ = false;
   T best_value_;
-  int best_count_;
   double best_weight_;
-  mutable std::mt19937 gen_;
-};
+};  // namespace lczero
 
 // Creates SoftmaxSampler or MaxSampler, depending on whether theta is 0.
 template <class T>
