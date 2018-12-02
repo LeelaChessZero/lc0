@@ -446,11 +446,16 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   float temperature = params_.GetTemperature();
   if (temperature && params_.GetTempDecayMoves()) {
     int moves = played_history_.Last().GetGamePly() / 2;
+    float tempmin = params_.GetTempMin();
+    int decayrange = params_.GetTempDecayMoves() - params_.GetTempDecayOffset();
+    float tempdiff = temperature - tempmin;
+    assert(temperature > tempmin);
+    assert(decayrange > 0);
     if (moves >= params_.GetTempDecayMoves()) {
-      temperature = 0.0;
-    } else {
-      temperature *= static_cast<float>(params_.GetTempDecayMoves() - moves) /
-                     params_.GetTempDecayMoves();
+      temperature = tempmin;
+    } else if (moves > params_.GetTempDecayOffset()){
+      temperature = static_cast<float>(tempdiff*((decayrange - (moves -
+                         params_.GetTempDecayOffset())) / decayrange) + tempmin);
     }
   }
 

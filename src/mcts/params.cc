@@ -61,9 +61,16 @@ const OptionId SearchParams::kTemperatureId{
     "while making the move."};
 const OptionId SearchParams::kTempDecayMovesId{
     "tempdecay-moves", "TempDecayMoves",
-    "Reduce temperature for every move from the game start to this number of "
-    "moves, decreasing linearly from initial temperature to 0. A value of 0 "
-    "disables tempdecay."};
+    "Reduce temperature for every move from the game start + TempDecayOffset "
+    "to this number of moves, decreasing linearly from initial temperature to "
+    "TempMin value. A value of 0 disables tempdecay."};
+const OptionId SearchParams::kTempMinId{
+    "temp-min","TempMin",
+    "When using temperature decay, temperature will decrease to this value."};
+const OptionId SearchParams::kTempDecayOffsetId{
+    "tempdecay-offset","TempDecayOffset",
+    "When using temperature decay, temperature decrease will start from move "
+    "TempDecayOffset + 1."};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset",
     "Reduces visits by this value when picking a move with a temperature. When "
@@ -139,6 +146,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.2f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
+  options->Add<FloatOption>(kTempMinId, 0.0f, 100.0f) = 0.0f;
+  options->Add<IntOption>(kTempDecayOffsetId, 0, 100) = 0;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
