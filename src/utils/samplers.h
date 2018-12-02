@@ -38,7 +38,7 @@ class Sampler {
   // Resets sampler to it can start fresh.
   virtual void Reset() = 0;
   // Adds one sample.
-  virtual void Add(double weight, const T& val) = 0;
+  virtual void Add(float weight, const T& val) = 0;
   // Picks a random sample according to sampler's distribution and returns its
   // value.
   virtual T Toss() const = 0;
@@ -50,7 +50,7 @@ class Sampler {
 template <class T>
 class SoftmaxSampler : public Sampler<T> {
  public:
-  SoftmaxSampler(double theta)
+  SoftmaxSampler(float theta)
       : base_(std::exp(1.0 / theta)),
         gen_(Random::Get().GetInt(0, std::numeric_limits<int>::max())) {}
 
@@ -60,7 +60,7 @@ class SoftmaxSampler : public Sampler<T> {
     cumulative_weights_.clear();
   }
 
-  void Add(double weight, const T& val) override {
+  void Add(float weight, const T& val) override {
     if (weights_.empty() || weight > max_weight_) max_weight_ = weight;
     weights_.push_back(weight);
     values_.push_back(val);
@@ -69,14 +69,14 @@ class SoftmaxSampler : public Sampler<T> {
   T Toss() const override {
     if (weights_.size() != cumulative_weights_.size()) {
       cumulative_weights_.clear();
-      double sum = 0.0;
+      float sum = 0.0;
       for (auto weight : weights_) {
         sum += std::pow(base_, weight - max_weight_);
         cumulative_weights_.push_back(sum);
       }
     }
 
-    const double rnd = std::uniform_real_distribution<double>(
+    const float rnd = std::uniform_real_distribution<float>(
         0.0, cumulative_weights_.back())(gen_);
     int idx = std::lower_bound(cumulative_weights_.begin(),
                                cumulative_weights_.end(), rnd) -
@@ -85,11 +85,11 @@ class SoftmaxSampler : public Sampler<T> {
   }
 
  private:
-  const double base_;
-  std::vector<double> weights_;
+  const float base_;
+  std::vector<float> weights_;
   std::vector<T> values_;
-  mutable std::vector<double> cumulative_weights_;
-  double max_weight_;
+  mutable std::vector<float> cumulative_weights_;
+  float max_weight_;
   mutable std::mt19937 gen_;
 };
 
@@ -99,7 +99,7 @@ class SoftmaxSampler : public Sampler<T> {
 template <class T>
 class PowSampler : public Sampler<T> {
  public:
-  PowSampler(double theta)
+  PowSampler(float theta)
       : exponent_(1.0 / theta),
         gen_(Random::Get().GetInt(0, std::numeric_limits<int>::max())) {
     Reset();
@@ -111,14 +111,14 @@ class PowSampler : public Sampler<T> {
     values_.clear();
   }
 
-  void Add(double weight, const T& val) override {
+  void Add(float weight, const T& val) override {
     cumulative_weights_.push_back(cumulative_weights_.back() +
                                   std::pow(weight, exponent_));
     values_.push_back(val);
   }
 
   T Toss() const override {
-    const double rnd = std::uniform_real_distribution<double>(
+    const float rnd = std::uniform_real_distribution<float>(
         0.0, cumulative_weights_.back())(gen_);
     int idx = std::upper_bound(cumulative_weights_.begin(),
                                cumulative_weights_.end(), rnd) -
@@ -127,8 +127,8 @@ class PowSampler : public Sampler<T> {
   }
 
  private:
-  const double exponent_;
-  std::vector<double> cumulative_weights_;
+  const float exponent_;
+  std::vector<float> cumulative_weights_;
   std::vector<T> values_;
   mutable std::mt19937 gen_;
 };
@@ -141,7 +141,7 @@ template <class T>
 class MaxSampler : public Sampler<T> {
  public:
   void Reset() override { have_value_ = false; }
-  void Add(double weight, const T& val) override {
+  void Add(float weight, const T& val) override {
     if (!have_value_ || best_weight_ < weight) {
       have_value_ = true;
       best_value_ = val;
@@ -156,12 +156,12 @@ class MaxSampler : public Sampler<T> {
   // std::optional.
   bool have_value_ = false;
   T best_value_;
-  double best_weight_;
+  float best_weight_;
 };  // namespace lczero
 
 // Creates SoftmaxSampler or MaxSampler, depending on whether theta is 0.
 template <class T>
-std::unique_ptr<Sampler<T>> MakeSoftmaxSampler(double theta) {
+std::unique_ptr<Sampler<T>> MakeSoftmaxSampler(float theta) {
   if (theta > 0) {
     return std::make_unique<SoftmaxSampler<T>>(theta);
   } else {
@@ -171,7 +171,7 @@ std::unique_ptr<Sampler<T>> MakeSoftmaxSampler(double theta) {
 
 // Creates PowSampler or MaxSampler, depending on whether theta is 0.
 template <class T>
-std::unique_ptr<Sampler<T>> MakePowSampler(double theta) {
+std::unique_ptr<Sampler<T>> MakePowSampler(float theta) {
   if (theta > 0) {
     return std::make_unique<PowSampler<T>>(theta);
   } else {
