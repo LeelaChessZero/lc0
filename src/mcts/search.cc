@@ -144,18 +144,19 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       uci_info.pv.push_back(iter.GetMove(flip));
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
     }
-    // For mate display offset certain scores by 20000 + length of pv (average
-    // mate). Length of mate is +1000 if winning certain score is based on a
-    // propagated TBHit. For root filtered TB search, use best_rank (mate +500)
-    // TODO: include proper mate scores in uci_info structure
+
+    // Mate display if certain win (or loss) with distance to mate set to
+    // length of pv (average  mate) + NegaBoundSearch Depth.
+    // If win is based on propagated TB bit, length of mate is
+    // adjusted by +1000; For root filtered TB moves +500.
     if (params_.GetCertaintyPropagation()) {
       if (edge.IsCertain() && edge.GetEQ() != 0)
-        uci_info.score =
-            edge.GetEQ() * (20000 + ((uci_info.pv.size() + 1) / 2) + 1 +
-                            (edge.IsPropagatedTBHit() ? 1000 : 0));
+        uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 +
+                                        params_.GetCertaintyPropagationDepth() +
+                                        (edge.IsPropagatedTBHit() ? 1000 : 0));
       else if (root_syzygy_rank_) {
         int sign = (root_syzygy_rank_ - 1 > 0) - (root_syzygy_rank_ - 1 < 0);
-        uci_info.score = sign * (19500 + abs(root_syzygy_rank_));
+        uci_info.mate = sign * (500 + abs(root_syzygy_rank_));
       }
     }
   }

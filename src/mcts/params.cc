@@ -168,8 +168,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt {"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<IntOption>(kCertaintyPropagationId, 0, 4) = 1;
-  options->Add<IntOption>(kCertaintyPropagationDepthId, 0, 4) = 0;
+  options->Add<IntOption>(kCertaintyPropagationId, 0, 4) = 0;
+  options->Add<IntOption>(kCertaintyPropagationDepthId, 0, 4) = 1;
 }
 
 

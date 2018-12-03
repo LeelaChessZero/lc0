@@ -69,11 +69,10 @@ struct ThinkingInfo {
   int hashfull = -1;
   // Win in centipawns.
   optional<int> score;
+  // Distance to Mate
+  optional<int> mate;
   // Number of successful TB probes (not the same as playouts ending in TB hit).
   int tb_hits = -1;
-  // Number of nodes made certain and nodes bounded
-  int certain = -1;
-  int bounds = -1;
   // Best line found. Moves are from perspective of white player.
   std::vector<Move> pv;
   // Multipv index.

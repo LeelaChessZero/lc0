@@ -153,8 +153,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
-  defaults->Set<int>(SearchParams::kCertaintyPropagationId.GetId(), 3);
-  defaults->Set<int>(SearchParams::kCertaintyPropagationDepthId.GetId(), 0);
+  defaults->Set<int>(SearchParams::kCertaintyPropagationId.GetId(), 2);
+  defaults->Set<int>(SearchParams::kCertaintyPropagationDepthId.GetId(), 1);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(
@@ -357,6 +357,7 @@ void EngineController::Go(const GoParams& params) {
           if (info.multipv <= 1) {
             ponder_info = info;
             if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+            if (ponder_info.mate) ponder_info.mate = -*ponder_info.mate;
             if (ponder_info.depth > 1) ponder_info.depth--;
             if (ponder_info.seldepth > 1) ponder_info.seldepth--;
             ponder_info.pv.clear();
