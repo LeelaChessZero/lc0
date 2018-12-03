@@ -333,14 +333,12 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   // half alpha = float2half_rn(1.0f), beta = float2half_rn(0.0f);
-  std::uint16_t one_h = 0x3c00;
-  std::uint16_t zero_h = 0;
-  half alpha;
-  half beta;
-  // GCC 8 has -Werror=class-memaccess but CUDA 9.0 has no half constructor.
-  // These stunts are performed by trained professionals, dont try this at home.
-  memcpy(static_cast<void*>(&alpha), &one_h, sizeof(half));
-  memcpy(static_cast<void*>(&beta), &zero_h, sizeof(half));
+  __half_raw one_h;
+  __half_raw zero_h;
+  one_h.x = 0x3C00;
+  zero_h.x = 0;
+  half alpha = one_h;
+  half beta = zero_h;
   ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
                                  N, num_inputs, &alpha, weights_, num_inputs,
                                  input_tensor, num_inputs, &beta, output_tensor,
