@@ -156,7 +156,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
                                         (edge.IsPropagatedTBHit() ? 1000 : 0));
       else if (root_syzygy_rank_) {
         int sign = (root_syzygy_rank_ - 1 > 0) - (root_syzygy_rank_ - 1 < 0);
-        uci_info.mate = sign * (500 + abs(root_syzygy_rank_));
+        if (sign) {
+          uci_info.mate = sign * (-500 + abs(root_syzygy_rank_));
+        } else uci_info.score = 0;
       }
     }
   }
@@ -936,7 +938,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           if (child.edge()->IsOnlyUBounded()) Q -= child.GetN() * 0.1f;
           // We do not really need to visit certain nodes, but
           // we do initially to yield information quickly.
-          if (child.edge()->IsCertain()) Q -= child.GetN() * 0.01f;
+          // if (child.edge()->IsCertain()) Q -= child.GetN() * 0.01f;
         }
       }
 
@@ -1431,7 +1433,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
 
     // Certainty propagation: reduce error by keeping score in proven bounds.
-    if (params_.GetCertaintyPropagation() >= 2 && n->GetParent() &&
+    if (params_.GetCertaintyPropagation() >= 1 && n->GetParent() &&
         !n->IsCertain()) {
       if (n->GetOwnEdge()->IsUBounded() && v > 0.0f) v = 0.00f;
       if (n->GetOwnEdge()->IsLBounded() && v < 0.0f) v = 0.00f;
