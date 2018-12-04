@@ -78,6 +78,9 @@ const OptionId SearchParams::kNoiseId{
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move."};
+const OptionId SearchParams::kFrequentVerboseStatsId{
+    "frequent-verbose-move-stats", "FrequentVerboseMoveStats",
+    "Increase frequency of verbose move stats."};
 const OptionId SearchParams::kSmartPruningFactorId{
     "smart-pruning-factor", "SmartPruningFactor",
     "Do not spend time on the moves which cannot become bestmove given the "
@@ -143,6 +146,7 @@ void SearchParams::Populate(OptionsParser* options) {
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
+  options->Add<BoolOption>(kFrequentVerboseStatsId) = false;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 7;

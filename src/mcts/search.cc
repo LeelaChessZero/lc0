@@ -161,6 +161,7 @@ void Search::MaybeOutputInfo() {
        last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
            GetTimeSinceStart())) {
     SendUciInfo();
+    if (params_.GetFrequentVerboseStats()) SendMovesStats();
     if (stop_.load(std::memory_order_acquire) && !ok_to_respond_bestmove_) {
       ThinkingInfo info;
       info.comment =
