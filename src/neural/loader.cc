@@ -37,7 +37,6 @@
 #include <sstream>
 #include <string>
 
-#include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"

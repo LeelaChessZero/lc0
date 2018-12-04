@@ -27,7 +27,7 @@
 
 #include <iterator>
 #include <vector>
-#include "proto/net.pb.h"
+#include "utils/pb.h"
 
 namespace lczero {
 

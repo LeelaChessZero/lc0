@@ -31,7 +31,7 @@
 #include <vector>
 
 #include "neural/network.h"
-#include "proto/net.pb.h"
+#include "utils/pb.h"
 
 namespace lczero {
 
