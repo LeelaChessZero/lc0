@@ -795,6 +795,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   uint16_t depth = 0;
+  uint16_t piececount;
 
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
@@ -807,19 +808,20 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
     best_edge.Reset();
     depth++;
+    piececount = (history_.Last().GetBoard().ours() + history_.Last().GetBoard().theirs()).count();
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
       IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
-      return NodeToProcess::Collision(node, depth, collision_limit);
+      return NodeToProcess::Collision(node, depth, piececount, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
         IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
-        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+        return NodeToProcess::TerminalHit(node, depth, piececount, collision_limit);
       } else {
-        return NodeToProcess::Extension(node, depth);
+        return NodeToProcess::Extension(node, depth, piececount);
       }
     }
 
@@ -1107,7 +1109,12 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  node_to_process->v = -computation_->GetQVal(idx_in_computation);
+  auto penalty = params_.GetTradePenalty() * (node_to_process->piececount - params_.GetTradePenalty2());
+  if(node_to_process->depth % 2 == 1)
+    penalty = -penalty;
+  auto board = search_->played_history_.Last().GetBoard();
+  auto contempt = params_.GetContempt() * (board.ours() + board.theirs()).count() - params_.GetContempt() * 12;
+  node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty + contempt;
   // ...and secondly, the policy data.
   float total = 0.0;
   for (auto edge : node->Edges()) {
