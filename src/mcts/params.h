@@ -74,6 +74,9 @@ class SearchParams {
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
+  bool GetFrequentVerboseStats() const {
+    return options_.Get<bool>(kFrequentVerboseStatsId.GetId());
+  }
   float GetSmartPruningFactor() const { return kSmartPruningFactor; }
   bool GetFpuAbsolute() const { return kFpuAbsolute; }
   float GetFpuReduction() const { return kFpuReduction; }
@@ -103,6 +106,7 @@ class SearchParams {
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
   static const OptionId kVerboseStatsId;
+  static const OptionId kFrequentVerboseStatsId;
   static const OptionId kSmartPruningFactorId;
   static const OptionId kFpuStrategyId;
   static const OptionId kFpuReductionId;
