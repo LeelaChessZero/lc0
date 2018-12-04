@@ -826,8 +826,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // playout remains incomplete; we must go deeper. 
     float puct_mult =
         params_.GetCpuct() * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-    if (search_->total_playouts_ % 100 < 25)
-      puct_mult+=2;
+    if (search_->total_playouts_ % 100 > 50)
+      puct_mult*=2;
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
