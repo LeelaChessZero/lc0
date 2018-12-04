@@ -54,6 +54,18 @@ const OptionId SearchParams::kCpuctId{
     "Cpuct constant from \"UCT search\" algorithm. Higher values promote more "
     "exploration/wider search, lower values promote more confidence/deeper "
     "search."};
+const OptionId SearchParams::kTradePenaltyId{
+    "trade-penalty", "TradePenalty",
+    "Value is multiplied with number of pieces on the board and added to "
+    "current evaluation. Values -1.0 to 1.0"};
+const OptionId SearchParams::kTradePenalty2Id{
+    "trade-penalty2", "TradePenalty2",
+    "Fixed value offset, gets subtracted from current number of pieces. To use "
+    "in combination with \"trade-penalty\". Values from -1000.0 to 1000.0"};
+const OptionId SearchParams::kContemptId{
+    "contempt", "Contempt",
+    "Value for contempt, multiplied with number of pieces at root not depth, "
+    "and gets added to current evaluation. Values from -1.0 to 1.0"};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -137,6 +149,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 1;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.2f;
+  options->Add<FloatOption>(kTradePenaltyId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kTradePenalty2Id, -1000.0f, 1000.0f) = 0.0f;
+  options->Add<FloatOption>(kContemptId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
@@ -160,6 +175,9 @@ void SearchParams::Populate(OptionsParser* options) {
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
+      kTradePenalty(options.Get<float>(kTradePenaltyId.GetId())),
+      kTradePenalty2(options.Get<float>(kTradePenalty2Id.GetId())),
+      kContempt(options.Get<float>(kContemptId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
