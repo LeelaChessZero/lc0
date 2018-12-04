@@ -333,10 +333,8 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   // half alpha = float2half_rn(1.0f), beta = float2half_rn(0.0f);
-  __half_raw one_h;
-  __half_raw zero_h;
-  one_h.x = 0x3C00;
-  zero_h.x = 0;
+  __half_raw one_h {0x3C00};
+  __half_raw zero_h {0};
   half alpha = one_h;
   half beta = zero_h;
   ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
