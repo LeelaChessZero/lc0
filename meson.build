@@ -63,6 +63,16 @@ endif
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
+if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
+  error('''
+
+        The libs/lczero-common submodule is missing.
+        If you are using git, do:
+            git submodule update --init --recursive --remote
+        Otherwise, you can download it from:
+            https://github.com/LeelaChessZero/lczero-common''')
+endif
+
 files += gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 
