@@ -579,8 +579,7 @@ void Search::RunBlocking(size_t threads) {
 }
 
 bool Search::IsSearchActive() const {
-  Mutex::Lock lock(counters_mutex_);
-  return !bestmove_is_sent_;
+  return !stop_.load(std::memory_order_acquire);
 }
 
 void Search::WatchdogThread() {
