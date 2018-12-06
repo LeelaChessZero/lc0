@@ -82,6 +82,8 @@ class EngineController {
       const GoParams& params,
       std::chrono::steady_clock::time_point start_time);
 
+  void OptionsChanged() { options_changed_ = true; }
+
  private:
   void UpdateFromUciOptions();
 
@@ -89,6 +91,7 @@ class EngineController {
                      const std::vector<std::string>& moves);
 
   const OptionsDict& options_;
+  bool options_changed_ = false;
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
