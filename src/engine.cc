@@ -283,7 +283,6 @@ void EngineController::UpdateFromUciOptions() {
 }
 
 void EngineController::EnsureReady() {
-  UpdateFromUciOptions();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
