@@ -257,7 +257,6 @@ SearchLimits EngineController::PopulateSearchLimits(
 // Updates values from Uci options.
 void EngineController::UpdateFromUciOptions() {
   SharedLock lock(busy_mutex_);
-  options_changed_ = false;
 
   // Syzygy tablebases.
   std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId.GetId());
@@ -284,8 +283,6 @@ void EngineController::UpdateFromUciOptions() {
 }
 
 void EngineController::EnsureReady() {
-  // TODO(borg) The call to UpdateFromUciOptions() should be removed.
-  if (options_changed_) UpdateFromUciOptions();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
@@ -435,6 +432,8 @@ void EngineLoop::CmdUci() {
     SendResponse(option);
   }
   SendResponse("uciok");
+  // Not all GUIs send a ucinewgame command.
+  engine_.NewGame();
 }
 
 void EngineLoop::CmdIsReady() {
@@ -448,7 +447,6 @@ void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
   // Set the log filename for the case it was set in UCI option.
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId.GetId()));
-  engine_.OptionsChanged();
 }
 
 void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
