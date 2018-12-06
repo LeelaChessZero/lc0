@@ -53,12 +53,11 @@ const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
     "more exploration/wider search, lower values promote more "
-    "confidence/deeper "
-    "search."};
+    "confidence/deeper search."};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct", "CPuct",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
-    "higher growth of Cpuct."};
+    "higher growth of Cpuct as number of node visits grows."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
