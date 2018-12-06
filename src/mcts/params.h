@@ -49,6 +49,7 @@ class SearchParams {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   float GetCpuct() const { return kCpuct; }
+  float GetCpuctBase() const { return kCpuctBase; }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -79,6 +80,7 @@ class SearchParams {
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
+  static const OptionId kCpuctBaseId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTemperatureVisitOffsetId;
@@ -104,6 +106,7 @@ class SearchParams {
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimiations.
   const float kCpuct;
+  const float kCpuctBase;
   const bool kNoise;
   const float kSmartPruningFactor;
   const float kFpuReduction;
