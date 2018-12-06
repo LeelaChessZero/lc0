@@ -55,7 +55,7 @@ const OptionId SearchParams::kCpuctId{
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
 const OptionId SearchParams::kCpuctBaseId{
-    "cpuct", "CPuct",
+    "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
     "higher growth of Cpuct as number of node visits grows."};
 const OptionId SearchParams::kTemperatureId{
