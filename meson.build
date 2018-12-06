@@ -293,6 +293,10 @@ if get_option('build_backends')
 
   endif
 
+  if has_opencl and cc.has_header('CL/opencl.h', args: get_option('opencl_include'))
+      has_opencl = false
+  endif
+
   if get_option('opencl') and has_opencl
 
     opencl_files = [
