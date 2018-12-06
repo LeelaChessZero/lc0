@@ -432,8 +432,6 @@ void EngineLoop::CmdUci() {
     SendResponse(option);
   }
   SendResponse("uciok");
-  // Not all GUIs send a ucinewgame command.
-  engine_.NewGame();
 }
 
 void EngineLoop::CmdIsReady() {
