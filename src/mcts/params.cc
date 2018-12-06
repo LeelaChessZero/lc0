@@ -51,9 +51,13 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "them into cache."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
-    "Cpuct constant from \"UCT search\" algorithm. Higher values promote more "
-    "exploration/wider search, lower values promote more confidence/deeper "
-    "search."};
+    "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
+    "more exploration/wider search, lower values promote more "
+    "confidence/deeper search."};
+const OptionId SearchParams::kCpuctBaseId{
+    "cpuct", "CPuct",
+    "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
+    "higher growth of Cpuct as number of node visits grows."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -136,7 +140,8 @@ void SearchParams::Populate(OptionsParser* options) {
   // tournament.cc
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 1;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
-  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.2f;
+  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.25f;
+  options->Add<FloatOption>(kCpuctBaseId, 0.0f, 100000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
@@ -153,13 +158,14 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
-  std::vector<std::string> history_fill_opt {"no", "fen_only", "always"};
+  std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
+      kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
