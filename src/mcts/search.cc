@@ -189,7 +189,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
       -node->GetQ() -
       params_.GetFpuReduction() * std::sqrt(node->GetVisitedPolicy());
   
-  const float cpuct = std::log( (1+std::max(node->GetChildrenVisits(), 1u) + params_.GetCpuct() ) / params_.GetCpuct()) + 1;
+  const float cpuct = std::log( (1+std::max(node->GetChildrenVisits(), 1u) + params_.GetCpuct() ) / params_.GetCpuct()) + 1.25;
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
 
@@ -828,7 +828,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    float cpuct = std::log( (1+std::max(node->GetChildrenVisits(), 1u) + params_.GetCpuct() ) / params_.GetCpuct()) + 1;
+    float cpuct = std::log( (1+std::max(node->GetChildrenVisits(), 1u) + params_.GetCpuct() ) / params_.GetCpuct()) + 1.25;
     float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
@@ -1029,7 +1029,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   // Populate all subnodes and their scores.
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
-  float cpuct = std::log( (1+std::max(node->GetChildrenVisits(), 1u) + params_.GetCpuct() ) / params_.GetCpuct()) + 1;
+  float cpuct = std::log( (1+std::max(node->GetChildrenVisits(), 1u) + params_.GetCpuct() ) / params_.GetCpuct()) + 1.25;
   float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
