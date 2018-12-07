@@ -1051,7 +1051,6 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
                       params_.GetCpuct();
 
   float puct_mult = cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  // FPU reduction is not taken into account.
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
