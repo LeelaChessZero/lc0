@@ -184,6 +184,15 @@ int64_t Search::GetTimeToDeadline() const {
 }
 
 namespace {
+inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
+  return params.GetFpuAbsolute()
+             ? params.GetFpuValue()
+             : ((is_root_node && params.GetNoise()) ||
+                !params.GetFpuReduction())
+                   ? -node->GetQ()
+                   : -node->GetQ() - params.GetFpuReduction() *
+                                         std::sqrt(node->GetVisitedPolicy());
+}
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
   const float init = params.GetCpuct();
@@ -191,14 +200,11 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
   const float base = params.GetCpuctBase();
   return init + (k ? k * std::log((N + base) / base) : 0.0f);
 }
-
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node,
                                                  bool is_black_to_move) const {
-  const float parent_q =
-      -node->GetQ() -
-      params_.GetFpuReduction() * std::sqrt(node->GetVisitedPolicy());
+  const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -206,13 +212,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
-  std::sort(edges.begin(), edges.end(),
-            [&parent_q, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
-              return std::forward_as_tuple(a.GetN(),
-                                           a.GetQ(parent_q) + a.GetU(U_coeff)) <
-                     std::forward_as_tuple(b.GetN(),
-                                           b.GetQ(parent_q) + b.GetU(U_coeff));
-            });
+  std::sort(
+      edges.begin(), edges.end(),
+      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
+        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff)) <
+               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff));
+      });
 
   std::vector<std::string> infos;
   for (const auto& edge : edges) {
@@ -230,14 +235,14 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
         << "%) ";
 
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(parent_q)
+    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
         << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(parent_q) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(fpu) + edge.GetU(U_coeff) << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -456,8 +461,11 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   if (!root_node_->HasChildren()) return;
 
   float temperature = params_.GetTemperature();
-  if (temperature && params_.GetTempDecayMoves()) {
-    int moves = played_history_.Last().GetGamePly() / 2;
+  const int cutoff_move = params_.GetTemperatureCutoffMove();
+  const int moves = played_history_.Last().GetGamePly() / 2;
+  if (cutoff_move && (moves + 1) >= cutoff_move) {
+    temperature = params_.GetTemperatureEndgame();
+  } else if (temperature && params_.GetTempDecayMoves()) {
     if (moves >= params_.GetTempDecayMoves()) {
       temperature = 0.0;
     } else {
@@ -525,6 +533,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   float sum = 0.0;
   float max_n = 0.0;
   float offset = params_.GetTemperatureVisitOffset();
+  float max_eval = -1.0f;
+  const float fpu = GetFpu(params_, parent, parent == root_node_);
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -532,20 +542,23 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if (edge.GetN() + offset > max_n) {
-      max_n = edge.GetN() + offset;
-    }
+    if (edge.GetN() + offset > max_n) max_n = edge.GetN() + offset;
+    if (edge.GetQ(fpu) > max_eval) max_eval = edge.GetQ(fpu);
   }
 
   // No move had enough visits for temperature, so use default child criteria
   if (max_n <= 0.0f) return GetBestChildNoTemperature(parent);
 
+  // TODO(crem) Simplify this code when samplers.h is merged.
+  const float min_eval =
+      max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
             root_limit.end()) {
       continue;
     }
+    if (edge.GetQ(fpu) < min_eval) continue;
     sum += std::pow(
         std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
         1 / temperature);
@@ -564,6 +577,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
+    if (edge.GetQ(fpu) < min_eval) continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
@@ -842,11 +856,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
-    float parent_q =
-        ((is_root_node && params_.GetNoise()) || !params_.GetFpuReduction())
-            ? -node->GetQ()
-            : -node->GetQ() - params_.GetFpuReduction() *
-                                  std::sqrt(node->GetVisitedPolicy());
+    const float fpu = GetFpu(params_, node, is_root_node);
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -866,7 +876,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      float Q = child.GetQ(parent_q);
+      float Q = child.GetQ(fpu);
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
@@ -880,9 +890,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
-      collision_limit = std::min(
-          collision_limit,
-          best_edge.GetVisitsToReachU(second_best, puct_mult, parent_q));
+      collision_limit =
+          std::min(collision_limit,
+                   best_edge.GetVisitsToReachU(second_best, puct_mult, fpu));
       assert(collision_limit >= 1);
       second_best_edge.Reset();
     }
@@ -1039,12 +1049,11 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   std::vector<ScoredEdge> scores;
   const float cpuct = ComputeCpuct(params_, node->GetN());
   float puct_mult = cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  // FPU reduction is not taken into account.
-  const float parent_q = -node->GetQ();
+  const float fpu = GetFpu(params_, node, node == search_->root_node_);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(parent_q), edge);
+    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu), edge);
   }
 
   size_t first_unsorted_index = 0;
@@ -1074,7 +1083,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-parent_q);
+      const float q = edge.GetQ(-fpu);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
