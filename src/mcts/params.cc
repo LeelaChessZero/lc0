@@ -58,6 +58,8 @@ const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
     "higher growth of Cpuct as number of node visits grows."};
+const OptionId SearchParams::kCpuctFactorId{
+    "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -165,8 +167,9 @@ void SearchParams::Populate(OptionsParser* options) {
   // tournament.cc
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 1;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
-  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.25f;
-  options->Add<FloatOption>(kCpuctBaseId, 0.0f, 100000000000.0f) = 19652.0f;
+  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.2f;
+  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
+  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
@@ -197,6 +200,7 @@ SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
+      kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
