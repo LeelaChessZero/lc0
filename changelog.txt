@@ -1,3 +1,9 @@
+v0.19.1-rc2 (2018-12-07)
+~~~~~~~~~~~
+
+* Temperature and FPU related params. (#568)
+* Rework Cpuct related params. (#567)
+
 v0.19.1-rc1 (2018-12-06)
 ~~~~~~~~~~~
 
