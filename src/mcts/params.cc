@@ -104,10 +104,9 @@ const OptionId SearchParams::kSmartPruningFactorId{
     "pruning is deactivated."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
-    "How is an eval of unvisited node determined. \"reduction\" more subtracts "
-    "--fpu-reduction value from the parent eval. "
-    "\"absolute\" sets eval of unvisited nodes to the value specified in "
-    "--fpu-value."};
+    "How is an eval of unvisited node determined. \"reduction\" subtracts "
+    "--fpu-reduction value from the parent eval. \"absolute\" sets eval of "
+    "unvisited nodes to the value specified in --fpu-value."};
 // TODO(crem) Make FPU in "reduction" mode use fpu-value too. For now it's kept
 // for backwards compatibility.
 const OptionId SearchParams::kFpuReductionId{
