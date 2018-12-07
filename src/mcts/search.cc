@@ -185,10 +185,13 @@ int64_t Search::GetTimeToDeadline() const {
 
 namespace {
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
-  return ((is_root_node && params.GetNoise()) || !params.GetFpuReduction())
-             ? -node->GetQ()
-             : -node->GetQ() - params.GetFpuReduction() *
-                                   std::sqrt(node->GetVisitedPolicy());
+  return params.GetFpuAbsolute()
+             ? params.GetFpuValue()
+             : ((is_root_node && params.GetNoise()) ||
+                !params.GetFpuReduction())
+                   ? -node->GetQ()
+                   : -node->GetQ() - params.GetFpuReduction() *
+                                         std::sqrt(node->GetVisitedPolicy());
 }
 }  // namespace
 
