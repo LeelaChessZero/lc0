@@ -183,14 +183,23 @@ int64_t Search::GetTimeToDeadline() const {
       .count();
 }
 
+namespace {
+
+inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
+  const float init = params.GetCpuct();
+  const float k = params.GetCpuctFactor();
+  const float base = params.GetCpuctBase();
+  return init + (k ? k * std::log((N + base) / base) : 0.0f);
+}
+
+}  // namespace
+
 std::vector<std::string> Search::GetVerboseStats(Node* node,
                                                  bool is_black_to_move) const {
   const float parent_q =
       -node->GetQ() -
       params_.GetFpuReduction() * std::sqrt(node->GetVisitedPolicy());
-  const float cpuct = std::log((1 + node->GetN() + params_.GetCpuctBase()) /
-                               params_.GetCpuctBase()) +
-                      params_.GetCpuct();
+  const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
 
@@ -827,9 +836,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    const float cpuct = std::log((1 + node->GetN() + params_.GetCpuctBase()) /
-                                 params_.GetCpuctBase()) +
-                        params_.GetCpuct();
+    const float cpuct = ComputeCpuct(params_, node->GetN());
     float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
@@ -1030,10 +1037,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   // Populate all subnodes and their scores.
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
-  const float cpuct = std::log((1 + node->GetN() + params_.GetCpuctBase()) /
-                               params_.GetCpuctBase()) +
-                      params_.GetCpuct();
-
+  const float cpuct = ComputeCpuct(params_, node->GetN());
   float puct_mult = cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   // FPU reduction is not taken into account.
   const float parent_q = -node->GetQ();
