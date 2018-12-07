@@ -59,6 +59,16 @@ class SearchParams {
   int GetTempDecayMoves() const {
     return options_.Get<int>(kTempDecayMovesId.GetId());
   }
+  int GetTemperatureCutoffMove() const {
+    return options_.Get<int>(kTemperatureCutoffMoveId.GetId());
+  }
+  float GetTemperatureEndgame() const {
+    return options_.Get<float>(kTemperatureEndgameId.GetId());
+  }
+  float GetTemperatureWinpctCutoff() const {
+    return options_.Get<float>(kTemperatureWinpctCutoffId.GetId());
+  }
+
   bool GetNoise() const { return kNoise; }
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
@@ -83,6 +93,9 @@ class SearchParams {
   static const OptionId kCpuctBaseId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
+  static const OptionId kTemperatureCutoffMoveId;
+  static const OptionId kTemperatureEndgameId;
+  static const OptionId kTemperatureWinpctCutoffId;
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
   static const OptionId kVerboseStatsId;

@@ -68,6 +68,18 @@ const OptionId SearchParams::kTempDecayMovesId{
     "Reduce temperature for every move from the game start to this number of "
     "moves, decreasing linearly from initial temperature to 0. A value of 0 "
     "disables tempdecay."};
+const OptionId SearchParams::kTemperatureCutoffMoveId{
+    "temp-cutoff-move", "TempCutoffMove",
+    "Move number, starting from which endgame temperature is used rather "
+    "than initial temperature. Setting it to 0 disables cutoff."};
+const OptionId SearchParams::kTemperatureEndgameId{
+    "temp-endgame", "TempEndgame",
+    "Temperature used during endgame (starting from cutoff move). Endgame "
+    "temperature doesn't decay."};
+const OptionId SearchParams::kTemperatureWinpctCutoffId{
+    "temp-value-cutoff", "TempValueCutoff",
+    "When move is selected using temperature, bad moves (with win "
+    "probability less than X than the best move) are not considered at all."};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset",
     "Reduces visits by this value when picking a move with a temperature. When "
@@ -144,6 +156,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctBaseId, 0.0f, 100000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
+  options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
+  options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
+  options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
