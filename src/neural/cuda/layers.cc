@@ -308,15 +308,15 @@ void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   ReportCUDAErrors(
       cudaMemcpyAsync(w2_, w2, weight_size2, cudaMemcpyHostToDevice));
 
-  // Bais for the first FC layer.
+  // Bias for the first FC layer.
   ReportCUDAErrors(cudaMemcpyAsync(b1_, b1, numFc1Out_ * sizeof(float),
                                    cudaMemcpyHostToDevice));
 
-  // Bais for the second FC layer.
+  // Bias for the second FC layer.
   ReportCUDAErrors(
       cudaMemcpyAsync(b2_, b2, 2 * C * sizeof(float), cudaMemcpyHostToDevice));
 
-  // Bais for previous layer (Convolution).
+  // Bias for previous layer (Convolution).
   if (prevLayerBias) {
     ReportCUDAErrors(cudaMemcpyAsync(bPrev_, prevLayerBias, C * sizeof(float),
                                      cudaMemcpyHostToDevice));
@@ -362,17 +362,17 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   }
   copyTypeConverted((half*)w2_, (float*)scratch, num_weights2);
 
-  // Bais for the first FC layer.
+  // Bias for the first FC layer.
   ReportCUDAErrors(cudaMemcpyAsync(scratch, b1, numFc1Out_ * sizeof(float),
                                    cudaMemcpyHostToDevice));
   copyTypeConverted((half*)b1_, (float*)scratch, numFc1Out_);
 
-  // Bais for the second FC layer.
+  // Bias for the second FC layer.
   ReportCUDAErrors(cudaMemcpyAsync(scratch, b2, 2 * C * sizeof(float),
                                    cudaMemcpyHostToDevice));
   copyTypeConverted((half*)b2_, (float*)scratch, 2 * C);
 
-  // Bais for previous layer (Convolution).
+  // Bias for previous layer (Convolution).
   if (prevLayerBias) {
     ReportCUDAErrors(cudaMemcpyAsync(scratch, prevLayerBias, C * sizeof(float),
                                      cudaMemcpyHostToDevice));
