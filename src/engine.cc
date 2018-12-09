@@ -107,6 +107,7 @@ float ComputeMoveWeight(int ply, float peak, float left_width,
   constexpr float width_scaler = 1.518651485f;  // 2 / log(2 + sqrt(3))
   return std::pow(std::cosh((ply - peak) / width / width_scaler), -2.0f);
 }
+  bool second_nn_already_loaded_ = false;
 
 }  // namespace
 
@@ -300,6 +301,14 @@ void EngineController::NewGame() {
   tree_.reset();
   time_spared_ms_ = 0;
   current_position_.reset();
+  // reload the main NN every new game in a tournament
+  if(second_nn_already_loaded_){
+    LOGFILE << "Reloading Leela NN";
+    auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+    network_ = NetworkFactory::LoadNetwork(options_);
+    network_configuration_ = network_configuration;
+    second_nn_already_loaded_ = false;
+  }
   UpdateFromUciOptions();
 }
 
@@ -400,6 +409,28 @@ void EngineController::Go(const GoParams& params) {
             << FormatTime(SteadyClockToSystemClock(move_start_time_));
   }
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
+
+  auto board = search_->PublicHistory().Last().GetBoard();
+  if((board.ours() + board.theirs()).count() < 13){
+    if(!second_nn_already_loaded_){
+      std::string net_path = "ender/ender128-80.pb.gz";
+      std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
+      std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId.GetId());
+      LOGFILE << "Will switch to second NN on backend " << backend << " with options " << backend_options;
+      CERR << "Loading weights file from: " << net_path;
+      WeightsFile weights = LoadWeightsFromFile(net_path);
+      OptionsDict network_options(&options_);
+      network_options.AddSubdictFromString(backend_options);
+      // TODO smarter wait
+      // If some thread still has some search ongoing, then lc0 will segfault
+      // First try to solve this: wait 5 seconds, works but is clumpsy
+      std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+      // Second try: mimic NewGame(), doesn't work.
+      // SharedLock lock(busy_mutex_);
+      network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
+      second_nn_already_loaded_ = true;
+    }
+  }
 }
 
 void EngineController::PonderHit() {
