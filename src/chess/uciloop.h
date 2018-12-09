@@ -37,8 +37,8 @@
 namespace lczero {
 
 struct GoParams {
-  std::int64_t wtime = -1;
-  std::int64_t btime = -1;
+  optional<std::int64_t> wtime;
+  optional<std::int64_t> btime;
   std::int64_t winc = -1;
   std::int64_t binc = -1;
   int movestogo = -1;

@@ -30,7 +30,6 @@
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/opencl/OpenCLTuner.h"
 
-#include "neural/blas/blas.h"
 #include "utils/logging.h"
 
 const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
@@ -45,8 +44,19 @@ static void sgemmBatched_ref(const std::vector<float>& a,
     auto offset_v = batch * n * k;
     auto offset_m = batch * m * n;
 
-    cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, k, 1.0f,
-                &a[offset_u], m, &b[offset_v], n, 0.0f, &c[offset_m], n);
+    // cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, k, 1.0f,
+    //             &a[offset_u], m, &b[offset_v], n, 0.0f, &c[offset_m], n);
+    // Calculates C = transpose(tranpose(A) * B) in row major, or
+    // C = A * transpose(B) in column major.
+    for (auto i = 0; i < m; i++) {
+      for (auto j = 0; j < n; j++) {
+        auto acc = 0.0f;
+        for (auto l = 0; l < k; l++) {
+          acc += a[l * m + i + offset_u] * b[l * n + j + offset_v];
+        }
+        c[j * m + i + offset_m] = acc;
+      }
+    }
   }
 }
 
@@ -457,8 +467,8 @@ std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
           // the matrix multiplication (n = WINOGRAD_P * batch_size).
           CERR << "Loaded existing SGEMM tuning for batch size "
                << n / WINOGRAD_P << ".";
+          return tuners;
         }
-        return tuners;
       }
     }
   }

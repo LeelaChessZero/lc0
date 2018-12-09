@@ -147,7 +147,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 256);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
-  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
+  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.0f);
+  defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 2.0f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
   defaults->Set<int>(SearchParams::kMaxCollisionVisitsId.GetId(), 9999);
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
@@ -167,7 +168,7 @@ SearchLimits EngineController::PopulateSearchLimits(
         start_time + std::chrono::milliseconds(params.movetime - move_overhead);
   }
 
-  int64_t time = (is_black ? params.btime : params.wtime);
+  const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
     for (const auto& move : params.searchmoves) {
@@ -188,7 +189,7 @@ SearchLimits EngineController::PopulateSearchLimits(
     if (limit < limits.visits) limits.visits = limit;
   }
   limits.depth = params.depth;
-  if (limits.infinite || time < 0) return limits;
+  if (limits.infinite || !time) return limits;
   int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
 
   int movestogo = params.movestogo < 0 ? 50 : params.movestogo;
@@ -203,7 +204,7 @@ SearchLimits EngineController::PopulateSearchLimits(
 
   // Total time till control including increments.
   auto total_moves_time =
-      std::max(int64_t{0}, time + increment * (movestogo - 1) - move_overhead);
+      std::max(int64_t{0}, *time + increment * (movestogo - 1) - move_overhead);
 
   // If there is time spared from previous searches, the `time_to_squander` part
   // of it will be used immediately, remove that from planning.
@@ -242,7 +243,7 @@ SearchLimits EngineController::PopulateSearchLimits(
           << std::chrono::duration_cast<std::chrono::milliseconds>(
                  std::chrono::steady_clock::now() - start_time)
                  .count()
-          << "ms already passed). Remaining time " << time << "ms(-"
+          << "ms already passed). Remaining time " << *time << "ms(-"
           << move_overhead << "ms overhead)";
   // Use `time_to_squander` time immediately.
   this_move_time += time_to_squander;
@@ -250,8 +251,8 @@ SearchLimits EngineController::PopulateSearchLimits(
   // Make sure we don't exceed current time limit with what we calculated.
   limits.search_deadline =
       start_time +
-      std::chrono::milliseconds(
-          std::min(static_cast<int64_t>(this_move_time), time - move_overhead));
+      std::chrono::milliseconds(std::min(static_cast<int64_t>(this_move_time),
+                                         *time - move_overhead));
   return limits;
 }
 
@@ -284,7 +285,6 @@ void EngineController::UpdateFromUciOptions() {
 }
 
 void EngineController::EnsureReady() {
-  UpdateFromUciOptions();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
@@ -319,13 +319,14 @@ void EngineController::SetupPosition(
   SharedLock lock(busy_mutex_);
   search_.reset();
 
+  UpdateFromUciOptions();
+
   if (!tree_) tree_ = std::make_unique<NodeTree>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   bool is_same_game = tree_->ResetToPosition(fen, moves);
   if (!is_same_game) time_spared_ms_ = 0;
-  UpdateFromUciOptions();
 }
 
 void EngineController::Go(const GoParams& params) {
@@ -372,7 +373,7 @@ void EngineController::Go(const GoParams& params) {
       SetupPosition(current_position_->fen, current_position_->moves);
     }
   } else if (!tree_) {
-    SetupPosition(ChessBoard::kStartingFen, {});
+    SetupPosition(ChessBoard::kStartposFen, {});
   }
 
   auto limits = PopulateSearchLimits(
@@ -410,10 +411,7 @@ void EngineController::PonderHit() {
 }
 
 void EngineController::Stop() {
-  if (search_) {
-    search_->Stop();
-    search_->Wait();
-  }
+  if (search_) search_->Stop();
 }
 
 EngineLoop::EngineLoop()
@@ -457,7 +455,7 @@ void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
   std::string fen = position;
-  if (fen.empty()) fen = ChessBoard::kStartingFen;
+  if (fen.empty()) fen = ChessBoard::kStartposFen;
   engine_.SetPosition(fen, moves);
 }
 
