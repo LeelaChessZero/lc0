@@ -282,7 +282,8 @@ void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
 }
 
 __global__ void globalScale_kernel(float* output, const float* input,
-                                   const float* scaleBias, int inputSize,
+                                   const float* scaleBias,
+                                   const float* prevLayerBias, int inputSize,
                                    int C) {
   const int kPlaneSize = 64;
 
@@ -290,16 +291,21 @@ __global__ void globalScale_kernel(float* output, const float* input,
 
   if (tid > inputSize) return;
 
-  float val1 = input[tid];   // skip connection
-  float val2 = output[tid];  // output of residual block to be scaled
-
   int nc = tid / kPlaneSize;
   int n = nc / C;
   int c = nc % C;
-  int startIdx = n * 2 * C;  // scale and bias interleaved
+
+  float val1 = input[tid];   // Output of residual block to be scaled.
+  float val2 = output[tid];  // Skip connection to be added directly.
+
+  if (prevLayerBias) {
+    val1 += prevLayerBias[c];
+  }
+
+  int startIdx = n * 2 * C;  // Scale and bias interleaved.
 
   float s = scaleBias[startIdx + c];
-  s = 1.0f / (1.0f + exp(-s));  // sigmoid on scale
+  s = 1.0f / (1.0f + exp(-s));  // Sigmoid on scale.
 
   float b = scaleBias[startIdx + c + C];
 
@@ -309,21 +315,26 @@ __global__ void globalScale_kernel(float* output, const float* input,
 }
 
 __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
-                                             const half* scaleBias,
+                                             const half* scaleBias, const half* prevLayerBias,
                                              int inputSize, int C, int HWC) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (tid > inputSize) return;
-
-  float val1 = (float)input[tid];   // skip connection
-  float val2 = (float)output[tid];  // output of residual block to be scaled
-
+  
   int c = tid % C;
   int n = tid / (HWC);
-  int startIdx = n * 2 * C;  // scale and bias interleaved
+
+  float val1 = (float)input[tid];   // Output of residual block to be scaled.
+  float val2 = (float)output[tid];  // Skip connection to be added directly.
+  if (prevLayerBias)
+  {
+    val1 += (float)prevLayerBias[c];
+  }
+
+  int startIdx = n * 2 * C;  // Scale and bias interleaved.
 
   float s = scaleBias[startIdx + c];
-  s = 1.0f / (1.0f + exp(-s));  // sigmoid on scale
+  s = 1.0f / (1.0f + exp(-s));  // Sigmoid on scale.
 
   float b = scaleBias[startIdx + c + C];
 
@@ -333,11 +344,12 @@ __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
   output[tid] = (half)op;
 }
 
-// N blocks
-// C threads per block
-// 'HWC' input data processed by thread block
-// each thread writes a single output
+// N blocks.
+// C threads per block.
+// 'HWC' input data processed by thread block.
+// Each thread writes a single output.
 __global__ void globalAvgPool_kernel_NHWC_fp16(half* output, const half* input,
+                                               const half* prevLayerBias,
                                                int inputSize, int outputSize) {
   const int elementsPerThread = 64;  // 8x8 board
 
@@ -352,15 +364,21 @@ __global__ void globalAvgPool_kernel_NHWC_fp16(half* output, const half* input,
     if (inputIndex < inputSize) S += (float)(input[inputIndex]);
   }
 
-  half avg = (half)(S / elementsPerThread);
+  float avg = S / elementsPerThread;
+
+  // Add bias from previous layer.
+  if (prevLayerBias)
+    avg += (float)(prevLayerBias[threadIdx.x]);
 
   int opIndex = blockStart + threadIdx.x;
-  if (opIndex < outputSize) output[opIndex] = avg;
+  if (opIndex < outputSize) output[opIndex] = (half)avg;
 }
 
-// each thread reads 2 inputs (8x8/32), and each warp writes a single output
+// Each thread reads 2 inputs (8x8/32), and each warp writes a single output.
 __global__ void globalAvgPool_kernel(float* output, const float* input,
-                                     int inputSize, int outputSize) {
+                                     const float* prevLayerBias,
+                                     int inputSize, int outputSize,
+                                     int C) {
   const int elementsPerWarp = 64;
   const int elementsPerThread = 2;
 
@@ -369,7 +387,7 @@ __global__ void globalAvgPool_kernel(float* output, const float* input,
   int laneId = threadIdx.x & 0x1F;
   int laneStartIndex = (tid - laneId) * elementsPerThread;
 
-  // compute per-thread sum for elementsPerThread elements
+  // Compute per-thread sum for elementsPerThread elements.
   float S = 0;
 
   #pragma unroll
@@ -378,7 +396,7 @@ __global__ void globalAvgPool_kernel(float* output, const float* input,
     if (index < inputSize) S += input[index];
   }
 
-  // compute warp wide sum (for entire plane - elementsPerWarp elements)
+  // Compute warp wide sum (for entire plane - elementsPerWarp elements).
   #pragma unroll
   for (int offset = 1; offset < 32; offset *= 2) {
     S += __shfl_down_sync(0xFFFFFFFF, S, offset);
@@ -387,61 +405,68 @@ __global__ void globalAvgPool_kernel(float* output, const float* input,
   float avg = S / elementsPerWarp;
   int opIndex = tid >> 5;
 
-  // first thread in warp has the sum, write it in output
+  // First thread in warp has the sum, write it in output.
   if (laneId == 0) {
-    if (opIndex < outputSize) output[opIndex] = avg;
+    if (opIndex < outputSize) {
+      if (prevLayerBias) avg += prevLayerBias[opIndex % C];
+      output[opIndex] = avg;
+    }
   }
 }
 
 template <typename T>
-void globalAvgPool(int N, int C, T* output, const T* input) {
+void globalAvgPool(int N, int C, T* output, const T* input,
+                   const T* prevLayerBias) {
   const int kPlaneSize = 64;
 
   const bool fp16 = std::is_same<half, T>::value;
   if (fp16) {
-    // for NHWC fp16, simply launch N blocks, each with C threads
+    // For NHWC fp16, simply launch N blocks, each with C threads.
     globalAvgPool_kernel_NHWC_fp16<<<N, C>>>((half*)output, (half*)input,
-                                             N * C * kPlaneSize,
-                                             N * C);
+                                             (half*)prevLayerBias,
+                                             N * C * kPlaneSize, N * C);
   } else {
-    // for NCHW layout (used with fp32),
+    // For NCHW layout (used with fp32),
     // each warp processes a full plane (64 elements), and writes a single
-    // average N*C warps are launched
+    // average N*C warps are launched.
 
     const int kTotalWarps = N * C;
     const int kWarpsPerBlock = 8;
     const int kBlockSize = kWarpsPerBlock * 32;
 
     int blocks = DivUp(kTotalWarps, kWarpsPerBlock);
-
-    globalAvgPool_kernel<<<blocks, kBlockSize>>>((float *)output, (float *)input,
-                                                 N * C * kPlaneSize, N * C);
+    globalAvgPool_kernel<<<blocks, kBlockSize>>>((float*)output, (float*)input,
+                                                 (float*)prevLayerBias,
+                                                 N * C * kPlaneSize, N * C, C);
   }
   ReportCUDAErrors(cudaGetLastError());
 }
 
 template <typename T>
-void globalScale(int N, int C, T* output, const T* input, const T* scaleBias) {
+void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
+                 const T* prevLayerBias) {
 
   const bool fp16 = std::is_same<half, T>::value;
 
-  // each thread writes one output
+  // Each thread writes one output.
   const int kBlockSize = 256;
   const int kBlocks = DivUp(N * 8 * 8 * C, kBlockSize);
 
   if (fp16) {
     globalScale_kernel_fp16_nhwc<<<kBlocks, kBlockSize>>>(
-        (half*)output, (half*)input, (half*)scaleBias, N * C * 8 * 8, C,
+        (half*)output, (half*)input, (half*)scaleBias,
+        (half*)prevLayerBias, N * C * 8 * 8, C,
         8 * 8 * C);
   } else {
     globalScale_kernel<<<kBlocks, kBlockSize>>>(
-        (float*)output, (float*)input, (float*)scaleBias, N * C * 8 * 8, C);
+        (float*)output, (float*)input, (float*)scaleBias,
+        (float*)prevLayerBias, N * C * 8 * 8, C);
     
   }
   ReportCUDAErrors(cudaGetLastError());
 }
 
-// Template instantiation
+// Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N);
 template void copyTypeConverted<float, half>(float* op, half* ip, int N);
 
@@ -467,14 +492,18 @@ template void addBias_NCHW<half>(half* c, half* a, half* b, int N, int C,
                                   int H, int W);
 
 template void globalAvgPool<float>(int N, int C, float* output,
-                                   const float* input);
-template void globalAvgPool<half>(int N, int C, half* output,
-                                  const half* input);
+                                   const float* input,
+                                   const float* prevLayerBias);
+template void globalAvgPool<half>(int N, int C, half* output, 
+                                  const half* input,
+                                  const half* prevLayerBias);
 
 template void globalScale<float>(int N, int C, float* output,
-                                 const float* input, const float* scaleBias);
+                                 const float* input, const float* scaleBias,
+                                 const float* prevLayerBias);
 template void globalScale<half>(int N, int C, half* output, const half* input,
-                                const half* scaleBias);
+                                const half* scaleBias,
+                                const half* prevLayerBias);
 
 }  // namespace cudnn_backend
 }  // namespace lczero

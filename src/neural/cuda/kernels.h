@@ -63,16 +63,18 @@ void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
 
 // perform global avg pool
 template <typename T>
-void globalAvgPool(int N, int C, T* output, const T* input);
+void globalAvgPool(int N, int C, T* output, const T* input,
+                   const T* prevLayerBias);
 
 // perform global scale
 template <typename T>
-void globalScale(int N, int C, T* output, const T* input, const T* scaleBias);
+void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
+                 const T* prevLayerBias);
 
 // perform Squeeze-and-Excitation (SE)
 void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
-                  const half* w2, const half* b2);
+                  const half* w2, const half* b2, const half* bPrev);
 
 }  // namespace cudnn_backend
 }  // namespace lczero

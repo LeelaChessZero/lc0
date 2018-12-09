@@ -180,35 +180,5 @@ class SELayer : public BaseLayer<DataType> {
   bool addPrevLayerBias_;
 };
 
-template <typename DataType>
-class GlobalAvgPoolLayer : public BaseLayer<DataType> {
-  using BaseLayer<DataType>::C;
- public:
-  // does averaging of all inputs across W and H dimensions
-  // basically get 1 value from the entire 8x8 board plane (squeeze step for SE)
-  // output is 2 dimensional containing NxC elements
-  GlobalAvgPoolLayer(BaseLayer<DataType>* ip);
-
-  void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
-};
-
-template <typename DataType>
-class GlobalScaleLayer : public BaseLayer<DataType> {
-  using BaseLayer<DataType>::C;
- public:
-  // scales output (NCHW) with per-channel scaling factors in input2 (NC)
-  // also adds input (NCHW)
-
-  GlobalScaleLayer(
-      BaseLayer<DataType>* ip);  // ip is pointer to 'input' (of dimension NCHW)
-
-  void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
-};
-
-
 }  // namespace cudnn_backend
 }  // namespace lczero

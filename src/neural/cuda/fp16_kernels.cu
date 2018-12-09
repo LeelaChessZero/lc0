@@ -52,7 +52,7 @@ namespace cudnn_backend {
 template <int C, int K>
 __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
                               const half* w1, const half* b1, const half* w2,
-                              const half* b2) {
+                              const half* b2, const half *bPrev) {
   const int elementsPerThread = 64;  // 8x8 board
 
   int n = blockIdx.x;
@@ -64,12 +64,15 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
   half S = 0;
 
+  half bias = 0;
+  if (bPrev) bias = bPrev[c];
+
   // 1. global avg (1 avg per thread)
   #pragma unroll
   for (int i = 0; i < elementsPerThread; i++) {
     int localIndex = i * C + c;
     int inputIndex = n * C * elementsPerThread + localIndex;
-    localData[i].x = input[inputIndex];
+    localData[i].x = input[inputIndex] + bias;
     localData[i].y = skip[inputIndex];
     S += localData[i].x;
   }
@@ -95,7 +98,6 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
     sharedData[c] = S;
   }
-
   __syncthreads();
 
   // 3. second fully connected layer
@@ -110,7 +112,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   S += b2[c];
   B += b2[c + C];
 
-  // sigmoid
+  // sigmoid (only on the scale part)
   S = (half)(1.0f / (1.0f + exp(-(float)(S))));
 
   // 4. scale, and add skip connection, perform relu, and write to output
@@ -129,36 +131,44 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
 void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
-                  const half* w2, const half* b2) {
+                  const half* w2, const half* b2, const half* bPrev) {
   // TODO: think of more elegant way to avoid this hardcoding :-/
   if (numFc1Out == 32) {
     if (C == 64) {
-      SE_Layer_NHWC<64, 32><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+      SE_Layer_NHWC<64, 32>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else if (C == 128) {
-      SE_Layer_NHWC<128, 32><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+      SE_Layer_NHWC<128, 32>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else if (C == 192) {
-      SE_Layer_NHWC<192, 32><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+      SE_Layer_NHWC<192, 32>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else if (C == 256) {
-      SE_Layer_NHWC<256, 32><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+      SE_Layer_NHWC<256, 32>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else {
-      // TODO: support other channel counts
+      // TODO: support other channel counts.
       throw Exception("channel count unsupported by SE layer");
     }
   } else if (numFc1Out == 64) {
     if (C == 64) {
-      SE_Layer_NHWC<64, 64><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+      SE_Layer_NHWC<64, 64>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else if (C == 128) {
-      SE_Layer_NHWC<128, 64><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+      SE_Layer_NHWC<128, 64>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else if (C == 192) {
-      SE_Layer_NHWC<192, 64><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+      SE_Layer_NHWC<192, 64>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else if (C == 256) {
-      SE_Layer_NHWC<256, 64><<<N, C>>>(output, skip, input, w1, b1, w2, b2);
+      SE_Layer_NHWC<256, 64>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else {
-      // TODO: support other channel counts
+      // TODO: support other channel counts.
       throw Exception("channel count unsupported by SE layer");
     }
   } else {
-    // TODO: support other sizes
+    // TODO: support other sizes.
     throw Exception("numOutputs unsupported by SE layer");
   }
   ReportCUDAErrors(cudaGetLastError());
