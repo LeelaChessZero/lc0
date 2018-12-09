@@ -37,14 +37,15 @@ namespace cudnn_backend {
 
 
 
-// SE layer implementation using single fused kernel
+// SE layer implementation using single fused kernel.
 
-// N blocks
-// C threads per block
-// 'HWC' input data processed by thread block
-// each thread processes 8x8 elements
+// N blocks.
+// C threads per block.
+// 'HWC' input data processed by thread block.
+// Each thread processes 8x8 elements.
 // K is the no. of outputs of first fully connected layer (same as no. of inputs
-// for second fully connected layer) the kernel assumes K <= C
+// for second fully connected layer). 
+// The kernel assumes K <= C.
 
 #define readw1(row, col) (w1[(row)*K + (col)])
 #define readw2(row, col) (w2[(row)*2 * C + (col)])
@@ -67,7 +68,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   half bias = 0;
   if (bPrev) bias = bPrev[c];
 
-  // 1. global avg (1 avg per thread)
+  // 1. Global avg (1 avg per thread).
   #pragma unroll
   for (int i = 0; i < elementsPerThread; i++) {
     int localIndex = i * C + c;
@@ -82,7 +83,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
   __syncthreads();
 
-  // 2. first fully connected layer
+  // 2. First fully connected layer.
   if (c < K) {
     S = 0;
 
@@ -100,7 +101,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   }
   __syncthreads();
 
-  // 3. second fully connected layer
+  // 3. Second fully connected layer.
   S = 0;
   half B = 0;
   #pragma unroll
@@ -112,17 +113,17 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   S += b2[c];
   B += b2[c + C];
 
-  // sigmoid (only on the scale part)
+  // Sigmoid (only on the scale part).
   S = (half)(1.0f / (1.0f + exp(-(float)(S))));
 
-  // 4. scale, and add skip connection, perform relu, and write to output
+  // 4. Scale, and add skip connection, perform relu, and write to output.
   #pragma unroll
   for (int i = 0; i < elementsPerThread; i++) {
     int localIndex = i * C + c;
     int inputIndex = n * C * elementsPerThread + localIndex;
     half val = localData[i].y + localData[i].x * S + B;
 
-    // relu
+    // Relu activation function.
     if (val < (half)0) val = 0;
 
     output[inputIndex] = val;
@@ -132,7 +133,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
                   const half* w2, const half* b2, const half* bPrev) {
-  // TODO: think of more elegant way to avoid this hardcoding :-/
+  // TODO: Think of more elegant way to avoid this hardcoding :-/
   if (numFc1Out == 32) {
     if (C == 64) {
       SE_Layer_NHWC<64, 32>

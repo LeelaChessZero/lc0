@@ -83,7 +83,7 @@ __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
   if (i < size) {
     float aVal = (float)a[i];
 
-    // All this math can be optimized, but the kernel is memory bound anyway
+    // All this math can be optimized, but the kernel is memory bound anyway.
     int biasIndex = (i / (H * W)) % C;
     float bVal = (float)b[biasIndex];
 
@@ -92,7 +92,7 @@ __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
   }
 }
 
-// add bias to convolution's output
+// Add bias to convolution's output.
 template <typename T>
 void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W) {
   int size = N * C * H * W;
@@ -173,9 +173,9 @@ __global__ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
 
   int wIndex = 0;
   if (sizeof(T) == sizeof(float))
-    wIndex = (index / (H * W)) % C;  // NCHW for fp32
+    wIndex = (index / (H * W)) % C;  // NCHW for fp32.
   else
-    wIndex = index % C;  // NHWC for fp16
+    wIndex = index % C;  // NHWC for fp16.
 
   float el = input[index];
   float mean = means[wIndex];
@@ -220,7 +220,7 @@ __global__ void expandPlanes_kernel_Fp32_NCHW(float* output,
 
   if (planeIndex >= n) return;
 
-  // load inputs to shared memory.
+  // Load inputs to shared memory.
   if (threadIdx.x < kNumShmemElments) {
     shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
     shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
@@ -351,7 +351,7 @@ __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
 __global__ void globalAvgPool_kernel_NHWC_fp16(half* output, const half* input,
                                                const half* prevLayerBias,
                                                int inputSize, int outputSize) {
-  const int elementsPerThread = 64;  // 8x8 board
+  const int elementsPerThread = 64;  // 8x8 board.
 
   int blockStart = blockIdx.x * blockDim.x;
 

@@ -386,7 +386,7 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
                           size_t scratch_size, cudnnHandle_t /*cudnn*/,
                           cublasHandle_t cublas) {
   assert(output == input2);
-  // Ping-pong between 'op1' and 'op2' (parts of scratch memory)
+  // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
   float* op1 = (float*)scratch;
   float* op2 = (float*)scratch + scratch_size / sizeof(float) / 2;
 
@@ -408,8 +408,8 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
                                  numFc1Out_, &beta, op2, 2 * C));
   addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false);
 
-  // 4. (optional prev layer bias add+) Global scale, residual add, relu and
-  // bias
+  // 4. (Optional prev layer bias add), Global scale, residual add, relu and
+  // bias.
   globalScale(N, C, output, input, op2, bPrev_);
 }
 
@@ -422,7 +422,7 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
                  bPrev_);
   } else {
     assert(output == input2);
-    // Ping-pong between 'op1' and 'op2' (parts of scratch memory)
+    // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
     half* op1 = (half*)scratch;
     half* op2 = (half*)scratch + scratch_size / sizeof(half) / 2;
 
@@ -447,8 +447,8 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
                                    numFc1Out_, &beta, op2, 2 * C));
     addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false);
 
-    // 4. (optional prev layer bias add+) Global scale, residual add, relu and
-    // bias
+    // 4. (Optional prev layer bias add), Global scale, residual add, relu and
+    // bias.
     globalScale(N, C, output, input, op2, bPrev_);
   }
 }
@@ -566,7 +566,7 @@ FCLayer<DataType>::~FCLayer() {
   ReportCUDAErrors(cudaFree(biases_));
 }
 
-// Template instantiation
+// Template instantiation.
 template class ConvLayer<half>;
 template class ConvLayer<float>;
 
@@ -582,7 +582,7 @@ template class SoftMaxLayer<float>;
 template class SELayer<half>;
 template class SELayer<float>;
 
-// misc error handling stuff
+// Misc error handling stuff.
 void CudnnError(cudnnStatus_t status, const char* file, const int& line) {
   if (status != CUDNN_STATUS_SUCCESS) {
     char message[128];
