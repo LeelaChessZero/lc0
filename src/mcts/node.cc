@@ -469,11 +469,10 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously trimmed; we need to reset current_head_ in that case.
   // Also, if the current_head_ is terminal, reset that as well to allow forced
   // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  if (!seen_old_head) TrimTreeAtHead();  // must check if edges are created
+  if (!seen_old_head) TrimTreeAtHead(); 
 
   // Certainty Propagation: No need to trim the head, just resetting certainty
-  // state and recomputing N should suffice even with WDL hits.
-  // TODO: Works, but maybe recheck if there are crititcal edge cases.
+  // state except bounds, and recomputing N should suffices even with WDL hits.
   if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearCertaintyState();
   current_head_->RecomputeNfromChildren();
   return seen_old_head;

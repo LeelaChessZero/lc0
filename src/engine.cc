@@ -36,7 +36,7 @@
 
 namespace lczero {
 namespace {
-const int kDefaultThreads = 4;
+const int kDefaultThreads = 2;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
@@ -153,7 +153,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
-  defaults->Set<int>(SearchParams::kCertaintyPropagationId.GetId(), 2);
+  defaults->Set<bool>(SearchParams::kCertaintyPropagationId.GetId(), false);
   defaults->Set<int>(SearchParams::kCertaintyPropagationDepthId.GetId(), 1);
 }
 

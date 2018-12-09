@@ -74,7 +74,7 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  int GetCertaintyPropagation() const { return kCertaintyPropagation; }
+  bool GetCertaintyPropagation() const { return kCertaintyPropagation; }
   int GetCertaintyPropagationDepth() const { return kCertaintyPropagationDepth; }
 
   // Search parameter IDs.
@@ -116,7 +116,7 @@ class SearchParams {
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
-  const int kCertaintyPropagation;
+  const bool kCertaintyPropagation;
   const int kCertaintyPropagationDepth; 
   const FillEmptyHistory kHistoryFill;
 };

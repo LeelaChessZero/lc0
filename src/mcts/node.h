@@ -416,7 +416,7 @@ class EdgeAndNode {
   // is the proven game result (-1, 0, +1).
   int GetEQ() const { return edge_->GetEQ(); }
 
-  // N-related getters, from Node (if exists).
+  // N-related getters, from node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }

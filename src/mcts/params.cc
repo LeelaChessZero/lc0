@@ -132,14 +132,12 @@ const OptionId SearchParams::kHistoryFillId{
 
 const OptionId SearchParams::kCertaintyPropagationId{
     "certainty-propagation", "CertaintyPropagation", 
-    "Level of certainty propagation: off (default), training or play. "
-    "If set to play root moves are pruned, certain wins are "
-    "played immediately and certain losses are avoided regardless of "
-    "visits. Training chooses root moves according to visits only."};
+    "Propagates certain scores more efficiently in the search tree, "
+    "proves and displays mates. Uses two-fold draw scoring."};
 
 const OptionId SearchParams::kCertaintyPropagationDepthId{
     "certainty-propagation-depth", "CertaintyPropagationDepth",
-    "Depth of look-ahead-search: "
+    "Depth of look-ahead-search for certainty propagation. "
     "Warning, settings larger than 1 are currently not "
     "recommended."};
 
@@ -168,7 +166,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt {"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<IntOption>(kCertaintyPropagationId, 0, 4) = 0;
+  options->Add<BoolOption>(kCertaintyPropagationId) = false;
   options->Add<IntOption>(kCertaintyPropagationDepthId, 0, 4) = 1;
 }
 
@@ -185,7 +183,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
-      kCertaintyPropagation(options.Get<int>(kCertaintyPropagationId.GetId())),
+      kCertaintyPropagation(options.Get<bool>(kCertaintyPropagationId.GetId())),
       kCertaintyPropagationDepth(options.Get<int>(kCertaintyPropagationDepthId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))) {
