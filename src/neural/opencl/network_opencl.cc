@@ -16,14 +16,13 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/network.h"
-#include "neural/blas/batchnorm.h"
-#include "neural/blas/blas.h"
-#include "neural/blas/fully_connected_layer.h"
-#include "neural/blas/winograd_convolution3.h"
 #include "neural/factory.h"
+#include "neural/network.h"
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
+#include "neural/shared/activation.h"
+#include "neural/shared/batchnorm.h"
+#include "neural/shared/winograd_filter.h"
 
 #include <algorithm>
 #include <cassert>
@@ -59,7 +58,8 @@ struct OpenCLWeights {
 
 class OpenCLComputation : public NetworkComputation {
  public:
-  OpenCLComputation(const OpenCL_Network& opencl_net, const OpenCLWeights& weights)
+  OpenCLComputation(const OpenCL_Network& opencl_net,
+                    const OpenCLWeights& weights)
       : opencl_net_(opencl_net), weights_(weights), policies_(), q_values_() {
     buffers_ = opencl_net.acquire_buffers();
   }
@@ -102,17 +102,17 @@ class OpenCLComputation : public NetworkComputation {
         std::vector<float> policy(weights_.num_output_policies);
 
         // Get the moves.
-        FullyConnectedLayer::Softmax(num_output_policies,
-                                     &output_pol[j * num_output_policies],
-                                     policy.data());
+        SoftmaxActivation(num_output_policies,
+                          &output_pol[j * num_output_policies], policy.data());
 
         policies_.emplace_back(std::move(policy));
 
         // Now get the score.
-        auto winrate = FullyConnectedLayer::Forward0D(
-                           num_value_channels, weights_.ip2_val_w.data(),
-                           &output_val[j * num_value_channels]) +
-                       weights_.ip2_val_b[0];
+        auto winrate = weights_.ip2_val_b[0];
+        auto ptr_weights = weights_.ip2_val_w.data();
+        auto ptr_outputs = &output_val[j * num_value_channels];
+        for (size_t i = 0; i < num_value_channels; i++)
+          winrate += ptr_weights[i] * ptr_outputs[i];
 
         q_values_.emplace_back(std::tanh(winrate));
       }
@@ -215,11 +215,11 @@ class OpenCLNetwork : public Network {
     size_t m_ceil = ceilMultiple(ceilMultiple(channels, mwg), vwm);
     size_t k_ceil = ceilMultiple(ceilMultiple(inputChannels, kwg), vwm);
 
-    std::vector<float> input_conv_weights = WinogradConvolution3::TransformF(
+    std::vector<float> input_conv_weights = WinogradFilterTransformF(
         weights.input.weights, channels, inputChannels);
 
-    auto Upad = WinogradConvolution3::ZeropadU(input_conv_weights, channels,
-                                               inputChannels, m_ceil, k_ceil);
+    auto Upad = WinogradFilterZeropadU(input_conv_weights, channels,
+                                       inputChannels, m_ceil, k_ceil);
 
     std::vector<float> input_batchnorm_means = weights.input.GetOffsetMeans();
     std::vector<float> input_batchnorm_stddivs =
@@ -238,14 +238,14 @@ class OpenCLNetwork : public Network {
       auto& se = residual.se;
 
       std::vector<float> conv_weights_1 =
-          WinogradConvolution3::TransformF(conv1.weights, channels, channels);
+          WinogradFilterTransformF(conv1.weights, channels, channels);
       std::vector<float> conv_weights_2 =
-          WinogradConvolution3::TransformF(conv2.weights, channels, channels);
+          WinogradFilterTransformF(conv2.weights, channels, channels);
 
-      auto Upad1 = WinogradConvolution3::ZeropadU(conv_weights_1, channels,
-                                                  channels, m_ceil, m_ceil);
-      auto Upad2 = WinogradConvolution3::ZeropadU(conv_weights_2, channels,
-                                                  channels, m_ceil, m_ceil);
+      auto Upad1 = WinogradFilterZeropadU(conv_weights_1, channels, channels,
+                                          m_ceil, m_ceil);
+      auto Upad2 = WinogradFilterZeropadU(conv_weights_2, channels, channels,
+                                          m_ceil, m_ceil);
 
       std::vector<float> batchnorm_means_1 = conv1.GetOffsetMeans();
       std::vector<float> batchnorm_means_2 = conv2.GetOffsetMeans();
@@ -256,11 +256,12 @@ class OpenCLNetwork : public Network {
                                 batchnorm_means_1, batchnorm_stddivs_1, Upad2,
                                 batchnorm_means_2, batchnorm_stddivs_2);
       if (residual.has_se) {
-          auto se_fc_outputs = se.w1.size() / channels;
-          if (se.b2.size() != 2 * channels) {
-              throw Exception("SE-unit output bias is not right size.");
-          }
-          opencl_net_.push_se(channels, se_fc_outputs, se.w1, se.b1, se.w2, se.b2);
+        auto se_fc_outputs = se.w1.size() / channels;
+        if (se.b2.size() != 2 * channels) {
+          throw Exception("SE-unit output bias is not right size.");
+        }
+        opencl_net_.push_se(channels, se_fc_outputs, se.w1, se.b1, se.w2,
+                            se.b2);
       }
     }
 

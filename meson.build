@@ -38,6 +38,9 @@ files = []
 includes = []
 has_backends = false
 
+# Third party files.
+includes += include_directories('third_party', is_system: true)
+
 # Both protobuf and protoc must be the same version, so couple them together.
 protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
 if not protobuf_lib.found()
@@ -155,6 +158,8 @@ if get_option('build_backends')
   ## Blas
   ## ~~~~~
 
+  shared_files = []
+
   has_blas = false
 
   accelerate_lib = dependency('Accelerate', required: false)
@@ -168,7 +173,7 @@ if get_option('build_backends')
     openblas_lib = cc.find_library('openblas', dirs: openblas_libdirs, required: false)
   endif
 
-  if get_option('blas') or get_option('opencl')
+  if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
@@ -204,15 +209,6 @@ if get_option('build_backends')
       has_blas = true
     endif
 
-    if has_blas
-      blas_files = [
-      'src/neural/blas/batchnorm.cc',
-      'src/neural/blas/fully_connected_layer.cc',
-      'src/neural/blas/se_unit.cc',
-      'src/neural/blas/winograd_convolution3.cc'
-      ]
-    endif
-
     ispc = find_program('ispc', required: false)
     ispc_extra_args = []
     if has_blas and get_option('ispc') and ispc.found()
@@ -240,7 +236,7 @@ if get_option('build_backends')
       endif
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
-        arguments: [ '-O2', '--arch=x86-64',
+        arguments: [ '-O2', '--wno-perf', '--arch=x86-64',
                      '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
                      + ispc_extra_args
@@ -251,9 +247,18 @@ if get_option('build_backends')
 
   if get_option('blas') and has_blas
 
-    blas_files += [
+    blas_files = [
     'src/neural/blas/convolution1.cc',
-    'src/neural/blas/network_blas.cc'
+    'src/neural/blas/fully_connected_layer.cc',
+    'src/neural/blas/se_unit.cc',
+    'src/neural/blas/network_blas.cc',
+    'src/neural/blas/winograd_convolution3.cc'
+    ]
+
+    shared_files = [
+    'src/neural/shared/activation.cc',
+    'src/neural/shared/batchnorm.cc',
+    'src/neural/shared/winograd_filter.cc',
     ]
 
     files += blas_files
@@ -288,30 +293,32 @@ if get_option('build_backends')
 
   endif
 
+  if has_opencl and cc.has_header('CL/opencl.h', args: get_option('opencl_include'))
+      has_opencl = false
+  endif
 
   if get_option('opencl') and has_opencl
 
-    if has_blas
-      opencl_files = [
+    opencl_files = [
+      'src/neural/opencl/network_opencl.cc',
       'src/neural/opencl/OpenCL.cc',
       'src/neural/opencl/OpenCLTuner.cc',
       'src/neural/opencl/OpenCLBuffers.cc',
-      'src/neural/opencl/network_opencl.cc',
-      ]
+    ]
 
-      if not get_option('blas')
-        opencl_files += blas_files
-      endif
+    shared_files = [
+    'src/neural/shared/activation.cc',
+    'src/neural/shared/batchnorm.cc',
+    'src/neural/shared/winograd_filter.cc',
+    ]
 
-      includes += include_directories(get_option('opencl_include'))
-      files += opencl_files
-      has_backends = true
-    else
-      warning('The OpenCL backend requires a BLAS library')
-    endif
+    includes += include_directories(get_option('opencl_include'))
+    files += opencl_files
+    has_backends = true
 
   endif
 
+  files += shared_files
 
   ## ~~~~~
   ## cuDNN
@@ -320,7 +327,8 @@ if get_option('build_backends')
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-  nvcc = find_program('/usr/local/cuda/bin/nvcc', 'nvcc', required: false)
+  nvcc = find_program('/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
+                      'nvcc', required: false)
 
   #.cc files
   cuda_files = [
