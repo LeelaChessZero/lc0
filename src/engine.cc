@@ -411,7 +411,7 @@ void EngineController::Go(const GoParams& params) {
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 
   auto board = search_->PublicHistory().Last().GetBoard();
-  if((board.ours() + board.theirs()).count() < 13){
+  if((board.ours() + board.theirs()).count() < 17){
     if(!second_nn_already_loaded_){
       std::string net_path = "ender/ender128-80.pb.gz";
       std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
