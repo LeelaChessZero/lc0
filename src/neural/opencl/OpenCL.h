@@ -55,11 +55,13 @@ class Layer {
  private:
   unsigned int channels{0};
   unsigned int outputs{0};
+  unsigned int se_fc_outputs{0};
   unsigned int filter_size{0};
   unsigned int ip_in_size{0};
   unsigned int ip_out_size{0};
   bool is_input_convolution{false};
   bool is_residual_block{false};
+  bool is_se_unit{false};
   bool is_policy{false};
   bool is_value{false};
   std::vector<cl::Buffer> weights;
@@ -113,6 +115,23 @@ class OpenCL_Network {
     m_layers[layer].outputs = outputs;
     m_layers[layer].filter_size = filter_size;
     m_layers[layer].channels = channels;
+  }
+
+  void push_se(unsigned int channels,
+               unsigned int se_fc_outputs,
+               const std::vector<float>& weights_1,
+               const std::vector<float>& biases_1,
+               const std::vector<float>& weights_2,
+               const std::vector<float>& biases_2) {
+    size_t layer = get_layer_count();
+    push_weights(layer, weights_1);
+    push_weights(layer, biases_1);
+    push_weights(layer, weights_2);
+    push_weights(layer, biases_2);
+    m_layers[layer].is_se_unit = true;
+    m_layers[layer].channels = channels;
+    m_layers[layer].se_fc_outputs = se_fc_outputs;
+    m_layers[layer].outputs = channels;
   }
 
   void push_policy(unsigned int channels, unsigned int outputs,

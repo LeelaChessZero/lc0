@@ -19,24 +19,13 @@
 #pragma once
 
 #include <cstddef>
-#include <vector>
 
 namespace lczero {
 
-class FullyConnectedLayer {
- public:
-  FullyConnectedLayer() = delete;
-
-  // Forward inference, batched, from input_size to output_size
-  static void Forward1D(const size_t batch_size, const size_t input_size,
-                        const size_t output_size, const float* input,
-                        const float* weights, const float* biases,
-                        bool apply_relu, float* output);
-
-  // Forward inference, no batched, from input_size to scalar
-  static float Forward0D(const size_t input_size, const float* input,
-                         const float* weights);
-
-};
+void ApplySEUnit(const size_t batch_size, const size_t channels,
+                 const size_t se_fc_outputs, const float* input,
+                 const float* residual, const float* weights_w1,
+                 const float* weights_b1, const float* weights_w2,
+                 const float* weights_b2, float* output);
 
 }  // namespace lczero

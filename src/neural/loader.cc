@@ -49,18 +49,6 @@ namespace lczero {
 namespace {
 const std::uint32_t kWeightMagic = 0x1c0;
 
-void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
-  *out = std::move(vecs->back());
-  vecs->pop_back();
-}
-
-void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
-  PopulateLastIntoVector(vecs, &block->bn_stddivs);
-  PopulateLastIntoVector(vecs, &block->bn_means);
-  PopulateLastIntoVector(vecs, &block->biases);
-  PopulateLastIntoVector(vecs, &block->weights);
-}
-
 std::string DecompressGzip(const std::string& filename) {
   const int kStartingSize = 8 * 1024 * 1024;  // 8M
   std::string buffer;
@@ -86,32 +74,8 @@ std::string DecompressGzip(const std::string& filename) {
   return buffer;
 }
 
-FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
-  FloatVector vec;
-  auto& buffer = layer.params();
-  auto data = reinterpret_cast<const std::uint16_t*>(buffer.data());
-  int n = buffer.length() / 2;
-  vec.resize(n);
-  for (int i = 0; i < n; i++) {
-    vec[i] = data[i] / float(0xffff);
-    vec[i] *= layer.max_val() - layer.min_val();
-    vec[i] += layer.min_val();
-  }
-  return vec;
-}
-
-void DenormConvBlock(const pblczero::Weights_ConvBlock& conv,
-                     FloatVectors* vecs) {
-  vecs->emplace_back(DenormLayer(conv.weights()));
-  vecs->emplace_back(DenormLayer(conv.biases()));
-  vecs->emplace_back(DenormLayer(conv.bn_means()));
-  vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
-}
-
-}  // namespace
-
-FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
-  auto net = pblczero::Net();
+WeightsFile ParseWeightsProto(const std::string& buffer) {
+  WeightsFile net;
   using namespace google::protobuf::io;
 
   ArrayInputStream raw_input_stream(buffer.data(), buffer.size());
@@ -138,57 +102,24 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
                     " required.");
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
-    throw Exception("Invalid weight file: wrong encoding.");
+    throw Exception("Invalid weight file: unsupported encoding.");
 
-  const auto& w = net.weights();
-
-  FloatVectors vecs;
-  DenormConvBlock(w.input(), &vecs);
-
-  for (int i = 0, n = w.residual_size(); i < n; i++) {
-    DenormConvBlock(w.residual(i).conv1(), &vecs);
-    DenormConvBlock(w.residual(i).conv2(), &vecs);
+  // Older protobufs don't have format definition.
+  // Populate format fields with legacy (or "classical") formats.
+  if (!net.format().has_network_format()) {
+    auto net_format = net.mutable_format()->mutable_network_format();
+    using nf = pblczero::NetworkFormat;
+    net_format->set_input(nf::INPUT_CLASSICAL_112_PLANE);
+    net_format->set_output(nf::OUTPUT_CLASSICAL);
+    net_format->set_network(nf::NETWORK_CLASSICAL);
   }
 
-  DenormConvBlock(w.policy(), &vecs);
-  vecs.emplace_back(DenormLayer(w.ip_pol_w()));
-  vecs.emplace_back(DenormLayer(w.ip_pol_b()));
-  DenormConvBlock(w.value(), &vecs);
-  vecs.emplace_back(DenormLayer(w.ip1_val_w()));
-  vecs.emplace_back(DenormLayer(w.ip1_val_b()));
-  vecs.emplace_back(DenormLayer(w.ip2_val_w()));
-  vecs.emplace_back(DenormLayer(w.ip2_val_b()));
-
-  return vecs;
+  return net;
 }
 
-FloatVectors LoadFloatsFromFile(std::string* buffer) {
-  // Parse buffer.
-  FloatVectors result;
-  FloatVector line;
-  (*buffer) += "\n";
-  size_t start = 0;
-  for (size_t i = 0; i < buffer->size(); ++i) {
-    char& c = (*buffer)[i];
-    const bool is_newline = (c == '\n' || c == '\r');
-    if (!std::isspace(c)) continue;
-    if (start < i) {
-      // If previous character was not space too.
-      c = '\0';
-      line.push_back(std::atof(&(*buffer)[start]));
-    }
-    if (is_newline && !line.empty()) {
-      result.emplace_back();
-      result.back().swap(line);
-    }
-    start = i + 1;
-  }
+}  // namespace
 
-  result.erase(result.begin());
-  return result;
-}
-
-Weights LoadWeightsFromFile(const std::string& filename) {
+WeightsFile LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
 
@@ -197,35 +128,11 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   else if (buffer[0] == '1' && buffer[1] == '\n')
     throw Exception("Invalid weight file: no longer supported.");
   else if (buffer[0] == '2' && buffer[1] == '\n')
-    vecs = LoadFloatsFromFile(&buffer);
-  else
-    vecs = LoadFloatsFromPbFile(buffer);
+    throw Exception(
+        "Text format weights files are no longer supported. Use a command line "
+        "tool to convert it to the new format.");
 
-  Weights result;
-  // Populating backwards.
-  PopulateLastIntoVector(&vecs, &result.ip2_val_b);
-  PopulateLastIntoVector(&vecs, &result.ip2_val_w);
-  PopulateLastIntoVector(&vecs, &result.ip1_val_b);
-  PopulateLastIntoVector(&vecs, &result.ip1_val_w);
-  PopulateConvBlockWeights(&vecs, &result.value);
-
-  PopulateLastIntoVector(&vecs, &result.ip_pol_b);
-  PopulateLastIntoVector(&vecs, &result.ip_pol_w);
-  PopulateConvBlockWeights(&vecs, &result.policy);
-
-  // Input + all the residual should be left.
-  if ((vecs.size() - 4) % 8 != 0)
-    throw Exception("Invalid weight file: parse error.");
-
-  const int num_residual = (vecs.size() - 4) / 8;
-  result.residual.resize(num_residual);
-  for (int i = num_residual - 1; i >= 0; --i) {
-    PopulateConvBlockWeights(&vecs, &result.residual[i].conv2);
-    PopulateConvBlockWeights(&vecs, &result.residual[i].conv1);
-  }
-
-  PopulateConvBlockWeights(&vecs, &result.input);
-  return result;
+  return ParseWeightsProto(buffer);
 }
 
 std::string DiscoverWeightsFile() {

@@ -148,10 +148,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 256);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
-  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
+  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.0f);
   defaults->Set<float>(SearchParams::kTradePenaltyId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kTradePenalty2Id.GetId(), 0.0f);
-  defaults->Set<float>(SearchParams::kContemptId.GetId(), 0.0f);
+  defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 2.0f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
   defaults->Set<int>(SearchParams::kMaxCollisionVisitsId.GetId(), 9999);
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
@@ -286,7 +286,6 @@ void EngineController::UpdateFromUciOptions() {
 }
 
 void EngineController::EnsureReady() {
-  UpdateFromUciOptions();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
@@ -321,13 +320,14 @@ void EngineController::SetupPosition(
   SharedLock lock(busy_mutex_);
   search_.reset();
 
+  UpdateFromUciOptions();
+
   if (!tree_) tree_ = std::make_unique<NodeTree>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   bool is_same_game = tree_->ResetToPosition(fen, moves);
   if (!is_same_game) time_spared_ms_ = 0;
-  UpdateFromUciOptions();
 }
 
 void EngineController::Go(const GoParams& params) {

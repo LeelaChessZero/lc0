@@ -25,27 +25,17 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include "cuda_common.h"
 
-#include <string>
-#include <vector>
-
-#include "neural/network.h"
-#include "proto/net.pb.h"
 
 namespace lczero {
+namespace cudnn_backend {
 
-using FloatVector = std::vector<float>;
-using FloatVectors = std::vector<FloatVector>;
+/////////////////////////////////////////////////////////////////////////////
+//          fp16-specific kernels used by certain layers                   //
+/////////////////////////////////////////////////////////////////////////////
 
-using WeightsFile = pblczero::Net;
+// Nothing here yet!
 
-// Read weights file and fill the weights structure.
-WeightsFile LoadWeightsFromFile(const std::string& filename);
-
-// Tries to find a file which looks like a weights file, and located in
-// directory of binary_name or one of subdirectories. If there are several such
-// files, returns one which has the latest modification date.
-std::string DiscoverWeightsFile();
-
-}  // namespace lczero
+}   // namespace cudnn_backend
+}   // namespace lczero

@@ -51,7 +51,8 @@ class SearchParams {
   float GetCpuct() const { return kCpuct; }
   float GetTradePenalty() const { return kTradePenalty; }
   float GetTradePenalty2() const { return kTradePenalty2; }
-  float GetContempt() const { return kContempt; }
+  float GetCpuctBase() const { return kCpuctBase; }
+  float GetCpuctFactor() const { return kCpuctFactor; }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -61,12 +62,24 @@ class SearchParams {
   int GetTempDecayMoves() const {
     return options_.Get<int>(kTempDecayMovesId.GetId());
   }
+  int GetTemperatureCutoffMove() const {
+    return options_.Get<int>(kTemperatureCutoffMoveId.GetId());
+  }
+  float GetTemperatureEndgame() const {
+    return options_.Get<float>(kTemperatureEndgameId.GetId());
+  }
+  float GetTemperatureWinpctCutoff() const {
+    return options_.Get<float>(kTemperatureWinpctCutoffId.GetId());
+  }
+
   bool GetNoise() const { return kNoise; }
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
   float GetSmartPruningFactor() const { return kSmartPruningFactor; }
+  bool GetFpuAbsolute() const { return kFpuAbsolute; }
   float GetFpuReduction() const { return kFpuReduction; }
+  float GetFpuValue() const { return kFpuValue; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
@@ -84,14 +97,20 @@ class SearchParams {
   static const OptionId kCpuctId;
   static const OptionId kTradePenaltyId;
   static const OptionId kTradePenalty2Id;
-  static const OptionId kContemptId;
+  static const OptionId kCpuctBaseId;
+  static const OptionId kCpuctFactorId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
+  static const OptionId kTemperatureCutoffMoveId;
+  static const OptionId kTemperatureEndgameId;
+  static const OptionId kTemperatureWinpctCutoffId;
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
   static const OptionId kVerboseStatsId;
   static const OptionId kSmartPruningFactorId;
+  static const OptionId kFpuStrategyId;
   static const OptionId kFpuReductionId;
+  static const OptionId kFpuValueId;
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
   static const OptionId kMaxCollisionEventsId;
@@ -112,10 +131,13 @@ class SearchParams {
   const float kCpuct;
   const float kTradePenalty;
   const float kTradePenalty2;
-  const float kContempt;
+  const float kCpuctBase;
+  const float kCpuctFactor;
   const bool kNoise;
   const float kSmartPruningFactor;
+  const bool kFpuAbsolute;
   const float kFpuReduction;
+  const float kFpuValue;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kMaxCollisionEvents;

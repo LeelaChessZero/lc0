@@ -16,27 +16,24 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#include "neural/shared/activation.h"
 
-#include <cstddef>
-#include <vector>
+#include <algorithm>
+#include <cmath>
 
 namespace lczero {
 
-class FullyConnectedLayer {
- public:
-  FullyConnectedLayer() = delete;
+void SoftmaxActivation(const size_t size, const float* input, float* output) {
+  auto alpha = *std::max_element(input, input + size);
 
-  // Forward inference, batched, from input_size to output_size
-  static void Forward1D(const size_t batch_size, const size_t input_size,
-                        const size_t output_size, const float* input,
-                        const float* weights, const float* biases,
-                        bool apply_relu, float* output);
-
-  // Forward inference, no batched, from input_size to scalar
-  static float Forward0D(const size_t input_size, const float* input,
-                         const float* weights);
-
-};
-
+  auto denom = 0.0f;
+  for (size_t i = 0; i < size; i++) {
+    auto val = std::exp(input[i] - alpha);
+    output[i] = val;
+    denom += val;
+  }
+  for (size_t i = 0; i < size; i++) {
+    output[i] = output[i] / denom;
+  }
+}
 }  // namespace lczero

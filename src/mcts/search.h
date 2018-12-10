@@ -198,9 +198,11 @@ class SearchWorker {
   // Runs iterations while needed.
   void RunBlocking() {
     LOGFILE << "Started search thread.";
-    while (search_->IsSearchActive()) {
+    // A very early stop may arrive before this point, so the test is at the end
+    // to ensure at least one iteration runs before exiting.
+    do {
       ExecuteOneIteration();
-    }
+    } while (search_->IsSearchActive());
   }
 
   // Does one full iteration of MCTS search:
