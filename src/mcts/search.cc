@@ -184,6 +184,8 @@ int64_t Search::GetTimeToDeadline() const {
 }
 
 namespace {
+#include "fmath.hpp"
+
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
   return params.GetFpuAbsolute()
              ? params.GetFpuValue()
@@ -198,7 +200,12 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
   const float init = params.GetCpuct();
   const float k = params.GetCpuctFactor();
   const float base = params.GetCpuctBase();
-  return init + (k ? k * std::log((N + base) / base) : 0.0f);
+  return init + (k ? k * fmath::log((N + base) / base) : 0.0f);
+}
+
+inline float PowPositive(const float x, const float y) {
+  if (x <= 0.0) return 0.0;
+  return fmath::exp(y * fmath::log(x));
 }
 }  // namespace
 
@@ -559,9 +566,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       continue;
     }
     if (edge.GetQ(fpu) < min_eval) continue;
-    sum += std::pow(
-        std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
-        1 / temperature);
+    sum += PowPositive((static_cast<float>(edge.GetN()) + offset) / max_n,
+                 1 / temperature);
     cumulative_sums.push_back(sum);
   }
   assert(sum);
@@ -1137,7 +1143,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
     if (params_.GetPolicySoftmaxTemp() != 1.0f) {
-      p = pow(p, 1 / params_.GetPolicySoftmaxTemp());
+      p = PowPositive(p, 1 / params_.GetPolicySoftmaxTemp());
     }
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
