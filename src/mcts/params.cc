@@ -68,10 +68,6 @@ const OptionId SearchParams::kTradePenalty2Id{
     "trade-penalty2", "TradePenalty2",
     "Fixed value offset, gets subtracted from current number of pieces. To use "
     "in combination with \"trade-penalty\". Values from -1000.0 to 1000.0"};
-const OptionId SearchParams::kContemptId{
-    "contempt", "Contempt",
-    "Value for contempt, multiplied with number of pieces at root not depth, "
-    "and gets added to current evaluation. Values from -1.0 to 1.0"};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -184,7 +180,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 0.0f;
   options->Add<FloatOption>(kTradePenaltyId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kTradePenalty2Id, -1000.0f, 1000.0f) = 0.0f;
-  options->Add<FloatOption>(kContemptId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
@@ -218,7 +213,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kTradePenalty(options.Get<float>(kTradePenaltyId.GetId())),
       kTradePenalty2(options.Get<float>(kTradePenalty2Id.GetId())),
-      kContempt(options.Get<float>(kContemptId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==

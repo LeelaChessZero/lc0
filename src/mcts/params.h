@@ -53,7 +53,6 @@ class SearchParams {
   float GetCpuctFactor() const { return kCpuctFactor; }
   float GetTradePenalty() const { return kTradePenalty; }
   float GetTradePenalty2() const { return kTradePenalty2; }
-  float GetContempt() const { return kContempt; }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -100,7 +99,6 @@ class SearchParams {
   static const OptionId kCpuctFactorId;
   static const OptionId kTradePenaltyId;
   static const OptionId kTradePenalty2Id;
-  static const OptionId kContemptId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
@@ -135,7 +133,6 @@ class SearchParams {
   const float kCpuctFactor;
   const float kTradePenalty;
   const float kTradePenalty2;
-  const float kContempt;
   const bool kNoise;
   const float kSmartPruningFactor;
   const bool kFpuAbsolute;

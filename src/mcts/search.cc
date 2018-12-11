@@ -1134,11 +1134,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // For NN results, we need to populate policy as well as value.
   // First the value...
   auto penalty = params_.GetTradePenalty() * (node_to_process->piececount - params_.GetTradePenalty2());
+  // We flip penalty sign for Leela's moves (odd depths)
+  // (opponent depth is even depths and has opposite sign)
   if(node_to_process->depth % 2 == 1)
     penalty = -penalty;
-  auto board = search_->played_history_.Last().GetBoard();
-  auto contempt = params_.GetContempt() * (board.ours() + board.theirs()).count() - params_.GetContempt() * 12;
-  node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty + contempt;
+  node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty;
   // ...and secondly, the policy data.
   float total = 0.0;
   for (auto edge : node->Edges()) {
