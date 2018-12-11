@@ -1139,6 +1139,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if(node_to_process->depth % 2 == 1)
     penalty = -penalty;
   node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty;
+  if(node_to_process->v < -1.0) {
+    node_to_process->v = -0.9999;
+  } else if (node_to_process->v > 1.0) {
+    node_to_process->v = 0.9999;
+  }
   // ...and secondly, the policy data.
   float total = 0.0;
   for (auto edge : node->Edges()) {
