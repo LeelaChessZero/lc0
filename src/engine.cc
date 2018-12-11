@@ -413,7 +413,7 @@ void EngineController::Go(const GoParams& params) {
   auto board = search_->PublicHistory().Last().GetBoard();
   if((board.ours() + board.theirs()).count() < 12){
     if(!second_nn_already_loaded_){
-      std::string net_path = "ender/ender128-80.pb.gz";
+      std::string net_path = "/home/ubuntu/ender/ender128-80.pb.gz";
       std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
       std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId.GetId());
       LOGFILE << "Will switch to second NN on backend " << backend << " with options " << backend_options;
@@ -424,7 +424,7 @@ void EngineController::Go(const GoParams& params) {
       // TODO smarter wait
       // If some thread still has some search ongoing, then lc0 will segfault
       // First try to solve this: wait 5 seconds, works but is clumpsy
-      std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+      std::this_thread::sleep_for(std::chrono::milliseconds(10000));
       // Second try: mimic NewGame(), doesn't work.
       // SharedLock lock(busy_mutex_);
       network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
