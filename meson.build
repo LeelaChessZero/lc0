@@ -15,7 +15,7 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
+        default_options : ['cpp_std=c++14', 'b_ndebug=if-release', 'b_lto=true'],
         meson_version: '>=0.45')
 
 cc = meson.get_compiler('cpp')
