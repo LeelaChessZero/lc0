@@ -1133,16 +1133,16 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  auto penalty = params_.GetTradePenalty() * (node_to_process->piececount - params_.GetTradePenalty2());
-  // We flip penalty sign for Leela's moves (odd depths)
-  // (opponent depth is even depths and has opposite sign)
-  if(node_to_process->depth % 2 == 1)
-    penalty = -penalty;
-  node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty;
-  if(node_to_process->v < -1.0) {
-    node_to_process->v = -0.9999;
-  } else if (node_to_process->v > 1.0) {
-    node_to_process->v = 0.9999;
+  // Trade Penalty defaults to off, ie 0.0, so we only calculate penalty if it's set to != 0:
+  if (params_.GetTradePenalty() != 0.0f) {
+    auto penalty = params_.GetTradePenalty() * (node_to_process->piececount - params_.GetTradePenalty2());
+    // We flip penalty sign for Leela's moves (odd depths)
+    // (opponent depth is even depths and has opposite sign):
+    if(node_to_process->depth % 2 == 1)
+      penalty = -penalty;
+    node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty;
+    // penalty shouldn't put v outside (-1, 1), and we will clip if it is:
+    node_to_process->v = std::max(-0.9999f, std::min(0.9999f, node_to_process->v));
   }
   // ...and secondly, the policy data.
   float total = 0.0;
