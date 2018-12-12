@@ -62,6 +62,8 @@ class EngineController {
 
   void PopulateOptions(OptionsParser* options);
 
+  void SwitchNN();
+
   // Blocks.
   void EnsureReady();
 

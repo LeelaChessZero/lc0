@@ -288,6 +288,7 @@ void EngineController::EnsureReady() {
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
+  EngineController::SwitchNN();
   move_start_time_ = std::chrono::steady_clock::now();
 }
 
@@ -409,28 +410,6 @@ void EngineController::Go(const GoParams& params) {
             << FormatTime(SteadyClockToSystemClock(move_start_time_));
   }
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
-
-  auto board = search_->PublicHistory().Last().GetBoard();
-  if((board.ours() + board.theirs()).count() < 12){
-    if(!second_nn_already_loaded_){
-      std::string net_path = "/home/ubuntu/ender/ender128-80.pb.gz";
-      std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
-      std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId.GetId());
-      LOGFILE << "Will switch to second NN on backend " << backend << " with options " << backend_options;
-      CERR << "Loading weights file from: " << net_path;
-      WeightsFile weights = LoadWeightsFromFile(net_path);
-      OptionsDict network_options(&options_);
-      network_options.AddSubdictFromString(backend_options);
-      // TODO smarter wait
-      // If some thread still has some search ongoing, then lc0 will segfault
-      // First try to solve this: wait 5 seconds, works but is clumpsy
-      std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-      // Second try: mimic NewGame(), doesn't work.
-      // SharedLock lock(busy_mutex_);
-      network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
-      second_nn_already_loaded_ = true;
-    }
-  }
 }
 
 void EngineController::PonderHit() {
@@ -441,6 +420,30 @@ void EngineController::PonderHit() {
 
 void EngineController::Stop() {
   if (search_) search_->Stop();
+}
+
+void EngineController::SwitchNN() {
+  auto board = search_->PublicHistory().Last().GetBoard();
+  if((board.ours() + board.theirs()).count() < 17){
+    if(!second_nn_already_loaded_){
+      std::string net_path = "/home/hans/ender/ender128-80.pb.gz";
+      std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
+      std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId.GetId());
+      LOGFILE << "Will switch to second NN on backend " << backend << " with options " << backend_options;
+      CERR << "Loading weights file from: " << net_path;
+      WeightsFile weights = LoadWeightsFromFile(net_path);
+      OptionsDict network_options(&options_);
+      network_options.AddSubdictFromString(backend_options);
+      // TODO smarter wait
+      // If some thread still has some search ongoing, then lc0 will segfault
+      // First try to solve this: wait 5 seconds, works but is clumpsy
+      // std::this_thread::sleep_for(std::chrono::milliseconds(50000));
+      // Second try: mimic NewGame(), doesn't work.
+      // SharedLock lock(busy_mutex_);
+      network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
+      second_nn_already_loaded_ = true;
+    }
+  }
 }
 
 EngineLoop::EngineLoop()
