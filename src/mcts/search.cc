@@ -191,24 +191,22 @@ namespace {
 inline float flog2(const float a) {
   int32_t tmp;
   std::memcpy(&tmp, &a, sizeof(float));
-  int exp = (tmp >> 23) - 0x7f;
+  int expm1 = (tmp >> 23) - 0x80;
   tmp = (tmp & 0x7fffff) | (0x7f << 23);
   float out;
   std::memcpy(&out, &tmp, sizeof(float));
-  return out + exp - 1;
+  return out + expm1;
 }
 
 // The approximation used here is 2^(N+f) ~ 2^N*(1+f) where N is integer and f
 // the fractional part, f>=0.
+// Using trick from: github.com/etheory/fastapprox
 inline float fpow2(const float a) {
-  int exp = floor(a);
-  float mult = 1.0 + a - exp;
-  exp += 0x7f;
-  int32_t tmp;
-  tmp = exp < 0 ? 0 : exp << 23;
+  if (a < -126) return 0;
+  int32_t tmp = static_cast<int>((a + 127) * (1 << 23));
   float out;
   std::memcpy(&out, &tmp, sizeof(float));
-  return out * mult;
+  return out;
 }
 
 inline float flog(const float a) {
