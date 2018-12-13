@@ -200,10 +200,10 @@ inline float flog2(const float a) {
 
 // The approximation used here is 2^(N+f) ~ 2^N*(1+f) where N is integer and f
 // the fractional part, f>=0.
-// Using trick from: github.com/etheory/fastapprox
+// Using a trick from Paul Mineiro (github.com/etheory/fastapprox).
 inline float fpow2(const float a) {
   if (a < -126) return 0;
-  int32_t tmp = static_cast<int>((a + 127) * (1 << 23));
+  int32_t tmp = static_cast<int>(a * (1 << 23)) + (127 << 23);
   float out;
   std::memcpy(&out, &tmp, sizeof(float));
   return out;
