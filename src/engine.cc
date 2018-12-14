@@ -281,7 +281,7 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Cache size.
-  cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));
+ cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));
 }
 
 void EngineController::EnsureReady() {
@@ -423,25 +423,22 @@ void EngineController::Stop() {
 }
 
 void EngineController::SwitchNN() {
-  auto board = search_->PublicHistory().Last().GetBoard();
-  if((board.ours() + board.theirs()).count() < 17){
-    if(!second_nn_already_loaded_){
-      std::string net_path = "/home/hans/ender/ender128-80.pb.gz";
-      std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
-      std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId.GetId());
-      LOGFILE << "Will switch to second NN on backend " << backend << " with options " << backend_options;
-      CERR << "Loading weights file from: " << net_path;
-      WeightsFile weights = LoadWeightsFromFile(net_path);
-      OptionsDict network_options(&options_);
-      network_options.AddSubdictFromString(backend_options);
-      // TODO smarter wait
-      // If some thread still has some search ongoing, then lc0 will segfault
-      // First try to solve this: wait 5 seconds, works but is clumpsy
-      // std::this_thread::sleep_for(std::chrono::milliseconds(50000));
-      // Second try: mimic NewGame(), doesn't work.
-      // SharedLock lock(busy_mutex_);
-      network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
-      second_nn_already_loaded_ = true;
+  if(search_ != nullptr &&
+     options_.Get<std::string>(NetworkFactory::kSecondWeightsId.GetId()) != ""){
+    auto board = search_->PublicHistory().Last().GetBoard();
+    if((board.ours() + board.theirs()).count() < options_.Get<int>(NetworkFactory::kSecondWeightsSwitchAt.GetId())){
+      if(!second_nn_already_loaded_){
+	std::string net_path = options_.Get<std::string>(NetworkFactory::kSecondWeightsId.GetId());
+	std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
+	std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId.GetId());
+	LOGFILE << "Will switch to second NN on backend " << backend << " with options " << backend_options;
+	CERR << "Loading weights file from: " << net_path;
+	WeightsFile weights = LoadWeightsFromFile(net_path);
+	OptionsDict network_options(&options_);
+	network_options.AddSubdictFromString(backend_options);
+	network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
+	second_nn_already_loaded_ = true;
+      }
     }
   }
 }
