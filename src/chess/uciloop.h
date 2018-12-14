@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #pragma once
@@ -28,16 +37,17 @@
 namespace lczero {
 
 struct GoParams {
-  std::int64_t wtime = -1;
-  std::int64_t btime = -1;
-  std::int64_t winc = -1;
-  std::int64_t binc = -1;
-  int movestogo = -1;
-  int depth = -1;
-  int nodes = -1;
-  std::int64_t movetime = -1;
+  optional<std::int64_t> wtime;
+  optional<std::int64_t> btime;
+  optional<std::int64_t> winc;
+  optional<std::int64_t> binc;
+  optional<int> movestogo;
+  optional<int> depth;
+  optional<int> nodes;
+  optional<std::int64_t> movetime;
   bool infinite = false;
   std::vector<std::string> searchmoves;
+  bool ponder = false;
 };
 
 class UciLoop {
@@ -50,7 +60,7 @@ class UciLoop {
   // Sends responses to host ensuring they are received as a block.
   virtual void SendResponses(const std::vector<std::string>& responses);
   void SendBestMove(const BestMoveInfo& move);
-  void SendInfo(const ThinkingInfo& info);
+  void SendInfo(const std::vector<ThinkingInfo>& infos);
   void SendId();
 
   // Command handlers.
@@ -70,16 +80,13 @@ class UciLoop {
     throw Exception("Not supported");
   }
   virtual void CmdStop() { throw Exception("Not supported"); }
+  virtual void CmdPonderHit() { throw Exception("Not supported"); }
   virtual void CmdStart() { throw Exception("Not supported"); }
-
-  void SetLogFilename(const std::string& filename);
 
  private:
   bool DispatchCommand(
       const std::string& command,
       const std::unordered_map<std::string, std::string>& params);
-
-  std::ofstream debug_log_;
 };
 
 }  // namespace lczero

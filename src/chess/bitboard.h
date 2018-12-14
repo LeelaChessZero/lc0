@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #pragma once
@@ -32,7 +41,7 @@ class BoardSquare {
  public:
   constexpr BoardSquare() {}
   // As a single number, 0 to 63, bottom to top, left to right.
-  // 0 is a1, 8 is b1, 63 is h8.
+  // 0 is a1, 8 is a2, 63 is h8.
   constexpr BoardSquare(std::uint8_t num) : square_(num) {}
   // From row(bottom to top), and col(left to right), 0-based.
   constexpr BoardSquare(int row, int col) : BoardSquare(row * 8 + col) {}
@@ -86,6 +95,40 @@ class BitBoard {
 
   std::uint64_t as_int() const { return board_; }
   void clear() { board_ = 0; }
+
+  // Counts the number of set bits in the BitBoard.
+  int count() const {
+#if defined(NO_POPCNT)
+    std::uint64_t x = board_;
+    x -= (x >> 1) & 0x5555555555555555;
+    x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333);
+    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F;
+    return (x * 0x0101010101010101) >> 56;
+#elif defined(_MSC_VER) && defined(_WIN64)
+    return _mm_popcnt_u64(board_);
+#elif defined(_MSC_VER)
+    return __popcnt(board_) + __popcnt(board_ >> 32);
+#else
+    return __builtin_popcountll(board_);
+#endif
+  }
+
+  // Like count() but using algorithm faster on a very sparse BitBoard.
+  // May be slower for more than 4 set bits, but still correct.
+  // Useful when counting bits in a Q, R, N or B BitBoard.
+  int count_few() const {
+#if defined(NO_POPCNT)
+    std::uint64_t x = board_;
+    int count;
+    for (count = 0; x != 0; ++count) {
+      // Clear the rightmost set bit.
+      x &= x - 1;
+    }
+    return count;
+#else
+    return count();
+#endif
+  }
 
   // Sets the value for given square to 1 if cond is true.
   // Otherwise does nothing (doesn't reset!).

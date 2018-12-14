@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "chess/board.h"
@@ -24,16 +33,14 @@
 #include <sstream>
 #include "utils/exception.h"
 
-#ifdef _MSC_VER
-#include <nmmintrin.h>
-#endif
-
 namespace lczero {
 
 using std::string;
 
-const string ChessBoard::kStartingFen =
+const char* ChessBoard::kStartposFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+const ChessBoard ChessBoard::kStartposBoard(ChessBoard::kStartposFen);
 
 void ChessBoard::Clear() {
   std::memset(reinterpret_cast<void*>(this), 0, sizeof(ChessBoard));
@@ -176,6 +183,8 @@ static const Move::Promotion kPromotions[] = {
 }  // namespace
 
 BitBoard ChessBoard::pawns() const { return pawns_ * kPawnMask; }
+
+BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
@@ -436,7 +445,10 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // Set en passant flag.
   if (to_row - from_row == 2 && pawns_.get(to)) {
-    pawns_.set(0, to_col);
+    BoardSquare ep_sq(to_row - 1, to_col);
+    if (kPawnAttacks[ep_sq.as_int()].intersects(their_pieces_ * pawns_)) {
+      pawns_.set(0, to_col);
+    }
   }
   return reset_50_moves;
 }
@@ -697,14 +709,7 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-#ifdef _MSC_VER
-  int our = _mm_popcnt_u64(our_pieces_.as_int());
-  int their = _mm_popcnt_u64(their_pieces_.as_int());
-#else
-  int our = __builtin_popcountll(our_pieces_.as_int());
-  int their = __builtin_popcountll(their_pieces_.as_int());
-#endif
-  if (our + their < 4) {
+  if ((our_pieces_ + their_pieces_).count() < 4) {
     // K v K, K+B v K, K+N v K.
     return false;
   }

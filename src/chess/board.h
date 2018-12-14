@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #pragma once
@@ -30,7 +39,11 @@ struct MoveExecution;
 // Unlike most chess engines, the board is mirrored for black.
 class ChessBoard {
  public:
-  static const std::string kStartingFen;
+  ChessBoard() = default;
+  ChessBoard(const std::string& fen) { SetFromFen(fen); }
+
+  static const char* kStartposFen;
+  static const ChessBoard kStartposBoard;
 
   // Sets position from FEN string.
   // If @no_capture_ply and @moves are not nullptr, they are filled with number
@@ -41,8 +54,8 @@ class ChessBoard {
   // Nullifies the whole structure.
   void Clear();
   // Swaps black and white pieces and mirrors them relative to the
-  // middle of the board. (what was on file 1 appears on file 8, what was
-  // on rank b remains on b).
+  // middle of the board. (what was on rank 1 appears on rank 8, what was
+  // on file b remains on file b).
   void Mirror();
 
   // Generates list of possible moves for "ours" (white), but may leave king
@@ -88,6 +101,7 @@ class ChessBoard {
     bool we_can_000() const { return data_ & 2; }
     bool they_can_00() const { return data_ & 4; }
     bool they_can_000() const { return data_ & 8; }
+    bool no_legal_castle() const { return data_ == 0; }
 
     void Mirror() { data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2); }
 
@@ -116,6 +130,7 @@ class ChessBoard {
   BitBoard ours() const { return our_pieces_; }
   BitBoard theirs() const { return their_pieces_; }
   BitBoard pawns() const;
+  BitBoard en_passant() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
   BitBoard queens() const { return rooks_ * bishops_; }

@@ -14,15 +14,26 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "selfplay/loop.h"
 #include "selfplay/tournament.h"
+#include "utils/configfile.h"
 
 namespace lczero {
 
 namespace {
-const char* kInteractive = "Run in interactive mode with uci-like interface";
+const OptionId kInteractiveId{
+    "interactive", "", "Run in interactive mode with UCI-like interface."};
 }  // namespace
 
 SelfPlayLoop::SelfPlayLoop() {}
@@ -33,11 +44,11 @@ SelfPlayLoop::~SelfPlayLoop() {
 }
 
 void SelfPlayLoop::RunLoop() {
-  options_.Add<BoolOption>(kInteractive, "interactive") = false;
+  options_.Add<BoolOption>(kInteractiveId) = false;
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;
-  if (options_.GetOptionsDict().Get<bool>(kInteractive)) {
+  if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
     UciLoop::RunLoop();
   } else {
     // Send id before starting tournament to allow wrapping client to know
@@ -63,7 +74,6 @@ void SelfPlayLoop::CmdUci() {
 
 void SelfPlayLoop::CmdStart() {
   if (tournament_) return;
-  options_.SendAllOptions();
   tournament_ = std::make_unique<SelfPlayTournament>(
       options_.GetOptionsDict(),
       std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
@@ -81,7 +91,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   // and move list potentially contain spaces.
   if (info.min_false_positive_threshold) {
     std::string resign_res = "resign_report";
-    resign_res += 
+    resign_res +=
         " fp_threshold " + std::to_string(*info.min_false_positive_threshold);
     responses.push_back(resign_res);
   }
@@ -109,7 +119,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
 void SelfPlayLoop::CmdSetOption(const std::string& name,
                                 const std::string& value,
                                 const std::string& context) {
-  options_.SetOption(name, value, context);
+  options_.SetUciOption(name, value, context);
 }
 
 void SelfPlayLoop::SendTournament(const TournamentInfo& info) {

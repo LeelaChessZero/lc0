@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include "selfplay/game.h"
@@ -24,31 +33,33 @@
 namespace lczero {
 
 namespace {
-const char* kReuseTreeStr = "Reuse the node statistics between moves";
-const char* kResignPercentageStr = "Resign when win percentage drops below n";
+const OptionId kReuseTreeId{"reuse-tree", "ReuseTree",
+                            "Reuse the search tree between moves."};
+const OptionId kResignPercentageId{
+    "resign-percentage", "ResignPercentage",
+    "Resign when win percentage drops below specified value."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
-  options->Add<BoolOption>(kReuseTreeStr, "reuse-tree") = false;
-  options->Add<FloatOption>(kResignPercentageStr, 0.0f, 100.0f,
-                            "resign-percentage", 'r') = 0.0f;
+  options->Add<BoolOption>(kReuseTreeId) = false;
+  options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree)
     : options_{player1, player2} {
   tree_[0] = std::make_shared<NodeTree>();
-  tree_[0]->ResetToPosition(ChessBoard::kStartingFen, {});
+  tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 
   if (shared_tree) {
     tree_[1] = tree_[0];
   } else {
     tree_[1] = std::make_shared<NodeTree>();
-    tree_[1]->ResetToPosition(ChessBoard::kStartingFen, {});
+    tree_[1]->ResetToPosition(ChessBoard::kStartposFen, {});
   }
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads,
+void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         bool enable_resign) {
   bool blacks_move = false;
 
@@ -61,8 +72,13 @@ void SelfPlayGame::Play(int white_threads, int black_threads,
 
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
-    if (!options_[idx].uci_options->Get<bool>(kReuseTreeStr)) {
+    if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
       tree_[idx]->TrimTreeAtHead();
+    }
+    if (options_[idx].search_limits.movetime > -1) {
+      options_[idx].search_limits.search_deadline =
+          std::chrono::steady_clock::now() +
+          std::chrono::milliseconds(options_[idx].search_limits.movetime);
     }
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -70,23 +86,28 @@ void SelfPlayGame::Play(int white_threads, int black_threads,
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
           options_[idx].info_callback, options_[idx].search_limits,
-          *options_[idx].uci_options, options_[idx].cache);
+          *options_[idx].uci_options, options_[idx].cache, nullptr);
+      // TODO: add Syzygy option for selfplay.
     }
 
     // Do search.
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
     if (abort_) break;
 
-    // Append training data. The GameResult is later overwritten.
-    training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
-        GameResult::UNDECIDED, tree_[idx]->GetPositionHistory()));
+    if (training) {
+      // Append training data. The GameResult is later overwritten.
+      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
+          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
+          search_->GetParams().GetHistoryFill()));
+    }
 
     float eval = search_->GetBestEval();
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
     if (enable_resign) {
       const float resignpct =
-          options_[idx].uci_options->Get<float>(kResignPercentageStr) / 100;
+          options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
+          100;
       if (eval < resignpct) {  // always false when resignpct == 0
         game_result_ =
             blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
@@ -127,6 +148,7 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
+  assert(!training_data_.empty());
   bool black_to_move =
       tree_[0]->GetPositionHistory().Starting().IsBlackToMove();
   for (auto chunk : training_data_) {

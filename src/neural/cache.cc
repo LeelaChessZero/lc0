@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 #include "neural/cache.h"
 #include <cassert>
@@ -37,6 +46,13 @@ bool CachingComputation::AddInputByHash(uint64_t hash) {
   batch_.back().lock = std::move(lock);
   batch_.back().hash = hash;
   return true;
+}
+
+void CachingComputation::PopCacheHit() {
+  assert(!batch_.empty());
+  assert(batch_.back().lock);
+  assert(batch_.back().idx_in_parent == -1);
+  batch_.pop_back();
 }
 
 void CachingComputation::AddInput(

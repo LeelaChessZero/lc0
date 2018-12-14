@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #pragma once
@@ -46,7 +55,7 @@ class Position {
   void SetRepetitions(int repetitions) { repetitions_ = repetitions; }
 
   // Number of ply with no captures and pawn moves.
-  int GetNoCapturePly() const { return no_capture_ply_; }
+  int GetNoCaptureNoPawnPly() const { return no_capture_ply_; }
 
   // Returns whether castle is still allowed in given direction.
   bool CanCastle(Castling) const;
@@ -113,6 +122,9 @@ class PositionHistory {
 
   // Builds a hash from last X positions.
   uint64_t HashLast(int positions) const;
+
+  // Checks for any repetitions since the last time 50 move rule was reset.
+  bool DidRepeatSinceLastZeroingMove() const;
 
  private:
   int ComputeLastMoveRepetitions() const;

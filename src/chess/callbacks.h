@@ -14,6 +14,15 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #pragma once
@@ -60,8 +69,12 @@ struct ThinkingInfo {
   int hashfull = -1;
   // Win in centipawns.
   optional<int> score;
+  // Number of successful TB probes (not the same as playouts ending in TB hit).
+  int tb_hits = -1;
   // Best line found. Moves are from perspective of white player.
   std::vector<Move> pv;
+  // Multipv index.
+  int multipv = -1;
   // Freeform comment.
   std::string comment;
 
@@ -73,7 +86,7 @@ struct ThinkingInfo {
   // The color of the player, if known.
   optional<bool> is_black;
 
-  using Callback = std::function<void(const ThinkingInfo&)>;
+  using Callback = std::function<void(const std::vector<ThinkingInfo>&)>;
 };
 
 // Is sent when a single game is finished.

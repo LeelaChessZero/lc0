@@ -14,25 +14,38 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
 */
 
 #include <chrono>
 #include <functional>
 #include <thread>
+#include <cstring>
 #include "neural/factory.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
+namespace {
 
 class RandomNetworkComputation : public NetworkComputation {
  public:
-  RandomNetworkComputation(int delay, int seed) : delay_ms_(delay), seed_(seed) {}
+  RandomNetworkComputation(int delay, int seed)
+      : delay_ms_(delay), seed_(seed) {}
   void AddInput(InputPlanes&& input) override {
     std::uint64_t hash = seed_;
     for (const auto& plane : input) {
       hash = HashCat({hash, plane.mask});
-      std::uint64_t value_hash = 
-          *reinterpret_cast<const std::uint32_t*>(&plane.value);
+      std::uint32_t tmp;
+      std::memcpy(&tmp, &plane.value, sizeof(float));
+      std::uint64_t value_hash = tmp;
       hash = HashCat({hash, value_hash});
     }
     inputs_.push_back(hash);
@@ -61,8 +74,8 @@ class RandomNetworkComputation : public NetworkComputation {
 
 class RandomNetwork : public Network {
  public:
-  RandomNetwork(const Weights& /*weights*/, const OptionsDict& options)
-      : delay_ms_(options.GetOrDefault<int>("delay", 0)), 
+  RandomNetwork(const OptionsDict& options)
+      : delay_ms_(options.GetOrDefault<int>("delay", 0)),
         seed_(options.GetOrDefault<int>("seed", 0)) {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_);
@@ -72,7 +85,13 @@ class RandomNetwork : public Network {
   int delay_ms_ = 0;
   int seed_ = 0;
 };
+}  // namespace
 
-REGISTER_NETWORK("random", RandomNetwork, -900)
+std::unique_ptr<Network> MakeRandomNetwork(const WeightsFile& /*weights*/,
+                                           const OptionsDict& options) {
+  return std::make_unique<RandomNetwork>(options);
+}
+
+REGISTER_NETWORK("random", MakeRandomNetwork, -900)
 
 }  // namespace lczero

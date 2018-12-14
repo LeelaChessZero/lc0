@@ -31,7 +31,7 @@ option('protobuf_libdir',
 option('openblas_libdirs',
        type: 'array',
        value: ['/usr/lib/'],
-       description: 'Paths to OpenCL libraries')
+       description: 'Paths to OpenBLAS libraries')
 
 option('opencl_libdirs',
        type: 'array',
@@ -55,7 +55,7 @@ option('mkl_include',
 
 option('cudnn_include', 
        type: 'array',
-       value: [],
+       value: ['/opt/cuda/include/', '/usr/local/cuda/include/'],
        description: 'Paths to cudnn include directory')
 
 option('build_backends',
@@ -68,6 +68,16 @@ option('blas',
        value: true,
        description: 'Enable BLAS backend')
 
+option('ispc',
+       type: 'boolean',
+       value: true,
+       description: 'use ispc')
+
+option('ispc_native_only',
+       type: 'boolean',
+       value: true,
+       description: 'use ispc and enable native arch only')
+
 option('cudnn',
        type: 'boolean',
        value: true,
@@ -78,9 +88,9 @@ option('opencl',
        value: true,
        description: 'Enable OpenCL backend')
 
-option('tf',
+option('tensorflow',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable TensorFlow backend')
 
 option('openblas',
@@ -97,6 +107,11 @@ option('accelerate',
        type: 'boolean',
        value: true,
        description: 'Enable Accelerate BLAS support')
+
+option('popcnt',
+       type: 'boolean',
+       value: true,
+       description: 'Use the popcnt instruction')
 
 option('gtest',
        type: 'boolean',
