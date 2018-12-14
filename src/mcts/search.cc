@@ -849,8 +849,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         return NodeToProcess::Extension(node, depth);
       }
     }
-    if (!is_root_node) return {node, true};
-
+    if (!is_root_node) {
+      IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+      return NodeToProcess::Collision(node, depth, collision_limit);
+    }
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     const float cpuct = ComputeCpuct(params_, node->GetN());
