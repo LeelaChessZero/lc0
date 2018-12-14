@@ -170,9 +170,14 @@ class CudnnNetwork : public Network {
 
     numBlocks_ = weights.residual.size();
 
+    has_se_ = false;
+
     // 0. Process weights.
     processConvBlock(weights.input, true);
     for (int i = 0; i < numBlocks_; i++) {
+      if (weights.residual[i].has_se) {
+        has_se_ = true;
+      }
       processConvBlock(weights.residual[i].conv1, true);
       processConvBlock(weights.residual[i].conv2, true);
     }
@@ -224,12 +229,12 @@ class CudnnNetwork : public Network {
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 #ifdef DEBUG_RAW_NPS
-    printf("\nallocated %d bytes for scratch memory\n", (int)scratch_size_);
+    CERR << "allocated " << scratch_size_ << " bytes for scratch memory";
 #endif
 
     // 2. Build the network, and copy the weights to GPU memory.
 
-    // input
+    // Input.
     {
       auto inputConv = std::make_unique<ConvLayer<DataType>>(
           nullptr, kNumFilters, 8, 8, 3, kNumInputPlanes, true, true);
@@ -238,7 +243,7 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(inputConv));
     }
 
-    // residual block
+    // Residual block.
     for (size_t block = 0; block < weights.residual.size(); block++) {
       auto conv1 = std::make_unique<ConvLayer<DataType>>(
           getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
@@ -247,17 +252,35 @@ class CudnnNetwork : public Network {
                          scratch_mem_);
       network_.emplace_back(std::move(conv1));
 
+      // Relu and bias of second convolution is handled by SELayer.
+      bool useReluAndBias = weights.residual[block].has_se ? false : true;
+
       auto conv2 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
-      conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
-                         &weights.residual[block].conv2.biases[0],
-                         scratch_mem_);
+          getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, useReluAndBias,
+          useReluAndBias);
+      conv2->LoadWeights(
+          &weights.residual[block].conv2.weights[0],
+          useReluAndBias ? &weights.residual[block].conv2.biases[0] : nullptr,
+          scratch_mem_);
       network_.emplace_back(std::move(conv2));
+
+      if (weights.residual[block].has_se) {
+          int numFCOut = weights.residual[block].se.b1.size();
+          auto se = std::make_unique<SELayer<DataType>>(getLastLayer(),
+                                                        numFCOut, false);
+          se->LoadWeights(&weights.residual[block].se.w1[0],
+                          &weights.residual[block].se.b1[0],
+                          &weights.residual[block].se.w2[0],
+                          &weights.residual[block].se.b2[0],
+                          &weights.residual[block].conv2.biases[0],
+                          scratch_mem_);
+          network_.emplace_back(std::move(se));
+      }
     }
 
     resi_last_ = getLastLayer();
 
-    // policy head
+    // Policy head.
     {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.policy.bn_means.size(), 8, 8, 1, kNumFilters);
@@ -281,7 +304,7 @@ class CudnnNetwork : public Network {
     }
     policy_out_ = getLastLayer();
 
-    // value head
+    // Value head.
     {
       auto convVal = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.value.bn_means.size(), 8, 8, 1, kNumFilters);
@@ -307,17 +330,19 @@ class CudnnNetwork : public Network {
     }
     value_out_ = getLastLayer();
 
-    // 3. allocate GPU memory for running the network
+    // 3. Allocate GPU memory for running the network:
     //    - three buffers of max size are enough (one to hold input, second to
-    //    hold output and third to hold skip connection's input).
+    //      hold output and third to hold skip connection's input).
     size_t maxSize = resi_last_->GetOutputSize(max_batch_size_);
     for (auto& mem : tensor_mem_) {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
     }
 
-    // printf("Allocated %d bytes of GPU memory to run the network\n", 3 *
-    // maxSize);
+#ifdef DEBUG_RAW_NPS
+    CERR << "allocated " << 3 * maxSize
+         << " bytes of GPU memory to run the network";
+#endif
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
@@ -327,7 +352,7 @@ class CudnnNetwork : public Network {
     auto t_start = std::chrono::high_resolution_clock::now();
 #endif
 
-    // expand packed planes to full planes
+    // Expand packed planes to full planes.
     uint64_t* ipDataMasks = io->input_masks_mem_gpu_;
     float* ipDataValues = io->input_val_mem_gpu_;
 
@@ -343,23 +368,37 @@ class CudnnNetwork : public Network {
     float* opVal = io->op_value_mem_gpu_;
 
     int l = 0;
-    // input
+    // Input.
     network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], nullptr,
                         scratch_mem_, scratch_size_, cudnn_,
                         cublas_);  // input conv
 
-    // residual block
+    // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // conv1
 
-      network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
-                          tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // conv2
+      // For SE Resnet, skip connection is added after SE (and bias is added as
+      // part of SE).
+      if (has_se_) {
+        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // conv2
+      } else {
+        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
+                            tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // conv2
+      }
+
+      if (has_se_) {
+        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
+                            tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // SE layer
+      }
     }
 
-    // policy head
+    // Policy head.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                         scratch_mem_, scratch_size_, cudnn_,
                         cublas_);  // pol conv
@@ -370,7 +409,7 @@ class CudnnNetwork : public Network {
                         scratch_mem_, scratch_size_, cudnn_,
                         cublas_);  // pol FC
     if (std::is_same<half, DataType>::value) {
-      // TODO: consider softmax layer that writes directly to fp32
+      // TODO: consider softmax layer that writes directly to fp32.
       network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // pol softmax
@@ -394,7 +433,7 @@ class CudnnNetwork : public Network {
                         cublas_);  // value FC1
 
     if (std::is_same<half, DataType>::value) {
-      // TODO: consider fusing the bias-add of FC2 with format conversion
+      // TODO: consider fusing the bias-add of FC2 with format conversion.
       network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // value FC2
@@ -422,11 +461,9 @@ class CudnnNetwork : public Network {
     if (numCalls == reportingCalls) {
       double avgBatchSize = ((double)sumBatchSize) / numCalls;
       double nps = sumBatchSize / totalTime;
-      printf(
-          "\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals. "
-          "NPS: "
-          "%g\n",
-          avgBatchSize, totalTime, sumBatchSize, nps);
+      CERR << "Avg batch size: " << avgBatchSize
+           << ", NN eval time: " << totalTime << " seconds per " << sumBatchSize
+           << " evals. NPS: " << nps;
       sumBatchSize = 0;
       totalTime = 0;
       numCalls = 0;
@@ -444,8 +481,8 @@ class CudnnNetwork : public Network {
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    // set correct gpu id for this computation (as it might have been called
-    // from a different thread)
+    // Set correct gpu id for this computation (as it might have been called
+    // from a different thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
     return std::make_unique<CudnnNetworkComputation<DataType>>(this);
   }
@@ -478,11 +515,12 @@ class CudnnNetwork : public Network {
   int gpu_id_;
   int max_batch_size_;
 
-  // currently only one NN Eval can happen a time (we can fix this if needed
-  // by allocating more memory)
+  // Currently only one NN Eval can happen a time (we can fix this if needed
+  // by allocating more memory).
   mutable std::mutex lock_;
 
   int numBlocks_;
+  bool has_se_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
@@ -562,7 +600,9 @@ template <typename DataType>
 std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile &weights,
                                           const OptionsDict &options) {
   if (weights.format().network_format().network() !=
-      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+      weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_SE) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
