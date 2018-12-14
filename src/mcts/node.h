@@ -35,6 +35,7 @@
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
+#include "neural/encoder.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
 
@@ -187,7 +188,8 @@ class Node {
   bool UpdateFullDepth(uint16_t* depth);
 
   V3TrainingData GetV3TrainingData(GameResult result,
-                                   const PositionHistory& history) const;
+                                   const PositionHistory& history,
+                                   FillEmptyHistory fill_empty_history) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -206,6 +208,9 @@ class Node {
 
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
+
+  // Returns edge to the own node.
+  Edge* GetOwnEdge() const;
 
   // Debug information about the node.
   std::string DebugString() const;
@@ -307,7 +312,9 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
-  Move GetMove(bool flip = false) const { return edge_->GetMove(flip); }
+  Move GetMove(bool flip = false) const {
+    return edge_ ? edge_->GetMove(flip) : Move();
+  }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).

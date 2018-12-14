@@ -80,7 +80,7 @@ class MuxingComputation : public NetworkComputation {
 
 class MuxingNetwork : public Network {
  public:
-  MuxingNetwork(const Weights& weights, const OptionsDict& options) {
+  MuxingNetwork(const WeightsFile& weights, const OptionsDict& options) {
     // int threads, int max_batch)
     //: network_(std::move(network)), max_batch_(max_batch) {
 
@@ -97,7 +97,7 @@ class MuxingNetwork : public Network {
     }
   }
 
-  void AddBackend(const std::string& name, const Weights& weights,
+  void AddBackend(const std::string& name, const WeightsFile& weights,
                   const OptionsDict& opts) {
     const int nn_threads = opts.GetOrDefault<int>("threads", 1);
     const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
@@ -203,8 +203,12 @@ void MuxingComputation::ComputeBlocking() {
   dataready_cv_.wait(lock, [this]() { return dataready_; });
 }
 
+std::unique_ptr<Network> MakeMuxingNetwork(const WeightsFile& weights,
+                                           const OptionsDict& options) {
+  return std::make_unique<MuxingNetwork>(weights, options);
+}
+
+REGISTER_NETWORK("multiplexing", MakeMuxingNetwork, -1000)
+
 }  // namespace
-
-REGISTER_NETWORK("multiplexing", MuxingNetwork, -1000)
-
 }  // namespace lczero

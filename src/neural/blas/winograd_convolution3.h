@@ -43,18 +43,6 @@ class WinogradConvolution3 {
                        const size_t max_input_layers,
                        const size_t max_output_layers);
 
-  // Create the zero-padded U matrix.
-  static std::vector<float> ZeropadU(const std::vector<float>& U,
-                                     const size_t outputs,
-                                     const size_t channels,
-                                     const size_t outputs_pad,
-                                     const size_t channels_pad);
-
-  // Create the filter transform matrix.
-  static std::vector<float> TransformF(const std::vector<float>& f,
-                                       const size_t outputs,
-                                       const size_t channels);
-
   // Forward inference, batched.
   void Forward(const size_t batch_size, const size_t input_channels,
                const size_t output_channels, const float* input,
