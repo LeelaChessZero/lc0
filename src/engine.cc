@@ -282,7 +282,7 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Cache size.
- cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));
+  cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId.GetId()));
 }
 
 void EngineController::EnsureReady() {
