@@ -427,9 +427,9 @@ void EngineController::Stop() {
 }
 
 void EngineController::SwitchNN() {
-  if(!second_nn_already_loaded_ && 
+  if(!second_nn_already_loaded_ &&
    options_.Get<std::string>(NetworkFactory::kSecondWeightsId.GetId()) != "" &&
-   k_pieces_left == options_.Get<int>(NetworkFactory::kSecondWeightsSwitchAt.GetId())){
+   k_pieces_left <= options_.Get<int>(NetworkFactory::kSecondWeightsSwitchAt.GetId())){
     std::string net_path = options_.Get<std::string>(NetworkFactory::kSecondWeightsId.GetId());
     std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
     std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId.GetId());
