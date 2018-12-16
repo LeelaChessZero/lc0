@@ -186,25 +186,28 @@ int64_t Search::GetTimeToDeadline() const {
 namespace {
 // These stunts are performed by trained professionals, do not try this at home.
 
-// The approximation used here is log2(2^N*(1+f)) ~ N+f where N is integer and f
-// the fractional part, f>=0.
+// The approximation used here is log2(2^N*(1+f)) ~ N+f*(1.342671-0.342671*f)
+// where N is the integer and f the fractional part, f>=0.
 inline float flog2(const float a) {
   int32_t tmp;
   std::memcpy(&tmp, &a, sizeof(float));
-  int expm1 = (tmp >> 23) - 0x80;
+  int expb = (tmp >> 23);
   tmp = (tmp & 0x7fffff) | (0x7f << 23);
   float out;
   std::memcpy(&out, &tmp, sizeof(float));
-  return out + expm1;
+  return out * (2.028011f - 0.342671f * out) - 128.68534f + expb;
 }
 
-// The approximation used here is 2^(N+f) ~ 2^N*(1+f) where N is integer and f
-// the fractional part, f>=0.
-// Using a trick from Paul Mineiro (github.com/etheory/fastapprox).
+// The approximation used here is 2^(N+f) ~ 2^N*(1+f*(0.656366+0.343634*f))
+// where N is the integer and f the fractional part, f>=0.
 inline float fpow2(const float a) {
-  if (a < -126) return 0;
-  int32_t tmp = static_cast<int32_t>(a * (1 << 23)) + (127 << 23);
-  float out;
+  if (a < -126) return 0.0;
+  int exp = floor(a);
+  float out = a - exp;
+  out = 1.0f + out * (0.656366f + 0.343634f * out);
+  int32_t tmp;
+  std::memcpy(&tmp, &out, sizeof(float));
+  tmp += exp << 23;
   std::memcpy(&out, &tmp, sizeof(float));
   return out;
 }
