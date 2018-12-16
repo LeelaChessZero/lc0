@@ -73,7 +73,10 @@ class NetworkFactory {
   static const OptionId kBackendId;
   static const OptionId kBackendOptionsId;
   static const OptionId kSecondWeightsId;
-  static const OptionId kSecondWeightsSwitchAt;  
+  static const OptionId kSecondWeightsSwitchAtId;
+  static const OptionId kSecondWeightsCpuctId;
+  static const OptionId kSecondWeightsFpuValueId;
+  static const OptionId kSecondWeightsPolicySoftmaxTempId;
 
   struct BackendConfiguration {
     BackendConfiguration() = default;

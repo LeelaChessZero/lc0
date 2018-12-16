@@ -109,6 +109,13 @@ float ComputeMoveWeight(int ply, float peak, float left_width,
 }
   bool second_nn_already_loaded_ = false;
   int k_pieces_left = 32;
+  std::string CPuct_for_primary_NN = "";
+  std::string FPU_for_primary_NN = "";
+  std::string PolicyTemperature_for_primary_NN = "";    
+
+  // Purely informational vars, writing to them do not affect behaviour, they
+  // are just convenient to have when we want to tell about the current state.
+  std::string weights_currently_in_use;
 
 }  // namespace
 
@@ -159,6 +166,18 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }
 
+void EngineController::SetSearchParamsforSecondNN(OptionsParser* options) {
+  options->GetMutableOptions()->Set<float>(SearchParams::kCpuctId.GetId(), options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsCpuctId.GetId()));
+  options->GetMutableOptions()->Set<float>(SearchParams::kFpuValueId.GetId(), options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsFpuValueId.GetId()));
+  options->GetMutableOptions()->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsPolicySoftmaxTempId.GetId()));    
+}
+
+void EngineController::ResetSearchParamsforPrimaryNN(OptionsParser* options) {
+  options->GetMutableOptions()->Set<float>(SearchParams::kCpuctId.GetId(), stof(CPuct_for_primary_NN));
+  options->GetMutableOptions()->Set<float>(SearchParams::kFpuValueId.GetId(), stof(FPU_for_primary_NN));
+  options->GetMutableOptions()->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), stof(PolicyTemperature_for_primary_NN));
+}
+  
 SearchLimits EngineController::PopulateSearchLimits(
     int ply, bool is_black, const GoParams& params,
     std::chrono::steady_clock::time_point start_time) {
@@ -289,7 +308,7 @@ void EngineController::EnsureReady() {
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
-  EngineController::SwitchNN();
+  EngineController::SwitchToSecondaryNN();
   move_start_time_ = std::chrono::steady_clock::now();
 }
 
@@ -305,11 +324,13 @@ void EngineController::NewGame() {
   current_position_.reset();
   // reload the main NN every new game in a tournament
   if(second_nn_already_loaded_){
-    LOGFILE << "Reloading Leela NN";
     auto network_configuration = NetworkFactory::BackendConfiguration(options_);
     network_ = NetworkFactory::LoadNetwork(options_);
     network_configuration_ = network_configuration;
     second_nn_already_loaded_ = false;
+    k_pieces_left = 32;
+    weights_currently_in_use = options_.Get<std::string>(NetworkFactory::kWeightsId.GetId());
+    LOGFILE << "Reloaded Leela NN: " << weights_currently_in_use;
   }
   UpdateFromUciOptions();
 }
@@ -344,6 +365,7 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
+  
   auto start_time = move_start_time_;
   go_params_ = params;
 
@@ -426,10 +448,10 @@ void EngineController::Stop() {
   if (search_) search_->Stop();
 }
 
-void EngineController::SwitchNN() {
+void EngineController::SwitchToSecondaryNN() {
   if(!second_nn_already_loaded_ &&
    options_.Get<std::string>(NetworkFactory::kSecondWeightsId.GetId()) != "" &&
-   k_pieces_left <= options_.Get<int>(NetworkFactory::kSecondWeightsSwitchAt.GetId())){
+   k_pieces_left <= options_.Get<int>(NetworkFactory::kSecondWeightsSwitchAtId.GetId())){
     std::string net_path = options_.Get<std::string>(NetworkFactory::kSecondWeightsId.GetId());
     std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId.GetId());
     std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId.GetId());
@@ -440,14 +462,16 @@ void EngineController::SwitchNN() {
     network_options.AddSubdictFromString(backend_options);
     network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
     second_nn_already_loaded_ = true;
+    weights_currently_in_use = net_path;
   }
 }
-
+  
 EngineLoop::EngineLoop()
     : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
+  // engine_.MyChangeOptions(&options_);
   options_.Add<StringOption>(kLogFileId);
 }
 
@@ -467,19 +491,49 @@ void EngineLoop::CmdUci() {
 }
 
 void EngineLoop::CmdIsReady() {
+  bool nn_changed = second_nn_already_loaded_;
   engine_.EnsureReady();
+  // If EnsureReady() actually switched NN, then also set cpuct etc to fit the new NN, if these are defined.
+  if(nn_changed != second_nn_already_loaded_){
+    engine_.SetSearchParamsforSecondNN(&options_);  
+  }
+  
   SendResponse("readyok");
 }
 
 void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   options_.SetUciOption(name, value, context);
+
+  // We want access to some parameters of the search, so that we can change these when the NN
+  // is switched (which search know nothing about).
+  if(name == "CPuct"){
+    CPuct_for_primary_NN = value;
+    LOGFILE << "Storing CPuct for original NN: " << CPuct_for_primary_NN;
+  }
+  if(name == "FpuValue"){
+    FPU_for_primary_NN = value;
+    LOGFILE << "Storing FpuValue for original NN: " << FPU_for_primary_NN;
+  }
+  if(name == "PolicyTemperature"){
+    PolicyTemperature_for_primary_NN = value;
+    LOGFILE << "Storing PolicyTemperature for original NN: " << PolicyTemperature_for_primary_NN;
+  }
+
   // Set the log filename for the case it was set in UCI option.
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId.GetId()));
 }
 
-void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
+void EngineLoop::CmdUciNewGame() {
+  bool nn_changed = second_nn_already_loaded_;  
+  engine_.NewGame();
+
+  if(nn_changed != second_nn_already_loaded_){
+    // Reset Search parameters too (cpuct et al)
+    engine_.ResetSearchParamsforPrimaryNN(&options_);    
+  }
+}
 
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {

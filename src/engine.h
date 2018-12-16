@@ -62,7 +62,10 @@ class EngineController {
 
   void PopulateOptions(OptionsParser* options);
 
-  void SwitchNN();
+  void SwitchToSecondaryNN();
+
+  void SetSearchParamsforSecondNN(OptionsParser* options);
+  void ResetSearchParamsforPrimaryNN(OptionsParser* options);    
 
   // Blocks.
   void EnsureReady();
