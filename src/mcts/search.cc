@@ -203,7 +203,7 @@ inline float flog2(const float a) {
 // Using a trick from Paul Mineiro (github.com/etheory/fastapprox).
 inline float fpow2(const float a) {
   if (a < -126) return 0;
-  int32_t tmp = static_cast<int>(a * (1 << 23)) + (127 << 23);
+  int32_t tmp = static_cast<int32_t>(a * (1 << 23)) + (127 << 23);
   float out;
   std::memcpy(&out, &tmp, sizeof(float));
   return out;
@@ -228,11 +228,6 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
   const float k = params.GetCpuctFactor();
   const float base = params.GetCpuctBase();
   return init + (k ? k * flog((N + base) / base) : 0.0f);
-}
-
-inline float PowPositive(const float x, const float y) {
-  if (x <= 0.0) return 0.0;
-  return fpow2(y * flog2(x));
 }
 }  // namespace
 
@@ -593,8 +588,9 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       continue;
     }
     if (edge.GetQ(fpu) < min_eval) continue;
-    sum += PowPositive((static_cast<float>(edge.GetN()) + offset) / max_n,
-                 1 / temperature);
+    sum += std::pow(
+        std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
+        1 / temperature);
     cumulative_sums.push_back(sum);
   }
   assert(sum);
@@ -1170,7 +1166,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
     if (params_.GetPolicySoftmaxTemp() != 1.0f) {
-      p = PowPositive(p, 1 / params_.GetPolicySoftmaxTemp());
+      // Flush denormals to zero.
+      p = p < 1.17549435E-38 ? 0.0
+                             : fpow2(flog2(p) / params_.GetPolicySoftmaxTemp());
     }
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
