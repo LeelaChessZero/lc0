@@ -50,6 +50,10 @@ const std::string sourceCode_convolve3 =
 #include "clsource/convolve3.opencl"
     ;
 
+const std::string sourceCode_se =
+#include "clsource/se.opencl"
+    ;
+
 const std::string sourceCode_blast_level3_common =
 #include "clblast_level3/common.opencl"
     ;
@@ -316,9 +320,12 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   // Make program of the source code in the context.
   try {
     m_program =
-        cl::Program(m_context, sourceCode_config + sourceCode_convolve1 +
-                                   sourceCode_convolve3 + sourceCode_sgemm +
-                                   sourceCode_sgemv);
+        cl::Program(m_context, sourceCode_config +
+                               sourceCode_convolve1 +
+                               sourceCode_convolve3 +
+                               sourceCode_se +
+                               sourceCode_sgemm +
+                               sourceCode_sgemv);
   } catch (const cl::Error& e) {
     CERR << "Error getting kernels: " << e.what() << ": " << e.err();
     throw std::runtime_error("Error getting OpenCL kernels.");
@@ -369,7 +376,8 @@ std::unique_ptr<OpenCLBuffers> OpenCL_Network::acquire_buffers() const {
   return result;
 }
 
-void OpenCL_Network::release_buffers(std::unique_ptr<OpenCLBuffers> buffers) const {
+void OpenCL_Network::release_buffers(
+    std::unique_ptr<OpenCLBuffers> buffers) const {
   std::lock_guard<std::mutex> lock(m_pool_mutex);
   m_buffers_pool.push_back(std::move(buffers));
 }

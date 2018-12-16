@@ -21,22 +21,16 @@
 #include <cstddef>
 #include <vector>
 
+#include "neural/network.h"
+
 namespace lczero {
 
-class FullyConnectedLayer {
- public:
-  FullyConnectedLayer() = delete;
-
-  // Forward inference, batched, from input_size to output_size
-  static void Forward1D(const size_t batch_size, const size_t input_size,
-                        const size_t output_size, const float* input,
-                        const float* weights, const float* biases,
-                        bool apply_relu, float* output);
-
-  // Forward inference, no batched, from input_size to scalar
-  static float Forward0D(const size_t input_size, const float* input,
-                         const float* weights);
-
-};
+// Apply batch normalization, along with a Relu and add a possible skip
+// connection.
+void ApplyBatchNormalization(const size_t batch_size, const size_t channels,
+                             float* data, const float* means,
+                             const float* stddivs,
+                             const float* eltwise = nullptr,
+                             const bool relu = true);
 
 }  // namespace lczero

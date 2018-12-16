@@ -51,9 +51,15 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "them into cache."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
-    "Cpuct constant from \"UCT search\" algorithm. Higher values promote more "
-    "exploration/wider search, lower values promote more confidence/deeper "
-    "search."};
+    "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
+    "more exploration/wider search, lower values promote more "
+    "confidence/deeper search."};
+const OptionId SearchParams::kCpuctBaseId{
+    "cpuct-base", "CPuctBase",
+    "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
+    "higher growth of Cpuct as number of node visits grows."};
+const OptionId SearchParams::kCpuctFactorId{
+    "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -64,6 +70,18 @@ const OptionId SearchParams::kTempDecayMovesId{
     "Reduce temperature for every move from the game start to this number of "
     "moves, decreasing linearly from initial temperature to 0. A value of 0 "
     "disables tempdecay."};
+const OptionId SearchParams::kTemperatureCutoffMoveId{
+    "temp-cutoff-move", "TempCutoffMove",
+    "Move number, starting from which endgame temperature is used rather "
+    "than initial temperature. Setting it to 0 disables cutoff."};
+const OptionId SearchParams::kTemperatureEndgameId{
+    "temp-endgame", "TempEndgame",
+    "Temperature used during endgame (starting from cutoff move). Endgame "
+    "temperature doesn't decay."};
+const OptionId SearchParams::kTemperatureWinpctCutoffId{
+    "temp-value-cutoff", "TempValueCutoff",
+    "When move is selected using temperature, bad moves (with win "
+    "probability less than X than the best move) are not considered at all."};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset",
     "Reduces visits by this value when picking a move with a temperature. When "
@@ -86,13 +104,26 @@ const OptionId SearchParams::kSmartPruningFactorId{
     "promising moves from being considered even earlier. Values less than 1 "
     "causes hopeless moves to still have some attention. When set to 0, smart "
     "pruning is deactivated."};
+const OptionId SearchParams::kFpuStrategyId{
+    "fpu-strategy", "FpuStrategy",
+    "How is an eval of unvisited node determined. \"reduction\" subtracts "
+    "--fpu-reduction value from the parent eval. \"absolute\" sets eval of "
+    "unvisited nodes to the value specified in --fpu-value."};
+// TODO(crem) Make FPU in "reduction" mode use fpu-value too. For now it's kept
+// for backwards compatibility.
 const OptionId SearchParams::kFpuReductionId{
     "fpu-reduction", "FpuReduction",
-    "\"First Play Urgency\" reduction. Normally when a move has no visits, "
+    "\"First Play Urgency\" reduction (used when FPU strategy is "
+    "\"reduction\"). Normally when a move has no visits, "
     "it's eval is assumed to be equal to parent's eval. With non-zero FPU "
     "reduction, eval of unvisited move is decreased by that value, "
     "discouraging visits of unvisited moves, and saving those visits for "
     "(hopefully) more promising moves."};
+const OptionId SearchParams::kFpuValueId{
+    "fpu-value", "FpuValue",
+    "\"First Play Urgency\" value. When FPU strategy is \"absolute\", value of "
+    "unvisited node is assumed to be equal to this value, and does not depend "
+    "on parent eval."};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
     "Length of history, in half-moves, to include into the cache key. When "
@@ -137,14 +168,22 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 1;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.2f;
+  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
+  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
+  options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
+  options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
+  options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
+  std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
+  options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 0.0f;
+  options->Add<FloatOption>(kFpuValueId, -1.0f, 1.0f) = -1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 7;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.0f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 1;
@@ -153,16 +192,21 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
-  std::vector<std::string> history_fill_opt {"no", "fen_only", "always"};
+  std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
+      kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
+      kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
+      kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
+                   "absolute"),
       kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
+      kFpuValue(options.Get<float>(kFpuValueId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),

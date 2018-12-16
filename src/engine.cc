@@ -148,7 +148,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 256);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
-  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
+  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.0f);
+  defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 2.0f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
   defaults->Set<int>(SearchParams::kMaxCollisionVisitsId.GetId(), 9999);
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
@@ -161,9 +162,9 @@ SearchLimits EngineController::PopulateSearchLimits(
     std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
   int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
-  if (params.movetime >= 0) {
-    limits.search_deadline =
-        start_time + std::chrono::milliseconds(params.movetime - move_overhead);
+  if (params.movetime) {
+    limits.search_deadline = start_time + std::chrono::milliseconds(
+                                              *params.movetime - move_overhead);
   }
 
   const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
@@ -174,7 +175,7 @@ SearchLimits EngineController::PopulateSearchLimits(
     }
   }
   limits.infinite = params.infinite || params.ponder;
-  if (params.nodes >= 0) limits.visits = params.nodes;
+  if (params.nodes) limits.visits = *params.nodes;
   int ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
   if (ram_limit) {
     const auto cache_size =
@@ -186,11 +187,12 @@ SearchLimits EngineController::PopulateSearchLimits(
     if (limit < 0) limit = 0;
     if (limit < limits.visits) limits.visits = limit;
   }
-  limits.depth = params.depth;
+  if (params.depth) limits.depth = *params.depth;
   if (limits.infinite || !time) return limits;
-  int increment = std::max(int64_t(0), is_black ? params.binc : params.winc);
+  const optional<int64_t>& inc = is_black ? params.binc : params.winc;
+  int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
-  int movestogo = params.movestogo < 0 ? 50 : params.movestogo;
+  int movestogo = params.movestogo.value_or(50);
   // Fix non-standard uci command.
   if (movestogo == 0) movestogo = 1;
 
@@ -283,7 +285,6 @@ void EngineController::UpdateFromUciOptions() {
 }
 
 void EngineController::EnsureReady() {
-  UpdateFromUciOptions();
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
