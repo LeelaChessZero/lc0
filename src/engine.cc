@@ -110,7 +110,7 @@ float ComputeMoveWeight(int ply, float peak, float left_width,
   bool second_nn_already_loaded_ = false;
   int k_pieces_left = 32;
   std::string CPuct_for_primary_NN = "";
-  std::string FPU_for_primary_NN = "";
+  std::string FPUR_for_primary_NN = "";
   std::string PolicyTemperature_for_primary_NN = "";    
 
   // Purely informational vars, writing to them do not affect behaviour, they
@@ -168,13 +168,13 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
 void EngineController::SetSearchParamsforSecondNN(OptionsParser* options) {
   options->GetMutableOptions()->Set<float>(SearchParams::kCpuctId.GetId(), options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsCpuctId.GetId()));
-  options->GetMutableOptions()->Set<float>(SearchParams::kFpuValueId.GetId(), options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsFpuValueId.GetId()));
+  options->GetMutableOptions()->Set<float>(SearchParams::kFpuReductionId.GetId(), options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsFpuReductionId.GetId()));
   options->GetMutableOptions()->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsPolicySoftmaxTempId.GetId()));    
 }
 
 void EngineController::ResetSearchParamsforPrimaryNN(OptionsParser* options) {
   options->GetMutableOptions()->Set<float>(SearchParams::kCpuctId.GetId(), stof(CPuct_for_primary_NN));
-  options->GetMutableOptions()->Set<float>(SearchParams::kFpuValueId.GetId(), stof(FPU_for_primary_NN));
+  options->GetMutableOptions()->Set<float>(SearchParams::kFpuReductionId.GetId(), stof(FPUR_for_primary_NN));
   options->GetMutableOptions()->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), stof(PolicyTemperature_for_primary_NN));
 }
   
@@ -511,9 +511,9 @@ void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
     CPuct_for_primary_NN = value;
     LOGFILE << "Storing CPuct for original NN: " << CPuct_for_primary_NN;
   }
-  if(name == "FpuValue"){
-    FPU_for_primary_NN = value;
-    LOGFILE << "Storing FpuValue for original NN: " << FPU_for_primary_NN;
+  if(name == "FpuReduction"){
+    FPUR_for_primary_NN = value;
+    LOGFILE << "Storing FpuReduction for original NN: " << FPUR_for_primary_NN;
   }
   if(name == "PolicyTemperature"){
     PolicyTemperature_for_primary_NN = value;

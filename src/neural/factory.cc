@@ -61,11 +61,13 @@ const OptionId NetworkFactory::kSecondWeightsCpuctId{
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search. "
     "This value is used for the Secondary NN."};
-const OptionId NetworkFactory::kSecondWeightsFpuValueId{
-    "SWfpu-value", "SWFpuValue",
-    "\"First Play Urgency\" value. When FPU strategy is \"absolute\", value of "
-    "unvisited node is assumed to be equal to this value, and does not depend "
-    "on parent eval. "
+const OptionId NetworkFactory::kSecondWeightsFpuReductionId{
+    "SWfpu-Reduction", "SWFpuReduction",
+      "First Play Urgency reduction (used when FPU strategy is 'reduction'). Normally "
+      "when a move has no visits, it's eval is assumed to be equal to parent's eval. "
+      "With non-zero FPU reduction, eval of unvisited move is decreased by that value, "
+      "discouraging visits of unvisited moves, and saving those visits for (hopefully) "
+      "more promising moves. "
     "This value is used for the Secondary NN."};      
 const OptionId NetworkFactory::kSecondWeightsPolicySoftmaxTempId{
     "SWpolicy-softmax-temp", "SWPolicyTemperature",
@@ -94,7 +96,7 @@ void NetworkFactory::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(NetworkFactory::kSecondWeightsId);
   options->Add<IntOption>(NetworkFactory::kSecondWeightsSwitchAtId, 5, 16) = 16;
   options->Add<FloatOption>(kSecondWeightsCpuctId, 0.0f, 100.0f) = 3.5f;
-  options->Add<FloatOption>(kSecondWeightsFpuValueId, -1.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kSecondWeightsFpuReductionId, -100.0f, 100.0f) = 1.20f;
   options->Add<FloatOption>(kSecondWeightsPolicySoftmaxTempId, 0.1f, 10.0f) = 1.7f;
 }
 

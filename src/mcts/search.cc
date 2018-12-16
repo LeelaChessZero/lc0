@@ -609,7 +609,7 @@ bool Search::IsSearchActive() const {
 }
 
 void Search::WatchdogThread() {
-  LOGFILE << "Start a watchdog thread." << " Cpuct is now " << params_.GetCpuct() ;
+  LOGFILE << "Start a watchdog thread." << " Cpuct: " << params_.GetCpuct() << " FPUR: " << params_.GetFpuReduction() << " PolicySoftMaxTemp: " << params_.GetPolicySoftmaxTemp();
   while (true) {
     MaybeTriggerStop();
     MaybeOutputInfo();
