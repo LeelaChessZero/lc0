@@ -83,6 +83,7 @@ namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
   float total = 0;
   std::vector<float> noise;
+  noise.reserve(node->GetNumEdges());
 
   for (int i = 0; i < node->GetNumEdges(); ++i) {
     float eta = Random::Get().GetGamma(alpha, 1.0);
@@ -989,7 +990,8 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
 
   if (node && node->HasChildren()) {
     // Legal moves are known, use them.
-    for (auto edge : node->Edges()) {
+    moves.reserve(node->GetNumEdges());
+    for (const auto& edge : node->Edges()) {
       moves.emplace_back(edge.GetMove().as_nn_index());
     }
   } else {
