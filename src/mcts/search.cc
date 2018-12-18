@@ -1167,10 +1167,10 @@ void SearchWorker::DoBackupUpdate() {
 
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
-  Node* node = node_to_process.node;
   if (node_to_process.IsCollision()) {
     // If it was a collision, just undo counters.
-    for (; node != search_->root_node_->GetParent(); node = node->GetParent()) {
+    for (Node* node = node_to_process.node;
+         node != search_->root_node_->GetParent(); node = node->GetParent()) {
       node->CancelScoreUpdate(node_to_process.multivisit);
     }
     return;
@@ -1178,7 +1178,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
-  for (Node* n = node; n != search_->root_node_->GetParent();
+  for (Node* n = node_to_process.node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
     n->FinalizeScoreUpdate(v, node_to_process.multivisit);
     // Q will be flipped for opponent.
