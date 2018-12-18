@@ -162,11 +162,11 @@ class Node {
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
 
+  // Mark the node as "being updating" by incrementing n_in_flight.
   // If this node is not in the process of being expanded by another thread
-  // (which can happen only if n==0 and n-in-flight==1), mark the node as
-  // "being updated" by incrementing n-in-flight, and return true.
+  // (in which case n == 0 and n-in-flight > 1), return true.
   // Otherwise return false.
-  bool TryStartScoreUpdate();
+  bool StartScoreUpdate();
   // Decrements n-in-flight back.
   void CancelScoreUpdate(int multivisit);
   // Updates the node with newly computed value v.

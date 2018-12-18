@@ -234,7 +234,7 @@ void Node::MakeTerminal(GameResult result) {
   }
 }
 
-bool Node::TryStartScoreUpdate() { return n_in_flight_++ == 0 || n_ != 0; }
+bool Node::StartScoreUpdate() { return n_in_flight_++ == 0 || n_ != 0; }
 
 void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 

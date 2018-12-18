@@ -836,7 +836,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
-    if (!node->TryStartScoreUpdate()) {
+    if (!node->StartScoreUpdate()) {
       IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
