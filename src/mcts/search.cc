@@ -1170,8 +1170,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   Node* node = node_to_process.node;
   if (node_to_process.IsCollision()) {
     // If it was a collision, just undo counters.
-    for (node = node->GetParent(); node != search_->root_node_->GetParent();
-         node = node->GetParent()) {
+    for (; node != search_->root_node_->GetParent(); node = node->GetParent()) {
       node->CancelScoreUpdate(node_to_process.multivisit);
     }
     return;

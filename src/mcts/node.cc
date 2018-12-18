@@ -216,6 +216,13 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
+void Node::DebugPrintSubtree(int depth) const {
+  CERR << std::string(depth * 2, ' ') << DebugString();
+  for (auto node : ChildNodes()) {
+    node->DebugPrintSubtree(depth + 1);
+  }
+}
+
 void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
@@ -227,11 +234,7 @@ void Node::MakeTerminal(GameResult result) {
   }
 }
 
-bool Node::TryStartScoreUpdate() {
-  if (n_ == 0 && n_in_flight_ > 0) return false;
-  ++n_in_flight_;
-  return true;
-}
+bool Node::TryStartScoreUpdate() { return n_in_flight_++ == 0 || n_ != 0; }
 
 void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 

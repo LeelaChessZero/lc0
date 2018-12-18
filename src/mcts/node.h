@@ -215,6 +215,9 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
+  // Prints subtree to stderr.
+  void DebugPrintSubtree(int depth = 0) const;
+
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
