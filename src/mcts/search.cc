@@ -837,7 +837,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
-      IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+      if (!is_root_node) {
+        IncrementNInFlight(node->GetParent(), search_->root_node_,
+                           collision_limit - 1);
+      }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
@@ -850,7 +853,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
     }
     if (!is_root_node) {
-      IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+      IncrementNInFlight(node->GetParent(), search_->root_node_,
+                         collision_limit - 1);
+      // Hack, collisions don't think that n_in_flight_ for the new node should
+      // have been updated.
+      node->CancelScoreUpdate(1);
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // If we fall through, then n_in_flight_ has been incremented but this
@@ -863,11 +870,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
     for (auto child : node->Edges()) {
+      // We must choose an edge even if they are all done.
+      if (best == std::numeric_limits<float>::lowest()) best_edge = child;
       // Never want to visit anywhere more than once if trying for a depth one
       // value evaluation. Doing this before the next if statement means batch
       // gathering terminates when there are no more unvisited children due to
       // the possible_moves count not ever getting incremented.
-      if (child.GetN() > 0) continue;
+      if (child.GetNStarted() > 0) {
+        // We want to continue based on GetNStarted to optimize gathering a
+        // bigger batch but we don't want to trigger the flag set unless the
+        // results have arrived.
+        if (child.GetN() == 0) ++possible_moves;
+        continue;
+      }
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
         // remaining playouts, don't consider it.
