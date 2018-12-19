@@ -1143,6 +1143,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty;
     // penalty shouldn't put v outside (-1, 1), and we will clip if it is:
     node_to_process->v = std::max(-0.9999f, std::min(0.9999f, node_to_process->v));
+  } else {
+    node_to_process->v = -computation_->GetQVal(idx_in_computation);
   }
   // ...and secondly, the policy data.
   float total = 0.0;
