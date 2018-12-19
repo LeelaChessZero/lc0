@@ -846,8 +846,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
-        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
-        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+        // For 1 visit purposes, we must only 'extend' a terminal once. Never
+        // terminal hit. (If root node is terminal, then game is over, but we
+        // should not fall through....)
+        if (is_root_node) {
+          IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+          return NodeToProcess::TerminalHit(node, depth, collision_limit);
+        }
+        // Fall through to the fake collision path below.
       } else {
         return NodeToProcess::Extension(node, depth);
       }
