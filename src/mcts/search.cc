@@ -503,6 +503,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
+    // For visit 1 purposes.
+    if (edge.GetN() != 1) {
+      throw Exception("One visit mode didn't do one visit per node!!!");
+    }
     edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
   auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
@@ -541,6 +545,10 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
             root_limit.end()) {
       continue;
+    }
+    // For visit 1 purposes.
+    if (edge.GetN() != 1) {
+      throw Exception("One visit mode didn't do one visit per node!!!");
     }
     if (edge.GetN() + offset > max_n) max_n = edge.GetN() + offset;
     if (edge.GetQ(fpu) > max_eval) max_eval = edge.GetQ(fpu);
