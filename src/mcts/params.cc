@@ -165,6 +165,8 @@ void SearchParams::Populate(OptionsParser* options) {
   // Here the "safe defaults" are listed.
   // Many of them are overridden with optimized defaults in engine.cc and
   // tournament.cc
+  // For defaults on cpuct, fpur and policy softmax temp for the endgame,
+  // see neural/factory.cc
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 1;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.2f;

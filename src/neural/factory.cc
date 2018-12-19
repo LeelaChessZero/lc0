@@ -94,9 +94,9 @@ void NetworkFactory::PopulateOptions(OptionsParser* options) {
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(NetworkFactory::kBackendOptionsId);
   options->Add<StringOption>(NetworkFactory::kSecondWeightsId);
-  options->Add<IntOption>(NetworkFactory::kSecondWeightsSwitchAtId, 5, 16) = 16;
+  options->Add<IntOption>(NetworkFactory::kSecondWeightsSwitchAtId, 5, 16) = 12;
   options->Add<FloatOption>(kSecondWeightsCpuctId, 0.0f, 100.0f) = 3.5f;
-  options->Add<FloatOption>(kSecondWeightsFpuReductionId, -100.0f, 100.0f) = 1.20f;
+  options->Add<FloatOption>(kSecondWeightsFpuReductionId, -100.0f, 100.0f) = 1.02f;
   options->Add<FloatOption>(kSecondWeightsPolicySoftmaxTempId, 0.1f, 10.0f) = 1.7f;
 }
 
