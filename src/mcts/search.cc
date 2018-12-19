@@ -837,7 +837,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
-      IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+      if (!is_root_node) {
+        IncrementNInFlight(node->GetParent(), search_->root_node_, collision_limit - 1);
+      }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
