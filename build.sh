@@ -23,11 +23,13 @@ fi
 
 pushd ${BUILDDIR}
 
+NINJA=$(awk '/ninja/ {ninja=$4} END {print ninja}' meson-logs/meson-log.txt)
+
 if [ -n "${INSTALL_PREFIX}" ]
 then
-  ninja install
+  ${NINJA} install
 else
-  ninja
+  ${NINJA}
 fi
 
 popd
