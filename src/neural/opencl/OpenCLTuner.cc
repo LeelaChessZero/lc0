@@ -44,8 +44,6 @@ static void sgemmBatched_ref(const std::vector<float>& a,
     auto offset_v = batch * n * k;
     auto offset_m = batch * m * n;
 
-    // cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, k, 1.0f,
-    //             &a[offset_u], m, &b[offset_v], n, 0.0f, &c[offset_m], n);
     // Calculates C = transpose(tranpose(A) * B) in row major, or
     // C = A * transpose(B) in column major.
     for (auto i = 0; i < m; i++) {
@@ -169,16 +167,16 @@ static float compare_ref(std::vector<float>& x, std::vector<float>& ref,
                          const int m_ceil, const int n_ceil) {
   auto sum = 0.0f;
   for (auto batch = 0; batch < batch_size; batch++) {
-    for (auto i = 0; i < n; i++) {
-      for (auto j = 0; j < m; j++) {
-        auto r = ref[batch * n * m + i * m + j];
+    for (auto j = 0; j < m; j++) {
+      for (auto i = 0; i < n; i++) {
+        auto r = ref[batch * n * m + j * n + i];
         auto y = x[batch * n_ceil * m_ceil + j * n_ceil + i];
 
         sum += (r - y) * (r - y);
       }
     }
   }
-  return sum / (m * n);
+  return sum / (m * n * batch_size);
 }
 
 std::string Tuner::tune_sgemm(const int m, const int n, const int k,

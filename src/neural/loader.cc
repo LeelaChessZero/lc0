@@ -60,6 +60,10 @@ std::string DecompressGzip(const std::string& filename) {
   if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
     int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
+    if (sz < 0) {
+      int errnum;
+      throw Exception(gzerror(file, &errnum));
+    }
     if (sz == static_cast<int>(buffer.size()) - bytes_read) {
       bytes_read = buffer.size();
       buffer.resize(buffer.size() * 2);
