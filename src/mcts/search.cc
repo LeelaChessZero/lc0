@@ -39,6 +39,7 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
+#include "utils/fastmath.h"
 #include "utils/random.h"
 
 namespace lczero {
@@ -184,38 +185,6 @@ int64_t Search::GetTimeToDeadline() const {
 }
 
 namespace {
-// These stunts are performed by trained professionals, do not try this at home.
-
-// The approximation used here is log2(2^N*(1+f)) ~ N+f*(1.342671-0.342671*f)
-// where N is the integer and f the fractional part, f>=0.
-inline float flog2(const float a) {
-  int32_t tmp;
-  std::memcpy(&tmp, &a, sizeof(float));
-  int expb = (tmp >> 23);
-  tmp = (tmp & 0x7fffff) | (0x7f << 23);
-  float out;
-  std::memcpy(&out, &tmp, sizeof(float));
-  return out * (2.028011f - 0.342671f * out) - 128.68534f + expb;
-}
-
-// The approximation used here is 2^(N+f) ~ 2^N*(1+f*(0.656366+0.343634*f))
-// where N is the integer and f the fractional part, f>=0.
-inline float fpow2(const float a) {
-  if (a < -126) return 0.0;
-  int exp = floor(a);
-  float out = a - exp;
-  out = 1.0f + out * (0.656366f + 0.343634f * out);
-  int32_t tmp;
-  std::memcpy(&tmp, &out, sizeof(float));
-  tmp += exp << 23;
-  std::memcpy(&out, &tmp, sizeof(float));
-  return out;
-}
-
-inline float flog(const float a) {
-  return 0.6931471805599453f * flog2(a);
-}
-
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
   return params.GetFpuAbsolute()
              ? params.GetFpuValue()
@@ -230,7 +199,7 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
   const float init = params.GetCpuct();
   const float k = params.GetCpuctFactor();
   const float base = params.GetCpuctBase();
-  return init + (k ? k * flog((N + base) / base) : 0.0f);
+  return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
 }  // namespace
 
@@ -1172,8 +1141,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
     if (params_.GetPolicySoftmaxTemp() != 1.0f) {
       // Flush denormals to zero.
-      p = p < 1.17549435E-38 ? 0.0
-                             : fpow2(flog2(p) / params_.GetPolicySoftmaxTemp());
+      p = p < 1.17549435E-38
+              ? 0.0
+              : FastPow2(FastLog2(p) / params_.GetPolicySoftmaxTemp());
     }
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
