@@ -16,7 +16,7 @@ BUILDDIR=build/${BUILDTYPE}
 
 if [ -f ${BUILDDIR}/build.ninja ]
 then
-  meson configure ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
+  meson configure ${BUILDDIR} -Dbuildtype=${BUILDTYPE} -Dprefix=${INSTALL_PREFIX:-/usr/local} "$@"
 else
   meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
 fi
