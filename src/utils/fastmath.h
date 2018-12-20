@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <cstring>
+
 namespace lczero {
 // These stunts are performed by trained professionals, do not try this at home.
 
