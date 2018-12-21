@@ -39,6 +39,7 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
+#include "utils/fastmath.h"
 #include "utils/random.h"
 
 namespace lczero {
@@ -198,7 +199,7 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
   const float init = params.GetCpuct();
   const float k = params.GetCpuctFactor();
   const float base = params.GetCpuctBase();
-  return init + (k ? k * std::log((N + base) / base) : 0.0f);
+  return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
 }  // namespace
 
@@ -837,7 +838,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
-      IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
+      if (!is_root_node) {
+        IncrementNInFlight(node->GetParent(), search_->root_node_, collision_limit - 1);
+      }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
@@ -1137,7 +1140,10 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
     if (params_.GetPolicySoftmaxTemp() != 1.0f) {
-      p = pow(p, 1 / params_.GetPolicySoftmaxTemp());
+      // Flush denormals to zero.
+      p = p < 1.17549435E-38
+              ? 0.0
+              : FastPow2(FastLog2(p) / params_.GetPolicySoftmaxTemp());
     }
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
