@@ -38,9 +38,9 @@ const OptionId kReuseTreeId{"reuse-tree", "ReuseTree",
 const OptionId kResignPercentageId{
     "resign-percentage", "ResignPercentage",
     "Resign when win percentage drops below specified value."};
-const OptionId kResignEarliestMoveId{
-    "resign-earliest-move", "ResignEarliestMove",
-    "Earliest move that resign is allowed."};
+const OptionId kResignEarliestMoveId{"resign-earliest-move",
+                                     "ResignEarliestMove",
+                                     "Earliest move that resign is allowed."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -110,9 +110,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     float eval = search_->GetBestEval();
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
-    if (enable_resign && 
-        ply_count / 2 >= (options_[idx].uci_options->Get<int>(
-            kResignEarliestMoveId.GetId()) - 1)) {
+    if (enable_resign && ply_count / 2 >= (options_[idx].uci_options->Get<int>(
+                                               kResignEarliestMoveId.GetId()) -
+                                           1)) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
           100;
