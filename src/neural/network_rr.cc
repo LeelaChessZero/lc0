@@ -67,7 +67,7 @@ class RoundRobinNetwork : public Network {
     return networks_[val % networks_.size()]->NewComputation();
   }
 
-  ~LoadBalancingNetwork() {}
+  ~RoundRobinNetwork() {}
 
  private:
   std::vector<std::unique_ptr<Network>> networks_;
