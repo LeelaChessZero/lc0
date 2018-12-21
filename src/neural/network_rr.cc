@@ -35,9 +35,9 @@
 namespace lczero {
 namespace {
 
-class LoadBalancingNetwork : public Network {
+class RoundRobinNetwork : public Network {
  public:
-  LoadBalancingNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  RoundRobinNetwork(const WeightsFile& weights, const OptionsDict& options) {
     // int threads, int max_batch)
     //: network_(std::move(network)), max_batch_(max_batch) {
 
@@ -74,12 +74,12 @@ class LoadBalancingNetwork : public Network {
   std::atomic<long long> counter_;
 };
 
-std::unique_ptr<Network> MakeLoadBalancingNetwork(const WeightsFile& weights,
-                                                  const OptionsDict& options) {
-  return std::make_unique<LoadBalancingNetwork>(weights, options);
+std::unique_ptr<Network> MakeRoundRobinNetwork(const WeightsFile& weights,
+                                               const OptionsDict& options) {
+  return std::make_unique<RoundRobinNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("loadbalancing", MakeLoadBalancingNetwork, -1000)
+REGISTER_NETWORK("roundrobin", MakeRoundRobinNetwork, -1000)
 
 }  // namespace
 }  // namespace lczero
