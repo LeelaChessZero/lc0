@@ -196,14 +196,14 @@ void DemuxingComputation::ComputeBlocking() {
   dataready_ = splits;
   int cur_idx = 0;
   for (auto& network : network_->networks_) {
-    parents_.emplace_back(network_->networks_->NewComputation());
+    parents_.emplace_back(network->NewComputation());
     for (int i = cur_idx; i < std::min(GetBatchSize(), cur_idx + partial_size_);
          i++) {
       parents_.back()->AddInput(std::move(planes_[i]));
     }
-    network_->Enqueue(parents_.back()->get(), this);
+    network_->Enqueue(parents_.back().get(), this);
     cur_idx += partial_size_;
-    if (cur_idx_ >= GetBatchSize()) break;
+    if (cur_idx >= GetBatchSize()) break;
   }
   dataready_cv_.wait(lock, [this]() { return dataready_ == 0; });
 }
