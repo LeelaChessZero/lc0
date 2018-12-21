@@ -38,11 +38,15 @@ const OptionId kReuseTreeId{"reuse-tree", "ReuseTree",
 const OptionId kResignPercentageId{
     "resign-percentage", "ResignPercentage",
     "Resign when win percentage drops below specified value."};
+const OptionId kResignEarliestMoveId{
+    "resign-earliest-move", "ResignEarliestMove",
+    "Earliest move that resign is allowed."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeId) = false;
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
+  options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
@@ -62,6 +66,8 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         bool enable_resign) {
   bool blacks_move = false;
+
+  int ply_count = 0;
 
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
@@ -104,7 +110,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     float eval = search_->GetBestEval();
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
-    if (enable_resign) {
+    if (enable_resign && 
+        ply_count / 2 >= (options_[idx].uci_options->Get<int>(
+            kResignEarliestMoveId.GetId()) - 1)) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
           100;
@@ -120,6 +128,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
+    ply_count++;
   }
 }
 
