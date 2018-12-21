@@ -67,9 +67,7 @@ class LoadBalancingNetwork : public Network {
     return networks_[val % networks_.size()]->NewComputation();
   }
 
-  ~LoadBalancingNetwork() {
-  }
-
+  ~LoadBalancingNetwork() {}
 
  private:
   std::vector<std::unique_ptr<Network>> networks_;
@@ -77,7 +75,7 @@ class LoadBalancingNetwork : public Network {
 };
 
 std::unique_ptr<Network> MakeLoadBalancingNetwork(const WeightsFile& weights,
-                                           const OptionsDict& options) {
+                                                  const OptionsDict& options) {
   return std::make_unique<LoadBalancingNetwork>(weights, options);
 }
 
