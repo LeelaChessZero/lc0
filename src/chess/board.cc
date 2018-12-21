@@ -37,8 +37,10 @@ namespace lczero {
 
 using std::string;
 
-const string ChessBoard::kStartingFen =
+const char* ChessBoard::kStartposFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+const ChessBoard ChessBoard::kStartposBoard(ChessBoard::kStartposFen);
 
 void ChessBoard::Clear() {
   std::memset(reinterpret_cast<void*>(this), 0, sizeof(ChessBoard));
@@ -181,6 +183,8 @@ static const Move::Promotion kPromotions[] = {
 }  // namespace
 
 BitBoard ChessBoard::pawns() const { return pawns_ * kPawnMask; }
+
+BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
@@ -705,14 +709,7 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-  // Count the total pieces on the board.
-  uint64_t x = our_pieces_.as_int() | their_pieces_.as_int();
-  // x &= x - 1 clears the rigthmost set bit (if any).
-  x &= x - 1;
-  x &= x - 1;
-  x &= x - 1;
-  // If x is zero we started with 3 or less bits set.
-  if (x == 0) {
+  if ((our_pieces_ + their_pieces_).count() < 4) {
     // K v K, K+B v K, K+N v K.
     return false;
   }

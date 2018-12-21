@@ -37,13 +37,6 @@ class FullyConnectedLayer {
   static float Forward0D(const size_t input_size, const float* input,
                          const float* weights);
 
-  // Softmax activation
-  static void Softmax(const size_t size, const float* input, float* output);
-
- private:
-  static constexpr auto kWidth = 8;
-  static constexpr auto kHeight = 8;
-  static constexpr auto kSquares = kWidth * kHeight;
 };
 
 }  // namespace lczero

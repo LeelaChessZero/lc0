@@ -55,4 +55,10 @@ std::string RightTrim(std::string str);
 // Trims a string of whitespace from both ends.
 std::string Trim(std::string str);
 
+// Returns whether strings are equal, ignoring case.
+bool StringsEqualIgnoreCase(const std::string& a, const std::string& b);
+
+// Flow text into lines of width up to @width.
+std::vector<std::string> FlowText(const std::string& src, size_t width);
+
 }  // namespace lczero

@@ -26,6 +26,7 @@
 */
 
 #include "utils/commandline.h"
+#include "utils/logging.h"
 
 namespace lczero {
 
@@ -36,7 +37,12 @@ std::vector<std::pair<std::string, std::string>> CommandLine::modes_;
 void CommandLine::Init(int argc, const char** argv) {
   binary_ = argv[0];
   arguments_.clear();
-  for (int i = 1; i < argc; ++i) arguments_.push_back(argv[i]);
+  std::ostringstream params;
+  for (int i = 1; i < argc; ++i) {
+    params << ' ' << argv[i];
+    arguments_.push_back(argv[i]);
+  }
+  LOGFILE << "Command line: " << binary_ << params.str();
 }
 
 bool CommandLine::ConsumeCommand(const std::string& command) {

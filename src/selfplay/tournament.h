@@ -87,7 +87,7 @@ class SelfPlayTournament {
   std::shared_ptr<Network> networks_[2];
   std::shared_ptr<NNCache> cache_[2];
   const OptionsDict player_options_[2];
-  SearchLimits search_limits_[2];
+  SelfPlayLimits search_limits_[2];
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
