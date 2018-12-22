@@ -1,3 +1,21 @@
+v0.20.0-rc1 (2018-12-22)
+~~~~~~~~~~~
+
+* Squeeze-and-Excitation Networks are now supported! (lc0.org/se)
+
+* Various performance fixes (most major being having fast approximate math functions).
+
+* Compiler settings tweaks (use VS2017 for windows builds, always have LTO enabled).
+
+* Benchmark mode has more options now (e.g. movetime) and saner defaults.
+
+* Added an option to prevent engine to resign too early (used in training).
+
+* Fixed a bug when number of visits could be too high in collision nodes.
+  The fix is pretty hacky, there will be better fix later.
+
+* 32-bit version compiles again.
+
 v0.19.1 (2018-12-10)
 ~~~~~~~
 
