@@ -201,7 +201,7 @@ void DemuxingComputation::ComputeBlocking() {
   dataready_ = splits;
   int cur_idx = 0;
   for (int j=0; j < splits; j++) {
-    long long net_idx = ++counter_ % network_->networks_.size();
+    long long net_idx = ++(network_->counter_) % network_->networks_.size();
     parents_.emplace_back(network_->networks_[net_idx]->NewComputation());
     for (int i = cur_idx; i < std::min(GetBatchSize(), cur_idx + partial_size_);
          i++) {
