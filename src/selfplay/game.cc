@@ -46,7 +46,7 @@ const OptionId kResignEarliestMoveId{"resign-earliest-move",
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeId) = false;
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
-  options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0.0f;
+  options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
