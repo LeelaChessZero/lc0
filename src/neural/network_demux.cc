@@ -80,8 +80,6 @@ class DemuxingComputation : public NetworkComputation {
 class DemuxingNetwork : public Network {
  public:
   DemuxingNetwork(const WeightsFile& weights, const OptionsDict& options) {
-    // int threads, int max_batch)
-    //: network_(std::move(network)), max_batch_(max_batch) {
     minimum_split_size_ = options.GetOrDefault<int>("minimum-split-size", 0);
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
@@ -218,7 +216,7 @@ std::unique_ptr<Network> MakeDemuxingNetwork(const WeightsFile& weights,
   return std::make_unique<DemuxingNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("demux", MakeDemuxingNetwork, -1000)
+REGISTER_NETWORK("demux", MakeDemuxingNetwork, -1001)
 
 }  // namespace
 }  // namespace lczero

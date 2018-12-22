@@ -38,9 +38,6 @@ namespace {
 class RoundRobinNetwork : public Network {
  public:
   RoundRobinNetwork(const WeightsFile& weights, const OptionsDict& options) {
-    // int threads, int max_batch)
-    //: network_(std::move(network)), max_batch_(max_batch) {
-
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
       // If options are empty, or multiplexer configured in root object,
@@ -79,7 +76,7 @@ std::unique_ptr<Network> MakeRoundRobinNetwork(const WeightsFile& weights,
   return std::make_unique<RoundRobinNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("roundrobin", MakeRoundRobinNetwork, -1000)
+REGISTER_NETWORK("roundrobin", MakeRoundRobinNetwork, -999)
 
 }  // namespace
 }  // namespace lczero
