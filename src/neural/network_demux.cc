@@ -82,7 +82,7 @@ class DemuxingNetwork : public Network {
   DemuxingNetwork(const WeightsFile& weights, const OptionsDict& options) {
     // int threads, int max_batch)
     //: network_(std::move(network)), max_batch_(max_batch) {
-
+    minimum_split_size_ = options.GetOrDefault<int>("minimum-split-size", 0);
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
       // If options are empty, or multiplexer configured in root object,
@@ -178,6 +178,8 @@ class DemuxingNetwork : public Network {
   std::vector<std::unique_ptr<Network>> networks_;
   std::queue<NetworkComputation*> queue_;
   std::queue<DemuxingComputation*> queuedemux_;
+  int minimum_split_size_ = 0;
+  std::atomic<long long> counter_;
   bool abort_ = false;
 
   std::mutex mutex_;
@@ -190,20 +192,23 @@ void DemuxingComputation::ComputeBlocking() {
   if (GetBatchSize() == 0) return;
   partial_size_ = (GetBatchSize() + network_->networks_.size() - 1) /
                   network_->networks_.size();
+  if (partial_size_ < network_->minimum_split_size_) {
+    partial_size_ = std::min(GetBatchSize(), network_->minimum_split_size_);
+  }
   int splits = (GetBatchSize() + partial_size_ - 1) / partial_size_;
 
   std::unique_lock<std::mutex> lock(mutex_);
   dataready_ = splits;
   int cur_idx = 0;
-  for (auto& network : network_->networks_) {
-    parents_.emplace_back(network->NewComputation());
+  for (int j=0; j < splits; j++) {
+    long long net_idx = ++counter_ % network_->networks_.size();
+    parents_.emplace_back(network_->networks_[net_idx]->NewComputation());
     for (int i = cur_idx; i < std::min(GetBatchSize(), cur_idx + partial_size_);
          i++) {
       parents_.back()->AddInput(std::move(planes_[i]));
     }
     network_->Enqueue(parents_.back().get(), this);
     cur_idx += partial_size_;
-    if (cur_idx >= GetBatchSize()) break;
   }
   dataready_cv_.wait(lock, [this]() { return dataready_ == 0; });
 }
