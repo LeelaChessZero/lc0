@@ -193,8 +193,8 @@ class Search {
 class SearchWorker {
  public:
   SearchWorker(Search* search, const SearchParams& params)
-      : search_(search), history_(search_->played_history_), params_(params) { }
-  
+      : search_(search), history_(search_->played_history_), params_(params) {}
+
   // Runs iterations while needed.
   void RunBlocking() {
     LOGFILE << "Started search thread.";
