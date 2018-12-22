@@ -67,8 +67,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         bool enable_resign) {
   bool blacks_move = false;
 
-  int ply_count = 0;
-
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
@@ -128,7 +126,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
-    ply_count++;
   }
 }
 
