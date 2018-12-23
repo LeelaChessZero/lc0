@@ -406,9 +406,6 @@ bool ChessBoard::ApplyMove(Move move) {
     return reset_50_moves;
   }
 
-  // Now destination square for our piece is known.
-  our_pieces_.set(to);
-
   // Promotion
   if (move.promotion() != Move::Promotion::None) {
     switch (move.promotion()) {
