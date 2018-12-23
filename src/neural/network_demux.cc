@@ -62,7 +62,7 @@ class DemuxingComputation : public NetworkComputation {
     std::unique_lock<std::mutex> lock(mutex_);
     dataready_--;
     if (dataready_ == 0) {
-      dataready_cv_.notify_all();
+      dataready_cv_.notify_one();
     }
   }
 
