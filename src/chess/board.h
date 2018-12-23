@@ -68,8 +68,8 @@ class ChessBoard {
   bool IsUnderAttack(BoardSquare square) const;
   // Checks if "our" (white) king is under check.
   bool IsUnderCheck() const { return IsUnderAttack(our_king_); }
-  // Checks whether at least one of the sides has mating material.
 
+  // Checks whether at least one of the sides has mating material.
   bool HasMatingMaterial() const;
   // Generates legal moves.
   MoveList GenerateLegalMoves() const;
@@ -168,8 +168,8 @@ class ChessBoard {
   // Pawns.
   // Ranks 1 and 8 have special meaning. Pawn at rank 1 means that
   // corresponding white pawn on rank 4 can be taken en passant. Rank 8 is the
-  // same for black pawns. Those "fake" pawns are not present in white_ and
-  // black_ bitboards.
+  // same for black pawns. Those "fake" pawns are not present in our_pieces_ and
+  // their_pieces_ bitboards.
   BitBoard pawns_;
   BoardSquare our_king_;
   BoardSquare their_king_;
