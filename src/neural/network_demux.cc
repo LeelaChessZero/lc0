@@ -66,6 +66,17 @@ class DemuxingComputation : public NetworkComputation {
     }
   }
 
+  NetworkComputation* AddParentFromNetwork(Network* network) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    parents_.emplace_back(network->NewComputation());
+    int cur_idx = (parents_.size() - 1) * partial_size_;
+    for (int i = cur_idx; i < std::min(GetBatchSize(), cur_idx + partial_size_);
+         i++) {
+      parents_.back()->AddInput(std::move(planes_[i]));
+    }
+    return parents_.back().get();
+  }
+
  private:
   std::vector<InputPlanes> planes_;
   DemuxingNetwork* network_;
@@ -111,10 +122,9 @@ class DemuxingNetwork : public Network {
     return std::make_unique<DemuxingComputation>(this);
   }
 
-  void Enqueue(NetworkComputation* parent, DemuxingComputation* computation) {
+  void Enqueue(DemuxingComputation* computation) {
     std::lock_guard<std::mutex> lock(mutex_);
-    queue_.push(parent);
-    queuedemux_.push(computation);
+    queue_.push(computation);
     cv_.notify_one();
   }
 
@@ -122,9 +132,9 @@ class DemuxingNetwork : public Network {
     Abort();
     Wait();
     // Unstuck waiting computations.
-    while (!queuedemux_.empty()) {
-      queuedemux_.front()->NotifyComplete();
-      queuedemux_.pop();
+    while (!queue_.empty()) {
+      queue_.front()->NotifyComplete();
+      queue_.pop();
     }
   }
 
@@ -141,16 +151,16 @@ class DemuxingNetwork : public Network {
 
         // While there is a work in queue, process it.
         while (true) {
-          NetworkComputation* to_compute;
+          
           DemuxingComputation* to_notify;
           {
             std::unique_lock<std::mutex> lock(mutex_);
             if (queue_.empty()) break;
-            to_compute = queue_.front();
+            to_notify = queue_.front();
             queue_.pop();
-            to_notify = queuedemux_.front();
-            queuedemux_.pop();
           }
+          long long net_idx = ++(counter_) % networks_.size();
+          NetworkComputation* to_compute = to_notify->AddParentFromNetwork(networks_[net_idx].get());
           to_compute->ComputeBlocking();
           to_notify->NotifyComplete();
         }
@@ -174,8 +184,7 @@ class DemuxingNetwork : public Network {
   }
 
   std::vector<std::unique_ptr<Network>> networks_;
-  std::queue<NetworkComputation*> queue_;
-  std::queue<DemuxingComputation*> queuedemux_;
+  std::queue<DemuxingComputation*> queue_;
   int minimum_split_size_ = 0;
   std::atomic<long long> counter_;
   bool abort_ = false;
@@ -197,16 +206,8 @@ void DemuxingComputation::ComputeBlocking() {
 
   std::unique_lock<std::mutex> lock(mutex_);
   dataready_ = splits;
-  int cur_idx = 0;
   for (int j=0; j < splits; j++) {
-    long long net_idx = ++(network_->counter_) % network_->networks_.size();
-    parents_.emplace_back(network_->networks_[net_idx]->NewComputation());
-    for (int i = cur_idx; i < std::min(GetBatchSize(), cur_idx + partial_size_);
-         i++) {
-      parents_.back()->AddInput(std::move(planes_[i]));
-    }
-    network_->Enqueue(parents_.back().get(), this);
-    cur_idx += partial_size_;
+    network_->Enqueue(this);
   }
   dataready_cv_.wait(lock, [this]() { return dataready_ == 0; });
 }
