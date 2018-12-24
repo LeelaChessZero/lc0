@@ -812,8 +812,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   Node* node = search_->root_node_;
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
-  // Initialize position sequence with pre-move position.
-  history_.Trim(search_->played_history_.GetLength());
 
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
@@ -902,7 +900,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    history_.Append(best_edge.GetMove());
     if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
       // If there is only one move theoretically possible within remaining time,
       // output it.
@@ -914,6 +911,22 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 }
 
 void SearchWorker::ExtendNode(Node* node) {
+  // Initialize position sequence with pre-move position.
+  history_.Trim(search_->played_history_.GetLength());
+  std::vector<Move> to_add;
+  // Could instead reserve one more than the difference between history_.size()
+  // and history_.capacity().
+  to_add.reserve(60);
+  Node* cur = node;
+  while (cur != search_->root_node_) {
+    Node* prev = cur->GetParent();
+    to_add.push_back(prev->GetEdgeToNode(cur)->GetMove());
+    cur = prev;
+  }
+  for (int i = to_add.size() - 1; i >= 0; i--) {
+    history_.Append(to_add[i]);
+  }
+
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
   const auto& board = history_.Last().GetBoard();
