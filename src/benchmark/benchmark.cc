@@ -60,7 +60,8 @@ void Benchmark::Run() {
 
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 256);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
-  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.4f);
+  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.0f);
+  defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 2.0f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
   defaults->Set<int>(SearchParams::kMaxCollisionVisitsId.GetId(), 9999);
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
