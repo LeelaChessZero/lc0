@@ -214,7 +214,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
       kHistoryFill(
-          EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))) {
+          EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
 }
 
 }  // namespace lczero

@@ -26,6 +26,7 @@ endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   add_project_arguments('-Wextra', language : 'cpp')
   add_project_arguments('-pedantic', language : 'cpp')
+  add_project_arguments('-ffast-math', language : 'cpp')
 
   if get_option('buildtype') == 'release'
     add_project_arguments('-march=native', language : 'cpp')
@@ -97,9 +98,11 @@ files += [
   'src/neural/factory.cc',
   'src/neural/loader.cc',
   'src/neural/network_check.cc',
+  'src/neural/network_demux.cc',
   'src/neural/network_legacy.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
+  'src/neural/network_rr.cc',
   'src/neural/network_st_batch.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
