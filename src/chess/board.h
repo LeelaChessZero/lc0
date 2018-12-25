@@ -81,8 +81,10 @@ class ChessBoard {
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
                     rooks_.as_int(), bishops_.as_int(), pawns_.as_int(),
-                    (static_cast<unsigned>(our_king_.as_int()) << 24) | (static_cast<unsigned>(their_king_.as_int()) << 16) |
-                    (static_cast<unsigned>(castlings_.as_int()) << 8) | flipped_});
+                    (static_cast<unsigned>(our_king_.as_int()) << 24) |
+                        (static_cast<unsigned>(their_king_.as_int()) << 16) |
+                        (static_cast<unsigned>(castlings_.as_int()) << 8) |
+                        flipped_});
   }
 
   class Castlings {
