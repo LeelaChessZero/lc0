@@ -59,14 +59,14 @@ const OptionId kMoveOverheadId{
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
 const OptionId kTimeMidpointPlyId{
-    "time-midpoint-halfmove", "TimeMidpointHalfmove",
-    "The halfmove where the time budgeting algorithm guesses half of all chess "
+    "time-midpoint-halfmove", "TimeMidpointPly",
+    "The halfmove where the time budgeting algorithm guesses half of all "
     "games to be completed by. Half of the time allocated for the first move "
     "is allocated at approximately this halfmove."};
 const OptionId kTimeSteepnessId{
     "time-steepness", "TimeSteepness",
     "\"Steepness\" of the function the time budgeting algorithm uses to "
-    "consider when chess games are completed. Lower values leave more time for "
+    "consider when games are completed. Lower values leave more time for "
     "the endgame, higher values use more time for each move before the "
     "midpoint."};
 const OptionId kSyzygyTablebaseId{
