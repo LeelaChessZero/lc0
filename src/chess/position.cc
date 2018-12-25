@@ -128,13 +128,13 @@ bool PositionHistory::DidRepeatSinceLastZeroingMove() const {
 }
 
 uint64_t PositionHistory::HashLast(int positions) const {
-  uint64_t hash = positions;
+  uint64_t hash = Hash((positions << 16) | Last().GetNoCaptureNoPawnPly());
   for (auto iter = positions_.rbegin(), end = positions_.rend(); iter != end;
        ++iter) {
     if (!positions--) break;
     hash = HashCat(hash, iter->Hash());
   }
-  return HashCat(hash, Last().GetNoCaptureNoPawnPly());
+  return hash;
 }
 
 }  // namespace lczero
