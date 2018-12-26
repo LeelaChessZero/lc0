@@ -181,6 +181,9 @@ if get_option('build_backends')
 
   mkl_libdirs = get_option('mkl_libdirs')
   mkl_lib = cc.find_library('mkl_rt', dirs: mkl_libdirs, required: false)
+  if not mkl_lib.found()
+    mkl_lib = cc.find_library('mklml', dirs: mkl_libdirs, required: false)
+  endif
 
   openblas_libdirs = get_option('openblas_libdirs')
   openblas_lib = cc.find_library('openblas.dll', dirs: openblas_libdirs, required: false)
