@@ -591,24 +591,6 @@ MoveList ChessBoard::GenerateLegalMoves() const {
   return result;
 }
 
-std::vector<MoveExecution> ChessBoard::GenerateLegalMovesAndPositions() const {
-  MoveList move_list = GeneratePseudolegalMoves();
-  std::vector<MoveExecution> result;
-
-  for (const auto& move : move_list) {
-    result.emplace_back();
-    auto& newboard = result.back().board;
-    newboard = *this;
-    result.back().reset_50_moves = newboard.ApplyMove(move);
-    if (newboard.IsUnderCheck()) {
-      result.pop_back();
-      continue;
-    }
-    result.back().move = move;
-  }
-  return result;
-}
-
 void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
                             int* moves) {
   Clear();

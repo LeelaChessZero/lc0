@@ -33,8 +33,6 @@
 
 namespace lczero {
 
-struct MoveExecution;
-
 // Represents a board position.
 // Unlike most chess engines, the board is mirrored for black.
 class ChessBoard {
@@ -75,8 +73,6 @@ class ChessBoard {
   MoveList GenerateLegalMoves() const;
   // Check whether pseudolegal move is legal.
   bool IsLegalMove(Move move, bool was_under_check) const;
-  // Returns a list of legal moves and board positions after the move is made.
-  std::vector<MoveExecution> GenerateLegalMovesAndPositions() const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
@@ -177,13 +173,6 @@ class ChessBoard {
   BoardSquare their_king_;
   Castlings castlings_;
   bool flipped_ = false;  // aka "Black to move".
-};
-
-// Stores the move and state of the board after the move is done.
-struct MoveExecution {
-  Move move;
-  ChessBoard board;
-  bool reset_50_moves;
 };
 
 }  // namespace lczero
