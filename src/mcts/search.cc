@@ -813,6 +813,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
 
+  // Precache a newly constructed node to avoid memory allocations being
+  // performed while the mutex is held.
+  if (!precached_node_) {
+    precached_node_ = std::make_unique<Node>(nullptr, 0);
+  }
+
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
@@ -830,7 +836,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
-    if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    if (!is_root_node) {
+      node = best_edge.GetOrSpawnNode(/* parent */ node, &precached_node_);
+    }
     best_edge.Reset();
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
