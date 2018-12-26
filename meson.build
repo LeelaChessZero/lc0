@@ -399,9 +399,9 @@ endif # if get_option('build_backends')
 if not has_backends and get_option('build_backends')
   error('''
 
-        No usable computation backends (cudnn/tensorflow/etc) are found.
-        If you want to build it with random only backend, pass
-        -D build_backends=false to a meson build.''')
+        No usable computation backends (cudnn/opencl/blas/etc) enabled.
+        If you want to build with the random backend only, add
+        -Dbuild_backends=false to the build command line.''')
 endif
 
 
