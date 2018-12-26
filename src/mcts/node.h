@@ -131,13 +131,6 @@ class Node {
   // Takes pointer to a parent node and own index in a parent.
   Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
 
-  // Performs construction time type initialization. For use only with a node
-  // that has not been used beyond its construction.
-  void Reinit(Node* parent, uint16_t index) {
-    parent_ = parent;
-    index_ = index;
-  }
-
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
   Node* CreateSingleChildNode(Move m);
@@ -223,6 +216,13 @@ class Node {
   std::string DebugString() const;
 
  private:
+  // Performs construction time type initialization. For use only with a node
+  // that has not been used beyond its construction.
+  void Reinit(Node* parent, uint16_t index) {
+    parent_ = parent;
+    index_ = index;
+  }
+
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
