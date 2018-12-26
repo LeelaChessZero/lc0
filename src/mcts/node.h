@@ -216,6 +216,13 @@ class Node {
   std::string DebugString() const;
 
  private:
+  // Performs construction time type initialization. For use only with a node
+  // that has not been used beyond its construction.
+  void Reinit(Node* parent, uint16_t index) {
+    parent_ = parent;
+    index_ = index;
+  }
+
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
@@ -392,7 +399,8 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator& operator*() { return *this; }
 
   // If there is node, return it. Otherwise spawn a new one and return it.
-  Node* GetOrSpawnNode(Node* parent) {
+  Node* GetOrSpawnNode(Node* parent,
+                       std::unique_ptr<Node>* node_source = nullptr) {
     if (node_) return node_;  // If there is already a node, return it.
     Actualize();              // But maybe other thread already did that.
     if (node_) return node_;  // If it did, return.
@@ -408,7 +416,12 @@ class Edge_Iterator : public EdgeAndNode {
     // 2. Create fresh Node(idx_.5):
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
-    *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+    if (node_source && *node_source) {
+      (*node_source)->Reinit(parent, current_idx_);
+      *node_ptr_ = std::move(*node_source);
+    } else {
+      *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+    }
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
     //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
