@@ -143,18 +143,6 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
-
-  auto defaults = options->GetMutableDefaultsOptions();
-
-  defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 256);
-  defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 1.2f);
-  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 3.0f);
-  defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 2.0f);
-  defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 2.2f);
-  defaults->Set<int>(SearchParams::kMaxCollisionVisitsId.GetId(), 9999);
-  defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
-  defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
-  defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(
