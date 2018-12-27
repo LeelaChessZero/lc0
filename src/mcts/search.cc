@@ -861,6 +861,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     Node* possible_shorcut_child = node->GetCachedBestChild();
     if (possible_shorcut_child) {
+      is_root_node = false;
       fast_path = true;
       node = possible_shorcut_child;
       continue;
