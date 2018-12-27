@@ -859,11 +859,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         return NodeToProcess::Extension(node, depth);
       }
     }
-    Node* possible_shorcut_child = node->GetCachedBestChild();
-    if (possible_shorcut_child) {
+    Node* possible_shortcut_child = node->GetCachedBestChild();
+    if (possible_shortcut_child) {
       is_root_node = false;
       fast_path = true;
-      node = possible_shorcut_child;
+      node = possible_shortcut_child;
       continue;
     }
     fast_path = false;
