@@ -826,8 +826,8 @@ bool ChessBoard::HasMatingMaterial() const {
   constexpr BitBoard kLightSquares(0x55AA55AA55AA55AAULL);
   constexpr BitBoard kDarkSquares(0xAA55AA55AA55AA55ULL);
 
-  bool light_bishop = bishops_.intersects(kLightSquares);
-  bool dark_bishop = bishops_.intersects(kDarkSquares);
+  const bool light_bishop = bishops_.intersects(kLightSquares);
+  const bool dark_bishop = bishops_.intersects(kDarkSquares);
   return light_bishop && dark_bishop;
 }
 

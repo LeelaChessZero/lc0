@@ -173,7 +173,7 @@ std::string Edge::DebugString() const {
 EdgeList::EdgeList(MoveList moves)
     : edges_(std::make_unique<Edge[]>(moves.size())), size_(moves.size()) {
   auto* edge = edges_.get();
-  for (auto move : moves) edge++->SetMove(move);
+  for (const auto move : moves) edge++->SetMove(move);
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -306,7 +306,7 @@ V3TrainingData Node::GetV3TrainingData(
   result.version = 3;
 
   // Populate probabilities.
-  float total_n = static_cast<float>(GetChildrenVisits());
+  const float total_n = static_cast<float>(GetChildrenVisits());
   // Prevent garbage/invalid training data from being uploaded to server.
   if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
   std::memset(result.probabilities, 0, sizeof(result.probabilities));

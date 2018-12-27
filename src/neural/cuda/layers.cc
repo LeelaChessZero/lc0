@@ -294,10 +294,10 @@ SELayer<DataType>::~SELayer() {
 template <>
 void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
                                  float* prevLayerBias, void* /*scratch*/) {
-  size_t num_weights1 = C * numFc1Out_;
-  size_t weight_size1 = sizeof(float) * num_weights1;
+  const size_t num_weights1 = C * numFc1Out_;
+  const size_t weight_size1 = sizeof(float) * num_weights1;
 
-  size_t weight_size2 = 2 * weight_size1;
+  const size_t weight_size2 = 2 * weight_size1;
 
   // Weight for the first FC layer.
   ReportCUDAErrors(
@@ -473,7 +473,7 @@ FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
 template <>
 void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
                                 void* scratch) {
-  size_t num_weights =
+  const size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
   size_t weight_size = sizeof(float) * num_weights;
   size_t num_biases = C * H * W;
@@ -498,11 +498,11 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
 template <>
 void FCLayer<float>::LoadWeights(float* cpuWeight, float* cpuBias,
                                  void* /*scratch*/) {
-  size_t num_weights =
+  const size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
-  size_t weight_size = sizeof(float) * num_weights;
-  size_t num_biases = C * H * W;
-  size_t blas_size = sizeof(float) * num_biases;
+  const size_t weight_size = sizeof(float) * num_weights;
+  const size_t num_biases = C * H * W;
+  const size_t blas_size = sizeof(float) * num_biases;
 
   ReportCUDAErrors(cudaMemcpyAsync(weights_, cpuWeight, weight_size,
                                    cudaMemcpyHostToDevice));

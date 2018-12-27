@@ -105,8 +105,8 @@ bool NetworkFactory::BackendConfiguration::operator==(
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
   std::string net_path = options.Get<std::string>(kWeightsId.GetId());
-  std::string backend = options.Get<std::string>(kBackendId.GetId());
-  std::string backend_options =
+  const std::string backend = options.Get<std::string>(kBackendId.GetId());
+  const std::string backend_options =
       options.Get<std::string>(kBackendOptionsId.GetId());
 
   if (net_path == kAutoDiscover) {

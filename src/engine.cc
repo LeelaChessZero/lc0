@@ -265,7 +265,7 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Network.
-  auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+  const auto network_configuration = NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
     network_ = NetworkFactory::LoadNetwork(options_);
     network_configuration_ = network_configuration;
@@ -316,7 +316,7 @@ void EngineController::SetupPosition(
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  bool is_same_game = tree_->ResetToPosition(fen, moves);
+  const bool is_same_game = tree_->ResetToPosition(fen, moves);
   if (!is_same_game) time_spared_ms_ = 0;
 }
 
@@ -325,7 +325,7 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
-  auto start_time = move_start_time_;
+  const auto start_time = move_start_time_;
   go_params_ = params;
 
   ThinkingInfo::Callback info_callback(info_callback_);
