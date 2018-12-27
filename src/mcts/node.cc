@@ -246,6 +246,17 @@ void Node::FinalizeScoreUpdate(float v, int multivisit) {
   n_ += multivisit;
   // Decrement virtual loss.
   n_in_flight_ -= multivisit;
+  // Best child is potentially no longer valid.
+  best_child_cached_ = nullptr;
+}
+
+void Node::UpdateBestChild(const Iterator& best_edge, int collisions_allowed) {
+  if (!best_edge.HasNode()) {
+    best_child_cached_ = nullptr;
+    return;
+  }
+  best_child_cached_ = best_edge.node();
+  collisions_remaining_ = collisions_allowed + n_in_flight_;
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }

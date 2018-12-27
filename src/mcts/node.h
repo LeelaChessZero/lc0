@@ -183,6 +183,17 @@ class Node {
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
 
+  // Caches the best child if possible.
+  void UpdateBestChild(const Iterator& best_edge, int collisions_allowed);
+
+  // Gets a cached best child if it is still valid.
+  Node* GetCachedBestChild() {
+    if (n_in_flight_ < collisions_remaining_) {
+      return best_child_cached_;
+    }
+    return nullptr;
+  }
+
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
@@ -238,6 +249,9 @@ class Node {
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
+  // Cached pointer to best child, valid while n_in_flight <
+  // collisions_remaining_
+  Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
@@ -253,6 +267,9 @@ class Node {
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
   uint32_t n_in_flight_ = 0;
+  // If best_child_cached_ is non-null, and n_in_flight_ < this,
+  // best_child_cached_ is still the best child.
+  uint32_t collisions_remaining_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -280,9 +297,9 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 40, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+static_assert(sizeof(Node) == 72, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
