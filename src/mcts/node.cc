@@ -251,10 +251,6 @@ void Node::FinalizeScoreUpdate(float v, int multivisit) {
 }
 
 void Node::UpdateBestChild(const Iterator& best_edge, int collisions_allowed) {
-  if (!best_edge.HasNode()) {
-    best_child_cached_ = nullptr;
-    return;
-  }
   best_child_cached_ = best_edge.node();
   collisions_remaining_ = collisions_allowed + n_in_flight_;
 }
