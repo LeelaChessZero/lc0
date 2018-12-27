@@ -73,7 +73,7 @@ std::vector<int> ParseIntList(const std::string& str) {
 }
 
 std::string LeftTrim(std::string str) {
-  auto it = std::find_if(str.begin(), str.end(),
+  const auto it = std::find_if(str.begin(), str.end(),
                          [](int ch) { return !std::isspace(ch); });
   str.erase(str.begin(), it);
   return str;

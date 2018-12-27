@@ -56,10 +56,10 @@ std::string DecompressGzip(const std::string& filename) {
   int bytes_read = 0;
 
   // Read whole file into a buffer.
-  gzFile file = gzopen(filename.c_str(), "rb");
+  const gzFile file = gzopen(filename.c_str(), "rb");
   if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
-    int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
+    const int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
     if (sz < 0) {
       int errnum;
       throw Exception(gzerror(file, &errnum));
@@ -142,7 +142,7 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
 std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
-  std::string root_path = CommandLine::BinaryDirectory();
+  const std::string root_path = CommandLine::BinaryDirectory();
 
   // Open all files in <binary dir> amd <binary dir>/networks,
   // ones which are >= kMinFileSize are candidates.
@@ -161,11 +161,11 @@ std::string DiscoverWeightsFile() {
   // read version for it. If version is 2 or if the file is our protobuf,
   // return it.
   for (const auto& candidate : time_and_filename) {
-    gzFile file = gzopen(candidate.second.c_str(), "rb");
+    const gzFile file = gzopen(candidate.second.c_str(), "rb");
 
     if (!file) continue;
     char buf[256];
-    int sz = gzread(file, buf, 256);
+    const int sz = gzread(file, buf, 256);
     gzclose(file);
     if (sz < 0) continue;
 
@@ -180,7 +180,7 @@ std::string DiscoverWeightsFile() {
 
     // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
     // our own magic should suffice.
-    auto magic = reinterpret_cast<std::uint32_t*>(buf + 1);
+    const auto magic = reinterpret_cast<std::uint32_t*>(buf + 1);
     if (*magic == kWeightMagic) {
       CERR << "Found pb network file: " << candidate.second;
       return candidate.second;

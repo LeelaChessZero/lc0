@@ -235,7 +235,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   auto& game = **game_iter;
 
   // If kResignPlaythrough == 0, then this comparison is unconditionally true
-  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
+  const bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
 
   // PLAY GAME!
   game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining,
