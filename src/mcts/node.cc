@@ -233,7 +233,10 @@ bool Node::TryStartScoreUpdate() {
   return true;
 }
 
-void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
+void Node::CancelScoreUpdate(int multivisit) {
+  n_in_flight_ -= multivisit;
+  best_child_cached_ = nullptr;
+}
 
 void Node::FinalizeScoreUpdate(float v, int multivisit) {
   // Recompute Q.
