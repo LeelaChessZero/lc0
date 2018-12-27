@@ -36,7 +36,6 @@
 
 namespace lczero {
 namespace {
-const int kDefaultThreads = 2;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
@@ -121,7 +120,10 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
-  options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options->Add<IntOption>(kThreadsOptionId, 1, 128) = 
+    std::thread::hardware_concurrency() == 0
+          ? 2
+          : std::thread::hardware_concurrency();
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
