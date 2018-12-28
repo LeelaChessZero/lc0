@@ -912,7 +912,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (second_best_edge) {
       int collisions_remaining =
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
-      node->UpdateBestChild(best_edge, collisions_remaining);
+      if (!is_root_node) {
+        node->UpdateBestChild(best_edge, collisions_remaining);
+      }
       collision_limit = std::min(collision_limit, collisions_remaining);
       assert(collision_limit >= 1);
       second_best_edge.Reset();
