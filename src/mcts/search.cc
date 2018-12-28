@@ -411,6 +411,10 @@ void Search::UpdateRemainingMoves() {
   }
   // Even if we exceeded limits, don't go crazy by not allowing any playouts.
   if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
+  // Since remaining_playouts_ has changed, the logic for selecting visited root
+  // nodes may also change. Use a 0 visit cancel score update to clear out any
+  // cached best edge.
+  root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature
@@ -912,9 +916,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (second_best_edge) {
       int collisions_remaining =
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
-      if (!is_root_node) {
-        node->UpdateBestChild(best_edge, collisions_remaining);
-      }
+      // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
+      // has potential rounding errors and some conservative logic that can push
+      // it up to 2 away from the real value.
+      node->UpdateBestChild(best_edge, std::max(0, collisions_remaining - 2));
       collision_limit = std::min(collision_limit, collisions_remaining);
       assert(collision_limit >= 1);
       second_best_edge.Reset();
