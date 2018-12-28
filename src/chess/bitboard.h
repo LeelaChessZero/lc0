@@ -36,6 +36,8 @@
 
 namespace lczero {
 
+class MagicBitBoards;
+
 // Stores a coordinates of a single square.
 class BoardSquare {
  public:
@@ -227,6 +229,37 @@ class BitBoard {
 
  private:
   std::uint64_t board_ = 0;
+};
+
+// Holds magic bitboard routines and performs initialization.
+// We use so-called "fancy" magic bitboards.
+class MagicBitBoards {
+ public:
+  MagicBitBoards();
+
+ private:
+  // Structure holding all relevant magic parameters per square (except magic
+  // number).
+  struct MagicParams {
+    // Offset into lookup table.
+    uint32_t table_offset_;
+    // Number of index bits in the lookup table index.
+    uint8_t index_size_;
+    // Relevant occupancy mask.
+    BitBoard mask_;
+  };
+
+  // Magic numbers for each board square.
+  static const BitBoard kRookMagicNumbers[];
+  static const BitBoard kBishopMagicNumbers[];
+
+  // Magic parameters for each board square.
+  static MagicParams kRookMagicParams[64];
+  static MagicParams kBishopMagicParams[64];
+
+  // Magic attack lookup tables.
+  static BitBoard kRookAttacksTable[102400];
+  static BitBoard kBishopAttacksTable[5248];
 };
 
 class Move {
