@@ -39,7 +39,7 @@ Random& Random::Get() {
 
 int Random::GetInt(int min, int max) {
   Mutex::Lock lock(mutex_);
-  const std::uniform_int_distribution<> dist(min, max);
+  std::uniform_int_distribution<> dist(min, max);
   return dist(gen_);
 }
 
@@ -47,13 +47,13 @@ bool Random::GetBool() { return GetInt(0, 1) != 0; }
 
 double Random::GetDouble(double maxval) {
   Mutex::Lock lock(mutex_);
-  const std::uniform_real_distribution<> dist(0.0, maxval);
+  std::uniform_real_distribution<> dist(0.0, maxval);
   return dist(gen_);
 }
 
 float Random::GetFloat(float maxval) {
   Mutex::Lock lock(mutex_);
-  const std::uniform_real_distribution<> dist(0.0, maxval);
+  std::uniform_real_distribution<> dist(0.0, maxval);
   return dist(gen_);
 }
 
@@ -67,7 +67,7 @@ std::string Random::GetString(int length) {
 
 double Random::GetGamma(double alpha, double beta) {
   Mutex::Lock lock(mutex_);
-  const std::gamma_distribution<double> dist(alpha, beta);
+  std::gamma_distribution<double> dist(alpha, beta);
   return dist(gen_);
 }
 
