@@ -421,7 +421,7 @@ void init_indices() {
   }
   // TODO: choose a good seed.
   std::mt19937 gen(123523465);
-  const std::uniform_int_distribution<Key> dist(std::numeric_limits<Key>::lowest(),
+  std::uniform_int_distribution<Key> dist(std::numeric_limits<Key>::lowest(),
                                           std::numeric_limits<Key>::max());
   for (int i = 0; i < 16; i++) {
     // MaterialHash for 0 instances of a piece is 0 as an optimization so
