@@ -194,6 +194,10 @@ class Node {
     return nullptr;
   }
 
+  // Gets how many more visits the cached value is valid for. Only valid if
+  // GetCachedBestChild returns a value.
+  int GetRemainingCacheVisits() { return collisions_remaining_ - n_in_flight_; }
+
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
