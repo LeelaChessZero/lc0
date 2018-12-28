@@ -865,10 +865,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
     if (possible_shortcut_child) {
-      // Add one here to reverse some of the conservatism that goes into
-      // calculating the remaining cache visits.
+      // Add two here to reverse the conservatism that goes into calculating the
+      // remaining cache visits.
       collision_limit =
-          std::min(collision_limit, node->GetRemainingCacheVisits() + 1);
+          std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
       is_root_node = false;
       fast_path = true;
       node = possible_shortcut_child;
