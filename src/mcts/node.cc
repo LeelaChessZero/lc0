@@ -255,6 +255,10 @@ void Node::FinalizeScoreUpdate(float v, int multivisit) {
 
 void Node::UpdateBestChild(const Iterator& best_edge, int collisions_allowed) {
   best_child_cached_ = best_edge.node();
+  // Unexpanded edges can still have nodes. Do not cache unexpanded as they play by different rules.
+  if (best_child_cached_ && best_child_cached_->GetN() == 0) {
+    best_child_cached_ = nullptr;
+  }
   collisions_remaining_ = collisions_allowed + n_in_flight_;
 }
 
