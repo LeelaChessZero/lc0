@@ -184,7 +184,8 @@ class Node {
   void UpdateMaxDepth(int depth);
 
   // Caches the best child if possible.
-  void UpdateBestChild(const Iterator& best_edge, int collisions_allowed);
+  void UpdateBestChild(const Iterator& best_edge, int visits_allowed,
+                       int thits_allowed);
 
   // Gets a cached best child if it is still valid.
   Node* GetCachedBestChild() {
@@ -198,6 +199,14 @@ class Node {
   // GetCachedBestChild returns a value.
   int GetRemainingCacheVisits() {
     return best_child_cache_in_flight_limit_ - n_in_flight_;
+  }
+  // Gets how many more visits the cached value is valid for assuming thits.
+  // Only valid if GetCachedBestChild returns a value.
+  int GetRemainingTHitVisits() {
+    if
+      (best_child_cache_in_flight_thit_limit_ > n_in_flight_)
+    return best_child_cache_in_flight_thit_limit_ - n_in_flight_;
+    return 1;
   }
 
   // Calculates the full depth if new depth is larger, updates it, returns
@@ -276,6 +285,7 @@ class Node {
   // If best_child_cached_ is non-null, and n_in_flight_ < this,
   // best_child_cached_ is still the best child.
   uint32_t best_child_cache_in_flight_limit_ = 0;
+  uint32_t best_child_cache_in_flight_thit_limit_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -305,7 +315,7 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 72, "Unexpected size of Node");
+static_assert(sizeof(Node) == 80, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -361,6 +371,35 @@ class EdgeAndNode {
         1.0f,
         std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
                  1e9f));
+  }
+  int GetVisitsToReachUWithWorstCaseQ(float target_score, float numerator,
+                                      float default_q) const {
+    // This code assumes that terminal hit maximum magnitude is 1.
+    if (target_score <= -1) return std::numeric_limits<int>::max();
+    // For this path, every visit will have a back propigated q that is negative
+    // to the current q.
+    const auto q = GetQ(default_q);
+    const auto n1 = GetNStarted() + 1;
+    // Solve newq +newu == target_score
+    // newq here makes a pretty big assumption by using n1-1 instead of GetN() -
+    // but not making that assumption makes this equation even harder.
+    // newq == (q*(n1-1)-n)/(n1+n-1)
+    // newu == GetP() * numerator / (n1+n)
+    // Since that gets a bit complicated, make an approximation to give both the
+    // same divisor - choose whichever makes the answer smaller.
+    // target_score*(n1+n-k) == q*(n1-1)-n + GetP() * numerator
+    // target_score*n+n == q*(n1-1)-target_score*(n1-k) + GetP() * numerator
+    // n ==  (q*(n1-1)-target_score*(n1-k) + GetP() * numerator) / (target_score
+    // + 1)
+    // So use k==0 if target_score is positive and k==1 if target_score is
+    // negative.
+    float k = target_score > 0 ? 0 : 1;
+    return std::max(
+        1.0f, std::min(std::floor((q * (n1 - 1) - target_score * (n1 - k) +
+                                   GetP() * numerator) /
+                                  (target_score + 1)) +
+                           1,
+                       1e9f));
   }
 
   std::string DebugString() const;

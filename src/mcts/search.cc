@@ -823,6 +823,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     precached_node_ = std::make_unique<Node>(nullptr, 0);
   }
 
+  int thit_limit = collision_limit;
+
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
@@ -850,15 +852,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
       if (!is_root_node) {
-        IncrementNInFlight(node->GetParent(), search_->root_node_, collision_limit - 1);
+        IncrementNInFlight(node->GetParent(), search_->root_node_,
+                           collision_limit - 1);
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
-        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
-        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+        IncrementNInFlight(node, search_->root_node_, thit_limit - 1);
+        return NodeToProcess::TerminalHit(node, depth, thit_limit);
       } else {
         return NodeToProcess::Extension(node, depth);
       }
@@ -869,6 +872,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       // remaining cache visits.
       collision_limit =
           std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
+      thit_limit = std::min(thit_limit, node->GetRemainingTHitVisits());
       is_root_node = false;
       node = possible_shortcut_child;
       node_already_updated = true;
@@ -920,14 +924,20 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (second_best_edge) {
       int estimated_visits_to_change_best =
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
+      int estimated_visits_to_change_best_thit =
+          best_edge.GetVisitsToReachUWithWorstCaseQ(second_best, puct_mult,
+                                                    fpu);
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
       node->UpdateBestChild(best_edge,
-                            std::max(0, estimated_visits_to_change_best - 2));
+                            std::max(0, estimated_visits_to_change_best - 2),
+                            estimated_visits_to_change_best_thit);
       collision_limit =
           std::min(collision_limit, estimated_visits_to_change_best);
+      thit_limit = std::min(thit_limit, estimated_visits_to_change_best_thit);
       assert(collision_limit >= 1);
+      assert(thit_limit >= 1);
       second_best_edge.Reset();
     }
 
