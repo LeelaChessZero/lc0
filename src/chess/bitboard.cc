@@ -342,6 +342,7 @@ const int kQueenCastleIndex =
 static MagicBitBoards magic_bitboards;
 }  // namespace
 
+// Magic numbers determined via trial and error with random number generator.
 const BitBoard MagicBitBoards::kRookMagicNumbers[64] = {
     0x088000102088C001ULL, 0x10C0200040001000ULL, 0x83001041000B2000ULL,
     0x0680280080041000ULL, 0x488004000A080080ULL, 0x0100180400010002ULL,
