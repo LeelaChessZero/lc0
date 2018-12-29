@@ -99,6 +99,15 @@ class Search {
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
 
+  // Chooses an edge from parent with the highest N value, and returns this
+  // edges Q value
+  float GetQ_with_highest_N(Node* parent) const;
+
+  // Very similar to GetBestChildrenWithNoTemperature, expect it chooses
+  // the best child with a bit more emphasis on the Q value of each child.
+  // Also takes in the return value of GetQ_with_highest_N as Qtop
+  std::vector<EdgeAndNode> GetQBiasedMove(Node* parent, float Qtop) const;
+
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.

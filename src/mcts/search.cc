@@ -520,9 +520,83 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   return res;
 }
 
-// Returns a child with most visits.
+// Chooses an edge from parent with the highest N value, and returns this edge's
+// Q value
+float Search::GetQ_with_highest_N(Node* parent) const {
+  MoveList root_limit;
+  if (parent == root_node_) {
+    PopulateRootMoveLimit(&root_limit);
+  }
+
+  int N = 0;
+  float Q = -3;
+
+  for (auto edge : parent->Edges()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
+      continue;
+    }
+
+    // Very simple code to find the maximum N value of an edge
+    // and record the corresponding Q value
+    if (edge.GetN() >= N) {
+      N = edge.GetN();
+      Q = edge.GetQ(-1);
+    }
+  }
+
+  return Q;
+}
+
+// Very similar to GetBestChildrenWithNoTemperature, expect it chooses
+// the best child with a bit more emphasis on the Q value of each child.
+// Also takes in the return value of GetQ_with_highest_N as Qtop
+std::vector<EdgeAndNode> Search::GetQBiasedMove(Node* parent,
+                                                float Qtop) const {
+  MoveList root_limit;
+  if (parent == root_node_) {
+    PopulateRootMoveLimit(&root_limit);
+  }
+  float hold;
+
+  using El = std::tuple<float, float, float, EdgeAndNode>;
+  std::vector<El> edges;
+  for (auto edge : parent->Edges()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
+      continue;
+    }
+
+    // Qtop is Q value of the edge with the highest N value
+    if (edge.GetQ(-1) >= Qtop)
+      hold = sqrt(edge.GetQ(-1) - Qtop);
+    else
+      hold = -sqrt(-edge.GetQ(-1) + Qtop);
+
+    // Here, edge.GetN() is scaled slightly by exp(1.06*hold)
+    // This causes moves with good evals to be looked upon more
+    // favourably and bad evals looked upon less favourably
+    edges.emplace_back(edge.GetN() * exp(1.06 * hold), edge.GetQ(-1),
+                       edge.GetP(), edge);
+  }
+
+  auto middle =
+      (static_cast<int>(edges.size()) > 1) ? edges.begin() + 1 : edges.end();
+  std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
+
+  std::vector<EdgeAndNode> res;
+  std::transform(edges.begin(), middle, std::back_inserter(res),
+                 [](const El& x) { return std::get<3>(x); });
+
+  return res;
+}
+
+// Returns a child with best combination of most visits and highest eval (Q).
 EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
-  auto res = GetBestChildrenNoTemperature(parent, 1);
+  float Qtop = GetQ_with_highest_N(parent);
+  auto res = GetQBiasedMove(parent, Qtop);
   return res.empty() ? EdgeAndNode() : res.front();
 }
 
