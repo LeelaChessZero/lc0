@@ -117,3 +117,8 @@ option('gtest',
        type: 'boolean',
        value: true,
        description: 'Build gtest tests')
+
+option('protobuf-3-6-0',
+       type: 'boolean',
+       value: false,
+       description: 'Use the protobuf 3.6.0 subproject')
