@@ -918,13 +918,15 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
-      int collisions_remaining =
+      int estimated_visits_to_change_best =
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
-      node->UpdateBestChild(best_edge, std::max(0, collisions_remaining - 2));
-      collision_limit = std::min(collision_limit, collisions_remaining);
+      node->UpdateBestChild(best_edge,
+                            std::max(0, estimated_visits_to_change_best - 2));
+      collision_limit =
+          std::min(collision_limit, estimated_visits_to_change_best);
       assert(collision_limit >= 1);
       second_best_edge.Reset();
     }

@@ -188,7 +188,7 @@ class Node {
 
   // Gets a cached best child if it is still valid.
   Node* GetCachedBestChild() {
-    if (n_in_flight_ < collisions_remaining_) {
+    if (n_in_flight_ < best_child_cache_in_flight_limit_) {
       return best_child_cached_;
     }
     return nullptr;
@@ -196,7 +196,9 @@ class Node {
 
   // Gets how many more visits the cached value is valid for. Only valid if
   // GetCachedBestChild returns a value.
-  int GetRemainingCacheVisits() { return collisions_remaining_ - n_in_flight_; }
+  int GetRemainingCacheVisits() {
+    return best_child_cache_in_flight_limit_ - n_in_flight_;
+  }
 
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
@@ -254,7 +256,7 @@ class Node {
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
   // Cached pointer to best child, valid while n_in_flight <
-  // collisions_remaining_
+  // best_child_cache_in_flight_limit_
   Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
@@ -273,7 +275,7 @@ class Node {
   uint32_t n_in_flight_ = 0;
   // If best_child_cached_ is non-null, and n_in_flight_ < this,
   // best_child_cached_ is still the best child.
-  uint32_t collisions_remaining_ = 0;
+  uint32_t best_child_cache_in_flight_limit_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
