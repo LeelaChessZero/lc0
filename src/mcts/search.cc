@@ -831,7 +831,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   uint16_t depth = 0;
-  bool fast_path = true;
+  bool node_already_updated = true;
 
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
@@ -841,7 +841,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
-    if (!fast_path) {
+    if (!node_already_updated) {
       node = best_edge.GetOrSpawnNode(/* parent */ node, &precached_node_);
     }
     best_edge.Reset();
@@ -870,11 +870,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       collision_limit =
           std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
       is_root_node = false;
-      fast_path = true;
       node = possible_shortcut_child;
+      node_already_updated = true;
       continue;
     }
-    fast_path = false;
+    node_already_updated = false;
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
