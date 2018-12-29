@@ -243,12 +243,12 @@ class MagicBitBoards {
 
   // Returns the rook attack bitboard for the given rook board square and the
   // given occupied piece bitboard.
-  BitBoard GetRookAttacks(const BoardSquare rook_square,
-                          const BitBoard pieces) const;
+  static BitBoard GetRookAttacks(const BoardSquare rook_square,
+                                 const BitBoard pieces);
   // Returns the bishop attack bitboard for the given rook board square and the
   // given occupied piece bitboard.
-  BitBoard GetBishopAttacks(const BoardSquare bishop_square,
-                            const BitBoard pieces) const;
+  static BitBoard GetBishopAttacks(const BoardSquare bishop_square,
+                                   const BitBoard pieces);
 
  private:
   // Structure holding all relevant magic parameters per square (except
@@ -259,7 +259,7 @@ class MagicBitBoards {
     // Number of bits to shift.
     uint8_t shift_bits_;
     // Relevant occupancy mask.
-    BitBoard mask_;
+    uint64_t mask_;
   };
 
   // Builds rook or bishop attack table.
@@ -268,16 +268,16 @@ class MagicBitBoards {
                         const std::pair<int, int>* directions);
 
   // Magic numbers for each board square.
-  static const BitBoard kRookMagicNumbers[];
-  static const BitBoard kBishopMagicNumbers[];
+  static const BitBoard kRookMagicNumbers[64];
+  static const BitBoard kBishopMagicNumbers[64];
 
   // Magic parameters for each board square.
-  static MagicParams rook_magic_params_[];
-  static MagicParams bishop_magic_params_[];
+  static MagicParams rook_magic_params_[64];
+  static MagicParams bishop_magic_params_[64];
 
   // Magic attack lookup tables.
-  static BitBoard rook_attacks_table_[];
-  static BitBoard bishop_attacks_table_[];
+  static BitBoard rook_attacks_table_[102400];
+  static BitBoard bishop_attacks_table_[5248];
 };
 
 class Move {

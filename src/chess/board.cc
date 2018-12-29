@@ -250,35 +250,23 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     // Rook (and queen)
     if (rooks_.get(source)) {
       processed_piece = true;
-      for (const auto& direction : kRookDirections) {
-        auto dst_row = source.row();
-        auto dst_col = source.col();
-        while (true) {
-          dst_row += direction.first;
-          dst_col += direction.second;
-          if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-          const BoardSquare destination(dst_row, dst_col);
-          if (our_pieces_.get(destination)) break;
-          result.emplace_back(source, destination);
-          if (their_pieces_.get(destination)) break;
-        }
+      BitBoard attacked =
+          MagicBitBoards::GetRookAttacks(source, our_pieces_ + their_pieces_) -
+          our_pieces_;
+
+      for (const auto& destination : attacked) {
+        result.emplace_back(source, destination);
       }
     }
     // Bishop (and queen)
     if (bishops_.get(source)) {
       processed_piece = true;
-      for (const auto& direction : kBishopDirections) {
-        auto dst_row = source.row();
-        auto dst_col = source.col();
-        while (true) {
-          dst_row += direction.first;
-          dst_col += direction.second;
-          if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-          const BoardSquare destination(dst_row, dst_col);
-          if (our_pieces_.get(destination)) break;
-          result.emplace_back(source, destination);
-          if (their_pieces_.get(destination)) break;
-        }
+      BitBoard attacked = MagicBitBoards::GetBishopAttacks(
+                              source, our_pieces_ + their_pieces_) -
+                          our_pieces_;
+
+      for (const auto& destination : attacked) {
+        result.emplace_back(source, destination);
       }
     }
     if (processed_piece) continue;

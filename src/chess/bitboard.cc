@@ -403,11 +403,12 @@ MagicBitBoards::MagicBitBoards() {
     // Calculate relevant occupancy masks by subtracting the board edges from
     // the total attack bitboards.
     rook_magic_params_[square].mask_ =
-        kRookAttacks[square] - BoardSquare(b_sq.row(), 0) -
-        BoardSquare(b_sq.row(), 7) - BoardSquare(0, b_sq.col()) -
-        BoardSquare(7, b_sq.col());
+        (kRookAttacks[square] - BoardSquare(b_sq.row(), 0) -
+         BoardSquare(b_sq.row(), 7) - BoardSquare(0, b_sq.col()) -
+         BoardSquare(7, b_sq.col()))
+            .as_int();
     bishop_magic_params_[square].mask_ =
-        kBishopAttacks[square] - BitBoard(0xFF818181818181FFULL);
+        (kBishopAttacks[square] - BitBoard(0xFF818181818181FFULL)).as_int();
   }
 
   // Build attack tables.
@@ -431,7 +432,7 @@ void MagicBitBoards::BuildAttackTable(const BitBoard* magic_numbers,
     // Cache the relevant occupancy board squares.
     std::vector<BoardSquare> occupancy_squares;
 
-    for (auto temp_sq : magic_params[square].mask_) {
+    for (auto temp_sq : BitBoard(magic_params[square].mask_)) {
       occupancy_squares.emplace_back(temp_sq);
     }
 
@@ -491,12 +492,12 @@ void MagicBitBoards::BuildAttackTable(const BitBoard* magic_numbers,
   }
 }
 
-inline BitBoard MagicBitBoards::GetRookAttacks(const BoardSquare rook_square,
-                                               const BitBoard pieces) const {
+BitBoard MagicBitBoards::GetRookAttacks(const BoardSquare rook_square,
+                                        const BitBoard pieces) {
   // Calculate magic index.
   uint8_t square = rook_square.as_int();
 
-  uint64_t index = (pieces * rook_magic_params_[square].mask_).as_int();
+  uint64_t index = pieces.as_int() & rook_magic_params_[square].mask_;
   index *= kRookMagicNumbers[square].as_int();
   index >>= rook_magic_params_[square].shift_bits_;
 
@@ -504,8 +505,8 @@ inline BitBoard MagicBitBoards::GetRookAttacks(const BoardSquare rook_square,
   return rook_attacks_table_[rook_magic_params_[square].table_offset_ + index];
 }
 
-inline BitBoard MagicBitBoards::GetBishopAttacks(
-    const BoardSquare bishop_square, const BitBoard pieces) const {
+BitBoard MagicBitBoards::GetBishopAttacks(const BoardSquare bishop_square,
+                                          const BitBoard pieces) {
   // Calculate magic index.
   uint8_t square = bishop_square.as_int();
 
