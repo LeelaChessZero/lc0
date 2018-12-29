@@ -179,6 +179,10 @@ class BitBoard {
     return board_ == other.board_;
   }
 
+  bool operator!=(const BitBoard& other) const {
+    return board_ != other.board_;
+  }
+
   BitIterator<BoardSquare> begin() const { return board_; }
   BitIterator<BoardSquare> end() const { return 0; }
 
@@ -237,29 +241,43 @@ class MagicBitBoards {
  public:
   MagicBitBoards();
 
+  // Returns the rook attack bitboard for the given rook board square and the
+  // given occupied piece bitboard.
+  BitBoard GetRookAttacks(const BoardSquare rook_square,
+                          const BitBoard pieces) const;
+  // Returns the bishop attack bitboard for the given rook board square and the
+  // given occupied piece bitboard.
+  BitBoard GetBishopAttacks(const BoardSquare bishop_square,
+                            const BitBoard pieces) const;
+
  private:
-  // Structure holding all relevant magic parameters per square (except magic
-  // number).
+  // Structure holding all relevant magic parameters per square (except
+  // magic number).
   struct MagicParams {
     // Offset into lookup table.
     uint32_t table_offset_;
-    // Number of index bits in the lookup table index.
-    uint8_t index_size_;
+    // Number of bits to shift.
+    uint8_t shift_bits_;
     // Relevant occupancy mask.
     BitBoard mask_;
   };
+
+  // Builds rook or bishop attack table.
+  void BuildAttackTable(const BitBoard* kMagicNumbers,
+                        MagicParams* magic_params, BitBoard* attacks_table,
+                        const std::pair<int, int>* directions);
 
   // Magic numbers for each board square.
   static const BitBoard kRookMagicNumbers[];
   static const BitBoard kBishopMagicNumbers[];
 
   // Magic parameters for each board square.
-  static MagicParams kRookMagicParams[64];
-  static MagicParams kBishopMagicParams[64];
+  static MagicParams rook_magic_params_[];
+  static MagicParams bishop_magic_params_[];
 
   // Magic attack lookup tables.
-  static BitBoard kRookAttacksTable[102400];
-  static BitBoard kBishopAttacksTable[5248];
+  static BitBoard rook_attacks_table_[];
+  static BitBoard bishop_attacks_table_[];
 };
 
 class Move {
