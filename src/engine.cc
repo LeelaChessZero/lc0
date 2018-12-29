@@ -214,7 +214,9 @@ SearchLimits EngineController::PopulateSearchLimits(
   // If the number of moves remaining until the time control are less than
   // the estimated number of moves left in the game, then use the number of
   // moves until the time control instead.
-  if (params.movestogo && *params.movestogo < movestogo) {
+  if (params.movestogo &&
+      *params.movestogo > 0 &&  // Ignore non-standard uci command.
+      *params.movestogo < movestogo) {
     movestogo = *params.movestogo;
   }
 
