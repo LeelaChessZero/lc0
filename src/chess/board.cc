@@ -442,53 +442,27 @@ bool ChessBoard::ApplyMove(Move move) {
 bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   const int row = square.row();
   const int col = square.col();
-  // Check king
+  // Check king.
   {
     const int krow = their_king_.row();
     const int kcol = their_king_.col();
     if (std::abs(krow - row) <= 1 && std::abs(kcol - col) <= 1) return true;
   }
-  // Check Rooks (and queen)
-  if (kRookAttacks[square.as_int()].intersects(their_pieces_ * rooks_)) {
-    for (const auto& direction : kRookDirections) {
-      auto dst_row = row;
-      auto dst_col = col;
-      while (true) {
-        dst_row += direction.first;
-        dst_col += direction.second;
-        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-        const BoardSquare destination(dst_row, dst_col);
-        if (our_pieces_.get(destination)) break;
-        if (their_pieces_.get(destination)) {
-          if (rooks_.get(destination)) return true;
-          break;
-        }
-      }
-    }
+  // Check rooks (and queens).
+  if (MagicBitBoards::GetRookAttacks(square, our_pieces_ + their_pieces_)
+          .intersects(their_pieces_ * rooks_)) {
+    return true;
   }
-  // Check Bishops
-  if (kBishopAttacks[square.as_int()].intersects(their_pieces_ * bishops_)) {
-    for (const auto& direction : kBishopDirections) {
-      auto dst_row = row;
-      auto dst_col = col;
-      while (true) {
-        dst_row += direction.first;
-        dst_col += direction.second;
-        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-        const BoardSquare destination(dst_row, dst_col);
-        if (our_pieces_.get(destination)) break;
-        if (their_pieces_.get(destination)) {
-          if (bishops_.get(destination)) return true;
-          break;
-        }
-      }
-    }
+  // Check bishops.
+  if (MagicBitBoards::GetBishopAttacks(square, our_pieces_ + their_pieces_)
+          .intersects(their_pieces_ * bishops_)) {
+    return true;
   }
-  // Check pawns
+  // Check pawns.
   if (kPawnAttacks[square.as_int()].intersects(their_pieces_ * pawns_)) {
     return true;
   }
-  // Check knights
+  // Check knights.
   {
     if (kKnightAttacks[square.as_int()].intersects(their_pieces_ - their_king_ -
                                                    rooks_ - bishops_ -
