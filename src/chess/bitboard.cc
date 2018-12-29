@@ -492,33 +492,6 @@ void MagicBitBoards::BuildAttackTable(const BitBoard* magic_numbers,
   }
 }
 
-BitBoard MagicBitBoards::GetRookAttacks(const BoardSquare rook_square,
-                                        const BitBoard pieces) {
-  // Calculate magic index.
-  uint8_t square = rook_square.as_int();
-
-  uint64_t index = pieces.as_int() & rook_magic_params_[square].mask_;
-  index *= kRookMagicNumbers[square].as_int();
-  index >>= rook_magic_params_[square].shift_bits_;
-
-  // Return attack bitboard.
-  return rook_attacks_table_[rook_magic_params_[square].table_offset_ + index];
-}
-
-BitBoard MagicBitBoards::GetBishopAttacks(const BoardSquare bishop_square,
-                                          const BitBoard pieces) {
-  // Calculate magic index.
-  uint8_t square = bishop_square.as_int();
-
-  uint64_t index = (pieces * bishop_magic_params_[square].mask_).as_int();
-  index *= kBishopMagicNumbers[square].as_int();
-  index >>= bishop_magic_params_[square].shift_bits_;
-
-  // Return attack bitboard.
-  return bishop_attacks_table_[bishop_magic_params_[square].table_offset_ +
-                               index];
-}
-
 Move::Move(const std::string& str, bool black) {
   if (str.size() < 4) throw Exception("Bad move: " + str);
   SetFrom(BoardSquare(str.substr(0, 2), black));

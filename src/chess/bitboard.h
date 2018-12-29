@@ -241,16 +241,6 @@ class MagicBitBoards {
  public:
   MagicBitBoards();
 
-  // Returns the rook attack bitboard for the given rook board square and the
-  // given occupied piece bitboard.
-  static BitBoard GetRookAttacks(const BoardSquare rook_square,
-                                 const BitBoard pieces);
-  // Returns the bishop attack bitboard for the given rook board square and the
-  // given occupied piece bitboard.
-  static BitBoard GetBishopAttacks(const BoardSquare bishop_square,
-                                   const BitBoard pieces);
-
- private:
   // Structure holding all relevant magic parameters per square (except
   // magic number).
   struct MagicParams {
@@ -262,6 +252,39 @@ class MagicBitBoards {
     uint64_t mask_;
   };
 
+  // Returns the rook attack bitboard for the given rook board square and the
+  // given occupied piece bitboard.
+  static BitBoard GetRookAttacks(const BoardSquare rook_square,
+                                 const BitBoard pieces) {
+    // Calculate magic index.
+    uint8_t square = rook_square.as_int();
+
+    uint64_t index = pieces.as_int() & rook_magic_params_[square].mask_;
+    index *= kRookMagicNumbers[square].as_int();
+    index >>= rook_magic_params_[square].shift_bits_;
+
+    // Return attack bitboard.
+    return rook_attacks_table_[rook_magic_params_[square].table_offset_ +
+                               index];
+  }
+
+  // Returns the bishop attack bitboard for the given bishop board square and
+  // the given occupied piece bitboard.
+  static BitBoard GetBishopAttacks(const BoardSquare bishop_square,
+                                   const BitBoard pieces) {
+    // Calculate magic index.
+    uint8_t square = bishop_square.as_int();
+
+    uint64_t index = (pieces * bishop_magic_params_[square].mask_).as_int();
+    index *= kBishopMagicNumbers[square].as_int();
+    index >>= bishop_magic_params_[square].shift_bits_;
+
+    // Return attack bitboard.
+    return bishop_attacks_table_[bishop_magic_params_[square].table_offset_ +
+                                 index];
+  }
+
+ private:
   // Builds rook or bishop attack table.
   void BuildAttackTable(const BitBoard* kMagicNumbers,
                         MagicParams* magic_params, BitBoard* attacks_table,
