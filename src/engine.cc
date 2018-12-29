@@ -126,12 +126,12 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
   options->Add<FloatOption>(kTimeMidpointPlyId, 1.0f, 200.0f) = 100.0f;
-  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
+  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 9.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
-  options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 0.6f;
+  options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
   // Hide time curve options.
