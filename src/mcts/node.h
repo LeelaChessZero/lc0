@@ -394,12 +394,14 @@ class EdgeAndNode {
     // * numerator
     // n ==  (q*n_orig-target_score*n1-(n1-n_orig) + GetP() * numerator)
     // / (target_score + 1)
-    return std::max(1.0f,
-                    std::min(std::floor((q * n_orig - target_score * n1 -
-                                         (n1 - n_orig) + GetP() * numerator) /
-                                        (target_score + 1)) +
-                                 1,
-                             1e9f));
+    // Simplify a bit:
+    // n == ((q+1)*n_orig + GetP() * numerator) / (Target_score + 1) - n1
+    return std::max(
+        1.0f, std::min(std::floor(((q + 1) * n_orig + GetP() * numerator) /
+                                      (target_score + 1) -
+                                  n1) +
+                           1,
+                       1e9f));
   }
 
   std::string DebugString() const;
