@@ -51,7 +51,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree)
-    : options_{player1, player2} {
+    : options_{std::move(player1), std::move(player2)} {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 

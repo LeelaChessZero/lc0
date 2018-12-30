@@ -25,6 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <utility>
 #include "selfplay/tournament.h"
 #include "mcts/search.h"
 #include "neural/factory.h"
@@ -109,10 +110,10 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
                                        TournamentInfo::Callback tournament_info)
     : player_options_{options.GetSubdict("player1"),
                       options.GetSubdict("player2")},
-      best_move_callback_(best_move_info),
-      info_callback_(thinking_info),
-      game_callback_(game_info),
-      tournament_callback_(tournament_info),
+      best_move_callback_(std::move(best_move_info)),
+      info_callback_(std::move(thinking_info)),
+      game_callback_(std::move(game_info)),
+      tournament_callback_(std::move(tournament_info)),
       kThreads{
           options.GetSubdict("player1").Get<int>(kThreadsId.GetId()),
           options.GetSubdict("player2").Get<int>(kThreadsId.GetId()),

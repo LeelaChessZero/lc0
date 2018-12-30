@@ -54,7 +54,7 @@ class MuxingComputation : public NetworkComputation {
     return parent_->GetPVal(sample + idx_in_parent_, move_id);
   }
 
-  void PopulateToParent(std::shared_ptr<NetworkComputation> parent) {
+  void PopulateToParent(const std::shared_ptr<NetworkComputation>& parent) {
     // Populate our batch into batch of batches.
     parent_ = parent;
     idx_in_parent_ = parent->GetBatchSize();

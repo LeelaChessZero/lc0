@@ -29,8 +29,8 @@
 #include <cstddef>
 
 namespace lczero {
-void TransposeTensor(const std::vector<int>& dims, std::vector<int> order,
-                     const std::vector<float> from, float* to) {
+void TransposeTensor(const std::vector<int>& dims, std::vector<int>& order,
+                     const std::vector<float>& from, float* to) {
   if (order.empty()) {
     for (size_t i = 0; i < dims.size(); ++i)
       order.push_back(dims.size() - i - 1);

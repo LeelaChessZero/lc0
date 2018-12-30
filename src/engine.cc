@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <utility>
 
 #include "engine.h"
 #include "mcts/search.h"
@@ -114,8 +115,8 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
                                    ThinkingInfo::Callback info_callback,
                                    const OptionsDict& options)
     : options_(options),
-      best_move_callback_(best_move_callback),
-      info_callback_(info_callback),
+      best_move_callback_(std::move(best_move_callback)),
+      info_callback_(std::move(info_callback)),
       move_start_time_(std::chrono::steady_clock::now()) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {

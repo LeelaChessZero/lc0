@@ -30,7 +30,7 @@
 namespace lczero {
 
 namespace {
-FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
+FillEmptyHistory EncodeHistoryFill(const std::string& history_fill) {
   if (history_fill == "fen_only") return FillEmptyHistory::FEN_ONLY;
   if (history_fill == "always") return FillEmptyHistory::ALWAYS;
   assert(history_fill == "no");

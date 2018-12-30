@@ -35,6 +35,7 @@
 #include <iterator>
 #include <sstream>
 #include <thread>
+#include <utility>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
@@ -76,8 +77,8 @@ Search::Search(const NodeTree& tree, Network* network,
       limits_(limits),
       start_time_(std::chrono::steady_clock::now()),
       initial_visits_(root_node_->GetN()),
-      best_move_callback_(best_move_callback),
-      info_callback_(info_callback),
+      best_move_callback_(std::move(best_move_callback)),
+      info_callback_(std::move(info_callback)),
       params_(options) {}
 
 namespace {

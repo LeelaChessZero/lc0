@@ -55,7 +55,7 @@ NetworkFactory* NetworkFactory::Get() {
 
 NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
                                    int priority) {
-  NetworkFactory::Get()->RegisterNetwork(name, factory, priority);
+  NetworkFactory::Get()->RegisterNetwork(name, std::move(factory), priority);
 }
 
 void NetworkFactory::PopulateOptions(OptionsParser* options) {

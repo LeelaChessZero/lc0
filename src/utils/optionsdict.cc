@@ -30,6 +30,7 @@
 #include <cctype>
 #include <sstream>
 #include <string>
+#include <utility>
 #include "utils/exception.h"
 
 namespace lczero {
@@ -87,7 +88,7 @@ class Lexer {
     L_EOF
   };
 
-  Lexer(const std::string& str) : str_(str) { Next(); }
+  Lexer(std::string str) : str_(std::move(str)) { Next(); }
 
   void Next() {
     // Skip whitespace:
