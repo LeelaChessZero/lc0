@@ -383,24 +383,23 @@ class EdgeAndNode {
     // Solve newq +newu == target_score
     // This assumes all in flight also end up turning out to be worst case q, to
     // maximize conservativeness.
-    // newq == (q*(n_orig)-n-(n1-n_orig-1))/(n1+n-1)
+    // newq == (q*n_orig-n-(n1-n_orig-1))/(n1+n-1)
     // newu == GetP() * numerator / (n1+n)
-    // Since that gets a bit complicated, make an approximation to give both the
-    // same divisor - choose whichever makes the answer smaller.
-    // target_score*(n1+n-k) == q*(n_orig)-n-(n1-n_orig-1) + GetP() * numerator
-    // target_score*n+n == q*(n_orig)-target_score*(n1-k)-(n1-n_orig-1) + GetP()
+    // Since that gets a bit complicated, make an approximation to pretend there
+    // is an extra loss in flight for the q already so less visits will be
+    // needed to reach the target score.
+    // newq == (q*n_orig-n-(n1-n_orig))/(n1+n)
+    // target_score*(n1+n) == q*n_orig-n-(n1-n_orig) + GetP() * numerator
+    // target_score*n+n == q*n_orig-target_score*n1-(n1-n_orig) + GetP()
     // * numerator
-    // n ==  (q*(n_orig)-target_score*(n1-k)-(n1-n_orig-1) + GetP() * numerator)
+    // n ==  (q*n_orig-target_score*n1-(n1-n_orig) + GetP() * numerator)
     // / (target_score + 1)
-    // So use k==0 if target_score is positive and k==1 if target_score is
-    // negative.
-    float k = target_score > 0 ? 0 : 1;
-    return std::max(
-        1.0f, std::min(std::floor((q * n_orig - target_score * (n1 - k) -
-                                   (n1 - n_orig - 1) + GetP() * numerator) /
-                                  (target_score + 1)) +
-                           1,
-                       1e9f));
+    return std::max(1.0f,
+                    std::min(std::floor((q * n_orig - target_score * n1 -
+                                         (n1 - n_orig) + GetP() * numerator) /
+                                        (target_score + 1)) +
+                                 1,
+                             1e9f));
   }
 
   std::string DebugString() const;
