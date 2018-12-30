@@ -872,6 +872,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       // remaining cache visits.
       collision_limit =
           std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
+      // This logic is actually super conservative since GetRemaininTHitVisits
+      // shrinks for every n_in_flight 1 by 1. The actual calculation is will
+      // shrink slower. This discrepency is considered okay, because out of
+      // order will mean the cache is invalidated if this value is actually
+      // used, and then it can be re-evaluated more accurately for the next
+      // entry in the batch.  If out of order is disabled, it probably makes
+      // sense to not use multivist for tbhit at all, so being conservative here
+      // is also probably safest.
       thit_limit = std::min(thit_limit, node->GetRemainingTHitVisits());
       is_root_node = false;
       node = possible_shortcut_child;
