@@ -203,9 +203,8 @@ class Node {
   // Gets how many more visits the cached value is valid for assuming thits.
   // Only valid if GetCachedBestChild returns a value.
   int GetRemainingTHitVisits() {
-    if
-      (best_child_cache_in_flight_thit_limit_ > n_in_flight_)
-    return best_child_cache_in_flight_thit_limit_ - n_in_flight_;
+    if (best_child_cache_in_flight_thit_limit_ > n_in_flight_)
+      return best_child_cache_in_flight_thit_limit_ - n_in_flight_;
     return 1;
   }
 
@@ -380,23 +379,25 @@ class EdgeAndNode {
     // to the current q.
     const auto q = GetQ(default_q);
     const auto n1 = GetNStarted() + 1;
+    const auto n_orig = GetN();
     // Solve newq +newu == target_score
-    // newq here makes a pretty big assumption by using n1-1 instead of GetN() -
-    // but not making that assumption makes this equation even harder.
-    // newq == (q*(n1-1)-n)/(n1+n-1)
+    // This assumes all in flight also end up turning out to be worst case q, to
+    // maximize conservativeness.
+    // newq == (q*(n_orig)-n-(n1-n_orig-1))/(n1+n-1)
     // newu == GetP() * numerator / (n1+n)
     // Since that gets a bit complicated, make an approximation to give both the
     // same divisor - choose whichever makes the answer smaller.
-    // target_score*(n1+n-k) == q*(n1-1)-n + GetP() * numerator
-    // target_score*n+n == q*(n1-1)-target_score*(n1-k) + GetP() * numerator
-    // n ==  (q*(n1-1)-target_score*(n1-k) + GetP() * numerator) / (target_score
-    // + 1)
+    // target_score*(n1+n-k) == q*(n_orig)-n-(n1-n_orig-1) + GetP() * numerator
+    // target_score*n+n == q*(n_orig)-target_score*(n1-k)-(n1-n_orig-1) + GetP()
+    // * numerator
+    // n ==  (q*(n_orig)-target_score*(n1-k)-(n1-n_orig-1) + GetP() * numerator)
+    // / (target_score + 1)
     // So use k==0 if target_score is positive and k==1 if target_score is
     // negative.
     float k = target_score > 0 ? 0 : 1;
     return std::max(
-        1.0f, std::min(std::floor((q * (n1 - 1) - target_score * (n1 - k) +
-                                   GetP() * numerator) /
+        1.0f, std::min(std::floor((q * n_orig - target_score * (n1 - k) -
+                                   (n1 - n_orig - 1) + GetP() * numerator) /
                                   (target_score + 1)) +
                            1,
                        1e9f));
