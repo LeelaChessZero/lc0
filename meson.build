@@ -15,7 +15,7 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++14', 'b_ndebug=if-release', 'b_lto=true'],
+        default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
         meson_version: '>=0.45')
 
 cc = meson.get_compiler('cpp')
@@ -51,7 +51,10 @@ else
 endif
 protoc = find_program('protoc', required : false)
 # For tensorflow skip system protobuf, chances are it will not work.
-if not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
+if get_option('protobuf-3-6-0')
+  deps += subproject('protobuf-3.6.0').get_variable('protobuf_dep')
+  protoc = subproject('protobuf-3.6.0').get_variable('protoc')
+elif not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
   deps += subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
 else
@@ -157,6 +160,7 @@ if get_option('build_backends')
       tensorflow_include,
       tensorflow_include[0] + '/bazel-genfiles',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
+      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
