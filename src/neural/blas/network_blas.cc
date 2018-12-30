@@ -38,7 +38,8 @@ namespace {
 
 class BlasComputation : public NetworkComputation {
  public:
-  BlasComputation(const LegacyWeights& weights, const size_t max_batch_size);
+  BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
+                  const bool wdl);
 
   virtual ~BlasComputation() {}
 
@@ -52,7 +53,16 @@ class BlasComputation : public NetworkComputation {
   int GetBatchSize() const override { return static_cast<int>(planes_.size()); }
 
   // Returns Q value of @sample.
-  float GetQVal(int sample) const override { return q_values_[sample]; }
+  float GetQVal(int sample) const override {
+    if (wdl_) {
+      auto w = q_values_[3 * sample + 0];
+      // auto d = q_values_[3 * sample + 1];
+      auto l = q_values_[3 * sample + 2];
+      return w - l;
+    } else {
+      return q_values_[sample];
+    }
+  }
 
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
@@ -71,6 +81,7 @@ class BlasComputation : public NetworkComputation {
   std::vector<InputPlanes> planes_;
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
+  bool wdl_;
 };
 
 class BlasNetwork : public Network {
@@ -79,7 +90,7 @@ class BlasNetwork : public Network {
   virtual ~BlasNetwork(){};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<BlasComputation>(weights_, max_batch_size_);
+    return std::make_unique<BlasComputation>(weights_, max_batch_size_, wdl_);
   }
 
  private:
@@ -88,14 +99,16 @@ class BlasNetwork : public Network {
 
   LegacyWeights weights_;
   size_t max_batch_size_;
+  bool wdl_;
 };
 
 BlasComputation::BlasComputation(const LegacyWeights& weights,
-                                 const size_t max_batch_size)
+                                 const size_t max_batch_size, const bool wdl)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
-      q_values_(0) {}
+      q_values_(0),
+      wdl_(wdl) {}
 
 void BlasComputation::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
@@ -238,18 +251,38 @@ void BlasComputation::ComputeBlocking() {
       std::vector<float> policy(num_output_policy);
 
       // Get the moves
-      SoftmaxActivation(
-          num_output_policy, &output_pol[j * num_output_policy], policy.data());
+      SoftmaxActivation(num_output_policy, &output_pol[j * num_output_policy],
+                        policy.data());
 
       policies_.emplace_back(std::move(policy));
+    }
 
-      // Now get the score
-      double winrate = FullyConnectedLayer::Forward0D(
-                           num_value_channels, weights_.ip2_val_w.data(),
-                           &output_val[j * num_value_channels]) +
-                       weights_.ip2_val_b[0];
+    // Now get the score
+    if (wdl_) {
+      std::vector<float> wdl(3 * batch_size);
+      FullyConnectedLayer::Forward1D(
+          batch_size, num_value_channels, 3, output_val.data(),
+          weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
+          false,  // Relu Off
+          wdl.data());
 
-      q_values_.emplace_back(std::tanh(winrate));
+      for (size_t j = 0; j < batch_size; j++) {
+        std::vector<float> wdl_softmax(3);
+        SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
+
+        q_values_.emplace_back(wdl_softmax[0]);
+        q_values_.emplace_back(wdl_softmax[1]);
+        q_values_.emplace_back(wdl_softmax[2]);
+      }
+    } else {
+      for (size_t j = 0; j < batch_size; j++) {
+        double winrate = FullyConnectedLayer::Forward0D(
+                             num_value_channels, weights_.ip2_val_w.data(),
+                             &output_val[j * num_value_channels]) +
+                         weights_.ip2_val_b[0];
+
+        q_values_.emplace_back(std::tanh(winrate));
+      }
     }
   }
 }
@@ -267,6 +300,9 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
+
+  wdl_ = file.format().network_format().output() ==
+         pblczero::NetworkFormat::OUTPUT_WDL;
 
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;

@@ -59,8 +59,12 @@ struct OpenCLWeights {
 class OpenCLComputation : public NetworkComputation {
  public:
   OpenCLComputation(const OpenCL_Network& opencl_net,
-                    const OpenCLWeights& weights)
-      : opencl_net_(opencl_net), weights_(weights), policies_(), q_values_() {
+                    const OpenCLWeights& weights, const bool wdl)
+      : opencl_net_(opencl_net),
+        weights_(weights),
+        policies_(),
+        q_values_(),
+        wdl_(wdl) {
     buffers_ = opencl_net.acquire_buffers();
   }
 
@@ -108,13 +112,32 @@ class OpenCLComputation : public NetworkComputation {
         policies_.emplace_back(std::move(policy));
 
         // Now get the score.
-        auto winrate = weights_.ip2_val_b[0];
-        auto ptr_weights = weights_.ip2_val_w.data();
-        auto ptr_outputs = &output_val[j * num_value_channels];
-        for (size_t i = 0; i < num_value_channels; i++)
-          winrate += ptr_weights[i] * ptr_outputs[i];
+        if (wdl_) {
+          std::vector<float> wdl(weights_.ip2_val_b);
+          auto ptr_weights = weights_.ip2_val_w.data();
+          auto ptr_outputs = &output_val[j * num_value_channels];
+          for (size_t q = 0; q < 3; q++) {
+            for (size_t i = 0; i < num_value_channels; i++) {
+              wdl[q] +=
+                  ptr_weights[i + q * num_value_channels] * ptr_outputs[i];
+            }
+          }
 
-        q_values_.emplace_back(std::tanh(winrate));
+          std::vector<float> wdl_softmax(3);
+          SoftmaxActivation(3, wdl.data(), wdl_softmax.data());
+
+          q_values_.emplace_back(wdl_softmax[0]);
+          q_values_.emplace_back(wdl_softmax[1]);
+          q_values_.emplace_back(wdl_softmax[2]);
+        } else {
+          auto winrate = weights_.ip2_val_b[0];
+          auto ptr_weights = weights_.ip2_val_w.data();
+          auto ptr_outputs = &output_val[j * num_value_channels];
+          for (size_t i = 0; i < num_value_channels; i++)
+            winrate += ptr_weights[i] * ptr_outputs[i];
+
+          q_values_.emplace_back(std::tanh(winrate));
+        }
       }
     }
   }
@@ -123,7 +146,16 @@ class OpenCLComputation : public NetworkComputation {
   int GetBatchSize() const override { return static_cast<int>(planes_.size()); }
 
   // Returns Q value of @sample.
-  float GetQVal(int sample) const override { return q_values_[sample]; }
+  float GetQVal(int sample) const override {
+    if (wdl_) {
+      auto w = q_values_[3 * sample + 0];
+      // auto d = q_values_[3 * sample + 1];
+      auto l = q_values_[3 * sample + 2];
+      return w - l;
+    } else {
+      return q_values_[sample];
+    }
+  }
 
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
@@ -146,6 +178,7 @@ class OpenCLComputation : public NetworkComputation {
   std::vector<float> q_values_;
 
   std::unique_ptr<OpenCLBuffers> buffers_;
+  bool wdl_;
 };
 
 void OpenCLComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
@@ -170,7 +203,9 @@ class OpenCLNetwork : public Network {
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
 
-    // By default batch size is 1, as many old cards may not support more.
+    wdl_ = file.format().network_format().output() ==
+           pblczero::NetworkFormat::OUTPUT_WDL;
+
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));
     if (max_batch_size_ > kHardMaxBatchSize) {
@@ -290,7 +325,7 @@ class OpenCLNetwork : public Network {
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<OpenCLComputation>(opencl_net_, weights_);
+    return std::make_unique<OpenCLComputation>(opencl_net_, weights_, wdl_);
   }
 
  private:
@@ -300,6 +335,7 @@ class OpenCLNetwork : public Network {
   OpenCLParams params_;
   OpenCL opencl_;
   OpenCL_Network opencl_net_;
+  bool wdl_;
 };
 
 std::unique_ptr<Network> MakeOpenCLNetwork(const WeightsFile& weights,

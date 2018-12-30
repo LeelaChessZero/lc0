@@ -26,9 +26,9 @@
 */
 
 #include <chrono>
+#include <cstring>
 #include <functional>
 #include <thread>
-#include <cstring>
 #include "neural/factory.h"
 #include "utils/hashcat.h"
 

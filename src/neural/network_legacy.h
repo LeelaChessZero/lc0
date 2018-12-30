@@ -84,6 +84,8 @@ struct LegacyWeights {
   Vec ip1_val_b;
   Vec ip2_val_w;
   Vec ip2_val_b;
+
+  bool wdl;
 };
 
 }  // namespace lczero
