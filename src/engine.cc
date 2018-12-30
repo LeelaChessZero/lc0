@@ -97,7 +97,7 @@ const size_t kAvgCacheItemSize =
     NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
     sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
 
-float ComputeMedianMovesToGo(int ply, float midpoint, float steepness) {
+float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
   // An analysis of chess games shows that the distribution of game lengths
   // looks like a log-logistic distribution. The mean residual time function
   // calculates how many more moves are expected in the game given that we are
@@ -112,7 +112,7 @@ float ComputeMedianMovesToGo(int ply, float midpoint, float steepness) {
   return (midpoint * std::pow(1 + 2 * std::pow(ply / midpoint, steepness),
                               1 / steepness) -
           ply) /
-         2; // Divide plies by 2 to get moves.
+         2;  // Divide plies by 2 to get moves.
 }
 
 }  // namespace
@@ -191,7 +191,7 @@ SearchLimits EngineController::PopulateSearchLimits(
   float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
 
   float movestogo =
-      ComputeMedianMovesToGo(ply, time_curve_midpoint, time_curve_steepness);
+      ComputeEstimatedMovesToGo(ply, time_curve_midpoint, time_curve_steepness);
 
   // If the number of moves remaining until the time control are less than
   // the estimated number of moves left in the game, then use the number of
