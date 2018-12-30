@@ -513,7 +513,7 @@ class NodeTree {
   void MakeMove(Move move);
   // Resets the current head to ensure it doesn't carry over details from a
   // previous search.
-  void TrimTreeAtHead();
+  void TrimTreeAtHead() const;
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)

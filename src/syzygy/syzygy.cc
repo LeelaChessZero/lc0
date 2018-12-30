@@ -1017,7 +1017,7 @@ class SyzygyTablebaseImpl {
   }
 
  private:
-  std::string name_for_tb(const char* str, const char* suffix) {
+  std::string name_for_tb(const char* str, const char* suffix) const {
     std::stringstream path_string_stream(paths_);
     std::string path;
     std::ifstream stream;
@@ -1029,11 +1029,11 @@ class SyzygyTablebaseImpl {
     return std::string();
   }
 
-  bool test_tb(const char* str, const char* suffix) {
+  bool test_tb(const char* str, const char* suffix) const {
     return !name_for_tb(str, suffix).empty();
   }
 
-  void* map_tb(const char* name, const char* suffix, map_t* mapping) {
+  void* map_tb(const char* name, const char* suffix, map_t* mapping) const {
     std::string fname = name_for_tb(name, suffix);
     void* base_address;
 #ifndef _WIN32

@@ -407,7 +407,7 @@ void EngineController::PonderHit() {
   Go(go_params_);
 }
 
-void EngineController::Stop() {
+void EngineController::Stop() const {
   if (search_) search_->Stop();
 }
 

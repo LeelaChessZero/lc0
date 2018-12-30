@@ -136,7 +136,7 @@ class Lexer {
     RaiseError("Unable to parse token");
   }
 
-  void RaiseError(const std::string& message) {
+  void RaiseError(const std::string& message) const {
     throw Exception("Unable to parse config at offset " +
                     std::to_string(last_offset_) + ": " + str_ + " (" +
                     message + ")");
@@ -269,7 +269,7 @@ class Parser {
     }
   }
 
-  void EnsureToken(Lexer::TokenType type) {
+  void EnsureToken(Lexer::TokenType type) const {
     if (lexer_.GetToken() != type)
       lexer_.RaiseError("Expected token #" + std::to_string(type));
   }

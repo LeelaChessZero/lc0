@@ -63,7 +63,7 @@ class TrainingDataWriter {
   }
 
   // Writes a chunk.
-  void WriteChunk(const V3TrainingData& data);
+  void WriteChunk(const V3TrainingData& data) const;
 
   // Flushes file and closes it.
   void Finalize();

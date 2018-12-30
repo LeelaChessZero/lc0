@@ -40,7 +40,7 @@ class Benchmark{
 
   void Run();
   void OnBestMove(const BestMoveInfo& move);
-  void OnInfo(const std::vector<ThinkingInfo>& infos);
+  void OnInfo(const std::vector<ThinkingInfo>& infos) const;
 };
 
 }  // namespace lczero

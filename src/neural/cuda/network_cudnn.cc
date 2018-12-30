@@ -541,7 +541,7 @@ class CudnnNetwork : public Network {
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
   void processConvBlock(LegacyWeights::ConvBlock& block, bool foldBNLayer,
-                        int filterSize) {
+                        int filterSize) const {
     const float epsilon = 1e-5f;
 
     // Compute reciprocal of std-dev from the variances (so that it can be

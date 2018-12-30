@@ -146,7 +146,7 @@ class CheckComputation : public NetworkComputation {
                                        params_.absolute_tolerance);
   }
 
-  void DisplayHistogram() {
+  void DisplayHistogram() const {
     Histogram histogram(-15, 1, 5);
 
     int size = GetBatchSize();
@@ -180,7 +180,7 @@ class CheckComputation : public NetworkComputation {
       }
     }
 
-    void Dump(const char* name) {
+    void Dump(const char* name) const {
       CERR << std::scientific << std::setprecision(1) << name
            << ": absolute: " << max_absolute_error
            << ", relative: " << max_relative_error << ".";
@@ -196,7 +196,7 @@ class CheckComputation : public NetworkComputation {
     }
   };
 
-  void DisplayError() {
+  void DisplayError() const {
     MaximumError value_error;
     int size = GetBatchSize();
     for (int i = 0; i < size; i++) {

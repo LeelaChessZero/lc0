@@ -1022,7 +1022,7 @@ void SearchWorker::ExtendNode(Node* node) {
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
+bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) const {
   auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
@@ -1154,7 +1154,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() const { computation_->ComputeBlocking(); }
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1168,7 +1168,7 @@ void SearchWorker::FetchMinibatchResults() {
 }
 
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
-                                         int idx_in_computation) {
+                                         int idx_in_computation) const {
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {
     // Terminal nodes don't involve the neural NetworkComputation, nor do
@@ -1217,7 +1217,7 @@ void SearchWorker::DoBackupUpdate() {
 }
 
 void SearchWorker::DoBackupUpdateSingleNode(
-    const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
+    const NodeToProcess& node_to_process)const REQUIRES(search_->nodes_mutex_) {
   Node* node = node_to_process.node;
   if (node_to_process.IsCollision()) {
     // If it was a collision, just undo counters.

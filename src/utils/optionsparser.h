@@ -116,9 +116,9 @@ class OptionsParser {
 
   // Set the UCI option from string value.
   void SetUciOption(const std::string& name, const std::string& value,
-                    const std::string& context = "");
+                    const std::string& context = "") const;
   // Hide this option from help and UCI.
-  void HideOption(const OptionId& id);
+  void HideOption(const OptionId& id) const;
   // Processes all flags from the command line and an optional
   // configuration file. Returns false if there is an invalid flag.
   bool ProcessAllFlags();
@@ -126,13 +126,13 @@ class OptionsParser {
   bool ProcessFlags(const std::vector<std::string>& args);
 
   // Get the options dict for given context.
-  const OptionsDict& GetOptionsDict(const std::string& context = {});
+  const OptionsDict& GetOptionsDict(const std::string& context = {}) const;
   // Gets the dictionary for given context which caller can modify.
-  OptionsDict* GetMutableOptions(const std::string& context = {});
+  OptionsDict* GetMutableOptions(const std::string& context = {}) const;
   // Gets the mutable list of default options.
   OptionsDict* GetMutableDefaultsOptions() { return &defaults_; }
   // Adds a subdictionary for a given context.
-  void AddContext(const std::string&);
+  void AddContext(const std::string&) const;
 
  private:
   // Prints help to std::cerr.
@@ -230,7 +230,7 @@ class BoolOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
-  void ValidateBoolString(const std::string& val);
+  void ValidateBoolString(const std::string& val) const;
 };
 
 class ChoiceOption : public OptionsParser::Option {

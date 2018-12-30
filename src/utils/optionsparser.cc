@@ -59,7 +59,7 @@ std::vector<std::string> OptionsParser::ListOptionsUci() const {
 
 void OptionsParser::SetUciOption(const std::string& name,
                                  const std::string& value,
-                                 const std::string& context) {
+                                 const std::string& context) const {
   auto option = FindOptionByUciName(name);
   if (option) {
     option->SetValue(value, GetMutableOptions(context));
@@ -68,7 +68,7 @@ void OptionsParser::SetUciOption(const std::string& name,
   throw Exception("Unknown option: " + name);
 }
 
-void OptionsParser::HideOption(const OptionId& id) {
+void OptionsParser::HideOption(const OptionId& id) const {
   auto option = FindOptionById(id.GetId());
   if (option) option->hidden_ = true;
 }
@@ -98,12 +98,12 @@ OptionsParser::Option* OptionsParser::FindOptionById(
   return nullptr;
 }
 
-OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) {
+OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) const {
   if (context == "") return &values_;
   return values_.GetMutableSubdict(context);
 }
 
-const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
+const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) const {
   if (context == "") return values_;
   return values_.GetSubdict(context);
 }
@@ -184,7 +184,7 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
   return true;
 }
 
-void OptionsParser::AddContext(const std::string& context) {
+void OptionsParser::AddContext(const std::string& context) const {
   values_.AddSubdict(context);
 }
 
@@ -495,7 +495,7 @@ void BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetId(), val);
 }
 
-void BoolOption::ValidateBoolString(const std::string& val) {
+void BoolOption::ValidateBoolString(const std::string& val) const {
   if (val != "true" && val != "false") {
     std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be either "

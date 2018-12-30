@@ -102,7 +102,7 @@ void Benchmark::OnBestMove(const BestMoveInfo& move) {
   std::cout << "bestmove " << move.bestmove.as_string() << std::endl;
 }
 
-void Benchmark::OnInfo(const std::vector<ThinkingInfo>& infos) {
+void Benchmark::OnInfo(const std::vector<ThinkingInfo>& infos) const {
   std::string line = "Benchmark time " + std::to_string(infos[0].time);
   line += "ms, " + std::to_string(infos[0].nodes) + " nodes, ";
   line += std::to_string(infos[0].nps) + " nps";

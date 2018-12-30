@@ -76,7 +76,7 @@ class EngineController {
   void Go(const GoParams& params);
   void PonderHit();
   // Must not block.
-  void Stop();
+  void Stop() const;
 
   SearchLimits PopulateSearchLimits(int ply, bool is_black,
       const GoParams& params,

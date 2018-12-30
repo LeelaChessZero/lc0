@@ -227,7 +227,7 @@ class SearchWorker {
   void MaybePrefetchIntoCache();
 
   // 4. Run NN computation.
-  void RunNNComputation();
+  void RunNNComputation() const;
 
   // 5. Retrieve NN computations (and terminal values) into nodes.
   void FetchMinibatchResults();
@@ -278,11 +278,11 @@ class SearchWorker {
 
   NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node);
-  bool AddNodeToComputation(Node* node, bool add_if_cached);
+  bool AddNodeToComputation(Node* node, bool add_if_cached) const;
   int PrefetchIntoCache(Node* node, int budget);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
-                             int idx_in_computation);
-  void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
+                             int idx_in_computation) const;
+  void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process) const;
 
   Search* const search_;
   // List of nodes to process.

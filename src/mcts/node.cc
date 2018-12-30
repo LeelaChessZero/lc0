@@ -376,7 +376,7 @@ void NodeTree::MakeMove(Move move) {
   history_.Append(move);
 }
 
-void NodeTree::TrimTreeAtHead() {
+void NodeTree::TrimTreeAtHead() const {
   auto tmp = std::move(current_head_->sibling_);
   // Send dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
