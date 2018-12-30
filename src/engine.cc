@@ -58,19 +58,17 @@ const OptionId kMoveOverheadId{
     "Amount of time, in milliseconds, that the engine subtracts from it's "
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
-const OptionId kTimePeakPlyId{"time-peak-halfmove", "TimePeakHalfmove",
-                              "For which halfmove the time budgeting algorithm "
-                              "should allocate the maximum amount of time."};
-const OptionId kTimeLeftWidthId{
-    "time-left-width", "TimeLeftWidth",
-    "\"Width\" of time budget graph to the left of the peak value. For small "
-    "values, moves far from the peak will get little time; for larger values, "
-    "they will get almost the same time as the peak move."};
-const OptionId kTimeRightWidthId{
-    "time-right-width", "TimeRightWidth",
-    "\"Width\" of time budget graph to the right of the peak value. For small "
-    "values, moves far from the peak will get little time; for larger values, "
-    "they will get almost the same time as the peak move."};
+const OptionId kTimeMidpointPlyId{
+    "time-midpoint-halfmove", "TimeMidpointPly",
+    "The halfmove where the time budgeting algorithm guesses half of all "
+    "games to be completed by. Half of the time allocated for the first move "
+    "is allocated at approximately this halfmove."};
+const OptionId kTimeSteepnessId{
+    "time-steepness", "TimeSteepness",
+    "\"Steepness\" of the function the time budgeting algorithm uses to "
+    "consider when games are completed. Lower values leave more time for "
+    "the endgame, higher values use more time for each move before the "
+    "midpoint."};
 const OptionId kSyzygyTablebaseId{
     "syzygy-paths", "SyzygyPath",
     "List of Syzygy tablebase directories, list entries separated by system "
@@ -99,13 +97,15 @@ const size_t kAvgCacheItemSize =
     NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
     sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
 
-float ComputeMoveWeight(int ply, float peak, float left_width,
-                        float right_width) {
-  // Inflection points of the function are at ply = peak +/- width.
-  // At these points the function is at 2/3 of its max value.
-  const float width = ply > peak ? right_width : left_width;
-  constexpr float width_scaler = 1.518651485f;  // 2 / log(2 + sqrt(3))
-  return std::pow(std::cosh((ply - peak) / width / width_scaler), -2.0f);
+float ComputeSurvivalAtPly(int ply, float midpoint, float steepness) {
+  // This function is the survival function of the log-logistic distribution, it
+  // was chosen as it fit empirical analysis finding P(game ended at ply). We
+  // determine how many moves to plan time management for by summing over this
+  // function from ply to infinity (or some other reasonably large value).
+  // midpoint: The ply where the function is half its maximum value.
+  // steepness: How quickly the function drops off from its maximum value,
+  // around the midpoint.
+  return 1 / (1 + std::pow(ply / midpoint, steepness));
 }
 
 }  // namespace
@@ -125,20 +125,18 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-  options->Add<FloatOption>(kTimePeakPlyId, -1000.0f, 1000.0f) = 26.2f;
-  options->Add<FloatOption>(kTimeLeftWidthId, 0.0f, 1000.0f) = 82.0f;
-  options->Add<FloatOption>(kTimeRightWidthId, 0.0f, 1000.0f) = 74.0f;
+  options->Add<FloatOption>(kTimeMidpointPlyId, 1.0f, 200.0f) = 100.0f;
+  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 9.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
-  options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 0.6f;
+  options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
   // Hide time curve options.
-  options->HideOption(kTimePeakPlyId);
-  options->HideOption(kTimeLeftWidthId);
-  options->HideOption(kTimeRightWidthId);
+  options->HideOption(kTimeMidpointPlyId);
+  options->HideOption(kTimeSteepnessId);
 
   NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
@@ -180,19 +178,39 @@ SearchLimits EngineController::PopulateSearchLimits(
   const optional<int64_t>& inc = is_black ? params.binc : params.winc;
   int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
-  int movestogo = params.movestogo.value_or(50);
-  // Fix non-standard uci command.
-  if (movestogo == 0) movestogo = 1;
-
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  float time_curve_peak = options_.Get<float>(kTimePeakPlyId.GetId());
-  float time_curve_left_width = options_.Get<float>(kTimeLeftWidthId.GetId());
-  float time_curve_right_width = options_.Get<float>(kTimeRightWidthId.GetId());
+  float time_curve_midpoint = options_.Get<float>(kTimeMidpointPlyId.GetId());
+  float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
 
-  // Total time till control including increments.
+  // Sum over the survival function to guess how many moves ahead are worth
+  // planning time for. All values must be scaled relative to the first value,
+  // so compute the first ply separately.
+  float this_move_survival =
+      ComputeSurvivalAtPly(ply, time_curve_midpoint, time_curve_steepness);
+
+  // Sum over a large range of plies to approximate summing to infinity.
+  float movestogo = 0.0f;
+  for (int i = ply + 2; i < ply + 300; i += 2) {
+    movestogo +=
+        ComputeSurvivalAtPly(i, time_curve_midpoint, time_curve_steepness);
+  }
+
+  // Normalize to account for the game being at the current ply.
+  movestogo = movestogo / this_move_survival + 1;
+
+  // If the number of moves remaining until the time control are less than
+  // the estimated number of moves left in the game, then use the number of
+  // moves until the time control instead.
+  if (params.movestogo &&
+      *params.movestogo > 0 &&  // Ignore non-standard uci command.
+      *params.movestogo < movestogo) {
+    movestogo = *params.movestogo;
+  }
+
+  // Total time, including increments, until time control.
   auto total_moves_time =
-      std::max(int64_t{0}, *time + increment * (movestogo - 1) - move_overhead);
+      std::max(0.0f, *time + increment * (movestogo - 1) - move_overhead);
 
   // If there is time spared from previous searches, the `time_to_squander` part
   // of it will be used immediately, remove that from planning.
@@ -204,20 +222,12 @@ SearchLimits EngineController::PopulateSearchLimits(
     total_moves_time -= time_to_squander;
   }
 
-  constexpr int kSmartPruningToleranceMs = 200;
-  float this_move_weight = ComputeMoveWeight(
-      ply, time_curve_peak, time_curve_left_width, time_curve_right_width);
-  float other_move_weights = 0.0f;
-  for (int i = 1; i < movestogo; ++i)
-    other_move_weights +=
-        ComputeMoveWeight(ply + 2 * i, time_curve_peak, time_curve_left_width,
-                          time_curve_right_width);
-  // Compute the move time without slowmover.
-  float this_move_time = total_moves_time * this_move_weight /
-                         (this_move_weight + other_move_weights);
+  // Evenly split total time between all moves.
+  float this_move_time = total_moves_time / movestogo;
 
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
+  constexpr int kSmartPruningToleranceMs = 200;
   if (slowmover < 1.0 ||
       this_move_time * slowmover > kSmartPruningToleranceMs) {
     this_move_time *= slowmover;
