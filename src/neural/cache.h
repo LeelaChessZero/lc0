@@ -33,7 +33,7 @@
 namespace lczero {
 
 struct CachedNNRequest {
-  CachedNNRequest(size_t size) : p(size) {}
+  CachedNNRequest(uint8_t size) : p(size) {}
   typedef std::pair<uint16_t, float> IdxAndProb;
   float q;
   // TODO(mooskagh) Don't really need index if using perfect hash.

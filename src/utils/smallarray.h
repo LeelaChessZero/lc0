@@ -36,15 +36,13 @@ template <typename T>
 class SmallArray {
  public:
   SmallArray() = delete;
-  SmallArray(size_t size) : size_(size), data_(std::make_unique<T[]>(size)) {}
-  SmallArray(SmallArray&&);  // TODO implement when needed
-  T& operator[](int idx) { return data_[idx]; }
-  const T& operator[](int idx) const { return data_[idx]; }
-  int size() const { return size_; }
+  SmallArray(uint8_t size) : data_(size) { }
+  T& operator[](uint8_t idx) { return data_[idx]; }
+  const T& operator[](uint8_t idx) const { return data_[idx]; }
+  int size() const { return data_.size(); }
 
  private:
-  unsigned char size_;
-  std::unique_ptr<T[]> data_;
+  std::vector<T> data_;
 };
 
 }  // namespace lczero
