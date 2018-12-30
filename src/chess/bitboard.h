@@ -253,36 +253,36 @@ class MagicBitBoards {
     uint8_t shift_bits_;
   };
 
-  // Returns the rook attack bitboard for the given rook board square and the
+  // Returns the rook attacks bitboard for the given rook board square and the
   // given occupied piece bitboard.
   static BitBoard GetRookAttacks(const BoardSquare rook_square,
                                  const BitBoard pieces) {
     // Calculate magic index.
-    uint8_t square = rook_square.as_int();
+    const uint8_t square = rook_square.as_int();
 
     uint64_t index = pieces.as_int() & rook_magic_params_[square].mask_;
     index *= rook_magic_params_[square].magic_number_;
     index >>= rook_magic_params_[square].shift_bits_;
+    index += rook_magic_params_[square].table_offset_;
 
-    // Return attack bitboard.
-    return rook_attacks_table_[rook_magic_params_[square].table_offset_ +
-                               index];
+    // Return attacks bitboard.
+    return rook_attacks_table_[index];
   }
 
-  // Returns the bishop attack bitboard for the given bishop board square and
+  // Returns the bishop attacks bitboard for the given bishop board square and
   // the given occupied piece bitboard.
   static BitBoard GetBishopAttacks(const BoardSquare bishop_square,
                                    const BitBoard pieces) {
     // Calculate magic index.
-    uint8_t square = bishop_square.as_int();
+    const uint8_t square = bishop_square.as_int();
 
     uint64_t index = pieces.as_int() & bishop_magic_params_[square].mask_;
     index *= bishop_magic_params_[square].magic_number_;
     index >>= bishop_magic_params_[square].shift_bits_;
+    index += bishop_magic_params_[square].table_offset_;
 
-    // Return attack bitboard.
-    return bishop_attacks_table_[bishop_magic_params_[square].table_offset_ +
-                                 index];
+    // Return attacks bitboard.
+    return bishop_attacks_table_[index];
   }
 
  private:
@@ -299,7 +299,7 @@ class MagicBitBoards {
   static MagicParams rook_magic_params_[64];
   static MagicParams bishop_magic_params_[64];
 
-  // Attack bitboards lookup tables.
+  // Attacks bitboards lookup tables.
   static BitBoard rook_attacks_table_[102400];
   static BitBoard bishop_attacks_table_[5248];
 };

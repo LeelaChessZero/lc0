@@ -402,7 +402,7 @@ MagicBitBoards::MagicBitBoards() {
     const BoardSquare b_sq(square);
 
     // Calculate relevant occupancy masks by subtracting the board edges from
-    // the total attack bitboards.
+    // the total attacks bitboards.
     rook_magic_params_[square].mask_ =
         (kRookAttacks[square] - BoardSquare(b_sq.row(), 0) -
          BoardSquare(b_sq.row(), 7) - BoardSquare(0, b_sq.col()) -
@@ -412,7 +412,7 @@ MagicBitBoards::MagicBitBoards() {
         (kBishopAttacks[square] - BitBoard(0xFF818181818181FFULL)).as_int();
   }
 
-  // Build attack tables.
+  // Build attacks tables.
   BuildAttacksTable(kRookMagicNumbers, rook_magic_params_, rook_attacks_table_,
                     kRookDirections);
   BuildAttacksTable(kBishopMagicNumbers, bishop_magic_params_,
@@ -433,25 +433,27 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
     // Cache relevant occupancy board squares.
     std::vector<BoardSquare> occupancy_squares;
 
-    for (auto temp_sq : BitBoard(magic_params[square].mask_)) {
-      occupancy_squares.emplace_back(temp_sq);
+    for (auto occ_sq : BitBoard(magic_params[square].mask_)) {
+      occupancy_squares.emplace_back(occ_sq);
     }
 
     // Set magic number.
     magic_params[square].magic_number_ = magic_numbers[square].as_int();
 
-    // Set number of shifted bits.
+    // Set number of shifted bits. The magic numbers have been chosen such that
+    // the number of relevant occupancy bits suffice to index the attacks table.
     magic_params[square].shift_bits_ = 64 - occupancy_squares.size();
 
     // Set lookup table offset.
     magic_params[square].table_offset_ = table_offset;
 
-    // Clear attack table.
+    // Clear attacks table (used for sanity check later on).
     for (int i = 0; i < (1 << occupancy_squares.size()); i++) {
       attacks_table[table_offset + i] = 0;
     }
 
-    // Build square attack table for every possible masked occupancy bitboard.
+    // Build square attacks table for every possible relevant occupancy
+    // bitboard.
     for (int i = 0; i < (1 << occupancy_squares.size()); i++) {
       BitBoard occupancy(0);
 
@@ -459,8 +461,8 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
         occupancy.set_if(occupancy_squares[bit], (1 << bit) & i);
       }
 
-      // Calculate attack bitboard corresponding to this occupancy bitboard.
-      BitBoard attack(0);
+      // Calculate attacks bitboard corresponding to this occupancy bitboard.
+      BitBoard attacks(0);
 
       for (int j = 0; j < 4; j++) {
         auto direction = directions[j];
@@ -471,7 +473,7 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
           dst_col += direction.second;
           if (!BoardSquare::IsValid(dst_row, dst_col)) break;
           const BoardSquare destination(dst_row, dst_col);
-          attack.set(destination);
+          attacks.set(destination);
           if (occupancy.get(destination)) break;
         }
       }
@@ -481,14 +483,17 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
       index *= magic_numbers[square].as_int();
       index >>= magic_params[square].shift_bits_;
 
-      // Sanity check.
+      // Sanity check. The magic numbers have been chosen such that
+      // the number of relevant occupancy bits suffice to index the attacks
+      // table. If the table already contains an attacks bitboard, possible
+      // collisions should be constructive.
       if (attacks_table[table_offset + index] != 0 &&
-          attacks_table[table_offset + index] != attack) {
+          attacks_table[table_offset + index] != attacks) {
         throw Exception("Invalid magic number!");
       }
 
       // Update table.
-      attacks_table[table_offset + index] = attack;
+      attacks_table[table_offset + index] = attacks;
     }
 
     // Update table offset.
