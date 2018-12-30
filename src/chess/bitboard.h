@@ -241,15 +241,16 @@ class MagicBitBoards {
   // not be called again!
   MagicBitBoards();
 
-  // Structure holding all relevant magic parameters per square (except
-  // magic number).
+  // Structure holding all relevant magic parameters per square.
   struct MagicParams {
+    // Relevant occupancy mask.
+    uint64_t mask_;
+    // Magic number.
+    uint64_t magic_number_;
     // Offset into lookup table.
     uint32_t table_offset_;
     // Number of bits to shift.
     uint8_t shift_bits_;
-    // Relevant occupancy mask.
-    uint64_t mask_;
   };
 
   // Returns the rook attack bitboard for the given rook board square and the
@@ -260,7 +261,7 @@ class MagicBitBoards {
     uint8_t square = rook_square.as_int();
 
     uint64_t index = pieces.as_int() & rook_magic_params_[square].mask_;
-    index *= kRookMagicNumbers[square].as_int();
+    index *= rook_magic_params_[square].magic_number_;
     index >>= rook_magic_params_[square].shift_bits_;
 
     // Return attack bitboard.
@@ -275,8 +276,8 @@ class MagicBitBoards {
     // Calculate magic index.
     uint8_t square = bishop_square.as_int();
 
-    uint64_t index = (pieces * bishop_magic_params_[square].mask_).as_int();
-    index *= kBishopMagicNumbers[square].as_int();
+    uint64_t index = pieces.as_int() & bishop_magic_params_[square].mask_;
+    index *= bishop_magic_params_[square].magic_number_;
     index >>= bishop_magic_params_[square].shift_bits_;
 
     // Return attack bitboard.

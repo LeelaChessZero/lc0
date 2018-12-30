@@ -437,6 +437,9 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
       occupancy_squares.emplace_back(temp_sq);
     }
 
+    // Set magic number.
+    magic_params[square].magic_number_ = magic_numbers[square].as_int();
+
     // Set number of shifted bits.
     magic_params[square].shift_bits_ = 64 - occupancy_squares.size();
 
