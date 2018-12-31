@@ -33,6 +33,23 @@
 
 namespace lczero {
 
+// Represents king attack info used during legal move detection.
+class KingAttackInfo {
+ public:
+  bool in_check() const { return attacking_squares_and_lines_.as_int(); }
+  bool in_double_check() const { return double_check_; }
+  bool is_pinned(const BoardSquare square) const {
+    return pinned_pieces_.get(square);
+  }
+  bool is_on_attack_line(const BoardSquare square) const {
+    return attacking_squares_and_lines_.get(square);
+  }
+
+  bool double_check_ = 0;
+  BitBoard pinned_pieces_ = {0};
+  BitBoard attacking_squares_and_lines_ = {0};
+};
+
 // Represents a board position.
 // Unlike most chess engines, the board is mirrored for black.
 class ChessBoard {
@@ -55,22 +72,6 @@ class ChessBoard {
   // middle of the board. (what was on rank 1 appears on rank 8, what was
   // on file b remains on file b).
   void Mirror();
-
-  class KingAttackInfo {
-   public:
-    bool in_check() const { return attacking_squares_and_lines_.as_int(); }
-    bool in_double_check() const { return double_check_; }
-    bool is_pinned_piece(const BoardSquare square) const {
-      return pinned_pieces_.get(square);
-    }
-    bool is_attacked_square(const BoardSquare square) const {
-      return attacking_squares_and_lines_.get(square);
-    }
-
-    bool double_check_ = 0;
-    BitBoard pinned_pieces_ = {0};
-    BitBoard attacking_squares_and_lines_ = {0};
-  };
 
   // Generates list of possible moves for "ours" (white), but may leave king
   // under check.

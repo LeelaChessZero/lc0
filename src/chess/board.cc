@@ -531,7 +531,7 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
 }
 
 void ChessBoard::GenerateKingAttackInfo(
-    ChessBoard::KingAttackInfo& king_attack_info) const {
+    KingAttackInfo& king_attack_info) const {
   unsigned num_attackers = 0;
 
   const int row = our_king_.row();
@@ -675,7 +675,7 @@ bool ChessBoard::IsLegalMove(Move move,
     std::cout << "King is in check." << std::endl;
     std::cout << "is double check " << king_attack_info.in_double_check()
               << std::endl;
-    std::cout << "pinned piece: " << king_attack_info.is_pinned_piece(from)
+    std::cout << "pinned piece: " << king_attack_info.is_pinned(from)
               << std::endl;
     std::cout << "Position:" << std::endl << DebugString() << std::endl;
     std::cout << "Move:" << move.as_string() << std::endl;
@@ -688,65 +688,64 @@ bool ChessBoard::IsLegalMove(Move move,
               << std::endl;
 #endif
 
-    // King movement.
+    // King move.
     if (from == our_king_) {
-      if (king_attack_info.is_attacked_square(to) && !their_pieces_.get(to))
-        return false;  // fast fall-through
-
-      // Slower fallback check.
+      // Just apply and check that we are not under check.
       ChessBoard board(*this);
       board.ApplyMove(move);
       return !board.IsUnderCheck();
     }
 
-    if (!king_attack_info.in_double_check()) {
-      // We are not in double check.
-      if (!king_attack_info.is_pinned_piece(from)) {
-        // The piece is free to move. Check if the attacker is captured or
-        // interposed if the piece moves to its destination square.
-        return king_attack_info.is_attacked_square(to);
-      } else {
-        if (!king_attack_info.is_attacked_square(to)) return false;
-
-        // Pinned piece is handled further.
-      }
-    } else {
+    if (king_attack_info.in_double_check()) {
       // At this stage, no move can resolve the double checks anymore.
       return false;
+    } else {
+      // We are not in double check.
+      if (king_attack_info.is_pinned(from)) {
+        // Pinned piece move.
+        // If the pinned piece moves to a square that is not on an attack line,
+        // it's certainly illegal.
+        if (!king_attack_info.is_on_attack_line(to)) return false;
+
+        // The other case is handled further.
+      } else {
+        // The piece is free to move. Check if the attacker is captured or
+        // interposed if the piece moves to its destination square.
+        return king_attack_info.is_on_attack_line(to);
+      }
     }
   }
 
-  // If it's king's move, check that destination
-  // is not under attack.
+  // Castlings were checked earlier.
+  // Moreover, no pseudolegal king moves to an attacked square are generated.
+  // If it's king's move at this moment, its certainly legal.
   if (from == our_king_) {
-    // Castlings were checked earlier.
-    if (std::abs(static_cast<int>(from.col()) - static_cast<int>(to.col())) > 1)
-      return true;
-    return !IsUnderAttack(to);
+    return true;
   }
 
   // Now check that piece was pinned. And if it was, check that after the move
   // it is still on line of attack.
-  if (!king_attack_info.is_pinned_piece(from)) return true;
+  if (!king_attack_info.is_pinned(from)) return true;  // Fast fall-through.
 
-  // If the piece is pinned, it has to stay on the same line w.r.t. the king.
+  // The piece is pinned. Now check that it stays on the same line w.r.t. the
+  // king.
   int dx_from = from.col() - our_king_.col();
   int dy_from = from.row() - our_king_.row();
   int dx_to = to.col() - our_king_.col();
   int dy_to = to.row() - our_king_.row();
 
-  bool extra_check = true;
+  bool extra_pinned_piece_check = true;
   if (king_attack_info.in_check()) {
-    // We are in check (but not double check as this has been handled earlier.
+    // We are in check (but not double check as this has been handled earlier).
     // If we capture an opponent's piece and stay on the same line, it was
     // certainly the only attacking piece.
-    extra_check = their_pieces_.get(to);
+    extra_pinned_piece_check = their_pieces_.get(to);
   }
 
   if (dx_from == 0 || dx_to == 0) {
-    return (dx_from == dx_to) && extra_check;
+    return (dx_from == dx_to) && extra_pinned_piece_check;
   } else {
-    return (dx_from * dy_to == dx_to * dy_from) && extra_check;
+    return (dx_from * dy_to == dx_to * dy_from) && extra_pinned_piece_check;
   }
 }
 
