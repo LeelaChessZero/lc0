@@ -160,6 +160,10 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SearchParams::kDrawScoreId{
+    "draw-score", "Draw-Score",
+    "Score to assign for draws in range [-1, 1], where -1 is loss and +1 is win."
+    "Used for choosing the best move."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -193,6 +197,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<FloatOption>(kDrawScoreId, -1.0f, 1.0f) = 0.0f;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -213,7 +218,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
+      kDrawScore(options.Get<float>(kDrawScoreId.GetId())) {
 }
 
 }  // namespace lczero

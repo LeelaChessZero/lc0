@@ -154,6 +154,7 @@ class Node {
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetQ() const { return q_; }
+  float GetD() const { return d_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -174,7 +175,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, int multivisit);
+  void FinalizeScoreUpdate(float v, float d, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -245,6 +246,7 @@ class Node {
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
   float q_ = 0.0f;
+  float d_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
@@ -306,8 +308,15 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
+  float GetQD(float default_q, float drawScore) const {
+    float d = drawScore * GetD();
+    return (node_ && node_->GetN() > 0) ? node_->GetQ() + d : default_q;
+  }
   float GetQ(float default_q) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
+  }
+  float GetD() const {
+    return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }

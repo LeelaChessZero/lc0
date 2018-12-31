@@ -56,11 +56,19 @@ class BlasComputation : public NetworkComputation {
   float GetQVal(int sample) const override {
     if (wdl_) {
       auto w = q_values_[3 * sample + 0];
-      // auto d = q_values_[3 * sample + 1];
       auto l = q_values_[3 * sample + 2];
       return w - l;
     } else {
       return q_values_[sample];
+    }
+  }
+
+  float GetDVal(int sample) const override {
+    if (wdl_) {
+      auto d = q_values_[3 * sample + 1];
+      return d;
+    } else {
+      return 0.0f;
     }
   }
 

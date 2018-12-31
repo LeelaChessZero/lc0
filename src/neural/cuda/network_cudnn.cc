@@ -126,13 +126,22 @@ class CudnnNetworkComputation : public NetworkComputation {
   float GetQVal(int sample) const override {
     if (wdl_) {
       auto w = inputs_outputs_->op_value_mem_[3 * sample + 0];
-      // auto d = inputs_outputs_->op_value_mem_[3 * sample + 1];
       auto l = inputs_outputs_->op_value_mem_[3 * sample + 2];
       return w - l;
     } else {
       return inputs_outputs_->op_value_mem_[sample];
     }
   }
+
+  float GetDVal(int sample) const override {
+    if (wdl_) {
+      auto d = inputs_outputs_->op_value_mem_[3 * sample + 1];
+      return d;
+    } else {
+      return 0.0f;
+    }
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }

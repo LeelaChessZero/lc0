@@ -220,10 +220,13 @@ void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
     q_ = 0.0f;
+    d_ = 1.0f;
   } else if (result == GameResult::WHITE_WON) {
     q_ = 1.0f;
+    d_ = 0.0f;
   } else if (result == GameResult::BLACK_WON) {
     q_ = -1.0f;
+    d_ = 0.0f;
   }
 }
 
@@ -235,9 +238,11 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 
-void Node::FinalizeScoreUpdate(float v, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   // Recompute Q.
   q_ += multivisit * (v - q_) / (n_ + multivisit);
+  d_ += multivisit * (d - d_) / (n_ + multivisit);
+
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
