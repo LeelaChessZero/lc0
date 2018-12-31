@@ -58,11 +58,11 @@ const OptionId kMoveOverheadId{
     "Amount of time, in milliseconds, that the engine subtracts from it's "
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
-const OptionId kTimeMidpointPlyId{
-    "time-midpoint-halfmove", "TimeMidpointPly",
-    "The halfmove where the time budgeting algorithm guesses half of all "
+const OptionId kTimeMidpointMoveId{
+    "time-midpoint-move", "TimeMidpointMove",
+    "The move where the time budgeting algorithm guesses half of all "
     "games to be completed by. Half of the time allocated for the first move "
-    "is allocated at approximately this halfmove."};
+    "is allocated at approximately this move."};
 const OptionId kTimeSteepnessId{
     "time-steepness", "TimeSteepness",
     "\"Steepness\" of the function the time budgeting algorithm uses to "
@@ -109,10 +109,10 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
   // midpoint: The median length of games.
   // steepness: How quickly the function drops off from its maximum value,
   // around the midpoint.
-  return (midpoint * std::pow(1 + 2 * std::pow(ply / midpoint, steepness),
-                              1 / steepness) -
-          ply) /
-         2;  // Divide plies by 2 to get moves.
+  float move = ply / 2.0f;
+  return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
+                             1 / steepness) -
+         move;
 }
 
 }  // namespace
@@ -132,7 +132,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-  options->Add<FloatOption>(kTimeMidpointPlyId, 1.0f, 200.0f) = 103.0f;
+  options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
   options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
@@ -142,7 +142,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
   // Hide time curve options.
-  options->HideOption(kTimeMidpointPlyId);
+  options->HideOption(kTimeMidpointMoveId);
   options->HideOption(kTimeSteepnessId);
 
   NetworkFactory::PopulateOptions(options);
@@ -187,7 +187,7 @@ SearchLimits EngineController::PopulateSearchLimits(
 
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  float time_curve_midpoint = options_.Get<float>(kTimeMidpointPlyId.GetId());
+  float time_curve_midpoint = options_.Get<float>(kTimeMidpointMoveId.GetId());
   float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
 
   float movestogo =
