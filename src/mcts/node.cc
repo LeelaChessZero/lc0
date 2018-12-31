@@ -73,6 +73,7 @@ class NodeGarbageCollector {
     // Lock the mutex and remove all the pointers
     Mutex::Lock lock(gc_mutex_);
     while (!stop_.load() && !subtrees_to_gc_.empty()) {
+      // Node will be released in destructor when mutex is not locked.
       subtrees_to_gc_.pop_back();
     }
   }
