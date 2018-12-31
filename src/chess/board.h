@@ -56,6 +56,22 @@ class ChessBoard {
   // on file b remains on file b).
   void Mirror();
 
+  class KingAttackInfo {
+   public:
+    bool in_check() const { return attacking_squares_and_lines_.as_int(); }
+    bool in_double_check() const { return double_check_; }
+    bool is_pinned_piece(const BoardSquare square) const {
+      return pinned_pieces_.get(square);
+    }
+    bool is_attacked_square(const BoardSquare square) const {
+      return attacking_squares_and_lines_.get(square);
+    }
+
+    bool double_check_ = 0;
+    BitBoard pinned_pieces_ = {0};
+    BitBoard attacking_squares_and_lines_ = {0};
+  };
+
   // Generates list of possible moves for "ours" (white), but may leave king
   // under check.
   MoveList GeneratePseudolegalMoves() const;
@@ -64,6 +80,8 @@ class ChessBoard {
   bool ApplyMove(Move move);
   // Checks if the square is under attack from "theirs" (black).
   bool IsUnderAttack(BoardSquare square) const;
+  // Generates the king attack info used for legal move detection.
+  void GenerateKingAttackInfo(KingAttackInfo& king_attack_info) const;
   // Checks if "our" (white) king is under check.
   bool IsUnderCheck() const { return IsUnderAttack(our_king_); }
 
@@ -72,7 +90,7 @@ class ChessBoard {
   // Generates legal moves.
   MoveList GenerateLegalMoves() const;
   // Check whether pseudolegal move is legal.
-  bool IsLegalMove(Move move, bool was_under_check) const;
+  bool IsLegalMove(Move move, const KingAttackInfo& king_attack_info) const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
