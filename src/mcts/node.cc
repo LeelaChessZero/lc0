@@ -70,17 +70,10 @@ class NodeGarbageCollector {
 
  private:
   void GarbageCollect() {
-    while (!stop_.load()) {
-      // Node will be released in destructor when mutex is not locked.
-      std::unique_ptr<Node> node_to_gc;
-      {
-        // Lock the mutex and move last subtree from subtrees_to_gc_ into
-        // node_to_gc.
-        Mutex::Lock lock(gc_mutex_);
-        if (subtrees_to_gc_.empty()) return;
-        node_to_gc = std::move(subtrees_to_gc_.back());
-        subtrees_to_gc_.pop_back();
-      }
+    // Lock the mutex and remove all the pointers
+    Mutex::Lock lock(gc_mutex_);
+    while (!stop_.load() && !subtrees_to_gc_.empty()) {
+      subtrees_to_gc_.pop_back();
     }
   }
 
