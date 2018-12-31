@@ -99,6 +99,7 @@ class SearchParams {
   float GetMinimumKLDGainPerNode() const {
     return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
   }
+  float GetDrawScore() const { return kDrawScore; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -134,6 +135,7 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
+  static const OptionId kDrawScoreId;
 
  private:
   const OptionsDict& options_;
@@ -162,6 +164,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const float kDrawScore;
 };
 
 }  // namespace lczero
