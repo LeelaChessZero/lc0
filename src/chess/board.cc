@@ -536,15 +536,6 @@ void ChessBoard::GenerateKingAttackInfo(
 
   const int row = our_king_.row();
   const int col = our_king_.col();
-  // Check king.
-  {
-    const int krow = their_king_.row();
-    const int kcol = their_king_.col();
-    if (std::abs(krow - row) <= 1 && std::abs(kcol - col) <= 1) {
-      king_attack_info.attacking_squares_and_lines_.set(their_king_);
-      num_attackers++;
-    }
-  }
   // Check rooks (and queens).
   if (kRookAttacks[our_king_.as_int()].intersects(their_pieces_ * rooks_)) {
     for (const auto& direction : kRookDirections) {
@@ -563,7 +554,7 @@ void ChessBoard::GenerateKingAttackInfo(
             // No pieces pinned.
             break;
           } else {
-            // This is a possible pinned piece;
+            // This is a possible pinned piece.
             possible_pinned_piece_found = true;
             possible_pinned_piece = destination;
           }
@@ -578,8 +569,8 @@ void ChessBoard::GenerateKingAttackInfo(
               king_attack_info.pinned_pieces_.set(possible_pinned_piece);
             } else {
               // Update attacking lines.
-              king_attack_info.attacking_squares_and_lines_ =
-                  king_attack_info.attacking_squares_and_lines_ + attack_line;
+              king_attack_info.attacking_lines_ =
+                  king_attack_info.attacking_lines_ + attack_line;
               num_attackers++;
             }
           }
@@ -606,7 +597,7 @@ void ChessBoard::GenerateKingAttackInfo(
             // No pieces pinned.
             break;
           } else {
-            // This is a possible pinned piece;
+            // This is a possible pinned piece.
             possible_pinned_piece_found = true;
             possible_pinned_piece = destination;
           }
@@ -621,8 +612,8 @@ void ChessBoard::GenerateKingAttackInfo(
               king_attack_info.pinned_pieces_.set(possible_pinned_piece);
             } else {
               // Update attacking lines.
-              king_attack_info.attacking_squares_and_lines_ =
-                  king_attack_info.attacking_squares_and_lines_ + attack_line;
+              king_attack_info.attacking_lines_ =
+                  king_attack_info.attacking_lines_ + attack_line;
               num_attackers++;
             }
           }
@@ -632,26 +623,30 @@ void ChessBoard::GenerateKingAttackInfo(
     }
   }
   // Check pawns.
-  BitBoard attacking_pawns =
+  const BitBoard attacking_pawns =
       kPawnAttacks[our_king_.as_int()] * their_pieces_ * pawns_;
-  king_attack_info.attacking_squares_and_lines_ =
-      king_attack_info.attacking_squares_and_lines_ + attacking_pawns;
+  king_attack_info.attacking_lines_ =
+      king_attack_info.attacking_lines_ + attacking_pawns;
 
   if (attacking_pawns.as_int()) {
+    // No more than one pawn can give check.
     num_attackers++;
   }
 
   // Check knights.
-  BitBoard attacking_knights =
+  const BitBoard attacking_knights =
       kKnightAttacks[our_king_.as_int()] *
       (their_pieces_ - their_king_ - rooks_ - bishops_ - (pawns_ * kPawnMask));
-  king_attack_info.attacking_squares_and_lines_ =
-      king_attack_info.attacking_squares_and_lines_ + attacking_knights;
+  king_attack_info.attacking_lines_ =
+      king_attack_info.attacking_lines_ + attacking_knights;
 
   if (attacking_knights.as_int()) {
+    // No more than one knight can give check.
     num_attackers++;
   }
 
+  // Only combinations of minor pieces, rooks and queens can give double check
+  // (no pawns).
   king_attack_info.double_check_ = (num_attackers > 1);
 }
 
@@ -681,7 +676,7 @@ bool ChessBoard::IsLegalMove(Move move,
     std::cout << "Move:" << move.as_string() << std::endl;
     std::cout << "Attack set:" << std::endl
               << DebugStringBB(
-                     king_attack_info.attacking_squares_and_lines_.as_int())
+                     king_attack_info.attacking_lines_.as_int())
               << std::endl;
     std::cout << "Pinned pieces:" << std::endl
               << DebugStringBB(king_attack_info.pinned_pieces_.as_int())
