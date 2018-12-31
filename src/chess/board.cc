@@ -708,10 +708,7 @@ bool ChessBoard::IsLegalMove(Move move,
       } else {
         if (!king_attack_info.is_attacked_square(to)) return false;
 
-        // Pinned piece fallback check.
-        ChessBoard board(*this);
-        board.ApplyMove(move);
-        return !board.IsUnderCheck();
+        // Pinned piece is handled further.
       }
     } else {
       // At this stage, no move can resolve the double checks anymore.
@@ -730,44 +727,33 @@ bool ChessBoard::IsLegalMove(Move move,
 
   // Now check that piece was pinned. And if it was, check that after the move
   // it is still on line of attack.
-  int dx = from.col() - our_king_.col();
-  int dy = from.row() - our_king_.row();
+  if (!king_attack_info.is_pinned_piece(from)) return true;
 
-  // If it's not on the same file/rank/diagonal as our king, cannot be pinned.
-  if (dx != 0 && dy != 0 && std::abs(dx) != std::abs(dy)) return true;
-  dx = (dx > 0) - (dx < 0);  // Sign.
-  dy = (dy > 0) - (dy < 0);
-  auto col = our_king_.col();
-  auto row = our_king_.row();
-  while (true) {
-    col += dx;
-    row += dy;
-    // Attacking line left board, good.
-    if (!BoardSquare::IsValid(row, col)) return true;
-    const BoardSquare square(row, col);
-    // The source square of the move is now free.
-    if (square == from) continue;
-    // The destination square if the move is our piece. King is not under
-    // attack.
-    if (square == to) return true;
-    // Our piece on the line. Not under attack.
-    if (our_pieces_.get(square)) return true;
-    if (their_pieces_.get(square)) {
-      if (dx == 0 || dy == 0) {
-        // Have to be afraid of rook-like piece.
-        return !rooks_.get(square);
-      } else {
-        // Have to be afraid of bishop-like piece.
-        return !bishops_.get(square);
-      }
-      return true;
-    }
+  // If the piece is pinned, it has to stay on the same line w.r.t. the king.
+  int dx_from = from.col() - our_king_.col();
+  int dy_from = from.row() - our_king_.row();
+  int dx_to = to.col() - our_king_.col();
+  int dy_to = to.row() - our_king_.row();
+
+  bool extra_check = true;
+  if (king_attack_info.in_check()) {
+    // We are in check (but not double check as this has been handled earlier.
+    // If we capture an opponent's piece and stay on the same line, it was
+    // certainly the only attacking piece.
+    extra_check = their_pieces_.get(to);
+  }
+
+  if (dx_from == 0 || dx_to == 0) {
+    return (dx_from == dx_to) && extra_check;
+  } else {
+    return (dx_from * dy_to == dx_to * dy_from) && extra_check;
   }
 }
 
 MoveList ChessBoard::GenerateLegalMoves() const {
   KingAttackInfo king_attack_info;
-  if (IsUnderCheck()) GenerateKingAttackInfo(king_attack_info);
+  // if (IsUnderCheck())
+  GenerateKingAttackInfo(king_attack_info);
 
   MoveList move_list = GeneratePseudolegalMoves();
   MoveList result;
