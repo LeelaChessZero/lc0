@@ -82,7 +82,7 @@ class ChessBoard {
   // Checks if the square is under attack from "theirs" (black).
   bool IsUnderAttack(BoardSquare square) const;
   // Generates the king attack info used for legal move detection.
-  void GenerateKingAttackInfo(KingAttackInfo& king_attack_info) const;
+  KingAttackInfo GenerateKingAttackInfo() const;
   // Checks if "our" (white) king is under check.
   bool IsUnderCheck() const { return IsUnderAttack(our_king_); }
 

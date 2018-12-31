@@ -30,7 +30,6 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
 #include <sstream>
 #include "utils/exception.h"
 
@@ -180,24 +179,6 @@ static const Move::Promotion kPromotions[] = {
     Move::Promotion::Bishop,
     Move::Promotion::Knight,
 };
-
-string DebugStringBB(std::uint64_t bb) {
-  string result;
-  for (int i = 7; i >= 0; --i) {
-    for (int j = 0; j < 8; ++j) {
-      if (bb & (1ULL << (8 * i + j))) {
-        result += '*';
-      } else {
-        result += '.';
-      }
-
-      result += ' ';
-    }
-
-    result += '\n';
-  }
-  return result;
-}
 
 }  // namespace
 
@@ -530,12 +511,15 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   return false;
 }
 
-void ChessBoard::GenerateKingAttackInfo(
-    KingAttackInfo& king_attack_info) const {
+KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
+  KingAttackInfo king_attack_info;
+
+  // Number of attackers that give check (used for double check detection).
   unsigned num_attackers = 0;
 
   const int row = our_king_.row();
   const int col = our_king_.col();
+  // King checks are unnecessary, as kings cannot give check.
   // Check rooks (and queens).
   if (kRookAttacks[our_king_.as_int()].intersects(their_pieces_ * rooks_)) {
     for (const auto& direction : kRookDirections) {
@@ -648,6 +632,8 @@ void ChessBoard::GenerateKingAttackInfo(
   // Only combinations of minor pieces, rooks and queens can give double check
   // (no pawns).
   king_attack_info.double_check_ = (num_attackers > 1);
+
+  return king_attack_info;
 }
 
 bool ChessBoard::IsLegalMove(Move move,
@@ -666,23 +652,6 @@ bool ChessBoard::IsLegalMove(Move move,
 
   // Check if we are already under check.
   if (king_attack_info.in_check()) {
-#if 0
-    std::cout << "King is in check." << std::endl;
-    std::cout << "is double check " << king_attack_info.in_double_check()
-              << std::endl;
-    std::cout << "pinned piece: " << king_attack_info.is_pinned(from)
-              << std::endl;
-    std::cout << "Position:" << std::endl << DebugString() << std::endl;
-    std::cout << "Move:" << move.as_string() << std::endl;
-    std::cout << "Attack set:" << std::endl
-              << DebugStringBB(
-                     king_attack_info.attacking_lines_.as_int())
-              << std::endl;
-    std::cout << "Pinned pieces:" << std::endl
-              << DebugStringBB(king_attack_info.pinned_pieces_.as_int())
-              << std::endl;
-#endif
-
     // King move.
     if (from == our_king_) {
       // Just apply and check that we are not under check.
@@ -691,21 +660,22 @@ bool ChessBoard::IsLegalMove(Move move,
       return !board.IsUnderCheck();
     }
 
+    // Non-king move.
     if (king_attack_info.in_double_check()) {
-      // At this stage, no move can resolve the double checks anymore.
+      // Only a king move can resolve the double check.
       return false;
     } else {
-      // We are not in double check.
+      // Only one attacking piece gives check.
       if (king_attack_info.is_pinned(from)) {
         // Pinned piece move.
-        // If the pinned piece moves to a square that is not on an attack line,
+        // If the pinned piece moves to a square that is not on the attack line,
         // it's certainly illegal.
         if (!king_attack_info.is_on_attack_line(to)) return false;
 
         // The other case is handled further.
       } else {
         // The piece is free to move. Check if the attacker is captured or
-        // interposed if the piece moves to its destination square.
+        // interposed after the piece has moved to its destination square.
         return king_attack_info.is_on_attack_line(to);
       }
     }
@@ -718,8 +688,7 @@ bool ChessBoard::IsLegalMove(Move move,
     return true;
   }
 
-  // Now check that piece was pinned. And if it was, check that after the move
-  // it is still on line of attack.
+  // Now check if the piece is pinned.
   if (!king_attack_info.is_pinned(from)) return true;  // Fast fall-through.
 
   // The piece is pinned. Now check that it stays on the same line w.r.t. the
@@ -729,26 +698,24 @@ bool ChessBoard::IsLegalMove(Move move,
   int dx_to = to.col() - our_king_.col();
   int dy_to = to.row() - our_king_.row();
 
-  bool extra_pinned_piece_check = true;
+  // Handle pinned pieces when in check.
+  bool extra_condition = true;
   if (king_attack_info.in_check()) {
     // We are in check (but not double check as this has been handled earlier).
     // If we capture an opponent's piece and stay on the same line, it was
     // certainly the only attacking piece.
-    extra_pinned_piece_check = their_pieces_.get(to);
+    extra_condition = their_pieces_.get(to);
   }
 
   if (dx_from == 0 || dx_to == 0) {
-    return (dx_from == dx_to) && extra_pinned_piece_check;
+    return (dx_from == dx_to) && extra_condition;
   } else {
-    return (dx_from * dy_to == dx_to * dy_from) && extra_pinned_piece_check;
+    return (dx_from * dy_to == dx_to * dy_from) && extra_condition;
   }
 }
 
 MoveList ChessBoard::GenerateLegalMoves() const {
-  KingAttackInfo king_attack_info;
-  // if (IsUnderCheck())
-  GenerateKingAttackInfo(king_attack_info);
-
+  const KingAttackInfo king_attack_info = GenerateKingAttackInfo();
   MoveList move_list = GeneratePseudolegalMoves();
   MoveList result;
   result.reserve(move_list.size());
