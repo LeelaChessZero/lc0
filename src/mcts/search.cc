@@ -411,6 +411,10 @@ void Search::UpdateRemainingMoves() {
   }
   // Even if we exceeded limits, don't go crazy by not allowing any playouts.
   if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
+  // Since remaining_playouts_ has changed, the logic for selecting visited root
+  // nodes may also change. Use a 0 visit cancel score update to clear out any
+  // cached best edge.
+  root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature
@@ -812,8 +816,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   Node* node = search_->root_node_;
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
-  // Initialize position sequence with pre-move position.
-  history_.Trim(search_->played_history_.GetLength());
+
+  // Precache a newly constructed node to avoid memory allocations being
+  // performed while the mutex is held.
+  if (!precached_node_) {
+    precached_node_ = std::make_unique<Node>(nullptr, 0);
+  }
 
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
@@ -823,6 +831,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   uint16_t depth = 0;
+  bool node_already_updated = true;
 
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
@@ -832,7 +841,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
-    if (!is_root_node) node = best_edge.GetOrSpawnNode(/* parent */ node);
+    if (!node_already_updated) {
+      node = best_edge.GetOrSpawnNode(/* parent */ node, &precached_node_);
+    }
     best_edge.Reset();
     depth++;
     // n_in_flight_ is incremented. If the method returns false, then there is
@@ -852,6 +863,18 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         return NodeToProcess::Extension(node, depth);
       }
     }
+    Node* possible_shortcut_child = node->GetCachedBestChild();
+    if (possible_shortcut_child) {
+      // Add two here to reverse the conservatism that goes into calculating the
+      // remaining cache visits.
+      collision_limit =
+          std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
+      is_root_node = false;
+      node = possible_shortcut_child;
+      node_already_updated = true;
+      continue;
+    }
+    node_already_updated = false;
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
@@ -895,14 +918,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
+      int estimated_visits_to_change_best =
+          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
+      // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
+      // has potential rounding errors and some conservative logic that can push
+      // it up to 2 away from the real value.
+      node->UpdateBestChild(best_edge,
+                            std::max(0, estimated_visits_to_change_best - 2));
       collision_limit =
-          std::min(collision_limit,
-                   best_edge.GetVisitsToReachU(second_best, puct_mult, fpu));
+          std::min(collision_limit, estimated_visits_to_change_best);
       assert(collision_limit >= 1);
       second_best_edge.Reset();
     }
 
-    history_.Append(best_edge.GetMove());
     if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
       // If there is only one move theoretically possible within remaining time,
       // output it.
@@ -914,6 +942,22 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 }
 
 void SearchWorker::ExtendNode(Node* node) {
+  // Initialize position sequence with pre-move position.
+  history_.Trim(search_->played_history_.GetLength());
+  std::vector<Move> to_add;
+  // Could instead reserve one more than the difference between history_.size()
+  // and history_.capacity().
+  to_add.reserve(60);
+  Node* cur = node;
+  while (cur != search_->root_node_) {
+    Node* prev = cur->GetParent();
+    to_add.push_back(prev->GetEdgeToNode(cur)->GetMove());
+    cur = prev;
+  }
+  for (int i = to_add.size() - 1; i >= 0; i--) {
+    history_.Append(to_add[i]);
+  }
+
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
   const auto& board = history_.Last().GetBoard();
