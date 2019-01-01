@@ -28,6 +28,8 @@
 #include "chess/bitboard.h"
 #include "utils/exception.h"
 
+#include <vector>
+
 namespace lczero {
 
 namespace {
@@ -267,6 +269,61 @@ const Move kIdxToMove[] = {
     "g7g8b", "g7h8q", "g7h8r", "g7h8b", "h7g8q", "h7g8r", "h7g8b", "h7h8q",
     "h7h8r", "h7h8b"};
 
+// Which squares can rook attack from every of squares.
+static const BitBoard kRookAttacks[] = {
+    0x01010101010101FEULL, 0x02020202020202FDULL, 0x04040404040404FBULL,
+    0x08080808080808F7ULL, 0x10101010101010EFULL, 0x20202020202020DFULL,
+    0x40404040404040BFULL, 0x808080808080807FULL, 0x010101010101FE01ULL,
+    0x020202020202FD02ULL, 0x040404040404FB04ULL, 0x080808080808F708ULL,
+    0x101010101010EF10ULL, 0x202020202020DF20ULL, 0x404040404040BF40ULL,
+    0x8080808080807F80ULL, 0x0101010101FE0101ULL, 0x0202020202FD0202ULL,
+    0x0404040404FB0404ULL, 0x0808080808F70808ULL, 0x1010101010EF1010ULL,
+    0x2020202020DF2020ULL, 0x4040404040BF4040ULL, 0x80808080807F8080ULL,
+    0x01010101FE010101ULL, 0x02020202FD020202ULL, 0x04040404FB040404ULL,
+    0x08080808F7080808ULL, 0x10101010EF101010ULL, 0x20202020DF202020ULL,
+    0x40404040BF404040ULL, 0x808080807F808080ULL, 0x010101FE01010101ULL,
+    0x020202FD02020202ULL, 0x040404FB04040404ULL, 0x080808F708080808ULL,
+    0x101010EF10101010ULL, 0x202020DF20202020ULL, 0x404040BF40404040ULL,
+    0x8080807F80808080ULL, 0x0101FE0101010101ULL, 0x0202FD0202020202ULL,
+    0x0404FB0404040404ULL, 0x0808F70808080808ULL, 0x1010EF1010101010ULL,
+    0x2020DF2020202020ULL, 0x4040BF4040404040ULL, 0x80807F8080808080ULL,
+    0x01FE010101010101ULL, 0x02FD020202020202ULL, 0x04FB040404040404ULL,
+    0x08F7080808080808ULL, 0x10EF101010101010ULL, 0x20DF202020202020ULL,
+    0x40BF404040404040ULL, 0x807F808080808080ULL, 0xFE01010101010101ULL,
+    0xFD02020202020202ULL, 0xFB04040404040404ULL, 0xF708080808080808ULL,
+    0xEF10101010101010ULL, 0xDF20202020202020ULL, 0xBF40404040404040ULL,
+    0x7F80808080808080ULL};
+// Which squares can bishop attack.
+static const BitBoard kBishopAttacks[] = {
+    0x8040201008040200ULL, 0x0080402010080500ULL, 0x0000804020110A00ULL,
+    0x0000008041221400ULL, 0x0000000182442800ULL, 0x0000010204885000ULL,
+    0x000102040810A000ULL, 0x0102040810204000ULL, 0x4020100804020002ULL,
+    0x8040201008050005ULL, 0x00804020110A000AULL, 0x0000804122140014ULL,
+    0x0000018244280028ULL, 0x0001020488500050ULL, 0x0102040810A000A0ULL,
+    0x0204081020400040ULL, 0x2010080402000204ULL, 0x4020100805000508ULL,
+    0x804020110A000A11ULL, 0x0080412214001422ULL, 0x0001824428002844ULL,
+    0x0102048850005088ULL, 0x02040810A000A010ULL, 0x0408102040004020ULL,
+    0x1008040200020408ULL, 0x2010080500050810ULL, 0x4020110A000A1120ULL,
+    0x8041221400142241ULL, 0x0182442800284482ULL, 0x0204885000508804ULL,
+    0x040810A000A01008ULL, 0x0810204000402010ULL, 0x0804020002040810ULL,
+    0x1008050005081020ULL, 0x20110A000A112040ULL, 0x4122140014224180ULL,
+    0x8244280028448201ULL, 0x0488500050880402ULL, 0x0810A000A0100804ULL,
+    0x1020400040201008ULL, 0x0402000204081020ULL, 0x0805000508102040ULL,
+    0x110A000A11204080ULL, 0x2214001422418000ULL, 0x4428002844820100ULL,
+    0x8850005088040201ULL, 0x10A000A010080402ULL, 0x2040004020100804ULL,
+    0x0200020408102040ULL, 0x0500050810204080ULL, 0x0A000A1120408000ULL,
+    0x1400142241800000ULL, 0x2800284482010000ULL, 0x5000508804020100ULL,
+    0xA000A01008040201ULL, 0x4000402010080402ULL, 0x0002040810204080ULL,
+    0x0005081020408000ULL, 0x000A112040800000ULL, 0x0014224180000000ULL,
+    0x0028448201000000ULL, 0x0050880402010000ULL, 0x00A0100804020100ULL,
+    0x0040201008040201ULL};
+
+static const std::pair<int, int> kRookDirections[] = {
+    {1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+
+static const std::pair<int, int> kBishopDirections[] = {
+    {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
+
 std::vector<unsigned short> BuildMoveIndices() {
   std::vector<unsigned short> res(4 * 64 * 64);
   for (size_t i = 0; i < sizeof(kIdxToMove) / sizeof(kIdxToMove[0]); ++i) {
@@ -280,7 +337,169 @@ const int kKingCastleIndex =
     kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("h1").as_int()];
 const int kQueenCastleIndex =
     kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("a1").as_int()];
+
+// Instantiate static magic bitboards object to perform initialization once.
+static MagicBitBoards magic_bitboards;
 }  // namespace
+
+// Magic numbers determined via trial and error with random number generator.
+const BitBoard MagicBitBoards::kRookMagicNumbers[64] = {
+    0x088000102088C001ULL, 0x10C0200040001000ULL, 0x83001041000B2000ULL,
+    0x0680280080041000ULL, 0x488004000A080080ULL, 0x0100180400010002ULL,
+    0x040001C401021008ULL, 0x02000C04A980C302ULL, 0x0000800040082084ULL,
+    0x5020C00820025000ULL, 0x0001002001044012ULL, 0x0402001020400A00ULL,
+    0x00C0800800040080ULL, 0x4028800200040080ULL, 0x00A0804200802500ULL,
+    0x8004800040802100ULL, 0x0080004000200040ULL, 0x1082810020400100ULL,
+    0x0020004010080040ULL, 0x2004818010042800ULL, 0x0601010008005004ULL,
+    0x4600808002001400ULL, 0x0010040009180210ULL, 0x020412000406C091ULL,
+    0x040084228000C000ULL, 0x8000810100204000ULL, 0x0084110100402000ULL,
+    0x0046001A00204210ULL, 0x2001040080080081ULL, 0x0144020080800400ULL,
+    0x0840108400080229ULL, 0x0480308A0000410CULL, 0x0460324002800081ULL,
+    0x620080A001804000ULL, 0x2800802000801006ULL, 0x0002809000800800ULL,
+    0x4C09040080802800ULL, 0x4808800C00800200ULL, 0x0200311004001802ULL,
+    0x0400008402002141ULL, 0x0410800140008020ULL, 0x000080C001050020ULL,
+    0x004080204A020010ULL, 0x0224201001010038ULL, 0x0109001108010004ULL,
+    0x0282004844020010ULL, 0x8228180110040082ULL, 0x0001000080C10002ULL,
+    0x024000C120801080ULL, 0x0001406481060200ULL, 0x0101243200418600ULL,
+    0x0108800800100080ULL, 0x4022080100100D00ULL, 0x0000843040600801ULL,
+    0x8301000200CC0500ULL, 0x1000004500840200ULL, 0x1100104100800069ULL,
+    0x2001008440001021ULL, 0x2002008830204082ULL, 0x0010145000082101ULL,
+    0x01A2001004200842ULL, 0x1007000608040041ULL, 0x000A08100203028CULL,
+    0x02D4048040290402ULL};
+const BitBoard MagicBitBoards::kBishopMagicNumbers[64] = {
+    0x0008201802242020ULL, 0x0021040424806220ULL, 0x4006360602013080ULL,
+    0x0004410020408002ULL, 0x2102021009001140ULL, 0x08C2021004000001ULL,
+    0x6001031120200820ULL, 0x1018310402201410ULL, 0x401CE00210820484ULL,
+    0x001029D001004100ULL, 0x2C00101080810032ULL, 0x0000082581000010ULL,
+    0x10000A0210110020ULL, 0x200002016C202000ULL, 0x0201018821901000ULL,
+    0x006A0300420A2100ULL, 0x0010014005450400ULL, 0x1008C12008028280ULL,
+    0x00010010004A0040ULL, 0x3000820802044020ULL, 0x0000800405A02820ULL,
+    0x8042004300420240ULL, 0x10060801210D2000ULL, 0x0210840500511061ULL,
+    0x0008142118509020ULL, 0x0021109460040104ULL, 0x00A1480090019030ULL,
+    0x0102008808008020ULL, 0x884084000880E001ULL, 0x040041020A030100ULL,
+    0x3000810104110805ULL, 0x04040A2006808440ULL, 0x0044040404C01100ULL,
+    0x4122B80800245004ULL, 0x0044020502380046ULL, 0x0100400888020200ULL,
+    0x01C0002060020080ULL, 0x4008811100021001ULL, 0x8208450441040609ULL,
+    0x0408004900008088ULL, 0x0294212051220882ULL, 0x000041080810E062ULL,
+    0x10480A018E005000ULL, 0x80400A0204201600ULL, 0x2800200204100682ULL,
+    0x0020200400204441ULL, 0x0A500600A5002400ULL, 0x801602004A010100ULL,
+    0x0801841008040880ULL, 0x10010880C4200028ULL, 0x0400004424040000ULL,
+    0x0401000142022100ULL, 0x00A00010020A0002ULL, 0x1010400204010810ULL,
+    0x0829910400840000ULL, 0x0004235204010080ULL, 0x1002008143082000ULL,
+    0x11840044440C2080ULL, 0x2802A02104030440ULL, 0x6100000900840401ULL,
+    0x1C20A15A90420200ULL, 0x0088414004480280ULL, 0x0000204242881100ULL,
+    0x0240080802809010ULL};
+
+MagicBitBoards::MagicParams MagicBitBoards::rook_magic_params_[64];
+MagicBitBoards::MagicParams MagicBitBoards::bishop_magic_params_[64];
+
+BitBoard MagicBitBoards::rook_attacks_table_[102400];
+BitBoard MagicBitBoards::bishop_attacks_table_[5248];
+
+MagicBitBoards::MagicBitBoards() {
+  // Initialize masks for all board squares.
+  for (unsigned square = 0; square < 64; square++) {
+    const BoardSquare b_sq(square);
+
+    // Calculate relevant occupancy masks by subtracting the board edges from
+    // the total attacks bitboards.
+    rook_magic_params_[square].mask_ =
+        (kRookAttacks[square] - BoardSquare(b_sq.row(), 0) -
+         BoardSquare(b_sq.row(), 7) - BoardSquare(0, b_sq.col()) -
+         BoardSquare(7, b_sq.col()))
+            .as_int();
+    bishop_magic_params_[square].mask_ =
+        (kBishopAttacks[square] - BitBoard(0xFF818181818181FFULL)).as_int();
+  }
+
+  // Build attacks tables.
+  BuildAttacksTable(kRookMagicNumbers, rook_magic_params_, rook_attacks_table_,
+                    kRookDirections);
+  BuildAttacksTable(kBishopMagicNumbers, bishop_magic_params_,
+                    bishop_attacks_table_, kBishopDirections);
+}
+
+void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
+                                       MagicParams* magic_params,
+                                       BitBoard* attacks_table,
+                                       const std::pair<int, int>* directions) {
+  // Offset into lookup table.
+  uint32_t table_offset = 0;
+
+  // Initialize for all board squares.
+  for (unsigned square = 0; square < 64; square++) {
+    const BoardSquare b_sq(square);
+
+    // Cache relevant occupancy board squares.
+    std::vector<BoardSquare> occupancy_squares;
+
+    for (auto occ_sq : BitBoard(magic_params[square].mask_)) {
+      occupancy_squares.emplace_back(occ_sq);
+    }
+
+    // Set magic number.
+    magic_params[square].magic_number_ = magic_numbers[square].as_int();
+
+    // Set number of shifted bits. The magic numbers have been chosen such that
+    // the number of relevant occupancy bits suffice to index the attacks table.
+    magic_params[square].shift_bits_ = 64 - occupancy_squares.size();
+
+    // Set lookup table offset.
+    magic_params[square].table_offset_ = table_offset;
+
+    // Clear attacks table (used for sanity check later on).
+    for (int i = 0; i < (1 << occupancy_squares.size()); i++) {
+      attacks_table[table_offset + i] = 0;
+    }
+
+    // Build square attacks table for every possible relevant occupancy
+    // bitboard.
+    for (int i = 0; i < (1 << occupancy_squares.size()); i++) {
+      BitBoard occupancy(0);
+
+      for (size_t bit = 0; bit < occupancy_squares.size(); bit++) {
+        occupancy.set_if(occupancy_squares[bit], (1 << bit) & i);
+      }
+
+      // Calculate attacks bitboard corresponding to this occupancy bitboard.
+      BitBoard attacks(0);
+
+      for (int j = 0; j < 4; j++) {
+        auto direction = directions[j];
+        auto dst_row = b_sq.row();
+        auto dst_col = b_sq.col();
+        while (true) {
+          dst_row += direction.first;
+          dst_col += direction.second;
+          if (!BoardSquare::IsValid(dst_row, dst_col)) break;
+          const BoardSquare destination(dst_row, dst_col);
+          attacks.set(destination);
+          if (occupancy.get(destination)) break;
+        }
+      }
+
+      // Calculate magic index.
+      uint64_t index = occupancy.as_int();
+      index *= magic_numbers[square].as_int();
+      index >>= magic_params[square].shift_bits_;
+
+      // Sanity check. The magic numbers have been chosen such that
+      // the number of relevant occupancy bits suffice to index the attacks
+      // table. If the table already contains an attacks bitboard, possible
+      // collisions should be constructive.
+      if (attacks_table[table_offset + index] != 0 &&
+          attacks_table[table_offset + index] != attacks) {
+        throw Exception("Invalid magic number!");
+      }
+
+      // Update table.
+      attacks_table[table_offset + index] = attacks;
+    }
+
+    // Update table offset.
+    table_offset += (1 << occupancy_squares.size());
+  }
+}
 
 Move::Move(const std::string& str, bool black) {
   if (str.size() < 4) throw Exception("Bad move: " + str);
