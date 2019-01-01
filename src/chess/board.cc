@@ -658,24 +658,21 @@ bool ChessBoard::IsLegalMove(Move move,
       return !board.IsUnderCheck();
     }
 
-    // Non-king move.
+    // Pinned pieces can never resolve a check.
+    if (king_attack_info.is_pinned(from)) {
+      return false;
+    }
+
+    // Non-pinned non-king move.
     if (king_attack_info.in_double_check()) {
       // Only a king move can resolve the double check.
       return false;
     } else {
       // Only one attacking piece gives check.
-      if (king_attack_info.is_pinned(from)) {
-        // Pinned piece move.
-        // If the pinned piece moves to a square that is not on the attack line,
-        // it's certainly illegal.
-        if (!king_attack_info.is_on_attack_line(to)) return false;
-
-        // The other case is handled further.
-      } else {
-        // The piece is free to move. Check if the attacker is captured or
-        // interposed after the piece has moved to its destination square.
-        return king_attack_info.is_on_attack_line(to);
-      }
+      // Our piece is free to move (not pinned). Check if the attacker is
+      // captured or interposed after the piece has moved to its destination
+      // square.
+      return king_attack_info.is_on_attack_line(to);
     }
   }
 
@@ -686,8 +683,9 @@ bool ChessBoard::IsLegalMove(Move move,
     return true;
   }
 
-  // Now check if the piece is pinned.
-  if (!king_attack_info.is_pinned(from)) return true;  // Fast fall-through.
+  // If we get here, we are not under check.
+  // If the piece is not pinned, it is free to move anywhere.
+  if (!king_attack_info.is_pinned(from)) return true;
 
   // The piece is pinned. Now check that it stays on the same line w.r.t. the
   // king.
@@ -696,19 +694,10 @@ bool ChessBoard::IsLegalMove(Move move,
   int dx_to = to.col() - our_king_.col();
   int dy_to = to.row() - our_king_.row();
 
-  // Handle pinned pieces when in check.
-  bool extra_condition = true;
-  if (king_attack_info.in_check()) {
-    // We are in check (but not double check as this has been handled earlier).
-    // If we capture an opponent's piece and stay on the same line, it was
-    // certainly the only attacking piece.
-    extra_condition = their_pieces_.get(to);
-  }
-
   if (dx_from == 0 || dx_to == 0) {
-    return (dx_from == dx_to) && extra_condition;
+    return (dx_from == dx_to);
   } else {
-    return (dx_from * dy_to == dx_to * dy_from) && extra_condition;
+    return (dx_from * dy_to == dx_to * dy_from);
   }
 }
 
