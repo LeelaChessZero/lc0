@@ -1,3 +1,18 @@
+v0.20.1-rc1 (2019-01-01)
+~~~~~~~~~~~
+
+* Simplify movestogo approximator to use median residual time. (#634)
+* Replace time curve logic with movestogo approximator. (#271)
+* Cache best edge to improve PickNodeToExtend performance. (#619)
+* fix building with tensorflow 1.12 (#626)
+* Minor changes to `src/chess` (#606)
+* make uci search parameters the defaults ones (#609)
+* Preallocate nodes in advance of their need to avoid the allocation being behind a mutex. (#613)
+* imrpove meson error when no backends enabled (#614)
+* allow building with the mklml library as an mkl alternative (#612)
+* Only build the history up if we are actually going to extend the position. (#607)
+* fix warning (#604)
+
 v0.20.0 (2019-01-01)
 ~~~~~~~
 
