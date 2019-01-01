@@ -629,8 +629,6 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
     num_attackers++;
   }
 
-  // Only combinations of minor pieces, rooks and queens can give double check
-  // (no pawns).
   king_attack_info.double_check_ = (num_attackers > 1);
 
   return king_attack_info;
