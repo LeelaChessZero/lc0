@@ -244,7 +244,7 @@ SearchLimits EngineController::PopulateSearchLimits(
   // tree to reuse.
   if (first_move_of_game_) {
     LOGFILE << "GIVING EXTRA TIME";
-    this_move_time *= 1.7;
+    this_move_time *= 3.0;
   }
 
   // Make sure we don't exceed current time limit with what we calculated.
