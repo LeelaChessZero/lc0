@@ -337,8 +337,8 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     }
     // Knight.
     {
-      for (const auto destination : kKnightAttacks[source.as_int()]) {
-        if (our_pieces_.get(destination)) continue;
+      for (const auto destination :
+           kKnightAttacks[source.as_int()] - our_pieces_) {
         result.emplace_back(source, destination);
       }
     }
