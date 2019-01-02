@@ -72,8 +72,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -1, 999999) = -1;
-  options->Add<IntOption>(kThreadsId, 1, 256) = 4;
-  options->Add<IntOption>(kThreadParallelismId, 1, 256) = 32;
+  options->Add<IntOption>(kThreadsId, 1, 256) = 2;
+  options->Add<IntOption>(kThreadParallelismId, 1, 256) = 16;
   options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
   options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
   options->Add<IntOption>(kVisitsId, -1, 999999999) = -1;
