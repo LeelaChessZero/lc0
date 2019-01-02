@@ -88,7 +88,6 @@ class SelfPlayGame {
   bool IsWhiteToMove() const { return !black_to_move_; }
 
   void PrepareBatch(std::unique_ptr<NetworkComputation>);
-  void ComputeBatch();
   void ProcessBatch();
 
   bool IsGameFinished() const { return game_result_ != GameResult::UNDECIDED; }

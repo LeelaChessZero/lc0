@@ -89,10 +89,8 @@ void SelfPlayGame::PrepareBatch(
   search_worker_->MaybePrefetchIntoCache();
 }
 
-void SelfPlayGame::ComputeBatch() { search_worker_->RunNNComputation(); }
-
 void SelfPlayGame::ProcessBatch() {
-  search_worker_->UpdateCacheFromComputeResults();
+  search_worker_->RunNNComputation();
   search_worker_->DoBackupUpdate();
   search_worker_->UpdateCounters();
 

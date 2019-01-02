@@ -43,10 +43,9 @@ namespace lczero {
 //     x.AddInput();
 //     x.AddInput();
 //     ...
+//   network.ComputeAll();
 //   for x in computations:
-//     x.ComputeBlocking()   // Only last call actually computes, and they are
-//                           // computed together in one batch.
-//   for x in computations:
+//     x.ComputeBlocking()
 //     use(x)
 class SingleThreadBatchingNetwork : public Network {
  public:
@@ -55,6 +54,7 @@ class SingleThreadBatchingNetwork : public Network {
 
   // Start a fresh batch.
   void Reset();
+  void ComputeAll();
 
  private:
   Network* parent_;
@@ -69,8 +69,8 @@ class SingleThreadBatchingNetworkComputation : public NetworkComputation {
 
   // Adds a sample to the parent batch.
   void AddInput(InputPlanes&& input) override;
-  // May not actually compute immediately. Instead computes when all
-  // computations of the network called this.
+  // Does nothing. It's expected that network->ComputeALl() is already called by
+  // that moment.
   void ComputeBlocking() override;
   // Returns how many times AddInput() was called.
   int GetBatchSize() const override { return batch_size_; }

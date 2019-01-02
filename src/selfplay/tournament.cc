@@ -422,8 +422,8 @@ void SelfPlayTournament::Worker() {
     }
 
     // Run computation.
-    for (auto& game : games) game->ComputeBatch();
-
+    nets[0]->ComputeAll();
+    if (nets[0] != nets[1]) nets[1]->ComputeAll();
     // Process.
     for (auto& game : games) game->ProcessBatch();
 

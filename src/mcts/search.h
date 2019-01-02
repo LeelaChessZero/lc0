@@ -231,16 +231,13 @@ class SearchWorker {
   // 4. Run NN computation.
   void RunNNComputation();
 
-  // 5. Update cache from NN results.
-  void UpdateCacheFromComputeResults();
-
-  // 6. Retrieve NN computations (and terminal values) into nodes.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
   void FetchMinibatchResults();
 
-  // 7. Propagate the new nodes' information to all their parents in the tree.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   void DoBackupUpdate();
 
-  // 8. Update the Search's status and progress information.
+  // 7. Update the Search's status and progress information.
   void UpdateCounters();
 
  private:

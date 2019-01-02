@@ -698,16 +698,13 @@ void SearchWorker::ExecuteOneIteration() {
   // 4. Run NN computation.
   RunNNComputation();
 
-  // 5. Update cache from NN results.
-  UpdateCacheFromComputeResults();
-
-  // 6. Retrieve NN computations (and terminal values) into nodes.
+  // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
 
-  // 7. Propagate the new nodes' information to all their parents in the tree.
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   DoBackupUpdate();
 
-  // 8. Update the Search's status and progress information.
+  // 7. Update the Search's status and progress information.
   UpdateCounters();
 }
 
@@ -1160,13 +1157,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 // ~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
-// 5. Update cache from NN results.
-// ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::UpdateCacheFromComputeResults() {
-  computation_->UpdateCacheFromComputeResults();
-}
-
-// 6. Retrieve NN computations (and terminal values) into nodes.
+// 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
@@ -1215,7 +1206,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
 }
 
-// 7. Propagate the new nodes' information to all their parents in the tree.
+// 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
   // Nodes mutex for doing node updates.
@@ -1259,7 +1250,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }  // namespace lczero
 
-// 8. Update the Search's status and progress information.
+// 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.

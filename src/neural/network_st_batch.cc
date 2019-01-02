@@ -44,6 +44,10 @@ void SingleThreadBatchingNetwork::Reset() {
   parent_computation_ = parent_->NewComputation();
 }
 
+void SingleThreadBatchingNetwork::ComputeAll() {
+  if (computations_pending_ > 0) parent_computation_->ComputeBlocking();
+}
+
 SingleThreadBatchingNetworkComputation::SingleThreadBatchingNetworkComputation(
     SingleThreadBatchingNetwork* network)
     : network_(network),
@@ -59,9 +63,7 @@ void SingleThreadBatchingNetworkComputation::AddInput(InputPlanes&& input) {
 
 void SingleThreadBatchingNetworkComputation::ComputeBlocking() {
   assert(network_->computations_pending_ > 0);
-  if (--network_->computations_pending_ == 0) {
-    network_->parent_computation_->ComputeBlocking();
-  }
+  --network_->computations_pending_;
 }
 
 float SingleThreadBatchingNetworkComputation::GetQVal(int sample) const {
