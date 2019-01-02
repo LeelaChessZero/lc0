@@ -91,6 +91,7 @@ void SelfPlayGame::PrepareBatch(
 
 void SelfPlayGame::ProcessBatch() {
   search_worker_->RunNNComputation();
+  search_worker_->FetchMinibatchResults();
   search_worker_->DoBackupUpdate();
   search_worker_->UpdateCounters();
 

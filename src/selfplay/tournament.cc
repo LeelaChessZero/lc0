@@ -72,8 +72,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -1, 999999) = -1;
-  options->Add<IntOption>(kThreadsId, 1, 256) = 8;
-  options->Add<IntOption>(kThreadParallelismId, 1, 256) = 8;
+  options->Add<IntOption>(kThreadsId, 1, 256) = 4;
+  options->Add<IntOption>(kThreadParallelismId, 1, 256) = 32;
   options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
   options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
   options->Add<IntOption>(kVisitsId, -1, 999999999) = -1;
@@ -87,6 +87,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 4);
+  defaults->Set<int>(SearchParams::kMaxPrefetchBatchId.GetId(), 8);
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 1.2f);
   defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 1.0f);
@@ -99,8 +100,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<bool>(SearchParams::kNoiseId.GetId(), true);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 0.0f);
   defaults->Set<std::string>(SearchParams::kHistoryFillId.GetId(), "no");
-  defaults->Set<std::string>(NetworkFactory::kBackendId.GetId(),
-                             "multiplexing");
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
