@@ -69,7 +69,6 @@ class CachingComputation {
   void PopLastInputHit();
   // Do the computation.
   void ComputeBlocking();
-  void UpdateCacheFromComputeResults();
   // Returns Q value of @sample.
   float GetQVal(int sample) const;
   // Returns P value @move_id of @sample.

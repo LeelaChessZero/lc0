@@ -67,12 +67,6 @@ class SelfPlayGame {
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
 
-  /*
-  // Starts the game and blocks until the game is finished.
-  void Play(int white_threads, int black_threads, bool training,
-            bool enable_resign = true);
-            */
-
   // Writes training data to a file.
   void WriteTrainingData(TrainingDataWriter* writer) const;
 
@@ -82,17 +76,30 @@ class SelfPlayGame {
   // Eval is the expected outcome in the range 0<->1.
   float GetWorstEvalForWinnerOrDraw() const;
 
+  // Index of the current game.
   int GetGameNumber() const { return game_number_; }
 
+  // Returns whether resign is enabled.
   bool IsResignEnabled() const { return enable_resign_; }
+
+  // Returns whether white player is currently thinking or about to start
+  // thinking.
   bool IsWhiteToMove() const { return !black_to_move_; }
 
+  // Executes part of an iteration before NN evaluation.
   void PrepareBatch(std::unique_ptr<NetworkComputation>);
+
+  // Executes part of an iteration after NN evalutation.
   void ProcessBatch();
 
+  // Returns whether the game is finished, so no more iterations have to be
+  // called.
   bool IsGameFinished() const { return game_result_ != GameResult::UNDECIDED; }
 
  private:
+  void PrepareForNextMove();
+  void ProcessMoveEnd();
+
   // options_[0] is for white player, [1] for black.
   PlayerOptions options_[2];
   // Node tree for player1 and player2. If the tree is shared between players,

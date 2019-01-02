@@ -66,44 +66,83 @@ SelfPlayGame::SelfPlayGame(int game_number, PlayerOptions player1,
   }
 }
 
-void SelfPlayGame::PrepareBatch(
-    std::unique_ptr<NetworkComputation> computation) {
-  search_ended_ = false;
-  if (!search_) {
-    const int idx = black_to_move_ ? 1 : 0;
-    auto best_move_callback = [this, idx](const BestMoveInfo& info) {
-      search_ended_ = true;
-      options_[idx].best_move_callback(info);
-    };
+void SelfPlayGame::PrepareForNextMove() {
+  const int idx = black_to_move_ ? 1 : 0;
+  auto best_move_callback = [this, idx](const BestMoveInfo& info) {
+    // When search sends best_move_ callback, signal that search is finished,
+    // so that in the end of the iteration move is added to the history, game
+    // result is checked, and search is destroyed.
+    search_ended_ = true;
+    options_[idx].best_move_callback(info);
+  };
 
-    search_ = std::make_unique<Search>(
-        *tree_[idx], nullptr, best_move_callback, options_[idx].info_callback,
-        options_[idx].search_limits, *options_[idx].uci_options,
-        options_[idx].cache, nullptr);
-
-    search_worker_ = std::make_unique<SearchWorker>(search_.get());
+  // If tree reuse is not allowed, trim the tree.
+  if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
+    tree_[idx]->TrimTreeAtHead();
   }
 
+  // If search move limit is time, compute deadline.
+  if (options_[idx].search_limits.movetime > -1) {
+    options_[idx].search_limits.search_deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(options_[idx].search_limits.movetime);
+  }
+
+  // Create new search.
+  search_ = std::make_unique<Search>(
+      *tree_[idx], nullptr, best_move_callback, options_[idx].info_callback,
+      options_[idx].search_limits, *options_[idx].uci_options,
+      options_[idx].cache, nullptr);
+  search_worker_ = std::make_unique<SearchWorker>(search_.get());
+  search_ended_ = false;
+}
+
+// For a given game, makes steps necessary to collect a batch to compute.
+void SelfPlayGame::PrepareBatch(
+    std::unique_ptr<NetworkComputation> computation) {
+  if (!search_) {
+    // If search is not active, it means opponent just made a move (or it's a
+    // game start). Create a new search and search worker.
+    PrepareForNextMove();
+  }
+
+  // 1. Initialize internal structures.
   search_worker_->InitializeIteration(std::move(computation));
+  // 2. Gather minibatch.
   search_worker_->GatherMinibatch();
+  // 3. Prefetch into cache.
   search_worker_->MaybePrefetchIntoCache();
 }
 
+// After the NN is computed, do the remaining steps.
 void SelfPlayGame::ProcessBatch() {
+  // 4. Run NN computation.
+  // (pretend that they are not computed yet, but in fact they are).
+  // RunNNComputation also remembers some results into cache, that's why it is
+  // still have to be called.
   search_worker_->RunNNComputation();
+  // 5. Retrieve NN computations (and terminal values) into nodes.
   search_worker_->FetchMinibatchResults();
+  // 6. Propagate the new nodes' information to all their parents in the tree.
   search_worker_->DoBackupUpdate();
+  // 7. Update the Search's status and progress information.
   search_worker_->UpdateCounters();
 
-  if (!search_ended_) return;
+  // If best_move was reported on this iteration process end of move.
+  if (search_ended_) ProcessMoveEnd();
+}
 
+void SelfPlayGame::ProcessMoveEnd() {
+  // We get here if move was made.
   const int idx = black_to_move_ ? 1 : 0;
 
-  // Append training data. The GameResult is later overwritten.
+  // Append training data. The GameResult is overwritten later, for now just
+  // use UNDECIDED.
   training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
       GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
       search_->GetParams().GetHistoryFill()));
 
+  // Handle possible resign.
   float eval = search_->GetBestEval();
   eval = (eval + 1) / 2;
   if (eval < min_eval_[idx]) min_eval_[idx] = eval;
@@ -126,74 +165,14 @@ void SelfPlayGame::ProcessBatch() {
   if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
   black_to_move_ = !black_to_move_;
 
-  game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
-
+  // Destroy search objects so that next iteration knows that new one has to
+  // be created.
   search_worker_.reset();
   search_.reset();
+
+  // Maybe it's game over.
+  game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
 }
-
-/* void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
-                        bool enable_resign) {
-  bool blacks_move = false;
-
-  // Do moves while not end of the game.
-  while (true) {
-    game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
-
-    // If endgame, stop.
-    if (game_result_ != GameResult::UNDECIDED) break;
-
-    // Initialize search.
-    const int idx = blacks_move ? 1 : 0;
-    if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
-      tree_[idx]->TrimTreeAtHead();
-    }
-    if (options_[idx].search_limits.movetime > -1) {
-      options_[idx].search_limits.search_deadline =
-          std::chrono::steady_clock::now() +
-          std::chrono::milliseconds(options_[idx].search_limits.movetime);
-    }
-    {
-      search_ = std::make_unique<Search>(
-          *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
-          options_[idx].info_callback, options_[idx].search_limits,
-          *options_[idx].uci_options, options_[idx].cache, nullptr);
-      // TODO: add Syzygy option for selfplay.
-    }
-
-    // Do search.
-    search_->RunBlocking(blacks_move ? black_threads : white_threads);
-
-    if (training) {
-      // Append training data. The GameResult is later overwritten.
-      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
-          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill()));
-    }
-
-    float eval = search_->GetBestEval();
-    eval = (eval + 1) / 2;
-    if (eval < min_eval_[idx]) min_eval_[idx] = eval;
-    int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
-    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
-                                            kResignEarliestMoveId.GetId())) {
-      const float resignpct =
-          options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
-          100;
-      if (eval < resignpct) {  // always false when resignpct == 0
-        game_result_ =
-            blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
-        break;
-      }
-    }
-
-    // Add best move to the tree.
-    Move move = search_->GetBestMove().first;
-    tree_[0]->MakeMove(move);
-    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
-    blacks_move = !blacks_move;
-  }
-} */
 
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;

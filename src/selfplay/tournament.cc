@@ -160,122 +160,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     }
   }
 }
-/*
-void SelfPlayTournament::PlayOneGame(int game_number) {
-  bool player1_black;  // Whether player1 will player as black in this game.
-  {
-    Mutex::Lock lock(mutex_);
-    player1_black = next_game_black_;
-    next_game_black_ = !next_game_black_;
-  }
-  const int color_idx[2] = {player1_black ? 1 : 0, player1_black ? 0 : 1};
 
-  PlayerOptions options[2];
-
-  std::vector<ThinkingInfo> last_thinking_info;
-  for (int pl_idx : {0, 1}) {
-    const bool verbose_thinking =
-        player_options_[pl_idx].Get<bool>(kVerboseThinkingId.GetId());
-    // Populate per-player options.
-    PlayerOptions& opt = options[color_idx[pl_idx]];
-    opt.network = networks_[pl_idx].get();
-    opt.cache = cache_[pl_idx].get();
-    opt.uci_options = &player_options_[pl_idx];
-    opt.search_limits = search_limits_[pl_idx];
-
-    // "bestmove" callback.
-    opt.best_move_callback = [this, game_number, pl_idx, player1_black,
-                              verbose_thinking,
-                              &last_thinking_info](const BestMoveInfo& info) {
-      // In non-verbose mode, output the last "info" message.
-      if (!verbose_thinking && !last_thinking_info.empty()) {
-        info_callback_(last_thinking_info);
-        last_thinking_info.clear();
-      }
-      BestMoveInfo rich_info = info;
-      rich_info.player = pl_idx + 1;
-      rich_info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
-      rich_info.game_id = game_number;
-      best_move_callback_(rich_info);
-    };
-
-    opt.info_callback =
-        [this, game_number, pl_idx, player1_black, verbose_thinking,
-         &last_thinking_info](const std::vector<ThinkingInfo>& infos) {
-          std::vector<ThinkingInfo> rich_info = infos;
-          for (auto& info : rich_info) {
-            info.player = pl_idx + 1;
-            info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
-            info.game_id = game_number;
-          }
-          if (verbose_thinking) {
-            info_callback_(rich_info);
-          } else {
-            // In non-verbose mode, remember the last "info" messages.
-            last_thinking_info = std::move(rich_info);
-          }
-        };
-  }
-
-  // Iterator to store the game in. Have to keep it so that later we can
-  // delete it. Need to expose it in games_ member variable only because
-  // of possible Abort() that should stop them all.
-  std::list<std::unique_ptr<SelfPlayGame>>::iterator game_iter;
-  {
-    Mutex::Lock lock(mutex_);
-    games_.emplace_front(
-        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
-    game_iter = games_.begin();
-  }
-  auto& game = **game_iter;
-
-  // If kResignPlaythrough == 0, then this comparison is unconditionally true
-  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
-
-  // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining,
-            enable_resign);
-
-  // If game was aborted, it's still undecided.
-  if (game.GetGameResult() != GameResult::UNDECIDED) {
-    // Game callback.
-    GameInfo game_info;
-    game_info.game_result = game.GetGameResult();
-    game_info.is_black = player1_black;
-    game_info.game_id = game_number;
-    game_info.moves = game.GetMoves();
-    if (!enable_resign) {
-      game_info.min_false_positive_threshold =
-          game.GetWorstEvalForWinnerOrDraw();
-    }
-    if (kTraining) {
-      TrainingDataWriter writer(game_number);
-      game.WriteTrainingData(&writer);
-      writer.Finalize();
-      game_info.training_filename = writer.GetFileName();
-    }
-    game_callback_(game_info);
-
-    // Update tournament stats.
-    {
-      Mutex::Lock lock(mutex_);
-      int result = game.GetGameResult() == GameResult::DRAW
-                       ? 1
-                       : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
-      if (player1_black) result = 2 - result;
-      ++tournament_info_.results[result][player1_black ? 1 : 0];
-      tournament_callback_(tournament_info_);
-    }
-  }
-
-  {
-    Mutex::Lock lock(mutex_);
-    games_.erase(game_iter);
-  }
-}
-
-*/
-
+// Creates a fresh SelfPlayGame.
 std::unique_ptr<SelfPlayGame> SelfPlayTournament::CreateNewGame(
     int game_number) {
   const bool player1_black = (game_number % 2) != first_game_is_flipped_;
@@ -325,45 +211,53 @@ std::unique_ptr<SelfPlayGame> SelfPlayTournament::CreateNewGame(
                                         enable_resign);
 }
 
+// Called when the SelfPlayGame is finished, so that it's processed.
 void SelfPlayTournament::SendGameReport(const SelfPlayGame& game) {
   const int game_number = game.GetGameNumber();
   const bool player1_black = (game_number % 2) != first_game_is_flipped_;
-  // If game was aborted, it's still undecided.
-  if (game.GetGameResult() != GameResult::UNDECIDED) {
-    // Game callback.
-    GameInfo game_info;
-    game_info.game_result = game.GetGameResult();
-    game_info.is_black = player1_black;
-    game_info.game_id = game_number;
-    game_info.moves = game.GetMoves();
-    if (!game.IsResignEnabled()) {
-      game_info.min_false_positive_threshold =
-          game.GetWorstEvalForWinnerOrDraw();
-    }
-    if (kTraining) {
-      TrainingDataWriter writer(game_number);
-      game.WriteTrainingData(&writer);
-      writer.Finalize();
-      game_info.training_filename = writer.GetFileName();
-    }
-    game_callback_(game_info);
 
-    // Update tournament stats.
-    {
-      Mutex::Lock lock(mutex_);
-      int result = game.GetGameResult() == GameResult::DRAW
-                       ? 1
-                       : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
-      if (player1_black) result = 2 - result;
-      ++tournament_info_.results[result][player1_black ? 1 : 0];
-      tournament_callback_(tournament_info_);
-    }
+  // If game was aborted, it's still undecided, in this case don't output any
+  // reports.
+  if (game.GetGameResult() == GameResult::UNDECIDED) return;
+
+  // Prepare "game ended" callback.
+  GameInfo game_info;
+  game_info.game_result = game.GetGameResult();
+  game_info.is_black = player1_black;
+  game_info.game_id = game_number;
+  game_info.moves = game.GetMoves();
+  if (!game.IsResignEnabled()) {
+    // For games which happened to be without resign, gather stats of possible
+    // incorrect resign.
+    game_info.min_false_positive_threshold = game.GetWorstEvalForWinnerOrDraw();
+  }
+  if (kTraining) {
+    // If training is enabled, write training file.
+    TrainingDataWriter writer(game_number);
+    game.WriteTrainingData(&writer);
+    writer.Finalize();
+    game_info.training_filename = writer.GetFileName();
+  }
+  game_callback_(game_info);
+
+  // Update tournament stats.
+  {
+    Mutex::Lock lock(mutex_);
+    int result = game.GetGameResult() == GameResult::DRAW
+                     ? 1
+                     : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
+    if (player1_black) result = 2 - result;
+    ++tournament_info_.results[result][player1_black ? 1 : 0];
+    tournament_callback_(tournament_info_);
   }
 }
 
 void SelfPlayTournament::Worker() {
+  // Games that this thread will handle.
   std::vector<std::unique_ptr<SelfPlayGame>> games(kThreadParallelism);
 
+  // Wrap network(s) with SingleThreadBatchingNetwork to be able to batch
+  // several games together.
   std::shared_ptr<SingleThreadBatchingNetwork> nets[2];
   nets[0] = std::make_shared<SingleThreadBatchingNetwork>(networks_[0].get());
   nets[1] =
@@ -420,13 +314,13 @@ void SelfPlayTournament::Worker() {
       game->PrepareBatch(network_to_use->NewComputation());
     }
 
-    // Run computation.
+    // Do actual NN eval.
     nets[0]->ComputeAll();
     if (nets[0] != nets[1]) nets[1]->ComputeAll();
     // Process.
     for (auto& game : games) game->ProcessBatch();
 
-    // Maybe some game is finished. Report it and delete from vector;
+    // Maybe some game is finished. Report it and destroy game object.
     for (auto& game : games) {
       if (game->IsGameFinished()) {
         SendGameReport(*game);

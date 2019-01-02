@@ -54,6 +54,8 @@ class SingleThreadBatchingNetwork : public Network {
 
   // Start a fresh batch.
   void Reset();
+
+  // Runs (combined) NN computations.
   void ComputeAll();
 
  private:
@@ -69,8 +71,8 @@ class SingleThreadBatchingNetworkComputation : public NetworkComputation {
 
   // Adds a sample to the parent batch.
   void AddInput(InputPlanes&& input) override;
-  // Does nothing. It's expected that network->ComputeALl() is already called by
-  // that moment.
+  // Does nothing (only watches for correct usage using some counters). It's
+  // expected that network->ComputeALl() is already called by that moment.
   void ComputeBlocking() override;
   // Returns how many times AddInput() was called.
   int GetBatchSize() const override { return batch_size_; }
