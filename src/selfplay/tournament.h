@@ -64,11 +64,10 @@ class SelfPlayTournament {
 
  private:
   void Worker();
-  void PlayOneGame(int game_id);
+  std::unique_ptr<SelfPlayGame> CreateNewGame(int game_number);
+  void SendGameReport(const SelfPlayGame& game);
 
   Mutex mutex_;
-  // Whether next game will be black for player1.
-  bool next_game_black_ GUARDED_BY(mutex_) = false;
   // Number of games which already started.
   int games_count_ GUARDED_BY(mutex_) = 0;
   bool abort_ GUARDED_BY(mutex_) = false;
@@ -93,12 +92,15 @@ class SelfPlayTournament {
   ThinkingInfo::Callback info_callback_;
   GameInfo::Callback game_callback_;
   TournamentInfo::Callback tournament_callback_;
-  const int kThreads[2];
+
   const int kTotalGames;
   const bool kShareTree;
-  const size_t kParallelism;
+  const size_t kThreads;
+  const size_t kThreadParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
+
+  const bool first_game_is_flipped_;
 };
 
 }  // namespace lczero

@@ -42,8 +42,6 @@ struct SelfPlayLimits : SearchLimits {
 };
 
 struct PlayerOptions {
-  // Network to use by the player.
-  Network* network;
   // Callback when player moves.
   BestMoveInfo::Callback best_move_callback;
   // Callback when player outputs info.
@@ -63,17 +61,17 @@ class SelfPlayGame {
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
-  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree);
+  SelfPlayGame(int game_number, PlayerOptions player1, PlayerOptions player2,
+               bool shared_tree, bool enable_resign);
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
 
+  /*
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,
             bool enable_resign = true);
-  // Aborts the game currently played, doesn't matter if it's synchronous or
-  // not.
-  void Abort();
+            */
 
   // Writes training data to a file.
   void WriteTrainingData(TrainingDataWriter* writer) const;
@@ -84,6 +82,17 @@ class SelfPlayGame {
   // Eval is the expected outcome in the range 0<->1.
   float GetWorstEvalForWinnerOrDraw() const;
 
+  int GetGameNumber() const { return game_number_; }
+
+  bool IsResignEnabled() const { return enable_resign_; }
+  bool IsWhiteToMove() const { return !black_to_move_; }
+
+  void PrepareBatch(std::unique_ptr<NetworkComputation>);
+  void ComputeBatch();
+  void ProcessBatch();
+
+  bool IsGameFinished() const { return game_result_ != GameResult::UNDECIDED; }
+
  private:
   // options_[0] is for white player, [1] for black.
   PlayerOptions options_[2];
@@ -91,10 +100,6 @@ class SelfPlayGame {
   // tree_[0] == tree_[1].
   std::shared_ptr<NodeTree> tree_[2];
 
-  // Search that is currently in progress. Stored in members so that Abort()
-  // can stop it.
-  std::unique_ptr<Search> search_;
-  bool abort_ = false;
   GameResult game_result_ = GameResult::UNDECIDED;
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
@@ -103,6 +108,15 @@ class SelfPlayGame {
 
   // Training data to send.
   std::vector<V3TrainingData> training_data_;
+
+  bool black_to_move_ = false;
+  bool search_ended_ = false;
+
+  std::unique_ptr<Search> search_;
+  std::unique_ptr<SearchWorker> search_worker_;
+
+  const int game_number_;
+  const bool enable_resign_;
 };
 
 }  // namespace lczero

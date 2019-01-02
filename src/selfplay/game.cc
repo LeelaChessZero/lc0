@@ -49,9 +49,12 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
 }
 
-SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree)
-    : options_{player1, player2} {
+SelfPlayGame::SelfPlayGame(int game_number, PlayerOptions player1,
+                           PlayerOptions player2, bool shared_tree,
+                           bool enable_resign)
+    : options_{player1, player2},
+      game_number_(game_number),
+      enable_resign_(enable_resign) {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 
@@ -63,12 +66,79 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
   }
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
+void SelfPlayGame::PrepareBatch(
+    std::unique_ptr<NetworkComputation> computation) {
+  search_ended_ = false;
+  if (!search_) {
+    const int idx = black_to_move_ ? 1 : 0;
+    auto best_move_callback = [this, idx](const BestMoveInfo& info) {
+      search_ended_ = true;
+      options_[idx].best_move_callback(info);
+    };
+
+    search_ = std::make_unique<Search>(
+        *tree_[idx], nullptr, best_move_callback, options_[idx].info_callback,
+        options_[idx].search_limits, *options_[idx].uci_options,
+        options_[idx].cache, nullptr);
+
+    search_worker_ = std::make_unique<SearchWorker>(search_.get());
+  }
+
+  search_worker_->InitializeIteration(std::move(computation));
+  search_worker_->GatherMinibatch();
+  search_worker_->MaybePrefetchIntoCache();
+}
+
+void SelfPlayGame::ComputeBatch() { search_worker_->RunNNComputation(); }
+
+void SelfPlayGame::ProcessBatch() {
+  search_worker_->UpdateCacheFromComputeResults();
+  search_worker_->DoBackupUpdate();
+  search_worker_->UpdateCounters();
+
+  if (!search_ended_) return;
+
+  const int idx = black_to_move_ ? 1 : 0;
+
+  // Append training data. The GameResult is later overwritten.
+  training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
+      GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
+      search_->GetParams().GetHistoryFill()));
+
+  float eval = search_->GetBestEval();
+  eval = (eval + 1) / 2;
+  if (eval < min_eval_[idx]) min_eval_[idx] = eval;
+  int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
+  if (enable_resign_ && move_number >= options_[idx].uci_options->Get<int>(
+                                           kResignEarliestMoveId.GetId())) {
+    const float resignpct =
+        options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
+        100;
+    if (eval < resignpct) {  // always false when resignpct == 0
+      game_result_ =
+          black_to_move_ ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+      return;
+    }
+  }
+
+  // Add best move to the tree.
+  Move move = search_->GetBestMove().first;
+  tree_[0]->MakeMove(move);
+  if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
+  black_to_move_ = !black_to_move_;
+
+  game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
+
+  search_worker_.reset();
+  search_.reset();
+}
+
+/* void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         bool enable_resign) {
   bool blacks_move = false;
 
-  // Do moves while not end of the game. (And while not abort_)
-  while (!abort_) {
+  // Do moves while not end of the game.
+  while (true) {
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
 
     // If endgame, stop.
@@ -85,8 +155,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           std::chrono::milliseconds(options_[idx].search_limits.movetime);
     }
     {
-      std::lock_guard<std::mutex> lock(mutex_);
-      if (abort_) break;
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
           options_[idx].info_callback, options_[idx].search_limits,
@@ -96,7 +164,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // Do search.
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
-    if (abort_) break;
 
     if (training) {
       // Append training data. The GameResult is later overwritten.
@@ -127,7 +194,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
   }
-}
+} */
 
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
@@ -145,12 +212,6 @@ float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
   if (game_result_ == GameResult::WHITE_WON) return min_eval_[0];
   if (game_result_ == GameResult::BLACK_WON) return min_eval_[1];
   return std::min(min_eval_[0], min_eval_[1]);
-}
-
-void SelfPlayGame::Abort() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  abort_ = true;
-  if (search_) search_->Abort();
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {

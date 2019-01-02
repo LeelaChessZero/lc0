@@ -31,13 +31,11 @@
 
 namespace lczero {
 
-SingleThreadBatchingNetwork::SingleThreadBatchingNetwork(
-    std::unique_ptr<Network> parent)
-    : parent_(std::move(parent)) {}
+SingleThreadBatchingNetwork::SingleThreadBatchingNetwork(Network* parent)
+    : parent_(parent) {}
 
 std::unique_ptr<NetworkComputation>
 SingleThreadBatchingNetwork::NewComputation() {
-  ++computations_pending_;
   return std::make_unique<SingleThreadBatchingNetworkComputation>(this);
 }
 
@@ -54,22 +52,25 @@ SingleThreadBatchingNetworkComputation::SingleThreadBatchingNetworkComputation(
 void SingleThreadBatchingNetworkComputation::AddInput(InputPlanes&& input) {
   assert(start_idx_ + batch_size_ ==
          network_->parent_computation_->GetBatchSize());
+  if (batch_size_ == 0) ++network_->computations_pending_;
   ++batch_size_;
   network_->parent_computation_->AddInput(std::move(input));
 }
 
 void SingleThreadBatchingNetworkComputation::ComputeBlocking() {
-  if (--network_->computations_pending_ == 0)
+  assert(network_->computations_pending_ > 0);
+  if (--network_->computations_pending_ == 0) {
     network_->parent_computation_->ComputeBlocking();
+  }
 }
 
 float SingleThreadBatchingNetworkComputation::GetQVal(int sample) const {
-  return network_->parent_computation_->GetQVal(sample - start_idx_);
+  return network_->parent_computation_->GetQVal(sample + start_idx_);
 }
 
 float SingleThreadBatchingNetworkComputation::GetPVal(int sample,
                                                       int move_id) const {
-  return network_->parent_computation_->GetPVal(sample - start_idx_, move_id);
+  return network_->parent_computation_->GetPVal(sample + start_idx_, move_id);
 }
 
 }  // namespace lczero

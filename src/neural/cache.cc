@@ -27,6 +27,7 @@
 #include "neural/cache.h"
 #include <cassert>
 #include <iostream>
+#include "utils/logging.h"
 
 namespace lczero {
 CachingComputation::CachingComputation(
@@ -75,7 +76,9 @@ void CachingComputation::PopLastInputHit() {
 void CachingComputation::ComputeBlocking() {
   if (parent_->GetBatchSize() == 0) return;
   parent_->ComputeBlocking();
+}
 
+void CachingComputation::UpdateCacheFromComputeResults() {
   // Fill cache with data from NN.
   for (const auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;

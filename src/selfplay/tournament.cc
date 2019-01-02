@@ -28,6 +28,7 @@
 #include "selfplay/tournament.h"
 #include "mcts/search.h"
 #include "neural/factory.h"
+#include "neural/network_st_batch.h"
 #include "selfplay/game.h"
 #include "utils/optionsparser.h"
 #include "utils/random.h"
@@ -38,11 +39,11 @@ const OptionId kShareTreesId{"share-trees", "ShareTrees",
                              "When on, game tree is shared for two players; "
                              "when off, each side has a separate tree."};
 const OptionId kTotalGamesId{"games", "Games", "Number of games to play."};
-const OptionId kParallelGamesId{"parallelism", "Parallelism",
-                                "Number of games to play in parallel."};
-const OptionId kThreadsId{
-    "threads", "Threads",
-    "Number of (CPU) worker threads to use for every game,", 't'};
+const OptionId kThreadsId{"selfplay-threads", "SelfplayThreads",
+                          "Number of selfplay threads to run in parallel."};
+const OptionId kThreadParallelismId{
+    "thread-parallelism", "ThreadParallelism",
+    "Number of games to play in parallel within single thread."};
 const OptionId kNnCacheSizeId{
     "nncache", "NNCache",
     "Number of positions to store in a memory cache. A large cache can speed "
@@ -71,8 +72,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -1, 999999) = -1;
-  options->Add<IntOption>(kParallelGamesId, 1, 256) = 8;
-  options->Add<IntOption>(kThreadsId, 1, 8) = 1;
+  options->Add<IntOption>(kThreadsId, 1, 256) = 8;
+  options->Add<IntOption>(kThreadParallelismId, 1, 256) = 8;
   options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
   options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
   options->Add<IntOption>(kVisitsId, -1, 999999999) = -1;
@@ -85,7 +86,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SearchParams::Populate(options);
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
-  defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 32);
+  defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 4);
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 1.2f);
   defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 1.0f);
@@ -113,20 +114,15 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       info_callback_(thinking_info),
       game_callback_(game_info),
       tournament_callback_(tournament_info),
-      kThreads{
-          options.GetSubdict("player1").Get<int>(kThreadsId.GetId()),
-          options.GetSubdict("player2").Get<int>(kThreadsId.GetId()),
-      },
       kTotalGames(options.Get<int>(kTotalGamesId.GetId())),
       kShareTree(options.Get<bool>(kShareTreesId.GetId())),
-      kParallelism(options.Get<int>(kParallelGamesId.GetId())),
+      kThreads(options.Get<int>(kThreadsId.GetId())),
+      kThreadParallelism(options.Get<int>(kThreadParallelismId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
-      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())) {
-  // If playing just one game, the player1 is white, otherwise randomize.
-  if (kTotalGames != 1) {
-    next_game_black_ = Random::Get().GetBool();
-  }
-
+      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
+      // If playing just one game, the player1 is white, otherwise randomize.
+      first_game_is_flipped_(kTotalGames == 1 ? false
+                                              : Random::Get().GetBool()) {
   static const char* kPlayerNames[2] = {"player1", "player2"};
   // Initializing networks.
   const auto& player1_opts = options.GetSubdict(kPlayerNames[0]);
@@ -165,7 +161,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     }
   }
 }
-
+/*
 void SelfPlayTournament::PlayOneGame(int game_number) {
   bool player1_black;  // Whether player1 will player as black in this game.
   {
@@ -279,29 +275,177 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
 }
 
+*/
+
+std::unique_ptr<SelfPlayGame> SelfPlayTournament::CreateNewGame(
+    int game_number) {
+  const bool player1_black = (game_number % 2) != first_game_is_flipped_;
+  const int color_idx[2] = {player1_black ? 1 : 0, player1_black ? 0 : 1};
+
+  PlayerOptions options[2];
+
+  for (int pl_idx : {0, 1}) {
+    const bool verbose_thinking =
+        player_options_[pl_idx].Get<bool>(kVerboseThinkingId.GetId());
+    // Populate per-player options.
+    PlayerOptions& opt = options[color_idx[pl_idx]];
+    opt.cache = cache_[pl_idx].get();
+    opt.uci_options = &player_options_[pl_idx];
+    opt.search_limits = search_limits_[pl_idx];
+
+    // "bestmove" callback.
+    opt.best_move_callback = [this, game_number, pl_idx,
+                              player1_black](const BestMoveInfo& info) {
+      BestMoveInfo rich_info = info;
+      rich_info.player = pl_idx + 1;
+      rich_info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
+      rich_info.game_id = game_number;
+      best_move_callback_(rich_info);
+    };
+
+    opt.info_callback =
+        [this, game_number, pl_idx, player1_black,
+         verbose_thinking](const std::vector<ThinkingInfo>& infos) {
+          if (verbose_thinking) {
+            std::vector<ThinkingInfo> rich_info = infos;
+            for (auto& info : rich_info) {
+              info.player = pl_idx + 1;
+              info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
+              info.game_id = game_number;
+            }
+            info_callback_(rich_info);
+          }
+        };
+  }
+
+  // If kResignPlaythrough == 0, then this comparison is unconditionally true
+  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
+
+  return std::make_unique<SelfPlayGame>(game_number, options[color_idx[0]],
+                                        options[color_idx[1]], kShareTree,
+                                        enable_resign);
+}
+
+void SelfPlayTournament::SendGameReport(const SelfPlayGame& game) {
+  const int game_number = game.GetGameNumber();
+  const bool player1_black = (game_number % 2) != first_game_is_flipped_;
+  // If game was aborted, it's still undecided.
+  if (game.GetGameResult() != GameResult::UNDECIDED) {
+    // Game callback.
+    GameInfo game_info;
+    game_info.game_result = game.GetGameResult();
+    game_info.is_black = player1_black;
+    game_info.game_id = game_number;
+    game_info.moves = game.GetMoves();
+    if (!game.IsResignEnabled()) {
+      game_info.min_false_positive_threshold =
+          game.GetWorstEvalForWinnerOrDraw();
+    }
+    if (kTraining) {
+      TrainingDataWriter writer(game_number);
+      game.WriteTrainingData(&writer);
+      writer.Finalize();
+      game_info.training_filename = writer.GetFileName();
+    }
+    game_callback_(game_info);
+
+    // Update tournament stats.
+    {
+      Mutex::Lock lock(mutex_);
+      int result = game.GetGameResult() == GameResult::DRAW
+                       ? 1
+                       : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
+      if (player1_black) result = 2 - result;
+      ++tournament_info_.results[result][player1_black ? 1 : 0];
+      tournament_callback_(tournament_info_);
+    }
+  }
+}
+
 void SelfPlayTournament::Worker() {
-  // Play games while game limit is not reached (or while not aborted).
-  while (true) {
-    int game_id;
+  std::vector<std::unique_ptr<SelfPlayGame>> games(kThreadParallelism);
+
+  std::shared_ptr<SingleThreadBatchingNetwork> nets[2];
+  nets[0] = std::make_shared<SingleThreadBatchingNetwork>(networks_[0].get());
+  nets[1] =
+      networks_[0] == networks_[1]
+          ? nets[0]
+          : std::make_shared<SingleThreadBatchingNetwork>(networks_[1].get());
+
+  // While there are games to play, play.
+  while (!games.empty()) {
+    // If aborted, return.
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      if (kTotalGames != -1 && games_count_ >= kTotalGames) break;
-      game_id = games_count_++;
     }
-    PlayOneGame(game_id);
+
+    bool remove_remaining = false;
+    // Go over games to see whether some of them have to be restarted.
+    for (size_t i = 0; i < games.size(); ++i) {
+      if (games[i]) continue;  // Active game.
+      int game_index = 0;
+      {
+        Mutex::Lock lock(mutex_);
+        if (kTotalGames != -1 && games_count_ >= kTotalGames) {
+          // If no more games are needed, remove the entry from the vector.
+          remove_remaining = true;
+          break;
+        }
+        game_index = games_count_++;
+      }
+      // Create new game.
+      games[i] = CreateNewGame(game_index);
+    }
+
+    // If limit is reached (total number of games), then remove all finished
+    // games from the vector.
+    if (remove_remaining) {
+      games.erase(std::remove_if(games.begin(), games.end(),
+                                 [](const std::unique_ptr<SelfPlayGame>& x) {
+                                   return !x;
+                                 }),
+                  games.end());
+    }
+
+    // Prepare network for a new iteration.
+    nets[0]->Reset();
+    if (nets[0] != nets[1]) nets[1]->Reset();
+    // Initialize for the next batch.
+    for (auto& game : games) {
+      const bool alternate_color = (game->GetGameNumber() % 2) == 1;
+      const bool player1_white = first_game_is_flipped_ == alternate_color;
+      const bool white_to_move = game->IsWhiteToMove();
+      const auto& network_to_use = nets[white_to_move == player1_white ? 0 : 1];
+
+      game->PrepareBatch(network_to_use->NewComputation());
+    }
+
+    // Run computation.
+    for (auto& game : games) game->ComputeBatch();
+
+    // Process.
+    for (auto& game : games) game->ProcessBatch();
+
+    // Maybe some game is finished. Report it and delete from vector;
+    for (auto& game : games) {
+      if (game->IsGameFinished()) {
+        SendGameReport(*game);
+        game.reset();
+      }
+    }
   }
 }
 
 void SelfPlayTournament::StartAsync() {
   Mutex::Lock lock(threads_mutex_);
-  while (threads_.size() < kParallelism) {
+  while (threads_.size() < kThreads) {
     threads_.emplace_back([&]() { Worker(); });
   }
 }
 
 void SelfPlayTournament::RunBlocking() {
-  if (kParallelism == 1) {
+  if (kThreads == 1) {
     // No need for multiple threads if there is one worker.
     Worker();
     Mutex::Lock lock(mutex_);
@@ -335,8 +479,6 @@ void SelfPlayTournament::Wait() {
 void SelfPlayTournament::Abort() {
   Mutex::Lock lock(mutex_);
   abort_ = true;
-  for (auto& game : games_)
-    if (game) game->Abort();
 }
 
 SelfPlayTournament::~SelfPlayTournament() {
