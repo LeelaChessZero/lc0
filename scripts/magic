@@ -1,0 +1,2 @@
+0	byte 0x0d	protobuf fixed32 stream
+>1	lelong 0x1c0	LeelaChessZero weights file
