@@ -240,6 +240,13 @@ SearchLimits EngineController::PopulateSearchLimits(
   // Use `time_to_squander` time immediately.
   this_move_time += time_to_squander;
 
+  // Steal some extra time for the first move of the game since it never has a
+  // tree to reuse.
+  if (first_move_of_game_) {
+    LOGFILE << "GIVING EXTRA TIME";
+    this_move_time *= 1.7;
+  }
+
   // Make sure we don't exceed current time limit with what we calculated.
   limits.search_deadline =
       start_time +
@@ -294,6 +301,7 @@ void EngineController::NewGame() {
   time_spared_ms_ = 0;
   current_position_.reset();
   UpdateFromUciOptions();
+  first_move_of_game_ = true;
 }
 
 void EngineController::SetPosition(const std::string& fen,
@@ -318,7 +326,10 @@ void EngineController::SetupPosition(
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   bool is_same_game = tree_->ResetToPosition(fen, moves);
-  if (!is_same_game) time_spared_ms_ = 0;
+  if (!is_same_game) {
+    time_spared_ms_ = 0;
+    first_move_of_game_ = true;
+  }
 }
 
 void EngineController::Go(const GoParams& params) {
@@ -381,6 +392,7 @@ void EngineController::Go(const GoParams& params) {
                 *limits.search_deadline - std::chrono::steady_clock::now())
                 .count();
       }
+      first_move_of_game_ = false;
     };
   }
 
