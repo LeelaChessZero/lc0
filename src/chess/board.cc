@@ -515,7 +515,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   KingAttackInfo king_attack_info;
 
   // Number of attackers that give check (used for double check detection).
-  unsigned num_attackers = 0;
+  unsigned num_king_attackers = 0;
 
   const int row = our_king_.row();
   const int col = our_king_.col();
@@ -555,7 +555,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
               // Update attacking lines.
               king_attack_info.attacking_lines_ =
                   king_attack_info.attacking_lines_ + attack_line;
-              num_attackers++;
+              num_king_attackers++;
             }
           }
           break;
@@ -598,7 +598,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
               // Update attacking lines.
               king_attack_info.attacking_lines_ =
                   king_attack_info.attacking_lines_ + attack_line;
-              num_attackers++;
+              num_king_attackers++;
             }
           }
           break;
@@ -614,7 +614,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
 
   if (attacking_pawns.as_int()) {
     // No more than one pawn can give check.
-    num_attackers++;
+    num_king_attackers++;
   }
 
   // Check knights.
@@ -626,10 +626,11 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
 
   if (attacking_knights.as_int()) {
     // No more than one knight can give check.
-    num_attackers++;
+    num_king_attackers++;
   }
 
-  king_attack_info.double_check_ = (num_attackers > 1);
+  assert(num_king_attackers <= 2);
+  king_attack_info.double_check_ = (num_king_attackers == 2);
 
   return king_attack_info;
 }
@@ -663,7 +664,7 @@ bool ChessBoard::IsLegalMove(Move move,
       return false;
     }
 
-    // Non-pinned non-king move.
+    // The piece to move is no king and is not pinned.
     if (king_attack_info.in_double_check()) {
       // Only a king move can resolve the double check.
       return false;
