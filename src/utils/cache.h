@@ -75,7 +75,7 @@ class LruCache {
     ShrinkToCapacity(capacity_ - 1);
     ++size_;
     ++allocated_;
-    Item* new_item = new Item(key, std::move(val), 0);
+    Item* new_item = new Item(key, std::move(val));
     new_item->next_in_hash = hash_head;
     hash_head = new_item;
     InsertIntoLru(new_item);
@@ -191,8 +191,8 @@ class LruCache {
 
  private:
   struct Item {
-    Item(K key, std::unique_ptr<V> value, int pins)
-        : key(key), value(std::move(value)), pins(pins) {}
+    Item(K key, std::unique_ptr<V> value)
+        : key(key), value(std::move(value)) {}
     K key;
     std::unique_ptr<V> value;
     int pins = 0;
