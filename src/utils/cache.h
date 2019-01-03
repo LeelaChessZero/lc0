@@ -61,8 +61,8 @@ class LruCache {
   // but new lookups will return updated value.
   // If @pinned, pins inserted element, Unpin has to be called to unpin.
   // In any case, puts element to front of the queue (makes it last to evict).
-  V* Insert(K key, std::unique_ptr<V> val, bool pinned = false) {
-    if (capacity_ == 0) return val.get();
+  V* Insert(K key, std::unique_ptr<V> val) {
+    if (capacity_ == 0) return nullptr;
 
     Mutex::Lock lock(mutex_);
 
