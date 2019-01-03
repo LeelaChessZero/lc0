@@ -62,6 +62,8 @@ class LruCache {
   // If @pinned, pins inserted element, Unpin has to be called to unpin.
   // In any case, puts element to front of the queue (makes it last to evict).
   V* Insert(K key, std::unique_ptr<V> val, bool pinned = false) {
+    if (capacity_ == 0) return val.get();
+
     Mutex::Lock lock(mutex_);
 
     auto hash = hasher_(key) % hash_.size();
@@ -86,6 +88,8 @@ class LruCache {
   // Checks whether a key exists. Doesn't lock. Of course the next moment the
   // key may be evicted.
   bool ContainsKey(K key) {
+    if (capacity_ == 0) return false;
+
     Mutex::Lock lock(mutex_);
     auto hash = hasher_(key) % hash_.size();
     for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
@@ -99,6 +103,8 @@ class LruCache {
   // evict); furthermore, a call to Unpin must be made for each such element.
   // Use of LruCacheLock is recommended to automate this pin management.
   V* LookupAndPin(K key) {
+    if (capacity_ == 0) return nullptr;
+
     Mutex::Lock lock(mutex_);
 
     auto hash = hasher_(key) % hash_.size();
@@ -115,6 +121,8 @@ class LruCache {
   // Unpins the element given key and value. Use of LruCacheLock is recommended
   // to automate this pin management.
   void Unpin(K key, V* value) {
+    if (capacity_ == 0) return;
+
     Mutex::Lock lock(mutex_);
 
     // Checking evicted list first.
