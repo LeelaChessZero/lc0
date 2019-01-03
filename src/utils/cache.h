@@ -57,10 +57,7 @@ class LruCache {
   }
 
   // Inserts the element under key @key with value @val.
-  // If the element is pinned, old value is still kept (until fully unpinned),
-  // but new lookups will return updated value.
-  // If @pinned, pins inserted element, Unpin has to be called to unpin.
-  // In any case, puts element to front of the queue (makes it last to evict).
+  // Puts element to front of the queue (makes it last to evict).
   void Insert(K key, std::unique_ptr<V> val) {
     if (capacity_ == 0) return;
 
