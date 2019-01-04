@@ -117,8 +117,6 @@ class LruCache {
   // Unpins the element given key and value. Use of LruCacheLock is recommended
   // to automate this pin management.
   void Unpin(K key, V* value) {
-    if (capacity_ == 0) return;
-
     Mutex::Lock lock(mutex_);
 
     // Checking evicted list first.
