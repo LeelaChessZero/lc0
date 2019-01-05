@@ -188,6 +188,7 @@ BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
+  result.reserve(60);
   for (auto source : our_pieces_) {
     // King
     if (source == our_king_) {
@@ -405,9 +406,6 @@ bool ChessBoard::ApplyMove(Move move) {
     return reset_50_moves;
   }
 
-  // Now destination square for our piece is known.
-  our_pieces_.set(to);
-
   // Promotion
   if (move.promotion() != Move::Promotion::None) {
     switch (move.promotion()) {
@@ -534,7 +532,7 @@ bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
     return !board.IsUnderCheck();
   }
 
-  // If it's kings move, check that destination
+  // If it's king's move, check that destination
   // is not under attack.
   if (from == our_king_) {
     // Castlings were checked earlier.
@@ -543,8 +541,8 @@ bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
     return !IsUnderAttack(to);
   }
 
-  // Not check that piece was pinned. And it was, check that after the move
-  // it is still on like of attack.
+  // Now check that piece was pinned. And if it was, check that after the move
+  // it is still on line of attack.
   int dx = from.col() - our_king_.col();
   int dy = from.row() - our_king_.row();
 
@@ -590,24 +588,6 @@ MoveList ChessBoard::GenerateLegalMoves() const {
     if (IsLegalMove(m, was_under_check)) result.emplace_back(m);
   }
 
-  return result;
-}
-
-std::vector<MoveExecution> ChessBoard::GenerateLegalMovesAndPositions() const {
-  MoveList move_list = GeneratePseudolegalMoves();
-  std::vector<MoveExecution> result;
-
-  for (const auto& move : move_list) {
-    result.emplace_back();
-    auto& newboard = result.back().board;
-    newboard = *this;
-    result.back().reset_50_moves = newboard.ApplyMove(move);
-    if (newboard.IsUnderCheck()) {
-      result.pop_back();
-      continue;
-    }
-    result.back().move = move;
-  }
   return result;
 }
 

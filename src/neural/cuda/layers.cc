@@ -117,7 +117,7 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
         cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH));
 
   // TODO: dynamic selection of algorithm!
-  if ((C > 32) && (!fp16)) {
+  if ((C > 32) && (!fp16) && (filter_size_ > 1)) {
     conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
   } else {
     conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
@@ -297,7 +297,6 @@ void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   size_t num_weights1 = C * numFc1Out_;
   size_t weight_size1 = sizeof(float) * num_weights1;
 
-  size_t num_weights2 = 2 * num_weights1;
   size_t weight_size2 = 2 * weight_size1;
 
   // Weight for the first FC layer.
@@ -385,7 +384,6 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
                           const float* /*input2*/, void* scratch,
                           size_t scratch_size, cudnnHandle_t /*cudnn*/,
                           cublasHandle_t cublas) {
-  assert(output == input2);
   // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
   float* op1 = (float*)scratch;
   float* op2 = (float*)scratch + scratch_size / sizeof(float) / 2;

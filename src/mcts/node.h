@@ -183,6 +183,23 @@ class Node {
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
 
+  // Caches the best child if possible.
+  void UpdateBestChild(const Iterator& best_edge, int collisions_allowed);
+
+  // Gets a cached best child if it is still valid.
+  Node* GetCachedBestChild() {
+    if (n_in_flight_ < best_child_cache_in_flight_limit_) {
+      return best_child_cached_;
+    }
+    return nullptr;
+  }
+
+  // Gets how many more visits the cached value is valid for. Only valid if
+  // GetCachedBestChild returns a value.
+  int GetRemainingCacheVisits() {
+    return best_child_cache_in_flight_limit_ - n_in_flight_;
+  }
+
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
@@ -216,6 +233,13 @@ class Node {
   std::string DebugString() const;
 
  private:
+  // Performs construction time type initialization. For use only with a node
+  // that has not been used beyond its construction.
+  void Reinit(Node* parent, uint16_t index) {
+    parent_ = parent;
+    index_ = index;
+  }
+
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
@@ -231,6 +255,9 @@ class Node {
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
+  // Cached pointer to best child, valid while n_in_flight <
+  // best_child_cache_in_flight_limit_
+  Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
@@ -246,6 +273,9 @@ class Node {
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
   uint32_t n_in_flight_ = 0;
+  // If best_child_cached_ is non-null, and n_in_flight_ < this,
+  // best_child_cached_ is still the best child.
+  uint32_t best_child_cache_in_flight_limit_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -273,9 +303,9 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 40, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+static_assert(sizeof(Node) == 72, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -392,7 +422,8 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator& operator*() { return *this; }
 
   // If there is node, return it. Otherwise spawn a new one and return it.
-  Node* GetOrSpawnNode(Node* parent) {
+  Node* GetOrSpawnNode(Node* parent,
+                       std::unique_ptr<Node>* node_source = nullptr) {
     if (node_) return node_;  // If there is already a node, return it.
     Actualize();              // But maybe other thread already did that.
     if (node_) return node_;  // If it did, return.
@@ -408,7 +439,12 @@ class Edge_Iterator : public EdgeAndNode {
     // 2. Create fresh Node(idx_.5):
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
-    *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+    if (node_source && *node_source) {
+      (*node_source)->Reinit(parent, current_idx_);
+      *node_ptr_ = std::move(*node_source);
+    } else {
+      *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+    }
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
     //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)

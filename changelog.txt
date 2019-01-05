@@ -1,3 +1,72 @@
+v0.20.0-rc1 (2018-12-22)
+~~~~~~~~~~~
+
+* Squeeze-and-Excitation Networks are now supported! (lc0.org/se)
+* Older text network files are no longer supported.
+* Various performance fixes (most major being having fast approximate math
+  functions).
+* For systems with multiple GPUs, in addition to "multiplexing" backend
+  we now also have "demux" backend and "roundrobin" backend.
+* Compiler settings tweaks (use VS2017 for windows builds, always have LTO
+  enabled, windows releases have PGO enabled).
+* Benchmark mode has more options now (e.g. movetime) and saner defaults.
+* Added an option to prevent engine to resign too early (used in training).
+* Fixed a bug when number of visits could be too high in collision nodes.
+  The fix is pretty hacky, there will be better fix later.
+* 32-bit version compiles again.
+
+v0.19.1 (2018-12-10)
+~~~~~~~
+
+(no changes relative to v0.19.1-rc2)
+
+v0.19.1-rc2 (2018-12-07)
+~~~~~~~~~~~
+
+* Temperature and FPU related params. (#568)
+* Rework Cpuct related params. (#567)
+
+v0.19.1-rc1 (2018-12-06)
+~~~~~~~~~~~
+
+* Updated cpuct formula from alphazero paper. (#563)
+* remove UpdateFromUciOptions() from EnsureReady() (#558)
+* revert IsSearchActive() and better fix for one of #500 crashes (#555)
+
+v0.19.0 (2018-11-19)
+~~~~~~~
+
+* remove Wait() from EngineController::Stop() (#522)
+
+v0.19.0-rc5 (2018-11-17)
+~~~~~~~~~~~
+
+* OpenCL: replace thread_local with a resource pool. (#516)
+* optional wtime and btime (#515)
+* Make convolve1 work with workgroup size of 128 (#514)
+* adjust average depth calculation for multivisits (#510)
+
+v0.19.0-rc4 (2018-11-12)
+~~~~~~~~~~~
+
+* Microseconds have 6 digits, not 3! (#505)
+* use bestmove_is_sent_ for Search::IsSearchActive() (#502)
+
+v0.19.0-rc3 (2018-11-07)
+~~~~~~~~~~~
+
+* Fix OpenCL tuner always loading the first saved tuning (#491)
+* Do not show warning when ComputeBlocking() takes too much time. (#494)
+* Output microseconds in log rather than milliseconds. (#495)
+* Add benchmark features (#483)
+* Fix EncodePositionForNN test failure (#490)
+
+v0.19.0-rc2 (2018-11-03)
+~~~~~~~~~~~
+
+* Version v0.19.0-rc1 reported it's version as v0.19.0-dev
+  Therefore v0.19.0-rc2 is released with this issue fixed.
+
 v0.19.0-rc1 (2018-11-03)
 ~~~~~~~~~~~
 
