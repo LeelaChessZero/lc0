@@ -36,9 +36,9 @@ namespace lczero {
 // The approximation used here is log2(2^N*(1+f)) ~ N+f*(1.342671-0.342671*f)
 // where N is the integer and f the fractional part, f>=0.
 inline float FastLog2(const float a) {
-  int32_t tmp;
+  uint32_t tmp;
   std::memcpy(&tmp, &a, sizeof(float));
-  int expb = (tmp >> 23);
+  uint32_t expb = tmp >> 23;
   tmp = (tmp & 0x7fffff) | (0x7f << 23);
   float out;
   std::memcpy(&out, &tmp, sizeof(float));
@@ -50,12 +50,12 @@ inline float FastLog2(const float a) {
 // where N is the integer and f the fractional part, f>=0.
 inline float FastPow2(const float a) {
   if (a < -126) return 0.0;
-  int exp = floor(a);
+  int32_t exp = floor(a);
   float out = a - exp;
   out = 1.0f + out * (0.656366f + 0.343634f * out);
   int32_t tmp;
   std::memcpy(&tmp, &out, sizeof(float));
-  tmp += exp << 23;
+  tmp += static_cast<int32_t>(static_cast<uint32_t>(exp) << 23);
   std::memcpy(&out, &tmp, sizeof(float));
   return out;
 }

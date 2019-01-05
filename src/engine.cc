@@ -155,11 +155,6 @@ SearchLimits EngineController::PopulateSearchLimits(
     std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
   int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
-  if (params.movetime) {
-    limits.search_deadline = start_time + std::chrono::milliseconds(
-                                              *params.movetime - move_overhead);
-  }
-
   const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
@@ -168,6 +163,10 @@ SearchLimits EngineController::PopulateSearchLimits(
     }
   }
   limits.infinite = params.infinite || params.ponder;
+  if (params.movetime && !limits.infinite) {
+    limits.search_deadline = start_time + std::chrono::milliseconds(
+                                              *params.movetime - move_overhead);
+  }
   if (params.nodes) limits.visits = *params.nodes;
   int ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
   if (ram_limit) {
