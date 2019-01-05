@@ -1,3 +1,12 @@
+v0.20.1-rc2 (2019-01-05)
+~~~~~~~~~~~
+
+* Don't use Winograd for 1x1 conv. (#659)
+* Fix issues with pondering and search limits. (#658)
+* Check for zero capacity in cache (#648)
+* fix undefined behavior in DiscoverWeightsFile() (#650)
+* fix fastmath.h undefined behavior and clean it up (#643)
+
 v0.20.1-rc1 (2019-01-01)
 ~~~~~~~~~~~
 
