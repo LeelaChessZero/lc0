@@ -38,7 +38,7 @@ namespace {
 
 class BlasComputation : public NetworkComputation {
  public:
-  BlasComputation(const LegacyWeights& weights, const size_t max_batch_size);
+  BlasComputation(const LegacyWeights& weights, const size_t max_batch_size, const bool conv_policy);
 
   virtual ~BlasComputation() {}
 
@@ -71,6 +71,7 @@ class BlasComputation : public NetworkComputation {
   std::vector<InputPlanes> planes_;
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
+  bool conv_policy_;
 };
 
 class BlasNetwork : public Network {
@@ -79,7 +80,7 @@ class BlasNetwork : public Network {
   virtual ~BlasNetwork(){};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<BlasComputation>(weights_, max_batch_size_);
+    return std::make_unique<BlasComputation>(weights_, max_batch_size_, conv_policy_);
   }
 
  private:
@@ -88,14 +89,17 @@ class BlasNetwork : public Network {
 
   LegacyWeights weights_;
   size_t max_batch_size_;
+  bool conv_policy_;
 };
 
 BlasComputation::BlasComputation(const LegacyWeights& weights,
-                                 const size_t max_batch_size)
+                                 const size_t max_batch_size,
+                                 const bool conv_policy)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
-      q_values_(0) {}
+      q_values_(0),
+      conv_policy_(conv_policy) {}
 
 void BlasComputation::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
@@ -204,17 +208,34 @@ void BlasComputation::ComputeBlocking() {
       }
     }
 
-    Convolution1::Forward(batch_size, output_channels, num_policy_input_planes,
-                          conv_out, weights_.policy.weights.data(),
-                          policy_buffer.data());
+    if (conv_policy_) {
+      // Need to preserve conv_out which is used for value head
+      convolve3.Forward(batch_size, output_channels, output_channels, conv_out,
+                        &weights_.policy1.weights[0], res);
+
+      ApplyBatchNormalization(batch_size, output_channels, &res[0],
+                              weights_.policy1.bn_means.data(),
+                              weights_.policy1.bn_stddivs.data());
+
+      convolve3.Forward(batch_size, output_channels, num_policy_input_planes, res,
+                        &weights_.policy.weights[0], policy_buffer.data());
+
+      ApplyBatchNormalization(batch_size, num_policy_input_planes, &policy_buffer.data()[0],
+                              weights_.policy.bn_means.data(),
+                              weights_.policy.bn_stddivs.data());
+    } else {
+      Convolution1::Forward(batch_size, output_channels, num_policy_input_planes,
+                            conv_out, weights_.policy.weights.data(),
+                            policy_buffer.data());
+
+      ApplyBatchNormalization(batch_size, num_policy_input_planes,
+                              &policy_buffer[0], weights_.policy.bn_means.data(),
+                              weights_.policy.bn_stddivs.data());
+    }
 
     Convolution1::Forward(batch_size, output_channels, num_value_input_planes,
                           conv_out, weights_.value.weights.data(),
                           value_buffer.data());
-
-    ApplyBatchNormalization(batch_size, num_policy_input_planes,
-                            &policy_buffer[0], weights_.policy.bn_means.data(),
-                            weights_.policy.bn_stddivs.data());
 
     ApplyBatchNormalization(batch_size, num_value_input_planes,
                             &value_buffer[0], weights_.value.bn_means.data(),
@@ -268,6 +289,9 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
+  conv_policy_ = file.format().network_format().policy() ==
+         pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;
   }
@@ -298,8 +322,22 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     conv2.InvertStddev();
   }
 
-  weights_.policy.OffsetMeans();
-  weights_.policy.InvertStddev();
+  if (conv_policy_) {
+    weights_.policy1.OffsetMeans();
+    weights_.policy1.InvertStddev();
+
+    weights_.policy1.weights = WinogradFilterTransformF(weights_.policy1.weights, channels, channels);
+    auto pol_channels = weights_.policy.biases.size();
+    weights_.policy.weights = WinogradFilterTransformF(weights_.policy.weights, pol_channels , channels);
+    // Move bias to batchnorm
+    for (auto i = size_t{0}; i < pol_channels; i++) {
+        weights_.policy.bn_means.emplace_back(-weights_.policy.biases[i]);
+        weights_.policy.bn_stddivs.emplace_back(1.0f);
+    }
+  } else {
+      weights_.policy.OffsetMeans();
+      weights_.policy.InvertStddev();
+  }
   weights_.value.OffsetMeans();
   weights_.value.InvertStddev();
 
