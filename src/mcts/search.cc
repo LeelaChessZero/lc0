@@ -884,6 +884,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       node->CancelScoreUpdate(1);
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
+    node_already_updated = false;
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
