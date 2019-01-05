@@ -146,6 +146,9 @@ class CudnnNetwork : public Network {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
+    conv_policy_ = file.format().network_format().policy() ==
+        pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
     int total_gpus;
@@ -193,7 +196,11 @@ class CudnnNetwork : public Network {
       processConvBlock(weights.residual[i].conv1, true, 3);
       processConvBlock(weights.residual[i].conv2, true, 3);
     }
-    processConvBlock(weights.policy, true, 1);
+    if (conv_policy_) {
+        processConvBlock(weights.policy1, true, 1);
+    } else { 
+        processConvBlock(weights.policy, true, 1);
+    }
     processConvBlock(weights.value, true, 1);
 
     // 1. Allocate scratch space (used internally by cudnn to run convolutions,
@@ -293,7 +300,34 @@ class CudnnNetwork : public Network {
     resi_last_ = getLastLayer();
 
     // Policy head.
-    {
+    if (conv_policy_) {
+      auto conv1 = std::make_unique<ConvLayer<DataType>>(
+          resi_last_, kNumFilters, 8, 8, 3, kNumFilters, true, true);
+      conv1->LoadWeights(&weights.policy1.weights[0],
+                         &weights.policy1.biases[0],
+                         scratch_mem_);
+      network_.emplace_back(std::move(conv1));
+
+      auto pol_channels = weights.policy.biases.size();
+
+      // No relu
+      auto conv2 = std::make_unique<ConvLayer<DataType>>(
+          getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, false, true);
+      conv2->LoadWeights(&weights.policy.weights[0],
+                         &weights.policy.biases[0],
+                         scratch_mem_);
+      network_.emplace_back(std::move(conv2));
+
+      auto FCPol = std::make_unique<FCLayer<DataType>>(
+          getLastLayer(), weights.ip_pol_b.size(), 1, 1, false, true);
+      FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0],
+                         scratch_mem_);
+      network_.emplace_back(std::move(FCPol));
+
+      auto softmaxPol =
+          std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
+      network_.emplace_back(std::move(softmaxPol));
+    } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.policy.bn_means.size(), 8, 8, 1, kNumFilters, true, true);
       convPol->LoadWeights(&weights.policy.weights[0],
@@ -403,23 +437,49 @@ class CudnnNetwork : public Network {
     }
 
     // Policy head.
-    network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                        scratch_mem_, scratch_size_, cudnn_,
-                        cublas_);  // pol conv
-    network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                        scratch_mem_, scratch_size_, cudnn_,
-                        cublas_);  // pol FC
-    if (std::is_same<half, DataType>::value) {
-      // TODO: consider softmax layer that writes directly to fp32.
-      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // pol softmax
-      copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
-                        batchSize * kNumOutputPolicy);  // POLICY
+    if (conv_policy_) {
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // conv1
+
+        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // conv1
+
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol FC
+        if (std::is_same<half, DataType>::value) {
+          // TODO: consider softmax layer that writes directly to fp32
+          network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                              scratch_mem_, scratch_size_, cudnn_,
+                              cublas_);  // pol softmax
+          copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
+                            batchSize * kNumOutputPolicy);  // POLICY
+        } else {
+          network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0], nullptr,
+                              scratch_mem_, scratch_size_, cudnn_,
+                              cublas_);  // pol softmax  // POLICY
+        }
     } else {
-      network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // pol softmax  // POLICY
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol conv
+        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol FC
+        if (std::is_same<half, DataType>::value) {
+          // TODO: consider softmax layer that writes directly to fp32.
+          network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
+                              scratch_mem_, scratch_size_, cudnn_,
+                              cublas_);  // pol softmax
+          copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
+                            batchSize * kNumOutputPolicy);  // POLICY
+        } else {
+          network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1], nullptr,
+                              scratch_mem_, scratch_size_, cudnn_,
+                              cublas_);  // pol softmax  // POLICY
+        }
     }
 
     // Copy policy output from device memory to host memory.
@@ -526,6 +586,7 @@ class CudnnNetwork : public Network {
 
   int numBlocks_;
   bool has_se_;
+  bool conv_policy_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
