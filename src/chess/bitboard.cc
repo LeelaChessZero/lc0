@@ -404,8 +404,8 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
     // the number of relevant occupancy bits suffice to index the attacks table.
     magic_params[square].shift_bits_ = 64 - occupancy_squares.size();
 
-    // Set lookup table offset.
-    magic_params[square].table_offset_ = table_offset;
+    // Set pointer to lookup table.
+    magic_params[square].attacks_table_ = &attacks_table[table_offset];
 
     // Clear attacks table (used for sanity check later on).
     for (int i = 0; i < (1 << occupancy_squares.size()); i++) {

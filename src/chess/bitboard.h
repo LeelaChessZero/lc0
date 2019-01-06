@@ -247,8 +247,8 @@ class MagicBitBoards {
     uint64_t mask_;
     // Magic number.
     uint64_t magic_number_;
-    // Offset into lookup table.
-    uint32_t table_offset_;
+    // Pointer to lookup table.
+    BitBoard* attacks_table_;
     // Number of bits to shift.
     uint8_t shift_bits_;
   };
@@ -263,10 +263,9 @@ class MagicBitBoards {
     uint64_t index = pieces.as_int() & rook_magic_params_[square].mask_;
     index *= rook_magic_params_[square].magic_number_;
     index >>= rook_magic_params_[square].shift_bits_;
-    index += rook_magic_params_[square].table_offset_;
 
     // Return attacks bitboard.
-    return rook_attacks_table_[index];
+    return rook_magic_params_[square].attacks_table_[index];
   }
 
   // Returns the bishop attacks bitboard for the given bishop board square and
@@ -279,10 +278,9 @@ class MagicBitBoards {
     uint64_t index = pieces.as_int() & bishop_magic_params_[square].mask_;
     index *= bishop_magic_params_[square].magic_number_;
     index >>= bishop_magic_params_[square].shift_bits_;
-    index += bishop_magic_params_[square].table_offset_;
 
     // Return attacks bitboard.
-    return bishop_attacks_table_[index];
+    return bishop_magic_params_[square].attacks_table_[index];
   }
 
  private:
