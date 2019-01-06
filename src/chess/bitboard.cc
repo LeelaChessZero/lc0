@@ -348,15 +348,23 @@ BitBoard MagicBitBoards::rook_attacks_table_[102400];
 BitBoard MagicBitBoards::bishop_attacks_table_[5248];
 
 MagicBitBoards::MagicBitBoards() {
+#if defined(NO_PEXT)
+  // Set magic numbers for all board squares.
+  for (unsigned square = 0; square < 64; square++) {
+    rook_magic_params_[square].magic_number_ =
+        kRookMagicNumbers[square].as_int();
+    bishop_magic_params_[square].magic_number_ =
+        kBishopMagicNumbers[square].as_int();
+  }
+#endif
+
   // Build attacks tables.
-  BuildAttacksTable(kRookMagicNumbers, rook_magic_params_, rook_attacks_table_,
-                    kRookDirections);
-  BuildAttacksTable(kBishopMagicNumbers, bishop_magic_params_,
-                    bishop_attacks_table_, kBishopDirections);
+  BuildAttacksTable(rook_magic_params_, rook_attacks_table_, kRookDirections);
+  BuildAttacksTable(bishop_magic_params_, bishop_attacks_table_,
+                    kBishopDirections);
 }
 
-void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
-                                       MagicParams* magic_params,
+void MagicBitBoards::BuildAttacksTable(MagicParams* magic_params,
                                        BitBoard* attacks_table,
                                        const std::pair<int, int>* directions) {
   // Offset into lookup table.
@@ -397,12 +405,11 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
       occupancy_squares.emplace_back(occ_sq);
     }
 
-    // Set magic number.
-    magic_params[square].magic_number_ = magic_numbers[square].as_int();
-
+#if defined(NO_PEXT)
     // Set number of shifted bits. The magic numbers have been chosen such that
     // the number of relevant occupancy bits suffice to index the attacks table.
     magic_params[square].shift_bits_ = 64 - occupancy_squares.size();
+#endif
 
     // Set pointer to lookup table.
     magic_params[square].attacks_table_ = &attacks_table[table_offset];
@@ -438,9 +445,10 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
         }
       }
 
+#if defined(NO_PEXT)
       // Calculate magic index.
       uint64_t index = occupancy.as_int();
-      index *= magic_numbers[square].as_int();
+      index *= magic_params[square].magic_number_;
       index >>= magic_params[square].shift_bits_;
 
       // Sanity check. The magic numbers have been chosen such that
@@ -451,6 +459,10 @@ void MagicBitBoards::BuildAttacksTable(const BitBoard* magic_numbers,
           attacks_table[table_offset + index] != attacks) {
         throw Exception("Invalid magic number!");
       }
+#else
+      uint64_t index =
+          _pext_u64(occupancy.as_int(), magic_params[square].mask_);
+#endif
 
       // Update table.
       attacks_table[table_offset + index] = attacks;

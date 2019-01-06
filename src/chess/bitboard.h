@@ -32,6 +32,11 @@
 #include <string>
 #include <vector>
 
+#if not defined(NO_PEXT)
+// Include header for pext instruction.
+#include <immintrin.h>
+#endif
+
 #include "utils/bititer.h"
 
 namespace lczero {
@@ -245,12 +250,14 @@ class MagicBitBoards {
   struct MagicParams {
     // Relevant occupancy mask.
     uint64_t mask_;
-    // Magic number.
-    uint64_t magic_number_;
     // Pointer to lookup table.
     BitBoard* attacks_table_;
+#if defined(NO_PEXT)
+    // Magic number.
+    uint64_t magic_number_;
     // Number of bits to shift.
     uint8_t shift_bits_;
+#endif
   };
 
   // Returns the rook attacks bitboard for the given rook board square and the
@@ -260,9 +267,14 @@ class MagicBitBoards {
     // Calculate magic index.
     const uint8_t square = rook_square.as_int();
 
+#if defined(NO_PEXT)
     uint64_t index = pieces.as_int() & rook_magic_params_[square].mask_;
     index *= rook_magic_params_[square].magic_number_;
     index >>= rook_magic_params_[square].shift_bits_;
+#else
+    uint64_t index =
+        _pext_u64(pieces.as_int(), rook_magic_params_[square].mask_);
+#endif
 
     // Return attacks bitboard.
     return rook_magic_params_[square].attacks_table_[index];
@@ -275,9 +287,14 @@ class MagicBitBoards {
     // Calculate magic index.
     const uint8_t square = bishop_square.as_int();
 
+#if defined(NO_PEXT)
     uint64_t index = pieces.as_int() & bishop_magic_params_[square].mask_;
     index *= bishop_magic_params_[square].magic_number_;
     index >>= bishop_magic_params_[square].shift_bits_;
+#else
+    uint64_t index =
+        _pext_u64(pieces.as_int(), bishop_magic_params_[square].mask_);
+#endif
 
     // Return attacks bitboard.
     return bishop_magic_params_[square].attacks_table_[index];
@@ -285,8 +302,7 @@ class MagicBitBoards {
 
  private:
   // Builds rook or bishop attacks table.
-  void BuildAttacksTable(const BitBoard* kMagicNumbers,
-                         MagicParams* magic_params, BitBoard* attacks_table,
+  void BuildAttacksTable(MagicParams* magic_params, BitBoard* attacks_table,
                          const std::pair<int, int>* directions);
 
   // Magic numbers for each board square.
