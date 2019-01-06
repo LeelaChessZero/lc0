@@ -295,7 +295,7 @@ static MagicBitBoards magic_bitboards;
 
 // Magic numbers determined via trial and error with random number generator
 // such that the number of relevant occupancy bits suffice to index the attacks
-// tables with only constructive collisions.
+// tables without non-constructive collisions.
 const BitBoard MagicBitBoards::kRookMagicNumbers[64] = {
     0x088000102088C001ULL, 0x10C0200040001000ULL, 0x83001041000B2000ULL,
     0x0680280080041000ULL, 0x488004000A080080ULL, 0x0100180400010002ULL,
@@ -376,7 +376,8 @@ void MagicBitBoards::BuildAttacksTable(MagicParams* magic_params,
   for (unsigned square = 0; square < 64; square++) {
     const BoardSquare b_sq(square);
 
-    // Calculate relevant occupancy masks.
+    // Calculate relevant occupancy masks by subtracting the board edges from
+    // the total attacks bitboards.
     BitBoard mask = {0};
 
     for (int j = 0; j < 4; j++) {
