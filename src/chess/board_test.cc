@@ -94,7 +94,7 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
 }
 }  // namespace
 
-/* TEST(ChessBoard, MoveGenStartingPos) {
+TEST(ChessBoard, MoveGenStartingPos) {
   ChessBoard board;
   board.SetFromFen(ChessBoard::kStartposFen);
 
@@ -105,7 +105,7 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
   EXPECT_EQ(Perft(board, 4), 197281);
   EXPECT_EQ(Perft(board, 5), 4865609);
   EXPECT_EQ(Perft(board, 6), 119060324);
-} */
+}
 
 TEST(ChessBoard, MoveGenKiwipete) {
   ChessBoard board;
@@ -116,7 +116,7 @@ TEST(ChessBoard, MoveGenKiwipete) {
   EXPECT_EQ(Perft(board, 2), 2039);
   EXPECT_EQ(Perft(board, 3), 97862);
   EXPECT_EQ(Perft(board, 4), 4085603);
-//  EXPECT_EQ(Perft(board, 5), 193690690);
+  EXPECT_EQ(Perft(board, 5), 193690690);
 }
 
 TEST(ChessBoard, MoveGenPosition3) {
@@ -151,7 +151,7 @@ TEST(ChessBoard, MoveGenPosition5) {
   EXPECT_EQ(Perft(board, 2), 1486);
   EXPECT_EQ(Perft(board, 3), 62379);
   EXPECT_EQ(Perft(board, 4), 2103487);
-//  EXPECT_EQ(Perft(board, 5), 89941194);
+  EXPECT_EQ(Perft(board, 5), 89941194);
 }
 
 TEST(ChessBoard, MoveGenPosition6) {
