@@ -514,9 +514,9 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
               // Store the pinned piece.
               king_attack_info.pinned_pieces_.set(possible_pinned_piece);
             } else {
-              // Update attacking lines.
-              king_attack_info.attacking_lines_ =
-                  king_attack_info.attacking_lines_ + attack_line;
+              // Update attack lines.
+              king_attack_info.attack_lines_ =
+                  king_attack_info.attack_lines_ + attack_line;
               num_king_attackers++;
             }
           }
@@ -557,9 +557,9 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
               // Store the pinned piece.
               king_attack_info.pinned_pieces_.set(possible_pinned_piece);
             } else {
-              // Update attacking lines.
-              king_attack_info.attacking_lines_ =
-                  king_attack_info.attacking_lines_ + attack_line;
+              // Update attack lines.
+              king_attack_info.attack_lines_ =
+                  king_attack_info.attack_lines_ + attack_line;
               num_king_attackers++;
             }
           }
@@ -571,8 +571,8 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   // Check pawns.
   const BitBoard attacking_pawns =
       kPawnAttacks[our_king_.as_int()] * their_pieces_ * pawns_;
-  king_attack_info.attacking_lines_ =
-      king_attack_info.attacking_lines_ + attacking_pawns;
+  king_attack_info.attack_lines_ =
+      king_attack_info.attack_lines_ + attacking_pawns;
 
   if (attacking_pawns.as_int()) {
     // No more than one pawn can give check.
@@ -583,8 +583,8 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   const BitBoard attacking_knights =
       kKnightAttacks[our_king_.as_int()] *
       (their_pieces_ - their_king_ - rooks_ - bishops_ - (pawns_ * kPawnMask));
-  king_attack_info.attacking_lines_ =
-      king_attack_info.attacking_lines_ + attacking_knights;
+  king_attack_info.attack_lines_ =
+      king_attack_info.attack_lines_ + attacking_knights;
 
   if (attacking_knights.as_int()) {
     // No more than one knight can give check.
