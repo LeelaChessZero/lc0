@@ -28,8 +28,6 @@
 #include "chess/bitboard.h"
 #include "utils/exception.h"
 
-#include <vector>
-
 namespace lczero {
 
 namespace {
@@ -269,12 +267,6 @@ const Move kIdxToMove[] = {
     "g7g8b", "g7h8q", "g7h8r", "g7h8b", "h7g8q", "h7g8r", "h7g8b", "h7h8q",
     "h7h8r", "h7h8b"};
 
-static const std::pair<int, int> kRookDirections[] = {
-    {1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-
-static const std::pair<int, int> kBishopDirections[] = {
-    {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
-
 std::vector<unsigned short> BuildMoveIndices() {
   std::vector<unsigned short> res(4 * 64 * 64);
   for (size_t i = 0; i < sizeof(kIdxToMove) / sizeof(kIdxToMove[0]); ++i) {
@@ -288,7 +280,6 @@ const int kKingCastleIndex =
     kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("h1").as_int()];
 const int kQueenCastleIndex =
     kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("a1").as_int()];
-
 }  // namespace
 
 Move::Move(const std::string& str, bool black) {
