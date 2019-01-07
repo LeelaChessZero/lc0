@@ -33,6 +33,9 @@
 
 namespace lczero {
 
+// Initializes internal magic bitboard structures.
+void InitializeMagicBitboards();
+
 // Represents king attack info used during legal move detection.
 class KingAttackInfo {
  public:
