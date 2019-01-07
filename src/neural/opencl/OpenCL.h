@@ -118,8 +118,7 @@ class OpenCL_Network {
     m_layers[layer].channels = channels;
   }
 
-  void push_se(unsigned int channels,
-               unsigned int se_fc_outputs,
+  void push_se(unsigned int channels, unsigned int se_fc_outputs,
                const std::vector<float>& weights_1,
                const std::vector<float>& biases_1,
                const std::vector<float>& weights_2,
@@ -155,16 +154,13 @@ class OpenCL_Network {
     m_layers[layer].ip_out_size = ip_out;
   }
 
-  void push_conv_policy(unsigned int channels, unsigned int outputs,
-                   unsigned int ip_in, unsigned int ip_out,
-                   const std::vector<float>& weights_1,
-                   const std::vector<float>& means_1,
-                   const std::vector<float>& variances_1,
-                   const std::vector<float>& weights_2,
-                   const std::vector<float>& means_2,
-                   const std::vector<float>& variances_2,
-                   const std::vector<float>& fc_w,
-                   const std::vector<float>& fc_b) {
+  void push_conv_policy(
+      unsigned int channels, unsigned int outputs, unsigned int ip_in,
+      unsigned int ip_out, const std::vector<float>& weights_1,
+      const std::vector<float>& means_1, const std::vector<float>& variances_1,
+      const std::vector<float>& weights_2, const std::vector<float>& means_2,
+      const std::vector<float>& variances_2, const std::vector<float>& fc_w,
+      const std::vector<float>& fc_b) {
     size_t layer = get_layer_count();
     push_weights(layer, weights_1);
     push_weights(layer, means_1);

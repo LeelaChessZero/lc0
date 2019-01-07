@@ -320,12 +320,9 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   // Make program of the source code in the context.
   try {
     m_program =
-        cl::Program(m_context, sourceCode_config +
-                               sourceCode_convolve1 +
-                               sourceCode_convolve3 +
-                               sourceCode_se +
-                               sourceCode_sgemm +
-                               sourceCode_sgemv);
+        cl::Program(m_context, sourceCode_config + sourceCode_convolve1 +
+                                   sourceCode_convolve3 + sourceCode_se +
+                                   sourceCode_sgemm + sourceCode_sgemv);
   } catch (const cl::Error& e) {
     CERR << "Error getting kernels: " << e.what() << ": " << e.err();
     throw std::runtime_error("Error getting OpenCL kernels.");
