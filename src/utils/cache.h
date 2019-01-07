@@ -182,7 +182,6 @@ class LruCache {
     return size_;
   }
   int GetCapacity() const {
-    Mutex::Lock lock(mutex_);
     return capacity_;
   }
   static constexpr size_t GetItemStructSize() { return sizeof(Item); }
@@ -270,7 +269,7 @@ class LruCache {
   }
 
   // Fresh in front, stale on back.
-  int capacity_ GUARDED_BY(mutex_);
+  std::atomic<int> capacity_;
   int size_ GUARDED_BY(mutex_) = 0;
   int allocated_ GUARDED_BY(mutex_) = 0;
   Item* lru_head_ GUARDED_BY(mutex_) = nullptr;  // Newest elements.
