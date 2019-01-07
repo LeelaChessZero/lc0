@@ -222,7 +222,8 @@ void BlasComputation::ComputeBlocking() {
 
       ApplyBatchNormalization(batch_size, num_policy_input_planes, &policy_buffer.data()[0],
                               weights_.policy.bn_means.data(),
-                              weights_.policy.bn_stddivs.data());
+                              weights_.policy.bn_stddivs.data(),
+                              nullptr, false);
     } else {
       Convolution1::Forward(batch_size, output_channels, num_policy_input_planes,
                             conv_out, weights_.policy.weights.data(),
