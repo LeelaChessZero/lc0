@@ -429,7 +429,7 @@ void InitializeMagicBitboards() {
                     kBishopDirections);
 }
 
-BitBoard ChessBoard::pawns() const { return pawns_ * kPawnMask; }
+BitBoard ChessBoard::pawns() const { return pawns_ & kPawnMask; }
 
 BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
@@ -498,7 +498,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     if (rooks_.get(source)) {
       processed_piece = true;
       BitBoard attacked =
-          GetRookAttacks(source, our_pieces_ + their_pieces_) - our_pieces_;
+          GetRookAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
 
       for (const auto& destination : attacked) {
         result.emplace_back(source, destination);
@@ -508,7 +508,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     if (bishops_.get(source)) {
       processed_piece = true;
       BitBoard attacked =
-          GetBishopAttacks(source, our_pieces_ + their_pieces_) - our_pieces_;
+          GetBishopAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
 
       for (const auto& destination : attacked) {
         result.emplace_back(source, destination);
@@ -516,7 +516,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     }
     if (processed_piece) continue;
     // Pawns.
-    if ((pawns_ * kPawnMask).get(source)) {
+    if ((pawns_ & kPawnMask).get(source)) {
       // Moves forward.
       {
         const auto dst_row = source.row() + 1;
@@ -612,7 +612,7 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // Remove en passant flags.
-  pawns_ *= kPawnMask;
+  pawns_ &= kPawnMask;
 
   // If pawn was moved, reset 50 move draw counter.
   reset_50_moves |= pawns_.get(from);
@@ -677,7 +677,7 @@ bool ChessBoard::ApplyMove(Move move) {
   // Set en passant flag.
   if (to_row - from_row == 2 && pawns_.get(to)) {
     BoardSquare ep_sq(to_row - 1, to_col);
-    if (kPawnAttacks[ep_sq.as_int()].intersects(their_pieces_ * pawns_)) {
+    if (kPawnAttacks[ep_sq.as_int()].intersects(their_pieces_ & pawns_)) {
       pawns_.set(0, to_col);
     }
   }
@@ -694,24 +694,24 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
     if (std::abs(krow - row) <= 1 && std::abs(kcol - col) <= 1) return true;
   }
   // Check rooks (and queens).
-  if (GetRookAttacks(square, our_pieces_ + their_pieces_)
-          .intersects(their_pieces_ * rooks_)) {
+  if (GetRookAttacks(square, our_pieces_ | their_pieces_)
+          .intersects(their_pieces_ & rooks_)) {
     return true;
   }
   // Check bishops.
-  if (GetBishopAttacks(square, our_pieces_ + their_pieces_)
-          .intersects(their_pieces_ * bishops_)) {
+  if (GetBishopAttacks(square, our_pieces_ | their_pieces_)
+          .intersects(their_pieces_ & bishops_)) {
     return true;
   }
   // Check pawns.
-  if (kPawnAttacks[square.as_int()].intersects(their_pieces_ * pawns_)) {
+  if (kPawnAttacks[square.as_int()].intersects(their_pieces_ & pawns_)) {
     return true;
   }
   // Check knights.
   {
     if (kKnightAttacks[square.as_int()].intersects(their_pieces_ - their_king_ -
                                                    rooks_ - bishops_ -
-                                                   (pawns_ * kPawnMask))) {
+                                                   (pawns_ & kPawnMask))) {
       return true;
     }
   }
@@ -728,7 +728,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   const int col = our_king_.col();
   // King checks are unnecessary, as kings cannot give check.
   // Check rooks (and queens).
-  if (kRookAttacks[our_king_.as_int()].intersects(their_pieces_ * rooks_)) {
+  if (kRookAttacks[our_king_.as_int()].intersects(their_pieces_ & rooks_)) {
     for (const auto& direction : kRookDirections) {
       auto dst_row = row;
       auto dst_col = col;
@@ -761,7 +761,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
             } else {
               // Update attack lines.
               king_attack_info.attack_lines_ =
-                  king_attack_info.attack_lines_ + attack_line;
+                  king_attack_info.attack_lines_ | attack_line;
               num_king_attackers++;
             }
           }
@@ -771,7 +771,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
     }
   }
   // Check bishops.
-  if (kBishopAttacks[our_king_.as_int()].intersects(their_pieces_ * bishops_)) {
+  if (kBishopAttacks[our_king_.as_int()].intersects(their_pieces_ & bishops_)) {
     for (const auto& direction : kBishopDirections) {
       auto dst_row = row;
       auto dst_col = col;
@@ -804,7 +804,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
             } else {
               // Update attack lines.
               king_attack_info.attack_lines_ =
-                  king_attack_info.attack_lines_ + attack_line;
+                  king_attack_info.attack_lines_ | attack_line;
               num_king_attackers++;
             }
           }
@@ -815,9 +815,9 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   }
   // Check pawns.
   const BitBoard attacking_pawns =
-      kPawnAttacks[our_king_.as_int()] * their_pieces_ * pawns_;
+      kPawnAttacks[our_king_.as_int()] & their_pieces_ & pawns_;
   king_attack_info.attack_lines_ =
-      king_attack_info.attack_lines_ + attacking_pawns;
+      king_attack_info.attack_lines_ | attacking_pawns;
 
   if (attacking_pawns.as_int()) {
     // No more than one pawn can give check.
@@ -826,10 +826,10 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
 
   // Check knights.
   const BitBoard attacking_knights =
-      kKnightAttacks[our_king_.as_int()] *
-      (their_pieces_ - their_king_ - rooks_ - bishops_ - (pawns_ * kPawnMask));
+      kKnightAttacks[our_king_.as_int()] &
+      (their_pieces_ - their_king_ - rooks_ - bishops_ - (pawns_ & kPawnMask));
   king_attack_info.attack_lines_ =
-      king_attack_info.attack_lines_ + attacking_knights;
+      king_attack_info.attack_lines_ | attacking_knights;
 
   if (attacking_knights.as_int()) {
     // No more than one knight can give check.
@@ -1020,7 +1020,7 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-  if ((our_pieces_ + their_pieces_).count() < 4) {
+  if ((our_pieces_ | their_pieces_).count() < 4) {
     // K v K, K+B v K, K+N v K.
     return false;
   }
@@ -1060,7 +1060,7 @@ string ChessBoard::DebugString() const {
         continue;
       }
       char c = '?';
-      if ((pawns_ * kPawnMask).get(i, j)) {
+      if ((pawns_ & kPawnMask).get(i, j)) {
         c = 'p';
       } else if (bishops_.get(i, j)) {
         if (rooks_.get(i, j))

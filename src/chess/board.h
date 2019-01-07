@@ -153,7 +153,7 @@ class ChessBoard {
   BitBoard en_passant() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
-  BitBoard queens() const { return rooks_ * bishops_; }
+  BitBoard queens() const { return rooks_ & bishops_; }
   BitBoard our_knights() const {
     return our_pieces_ - pawns() - our_king_ - rooks_ - bishops_;
   }
