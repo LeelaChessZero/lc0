@@ -59,7 +59,7 @@ class LruCache {
   // Inserts the element under key @key with value @val.
   // Puts element to front of the queue (makes it last to evict).
   void Insert(K key, std::unique_ptr<V> val) {
-    if (capacity_ == 0) return;
+    if (capacity_.load(std::memory_order_relaxed) == 0) return;
 
     Mutex::Lock lock(mutex_);
 
@@ -84,7 +84,7 @@ class LruCache {
   // Checks whether a key exists. Doesn't lock. Of course the next moment the
   // key may be evicted.
   bool ContainsKey(K key) {
-    if (capacity_ == 0) return false;
+    if (capacity_.load(std::memory_order_relaxed) == 0) return false;
 
     Mutex::Lock lock(mutex_);
     auto hash = hasher_(key) % hash_.size();
@@ -99,7 +99,7 @@ class LruCache {
   // evict); furthermore, a call to Unpin must be made for each such element.
   // Use of LruCacheLock is recommended to automate this pin management.
   V* LookupAndPin(K key) {
-    if (capacity_ == 0) return nullptr;
+    if (capacity_.load(std::memory_order_relaxed) == 0) return nullptr;
 
     Mutex::Lock lock(mutex_);
 
@@ -151,9 +151,9 @@ class LruCache {
   void SetCapacity(int capacity) {
     Mutex::Lock lock(mutex_);
 
-    if (capacity_ == capacity) return;
+    if (capacity_.load(std::memory_order_relaxed) == capacity) return;
     ShrinkToCapacity(capacity);
-    capacity_ = capacity;
+    capacity_.store(capacity);
 
     std::vector<Item*> new_hash(
         static_cast<size_t>(capacity * kLoadFactor + 1));
@@ -181,8 +181,8 @@ class LruCache {
     Mutex::Lock lock(mutex_);
     return size_;
   }
-  int GetCapacity() const {
-    return capacity_;
+  int GetCapacity() const { 
+	return capacity_.load(std::memory_order_relaxed);
   }
   static constexpr size_t GetItemStructSize() { return sizeof(Item); }
 
