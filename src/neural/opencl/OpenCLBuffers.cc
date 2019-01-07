@@ -187,6 +187,49 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
                          se_weights, // weights
                          m_inBuffer, // residual
                          batch_size); // batch_size
+    } else if (layer.is_conv_policy) {
+      assert(niter != cend(layers));
+      auto conv1_weights = begin(layer.weights);
+      auto bn1_weights = begin(layer.weights) + 1;
+      auto conv2_weights = begin(layer.weights) + 3;
+      auto bn2_weights = begin(layer.weights) + 4;
+      auto ip_w = begin(layer.weights) + 6;
+      auto ip_b = begin(layer.weights) + 7;
+
+      convolve3(layer.channels, // channels
+                layer.channels, // outputs
+                m_inBuffer, // bufferIn
+                m_inBuffer2, // bufferOut
+                m_VBuffer, // bufferV
+                m_MBuffer, // bufferM
+                conv1_weights, // weights
+                nullptr, // bufferResidual
+                bn1_weights, //bn_weights
+                skip_in_trans, // skip_in_transform
+                true, // fuse_in_transform
+                false, // store_inout
+                true, // relu
+                batch_size); // batch_size
+
+      // m_inBuffer needs to be preserved for value head
+      convolve3(layer.channels, // channels
+                layer.outputs, // outputs
+                m_inBuffer2, // bufferIn
+                m_inBuffer2, // bufferOut
+                m_VBuffer, // bufferV
+                m_MBuffer, // bufferM
+                conv2_weights, // weights
+                nullptr, // bufferResidual
+                bn2_weights, //bn_weights
+                true, // skip_in_transform
+                false, // fuse_in_transform
+                false, // store_inout
+                false, // relu
+                batch_size); // batch_size
+
+      innerproduct(m_inBuffer2, ip_w, ip_b, m_pinnedOutBuffer_pol,
+                   layer.ip_in_size, layer.ip_out_size, false, batch_size);
+
     } else {
       assert(layer.is_value || layer.is_policy);
 

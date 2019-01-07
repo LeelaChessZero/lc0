@@ -163,7 +163,7 @@ class OpenCLNetwork : public Network {
 
   OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
       : weights_(file), params_(), opencl_(), opencl_net_(opencl_) {
-    const LegacyWeights weights(file.weights());
+    LegacyWeights weights(file.weights());
     params_.gpuId = options.GetOrDefault<int>("gpu", -1);
     params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
@@ -230,6 +230,9 @@ class OpenCLNetwork : public Network {
                                        Upad, input_batchnorm_means,
                                        input_batchnorm_stddivs);
 
+    auto conv_policy = file.format().network_format().policy() ==
+           pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
     // Residual blocks.
     for (auto i = size_t{0}; i < residual_blocks; i++) {
       auto& residual = weights.residual[i];
@@ -268,14 +271,54 @@ class OpenCLNetwork : public Network {
     constexpr unsigned int width = 8;
     constexpr unsigned int height = 8;
 
-    std::vector<float> bn_pol_means = weights.policy.GetOffsetMeans();
-    std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
+    if (conv_policy) {
+        auto& policy1 = weights.policy1;
+        auto& policy = weights.policy;
+        auto pol_channels = policy.biases.size();
 
-    opencl_net_.push_policy(channels, num_policy_input_planes,
-                            num_policy_input_planes * width * height,
-                            num_output_policy, weights.policy.weights,
-                            bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
-                            weights.ip_pol_b);
+        std::vector<float> conv_weights_1 =
+            WinogradFilterTransformF(policy1.weights, channels, channels);
+        auto W1 = WinogradFilterZeropadU(conv_weights_1, channels, channels,
+                                         m_ceil, m_ceil);
+
+        size_t m_ceil_pol = ceilMultiple(ceilMultiple(pol_channels, mwg), vwm);
+        size_t k_ceil_pol = ceilMultiple(ceilMultiple(channels, kwg), vwm);
+        std::vector<float> conv_weights_2 =
+            WinogradFilterTransformF(policy.weights, pol_channels, channels);
+        auto W2 = WinogradFilterZeropadU(conv_weights_2, pol_channels, channels,
+                                         m_ceil_pol, k_ceil_pol);
+
+        std::vector<float> pol_means, pol_stddivs;
+        for (auto i = size_t{0}; i < pol_channels; i++) {
+          // Move bias to batchnorm
+          pol_means.emplace_back(-weights.policy.biases[i]);
+          pol_stddivs.emplace_back(1.0f);
+        }
+
+        std::vector<float> bn_pol1_means = weights.policy1.GetOffsetMeans();
+        std::vector<float> bn_pol1_stddivs = weights.policy1.GetInvertedStddev();
+
+        std::vector<float> bn_pol_means = weights.policy.GetOffsetMeans();
+        std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
+
+        opencl_net_.push_conv_policy(channels, pol_channels,
+                                pol_channels * width * height,
+                                num_output_policy, W1,
+                                bn_pol1_means, bn_pol1_stddivs,
+                                W2,
+                                pol_means, pol_stddivs,
+                                weights.ip_pol_w,
+                                weights.ip_pol_b);
+    } else {
+        std::vector<float> bn_pol_means = weights.policy.GetOffsetMeans();
+        std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
+
+        opencl_net_.push_policy(channels, num_policy_input_planes,
+                                num_policy_input_planes * width * height,
+                                num_output_policy, weights.policy.weights,
+                                bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
+                                weights.ip_pol_b);
+    }
 
     std::vector<float> bn_val_means = weights.value.GetOffsetMeans();
     std::vector<float> bn_val_stddivs = weights.value.GetInvertedStddev();
