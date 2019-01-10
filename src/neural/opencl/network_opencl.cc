@@ -167,48 +167,48 @@ class OpenCLNetwork : public Network {
     params_.gpuId = options.GetOrDefault<int>("gpu", -1);
     params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
-        if (options.GetOrDefault<bool>("tune_exhaustive", false))
-          params_.tune_effort = kTuneEffortSlowest;
-        
-        if (options.HasSubdict("tune")) {
-          auto tune_options = options.GetSubdict("tune");
-          if (tune_options.HasSubdict("help")) {
-            std::cerr << "OpenCL tune options are:" << std::endl
-            << "* Effort:" << std::endl
-            << "tune(faster): faster tuning." << std::endl
-            << "tune(normal): normal tuning." << std::endl
-            << "tune(slower): slower tuning." << std::endl
-            << "tune(slowest): slowest tuning." << std::endl
-            << "* Algo:" << std::endl
-            << "tune(stochastic): default." << std::endl
-            << "tune(systematic): former algorithm." << std::endl
-            << "* Misc.:" << std::endl
-            << "tune(force): force tuning even if exist in the file."
-            << std::endl
-            << "tune(only): exist after tuning." << std::endl;
-          }
-          
-          // Misc.
-          if (tune_options.HasSubdict("force")) params_.force_tune = true;
-          if (tune_options.HasSubdict("only")) params_.tune_only = true;
-          
-          // Tune algo.
-          if (tune_options.HasSubdict("stochastic"))
-            params_.tune_algo = kTuneAlgoStochastic;
-          if (tune_options.HasSubdict("systematic"))
-            params_.tune_algo = kTuneAlgoSystematic;
-          
-          // Tune effort.
-          if (tune_options.HasSubdict("faster"))
-            params_.tune_effort = kTuneEffortFaster;
-          if (tune_options.HasSubdict("normal"))
-            params_.tune_effort = kTuneEffortNormal;
-          if (tune_options.HasSubdict("slower"))
-            params_.tune_effort = kTuneEffortSlower;
-          if (tune_options.HasSubdict("slowest"))
-            params_.tune_effort = kTuneEffortSlowest;
-        }
-        
+    if (options.GetOrDefault<bool>("tune_exhaustive", false))
+      params_.tune_effort = kTuneEffortSlowest;
+
+    if (options.HasSubdict("tune")) {
+      auto tune_options = options.GetSubdict("tune");
+      if (tune_options.HasSubdict("help")) {
+        std::cerr << "OpenCL tune options are:" << std::endl
+                  << "* Effort:" << std::endl
+                  << "tune(faster): faster tuning." << std::endl
+                  << "tune(normal): normal tuning." << std::endl
+                  << "tune(slower): slower tuning." << std::endl
+                  << "tune(slowest): slowest tuning." << std::endl
+                  << "* Algo:" << std::endl
+                  << "tune(stochastic): default." << std::endl
+                  << "tune(systematic): former algorithm." << std::endl
+                  << "* Misc.:" << std::endl
+                  << "tune(force): force tuning even if exist in the file."
+                  << std::endl
+                  << "tune(only): exist after tuning." << std::endl;
+      }
+
+      // Misc.
+      if (tune_options.HasSubdict("force")) params_.force_tune = true;
+      if (tune_options.HasSubdict("only")) params_.tune_only = true;
+
+      // Tune algo.
+      if (tune_options.HasSubdict("stochastic"))
+        params_.tune_algo = kTuneAlgoStochastic;
+      if (tune_options.HasSubdict("systematic"))
+        params_.tune_algo = kTuneAlgoSystematic;
+
+      // Tune effort.
+      if (tune_options.HasSubdict("faster"))
+        params_.tune_effort = kTuneEffortFaster;
+      if (tune_options.HasSubdict("normal"))
+        params_.tune_effort = kTuneEffortNormal;
+      if (tune_options.HasSubdict("slower"))
+        params_.tune_effort = kTuneEffortSlower;
+      if (tune_options.HasSubdict("slowest"))
+        params_.tune_effort = kTuneEffortSlowest;
+    }
+
     // By default batch size is 1, as many old cards may not support more.
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));

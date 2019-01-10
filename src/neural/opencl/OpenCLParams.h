@@ -30,13 +30,11 @@ enum OpenCLTuneEffort {
 struct OpenCLParams {
   int gpuId = -1;
   int tune_batch_size = 1;
-  
+
   bool verbose = false;
   bool tune_only = false;
   bool force_tune = false;
-  
+
   OpenCLTuneAlgo tune_algo = kTuneAlgoStochastic;
   OpenCLTuneEffort tune_effort = kTuneEffortNormal;
 };
-
-
