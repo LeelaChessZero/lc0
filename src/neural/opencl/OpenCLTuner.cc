@@ -35,7 +35,6 @@
 
 static const auto kTunerFilename = std::string("leelaz_opencl_tuning");
 static constexpr auto kMaxError = 1e-4;
-static constexpr int kExhaustiveSkip = 20;
 static constexpr int kTuneIterations = 10;
 static constexpr double kFirstIterWeight = 0.25;
 
@@ -514,7 +513,6 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
   auto m_ceil_prev = 0;
   auto n_ceil_prev = 0;
   auto k_ceil_prev = 0;
-  auto param_counter = size_t{0};
 
   for (int seed = 0; seed < seeds; seed++) {
     int index = lczero::Random::Get().GetInt(0, cfgs);
@@ -540,8 +538,8 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
         auto value = p[name];
 
         auto values = opts[p0].second;
-        auto value_count = values.size();
-        auto value_index = -1;
+        int value_count = static_cast<int>(values.size());
+        int value_index = -1;
 
         for (int k = 0; k < value_count; k++) {
           if (value == values[k]) {
