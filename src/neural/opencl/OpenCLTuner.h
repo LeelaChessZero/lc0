@@ -29,7 +29,7 @@ using TuneParameters = std::map<std::string, size_t>;
 
 class OpenCL;
 
-class Tuner {
+class OpenCLTuner {
   OpenCL& m_opencl;
   const OpenCLParams& m_params;
   cl::Context m_context;
@@ -38,22 +38,24 @@ class Tuner {
  public:
   std::string tune_sgemm(const int m, const int n, const int k,
                          const int batch_size);
-
-  std::string tune_sgemm_stochastic(const int m, const int n, const int k,
-                                    const int batch_size);
-
   std::string load_sgemm_tuners(const int m, const int n, const int k,
                                 const int batch_size);
 
   static constexpr auto TUNER_VERSION = 0;
-  Tuner(OpenCL& opencl, const OpenCLParams& params, cl::Context context,
-        cl::Device device)
+  OpenCLTuner(OpenCL& opencl, const OpenCLParams& params, cl::Context context,
+              cl::Device device)
       : m_opencl(opencl),
         m_params(params),
         m_context(context),
         m_device(device) {}
 
  private:
+  std::string tune_sgemm_bruteforce(const int m, const int n, const int k,
+                                    const int batch_size);
+
+  std::string tune_sgemm_stochastic(const int m, const int n, const int k,
+                                    const int batch_size);
+
   void store_sgemm_tuners(const int m, const int n, const int k,
                           const int batch_size, std::string tuners);
   bool valid_config_sgemm(TuneParameters p, bool exhaustive);

@@ -194,7 +194,7 @@ class OpenCL_Network {
 class OpenCL {
   friend class OpenCL_Network;
   friend class OpenCLBuffers;
-  friend class Tuner;
+  friend class OpenCLTuner;
 
  public:
   void initialize(const int channels, const OpenCLParams& params);
