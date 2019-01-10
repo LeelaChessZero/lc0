@@ -173,7 +173,7 @@ class OpenCLNetwork : public Network {
     if (options.HasSubdict("tune")) {
       auto tune_options = options.GetSubdict("tune");
       if (tune_options.HasSubdict("help")) {
-        std::cerr << "OpenCL tune options are:" << std::endl
+        CERR << "OpenCL tune options are:" << std::endl
                   << "* Effort:" << std::endl
                   << "tune(faster): faster tuning." << std::endl
                   << "tune(normal): normal tuning." << std::endl
@@ -185,7 +185,7 @@ class OpenCLNetwork : public Network {
                   << "* Misc.:" << std::endl
                   << "tune(force): force tuning even if exist in the file."
                   << std::endl
-                  << "tune(only): exist after tuning." << std::endl;
+                  << "tune(only): exist after tuning.";
       }
 
       // Misc.
