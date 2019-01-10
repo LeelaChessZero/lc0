@@ -37,7 +37,11 @@ class Tuner {
 
  public:
   std::string tune_sgemm(const int m, const int n, const int k,
-                         const int batch_size, const int runs = 4);
+                         const int batch_size);
+
+  std::string tune_sgemm_stochastic(const int m, const int n, const int k,
+                                    const int batch_size);
+
   std::string load_sgemm_tuners(const int m, const int n, const int k,
                                 const int batch_size);
 
