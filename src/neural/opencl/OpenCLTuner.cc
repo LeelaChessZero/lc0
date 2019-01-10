@@ -34,15 +34,21 @@
 #include "utils/random.h"
 
 static const auto kTunerFilename = std::string("leelaz_opencl_tuning");
+
+// Maximum error from reference.
 static constexpr auto kMaxError = 1e-4;
+
+// Make from 5 to 10 iterations.
 static constexpr int kMinTuneIters = 5;
 static constexpr int kMaxTuneIters = 10;
-static constexpr double kFirstIterWeight = 0.25;
 
-// Let's assume a measure error of maximum 1us +/- 2.5%.
+// Measure error: of maximum 1us +/- 2.5%.
+// Assume that the first iteration has twice more dev.
 static constexpr auto kMaxTimingErrorRate = 0.025;
 static constexpr auto kMaxTimingErrorUs = 1;
+static constexpr double kFirstIterWeight = 0.25;
 
+// Stochastic search constants.
 static constexpr auto kSeeds = 10;
 static constexpr auto kWalkLength = 80;
 static constexpr auto kWalkMinChanges = 5;
