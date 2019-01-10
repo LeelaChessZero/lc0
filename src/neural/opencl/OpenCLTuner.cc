@@ -35,15 +35,16 @@
 
 static const auto kTunerFilename = std::string("leelaz_opencl_tuning");
 static constexpr auto kMaxError = 1e-4;
-static constexpr int kTuneIterations = 10;
+static constexpr int kMinTuneIters = 5;
+static constexpr int kMaxTuneIters = 10;
 static constexpr double kFirstIterWeight = 0.25;
 
 // Let's assume a measure error of maximum 1us +/- 2.5%.
 static constexpr auto kMaxTimingErrorRate = 0.025;
 static constexpr auto kMaxTimingErrorUs = 1;
 
-static constexpr auto kSeeds = 20;
-static constexpr auto kWalkLength = 60;
+static constexpr auto kSeeds = 10;
+static constexpr auto kWalkLength = 80;
 static constexpr auto kWalkMinChanges = 5;
 
 static void sgemmBatched_ref(const std::vector<float>& a,
@@ -238,19 +239,19 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
 
   if (large_set) {
     opts = {
-      {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
-      {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
-      {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4, 8}},
-      {"VWN", {1, 2, 4, 8}},  {"STRM", {0, 1}},       {"STRN", {0, 1}},
-      {"SA", {0, 1}},         {"SB", {0, 1}},
+        {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
+        {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
+        {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4, 8}},
+        {"VWN", {1, 2, 4, 8}},  {"STRM", {0, 1}},       {"STRN", {0, 1}},
+        {"SA", {0, 1}},         {"SB", {0, 1}},
     };
   } else {
-    opts = {      
-      {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {32}},
-      {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
-      {"NDIMB", {8, 16, 32}}, {"KWI", {2}},           {"VWM", {1, 2, 4}},
-      {"VWN", {1, 2, 4}},     {"STRM", {0}},          {"STRN", {0}},
-      {"SA", {0, 1}},         {"SB", {0, 1}},
+    opts = {
+        {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {32}},
+        {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
+        {"NDIMB", {8, 16, 32}}, {"KWI", {2}},           {"VWM", {1, 2, 4}},
+        {"VWN", {1, 2, 4}},     {"STRM", {0}},          {"STRN", {0}},
+        {"SA", {0, 1}},         {"SB", {0, 1}},
     };
   }
 
@@ -368,7 +369,7 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
     double sum_weight = 0;
     double time_us = 0;
 
-    for (auto r = 0; r < kTuneIterations; r++) {
+    for (auto r = 0; r < kMaxTuneIters; r++) {
       try {
         queue.enqueueNDRangeKernel(sgemm_kernel, cl::NullRange, size_sgemm,
                                    local_sgemm, nullptr, &event);
@@ -391,7 +392,7 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
         sum_weight += weight;
         time_us = 1e-3 * sum_wtime_ns / sum_weight;
 
-        if (best_time_us > 0) {
+        if (r > kMinTuneIters && best_time_us > 0) {
           double error_us =
               (kMaxTimingErrorRate * time_us + kMaxTimingErrorUs) /
               std::sqrt(sum_weight);
@@ -612,7 +613,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
       double sum_weight = 0;
       double time_us = 0;
 
-      for (int r = 0; r < kTuneIterations; r++) {
+      for (int r = 0; r < kMaxTuneIters; r++) {
         try {
           queue.enqueueNDRangeKernel(sgemm_kernel, cl::NullRange, size_sgemm,
                                      local_sgemm, nullptr, &event);
@@ -635,7 +636,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
           sum_weight += weight;
           time_us = 1e-3 * sum_wtime_ns / sum_weight;
 
-          if (best_time_us > 0) {
+          if (r > kMinTuneIters && best_time_us > 0) {
             double error_us =
                 (kMaxTimingErrorRate * time_us + kMaxTimingErrorUs) /
                 std::sqrt(sum_weight);
