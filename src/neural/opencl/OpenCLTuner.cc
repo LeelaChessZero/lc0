@@ -610,11 +610,10 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
                                 (n_ceil * p["NDIMC"]) / p["NWG"],
                                 (size_t)batch_size};
 
-      double max_error = 0.0;
+      float max_error = 0.0;
       double sum_wtime_ns = 0;
       double sum_weight = 0;
       double time_us = 0;
-      bool error = false;
 
       for (int r = 0; r < kTuneIterations; r++) {
         try {
@@ -629,7 +628,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
 
           auto this_error =
               compare_ref(c, c_ref, n, m, batch_size, n_ceil, m_ceil);
-          error |= this_error >= kMaxError;
+          max_error = std::max(max_error, this_error);
 
           auto elapsed = event.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
                          event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
@@ -654,7 +653,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
         }
       }
 
-      if (error) {
+      if (max_error >= kMaxError) {
         p = p_old;
         continue;
       }
