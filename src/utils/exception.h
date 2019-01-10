@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -28,12 +28,16 @@
 #pragma once
 
 #include <stdexcept>
+#include "utils/logging.h"
 
 namespace lczero {
 
 // Exception to throw around.
 class Exception : public std::runtime_error {
-  using std::runtime_error::runtime_error;
+ public:
+  Exception(const std::string& what) : std::runtime_error(what) {
+    LOGFILE << "Exception: " << what;
+  }
 };
 
 }  // namespace lczero

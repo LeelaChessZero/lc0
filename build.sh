@@ -2,25 +2,34 @@
 
 set -e
 
-BUILDTYPE=$1
-
-if [ -z "${BUILDTYPE}" ]
-then
-  BUILDTYPE=release
-fi
+case $1 in
+  plain|debug|debugoptimized|release|minsize)
+    BUILDTYPE=$1
+    shift
+    ;;
+  *)
+    BUILDTYPE=release
+    ;;
+esac
 
 BUILDDIR=build/${BUILDTYPE}
 
-rm -fr ${BUILDDIR}
-meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local}
+if [ -f ${BUILDDIR}/build.ninja ]
+then
+  meson configure ${BUILDDIR} -Dbuildtype=${BUILDTYPE} -Dprefix=${INSTALL_PREFIX:-/usr/local} "$@"
+else
+  meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
+fi
 
 pushd ${BUILDDIR}
 
+NINJA=$(awk '/ninja/ {ninja=$4} END {print ninja}' meson-logs/meson-log.txt)
+
 if [ -n "${INSTALL_PREFIX}" ]
 then
-  ninja install
+  ${NINJA} install
 else
-  ninja
+  ${NINJA}
 fi
 
 popd

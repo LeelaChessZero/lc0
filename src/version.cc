@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -30,7 +30,8 @@ std::uint32_t GetVersionInt(int major, int minor, int patch) {
   return major * 1000000 + minor * 1000 + patch;
 }
 
-std::string GetVersionStr(int major, int minor, int patch, const std::string& postfix) {
+std::string GetVersionStr(int major, int minor, int patch,
+                          const std::string& postfix) {
   auto v = std::to_string(major) + "." + std::to_string(minor) + "." +
            std::to_string(patch);
   if (postfix.empty()) return v;

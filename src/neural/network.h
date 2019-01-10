@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -33,39 +33,6 @@
 namespace lczero {
 
 const int kInputPlanes = 112;
-
-struct Weights {
-  using Vec = std::vector<float>;
-  struct ConvBlock {
-    Vec weights;
-    Vec biases;
-    Vec bn_means;
-    Vec bn_stddivs;
-  };
-
-  struct Residual {
-    ConvBlock conv1;
-    ConvBlock conv2;
-  };
-
-  // Input convnet.
-  ConvBlock input;
-
-  // Residual tower.
-  std::vector<Residual> residual;
-
-  // Policy head
-  ConvBlock policy;
-  Vec ip_pol_w;
-  Vec ip_pol_b;
-
-  // Value head
-  ConvBlock value;
-  Vec ip1_val_w;
-  Vec ip1_val_b;
-  Vec ip2_val_w;
-  Vec ip2_val_b;
-};
 
 // All input planes are 64 value vectors, every element of which is either
 // 0 or some value, unique for the plane. Therefore, input is defined as

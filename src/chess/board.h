@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -33,13 +33,32 @@
 
 namespace lczero {
 
-struct MoveExecution;
+// Represents king attack info used during legal move detection.
+class KingAttackInfo {
+ public:
+  bool in_check() const { return attacking_lines_.as_int(); }
+  bool in_double_check() const { return double_check_; }
+  bool is_pinned(const BoardSquare square) const {
+    return pinned_pieces_.get(square);
+  }
+  bool is_on_attack_line(const BoardSquare square) const {
+    return attacking_lines_.get(square);
+  }
+
+  bool double_check_ = 0;
+  BitBoard pinned_pieces_ = {0};
+  BitBoard attacking_lines_ = {0};
+};
 
 // Represents a board position.
 // Unlike most chess engines, the board is mirrored for black.
 class ChessBoard {
  public:
-  static const std::string kStartingFen;
+  ChessBoard() = default;
+  ChessBoard(const std::string& fen) { SetFromFen(fen); }
+
+  static const char* kStartposFen;
+  static const ChessBoard kStartposBoard;
 
   // Sets position from FEN string.
   // If @no_capture_ply and @moves are not nullptr, they are filled with number
@@ -50,8 +69,8 @@ class ChessBoard {
   // Nullifies the whole structure.
   void Clear();
   // Swaps black and white pieces and mirrors them relative to the
-  // middle of the board. (what was on file 1 appears on file 8, what was
-  // on rank b remains on b).
+  // middle of the board. (what was on rank 1 appears on rank 8, what was
+  // on file b remains on file b).
   void Mirror();
 
   // Generates list of possible moves for "ours" (white), but may leave king
@@ -62,23 +81,25 @@ class ChessBoard {
   bool ApplyMove(Move move);
   // Checks if the square is under attack from "theirs" (black).
   bool IsUnderAttack(BoardSquare square) const;
+  // Generates the king attack info used for legal move detection.
+  KingAttackInfo GenerateKingAttackInfo() const;
   // Checks if "our" (white) king is under check.
   bool IsUnderCheck() const { return IsUnderAttack(our_king_); }
-  // Checks whether at least one of the sides has mating material.
 
+  // Checks whether at least one of the sides has mating material.
   bool HasMatingMaterial() const;
   // Generates legal moves.
   MoveList GenerateLegalMoves() const;
   // Check whether pseudolegal move is legal.
-  bool IsLegalMove(Move move, bool was_under_check) const;
-  // Returns a list of legal moves and board positions after the move is made.
-  std::vector<MoveExecution> GenerateLegalMovesAndPositions() const;
+  bool IsLegalMove(Move move, const KingAttackInfo& king_attack_info) const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
                     rooks_.as_int(), bishops_.as_int(), pawns_.as_int(),
-                    our_king_.as_int(), their_king_.as_int(),
-                    castlings_.as_int(), flipped_});
+                    (static_cast<uint32_t>(our_king_.as_int()) << 24) |
+                        (static_cast<uint32_t>(their_king_.as_int()) << 16) |
+                        (static_cast<uint32_t>(castlings_.as_int()) << 8) |
+                        static_cast<uint32_t>(flipped_)});
   }
 
   class Castlings {
@@ -97,6 +118,7 @@ class ChessBoard {
     bool we_can_000() const { return data_ & 2; }
     bool they_can_00() const { return data_ & 4; }
     bool they_can_000() const { return data_ & 8; }
+    bool no_legal_castle() const { return data_ == 0; }
 
     void Mirror() { data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2); }
 
@@ -125,6 +147,7 @@ class ChessBoard {
   BitBoard ours() const { return our_pieces_; }
   BitBoard theirs() const { return their_pieces_; }
   BitBoard pawns() const;
+  BitBoard en_passant() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
   BitBoard queens() const { return rooks_ * bishops_; }
@@ -162,20 +185,13 @@ class ChessBoard {
   // Pawns.
   // Ranks 1 and 8 have special meaning. Pawn at rank 1 means that
   // corresponding white pawn on rank 4 can be taken en passant. Rank 8 is the
-  // same for black pawns. Those "fake" pawns are not present in white_ and
-  // black_ bitboards.
+  // same for black pawns. Those "fake" pawns are not present in our_pieces_ and
+  // their_pieces_ bitboards.
   BitBoard pawns_;
   BoardSquare our_king_;
   BoardSquare their_king_;
   Castlings castlings_;
   bool flipped_ = false;  // aka "Black to move".
-};
-
-// Stores the move and state of the board after the move is done.
-struct MoveExecution {
-  Move move;
-  ChessBoard board;
-  bool reset_50_moves;
 };
 
 }  // namespace lczero

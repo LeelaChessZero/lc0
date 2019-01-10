@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -54,5 +54,11 @@ std::string RightTrim(std::string str);
 
 // Trims a string of whitespace from both ends.
 std::string Trim(std::string str);
+
+// Returns whether strings are equal, ignoring case.
+bool StringsEqualIgnoreCase(const std::string& a, const std::string& b);
+
+// Flow text into lines of width up to @width.
+std::vector<std::string> FlowText(const std::string& src, size_t width);
 
 }  // namespace lczero

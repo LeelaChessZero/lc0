@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -32,8 +32,11 @@
 
 namespace lczero {
 
+enum class FillEmptyHistory {NO, FEN_ONLY, ALWAYS};
+
 // Encodes the last position in history for the neural network request.
 InputPlanes EncodePositionForNN(const PositionHistory& history,
-                                int history_planes);
+                                int history_planes,
+                                FillEmptyHistory fill_empty_history);
 
 }  // namespace lczero

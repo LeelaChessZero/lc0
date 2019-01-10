@@ -19,19 +19,19 @@
 
  If you modify this Program, or any covered work, by linking or
  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
- Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+ Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
  modified version of those libraries), containing parts covered by the
  terms of the respective license agreement, the licensors of this
  Program grant you additional permission to convey the resulting work.
  */
 
+#include "utils/histogram.h"
+#include <stdio.h>
+#include <string.h>
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
-#include <stdio.h>
-#include <string.h>
-#include "utils/histogram.h"
 
 namespace lczero {
 
@@ -48,7 +48,7 @@ std::string Format(const std::string& format, double value) {
   int len = snprintf(buffer, kMaxBufferSize, format.c_str(), value);
   return std::string(buffer, buffer + len);
 }
-} // namespace
+}  // namespace
 
 Histogram::Histogram()
     : Histogram(kDefaultMinExp, kDefaultMaxExp, kDefaultMinorScales) {}
@@ -128,7 +128,8 @@ int Histogram::GetIndex(double val) const {
   // 2: -15 :    -15.1 ... -14.9          2 ... 3
   // 1:          -15.3 ... -15.1
   // 0:          -15.5 ... -15.3          0 ... 1
-  int index = static_cast<int>(std::floor(2.5 + minor_scales_ * (log10 - min_exp_)));
+  int index =
+      static_cast<int>(std::floor(2.5 + minor_scales_ * (log10 - min_exp_)));
   if (index < 0) return 0;
   if (index >= total_scales_) return total_scales_ + 3;
   return index + 2;

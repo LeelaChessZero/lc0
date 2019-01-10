@@ -21,10 +21,8 @@
 struct OpenCLParams {
   int gpuId = -1;
 
-  bool verbose = false;
   bool tune_only = false;
   bool force_tune = false;
   bool tune_exhaustive = false;
   int tune_batch_size = 1;
-  
 };

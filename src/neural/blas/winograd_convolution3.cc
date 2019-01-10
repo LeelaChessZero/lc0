@@ -31,67 +31,6 @@
 
 namespace lczero {
 
-std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
-                                                  const size_t outputs,
-                                                  const size_t channels,
-                                                  const size_t outputs_pad,
-                                                  const size_t channels_pad) {
-  // Fill with zeroes.
-  auto Upad = std::vector<float>(kWinogradTile * outputs_pad * channels_pad);
-
-  for (size_t o = 0; o < outputs; o++) {
-    for (size_t c = 0; c < channels; c++) {
-      for (size_t xi = 0; xi < kWinogradAlpha; xi++) {
-        for (size_t nu = 0; nu < kWinogradAlpha; nu++) {
-          Upad[xi * (kWinogradAlpha * outputs_pad * channels_pad) +
-               nu * (outputs_pad * channels_pad) + c * outputs_pad + o] =
-              U[xi * (kWinogradAlpha * outputs * channels) +
-                nu * (outputs * channels) + c * outputs + o];
-        }
-      }
-    }
-  }
-  return Upad;
-}
-
-std::vector<float> WinogradConvolution3::TransformF(const std::vector<float>& f,
-                                                    const size_t outputs,
-                                                    const size_t channels) {
-  // F(2x2, 3x3) Winograd filter transformation
-  // transpose(G.dot(f).dot(G.transpose()))
-  // U matrix is transposed for better memory layout in SGEMM
-  auto U = std::vector<float>(kWinogradTile * outputs * channels);
-  auto G = std::array<float, kWinogradTile>{1.0, 0.0,  0.0, 0.5, 0.5, 0.5,
-                                            0.5, -0.5, 0.5, 0.0, 0.0, 1.0};
-  auto temp = std::array<float, 12>{};
-
-  for (size_t o = 0; o < outputs; o++) {
-    for (size_t c = 0; c < channels; c++) {
-      for (size_t i = 0; i < 4; i++) {
-        for (size_t j = 0; j < 3; j++) {
-          auto acc = 0.0f;
-          for (size_t k = 0; k < 3; k++) {
-            acc += G[i * 3 + k] * f[o * channels * 9 + c * 9 + k * 3 + j];
-          }
-          temp[i * 3 + j] = acc;
-        }
-      }
-
-      for (size_t xi = 0; xi < 4; xi++) {
-        for (size_t nu = 0; nu < 4; nu++) {
-          auto acc = 0.0f;
-          for (size_t k = 0; k < 3; k++) {
-            acc += temp[xi * 3 + k] * G[nu * 3 + k];
-          }
-          U[xi * (4 * outputs * channels) + nu * (outputs * channels) +
-            c * outputs + o] = acc;
-        }
-      }
-    }
-  }
-  return U;
-}
-
 WinogradConvolution3::WinogradConvolution3(const size_t max_batch_size,
                                            const size_t max_input_layers,
                                            const size_t max_output_layers)
@@ -107,8 +46,6 @@ void WinogradConvolution3::Forward(const size_t batch_size,
   Sgemm(batch_size, weights, input_channels, output_channels);
   TransformOut(batch_size, output, output_channels);
 }
-
-
 
 void WinogradConvolution3::TransformIn(const size_t batch_size,
                                        const float* input,
@@ -149,7 +86,6 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
                 }
               }
             }
-          
 
             // Calculates transpose(B).x.B
             // B = [[ 1.0,  0.0,  0.0,  0.0],
@@ -191,7 +127,6 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
             R[14][ch] = T1[3][2] - T1[3][1];
             R[15][ch] = T1[3][1] - T1[3][3];
           }
-          const size_t channel = channel_long;
           float* V_channel = V_batch + channel_long;
           const auto V_incr = channels * kTiles * batch_size;
           float* wTile_V = V_channel + channels * (block_y * kWtiles + block_x);
@@ -206,15 +141,12 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
     }
   }
 
-#else // USE_ISPC
+#else  // USE_ISPC
 
-  ispc::winograd_TransformIn_ispc( batch_size, input,channels,&V_[0]);
+  ispc::winograd_TransformIn_ispc(batch_size, input, channels, &V_[0]);
 
-#endif // USE_ISPC
-
+#endif  // USE_ISPC
 }
-
-
 
 void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                                  const size_t input_channels,
@@ -293,7 +225,6 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
 #endif
 }
 
-
 void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
                                         const size_t channels) {
 #ifndef USE_ISPC
@@ -353,11 +284,11 @@ void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
     }
   }
 
-#else // USE_ISPC
+#else  // USE_ISPC
 
-  ispc::winograd_TransformOut_ispc( batch_size, &M_[0],channels,output);
+  ispc::winograd_TransformOut_ispc(batch_size, &M_[0], channels, output);
 
-#endif // USE_ISPC
+#endif  // USE_ISPC
 }
 
 }  // namespace lczero

@@ -19,7 +19,7 @@
 
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the the NVIDIA CUDA Deep Neural Network library (or a
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
   modified version of those libraries), containing parts covered by the
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
@@ -36,6 +36,11 @@
 
 namespace lczero {
 
+struct SelfPlayLimits : SearchLimits {
+  // Movetime
+  std::int64_t movetime;
+};
+
 struct PlayerOptions {
   // Network to use by the player.
   Network* network;
@@ -48,7 +53,7 @@ struct PlayerOptions {
   // User options dictionary.
   const OptionsDict* uci_options;
   // Limits to use for every move.
-  SearchLimits search_limits;
+  SelfPlayLimits search_limits;
 };
 
 // Plays a single game vs itself.
@@ -64,7 +69,8 @@ class SelfPlayGame {
   static void PopulateUciParams(OptionsParser* options);
 
   // Starts the game and blocks until the game is finished.
-  void Play(int white_threads, int black_threads, bool enable_resign=true);
+  void Play(int white_threads, int black_threads, bool training,
+            bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
