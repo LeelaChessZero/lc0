@@ -45,8 +45,6 @@
 namespace lczero {
 
 namespace {
-const int kSmartPruningToleranceNodes = 300;
-const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
@@ -362,35 +360,86 @@ void Search::MaybeTriggerStop() {
          final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
+    const float move_npms = 1.0f * total_playouts_ / GetTimeSinceStart();
+    if (!average_move_npms_) {
+      average_move_npms_ = move_npms;
+    } else {
+      const float alpha = 2.0f / 3.0f;
+      average_move_npms_ =
+          *average_move_npms_ * (1 - alpha) + move_npms * alpha;
+    }
   }
 }
 
 void Search::UpdateRemainingMoves() {
   if (params_.GetSmartPruningFactor() <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
-  remaining_playouts_ = std::numeric_limits<int>::max();
+  remaining_playouts_ = std::numeric_limits<int64_t>::max();
   // Check for how many playouts there is time remaining.
-  if (limits_.search_deadline && !nps_start_time_) {
-    nps_start_time_ = std::chrono::steady_clock::now();
-  } else if (limits_.search_deadline) {
-    auto time_since_start =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - *nps_start_time_)
-            .count();
-    if (time_since_start > kSmartPruningToleranceMs) {
-      auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
-                     time_since_start +
-                 1;
-      int64_t remaining_time = GetTimeToDeadline();
-      // Put early_exit scaler here so calculation doesn't have to be done on
-      // every node.
-      int64_t remaining_playouts =
-          remaining_time * nps / params_.GetSmartPruningFactor() / 1000;
-      // Don't assign directly to remaining_playouts_ as overflow is possible.
-      if (remaining_playouts < remaining_playouts_)
-        remaining_playouts_ = remaining_playouts;
+  if (limits_.search_deadline) {
+    const auto npms_start_time = std::chrono::steady_clock::now();
+    if (npms_prev_time_) {
+      const auto time_delta =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              nps_start_time - *npms_prev_time_)
+              .count();
+      const auto nodes_delta = total_playouts_ - npms_prev_playouts_;
+      LOGFILE << "time_delta: " << time_delta
+              << ", nodes_delta: " << nodes_delta;
+      if (time_delta <= 0 || nodes_delta <= 0) {
+        remaining_playouts_ = prev_remaining_playouts_;
+        LOGFILE << "same playouts, using prev playouts: "
+                << remaining_playouts_;
+      } else {
+        const float instant_npms = 1.0f * nodes_delta / time_delta;
+        LOGFILE << "instant_npms: " << instant_npms;
+        if (!npms_average_) {
+          npms_average_ = instant_npms;
+          LOGFILE << "setting up average: " << *npms_average_;
+        } else {
+          const float alpha = std::exp(-time_delta / 2000.0f);
+          const auto prev_npms_average = *npms_average_;
+          npms_average_ = alpha * *npms_average_ + (1 - alpha) * instant_npms;
+          LOGFILE << "Updating average: " << *npms_average_
+                  << ", alpha: " << alpha;
+          if (!npms_trend_average_) {
+            npms_trend_average_ =
+                (*npms_average_ - prev_npms_average) / time_delta;
+            LOGFILE << "Setting up trend" << *npms_trend_average_;
+          } else {
+            if (npms_beginning_trend_) {
+              const auto instant_npms_trend =
+                  (*npms_average_ - prev_npms_average) / time_delta;
+              const float beta = std::exp(-time_delta / 100.0f);
+              npms_trend_average_ =
+                  *npms_trend_average_ * beta + instant_npms_trend * (1 - beta);
+              LOGFILE << "Updating trend: " << *npms_trend_average_
+                      << ", beta: " << beta;
+              if (*npms_trend_average_ <= 0) {
+                LOGFILE << "End of trend";
+                npms_beginning_trend_ = false;
+                remaining_playouts_ = std::numeric_limits<int>::max();
+                if (!average_move_npms_) {
+                  npms_average_ = *npms_average_ * 2;
+                  LOGFILE << "Doubling average npms for first move";
+                }
+              }
+            }
+            if (!npms_beginning_trend_) {
+              remaining_playouts_ =
+                  *npms_average_ * GetTimeToDeadline() /
+                  params_.GetSmartPruningFactor();  // Can this overflow?
+              LOGFILE << "Setting remaining playouts " << remaining_playouts_;
+            }
+          }
+        }
+      }
+      npms_prev_time_ = npms_start_time;
+      npms_prev_playouts_ = total_playouts_;
+      prev_remaining_playouts_ = remaining_playouts_;
     }
   }
+
   // Check how many visits are left.
   if (limits_.visits >= 0) {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
@@ -415,7 +464,7 @@ void Search::UpdateRemainingMoves() {
   // nodes may also change. Use a 0 visit cancel score update to clear out any
   // cached best edge.
   root_node_->CancelScoreUpdate(0);
-}
+}  // namespace lczero
 
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
@@ -850,7 +899,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
       if (!is_root_node) {
-        IncrementNInFlight(node->GetParent(), search_->root_node_, collision_limit - 1);
+        IncrementNInFlight(node->GetParent(), search_->root_node_,
+                           collision_limit - 1);
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }

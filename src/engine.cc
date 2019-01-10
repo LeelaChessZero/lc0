@@ -218,16 +218,10 @@ SearchLimits EngineController::PopulateSearchLimits(
   // Evenly split total time between all moves.
   float this_move_time = total_moves_time / movestogo;
 
-  // Only extend thinking time with slowmover if smart pruning can potentially
-  // reduce it.
-  constexpr int kSmartPruningToleranceMs = 200;
-  if (slowmover < 1.0 ||
-      this_move_time * slowmover > kSmartPruningToleranceMs) {
-    this_move_time *= slowmover;
-    // If time is planned to be overused because of slowmover, remove excess
-    // of that time from spared time.
-    time_spared_ms_ -= this_move_time * (slowmover - 1);
-  }
+  this_move_time *= slowmover;
+  // If time is planned to be overused because of slowmover, remove excess
+  // of that time from spared time.
+  time_spared_ms_ -= this_move_time * (slowmover - 1);
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
           << time_to_squander << "ms to squander -"

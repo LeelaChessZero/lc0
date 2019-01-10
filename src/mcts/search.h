@@ -43,6 +43,10 @@
 
 namespace lczero {
 
+namespace {
+  optional<float> average_move_npms_;
+}
+
 struct SearchLimits {
   // Type for N in nodes is currently uint32_t, so set limit in order not to
   // overflow it.
@@ -165,7 +169,6 @@ class Search {
   const SearchLimits limits_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
-  optional<std::chrono::steady_clock::time_point> nps_start_time_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
@@ -174,6 +177,15 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int64_t>::max();
+
+  optional<std::chrono::steady_clock::time_point> npms_prev_time_ GUARDED_BY(nodes_mutex_);
+  optional<float> npms_average_ GUARDED_BY(nodes_mutex_) = average_move_npms_;
+  optional<float> npms_trend_average_ GUARDED_BY(nodes_mutex_);
+  int64_t npms_prev_playouts_ GUARDED_BY(nodes_mutex_) = total_playouts_;
+  bool npms_beginning_trend_ GUARDED_BY(nodes_mutex_) = true;
+  int64_t prev_remaining_playouts_ GUARDED_BY(nodes_mutex_) =
+      std::numeric_limits<int64_t>::max();
+
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
