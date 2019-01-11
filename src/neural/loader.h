@@ -29,7 +29,9 @@
 
 #include <string>
 #include <vector>
+#ifdef __unix__
 #include <sys/sysmacros.h>
+#endif
 
 #include "neural/network.h"
 #include "proto/net.pb.h"

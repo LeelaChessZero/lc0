@@ -19,7 +19,9 @@
 #pragma once
 
 #include <vector>
+#ifdef __unix__
 #include <sys/sysmacros.h>
+#endif
 #include "proto/net.pb.h"
 
 namespace lczero {
