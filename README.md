@@ -100,6 +100,11 @@ For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before perfo
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
 
+#### openSUSE (all versions)
+
+Instructions, packages and tools for building on openSUSE are at the following page
+
+[openSUSE_install.md](https://github.com/LeelaChessZero/lc0/openSUSE_install.md)
 
 ### Windows
 
