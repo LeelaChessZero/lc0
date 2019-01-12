@@ -37,6 +37,7 @@
 #include "neural/network_legacy.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
+#include "neural/shared/policy_map.h"
 
 //#define DEBUG_RAW_NPS
 
@@ -314,11 +315,11 @@ class CudnnNetwork : public Network {
                          scratch_mem_);
       network_.emplace_back(std::move(conv2));
 
-      auto FCPol = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip_pol_b.size(), 1, 1, false, true);
-      FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0],
-                         scratch_mem_);
-      network_.emplace_back(std::move(FCPol));
+      auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+        getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
+      policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
+
+      network_.emplace_back(std::move(policymap));
 
       auto softmaxPol =
           std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());

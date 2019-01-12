@@ -564,6 +564,40 @@ FCLayer<DataType>::~FCLayer() {
   ReportCUDAErrors(cudaFree(biases_));
 }
 
+template <typename DataType>
+PolicyMapLayer<DataType>::PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize)
+    : BaseLayer<DataType>(C, H, W, ip),
+      usedSize(usedSize) {
+  size_t weight_size = sizeof(short) * usedSize;
+  ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
+}
+
+
+template <typename DataType>
+void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight, void* /*scratch*/) {
+  size_t weight_size = sizeof(short) * usedSize;
+
+  ReportCUDAErrors(cudaMemcpyAsync(weights_, cpuWeight, weight_size,
+                                   cudaMemcpyHostToDevice));
+}
+
+template <typename DataType>
+void PolicyMapLayer<DataType>::Eval(int N, DataType* output_tensor,
+                          const DataType* input_tensor, const DataType* /*input2*/,
+                          void* /*scratch*/, size_t /*scratch_size*/,
+                          cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/) {
+
+    int inputSize = this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
+    int outputSize = this->C * this->H * this->W;
+    PolicyMap(N, output_tensor, input_tensor, weights_,
+        inputSize, usedSize, outputSize);
+}
+
+template <typename DataType>
+PolicyMapLayer<DataType>::~PolicyMapLayer() {
+  ReportCUDAErrors(cudaFree(weights_));
+}
+
 // Template instantiation.
 template class ConvLayer<half>;
 template class ConvLayer<float>;
@@ -579,6 +613,9 @@ template class SoftMaxLayer<float>;
 
 template class SELayer<half>;
 template class SELayer<float>;
+
+template class PolicyMapLayer<half>;
+template class PolicyMapLayer<float>;
 
 // Misc error handling stuff.
 void CudnnError(cudnnStatus_t status, const char* file, const int& line) {

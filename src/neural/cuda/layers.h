@@ -151,6 +151,22 @@ class FCLayer : public BaseLayer<DataType> {
   DataType* biases_ = nullptr;
 };
 
+template <typename DataType>
+class PolicyMapLayer: public BaseLayer<DataType> {
+ public:
+  PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize);
+  ~PolicyMapLayer();
+
+  void LoadWeights(const short* cpuWeight, void* scratch);
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2, void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  int usedSize; // Size of the input without padding
+  short* weights_ = nullptr;
+};
+
 // Fused SE layer:
 // (optional bias add +) global avg -> FC1 -> FC2 -> global scale -> add skip
 // connection -> RELU.

@@ -76,6 +76,10 @@ void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
                   const half* w2, const half* b2, const half* bPrev);
 
+template <typename T>
+void PolicyMap(int N, T* output, const T* input, const short* indices,
+        int inputSize, int usedSize, int outputSize);
+
 }  // namespace cudnn_backend
 }  // namespace lczero
 

@@ -466,6 +466,36 @@ void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+template <typename T>
+__global__ void policyMap_kernel(T* output, const T* input, const short* indices,
+                                 int N, int inputSize, int usedSize, int outputSize) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+  int n = tid / usedSize;
+  int i = tid % usedSize;
+
+  if (n >= N) return;
+
+  int j = indices[i];
+
+  if (j > 0) {
+    output[n * outputSize + j] = input[n * inputSize + i];
+  }
+}
+
+template <typename T>
+void PolicyMap(int N, T* output, const T* input, const short* indices,
+        int inputSize, int usedSize, int outputSize) {
+
+  // Each thread writes one output.
+  const int kBlockSize = 256;
+  const int kBlocks = DivUp(N * usedSize, kBlockSize);
+
+  policyMap_kernel<T><<<kBlocks, kBlockSize>>>((T*)output, (T*)input,
+          (short*)indices, N, inputSize, usedSize, outputSize);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N);
 template void copyTypeConverted<float, half>(float* op, half* ip, int N);
@@ -494,7 +524,7 @@ template void addBias_NCHW<half>(half* c, half* a, half* b, int N, int C,
 template void globalAvgPool<float>(int N, int C, float* output,
                                    const float* input,
                                    const float* prevLayerBias);
-template void globalAvgPool<half>(int N, int C, half* output, 
+template void globalAvgPool<half>(int N, int C, half* output,
                                   const half* input,
                                   const half* prevLayerBias);
 
@@ -504,6 +534,12 @@ template void globalScale<float>(int N, int C, float* output,
 template void globalScale<half>(int N, int C, half* output, const half* input,
                                 const half* scaleBias,
                                 const half* prevLayerBias);
+
+template void PolicyMap<float>(int N, float* output, const float* input, const short* indices,
+        int inputSize, int usedSize, int outputSize);
+
+template void PolicyMap<half>(int N, half* output, const half* input, const short* indices,
+        int inputSize, int usedSize, int outputSize);
 
 }  // namespace cudnn_backend
 }  // namespace lczero
