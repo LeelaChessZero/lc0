@@ -81,10 +81,8 @@ class BatchCollector {
 
   BatchCollector(int num_threads);
   ~BatchCollector();
-  void Collect(Node* root, int limit, const SearchParams& params);
-  std::vector<NodeToProcess>&& GetNodes() {
-    return std::move(nodes_to_process_);
-  }
+  std::vector<NodeToProcess> Collect(Node* root, int limit,
+                                     const SearchParams& params);
 
  private:
   NodeToProcess PickNodeToExtend(Node* node, int batch_size, int depth);
@@ -100,7 +98,6 @@ class BatchCollector {
     int depth;
   };
 
-  std::vector<NodeToProcess> nodes_to_process_;
   std::atomic<bool> stop_;
   std::vector<std::thread> threads_;
   moodycamel::ConcurrentQueue<CollectionItem> queue_;

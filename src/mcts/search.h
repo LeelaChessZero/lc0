@@ -134,7 +134,7 @@ class Search {
   // Returns NN eval for a given node from cache, if that node is cached.
   NNCacheLock GetCachedNNEval(Node* node) const;
 
-  BatchCollector batch_collector_{4};
+  BatchCollector batch_collector_{2};
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.

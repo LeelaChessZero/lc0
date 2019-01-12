@@ -33,7 +33,7 @@
 namespace lczero {
 
 namespace {
-constexpr int kNodePickFanout = 2;
+constexpr int kNodePickFanout = 5;
 }  // namespace
 
 BatchCollector::BatchCollector(int num_threads) : idle_workers_(0) {
@@ -67,8 +67,8 @@ void IncrementN(Node* node, Node* root, int amount) {
 }
 }  // namespace
 
-void BatchCollector::Collect(Node* root, int limit,
-                             const SearchParams& params) {
+std::vector<BatchCollector::NodeToProcess> BatchCollector::Collect(
+    Node* root, int limit, const SearchParams& params) {
   work_done_ = false;
   // assert(results_.size_approx() == 0);  // DO NOT SUBMIT
   assert(queue_.size_approx() == 0);
@@ -78,13 +78,13 @@ void BatchCollector::Collect(Node* root, int limit,
   std::unique_lock<std::mutex> lock(mutex_);
   work_done_cv_.wait(lock, [this]() { return work_done_; });
 
-  nodes_to_process_.clear();
-
+  std::vector<NodeToProcess> result;
   NodeToProcess node;
   while (results_.try_dequeue(node)) {
     IncrementN(node.node, root, node.multivisit);
-    nodes_to_process_.emplace_back(std::move(node));
+    result.emplace_back(std::move(node));
   }
+  return result;
 }
 
 void BatchCollector::Worker() {

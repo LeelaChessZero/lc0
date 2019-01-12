@@ -688,7 +688,7 @@ void SearchWorker::ExecuteOneIteration() {
   GatherMinibatch();
 
   // 3. Prefetch into cache.
-  MaybePrefetchIntoCache();
+  // MaybePrefetchIntoCache();
 
   // 4. Run NN computation.
   RunNNComputation();
@@ -730,6 +730,8 @@ void SearchWorker::GatherMinibatch() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
+  std::vector<NodeToProcess> new_nodes;
+
   // Gather nodes to process in the current batch.
   // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
   // iteration so that search can exit.
@@ -740,7 +742,7 @@ void SearchWorker::GatherMinibatch() {
 
     {
       SharedMutex::Lock lock(search_->nodes_mutex_);
-      search_->batch_collector_.Collect(
+      new_nodes = search_->batch_collector_.Collect(
           search_->root_node_, params_.GetMiniBatchSize() - minibatch_size,
           params_);
     }
@@ -749,7 +751,9 @@ void SearchWorker::GatherMinibatch() {
         minibatch_.emplace_back(PickNodeToExtend(collisions_left));
     */
 
-    for (const auto& next_node : search_->batch_collector_.GetNodes()) {
+    bool only_collisions = true;
+
+    for (const auto& next_node : new_nodes) {
       minibatch_.emplace_back(next_node);
       auto& picked_node = minibatch_.back();
       auto* node = picked_node.node;
@@ -757,11 +761,12 @@ void SearchWorker::GatherMinibatch() {
       // There was a collision. If limit has been reached, return, otherwise
       // just start search of another node.
       if (picked_node.IsCollision()) {
-        if (--collision_events_left <= 0) return;
-        if ((collisions_left -= picked_node.multivisit) <= 0) return;
-        if (search_->stop_.load(std::memory_order_acquire)) return;
+        /*        if (--collision_events_left <= 0) return;
+                if ((collisions_left -= picked_node.multivisit) <= 0) return;
+                if (search_->stop_.load(std::memory_order_acquire)) return; */
         continue;
       }
+      only_collisions = false;
       ++minibatch_size;
 
       // If node is already known as terminal (win/loss/draw according to rules
@@ -798,6 +803,7 @@ void SearchWorker::GatherMinibatch() {
         ++number_out_of_order_;
       }
     }
+    if (only_collisions) return;
     // Check for stop at the end so we have at least one node.
     if (search_->stop_.load(std::memory_order_acquire)) return;
   }
@@ -1216,6 +1222,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (params_.GetNoise() && node == search_->root_node_) {
     ApplyDirichletNoise(node, 0.25, 0.3);
   }
+  node->ResetBeingExtended();
 }
 
 // 6. Propagate the new nodes' information to all their parents in the tree.
@@ -1256,7 +1263,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
   }
-  node->ResetBeingExtended();
   search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
