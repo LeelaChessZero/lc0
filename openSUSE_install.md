@@ -1,10 +1,19 @@
-# Building lc0 on openSUSE
+| # lc0 on openSUSE | ![openSUSE Logo](https://github.com/openSUSE/artwork/blob/master/Logo/official-logo-color.png)  |
+| :---         |          ---: |
 
 openSUSE is a popular RPM based Linux distro, the install sources can be downloaded from [https://software.opensuse.org](https://software.opensuse.org) .
 
 The steps described here are minimal, enough to install and run lc0 on openSUSE. The reader is encouraged to skim the Supplementary Information after completing the Install where additional information can be found to download an icon to beautify and enter complete information about the lc0 engine into Arena. I doubt anyone would want to run on a 32-bit machine, but for these kinds of oddball installs, modifying the script should be next to trivial.
 
 If the User finds anything in this guide unclear, the original documentation is linked under "Supplemental Information" in the last section. And, don't forget to recommend(as an Issue) or submit a change (as a Pull).
+
+## RPM packages vs Building from Source
+
+An extremely versatile Build script that makes building from source simple and trivial is provided below which should run on practically any version of openSUSE but supports only the eopenBLAS backend, which means it can be run on any openSUSE without any hardware dependencies, and supports any version of openSUSE LEAP or Tumbleweed. Most of the procedure after starting the script is just waiting to finish, no technical knowledge is required.
+
+For those who instead prefer to not install the many files to build lc0, experimental packages (as of this writing) are available for LEAP 15 and Tumbleweed only (as of this writing). Known quirks are described, and supports both BLAS (which can be installed on any hardware) and OpenCL which supports AMD GPU only. For Users who wish to use a pre-built binary from a package, skip down to "RPM packages"
+
+If someone wishes to do the work to investigate the procedures to install other backends (As of this writing, Tensorflow and CUDA are possible) findings and updates to this guide are welcomed.
 
 ## Supported openSUSE versions
 
@@ -50,6 +59,24 @@ cd ~/Downloads
 ./install_openSUSE_lc0
 ```
 
+
+## RPM packages
+
+If you ran the script that builds from source, you can ignore this section and skip to the next section which describes installing a networks file. 
+
+Otherwise, if you skipped most of what is described above because you want to use pre-built packages, this is where you should start!
+1. Using an openSUSE provided Web browser (recommend Firefox), find the package for your version of openSUSE and download adn/or install the package. The actual location of packages may change depending on project status, so you may also want to use the web package search at https://software.opensuse.org/search  As of this writing, the "One Click Install" that uses YaST to install is known to be broken, saying it requries root permissions(incorrectly). You will likely have to download the RPM package (not the YMP file)
+https://build.opensuse.org/package/binaries/home:malcolmlewis:TESTING/lc0/openSUSE_Leap_15.0
+https://build.opensuse.org/package/binaries/home:malcolmlewis:TESTING/lc0/openSUSE_Tumbleweed
+2. Once the RPM file has been downloaded, you can install using YaST, zypper or RPM by simply pointing the install command to the file.
+3. If successfully installed, you will find the lc0 binary at the following location and you can now proceed to the next section.
+```
+
+/usr/games/lco/lco
+```
+
+
+
 ## The One Thing you must do Manually
 
 #### Download and install the Networks file
@@ -59,6 +86,8 @@ The Install script automates practically everything needed for the lc0 Engine to
 [http://lczero.org/networks](http://lczero.org/networks/)
 
 #### An example settup up with the Arena graphical chessboard
+
+The following applies if you compiled your own lc0 binary or if you are using the pre-built lc0 binary on a machine with an AMD processor. Arena is known to have a bug that prevents the RPM binary to use BLAS (go back and use the compile from source script). The alternative is to use another graphical chessboard, [Cute Chess](https://cutechess.com/) has been tested and verified to work. Setting up Cute Chess is generally similar to setting up on Arena, with fewer options but generally the same major steps. If Users are unable to figure out how to set up with Cute Chess, a section will be added later.
 
 Download the Arena Linux app from [Download Arena for Linux](http://www.playwitharena.com/?Download:Arena_for_Linux)
 
@@ -84,26 +113,27 @@ If you were able to successfully create a Desktop shortcut to launch Arena, you 
 The above completes the installation of Arena, but does not hook it up to any Chess Engines. You can set up the Chess Engines that come with Arena, but the following describes how to set up lc0.
 Assuming that your command console is still open and at the root of the Arena application, the next steps set up lc0 to connect to Arena
 
-The "network file" is the file you should have downloaded in the above section "The One thing you must do Manually"
+The "network file" in the following is the file you should have downloaded in the above section "The One thing you must do Manually"
 
 ```
 
 mkdir Engine/lc0
 cp -r /opt/lc0/build/release/* Engines/lc0/
-cp <i>"network file"</i> Engines/lc0/
+cp "network file" Engines/lc0/
 ```
 
 #### Configure Arena to point to the lc0 binary
 
 Your files are now pre-positioned and ready for Arena.
 
-Launch the Arena Engine Install Wizard hit the F11 key. Or, if that doesn't work from the Arena menubar, Engines > Manage > Details tab > Installation Wizard button
+Launch the Arena Engine Install Wizard with the F11 key. Or, if that doesn't work, then from the Arena menubar, 
+Engines > Manage > Details tab > Installation Wizard button
 
 Enter the information as required, pointing to your lc0 binary at
 
 ```
 
-<i>Arena_root</i>/Engines/lc0/lc0
+[Arena_root]/Engines/lc0/lc0
 ```
 
 ## Removal / Uninstall
@@ -111,6 +141,7 @@ Enter the information as required, pointing to your lc0 binary at
 The following commands remove parts of the install, the User can decide which to implement
 
 The script installs lc0 files in /opt/lc0
+So the following removes these files
 
 ```
 
@@ -141,7 +172,7 @@ Full Instructions connecting lc0 to graphical chessboards including Arena
 
 [Running Leela Chess Zero in a Chess GUI"](https://github.com/LeelaChessZero/lc0/wiki/Running-Leela-Chess-Zero-in-a-Chess-GUI)
 
-Original instructions for setting lc0 on all platforms
+Original instructions for setting up lc0 on all platforms
 
 [Getting Started](https://github.com/LeelaChessZero/lc0/wiki/Getting-Started)
 
