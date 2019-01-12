@@ -85,7 +85,7 @@ The Install script automates practically everything needed for the lc0 Engine to
 
 [http://lczero.org/networks](http://lczero.org/networks/)
 
-## An example settup up with the Arena graphical chessboard
+## An example setup with the Arena graphical chessboard
 
 The following applies if you compiled your own lc0 binary or if you are using the pre-built lc0 binary on a machine with an AMD processor. Arena is known to have a bug that prevents the RPM binary to use BLAS (go back and use the compile from source script). The alternative is to use another graphical chessboard, [Cute Chess](https://cutechess.com/) has been tested and verified to work. Setting up Cute Chess is generally similar to setting up on Arena, with fewer options but generally the same major steps. If Users are unable to figure out how to set up with Cute Chess, a section will be added later.
 
