@@ -32,6 +32,7 @@
 #include <thread>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
+#include "mcts/batch_collector.h"
 #include "mcts/node.h"
 #include "mcts/params.h"
 #include "neural/cache.h"
@@ -132,6 +133,8 @@ class Search {
 
   // Returns NN eval for a given node from cache, if that node is cached.
   NNCacheLock GetCachedNNEval(Node* node) const;
+
+  BatchCollector batch_collector_{4};
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -239,44 +242,9 @@ class SearchWorker {
   void UpdateCounters();
 
  private:
-  struct NodeToProcess {
-    bool IsExtendable() const { return !is_collision && !node->IsTerminal(); }
-    bool IsCollision() const { return is_collision; }
-    bool CanEvalOutOfOrder() const {
-      return is_cache_hit || node->IsTerminal();
-    }
+  using NodeToProcess = BatchCollector::NodeToProcess;
 
-    // The node to extend.
-    Node* node;
-    // Value from NN's value head, or -1/0/1 for terminal nodes.
-    float v;
-    int multivisit = 0;
-    uint16_t depth;
-    bool nn_queried = false;
-    bool is_cache_hit = false;
-    bool is_collision = false;
-
-    static NodeToProcess Collision(Node* node, uint16_t depth,
-                                   int collision_count) {
-      return NodeToProcess(node, depth, true, collision_count);
-    }
-    static NodeToProcess Extension(Node* node, uint16_t depth) {
-      return NodeToProcess(node, depth, false, 1);
-    }
-    static NodeToProcess TerminalHit(Node* node, uint16_t depth,
-                                     int visit_count) {
-      return NodeToProcess(node, depth, false, visit_count);
-    }
-
-   private:
-    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit)
-        : node(node),
-          multivisit(multivisit),
-          depth(depth),
-          is_collision(is_collision) {}
-  };
-
-  NodeToProcess PickNodeToExtend(int collision_limit);
+  NodeToProcess PickNodeToExtendOld(int collision_limit);
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);

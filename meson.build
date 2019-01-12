@@ -93,6 +93,7 @@ files += [
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
   'src/mcts/node.cc',
+  'src/mcts/batch_collector.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
   'src/neural/cache.cc',

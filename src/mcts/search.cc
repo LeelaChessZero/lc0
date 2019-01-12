@@ -230,22 +230,21 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
 
     oss << " (" << std::setw(4) << edge.GetMove().as_nn_index() << ")";
 
-    oss << " N: " << std::right << std::setw(7) << edge.GetN() << " (+"
-        << std::setw(2) << edge.GetNInFlight() << ") ";
+    oss << " N: " << std::right << std::setw(7) << edge.GetN();
 
-    oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
-        << "%) ";
+    oss << " (P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
+        << "%)";
 
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
-        << ") ";
+    oss << " (Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
+        << ")";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
-        << ") ";
+    oss << " (U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
+        << ")";
 
-    oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff) << ") ";
+    oss << " (Q+U: " << std::setw(8) << std::setprecision(5)
+        << edge.GetQ(fpu) + edge.GetU(U_coeff) << ")";
 
-    oss << "(V: ";
+    oss << " (V: ";
     optional<float> v;
     if (edge.IsTerminal()) {
       v = edge.node()->GetQ();
@@ -258,9 +257,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     } else {
       oss << " -.----";
     }
-    oss << ") ";
+    oss << ")";
 
-    if (edge.IsTerminal()) oss << "(T) ";
+    if (edge.IsTerminal()) oss << " (T)";
     infos.emplace_back(oss.str());
   }
   return infos;
@@ -411,10 +410,6 @@ void Search::UpdateRemainingMoves() {
   }
   // Even if we exceeded limits, don't go crazy by not allowing any playouts.
   if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
-  // Since remaining_playouts_ has changed, the logic for selecting visited root
-  // nodes may also change. Use a 0 visit cancel score update to clear out any
-  // cached best edge.
-  root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature
@@ -742,59 +737,73 @@ void SearchWorker::GatherMinibatch() {
          number_out_of_order_ < params_.GetMiniBatchSize()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
-    // Pick next node to extend.
-    minibatch_.emplace_back(PickNodeToExtend(collisions_left));
-    auto& picked_node = minibatch_.back();
-    auto* node = picked_node.node;
 
-    // There was a collision. If limit has been reached, return, otherwise
-    // just start search of another node.
-    if (picked_node.IsCollision()) {
-      if (--collision_events_left <= 0) return;
-      if ((collisions_left -= picked_node.multivisit) <= 0) return;
-      if (search_->stop_.load(std::memory_order_acquire)) return;
-      continue;
-    }
-    ++minibatch_size;
-
-    // If node is already known as terminal (win/loss/draw according to rules
-    // of the game), it means that we already visited this node before.
-    if (picked_node.IsExtendable()) {
-      // Node was never visited, extend it.
-      ExtendNode(node);
-
-      // Only send non-terminal nodes to a neural network.
-      if (!node->IsTerminal()) {
-        picked_node.nn_queried = true;
-        picked_node.is_cache_hit = AddNodeToComputation(node, true);
-      }
+    {
+      SharedMutex::Lock lock(search_->nodes_mutex_);
+      search_->batch_collector_.Collect(
+          search_->root_node_, params_.GetMiniBatchSize() - minibatch_size,
+          params_);
     }
 
-    // If out of order eval is enabled and the node to compute we added last
-    // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
-    // out of order eval for it.
-    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
-      // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
-      {
-        // Nodes mutex for doing node updates.
-        SharedMutex::Lock lock(search_->nodes_mutex_);
-        DoBackupUpdateSingleNode(picked_node);
+    /*    // Pick next node to extend.
+        minibatch_.emplace_back(PickNodeToExtend(collisions_left));
+    */
+
+    for (const auto& next_node : search_->batch_collector_.GetNodes()) {
+      minibatch_.emplace_back(next_node);
+      auto& picked_node = minibatch_.back();
+      auto* node = picked_node.node;
+
+      // There was a collision. If limit has been reached, return, otherwise
+      // just start search of another node.
+      if (picked_node.IsCollision()) {
+        if (--collision_events_left <= 0) return;
+        if ((collisions_left -= picked_node.multivisit) <= 0) return;
+        if (search_->stop_.load(std::memory_order_acquire)) return;
+        continue;
+      }
+      ++minibatch_size;
+
+      // If node is already known as terminal (win/loss/draw according to rules
+      // of the game), it means that we already visited this node before.
+      if (picked_node.IsExtendable()) {
+        // Node was never visited, extend it.
+        ExtendNode(node);
+
+        // Only send non-terminal nodes to a neural network.
+        if (!node->IsTerminal()) {
+          picked_node.nn_queried = true;
+          picked_node.is_cache_hit = AddNodeToComputation(node, true);
+        }
       }
 
-      // Remove last entry in minibatch_, as it has just been
-      // processed.
-      // If NN eval was already processed out of order, remove it.
-      if (picked_node.nn_queried) computation_->PopCacheHit();
-      minibatch_.pop_back();
-      --minibatch_size;
-      ++number_out_of_order_;
+      // If out of order eval is enabled and the node to compute we added last
+      // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
+      // out of order eval for it.
+      if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+        // Perform out of order eval for the last entry in minibatch_.
+        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+        {
+          // Nodes mutex for doing node updates.
+          SharedMutex::Lock lock(search_->nodes_mutex_);
+          DoBackupUpdateSingleNode(picked_node);
+        }
+
+        // Remove last entry in minibatch_, as it has just been
+        // processed.
+        // If NN eval was already processed out of order, remove it.
+        if (picked_node.nn_queried) computation_->PopCacheHit();
+        minibatch_.pop_back();
+        --minibatch_size;
+        ++number_out_of_order_;
+      }
     }
     // Check for stop at the end so we have at least one node.
     if (search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
 
+/*
 namespace {
 void IncrementNInFlight(Node* node, Node* root, int amount) {
   if (amount == 0) return;
@@ -807,7 +816,7 @@ void IncrementNInFlight(Node* node, Node* root, int amount) {
 }  // namespace
 
 // Returns node and whether there's been a search collision on the node.
-SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
+SearchWorker::NodeToProcess SearchWorker::PickNodeToExtendOld(
     int collision_limit) {
   // Starting from search_->root_node_, generate a playout, choosing a
   // node at each level according to the MCTS formula. n_in_flight_ is
@@ -842,7 +851,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
     if (!node_already_updated) {
-      node = best_edge.GetOrSpawnNode(/* parent */ node, &precached_node_);
+      node = best_edge.GetOrSpawnNode(node, &precached_node_);
     }
     best_edge.Reset();
     depth++;
@@ -850,7 +859,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
       if (!is_root_node) {
-        IncrementNInFlight(node->GetParent(), search_->root_node_, collision_limit - 1);
+        IncrementNInFlight(node->GetParent(), search_->root_node_,
+                           collision_limit - 1);
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
@@ -940,6 +950,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     is_root_node = false;
   }
 }
+*/
 
 void SearchWorker::ExtendNode(Node* node) {
   // Initialize position sequence with pre-move position.
@@ -1058,6 +1069,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
 // 3. Prefetch into cache.
 // ~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::MaybePrefetchIntoCache() {
+  /*
   // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
@@ -1069,11 +1081,12 @@ void SearchWorker::MaybePrefetchIntoCache() {
     PrefetchIntoCache(search_->root_node_, params_.GetMaxPrefetchBatch() -
                                                computation_->GetCacheMisses());
   }
+  */
 }
 
 // Prefetches up to @budget nodes into cache. Returns number of nodes
 // prefetched.
-int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
+/* int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   if (budget <= 0) return 0;
 
   // We are in a leaf, which is not yet being processed.
@@ -1150,7 +1163,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     total_budget_spent += budget_spent;
   }
   return total_budget_spent;
-}
+} */
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
@@ -1221,8 +1234,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   Node* node = node_to_process.node;
   if (node_to_process.IsCollision()) {
     // If it was a collision, just undo counters.
-    for (node = node->GetParent(); node != search_->root_node_->GetParent();
-         node = node->GetParent()) {
+    for (; node != search_->root_node_->GetParent(); node = node->GetParent()) {
       node->CancelScoreUpdate(node_to_process.multivisit);
     }
     return;
@@ -1244,6 +1256,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
   }
+  node->ResetBeingExtended();
   search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);

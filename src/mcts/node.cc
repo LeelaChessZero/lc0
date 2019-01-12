@@ -212,7 +212,7 @@ std::string Node::DebugString() const {
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
       << " Index:" << index_ << " Child:" << child_.get()
       << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
-      << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
+      << " Edges:" << edges_.size();
   return oss.str();
 }
 
@@ -227,40 +227,13 @@ void Node::MakeTerminal(GameResult result) {
   }
 }
 
-bool Node::TryStartScoreUpdate() {
-  if (n_ == 0 && n_in_flight_ > 0) return false;
-  ++n_in_flight_;
-  return true;
-}
-
-void Node::CancelScoreUpdate(int multivisit) {
-  n_in_flight_ -= multivisit;
-  best_child_cached_ = nullptr;
-}
-
 void Node::FinalizeScoreUpdate(float v, int multivisit) {
   // Recompute Q.
-  q_ += multivisit * (v - q_) / (n_ + multivisit);
+  q_ += multivisit * (v - q_) / n_;
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
   }
-  // Increment N.
-  n_ += multivisit;
-  // Decrement virtual loss.
-  n_in_flight_ -= multivisit;
-  // Best child is potentially no longer valid.
-  best_child_cached_ = nullptr;
-}
-
-void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
-  best_child_cached_ = best_edge.node();
-  // An edge can point to an unexpanded node with n==0. These nodes don't
-  // increment their n_in_flight_ the same way and thus are not safe to cache.
-  if (best_child_cached_ && best_child_cached_->GetN() == 0) {
-    best_child_cached_ = nullptr;
-  }
-  best_child_cache_in_flight_limit_ = visits_allowed + n_in_flight_;
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }

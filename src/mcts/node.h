@@ -147,10 +147,7 @@ class Node {
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
-  uint32_t GetNInFlight() const { return n_in_flight_; }
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
-  // Returns n = n_if_flight.
-  int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetQ() const { return q_; }
@@ -162,44 +159,34 @@ class Node {
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
 
-  // If this node is not in the process of being expanded by another thread
-  // (which can happen only if n==0 and n-in-flight==1), mark the node as
-  // "being updated" by incrementing n-in-flight, and return true.
-  // Otherwise return false.
-  bool TryStartScoreUpdate();
-  // Decrements n-in-flight back.
-  void CancelScoreUpdate(int multivisit);
+  /*  // If this node is not in the process of being expanded by another thread
+    // (which can happen only if n==0 and n-in-flight==1), mark the node as
+    // "being updated" by incrementing n-in-flight, and return true.
+    // Otherwise return false.
+    bool TryStartScoreUpdate();
+  // Decrements n-in-flight back. */
+  void CancelScoreUpdate(int multivisit) { n_ -= multivisit; }
+
   // Updates the node with newly computed value v.
   // Updates:
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, int multivisit);
-  // When search decides to treat one visit as several (in case of collisions
-  // or visiting terminal nodes several times), it amplifies the visit by
-  // incrementing n_in_flight.
-  void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
+  /*  // When search decides to treat one visit as several (in case of
+    collisions
+    // or visiting terminal nodes several times), it amplifies the visit by
+    // incrementing n_in_flight.
+    void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
+  */
+  void IncrementN(int multivisit) { n_ += multivisit; }
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
 
-  // Caches the best child if possible.
-  void UpdateBestChild(const Iterator& best_edge, int collisions_allowed);
-
-  // Gets a cached best child if it is still valid.
-  Node* GetCachedBestChild() {
-    if (n_in_flight_ < best_child_cache_in_flight_limit_) {
-      return best_child_cached_;
-    }
-    return nullptr;
-  }
-
-  // Gets how many more visits the cached value is valid for. Only valid if
-  // GetCachedBestChild returns a value.
-  int GetRemainingCacheVisits() {
-    return best_child_cache_in_flight_limit_ - n_in_flight_;
-  }
-
+  /*  // Caches the best child if possible.
+    void UpdateBestChild(const Iterator& best_edge, int collisions_allowed);
+  */
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
@@ -232,6 +219,10 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
+  void SetBeingExtended() { is_being_extended_ = true; }
+  void ResetBeingExtended() { is_being_extended_ = false; }
+  bool IsBeingExtended() const { return is_being_extended_; }
+
  private:
   // Performs construction time type initialization. For use only with a node
   // that has not been used beyond its construction.
@@ -255,9 +246,6 @@ class Node {
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
-  // Cached pointer to best child, valid while n_in_flight <
-  // best_child_cache_in_flight_limit_
-  Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
@@ -269,13 +257,6 @@ class Node {
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
-  // (AKA virtual loss.) How many threads currently process this node (started
-  // but not finished). This value is added to n during selection which node
-  // to pick in MCTS, and also when selecting the best move.
-  uint32_t n_in_flight_ = 0;
-  // If best_child_cached_ is non-null, and n_in_flight_ < this,
-  // best_child_cached_ is still the best child.
-  uint32_t best_child_cache_in_flight_limit_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -284,6 +265,7 @@ class Node {
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
   bool is_terminal_ = false;
+  bool is_being_extended_ = false;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -305,7 +287,7 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 72, "Unexpected size of Node");
+static_assert(sizeof(Node) == 56, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -334,8 +316,6 @@ class EdgeAndNode {
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
-  int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
-  uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
 
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
@@ -349,14 +329,14 @@ class EdgeAndNode {
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+    return numerator * GetP() / (1 + GetN());
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
                         float default_q) const {
     const auto q = GetQ(default_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
-    const auto n1 = GetNStarted() + 1;
+    const auto n1 = GetN() + 1;
     return std::max(
         1.0f,
         std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
