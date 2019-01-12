@@ -26,6 +26,7 @@
 #include "neural/network_legacy.h"
 #include "neural/shared/activation.h"
 #include "neural/shared/batchnorm.h"
+#include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
 
 #include <algorithm>
@@ -66,6 +67,10 @@ class BlasComputation : public NetworkComputation {
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
+  static constexpr auto kPolicyOutputs = 1858;
+  // Number of used planes with convolutional policy.
+  // The real number of planes is higher because of padding.
+  static constexpr auto kPolicyUsedPlanes = 73;
 
   const LegacyWeights& weights_;
   size_t max_batch_size_;
@@ -108,7 +113,7 @@ void BlasComputation::ComputeBlocking() {
   const auto num_value_channels = weights_.ip1_val_b.size();
   const auto num_value_input_planes = weights_.value.bn_means.size();
   const auto num_policy_input_planes = weights_.policy.bn_means.size();
-  const auto num_output_policy = weights_.ip_pol_b.size();
+  const auto num_output_policy = kPolicyOutputs;
   const auto output_channels = weights_.input.biases.size();
 
   // max_channels is the maximum number of input channels of any
@@ -226,6 +231,18 @@ void BlasComputation::ComputeBlocking() {
           batch_size, num_policy_input_planes, &policy_buffer.data()[0],
           weights_.policy.bn_means.data(), weights_.policy.bn_stddivs.data(),
           nullptr, false);
+
+      // Mapping from convolutional policy to lc0 policy
+      for (auto batch = 0; batch < batch_size; batch++) {
+        for (auto i = 0; i < kPolicyUsedPlanes * kSquares; i++) {
+          auto j = kConvPolicyMap[i];
+          if (j > 0) {
+            output_pol[batch * num_output_policy + j] =
+                policy_buffer[batch * num_policy_input_planes * kSquares + i];
+          }
+        }
+      }
+
     } else {
       Convolution1::Forward(
           batch_size, output_channels, num_policy_input_planes, conv_out,
@@ -234,8 +251,16 @@ void BlasComputation::ComputeBlocking() {
       ApplyBatchNormalization(
           batch_size, num_policy_input_planes, &policy_buffer[0],
           weights_.policy.bn_means.data(), weights_.policy.bn_stddivs.data());
+
+      FullyConnectedLayer::Forward1D(
+          batch_size, num_policy_input_planes * kSquares, num_output_policy,
+          policy_buffer.data(), weights_.ip_pol_w.data(),
+          weights_.ip_pol_b.data(),
+          false,  // Relu Off
+          output_pol.data());
     }
 
+    // Value head
     Convolution1::Forward(batch_size, output_channels, num_value_input_planes,
                           conv_out, weights_.value.weights.data(),
                           value_buffer.data());
@@ -243,13 +268,6 @@ void BlasComputation::ComputeBlocking() {
     ApplyBatchNormalization(batch_size, num_value_input_planes,
                             &value_buffer[0], weights_.value.bn_means.data(),
                             weights_.value.bn_stddivs.data());
-
-    FullyConnectedLayer::Forward1D(
-        batch_size, num_policy_input_planes * kSquares, num_output_policy,
-        policy_buffer.data(), weights_.ip_pol_w.data(),
-        weights_.ip_pol_b.data(),
-        false,  // Relu Off
-        output_pol.data());
 
     FullyConnectedLayer::Forward1D(
         batch_size, num_value_input_planes * kSquares, num_value_channels,
