@@ -568,7 +568,7 @@ template <typename DataType>
 PolicyMapLayer<DataType>::PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H,
                                          int W, int usedSize)
     : BaseLayer<DataType>(C, H, W, ip), usedSize(usedSize) {
-  size_t weight_size = sizeof(short) * input_->GetC() * 64;
+  size_t weight_size = sizeof(short) * this->input_->GetC() * 64;
   ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
 }
 
@@ -580,7 +580,7 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
   if (std::is_same<half, DataType>::value) {
     // convert CHW to HWC
     int C = usedSize / 64;
-    int Cin = input_->GetC();
+    int Cin = this->input_->GetC();
     usedSize = Cin * 64;
     short* convertedWeights = new short[usedSize];
 
