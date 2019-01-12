@@ -1,5 +1,5 @@
-| # lc0 on openSUSE | ![openSUSE Logo](https://github.com/openSUSE/artwork/blob/master/Logo/official-logo-color.png)  |
-| :---         |          ---: |
+![openSUSE Logo](https://github.com/openSUSE/artwork/blob/master/Logo/official-logo-color.png/300?style=centerme)
+# lc0 on openSUSE 
 
 openSUSE is a popular RPM based Linux distro, the install sources can be downloaded from [https://software.opensuse.org](https://software.opensuse.org) .
 
