@@ -38,15 +38,9 @@ static const auto kTunerFilename = std::string("leelaz_opencl_tuning");
 // Maximum error from reference.
 static constexpr auto kMaxError = 1e-4;
 
-// Make from 5 to 10 iterations.
 static constexpr int kMinTuneIters = 5;
 static constexpr int kMaxTuneIters = 10;
-
-// Measure error: of maximum 1us +/- 2.5%.
-// Assume that the first iteration has twice more dev.
-static constexpr auto kMaxTimingErrorRate = 0.025;
-static constexpr auto kMaxTimingErrorUs = 1;
-static constexpr double kFirstIterWeight = 0.25;
+static constexpr int kCutoffRatio = 1.5;
 
 // Stochastic search constants.
 static constexpr auto kSeeds = 10;
@@ -369,11 +363,8 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
     cl::NDRange size_sgemm = {(m_ceil * p["MDIMC"]) / p["MWG"],
                               (n_ceil * p["NDIMC"]) / p["NWG"],
                               (size_t)batch_size};
-
-    double max_error = 0.0;
-    double sum_wtime_ns = 0;
-    double sum_weight = 0;
-    double time_us = 0;
+    float max_error = 0.0;
+    cl_long min_elapsed = 0;
 
     for (auto r = 0; r < kMaxTuneIters; r++) {
       try {
@@ -386,24 +377,20 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
                                 c.data());
         queue.finish();
 
-        double this_error =
+        auto this_error =
             compare_ref(c, c_ref, n, m, batch_size, n_ceil, m_ceil);
         max_error = std::max(max_error, this_error);
 
         auto elapsed = event.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
                        event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
 
-        double weight = r == 0 ? kFirstIterWeight : 1.0;
-        sum_wtime_ns += weight * elapsed;
-        sum_weight += weight;
-        time_us = 1e-3 * sum_wtime_ns / sum_weight;
-
-        if (r > kMinTuneIters && best_time_us > 0) {
-          double error_us =
-              (kMaxTimingErrorRate * time_us + kMaxTimingErrorUs) /
-              std::sqrt(sum_weight);
-          // If we cannot be stastistically faster, give up.
-          if (time_us - error_us > best_time_us) break;
+        if (r == 0 || elapsed < min_elapsed) {
+          min_elapsed = elapsed;
+          if (r >= kMinTuneIters) {
+            double time_us = 1e-3 * elapsed;
+            if (best_time_us > 0 && time_us > best_time_us * kCutoffRatio)
+              break;
+          }
         }
 
       } catch (const cl::Error&) {
@@ -413,11 +400,12 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
       }
     }
 
+    double time_us = 1e-3 * min_elapsed;
     if (max_error < kMaxError &&
         (best_time_us == 0 || time_us < best_time_us)) {
       auto param_str = parameters_to_string(p);
       // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out.
-      auto kernel_gflops = total_flops / (sum_wtime_ns / sum_weight);
+      auto kernel_gflops = total_flops / min_elapsed;
       CERR << std::fixed << std::setprecision(1) << "(" << param_counter << "/"
            << valid_params.size() << ") " << param_str << " " << time_us
            << " us (" << kernel_gflops << " GFLOPS)";
@@ -615,9 +603,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
                                 (size_t)batch_size};
 
       float max_error = 0.0;
-      double sum_wtime_ns = 0;
-      double sum_weight = 0;
-      double time_us = 0;
+      cl_long min_elapsed = 0;
 
       for (int r = 0; r < kMaxTuneIters; r++) {
         try {
@@ -637,17 +623,13 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
           auto elapsed = event.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
                          event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
 
-          double weight = r == 0 ? kFirstIterWeight : 1.0;
-          sum_wtime_ns += weight * elapsed;
-          sum_weight += weight;
-          time_us = 1e-3 * sum_wtime_ns / sum_weight;
-
-          if (r > kMinTuneIters && best_time_us > 0) {
-            double error_us =
-                (kMaxTimingErrorRate * time_us + kMaxTimingErrorUs) /
-                std::sqrt(sum_weight);
-            // If we cannot be stastistically faster, give up.
-            if (time_us - error_us > best_time_us) break;
+          if (r == 0 || elapsed < min_elapsed) {
+            min_elapsed = elapsed;
+            if (r >= kMinTuneIters) {
+              double time_us = 1e-3 * elapsed;
+              if (best_time_us > 0 && time_us > best_time_us * kCutoffRatio)
+                break;
+            }
           }
 
         } catch (const cl::Error&) {
@@ -662,10 +644,12 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
         continue;
       }
 
+      double time_us = 1e-3 * min_elapsed;
       if (walk_best_time_us == 0 || time_us < walk_best_time_us) {
         walk_best_time_us = time_us;
         walk_best_params = defines;
-        walk_best_gflops = total_flops / (sum_wtime_ns / sum_weight);
+        // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out.
+        walk_best_gflops = total_flops / min_elapsed;
         walk_best_string = parameters_to_string(p);
 
         if (best_time_us == 0 || walk_best_time_us < best_time_us) {
