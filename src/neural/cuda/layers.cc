@@ -565,20 +565,40 @@ FCLayer<DataType>::~FCLayer() {
 }
 
 template <typename DataType>
-PolicyMapLayer<DataType>::PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize)
-    : BaseLayer<DataType>(C, H, W, ip),
-      usedSize(usedSize) {
-  size_t weight_size = sizeof(short) * usedSize;
+PolicyMapLayer<DataType>::PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H,
+                                         int W, int usedSize)
+    : BaseLayer<DataType>(C, H, W, ip), usedSize(usedSize) {
+  size_t weight_size = sizeof(short) * input_->GetC() * 64;
   ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
 }
 
-
 template <typename DataType>
-void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight, void* /*scratch*/) {
+void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
+                                           void* /*scratch*/) {
   size_t weight_size = sizeof(short) * usedSize;
 
-  ReportCUDAErrors(cudaMemcpyAsync(weights_, cpuWeight, weight_size,
-                                   cudaMemcpyHostToDevice));
+  if (std::is_same<half, DataType>::value) {
+    // convert CHW to HWC
+    int C = usedSize / 64;
+    int Cin = input_->GetC();
+    usedSize = Cin * 64;
+    short* convertedWeights = new short[usedSize];
+
+    for (int hw = 0; hw < 64; hw++)
+      for (int c = 0; c < Cin; c++) {
+        if (c < C)
+          convertedWeights[c * Cin + hw] = cpuWeight[hw * 64 + c];
+        else
+          convertedWeights[c * Cin + hw] = -1;
+      }
+    ReportCUDAErrors(cudaMemcpyAsync(weights_, convertedWeights,
+                                     usedSize * sizeof(short),
+                                     cudaMemcpyHostToDevice));
+    delete[] convertedWeights;
+  } else {
+    ReportCUDAErrors(cudaMemcpyAsync(weights_, cpuWeight, weight_size,
+                                     cudaMemcpyHostToDevice));
+  }
 }
 
 template <typename DataType>
