@@ -159,8 +159,7 @@ class OpenCL_Network {
       unsigned int ip_out, const std::vector<float>& weights_1,
       const std::vector<float>& means_1, const std::vector<float>& variances_1,
       const std::vector<float>& weights_2, const std::vector<float>& means_2,
-      const std::vector<float>& variances_2, const std::vector<float>& fc_w,
-      const std::vector<float>& fc_b) {
+      const std::vector<float>& variances_2, const std::vector<short>& indices) {
     size_t layer = get_layer_count();
     push_weights(layer, weights_1);
     push_weights(layer, means_1);
@@ -168,8 +167,7 @@ class OpenCL_Network {
     push_weights(layer, weights_2);
     push_weights(layer, means_2);
     push_weights(layer, variances_2);
-    push_weights(layer, fc_w);
-    push_weights(layer, fc_b);
+    push_weights_short(layer, indices);
     m_layers[layer].is_conv_policy = true;
     m_layers[layer].outputs = outputs;
     m_layers[layer].channels = channels;
@@ -204,6 +202,11 @@ class OpenCL_Network {
     add_weights(layer, weights.size(), weights.data());
   }
   void add_weights(size_t layer, size_t size, const float* weights);
+
+  void push_weights_short(size_t layer, const std::vector<short>& weights) {
+    add_weights_short(layer, weights.size(), weights.data());
+  }
+  void add_weights_short(size_t layer, size_t size, const short* weights);
 
   OpenCL& m_opencl;
   size_t m_max_batch_size;

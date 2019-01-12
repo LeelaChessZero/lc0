@@ -33,6 +33,7 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
       cl::Kernel(program, "out_transform_fused_bn_in");
   m_global_avg_pooling_kernel = cl::Kernel(program, "global_avg_pooling");
   m_apply_se_kernel = cl::Kernel(program, "apply_se");
+  m_policymap_kernel = cl::Kernel(program, "policymap");
   m_sgemv_kernel = cl::Kernel(program, "Xgemv");
   m_commandqueue = cl::CommandQueue(context, device);
 
@@ -79,9 +80,15 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
       cl::Buffer(m_opencl.m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                  alloc_vm_size);
 
-  m_pinnedOutBuffer_pol =
-      cl::Buffer(m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                 max_batch_size * finalSize_pol);
+  try {
+      m_pinnedOutBuffer_pol =
+          cl::Buffer(m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
+                     max_batch_size * finalSize_pol);
+  } catch (const cl::Error& e) {
+    CERR << "Error in m_pinnedOutBuffer_pol: " << e.what() << ": " << e.err() << std::endl;
+    throw;
+  }
+
   m_pinnedOutBuffer_val =
       cl::Buffer(m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
                  max_batch_size * finalSize_val);
@@ -193,8 +200,7 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
       auto bn1_weights = begin(layer.weights) + 1;
       auto conv2_weights = begin(layer.weights) + 3;
       auto bn2_weights = begin(layer.weights) + 4;
-      auto ip_w = begin(layer.weights) + 6;
-      auto ip_b = begin(layer.weights) + 7;
+      auto indices = begin(layer.weights) + 6;
 
       convolve3(layer.channels,  // channels
                 layer.channels,  // outputs
@@ -227,8 +233,8 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
                 false,           // relu
                 batch_size);     // batch_size
 
-      innerproduct(m_inBuffer2, ip_w, ip_b, m_pinnedOutBuffer_pol,
-                   layer.ip_in_size, layer.ip_out_size, false, batch_size);
+      policymap(batch_size, m_inBuffer2, m_pinnedOutBuffer_pol, indices[0],
+            layer.outputs * 8 * 8, layer.ip_in_size, layer.ip_out_size);
 
     } else {
       assert(layer.is_value || layer.is_policy);
@@ -542,6 +548,27 @@ void OpenCLBuffers::innerproduct(cl::Buffer& input, weight_slice_t weights,
                                         cl::NDRange(local_size, 1));
   } catch (const cl::Error& e) {
     CERR << "Error in innerproduct: " << e.what() << ": " << e.err()
+         << std::endl;
+    throw;
+  }
+}
+
+void OpenCLBuffers::policymap(int N, const cl::Buffer& input, cl::Buffer& output,
+        const cl::Buffer& indices, int inputSize, int usedSize, int outputSize) {
+
+  try {
+    m_policymap_kernel.setArg(0, input);
+    m_policymap_kernel.setArg(1, output);
+    m_policymap_kernel.setArg(2, indices);
+    m_policymap_kernel.setArg(3, N);
+    m_policymap_kernel.setArg(4, inputSize);
+    m_policymap_kernel.setArg(5, usedSize);
+    m_policymap_kernel.setArg(6, outputSize);
+
+    m_commandqueue.enqueueNDRangeKernel(m_policymap_kernel, cl::NullRange,
+                                        cl::NDRange(N * usedSize));
+  } catch (const cl::Error& e) {
+    CERR << "Error in policymap: " << e.what() << ": " << e.err()
          << std::endl;
     throw;
   }

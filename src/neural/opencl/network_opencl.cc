@@ -22,6 +22,7 @@
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/shared/activation.h"
 #include "neural/shared/batchnorm.h"
+#include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
 
 #include <algorithm>
@@ -46,13 +47,12 @@ class OpenCLNetwork;
 struct OpenCLWeights {
   const std::vector<float> ip2_val_w;
   const std::vector<float> ip2_val_b;
-  const size_t num_output_policies;
+  const size_t num_output_policies = 1858;
   const size_t num_value_channels;
 
   OpenCLWeights(const WeightsFile& file)
       : ip2_val_w(LayerAdapter(file.weights().ip2_val_w()).as_vector()),
         ip2_val_b(LayerAdapter(file.weights().ip2_val_b()).as_vector()),
-        num_output_policies(LayerAdapter(file.weights().ip_pol_b()).size()),
         num_value_channels(LayerAdapter(file.weights().ip1_val_b()).size()) {}
 };
 
@@ -191,7 +191,7 @@ class OpenCLNetwork : public Network {
 
     const auto num_value_input_planes = weights.value.bn_means.size();
     const auto num_policy_input_planes = weights.policy.bn_means.size();
-    const auto num_output_policy = weights.ip_pol_b.size();
+    const auto num_output_policy = kPolicyOutputs;
     const auto num_value_channels = weights.ip1_val_b.size();
 
     // Typically
@@ -295,6 +295,11 @@ class OpenCLNetwork : public Network {
         pol_stddivs.emplace_back(1.0f);
       }
 
+      std::vector<short> indices;
+      for (auto i = size_t{0}; i < kPolicyUsedPlanes * 8 * 8; i++) {
+        indices.emplace_back(kConvPolicyMap[i]);
+      }
+
       std::vector<float> bn_pol1_means = weights.policy1.GetOffsetMeans();
       std::vector<float> bn_pol1_stddivs = weights.policy1.GetInvertedStddev();
 
@@ -302,9 +307,9 @@ class OpenCLNetwork : public Network {
       std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
 
       opencl_net_.push_conv_policy(
-          channels, pol_channels, pol_channels * width * height,
+          channels, pol_channels, kPolicyUsedPlanes * width * height,
           num_output_policy, W1, bn_pol1_means, bn_pol1_stddivs, W2, pol_means,
-          pol_stddivs, weights.ip_pol_w, weights.ip_pol_b);
+          pol_stddivs, indices);
     } else {
       std::vector<float> bn_pol_means = weights.policy.GetOffsetMeans();
       std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
@@ -334,6 +339,8 @@ class OpenCLNetwork : public Network {
 
  private:
   static constexpr auto kHardMaxBatchSize = 16;
+  static constexpr auto kPolicyUsedPlanes = 73;
+  static constexpr auto kPolicyOutputs = 1858;
 
   OpenCLWeights weights_;
   OpenCLParams params_;
