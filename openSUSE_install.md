@@ -9,7 +9,7 @@ If the User finds anything in this guide unclear, the original documentation is 
 
 ## RPM packages vs Building from Source
 
-An extremely versatile Build script that makes building from source simple and trivial is provided below which should run on practically any version of openSUSE but supports only the eopenBLAS backend, which means it can be run on any openSUSE without any hardware dependencies, and supports any version of openSUSE LEAP or Tumbleweed. Most of the procedure after starting the script is just waiting to finish, no technical knowledge is required.
+An extremely versatile Build script that makes building from source simple and trivial is provided below which should run on practically any version of openSUSE but supports only the openBLAS backend, which means it can be run on any openSUSE without any hardware dependencies, and supports any version of openSUSE LEAP or Tumbleweed. Most of the procedure after starting the script is just waiting to finish, no technical knowledge is required.
 
 For those who instead prefer to not install the many files to build lc0, experimental packages (as of this writing) are available for LEAP 15 and Tumbleweed only (as of this writing). Known quirks are described, and supports both BLAS (which can be installed on any hardware) and OpenCL which supports AMD GPU only. For Users who wish to use a pre-built binary from a package, skip down to "RPM packages"
 
@@ -38,7 +38,7 @@ Summary of steps
 
 Download and save the following file to your machine by clicking on the following link
 
-[Download install_openSUSE_lc0.sh](https://github.com/LeelaChessZero/lc0/install_openSUSE_lc0.sh)
+[install_openSUSE_lc0.sh](https://github.com/LeelaChessZero/lc0/install_openSUSE_lc0.sh)
 
 The file you just downloaded can be run from any location, but must be executed in a root console.
 
@@ -56,7 +56,7 @@ Change directory to where your downloaded script is (most likely your Downloads 
 ```
 
 cd ~/Downloads
-./install_openSUSE_lc0
+./install_openSUSE_lc0.sh
 ```
 
 
@@ -65,14 +65,14 @@ cd ~/Downloads
 If you ran the script that builds from source, you can ignore this section and skip to the next section which describes installing a networks file. 
 
 Otherwise, if you skipped most of what is described above because you want to use pre-built packages, this is where you should start!
-1. Using an openSUSE provided Web browser (recommend Firefox), find the package for your version of openSUSE and download adn/or install the package. The actual location of packages may change depending on project status, so you may also want to use the web package search at https://software.opensuse.org/search  As of this writing, the "One Click Install" that uses YaST to install is known to be broken, saying it requries root permissions(incorrectly). You will likely have to download the RPM package (not the YMP file)
+1. Using an openSUSE provided Web browser (recommend Firefox), find the package for your version of openSUSE and download and/or install the package. The actual location of packages may change depending on project status, so you may also want to use the web package search at https://software.opensuse.org/search  As of this writing, the "One Click Install" that uses YaST to install is known to be broken, saying it requries root permissions(incorrectly). You will likely have to download the RPM package (not the YMP file)
 https://build.opensuse.org/package/binaries/home:malcolmlewis:TESTING/lc0/openSUSE_Leap_15.0
 https://build.opensuse.org/package/binaries/home:malcolmlewis:TESTING/lc0/openSUSE_Tumbleweed
 2. Once the RPM file has been downloaded, you can install using YaST, zypper or RPM by simply pointing the install command to the file.
 3. If successfully installed, you will find the lc0 binary at the following location and you can now proceed to the next section.
 ```
 
-/usr/games/lco/lco
+/usr/bin/lco
 ```
 
 
@@ -85,7 +85,7 @@ The Install script automates practically everything needed for the lc0 Engine to
 
 [http://lczero.org/networks](http://lczero.org/networks/)
 
-#### An example settup up with the Arena graphical chessboard
+## An example settup up with the Arena graphical chessboard
 
 The following applies if you compiled your own lc0 binary or if you are using the pre-built lc0 binary on a machine with an AMD processor. Arena is known to have a bug that prevents the RPM binary to use BLAS (go back and use the compile from source script). The alternative is to use another graphical chessboard, [Cute Chess](https://cutechess.com/) has been tested and verified to work. Setting up Cute Chess is generally similar to setting up on Arena, with fewer options but generally the same major steps. If Users are unable to figure out how to set up with Cute Chess, a section will be added later.
 
