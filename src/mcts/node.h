@@ -113,6 +113,10 @@ class EdgeList {
   Edge& operator[](size_t idx) const { return edges_[idx]; }
   operator bool() const { return static_cast<bool>(edges_); }
   uint16_t size() const { return size_; }
+  void Reset() {
+    edges_.reset();
+    size_ = 0;
+  }
 
  private:
   std::unique_ptr<Edge[]> edges_;
@@ -146,8 +150,11 @@ class Node {
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
-  uint32_t GetN() const { return n_; }
-  uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
+  uint32_t GetN() const { return n_.load(std::memory_order_acquire); }
+  uint32_t GetChildrenVisits() const {
+    const auto n = GetN();
+    return n > 0 ? n - 1 : 0;
+  }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetQ() const { return q_; }
@@ -159,13 +166,9 @@ class Node {
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
 
-  /*  // If this node is not in the process of being expanded by another thread
-    // (which can happen only if n==0 and n-in-flight==1), mark the node as
-    // "being updated" by incrementing n-in-flight, and return true.
-    // Otherwise return false.
-    bool TryStartScoreUpdate();
-  // Decrements n-in-flight back. */
-  void CancelScoreUpdate(int multivisit) { n_ -= multivisit; }
+  void CancelScoreUpdate(int multivisit) {
+    n_.fetch_sub(multivisit, std::memory_order_acq_rel);
+  }
 
   // Updates the node with newly computed value v.
   // Updates:
@@ -173,13 +176,18 @@ class Node {
   // * N (+=1)
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, int multivisit);
-  /*  // When search decides to treat one visit as several (in case of
-    collisions
-    // or visiting terminal nodes several times), it amplifies the visit by
-    // incrementing n_in_flight.
-    void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
-  */
-  void IncrementN(int multivisit) { n_ += multivisit; }
+
+  void IncrementN(int multivisit) {
+    if (parent_ != nullptr && n_.load() == 0) {
+      // TODO(crem) Get rid of visited policy.
+      // If first visit, update parent's sum of policies visited at least once.
+      parent_->visited_policy_.store(
+          GetVisitedPolicy() + parent_->edges_[index_].GetP(),
+          std::memory_order_release);
+    }
+
+    n_.fetch_add(multivisit, std::memory_order_acq_rel);
+  }
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
@@ -219,18 +227,29 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
-  void SetBeingExtended() { is_being_extended_ = true; }
-  void ResetBeingExtended() { is_being_extended_ = false; }
-  bool IsBeingExtended() const { return is_being_extended_; }
-
- private:
-  // Performs construction time type initialization. For use only with a node
-  // that has not been used beyond its construction.
-  void Reinit(Node* parent, uint16_t index) {
-    parent_ = parent;
-    index_ = index;
+  void SetBeingExtended() {
+    is_being_extended_.store(true, std::memory_order_release);
+  }
+  void ResetBeingExtended() {
+    is_being_extended_.store(false, std::memory_order_release);
+  }
+  bool IsBeingExtended() const {
+    return is_being_extended_.load(std::memory_order_acquire);
   }
 
+  void Reset() {
+    // Do not reset parent and index.
+    edges_.Reset();
+    child_.reset();
+    sibling_.reset();
+    q_.store(0.0f, std::memory_order_release);
+    n_.store(0, std::memory_order_release);
+    visited_policy_.store(0.0f, std::memory_order_release);
+    is_terminal_ = false;
+    assert(is_being_extended_ == false);
+  }
+
+ private:
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
@@ -252,11 +271,11 @@ class Node {
   // subtree. For terminal nodes, eval is stored. This is from the perspective
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
-  float q_ = 0.0f;
+  std::atomic<float> q_{0.0f};
   // Sum of policy priors which have had at least one playout.
-  float visited_policy_ = 0.0f;
+  std::atomic<float> visited_policy_{0.0f};
   // How many completed visits this node had.
-  uint32_t n_ = 0;
+  std::atomic<uint32_t> n_{0};
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -265,7 +284,7 @@ class Node {
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
   bool is_terminal_ = false;
-  bool is_being_extended_ = false;
+  std::atomic<bool> is_being_extended_{false};
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -402,8 +421,7 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator& operator*() { return *this; }
 
   // If there is node, return it. Otherwise spawn a new one and return it.
-  Node* GetOrSpawnNode(Node* parent,
-                       std::unique_ptr<Node>* node_source = nullptr) {
+  Node* GetOrSpawnNode(Node* parent) {
     if (node_) return node_;  // If there is already a node, return it.
     Actualize();              // But maybe other thread already did that.
     if (node_) return node_;  // If it did, return.
@@ -419,12 +437,7 @@ class Edge_Iterator : public EdgeAndNode {
     // 2. Create fresh Node(idx_.5):
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
-    if (node_source && *node_source) {
-      (*node_source)->Reinit(parent, current_idx_);
-      *node_ptr_ = std::move(*node_source);
-    } else {
-      *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
-    }
+    *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
     //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)

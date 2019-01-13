@@ -79,10 +79,12 @@ class BatchCollector {
           is_collision(is_collision) {}
   };
 
-  BatchCollector(int num_threads);
+  BatchCollector(Node* root, const SearchParams& params);
   ~BatchCollector();
-  std::vector<NodeToProcess> Collect(Node* root, int limit,
-                                     const SearchParams& params);
+  void ControllerThread();
+
+  bool CollectOne(NodeToProcess* out);
+  size_t CollectMultiple(std::vector<NodeToProcess>* out, int limit);
 
  private:
   NodeToProcess PickNodeToExtend(Node* node, int batch_size, int depth);
@@ -98,15 +100,20 @@ class BatchCollector {
     int depth;
   };
 
-  std::atomic<bool> stop_;
-  std::vector<std::thread> threads_;
+  Node* root_;
+  const SearchParams& params_;
+
+  std::atomic<bool> pause_{false};
+  std::atomic<bool> stop_{false};
+  std::vector<std::thread> worker_threads_;
+  std::thread main_thread_;
   moodycamel::ConcurrentQueue<CollectionItem> queue_;
   moodycamel::ConcurrentQueue<NodeToProcess> results_;
-  const SearchParams* params_;
 
-  std::atomic<int> idle_workers_;
+  std::atomic<int> idle_workers_{0};
   std::mutex mutex_;
-  std::condition_variable cv_;
+  std::condition_variable worker_wakeup_cv_;
+  std::condition_variable unpause_cv_;
   std::condition_variable work_done_cv_;
   bool work_done_ = false;
 };

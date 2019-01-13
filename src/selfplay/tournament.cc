@@ -89,7 +89,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 1.2f);
   defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 1.0f);
-  defaults->Set<int>(SearchParams::kMaxCollisionVisitsId.GetId(), 1);
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 1);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 7);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), false);

@@ -197,7 +197,9 @@ void Node::CreateEdges(const MoveList& moves) {
 Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
 Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
-float Node::GetVisitedPolicy() const { return visited_policy_; }
+float Node::GetVisitedPolicy() const {
+  return visited_policy_.load(std::memory_order_release);
+}
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
@@ -229,11 +231,8 @@ void Node::MakeTerminal(GameResult result) {
 
 void Node::FinalizeScoreUpdate(float v, int multivisit) {
   // Recompute Q.
-  q_ += multivisit * (v - q_) / n_;
-  // If first visit, update parent's sum of policies visited at least once.
-  if (n_ == 0 && parent_ != nullptr) {
-    parent_->visited_policy_ += parent_->edges_[index_].GetP();
-  }
+  q_.store(q_.load(std::memory_order_acquire) + multivisit * (v - q_) / n_,
+           std::memory_order_release);
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
@@ -353,7 +352,7 @@ void NodeTree::TrimTreeAtHead() {
   auto tmp = std::move(current_head_->sibling_);
   // Send dependent nodes for GC instead of destroying them immediately.
   gNodeGc.AddToGcQueue(std::move(current_head_->child_));
-  *current_head_ = Node(current_head_->GetParent(), current_head_->index_);
+  current_head_->Reset();
   current_head_->sibling_ = std::move(tmp);
 }
 

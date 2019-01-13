@@ -134,8 +134,6 @@ class Search {
   // Returns NN eval for a given node from cache, if that node is cached.
   NNCacheLock GetCachedNNEval(Node* node) const;
 
-  BatchCollector batch_collector_{2};
-
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};
@@ -186,6 +184,7 @@ class Search {
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
   const SearchParams params_;
+  BatchCollector batch_collector_;
 
   friend class SearchWorker;
 };
@@ -225,9 +224,6 @@ class SearchWorker {
 
   // 2. Gather minibatch.
   void GatherMinibatch();
-
-  // 3. Prefetch into cache.
-  void MaybePrefetchIntoCache();
 
   // 4. Run NN computation.
   void RunNNComputation();

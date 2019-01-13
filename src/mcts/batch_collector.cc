@@ -33,27 +33,37 @@
 namespace lczero {
 
 namespace {
-constexpr int kNodePickFanout = 5;
+constexpr int kThreads = 2;
+constexpr int kNodePickFanout = 6;
+constexpr int kPrefetch = 1000;
+constexpr int kBatch = 256;
 }  // namespace
 
-BatchCollector::BatchCollector(int num_threads) : idle_workers_(0) {
-  for (int i = 0; i < num_threads; ++i)
-    threads_.emplace_back([this]() { Worker(); });
+BatchCollector::BatchCollector(Node* root, const SearchParams& params)
+    : root_(root), params_(params), idle_workers_(0) {
+  for (int i = 0; i < kThreads; ++i) {
+    worker_threads_.emplace_back([this]() { Worker(); });
+  }
+  main_thread_ = std::thread([this]() { ControllerThread(); });
 }
 
 BatchCollector::~BatchCollector() {
   stop_.store(true);
-  cv_.notify_all();
-  while (!threads_.empty()) {
-    threads_.back().join();
-    threads_.pop_back();
+  worker_wakeup_cv_.notify_all();
+  pause_.store(false);
+  unpause_cv_.notify_one();
+
+  while (!worker_threads_.empty()) {
+    worker_threads_.back().join();
+    worker_threads_.pop_back();
   }
+  main_thread_.join();
 }
 
 void BatchCollector::EnqueueWork(Node* root, int limit, int depth) {
   queue_.enqueue(CollectionItem(root, limit, depth));
   if (idle_workers_.load(std::memory_order_acquire) > 0) {
-    cv_.notify_one();
+    worker_wakeup_cv_.notify_one();
   }
 }
 
@@ -67,24 +77,47 @@ void IncrementN(Node* node, Node* root, int amount) {
 }
 }  // namespace
 
-std::vector<BatchCollector::NodeToProcess> BatchCollector::Collect(
-    Node* root, int limit, const SearchParams& params) {
-  work_done_ = false;
-  // assert(results_.size_approx() == 0);  // DO NOT SUBMIT
-  assert(queue_.size_approx() == 0);
-  assert(static_cast<int>(threads_.size()) == idle_workers_);
-  params_ = &params;
-  EnqueueWork(root, limit, 0);
-  std::unique_lock<std::mutex> lock(mutex_);
-  work_done_cv_.wait(lock, [this]() { return work_done_; });
-
-  std::vector<NodeToProcess> result;
-  NodeToProcess node;
-  while (results_.try_dequeue(node)) {
-    IncrementN(node.node, root, node.multivisit);
-    result.emplace_back(std::move(node));
+void BatchCollector::ControllerThread() {
+  while (!stop_.load(std::memory_order_acquire)) {
+    if (results_.size_approx() < kPrefetch) {
+      pause_.store(true, std::memory_order_release);
+      work_done_ = false;
+      EnqueueWork(root_, kBatch, 0);
+      std::unique_lock<std::mutex> lock(mutex_);
+      work_done_cv_.wait(lock, [this]() { return work_done_; });
+      assert(idle_workers_ == static_cast<int>(worker_threads_.size()));
+      continue;
+    }
+    std::unique_lock<std::mutex> lock(mutex_);
+    unpause_cv_.wait(lock, [this]() { return !pause_; });
   }
-  return result;
+}
+
+size_t BatchCollector::CollectMultiple(std::vector<NodeToProcess>* out,
+                                       int limit) {
+  const auto idx = out->size();
+  out->resize(idx + limit);
+  auto res = results_.try_dequeue_bulk(&(*out)[idx], limit);
+  out->resize(idx + res);
+
+  if (pause_.load(std::memory_order_acquire)) {
+    pause_.store(false, std::memory_order_relaxed);
+    unpause_cv_.notify_one();
+  }
+
+  return res;
+}
+
+bool BatchCollector::CollectOne(NodeToProcess* out) {
+  auto res = results_.try_dequeue(*out);
+
+  // CERR << results_.size_approx();
+  if (pause_.load(std::memory_order_acquire)) {
+    pause_.store(false, std::memory_order_relaxed);
+    unpause_cv_.notify_one();
+  }
+
+  return res;
 }
 
 void BatchCollector::Worker() {
@@ -93,12 +126,12 @@ void BatchCollector::Worker() {
     if (!queue_.try_dequeue(item)) {
       std::unique_lock<std::mutex> lock(mutex_);
       ++idle_workers_;
-      if (idle_workers_ == static_cast<int>(threads_.size())) {
+      if (idle_workers_ == static_cast<int>(worker_threads_.size())) {
         work_done_ = true;
         work_done_cv_.notify_one();
       }
       // TODO(crem) can size_approx() return 0 when it's not empty?..
-      cv_.wait(lock, [this]() {
+      worker_wakeup_cv_.wait(lock, [this]() {
         return stop_.load(std::memory_order_acquire) ||
                queue_.size_approx() > 0;
       });
@@ -106,8 +139,9 @@ void BatchCollector::Worker() {
       continue;
     }
 
-    results_.enqueue(
-        PickNodeToExtend(item.node, item.remaining_batch_size, item.depth));
+    auto node =
+        PickNodeToExtend(item.node, item.remaining_batch_size, item.depth);
+    if (!node.is_collision) results_.enqueue(std::move(node));
   }
 }
 
@@ -142,15 +176,18 @@ BatchCollector::NodeToProcess BatchCollector::PickNodeToExtend(Node* node,
 
     // First, terminate if we find collisions or leaf nodes.
     if (node->IsBeingExtended()) {
-      return NodeToProcess::Collision(node, depth, 1);  // DO NOT SUBMIT
+      // IncrementN(node, root_, batch_size);
+      return NodeToProcess::Collision(node, depth, batch_size);
     }
 
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
-        return NodeToProcess::TerminalHit(node, depth, 1);  // DO NOT SUBMIT
+        IncrementN(node, root_, 1);
+        return NodeToProcess::TerminalHit(node, depth, 1);
       } else {
         node->SetBeingExtended();
+        IncrementN(node, root_, 1);
         return NodeToProcess::Extension(node, depth);
       }
     }
@@ -160,8 +197,8 @@ BatchCollector::NodeToProcess BatchCollector::PickNodeToExtend(Node* node,
     best_scores.fill(std::numeric_limits<float>::lowest());
 
     // Find kEdges best edges.
-    const float cpuct = ComputeCpuct(*params_, node->GetN());
-    const float fpu = GetFpu(*params_, node, depth == 0);
+    const float cpuct = ComputeCpuct(params_, node->GetN());
+    const float fpu = GetFpu(params_, node, depth == 0);
 
     float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -188,8 +225,9 @@ BatchCollector::NodeToProcess BatchCollector::PickNodeToExtend(Node* node,
     int visits_left = batch_size;
     for (int i = 0; i < kNodePickFanout; ++i) {
       auto& edge = best_edges[i];
+      if (!edge) break;
       const auto& next_edge = best_edges[i + 1];
-      Node* new_node = edge.GetOrSpawnNode(parent, nullptr);
+      Node* new_node = edge.GetOrSpawnNode(parent);
       // Best node will be looked further in this thread, other nodes are
       // queued to be picked in parallel.
 

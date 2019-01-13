@@ -44,11 +44,6 @@ const OptionId SearchParams::kMiniBatchSizeId{
     "How many positions the engine tries to batch together for parallel NN "
     "computation. Larger batches may reduce strength a bit, especially with a "
     "small number of playouts."};
-const OptionId SearchParams::kMaxPrefetchBatchId{
-    "max-prefetch", "MaxPrefetch",
-    "When the engine cannot gather a large enough batch for immediate use, try "
-    "to prefetch up to X positions which are likely to be useful soon, and put "
-    "them into cache."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -134,9 +129,6 @@ const OptionId SearchParams::kPolicySoftmaxTempId{
     "policy-softmax-temp", "PolicyTemperature",
     "Policy softmax temperature. Higher values make priors of move candidates "
     "closer to each other, widening the search."};
-const OptionId SearchParams::kMaxCollisionVisitsId{
-    "max-collision-visits", "MaxCollisionVisits",
-    "Total allowed node collision visits, per batch."};
 const OptionId SearchParams::kMaxCollisionEventsId{
     "max-collision-events", "MaxCollisionEvents",
     "Allowed node collision events, per batch."};
@@ -165,7 +157,6 @@ void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
-  options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
@@ -186,7 +177,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
-  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
@@ -209,11 +199,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
-      kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
-}
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {}
 
 }  // namespace lczero

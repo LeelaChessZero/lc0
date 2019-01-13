@@ -42,12 +42,7 @@ class SearchParams {
   static void Populate(OptionsParser* options);
 
   // Parameter getters.
-  int GetMiniBatchSize() const {
-    return kMiniBatchSize;
-  }
-  int GetMaxPrefetchBatch() const {
-    return options_.Get<int>(kMaxPrefetchBatchId.GetId());
-  }
+  int GetMiniBatchSize() const { return kMiniBatchSize; }
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
@@ -81,7 +76,6 @@ class SearchParams {
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
-  int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
   std::string GetScoreType() const {
@@ -91,7 +85,6 @@ class SearchParams {
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
-  static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
@@ -110,7 +103,6 @@ class SearchParams {
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
   static const OptionId kMaxCollisionEventsId;
-  static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
@@ -135,7 +127,6 @@ class SearchParams {
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kMaxCollisionEvents;
-  const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
