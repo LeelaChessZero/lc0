@@ -38,7 +38,7 @@ Summary of steps
 
 Download and save the following file to your machine by clicking on the following link
 
-[install_openSUSE_lc0.sh](https://github.com/LeelaChessZero/lc0/install_openSUSE_lc0.sh)
+[install_openSUSE_lc0.sh](install_openSUSE_lc0.sh)
 
 The file you just downloaded can be run from any location, but must be executed in a root console.
 
