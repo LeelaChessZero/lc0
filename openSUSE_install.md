@@ -102,8 +102,17 @@ mv arenalinux_64bit_1.1.tar.gz ~/Arena/
 cd ~/Arena/
 tar -xf arenalinux_64bit_1.1.tar.gz
 ```
+Now, a special command to reset permissions on ~/.configure/ so that a regular User account can write to this directory. After you run the following command as root, you will be able to run Arena as a regular User.
 
-If you were able to successfully create a Desktop shortcut to launch Arena, you can test it now, otherwise in the Arena root folder you can execute the following in a console
+
+```
+
+chown -R $USER:$(id -gn $USER) /home/tony/.config
+```
+
+
+
+Now you can execute Arena as a normal, non-root User with the following command.
 
 ```
 
