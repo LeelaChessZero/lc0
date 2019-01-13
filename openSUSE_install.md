@@ -51,7 +51,8 @@ su
 
 For the following two commands and elsewhere below, the User can either copy the text into an open console or type the commands by hand.<br>
 
-Change directory to where your downloaded script is (most likely your Downloads folder) and execute
+Change directory to where your downloaded script is (most likely your Downloads folder) and execute.
+If necessary, modify the execute permission of the script with "chmod+x install_openSUSE_lc0.sh"
 
 ```
 
