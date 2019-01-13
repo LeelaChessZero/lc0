@@ -107,7 +107,7 @@ Now, a special command to reset permissions on ~/.configure/ so that a regular U
 
 ```
 
-chown -R $USER:$(id -gn $USER) /home/tony/.config
+chown -R $USER:$(id -gn $USER) ~/.config
 ```
 
 
