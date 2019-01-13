@@ -221,9 +221,9 @@ void Node::MakeTerminal(GameResult result) {
   if (result == GameResult::DRAW) {
     q_ = 0.0f;
   } else if (result == GameResult::WHITE_WON) {
-    q_ = 1.0f;
+    q_ = 10000.0f;
   } else if (result == GameResult::BLACK_WON) {
-    q_ = -1.0f;
+    q_ = -10000.0f;
   }
 }
 

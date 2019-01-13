@@ -968,9 +968,14 @@ void SearchWorker::ExtendNode(Node* node) {
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
-    } else {
-      node->MakeTerminal(GameResult::DRAW);
+		if (board.flipped()) {
+			node->MakeTerminal(GameResult::BLACK_WON);
+			return;
+		} else {
+			node->MakeTerminal(GameResult::WHITE_WON);
+			return;
+		}
+		node->MakeTerminal(GameResult::DRAW);
     }
     return;
   }
