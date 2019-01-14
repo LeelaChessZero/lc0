@@ -381,7 +381,7 @@ void Search::UpdateRemainingMoves() {
     if (npms_prev_time_) {
       const auto time_delta =
           std::chrono::duration_cast<std::chrono::milliseconds>(
-              nps_start_time - *npms_prev_time_)
+              npms_start_time - *npms_prev_time_)
               .count();
       const auto nodes_delta = total_playouts_ - npms_prev_playouts_;
       LOGFILE << "time_delta: " << time_delta
