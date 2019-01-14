@@ -388,9 +388,11 @@ void EngineController::Go(const GoParams& params) {
     };
   }
 
-  float move_delay = options_.Get<float>(kMoveDelayId.GetId());
-  if (move_delay && limits.search_deadline) {
-    move_delay *= *limits.search_deadline - std::chrono::steady_clock::now();
+  float move_delay_ratio = options_.Get<float>(kMoveDelayId.GetId());
+  if (move_delay_ratio != 0.0f && limits.search_deadline) {
+    auto move_delay =
+        (*limits.search_deadline - std::chrono::steady_clock::now()) *
+        move_delay_ratio;
     LOGFILE << "Sleeping for "
             << std::chrono::duration_cast<std::chrono::milliseconds>(move_delay)
                    .count()
