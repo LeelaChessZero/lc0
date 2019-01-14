@@ -58,11 +58,10 @@ const OptionId kMoveOverheadId{
     "Amount of time, in milliseconds, that the engine subtracts from it's "
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
-const OptionId kMoveDelayId{
-    "move-delay", "MoveDelayMs",
-    "Amount of time, in milliseconds, that the engine delays before starting "
-    "to think. This is one option that can be used to limit the engine's "
-    "strength."};
+const OptionId kMoveDelayId{"move-delay-ratio", "MoveDelayRatio",
+                            "Ratio of move time, that the engine delays "
+                            "before starting to think. This is an option meant "
+                            "to limit the engine's strength."};
 const OptionId kTimeMidpointMoveId{
     "time-midpoint-move", "TimeMidpointMove",
     "The move where the time budgeting algorithm guesses half of all "
@@ -137,7 +136,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-  options->Add<IntOption>(kMoveDelayId, 0, 100000000) = 0;
+  options->Add<FloatOption>(kMoveDelayId, 0.0f, 1.0f) = 0;
   options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
   options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
@@ -389,9 +388,14 @@ void EngineController::Go(const GoParams& params) {
     };
   }
 
-  int64_t move_delay = options_.Get<int>(kMoveDelayId.GetId());
-  if (move_delay) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(move_delay));
+  float move_delay = options_.Get<float>(kMoveDelayId.GetId());
+  if (move_delay && limits.search_deadline) {
+    move_delay *= *limits.search_deadline - std::chrono::steady_clock::now();
+    LOGFILE << "Sleeping for "
+            << std::chrono::duration_cast<std::chrono::milliseconds>(move_delay)
+                   .count()
+            << " ms.";
+    std::this_thread::sleep_for(move_delay);
   }
 
   search_ = std::make_unique<Search>(*tree_, network_.get(), best_move_callback,
