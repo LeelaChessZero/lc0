@@ -378,7 +378,10 @@ void Search::UpdateRemainingMoves() {
   // Check for how many playouts there is time remaining.
   if (limits_.search_deadline) {
     const auto npms_start_time = std::chrono::steady_clock::now();
-    if (npms_prev_time_) {
+    if (!npms_prev_time_) {
+      npms_prev_time_ = npms_start_time;
+      npms_prev_playouts_ = total_playouts_;
+    } else {
       const auto time_delta =
           std::chrono::duration_cast<std::chrono::milliseconds>(
               npms_start_time - *npms_prev_time_)
