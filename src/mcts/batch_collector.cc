@@ -33,7 +33,7 @@
 namespace lczero {
 
 namespace {
-constexpr int kThreads = 2;
+constexpr int kThreads = 3;
 constexpr int kNodePickFanout = 6;
 constexpr int kPrefetch = 1000;
 constexpr int kBatch = 256;
@@ -48,10 +48,10 @@ BatchCollector::BatchCollector(Node* root, const SearchParams& params)
 }
 
 BatchCollector::~BatchCollector() {
-  stop_.store(true);
-  worker_wakeup_cv_.notify_all();
-  pause_.store(false);
-  unpause_cv_.notify_one();
+  status_.store(Status::Abort);
+  worker_cv_.notify_all();
+  controller_cv_.notify_one();
+  pause_cv_.notify_all();
 
   while (!worker_threads_.empty()) {
     worker_threads_.back().join();
@@ -61,10 +61,12 @@ BatchCollector::~BatchCollector() {
 }
 
 void BatchCollector::EnqueueWork(Node* root, int limit, int depth) {
+  if (status_.load(std::memory_order_release) == Status::Abort) return;
   queue_.enqueue(CollectionItem(root, limit, depth));
-  if (idle_workers_.load(std::memory_order_acquire) > 0) {
-    worker_wakeup_cv_.notify_one();
-  }
+  auto expected_status = Status::Stuck;
+  status_.compare_exchange_strong(expected_status, Status::Unstuck,
+                                  std::memory_order_acq_rel);
+  worker_cv_.notify_one();
 }
 
 namespace {
@@ -78,18 +80,50 @@ void IncrementN(Node* node, Node* root, int amount) {
 }  // namespace
 
 void BatchCollector::ControllerThread() {
-  while (!stop_.load(std::memory_order_acquire)) {
-    if (results_.size_approx() < kPrefetch) {
-      pause_.store(true, std::memory_order_release);
-      work_done_ = false;
-      EnqueueWork(root_, kBatch, 0);
+  while (true) {
+    auto status = status_.load(std::memory_order_release);
+    if (status == Status::Abort) return;
+
+    if (paused_.load(std::memory_order_release) > 0) {
+      if (!status_.compare_exchange_weak(status, Status::Paused,
+                                         std::memory_order_acq_rel)) {
+        continue;
+      }
       std::unique_lock<std::mutex> lock(mutex_);
-      work_done_cv_.wait(lock, [this]() { return work_done_; });
-      assert(idle_workers_ == static_cast<int>(worker_threads_.size()));
+      pause_cv_.notify_all();
+      controller_cv_.wait(
+          lock, [this]() { return paused_ == 0 || status_ != Status::Paused; });
+      status = Status::Paused;
+      status_.compare_exchange_strong(status, Status::Stuck,
+                                      std::memory_order_acq_rel);
       continue;
     }
-    std::unique_lock<std::mutex> lock(mutex_);
-    unpause_cv_.wait(lock, [this]() { return !pause_; });
+
+    if (status == Status::LimitReached) {
+      std::unique_lock<std::mutex> lock(mutex_);
+      controller_cv_.wait(lock,
+                          [this]() { return status_ != Status::LimitReached; });
+      continue;
+    }
+
+    assert(status == Status::Stuck);
+
+    if (results_.size_approx() >= kPrefetch) {
+      status_.compare_exchange_weak(status, Status::LimitReached,
+                                    std::memory_order_acq_rel);
+      continue;
+    }
+
+    EnqueueWork(root_, kBatch, 0);
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      controller_cv_.wait(lock, [this]() {
+        auto s = status_.load(std::memory_order_release);
+        return s == Status::Abort ||
+               (s == Status::Stuck &&
+                idle_workers_ == static_cast<int>(worker_threads_.size()));
+      });
+    }
   }
 }
 
@@ -100,9 +134,10 @@ size_t BatchCollector::CollectMultiple(std::vector<NodeToProcess>* out,
   auto res = results_.try_dequeue_bulk(&(*out)[idx], limit);
   out->resize(idx + res);
 
-  if (pause_.load(std::memory_order_acquire)) {
-    pause_.store(false, std::memory_order_relaxed);
-    unpause_cv_.notify_one();
+  auto status = Status::LimitReached;
+  if (status_.compare_exchange_strong(status, Status::Stuck,
+                                      std::memory_order_acq_rel)) {
+    controller_cv_.notify_one();
   }
 
   return res;
@@ -111,29 +146,29 @@ size_t BatchCollector::CollectMultiple(std::vector<NodeToProcess>* out,
 bool BatchCollector::CollectOne(NodeToProcess* out) {
   auto res = results_.try_dequeue(*out);
 
-  // CERR << results_.size_approx();
-  if (pause_.load(std::memory_order_acquire)) {
-    pause_.store(false, std::memory_order_relaxed);
-    unpause_cv_.notify_one();
+  auto status = Status::LimitReached;
+  if (status_.compare_exchange_strong(status, Status::Stuck,
+                                      std::memory_order_acq_rel)) {
+    controller_cv_.notify_one();
   }
 
   return res;
 }
 
 void BatchCollector::Worker() {
-  while (!stop_.load(std::memory_order_acquire)) {
+  while (true) {
+    auto status = status_.load(std::memory_order_release);
+    if (status == Status::Abort) return;
+
     CollectionItem item;
     if (!queue_.try_dequeue(item)) {
       std::unique_lock<std::mutex> lock(mutex_);
       ++idle_workers_;
-      if (idle_workers_ == static_cast<int>(worker_threads_.size())) {
-        work_done_ = true;
-        work_done_cv_.notify_one();
-      }
-      // TODO(crem) can size_approx() return 0 when it's not empty?..
-      worker_wakeup_cv_.wait(lock, [this]() {
-        return stop_.load(std::memory_order_acquire) ||
-               queue_.size_approx() > 0;
+      status = Status::Unstuck;
+      status_.compare_exchange_strong(status, Status::Stuck);
+      controller_cv_.notify_one();
+      worker_cv_.wait(lock, [this]() {
+        return status_.load(std::memory_order_acquire) != Status::Stuck;
       });
       --idle_workers_;
       continue;

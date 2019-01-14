@@ -103,19 +103,29 @@ class BatchCollector {
   Node* root_;
   const SearchParams& params_;
 
-  std::atomic<bool> pause_{false};
-  std::atomic<bool> stop_{false};
   std::vector<std::thread> worker_threads_;
   std::thread main_thread_;
   moodycamel::ConcurrentQueue<CollectionItem> queue_;
   moodycamel::ConcurrentQueue<NodeToProcess> results_;
 
   std::atomic<int> idle_workers_{0};
+  std::atomic<int> paused_{0};
+  enum class Status {
+    // Only between iterations.
+    LimitReached,
+    Paused,
+    // Both between and during iteration.
+    Abort,
+    Stuck,
+    // Only during iteration.
+    Unstuck,
+  };
+
+  std::atomic<Status> status_{Status::Stuck};
   std::mutex mutex_;
-  std::condition_variable worker_wakeup_cv_;
-  std::condition_variable unpause_cv_;
-  std::condition_variable work_done_cv_;
-  bool work_done_ = false;
+  std::condition_variable controller_cv_;
+  std::condition_variable worker_cv_;
+  std::condition_variable pause_cv_;
 };
 
 }  // namespace lczero
