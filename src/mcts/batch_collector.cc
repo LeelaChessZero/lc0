@@ -33,7 +33,7 @@
 namespace lczero {
 
 namespace {
-constexpr int kThreads = 3;
+constexpr int kThreads = 4;
 constexpr int kNodePickFanout = 6;
 constexpr int kPrefetch = 1000;
 constexpr int kBatch = 256;
@@ -99,18 +99,13 @@ void BatchCollector::ControllerThread() {
       continue;
     }
 
-    if (status == Status::LimitReached) {
-      std::unique_lock<std::mutex> lock(mutex_);
-      controller_cv_.wait(lock,
-                          [this]() { return status_ != Status::LimitReached; });
-      continue;
-    }
-
     assert(status == Status::Stuck);
 
     if (results_.size_approx() >= kPrefetch) {
-      status_.compare_exchange_weak(status, Status::LimitReached,
-                                    std::memory_order_acq_rel);
+      std::unique_lock<std::mutex> lock(mutex_);
+      controller_cv_.wait(lock, [this]() {
+        return status_ != Status::Stuck || results_.size_approx() < kPrefetch;
+      });
       continue;
     }
 
@@ -133,25 +128,13 @@ size_t BatchCollector::CollectMultiple(std::vector<NodeToProcess>* out,
   out->resize(idx + limit);
   auto res = results_.try_dequeue_bulk(&(*out)[idx], limit);
   out->resize(idx + res);
-
-  auto status = Status::LimitReached;
-  if (status_.compare_exchange_strong(status, Status::Stuck,
-                                      std::memory_order_acq_rel)) {
-    controller_cv_.notify_one();
-  }
-
+  controller_cv_.notify_one();
   return res;
 }
 
 bool BatchCollector::CollectOne(NodeToProcess* out) {
   auto res = results_.try_dequeue(*out);
-
-  auto status = Status::LimitReached;
-  if (status_.compare_exchange_strong(status, Status::Stuck,
-                                      std::memory_order_acq_rel)) {
-    controller_cv_.notify_one();
-  }
-
+  controller_cv_.notify_one();
   return res;
 }
 
@@ -168,7 +151,8 @@ void BatchCollector::Worker() {
       status_.compare_exchange_strong(status, Status::Stuck);
       controller_cv_.notify_one();
       worker_cv_.wait(lock, [this]() {
-        return status_.load(std::memory_order_acquire) != Status::Stuck;
+        auto s = status_.load(std::memory_order_acquire);
+        return s == Status::Unstuck || s == Status::Abort;
       });
       --idle_workers_;
       continue;

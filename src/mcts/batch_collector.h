@@ -112,7 +112,6 @@ class BatchCollector {
   std::atomic<int> paused_{0};
   enum class Status {
     // Only between iterations.
-    LimitReached,
     Paused,
     // Both between and during iteration.
     Abort,
