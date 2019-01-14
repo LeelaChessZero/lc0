@@ -405,6 +405,7 @@ void Search::UpdateRemainingMoves() {
           npms_average_ = alpha * *npms_average_ + (1 - alpha) * instant_npms;
           LOGFILE << "Updating average: " << *npms_average_
                   << ", alpha: " << alpha;
+
           if (!npms_trend_average_) {
             npms_trend_average_ =
                 (*npms_average_ - prev_npms_average) / time_delta;
@@ -436,11 +437,11 @@ void Search::UpdateRemainingMoves() {
             }
           }
         }
+        npms_prev_time_ = npms_start_time;
+        npms_prev_playouts_ = total_playouts_;
       }
-      npms_prev_time_ = npms_start_time;
-      npms_prev_playouts_ = total_playouts_;
-      prev_remaining_playouts_ = remaining_playouts_;
     }
+    prev_remaining_playouts_ = remaining_playouts_;
   }
 
   // Check how many visits are left.
