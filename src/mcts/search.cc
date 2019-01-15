@@ -438,7 +438,7 @@ void Search::UpdateRemainingMoves() {
             params_.GetSmartPruningFactor();  // Maybe check for overflow here.
       }
 
-      LOGFILE << "[NPS] update_time: " << nps_update_time
+      LOGFILE << "[NPS] update_time: " << GetTimeSinceStart()
               << ", time_since_last_update: " << time_since_last_nps_update
               << ", nodes_since_last_update: " << nodes_since_last_nps_update
               << ", npms_since_last_update: " << npms_since_last_update
