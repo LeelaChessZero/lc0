@@ -236,7 +236,7 @@ void BlasComputation::ComputeBlocking() {
       for (auto batch = 0; batch < batch_size; batch++) {
         for (auto i = 0; i < kPolicyUsedPlanes * kSquares; i++) {
           auto j = kConvPolicyMap[i];
-          if (j > 0) {
+          if (j >= 0) {
             output_pol[batch * num_output_policy + j] =
                 policy_buffer[batch * num_policy_input_planes * kSquares + i];
           }

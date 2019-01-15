@@ -478,7 +478,7 @@ __global__ void policyMap_kernel(T* output, const T* input, const short* indices
 
   int j = indices[i];
 
-  if (j > 0) {
+  if (j >= 0) {
     output[n * outputSize + j] = input[n * inputSize + i];
   }
 }

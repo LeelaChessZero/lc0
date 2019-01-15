@@ -20,7 +20,7 @@ __kernel void policymap(
 
   int j = indices[i];
 
-  if (j > 0) {
+  if (j >= 0) {
     output[n * outputSize + j] = input[n * inputSize + i];
   }
 }
