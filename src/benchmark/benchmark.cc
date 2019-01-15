@@ -77,7 +77,7 @@ void Benchmark::Run() {
     if (movetime > -1) {
       limits.search_deadline = start + std::chrono::milliseconds(movetime);
     }
-    if (visits > 1) {
+    if (visits > -1) {
         limits.visits = visits;
     }
 
