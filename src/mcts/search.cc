@@ -968,9 +968,9 @@ void SearchWorker::ExtendNode(Node* node) {
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
+      node->MakeTerminal(GameResult::WHITE_WON, search_->played_history_.GetLength());
     } else {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, search_->played_history_.GetLength());
     }
     return;
   }
@@ -979,17 +979,17 @@ void SearchWorker::ExtendNode(Node* node) {
   // if they are root, then thinking about them is the point.
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, search_->played_history_.GetLength());
       return;
     }
 
     if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, search_->played_history_.GetLength());
       return;
     }
 
     if (history_.Last().GetRepetitions() >= 2) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, search_->played_history_.GetLength());
       return;
     }
 
@@ -1005,11 +1005,11 @@ void SearchWorker::ExtendNode(Node* node) {
       if (state != FAIL) {
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON);
+          node->MakeTerminal(GameResult::BLACK_WON, search_->played_history_.GetLength());
         } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON);
+          node->MakeTerminal(GameResult::WHITE_WON, search_->played_history_.GetLength());
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW);
+          node->MakeTerminal(GameResult::DRAW, search_->played_history_.GetLength());
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;

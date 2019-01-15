@@ -160,7 +160,7 @@ class Node {
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result);
+  void MakeTerminal(GameResult result, int depth);
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as

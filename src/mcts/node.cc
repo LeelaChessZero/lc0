@@ -216,15 +216,17 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
-void Node::MakeTerminal(GameResult result) {
-  is_terminal_ = true;
-  if (result == GameResult::DRAW) {
-    q_ = 0.0f;
-  } else if (result == GameResult::WHITE_WON) {
-    q_ = 10000.0f;
-  } else if (result == GameResult::BLACK_WON) {
-    q_ = -10000.0f;
-  }
+void Node::MakeTerminal(GameResult result, int depth) {
+	is_terminal_ = true;
+	if (result == GameResult::DRAW) {
+		q_ = 0.0f;
+	}
+	else if (result == GameResult::WHITE_WON) {
+		q_ = 10.0f - (depth / 50.0f);
+	}
+	else if (result == GameResult::BLACK_WON) {
+		q_ = -10.0f + (depth / 50.0f);
+	}
 }
 
 bool Node::TryStartScoreUpdate() {
