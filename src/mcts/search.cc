@@ -418,7 +418,7 @@ void Search::UpdateRemainingMoves() {
       if (initial_nps_trend_present_ && previous_npms_average) {
         const float npms_trend = (*npms_average_ - *previous_npms_average) /
                                  time_since_last_nps_update;
-        const bool skip = !!npms_average_trend_;  // dirty fix to ensure trend has been calculated at least twice.
+        const bool skip = !npms_average_trend_;  // dirty fix to ensure trend has been calculated at least twice.
         npms_average_trend_ = ExponentialSmoothingUpdate(
             npms_average_trend_, npms_trend,
             1 - std::exp(-time_since_last_nps_update / 100.0f));
