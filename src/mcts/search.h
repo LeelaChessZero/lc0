@@ -182,7 +182,7 @@ class Search {
 
   optional<std::chrono::steady_clock::time_point> last_nps_update_time_
       GUARDED_BY(nodes_mutex_);
-  optional<float> npms_average_ GUARDED_BY(nodes_mutex_) = average_move_npms_;
+  optional<float> npms_average_ GUARDED_BY(nodes_mutex_);
   optional<float> npms_average_trend_ GUARDED_BY(nodes_mutex_);
   int64_t last_nps_update_playouts_ GUARDED_BY(nodes_mutex_) = total_playouts_;
   bool initial_nps_trend_present_ GUARDED_BY(nodes_mutex_) = true;
