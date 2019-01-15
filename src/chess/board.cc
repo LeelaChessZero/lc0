@@ -188,6 +188,7 @@ BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
+  result.reserve(60);
   for (auto source : our_pieces_) {
     // King
     if (source == our_king_) {
@@ -336,8 +337,8 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     }
     // Knight.
     {
-      for (const auto destination : kKnightAttacks[source.as_int()]) {
-        if (our_pieces_.get(destination)) continue;
+      for (const auto destination :
+           kKnightAttacks[source.as_int()] - our_pieces_) {
         result.emplace_back(source, destination);
       }
     }
@@ -405,9 +406,6 @@ bool ChessBoard::ApplyMove(Move move) {
     return reset_50_moves;
   }
 
-  // Now destination square for our piece is known.
-  our_pieces_.set(to);
-
   // Promotion
   if (move.promotion() != Move::Promotion::None) {
     switch (move.promotion()) {
@@ -456,13 +454,13 @@ bool ChessBoard::ApplyMove(Move move) {
 bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   const int row = square.row();
   const int col = square.col();
-  // Check king
+  // Check king.
   {
     const int krow = their_king_.row();
     const int kcol = their_king_.col();
     if (std::abs(krow - row) <= 1 && std::abs(kcol - col) <= 1) return true;
   }
-  // Check Rooks (and queen)
+  // Check rooks (and queens).
   if (kRookAttacks[square.as_int()].intersects(their_pieces_ * rooks_)) {
     for (const auto& direction : kRookDirections) {
       auto dst_row = row;
@@ -480,7 +478,7 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
       }
     }
   }
-  // Check Bishops
+  // Check bishops.
   if (kBishopAttacks[square.as_int()].intersects(their_pieces_ * bishops_)) {
     for (const auto& direction : kBishopDirections) {
       auto dst_row = row;
@@ -498,11 +496,11 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
       }
     }
   }
-  // Check pawns
+  // Check pawns.
   if (kPawnAttacks[square.as_int()].intersects(their_pieces_ * pawns_)) {
     return true;
   }
-  // Check knights
+  // Check knights.
   {
     if (kKnightAttacks[square.as_int()].intersects(their_pieces_ - their_king_ -
                                                    rooks_ - bishops_ -
@@ -513,17 +511,134 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   return false;
 }
 
-bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
+KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
+  KingAttackInfo king_attack_info;
+
+  // Number of attackers that give check (used for double check detection).
+  unsigned num_king_attackers = 0;
+
+  const int row = our_king_.row();
+  const int col = our_king_.col();
+  // King checks are unnecessary, as kings cannot give check.
+  // Check rooks (and queens).
+  if (kRookAttacks[our_king_.as_int()].intersects(their_pieces_ * rooks_)) {
+    for (const auto& direction : kRookDirections) {
+      auto dst_row = row;
+      auto dst_col = col;
+      BitBoard attack_line(0);
+      bool possible_pinned_piece_found = false;
+      BoardSquare possible_pinned_piece;
+      while (true) {
+        dst_row += direction.first;
+        dst_col += direction.second;
+        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
+        const BoardSquare destination(dst_row, dst_col);
+        if (our_pieces_.get(destination)) {
+          if (possible_pinned_piece_found) {
+            // No pieces pinned.
+            break;
+          } else {
+            // This is a possible pinned piece.
+            possible_pinned_piece_found = true;
+            possible_pinned_piece = destination;
+          }
+        }
+        if (!possible_pinned_piece_found) {
+          attack_line.set(destination);
+        }
+        if (their_pieces_.get(destination)) {
+          if (rooks_.get(destination)) {
+            if (possible_pinned_piece_found) {
+              // Store the pinned piece.
+              king_attack_info.pinned_pieces_.set(possible_pinned_piece);
+            } else {
+              // Update attacking lines.
+              king_attack_info.attacking_lines_ =
+                  king_attack_info.attacking_lines_ + attack_line;
+              num_king_attackers++;
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+  // Check bishops.
+  if (kBishopAttacks[our_king_.as_int()].intersects(their_pieces_ * bishops_)) {
+    for (const auto& direction : kBishopDirections) {
+      auto dst_row = row;
+      auto dst_col = col;
+      BitBoard attack_line(0);
+      bool possible_pinned_piece_found = false;
+      BoardSquare possible_pinned_piece;
+      while (true) {
+        dst_row += direction.first;
+        dst_col += direction.second;
+        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
+        const BoardSquare destination(dst_row, dst_col);
+        if (our_pieces_.get(destination)) {
+          if (possible_pinned_piece_found) {
+            // No pieces pinned.
+            break;
+          } else {
+            // This is a possible pinned piece.
+            possible_pinned_piece_found = true;
+            possible_pinned_piece = destination;
+          }
+        }
+        if (!possible_pinned_piece_found) {
+          attack_line.set(destination);
+        }
+        if (their_pieces_.get(destination)) {
+          if (bishops_.get(destination)) {
+            if (possible_pinned_piece_found) {
+              // Store the pinned piece.
+              king_attack_info.pinned_pieces_.set(possible_pinned_piece);
+            } else {
+              // Update attacking lines.
+              king_attack_info.attacking_lines_ =
+                  king_attack_info.attacking_lines_ + attack_line;
+              num_king_attackers++;
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+  // Check pawns.
+  const BitBoard attacking_pawns =
+      kPawnAttacks[our_king_.as_int()] * their_pieces_ * pawns_;
+  king_attack_info.attacking_lines_ =
+      king_attack_info.attacking_lines_ + attacking_pawns;
+
+  if (attacking_pawns.as_int()) {
+    // No more than one pawn can give check.
+    num_king_attackers++;
+  }
+
+  // Check knights.
+  const BitBoard attacking_knights =
+      kKnightAttacks[our_king_.as_int()] *
+      (their_pieces_ - their_king_ - rooks_ - bishops_ - (pawns_ * kPawnMask));
+  king_attack_info.attacking_lines_ =
+      king_attack_info.attacking_lines_ + attacking_knights;
+
+  if (attacking_knights.as_int()) {
+    // No more than one knight can give check.
+    num_king_attackers++;
+  }
+
+  assert(num_king_attackers <= 2);
+  king_attack_info.double_check_ = (num_king_attackers == 2);
+
+  return king_attack_info;
+}
+
+bool ChessBoard::IsLegalMove(Move move,
+                             const KingAttackInfo& king_attack_info) const {
   const auto& from = move.from();
   const auto& to = move.to();
-
-  // If we are already under check, also apply move and check if valid.
-  // TODO(mooskagh) Optimize this case
-  if (was_under_check) {
-    ChessBoard board(*this);
-    board.ApplyMove(move);
-    return !board.IsUnderCheck();
-  }
 
   // En passant. Complex but rare. Just apply
   // and check that we are not under check.
@@ -534,80 +649,69 @@ bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
     return !board.IsUnderCheck();
   }
 
-  // If it's kings move, check that destination
-  // is not under attack.
-  if (from == our_king_) {
-    // Castlings were checked earlier.
-    if (std::abs(static_cast<int>(from.col()) - static_cast<int>(to.col())) > 1)
-      return true;
-    return !IsUnderAttack(to);
+  // Check if we are already under check.
+  if (king_attack_info.in_check()) {
+    // King move.
+    if (from == our_king_) {
+      // Just apply and check that we are not under check.
+      ChessBoard board(*this);
+      board.ApplyMove(move);
+      return !board.IsUnderCheck();
+    }
+
+    // Pinned pieces can never resolve a check.
+    if (king_attack_info.is_pinned(from)) {
+      return false;
+    }
+
+    // The piece to move is no king and is not pinned.
+    if (king_attack_info.in_double_check()) {
+      // Only a king move can resolve the double check.
+      return false;
+    } else {
+      // Only one attacking piece gives check.
+      // Our piece is free to move (not pinned). Check if the attacker is
+      // captured or interposed after the piece has moved to its destination
+      // square.
+      return king_attack_info.is_on_attack_line(to);
+    }
   }
 
-  // Not check that piece was pinned. And it was, check that after the move
-  // it is still on like of attack.
-  int dx = from.col() - our_king_.col();
-  int dy = from.row() - our_king_.row();
+  // Castlings were checked earlier.
+  // Moreover, no pseudolegal king moves to an attacked square are generated.
+  // If it's king's move at this moment, its certainly legal.
+  if (from == our_king_) {
+    return true;
+  }
 
-  // If it's not on the same file/rank/diagonal as our king, cannot be pinned.
-  if (dx != 0 && dy != 0 && std::abs(dx) != std::abs(dy)) return true;
-  dx = (dx > 0) - (dx < 0);  // Sign.
-  dy = (dy > 0) - (dy < 0);
-  auto col = our_king_.col();
-  auto row = our_king_.row();
-  while (true) {
-    col += dx;
-    row += dy;
-    // Attacking line left board, good.
-    if (!BoardSquare::IsValid(row, col)) return true;
-    const BoardSquare square(row, col);
-    // The source square of the move is now free.
-    if (square == from) continue;
-    // The destination square if the move is our piece. King is not under
-    // attack.
-    if (square == to) return true;
-    // Our piece on the line. Not under attack.
-    if (our_pieces_.get(square)) return true;
-    if (their_pieces_.get(square)) {
-      if (dx == 0 || dy == 0) {
-        // Have to be afraid of rook-like piece.
-        return !rooks_.get(square);
-      } else {
-        // Have to be afraid of bishop-like piece.
-        return !bishops_.get(square);
-      }
-      return true;
-    }
+  // If we get here, we are not under check.
+  // If the piece is not pinned, it is free to move anywhere.
+  if (!king_attack_info.is_pinned(from)) return true;
+
+  // The piece is pinned. Now check that it stays on the same line w.r.t. the
+  // king.
+  int dx_from = from.col() - our_king_.col();
+  int dy_from = from.row() - our_king_.row();
+  int dx_to = to.col() - our_king_.col();
+  int dy_to = to.row() - our_king_.row();
+
+  if (dx_from == 0 || dx_to == 0) {
+    return (dx_from == dx_to);
+  } else {
+    return (dx_from * dy_to == dx_to * dy_from);
   }
 }
 
 MoveList ChessBoard::GenerateLegalMoves() const {
-  const bool was_under_check = IsUnderCheck();
+  const KingAttackInfo king_attack_info = GenerateKingAttackInfo();
   MoveList move_list = GeneratePseudolegalMoves();
   MoveList result;
   result.reserve(move_list.size());
 
   for (Move m : move_list) {
-    if (IsLegalMove(m, was_under_check)) result.emplace_back(m);
+    if (IsLegalMove(m, king_attack_info)) result.emplace_back(m);
   }
 
-  return result;
-}
-
-std::vector<MoveExecution> ChessBoard::GenerateLegalMovesAndPositions() const {
-  MoveList move_list = GeneratePseudolegalMoves();
-  std::vector<MoveExecution> result;
-
-  for (const auto& move : move_list) {
-    result.emplace_back();
-    auto& newboard = result.back().board;
-    newboard = *this;
-    result.back().reset_50_moves = newboard.ApplyMove(move);
-    if (newboard.IsUnderCheck()) {
-      result.pop_back();
-      continue;
-    }
-    result.back().move = move;
-  }
   return result;
 }
 
