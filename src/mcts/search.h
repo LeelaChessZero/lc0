@@ -44,7 +44,7 @@
 namespace lczero {
 
 namespace {
-  optional<float> average_move_npms_;
+optional<float> average_move_npms_;
 }
 
 struct SearchLimits {
@@ -115,6 +115,8 @@ class Search {
   int64_t GetTimeSinceStart() const;
   int64_t GetTimeToDeadline() const;
   void UpdateRemainingMoves();
+  float ExponentialSmoothingUpdate(optional<float> smoothed_value,
+                                   float next_value, float smoothing_factor);
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
@@ -178,11 +180,12 @@ class Search {
   int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int64_t>::max();
 
-  optional<std::chrono::steady_clock::time_point> npms_prev_time_ GUARDED_BY(nodes_mutex_);
+  optional<std::chrono::steady_clock::time_point> last_nps_update_time_
+      GUARDED_BY(nodes_mutex_);
   optional<float> npms_average_ GUARDED_BY(nodes_mutex_) = average_move_npms_;
-  optional<float> npms_trend_average_ GUARDED_BY(nodes_mutex_);
-  int64_t npms_prev_playouts_ GUARDED_BY(nodes_mutex_) = total_playouts_;
-  bool npms_beginning_trend_ GUARDED_BY(nodes_mutex_) = true;
+  optional<float> npms_average_trend_ GUARDED_BY(nodes_mutex_);
+  int64_t last_nps_update_playouts_ GUARDED_BY(nodes_mutex_) = total_playouts_;
+  bool initial_nps_trend_present_ GUARDED_BY(nodes_mutex_) = true;
   int64_t prev_remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int64_t>::max();
 
