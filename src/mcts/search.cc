@@ -404,6 +404,9 @@ void Search::UpdateRemainingMoves() {
       optional<float> previous_npms_average;
       if (npms_average_) {
         previous_npms_average = *npms_average_;
+      } else if (average_move_npms_) {
+        npms_average_ = *average_move_npms_;
+        previous_npms_average = *previous_npms_average;
       }
 
       npms_average_ = ExponentialSmoothingUpdate(
