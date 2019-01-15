@@ -371,7 +371,7 @@ float Search::ExponentialSmoothingUpdate(optional<float> smoothed_value,
                                          float smoothing_factor) {
   if (!smoothed_value) return next_value;
   return smoothing_factor * next_value +
-         (1 - smoothing_factor) * smoothed_value;
+         (1 - smoothing_factor) * *smoothed_value;
 }
 
 void Search::UpdateRemainingMoves() {
