@@ -412,7 +412,7 @@ void Search::UpdateRemainingMoves() {
 
       // Only update the npms trend estimate if we detect a trend in the
       // beginning of the move.
-      if (!initial_nps_trend_present_ && previous_npms_average) {
+      if (initial_nps_trend_present_ && previous_npms_average) {
         const float npms_trend = (*npms_average_ - *previous_npms_average) /
                                  time_since_last_nps_update;
         npms_average_trend_ = ExponentialSmoothingUpdate(
