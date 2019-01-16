@@ -9,15 +9,17 @@ If the User finds anything in this guide unclear, the original documentation is 
 
 ## RPM packages vs Building from Source
 
-An extremely versatile Build script that makes building from source simple and trivial is provided below which should run on practically any version of openSUSE but supports only the openBLAS backend, which means it can be run on any openSUSE without any hardware dependencies, and supports any version of openSUSE LEAP or Tumbleweed. Most of the procedure after starting the script is just waiting to finish, no technical knowledge is required.
+An extremely versatile Build script that makes building from source simple and trivial is provided below which should run on practically any version of openSUSE but supports only the openBLAS backend, which means it can be run on any openSUSE without any hardware dependencies, and supports any version of openSUSE LEAP(ie 42.x, 15.1, etc, possibly ARM) or Tumbleweed. Most of the procedure after starting the script is just waiting to finish, no technical knowledge is required.
 
-For those who instead prefer to not install the many files to build lc0, experimental packages (as of this writing) are available for LEAP 15 and Tumbleweed only (as of this writing). Known quirks are described, and supports both BLAS (which can be installed on any hardware) and OpenCL which supports AMD GPU only. For Users who wish to use a pre-built binary from a package, skip down to ["RPM packages"](https://github.com/putztzu/lc0/blob/master/openSUSE_install.md#rpm-packages)
+For those who instead prefer to not install the many files to build lc0, experimental packages (as of this writing) are available for LEAP 15 and Tumbleweed only (as of this writing). Currently the RPM supports OpenCL(aMD GPU only) and BLAS (which can be installed on any hardware). For Users who wish to use a pre-built binary from a package, skip down to ["RPM packages"](https://github.com/putztzu/lc0/blob/master/openSUSE_install.md#rpm-packages)
 
 If someone wishes to do the work to investigate the procedures to install other backends (As of this writing, Tensorflow and CUDA are possible) findings and updates to this guide are welcomed.
 
 ## Supported openSUSE versions
 
-These instructions have been tested on current versions of LEAP 15.0 (The stable release) and Tumbleweed (The Development Rolling Release) on 64-bit machines but these instructions and the build script should work with all versions of LEAP and Tumbleweed both past and into the forseeable future provided the repositories and packages are available..
+The following until the "RPM Packages" section describes running the build script which would be the more flexible and versativle option today, which creates a binary for more than just the LEAP 15.0 and Tumbleweed x64 platforms
+
+These build script instructions have been tested on current versions of LEAP 15.0 (The stable release) and Tumbleweed (The Development Rolling Release) on 64-bit machines but these instructions and the build script should work with all versions of LEAP and Tumbleweed both past and into the forseeable future provided the repositories and packages are available..
 
 ## Supported lc0 Backends
 
@@ -30,7 +32,7 @@ Not all Players are Tech-heads, they just want something that will work ASAP wit
 Summary of steps
 
 * Compile the lc0 Engine
-* Download the Networks file and place in the same folder as the compile lc0 binary
+* Download the Networks file and place in the same folder as the compiled lc0 binary
 * Move or Copy the folder containing the lc0 binary to a convenient location for setting up the graphical chessboard
 * Configure the graphical chessboard pointing to the lc0 binary
 
@@ -61,7 +63,7 @@ cd ~/Downloads
 ```
 
 
-## RPM packages
+## RPM Packages
 
 If you ran the script that builds from source, you can ignore this section and skip to the next section which describes installing a networks file. 
 
@@ -127,12 +129,22 @@ Assuming that your command console is still open and at the root of the Arena ap
 
 The "network file" in the following is the file you should have downloaded in the above section "The One thing you must do Manually"
 
+If you built using the "install_openSUSE_lc0.sh" script, run the following
 ```
 
 mkdir Engine/lc0
 cp -r /opt/lc0/build/release/* Engines/lc0/
 cp "network file" Engines/lc0/
 ```
+If you installed using a RPM, run the following
+```
+
+mkdir Engine/lc0
+cp /usr/bin/lc0 Engines/lc0/
+cp "network file" Engines/lc0/
+```
+
+
 
 #### Configure Arena to point to the lc0 binary
 
@@ -147,6 +159,19 @@ Enter the information as required, pointing to your lc0 binary at
 
 [Arena_root]/Engines/lc0/lc0
 ```
+
+__RPM Package installs only__:
+
+* In Arena, "Load" the lc0 engine
+* In Arena, Press Ctl-1 or 
+   Engines > Engine 1 > Configure
+   Find the "backend" setting and select your preference, currently should be either opencl or blas
+* While still in "Engine 1" start the engine
+
+You should now be able to play!
+
+
+
 
 ## Removal / Uninstall
 
