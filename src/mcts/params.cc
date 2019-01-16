@@ -160,6 +160,9 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SearchParams::kRepetitionsIsDrawId{
+    "repetitions-before-draw-score", "RepetitionsBeforeDrawScore",
+    "How many repetitions before scoring nodes as draw during search."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -193,6 +196,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<IntOption>(kRepetitionsIsDrawId, 1, 2) = 2;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -213,7 +217,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
-}
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
+      kRepetitionsIsDraw(options.Get<int>(kRepetitionsIsDrawId.GetId())) {}
 
 }  // namespace lczero

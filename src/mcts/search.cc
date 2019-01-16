@@ -988,9 +988,29 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetRepetitions() >= 2) {
-      node->MakeTerminal(GameResult::DRAW);
-      return;
+    if (params_.GetRepetitionsIsDraw() == 2) {
+      // Old behaviour
+      if (history_.Last().GetRepetitions() >= 2) {
+        node->MakeTerminal(GameResult::DRAW);
+        return;
+      }
+    } else {
+      // New draw scoring
+      if (history_.Last().GetRepetitions() >= 1) {
+        int repeats_required = 1;
+        const auto& played_history = search_->played_history_;
+        for (int idx = played_history.GetLength() - 1; idx >= 0; --idx) {
+          if (history_.Last().GetBoard() ==
+              played_history.GetPositionAt(idx).GetBoard()) {
+            repeats_required = 2;
+            break;
+          }
+        }
+        if (history_.Last().GetRepetitions() >= repeats_required) {
+          node->MakeTerminal(GameResult::DRAW);
+          return;
+        }
+      }
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
