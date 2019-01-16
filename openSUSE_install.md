@@ -11,7 +11,7 @@ If the User finds anything in this guide unclear, the original documentation is 
 
 An extremely versatile Build script that makes building from source simple and trivial is provided below which should run on practically any version of openSUSE but supports only the openBLAS backend, which means it can be run on any openSUSE without any hardware dependencies, and supports any version of openSUSE LEAP(ie 42.x, 15.1, etc, possibly ARM) or Tumbleweed. Most of the procedure after starting the script is just waiting to finish, no technical knowledge is required.
 
-For those who instead prefer to not install the many files to build lc0, experimental packages (as of this writing) are available for LEAP 15 and Tumbleweed only (as of this writing). Currently the RPM supports OpenCL(aMD GPU only) and BLAS (which can be installed on any hardware). For Users who wish to use a pre-built binary from a package, skip down to ["RPM packages"](https://github.com/putztzu/lc0/blob/master/openSUSE_install.md#rpm-packages)
+For those who instead prefer to not install the many files to build lc0, experimental packages (as of this writing) are available for LEAP 15 and Tumbleweed only (as of this writing). Currently the RPM supports OpenCL(AMD GPU only) and BLAS (which can be installed on any hardware). For Users who wish to use a pre-built binary from a package, skip down to ["RPM packages"](https://github.com/putztzu/lc0/blob/master/openSUSE_install.md#rpm-packages)
 
 If someone wishes to do the work to investigate the procedures to install other backends (As of this writing, Tensorflow and CUDA are possible) findings and updates to this guide are welcomed.
 
