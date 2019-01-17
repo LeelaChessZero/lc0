@@ -251,8 +251,10 @@ SearchLimits EngineController::PopulateSearchLimits(
   // Steal some extra time for the first move of the game since it never has a
   // tree to reuse.
   if (first_move_of_game_) {
-    LOGFILE << "GIVING EXTRA TIME";
-    this_move_time *= options_.Get<float>(kFirstMoveTimeAdjId.GetId());
+    float adj = options_.Get<float>(kFirstMoveTimeAdjId.GetId());
+    LOGFILE << "Giving extra time: New move time is " << this_move_time * adj
+            << " ms";
+    this_move_time *= adj;
   }
 
   // Make sure we don't exceed current time limit with what we calculated.
