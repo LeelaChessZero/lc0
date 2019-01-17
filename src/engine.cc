@@ -145,7 +145,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kFirstMoveTimeAdjId, 1.0f, 10.0f) = 3.0f;
+  options->Add<FloatOption>(kFirstMoveTimeAdjId, 1.0f, 10.0f) = 1.6f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
   // Hide time curve options.
