@@ -237,29 +237,22 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
         << "%) ";
 
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
+    auto Q = edge.GetQ(fpu);
+    auto D = edge.GetD();
+    auto W = 0.5f*(1.0f - D + Q);
+    auto L = 0.5f*(1.0f - D - Q);
+
+    oss << "(Q: " << std::setw(8) << std::setprecision(5) << Q
         << ") ";
 
-    oss << "(QD: " << std::setw(8) << std::setprecision(5) << edge.GetQD(fpu, params_.GetDrawScore())
+    oss << "(W: " << std::setw(6) << std::setprecision(3) << W
         << ") ";
 
-    oss << "(D: " << std::setw(8) << std::setprecision(5)
+    oss << "(D: " << std::setw(6) << std::setprecision(3)
         << edge.GetD() << ") ";
 
-    oss << "(V: ";
-    optional<float> v;
-    if (edge.IsTerminal()) {
-      v = edge.node()->GetQ();
-    } else {
-      NNCacheLock nneval = GetCachedNNEval(edge.node());
-      if (nneval) v = -nneval->q;
-    }
-    if (v) {
-      oss << std::setw(7) << std::setprecision(4) << *v;
-    } else {
-      oss << " -.----";
-    }
-    oss << ") ";
+    oss << "(L: " << std::setw(6) << std::setprecision(3) << L
+        << ") ";
 
     if (edge.IsTerminal()) oss << "(T) ";
     infos.emplace_back(oss.str());
