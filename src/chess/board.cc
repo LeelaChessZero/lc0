@@ -690,10 +690,10 @@ bool ChessBoard::IsLegalMove(Move move,
 
   // The piece is pinned. Now check that it stays on the same line w.r.t. the
   // king.
-  int dx_from = from.col() - our_king_.col();
-  int dy_from = from.row() - our_king_.row();
-  int dx_to = to.col() - our_king_.col();
-  int dy_to = to.row() - our_king_.row();
+  const int dx_from = from.col() - our_king_.col();
+  const int dy_from = from.row() - our_king_.row();
+  const int dx_to = to.col() - our_king_.col();
+  const int dy_to = to.row() - our_king_.row();
 
   if (dx_from == 0 || dx_to == 0) {
     return (dx_from == dx_to);

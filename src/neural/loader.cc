@@ -165,7 +165,7 @@ std::string DiscoverWeightsFile() {
 
     if (!file) continue;
     unsigned char buf[256];
-    int sz = gzread(file, buf, 256);
+    const int sz = gzread(file, buf, 256);
     gzclose(file);
     if (sz < 0) continue;
 
@@ -180,7 +180,7 @@ std::string DiscoverWeightsFile() {
 
     // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
     // our own magic should suffice.
-    auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
+    const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
                  (static_cast<uint32_t>(buf[3]) << 16) |
                  (static_cast<uint32_t>(buf[4]) << 24);
     if (magic == kWeightMagic) {
