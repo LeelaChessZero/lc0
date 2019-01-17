@@ -50,8 +50,8 @@ void Benchmark::Run() {
   NetworkFactory::PopulateOptions(&options);
   SearchParams::Populate(&options);
 
-  options.Add<IntOption>(kNodesId, -1, 999999999) = 30000;
-  options.Add<IntOption>(kMovetimeId, -1, 999999999) = -1;
+  options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
+  options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
@@ -72,10 +72,13 @@ void Benchmark::Run() {
     auto start = std::chrono::steady_clock::now();
 
     SearchLimits limits;
-    limits.visits = option_dict.Get<int>(kNodesId.GetId());
+    int visits = option_dict.Get<int>(kNodesId.GetId());
     int movetime = option_dict.Get<int>(kMovetimeId.GetId());
     if (movetime > -1) {
       limits.search_deadline = start + std::chrono::milliseconds(movetime);
+    }
+    if (visits > -1) {
+        limits.visits = visits;
     }
 
     auto search = std::make_unique<Search>(
