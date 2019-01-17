@@ -80,6 +80,12 @@ const OptionId kSpendSavedTimeId{
     "the next move rather than to the entire game. When 1, all saved time is "
     "added to the next move's budget; when 0, saved time is distributed among "
     "all future moves."};
+const OptionId kFirstMoveTimeAdjId{
+    "first-move-time-adj", "FirstMoveTimeAdj",
+    "Fraction of move time allocated to give extra for the first move to "
+    "offset smart pruning savings. When 1, no extra time is given and the "
+    "first move is likely to be shorter. When 2 the first move time doubles, "
+    "when 3 triples etc."};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
 // Warning! When changed, also change number 30 in the help below!
@@ -139,11 +145,13 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kFirstMoveTimeAdjId, 1.0f, 10.0f) = 3.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
   // Hide time curve options.
   options->HideOption(kTimeMidpointMoveId);
   options->HideOption(kTimeSteepnessId);
+  options->HideOption(kFirstMoveTimeAdjId);
 
   NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
@@ -244,7 +252,7 @@ SearchLimits EngineController::PopulateSearchLimits(
   // tree to reuse.
   if (first_move_of_game_) {
     LOGFILE << "GIVING EXTRA TIME";
-    this_move_time *= 3.0;
+    this_move_time *= options_.Get<float>(kFirstMoveTimeAdjId.GetId());
   }
 
   // Make sure we don't exceed current time limit with what we calculated.
