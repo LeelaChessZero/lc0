@@ -26,7 +26,6 @@ endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   add_project_arguments('-Wextra', language : 'cpp')
   add_project_arguments('-pedantic', language : 'cpp')
-  add_project_arguments('-ffast-math', language : 'cpp')
 
   if get_option('buildtype') == 'release'
     add_project_arguments('-march=native', language : 'cpp')
