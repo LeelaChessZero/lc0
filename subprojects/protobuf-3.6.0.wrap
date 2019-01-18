@@ -1,0 +1,10 @@
+[wrap-file]
+directory = protobuf-3.6.0
+
+source_url = https://github.com/protocolbuffers/protobuf/releases/download/v3.6.0/protobuf-all-3.6.0.tar.gz
+source_filename = protobuf-all-3.6.0.tar.gz
+source_hash = 1532154addf85080330fdd037949d4653dfce16550df5c70ea0cd212d8aff3af
+
+patch_url = https://github.com/borg323/protobuf/releases/download/3.6.0/protobuf-3.6.0-wrap.zip
+patch_filename = protobuf-3.6.0-wrap.zip
+patch_hash = a14730d2e3702c4a0d7b3f05a380ec6b2c0b138a5b00539705b5c3a8df9885e3

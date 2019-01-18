@@ -86,6 +86,13 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SelfPlayGame::PopulateUciParams(options);
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 32);
+  defaults->Set<float>(SearchParams::kCpuctId.GetId(), 1.2f);
+  defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 0.0f);
+  defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 1.0f);
+  defaults->Set<int>(SearchParams::kMaxCollisionVisitsId.GetId(), 1);
+  defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 1);
+  defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 7);
+  defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), false);
   defaults->Set<float>(SearchParams::kSmartPruningFactorId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kTemperatureId.GetId(), 1.0f);
   defaults->Set<bool>(SearchParams::kNoiseId.GetId(), true);

@@ -43,7 +43,7 @@ class SearchParams {
 
   // Parameter getters.
   int GetMiniBatchSize() const {
-    return options_.Get<int>(kMiniBatchSizeId.GetId());
+    return kMiniBatchSize;
   }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
@@ -144,6 +144,7 @@ class SearchParams {
   const bool kCertaintyPropagation;
   const int kCertaintyPropagationDepth; 
   const FillEmptyHistory kHistoryFill;
+  const int kMiniBatchSize;
 };
 
 }  // namespace lczero

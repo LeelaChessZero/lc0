@@ -42,7 +42,7 @@ class BaseLayer {
   virtual ~BaseLayer() = default;
   size_t GetOutputSize(int N) const { return sizeof(DataType) * N * C * H * W; }
 
-  // input2 is optional (skip connection).
+  // Input2 is optional (skip connection).
   virtual void Eval(int N, DataType* output, const DataType* input,
                     const DataType* input2, void* scratch, size_t scratch_size,
                     cudnnHandle_t cudnn, cublasHandle_t cublas) = 0;
@@ -149,6 +149,35 @@ class FCLayer : public BaseLayer<DataType> {
   const bool use_sigmoid_;
   DataType* weights_ = nullptr;
   DataType* biases_ = nullptr;
+};
+
+// Fused SE layer:
+// (optional bias add +) global avg -> FC1 -> FC2 -> global scale -> add skip
+// connection -> RELU.
+template <typename DataType>
+class SELayer : public BaseLayer<DataType> {
+ using BaseLayer<DataType>::C;
+
+ public:
+  SELayer(BaseLayer<DataType>* ip, int numFc1Out,
+          bool addPrevLayerBias = false);
+  ~SELayer();
+
+  void LoadWeights(float* w1, float* b1, float* w2, float* b2,
+                   float* prevLayerBias, void* scratch);
+
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2, void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  DataType* w1_ = nullptr;
+  DataType* b1_ = nullptr;
+  DataType* w2_ = nullptr;
+  DataType* b2_ = nullptr;
+  DataType* bPrev_ = nullptr;
+  int numFc1Out_;
+  bool addPrevLayerBias_;
 };
 
 }  // namespace cudnn_backend
