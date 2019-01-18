@@ -205,15 +205,9 @@ SearchLimits EngineController::PopulateSearchLimits(
   auto total_moves_time =
       std::max(0.0f, *time + increment * (movestogo - 1) - move_overhead);
 
-  // If there is time spared from previous searches, the `time_to_squander` part
-  // of it will be used immediately, remove that from planning.
-  int time_to_squander = 0;
-  if (time_spared_ms_ > 0) {
-    time_to_squander =
-        time_spared_ms_ * options_.Get<float>(kSpendSavedTimeId.GetId());
-    time_spared_ms_ -= time_to_squander;
-    total_moves_time -= time_to_squander;
-  }
+  // If there is time spared from previous searches, the `time_to_squander_ms_`
+  // part of it will be used immediately.
+  total_moves_time -= time_to_squander_ms_;
 
   // Evenly split total time between all moves.
   float this_move_time = total_moves_time / movestogo;
@@ -224,20 +218,17 @@ SearchLimits EngineController::PopulateSearchLimits(
   if (slowmover < 1.0 ||
       this_move_time * slowmover > kSmartPruningToleranceMs) {
     this_move_time *= slowmover;
-    // If time is planned to be overused because of slowmover, remove excess
-    // of that time from spared time.
-    time_spared_ms_ -= this_move_time * (slowmover - 1);
   }
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
-          << time_to_squander << "ms to squander -"
+          << time_to_squander_ms_ << "ms to squander -"
           << std::chrono::duration_cast<std::chrono::milliseconds>(
                  std::chrono::steady_clock::now() - start_time)
                  .count()
           << "ms already passed). Remaining time " << *time << "ms(-"
           << move_overhead << "ms overhead)";
-  // Use `time_to_squander` time immediately.
-  this_move_time += time_to_squander;
+  // Use `time_to_squander_ms_` time immediately.
+  this_move_time += time_to_squander_ms_;
 
   // Make sure we don't exceed current time limit with what we calculated.
   limits.search_deadline =
@@ -290,7 +281,7 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  time_spared_ms_ = 0;
+  time_to_squander_ms_ = 0;
   current_position_.reset();
   UpdateFromUciOptions();
 }
@@ -317,7 +308,7 @@ void EngineController::SetupPosition(
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   bool is_same_game = tree_->ResetToPosition(fen, moves);
-  if (!is_same_game) time_spared_ms_ = 0;
+  if (!is_same_game) time_to_squander_ms_ = 0;
 }
 
 void EngineController::Go(const GoParams& params) {
@@ -370,15 +361,17 @@ void EngineController::Go(const GoParams& params) {
       tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
   LOGFILE << "Limits: " << limits.DebugString();
 
-  // If there is a time limit, also store amount of time saved.
+  // If there is a time limit, store amount of time saved to use immediately.
   if (limits.search_deadline) {
     best_move_callback = [this, limits](const BestMoveInfo& info) {
       best_move_callback_(info);
       if (limits.search_deadline) {
-        time_spared_ms_ +=
+        time_to_squander_ms_ =
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 *limits.search_deadline - std::chrono::steady_clock::now())
-                .count();
+                .count() *
+            options_.Get<float>(kSpendSavedTimeId.GetId());
+        if (time_to_squander_ms_ < 0) time_to_squander_ms_ = 0;
       }
     };
   }

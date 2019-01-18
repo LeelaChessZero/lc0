@@ -114,8 +114,8 @@ class EngineController {
   optional<CurrentPosition> current_position_;
   GoParams go_params_;
 
-  // How much less time was used by search than what was allocated.
-  int64_t time_spared_ms_ = 0;
+  // Time, that was allocated but not used by search, to use immediately.
+  int64_t time_to_squander_ms_ = 0;
   std::chrono::steady_clock::time_point move_start_time_;
 };
 
