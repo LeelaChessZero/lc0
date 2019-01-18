@@ -82,6 +82,7 @@ class Position {
 };
 
 enum class GameResult { UNDECIDED, WHITE_WON, DRAW, BLACK_WON };
+enum class CertaintyTrigger { NONE, TB_HIT, TWO_FOLD, TERMINAL, NORMAL };
 
 class PositionHistory {
  public:

@@ -98,7 +98,6 @@ const size_t kAvgNodeSize = sizeof(Node) + kAvgMovesPerPosition * sizeof(Edge);
 const size_t kAvgCacheItemSize =
     NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
     sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
-
 float ComputeMoveWeight(int ply, float peak, float left_width,
                         float right_width) {
   // Inflection points of the function are at ply = peak +/- width.
@@ -155,6 +154,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 32);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 0);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), true);
+  defaults->Set<bool>(SearchParams::kCertaintyPropagationId.GetId(), false);
+  defaults->Set<int>(SearchParams::kCertaintyPropagationDepthId.GetId(), 1);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(
@@ -358,6 +359,7 @@ void EngineController::Go(const GoParams& params) {
           if (info.multipv <= 1) {
             ponder_info = info;
             if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+            if (ponder_info.mate) ponder_info.mate = -*ponder_info.mate;
             if (ponder_info.depth > 1) ponder_info.depth--;
             if (ponder_info.seldepth > 1) ponder_info.seldepth--;
             ponder_info.pv.clear();
@@ -463,5 +465,7 @@ void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
+
+
 
 }  // namespace lczero

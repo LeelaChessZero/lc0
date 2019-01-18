@@ -77,7 +77,8 @@ class EngineController {
   void PonderHit();
   // Must not block.
   void Stop();
-
+  // Prints verbose move stats of current root
+ 
   SearchLimits PopulateSearchLimits(int ply, bool is_black,
       const GoParams& params,
       std::chrono::steady_clock::time_point start_time);

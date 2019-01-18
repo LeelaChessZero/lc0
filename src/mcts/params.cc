@@ -161,6 +161,17 @@ const OptionId SearchParams::kHistoryFillId{
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
 
+const OptionId SearchParams::kCertaintyPropagationId{
+    "certainty-propagation", "CertaintyPropagation", 
+    "Propagates certain scores more efficiently in the search tree, "
+    "proves and displays mates. Uses two-fold draw scoring."};
+
+const OptionId SearchParams::kCertaintyPropagationDepthId{
+    "certainty-propagation-depth", "CertaintyPropagationDepth",
+    "Depth of look-ahead-search for certainty propagation. "
+    "Warning, settings larger than 1 are currently not "
+    "recommended."};
+
 void SearchParams::Populate(OptionsParser* options) {
   // Here the "safe defaults" are listed.
   // Many of them are overridden with optimized defaults in engine.cc and
@@ -194,7 +205,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<BoolOption>(kCertaintyPropagationId) = false;
+  options->Add<IntOption>(kCertaintyPropagationDepthId, 0, 4) = 1;
 }
+
+
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
@@ -212,6 +227,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
+      kCertaintyPropagation(options.Get<bool>(kCertaintyPropagationId.GetId())),
+      kCertaintyPropagationDepth(options.Get<int>(kCertaintyPropagationDepthId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))) {
 }

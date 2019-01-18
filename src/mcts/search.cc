@@ -28,6 +28,7 @@
 #include "mcts/search.h"
 
 #include <algorithm>
+#include <bitset>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -117,18 +118,21 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.nps =
       common_info.time ? (total_playouts_ * 1000 / common_info.time) : 0;
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
-
   int multipv = 0;
   for (const auto& edge : edges) {
+    float score = (edge.HasNode() && edge.node()->GetParent())
+                      ? edge.GetQ(-edge.node()->GetParent()->GetQ())
+                      : edge.GetQ(0);
+
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     if (score_type == "centipawn") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+      uci_info.score = 290.680623072 * tan(1.548090806 * score);
     } else if (score_type == "win_percentage") {
-      uci_info.score = edge.GetQ(0) * 5000 + 5000;
+      uci_info.score = score * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = edge.GetQ(0) * 10000;
+      uci_info.score = score * 10000;
     }
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
@@ -136,6 +140,23 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
          iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
       uci_info.pv.push_back(iter.GetMove(flip));
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+    }
+
+    // Mate display if certain win (or loss) with distance to mate set to
+    // length of pv (average  mate) + NegaBoundSearch depth.
+    // If win is based on propagated TB bit, length of mate is
+    // adjusted by +1000; For root filtered TB moves +500.
+    if (params_.GetCertaintyPropagation()) {
+      if (edge.IsCertain() && edge.GetEQ() != 0)
+        uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 +
+                                        params_.GetCertaintyPropagationDepth() +
+                                        (edge.IsPropagatedTBHit() ? 1000 : 0));
+      else if (root_syzygy_rank_) {
+        int sign = (root_syzygy_rank_ - 1 > 0) - (root_syzygy_rank_ - 1 < 0);
+        if (sign) {
+          uci_info.mate = sign * (-500 + abs(root_syzygy_rank_));
+        } else uci_info.score = 0;
+      }
     }
   }
 
@@ -246,8 +267,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
 
     oss << "(V: ";
     optional<float> v;
-    if (edge.IsTerminal()) {
-      v = edge.node()->GetQ();
+    if (edge.IsCertain()) {
+      v = (float)edge.edge()->GetEQ();
     } else {
       NNCacheLock nneval = GetCachedNNEval(edge.node());
       if (nneval) v = -nneval->q;
@@ -259,7 +280,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     }
     oss << ") ";
 
-    if (edge.IsTerminal()) oss << "(T) ";
+    oss << " C:" << std::bitset<8>(edge.edge()->GetCertaintyStatus());
+
     infos.emplace_back(oss.str());
   }
   return infos;
@@ -437,21 +459,27 @@ std::int64_t Search::GetTotalPlayouts() const {
   return total_playouts_;
 }
 
-bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
+int Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   // Search moves overrides tablebase.
   if (!limits_.searchmoves.empty()) {
     *root_moves = limits_.searchmoves;
-    return false;
+    return 0;
   }
+
+  // Syzygy root_probe returns best_rank for proper eval if
+  // moves are syzygy root filtered.
   auto board = played_history_.Last().GetBoard();
   if (!syzygy_tb_ || !board.castlings().no_legal_castle() ||
       (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
-    return false;
+    return 0;
   }
-  return syzygy_tb_->root_probe(played_history_.Last(),
-                                played_history_.DidRepeatSinceLastZeroingMove(),
-                                root_moves) ||
-         syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
+
+  int best_rank = syzygy_tb_->root_probe(
+      played_history_.Last(), played_history_.DidRepeatSinceLastZeroingMove(),
+      root_moves);
+  if (!best_rank)
+    best_rank = syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
+  return best_rank;
 }
 
 // Computes the best move, maybe with temperature (according to the settings).
@@ -491,11 +519,14 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
     PopulateRootMoveLimit(&root_limit);
   }
   // Best child is selected using the following criteria:
+  // with Certainty Propagation:
+  // * Prefer certain wins, avoid certain losses
+  // Otherwise:
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<int, uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -503,19 +534,38 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+    edges.emplace_back(
+        (params_.GetCertaintyPropagation())
+            ? edge.edge()->GetEQ()
+            : 0,
+        edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
+  // In case of certain draws, insert
+  // these draws at first N (descending) where Q<=0.
+  if (params_.GetCertaintyPropagation()) {
+    std::partial_sort(edges.begin(), edges.end(), edges.end(),
+                      std::greater<El>());
+    // largest N with Q >= 0
+    uint64_t largest_N = 0;
+    for (auto it = edges.begin(); it != edges.end(); ++it) {
+      if (std::get<2>(*it) <= 0.0f && largest_N == 0)
+        largest_N = std::get<1>(*it);
+      if (std::get<4>(*it).edge()->IsCertainDraw() && largest_N > 0)
+        std::get<1>(*it) = largest_N;
+    }
+  }
+  // Final sort pass
   auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
                                                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
 
   std::vector<EdgeAndNode> res;
   std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<3>(x); });
+                 [](const El& x) { return std::get<4>(x); });
   return res;
 }
 
-// Returns a child with most visits.
+// Returns best child.
 EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   auto res = GetBestChildrenNoTemperature(parent, 1);
   return res.empty() ? EdgeAndNode() : res.front();
@@ -713,8 +763,10 @@ void SearchWorker::InitializeIteration(
 
   if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;
-    if (search_->PopulateRootMoveLimit(&root_move_filter_)) {
+    int best_rank = search_->PopulateRootMoveLimit(&root_move_filter_);
+    if (best_rank) {
       search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
+      search_->root_syzygy_rank_ = best_rank;
     }
   }
 }
@@ -759,7 +811,7 @@ void SearchWorker::GatherMinibatch() {
       ExtendNode(node);
 
       // Only send non-terminal nodes to a neural network.
-      if (!node->IsTerminal()) {
+      if (!node->IsCertain()) {
         picked_node.nn_queried = true;
         picked_node.is_cache_hit = AddNodeToComputation(node, true);
       }
@@ -841,13 +893,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) {
-      if (node->IsTerminal()) {
-        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
-        return NodeToProcess::TerminalHit(node, depth, collision_limit);
-      } else {
-        return NodeToProcess::Extension(node, depth);
-      }
+    if (node->IsCertain()) {
+      int multivisit =
+          (params_.GetCertaintyPropagation()) ? 1 : collision_limit;
+      IncrementNInFlight(node, search_->root_node_, multivisit - 1);
+      return NodeToProcess::TerminalHit(node, depth, multivisit);
+    } else if (!node->HasChildren()) {
+      return NodeToProcess::Extension(node, depth);
     }
 
     // If we fall through, then n_in_flight_ has been incremented but this
@@ -859,6 +911,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
+    bool parent_upperbounded = node->IsOnlyUBounded(); 
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -870,6 +923,18 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             search_->remaining_playouts_ < best_node_n - child.GetN()) {
           continue;
         }
+        // If CertaintyPropagation >= 1 play certain win and don't search other
+        // moves at root. If search limit infinite continue searching other
+        // moves.
+        if (params_.GetCertaintyPropagation() &&
+            child.edge()->IsCertainWin()) {
+          if (!search_->limits_.infinite) {
+            best_edge = child;
+            possible_moves = 1;
+            break;
+          } else if (search_->current_best_edge_ == child && possible_moves > 0)
+            continue;
+        }
         // If root move filter exists, make sure move is in the list.
         if (!root_move_filter_.empty() &&
             std::find(root_move_filter_.begin(), root_move_filter_.end(),
@@ -879,6 +944,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       float Q = child.GetQ(fpu);
+
+      // Certainty Propagation. Avoid suboptimal childs.
+      if (params_.GetCertaintyPropagation()) {
+        // Prefers lower bounded childs over drawing children.
+        if (child.edge()->IsOnlyLBounded() && child.GetQ(0) <= 0.0f) Q = 0.01f;
+        // Perfers drawing children over upper bounded childs.
+        if (child.edge()->IsOnlyUBounded() && child.GetQ(0) >= 0.0f) Q = -0.01f;
+        // Penalize exploring suboptimal childs throughout the tree.
+        if (parent_upperbounded) {
+          if (child.edge()->IsOnlyUBounded()) Q -= child.GetN() * 0.1f;
+        }
+      }
+
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
@@ -910,20 +988,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   }
 }
 
-void SearchWorker::ExtendNode(Node* node) {
-  // We don't need the mutex because other threads will see that N=0 and
-  // N-in-flight=1 and will not touch this node.
-  const auto& board = history_.Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
-
+void SearchWorker::EvalPosition(Node* node, MoveList& legal_moves,
+                                const ChessBoard& board, GameResult& result,
+                                CertaintyTrigger& trigger) {
   // Check whether it's a draw/lose by position. Importantly, we must check
   // these before doing the by-rule checks below.
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
+      result = GameResult::WHITE_WON;
+      trigger = CertaintyTrigger::TERMINAL;
     } else {
-      node->MakeTerminal(GameResult::DRAW);
+      result = GameResult::DRAW;
+      trigger = CertaintyTrigger::TERMINAL;
     }
     return;
   }
@@ -932,22 +1009,33 @@ void SearchWorker::ExtendNode(Node* node) {
   // if they are root, then thinking about them is the point.
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
-      node->MakeTerminal(GameResult::DRAW);
+      result = GameResult::DRAW;
+      trigger = CertaintyTrigger::TERMINAL;
       return;
     }
 
     if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
-      node->MakeTerminal(GameResult::DRAW);
+      result = GameResult::DRAW;
+      trigger = CertaintyTrigger::TERMINAL;
       return;
     }
 
     if (history_.Last().GetRepetitions() >= 2) {
-      node->MakeTerminal(GameResult::DRAW);
+      result = GameResult::DRAW;
+      trigger = CertaintyTrigger::TERMINAL;
+      return;
+    }
+
+    if ((history_.Last().GetRepetitions() >= 1) &&
+        params_.GetCertaintyPropagation()) {
+      result = GameResult::DRAW;
+      trigger = CertaintyTrigger::TWO_FOLD;
       return;
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
-    if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+    if (!search_->root_syzygy_rank_ && search_->syzygy_tb_ &&
+        board.castlings().no_legal_castle() &&
         history_.Last().GetNoCaptureNoPawnPly() == 0 &&
         (board.ours() + board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
@@ -958,20 +1046,127 @@ void SearchWorker::ExtendNode(Node* node) {
       if (state != FAIL) {
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON);
+          result = GameResult::BLACK_WON;
+          trigger = CertaintyTrigger::TB_HIT;
         } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON);
+          result = GameResult::WHITE_WON;
+          trigger = CertaintyTrigger::TB_HIT;
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW);
+          result = GameResult::DRAW;
+          trigger = CertaintyTrigger::NORMAL;
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
       }
     }
   }
+}
 
+void SearchWorker::ExtendNode(Node* node) {
+  // We don't need the mutex because other threads will see that N=0 and
+  // N-in-flight=1 and will not touch this node.
+  const auto& board = history_.Last().GetBoard();
+  auto legal_moves = board.GenerateLegalMoves();
+  GameResult result = GameResult::UNDECIDED;
+  CertaintyTrigger trigger = CertaintyTrigger::NONE;
+
+  EvalPosition(node, legal_moves, board, result, trigger);
+
+  if (trigger != CertaintyTrigger::NONE) {
+    if (trigger == CertaintyTrigger::TERMINAL)
+      node->MakeTerminal(result);
+    else
+      node->MakeCertain(result, trigger);
+    return;
+  }
   // Add legal moves as edges of this node.
   node->CreateEdges(legal_moves);
+
+  // Certainty Propagation:
+  // Look-ahead-search of moves to establish bounds and/or certainty.
+  // TODO: Hashtable, Move-Gen speed, move ordering.
+  if (params_.GetCertaintyPropagation() &&
+      params_.GetCertaintyPropagationDepth() > 0) {
+    int node_lowerbound = -1;
+    int node_upperbound = -1;
+    bool based_on_propagated_tbhit = false;
+    for (auto iter : node->Edges()) {
+      // Eval each edge: Append -> Search -> Pop
+      history_.Append(iter.GetMove());
+      struct Bounds bounds = SearchWorker::NegaBoundSearch(
+          params_.GetCertaintyPropagationDepth() - 1, -1, 1);
+      history_.Pop();
+      if (bounds.lowerbound == bounds.upperbound) {
+        iter.edge()->MakeCertain(-bounds.lowerbound,
+                                 bounds.based_on_tbhit
+                                     ? CertaintyTrigger::TB_HIT
+                                     : CertaintyTrigger::NORMAL);
+        based_on_propagated_tbhit |= bounds.based_on_tbhit;
+      } else {
+        if (bounds.lowerbound > -1) iter.edge()->UBound(-bounds.lowerbound);
+        if (bounds.upperbound < 1) iter.edge()->LBound(-bounds.upperbound);
+      }
+      if (-bounds.upperbound > node_lowerbound)
+        node_lowerbound = -bounds.upperbound;
+      if (-bounds.lowerbound > node_upperbound)
+        node_upperbound = -bounds.lowerbound;
+    }
+    if (node != search_->root_node_) {
+      if (node_lowerbound == node_upperbound) {
+        node->MakeCertain(-node_lowerbound, based_on_propagated_tbhit
+                                                ? CertaintyTrigger::TB_HIT
+                                                : CertaintyTrigger::NORMAL);
+      } else {
+        if (node_lowerbound > -1) node->UBound(-node_lowerbound);
+        if (node_upperbound < 1) node->LBound(-node_upperbound);
+      }
+    }
+  }
+}
+
+struct SearchWorker::Bounds SearchWorker::NegaBoundSearch(int depth,
+                                                          int lowerbound,
+                                                          int upperbound) {
+  struct Bounds returnbound;
+  const auto& board = history_.Last().GetBoard();
+  auto legal_moves_child = board.GenerateLegalMoves();
+  GameResult result = GameResult::UNDECIDED;
+  CertaintyTrigger trigger = CertaintyTrigger::NONE;
+  EvalPosition(nullptr, legal_moves_child, board, result, trigger);
+
+  if (trigger != CertaintyTrigger::NONE) {
+    returnbound.based_on_tbhit |= (trigger == CertaintyTrigger::TB_HIT);
+    int score = (result == GameResult::WHITE_WON)
+                    ? -1
+                    : (result == GameResult::BLACK_WON ? 1 : 0);
+    returnbound.lowerbound = score;
+    returnbound.upperbound = score;
+    return returnbound;
+  }
+  // Singular-extend positions with only one legal move.
+  if ((depth == 0 && legal_moves_child.size() != 1) || depth < -1) {
+    returnbound.lowerbound = -1;
+    returnbound.upperbound = 1;
+    return returnbound;
+  }
+
+  int myupperbound = -1;
+  for (auto iter : legal_moves_child) {
+    history_.Append(iter);
+    // Call recursive  NegaBoundSearch with bounds reversed for opponent.
+    struct Bounds bound = NegaBoundSearch(depth - 1, -upperbound, -lowerbound);
+    int rlower = -bound.upperbound;
+    int rupper = -bound.lowerbound;
+    returnbound.based_on_tbhit |= bound.based_on_tbhit;
+    history_.Pop();
+    if (rlower >= lowerbound) lowerbound = rlower;
+    if (rupper >= myupperbound) myupperbound = rupper;
+    // Alpha-Bound cutoff.
+    if (lowerbound >= upperbound) break;
+  }
+  returnbound.lowerbound = lowerbound;
+  returnbound.upperbound = myupperbound;
+  return returnbound;
 }
 
 // Returns whether node was already in cache.
@@ -1013,7 +1208,9 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
+  // TODO(Videodr0me) Maybe use bounds here to more efficiently select nodes.
   if (search_->stop_.load(std::memory_order_acquire)) return;
+
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
@@ -1043,8 +1240,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   assert(node);
   // n = 0 and n_in_flight_ > 0, that means the node is being extended.
   if (node->GetN() == 0) return 0;
-  // The node is terminal; don't prefetch it.
-  if (node->IsTerminal()) return 0;
+  // The node is certain; don't prefetch it.
+  if (node->IsCertain()) return 0;
 
   // Populate all subnodes and their scores.
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
@@ -1123,8 +1320,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          int idx_in_computation) {
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {
-    // Terminal nodes don't involve the neural NetworkComputation, nor do
-    // they require any further processing after value retrieval.
+    // Terminal or certain nodes don't involve the neural NetworkComputation,
+    // nor do they require any further processing after value retrieval.
     node_to_process->v = node->GetQ();
     return;
   }
@@ -1179,16 +1376,70 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
+  bool origin_bounded = node->IsBounded();
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
+    // Certainty Propagation:
+    // If update could affect bounds (origin_bounded),
+    // check all childs, and update bounds/certainty.
+    float prev_q = -100.0f;
+    if (params_.GetCertaintyPropagation() && n != node && (origin_bounded) &&
+        !n->IsCertain()) {
+      bool based_on_propagated_tbhit = false;
+      int lower_bound = -1;
+      int upper_bound = -1;
+      for (auto iter : n->Edges()) {
+        if (iter.IsLBounded() && iter.GetEQ() > lower_bound)
+          lower_bound = iter.GetEQ();
+        if (iter.IsUBounded() && iter.GetEQ() > upper_bound)
+          upper_bound = iter.GetEQ();
+        // Only checking !UBounded so that lower bounded
+        // edges, also get the correct upper_bound.
+        if (!iter.IsUBounded()) upper_bound = 1;
+        if (lower_bound == upper_bound && lower_bound == 1) {
+          based_on_propagated_tbhit = iter.IsPropagatedTBHit();
+          break;
+        }
+        based_on_propagated_tbhit |= iter.IsPropagatedTBHit();
+      }
+      // Exact scores are certain and propagate certainty.
+      // Inexact scores propagate their bounds.
+      if (lower_bound == upper_bound) {
+        if (n != search_->root_node_) {
+          prev_q = n->GetQ();
+          n->MakeCertain(-lower_bound, based_on_propagated_tbhit
+                                           ? CertaintyTrigger::TB_HIT
+                                           : CertaintyTrigger::NORMAL);
+          v = (float)-lower_bound;
+        }
+      } else {
+        if (lower_bound > -1) n->UBound(-lower_bound);
+        if (upper_bound < 1) n->LBound(-upper_bound);
+      }
+    }
+
+    // Certainty propagation: reduce error by keeping score in proven bounds.
+    if (params_.GetCertaintyPropagation() && n->GetParent() &&
+        !n->IsCertain()) {
+      if (n->GetOwnEdge()->IsUBounded() && v > 0.0f) v = 0.00f;
+      if (n->GetOwnEdge()->IsLBounded() && v < 0.0f) v = 0.00f;
+    }
+
     n->FinalizeScoreUpdate(v, node_to_process.multivisit);
+
+    // Certainty propagation: adjust Qs along the path as if all visits already
+    // had propagated the certain result.
+    if (params_.GetCertaintyPropagation() && (prev_q != -100.0f) &&
+        (prev_q != v) && n->IsCertain())
+      v = v + (v - prev_q) * (n->GetN() - 1);
+
     // Q will be flipped for opponent.
     v = -v;
 
-    // Update the stats.
-    // Best move.
+    // Update best move if new N > best N or
+    // if the node is a certain child of root.
     if (n->GetParent() == search_->root_node_ &&
-        search_->current_best_edge_.GetN() <= n->GetN()) {
+        (search_->current_best_edge_.GetN() <= n->GetN() || n->IsCertain())) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
