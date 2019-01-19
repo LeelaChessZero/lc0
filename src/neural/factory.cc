@@ -114,7 +114,7 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
-  WeightsFile weights = LoadWeightsFromFile(net_path);
+  const WeightsFile weights = LoadWeightsFromFile(net_path);
 
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);

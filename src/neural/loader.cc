@@ -93,11 +93,11 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   if (net.magic() != kWeightMagic)
     throw Exception("Invalid weight file: bad header.");
 
-  auto min_version =
+  const auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch(), "");
-  auto lc0_ver = GetVersionInt();
-  auto net_ver =
+  const auto lc0_ver = GetVersionInt();
+  const auto net_ver =
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch());
 
