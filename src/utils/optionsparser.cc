@@ -239,27 +239,27 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }  // namespace
 
 void OptionsParser::ShowHelp() const {
-  std::cerr << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
+  std::cout << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
             << std::endl;
 
-  std::cerr << "\nAvailable modes. A help for a mode: "
+  std::cout << "\nAvailable modes. A help for a mode: "
             << CommandLine::BinaryName() << " <mode> --help\n";
   for (const auto& mode : CommandLine::GetModes()) {
-    std::cerr << "  " << std::setw(10) << std::left << mode.first << " "
+    std::cout << "  " << std::setw(10) << std::left << mode.first << " "
               << mode.second << std::endl;
   }
 
-  std::cerr << "\nAllowed command line flags for current mode:\n";
-  std::cerr << FormatFlag('h', "help", "Show help and exit.");
+  std::cout << "\nAllowed command line flags for current mode:\n";
+  std::cout << FormatFlag('h', "help", "Show help and exit.");
   for (const auto& option : options_) {
-    if (!option->hidden_) std::cerr << option->GetHelp(defaults_);
+    if (!option->hidden_) std::cout << option->GetHelp(defaults_);
   }
 
   auto contexts = values_.ListSubdicts();
   if (!contexts.empty()) {
-    std::cerr << "\nFlags can be defined per context (one of: "
+    std::cout << "\nFlags can be defined per context (one of: "
               << StrJoin(contexts, ", ") << "), for example:\n";
-    std::cerr << "       --" << contexts[0] << '.'
+    std::cout << "       --" << contexts[0] << '.'
               << options_.back()->GetLongFlag() << "=(value)\n";
   }
 }
