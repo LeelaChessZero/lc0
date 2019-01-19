@@ -117,7 +117,7 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
         cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH));
 
   // TODO: dynamic selection of algorithm!
-  if ((C > 32) && (!fp16)) {
+  if ((C > 32) && (!fp16) && (filter_size_ > 1)) {
     conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
   } else {
     conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;

@@ -233,7 +233,10 @@ bool Node::TryStartScoreUpdate() {
   return true;
 }
 
-void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
+void Node::CancelScoreUpdate(int multivisit) {
+  n_in_flight_ -= multivisit;
+  best_child_cached_ = nullptr;
+}
 
 void Node::FinalizeScoreUpdate(float v, int multivisit) {
   // Recompute Q.
@@ -246,6 +249,18 @@ void Node::FinalizeScoreUpdate(float v, int multivisit) {
   n_ += multivisit;
   // Decrement virtual loss.
   n_in_flight_ -= multivisit;
+  // Best child is potentially no longer valid.
+  best_child_cached_ = nullptr;
+}
+
+void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
+  best_child_cached_ = best_edge.node();
+  // An edge can point to an unexpanded node with n==0. These nodes don't
+  // increment their n_in_flight_ the same way and thus are not safe to cache.
+  if (best_child_cached_ && best_child_cached_->GetN() == 0) {
+    best_child_cached_ = nullptr;
+  }
+  best_child_cache_in_flight_limit_ = visits_allowed + n_in_flight_;
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }

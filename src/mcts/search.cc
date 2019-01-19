@@ -413,6 +413,10 @@ void Search::UpdateRemainingMoves() {
   }
   // Even if we exceeded limits, don't go crazy by not allowing any playouts.
   if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
+  // Since remaining_playouts_ has changed, the logic for selecting visited root
+  // nodes may also change. Use a 0 visit cancel score update to clear out any
+  // cached best edge.
+  root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature
@@ -659,7 +663,7 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  if (!stop_.load(std::memory_order_acquire)) {
+  if (!stop_.load(std::memory_order_acquire) || !bestmove_is_sent_) {
     bestmove_is_sent_ = true;
     FireStopInternal();
   }
@@ -830,6 +834,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   uint16_t depth = 0;
+  bool node_already_updated = true;
 
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
@@ -839,7 +844,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     //            in the beginning (and there would be no need for "if
     //            (!is_root_node)"), but that would mean extra mutex lock.
     //            Will revisit that after rethinking locking strategy.
-    if (!is_root_node) {
+    if (!node_already_updated) {
       node = best_edge.GetOrSpawnNode(/* parent */ node, &precached_node_);
     }
     best_edge.Reset();
@@ -861,6 +866,18 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         return NodeToProcess::Extension(node, depth);
       }
     }
+    Node* possible_shortcut_child = node->GetCachedBestChild();
+    if (possible_shortcut_child) {
+      // Add two here to reverse the conservatism that goes into calculating the
+      // remaining cache visits.
+      collision_limit =
+          std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
+      is_root_node = false;
+      node = possible_shortcut_child;
+      node_already_updated = true;
+      continue;
+    }
+    node_already_updated = false;
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
@@ -904,9 +921,15 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
+      int estimated_visits_to_change_best =
+          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
+      // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
+      // has potential rounding errors and some conservative logic that can push
+      // it up to 2 away from the real value.
+      node->UpdateBestChild(best_edge,
+                            std::max(0, estimated_visits_to_change_best - 2));
       collision_limit =
-          std::min(collision_limit,
-                   best_edge.GetVisitsToReachU(second_best, puct_mult, fpu));
+          std::min(collision_limit, estimated_visits_to_change_best);
       assert(collision_limit >= 1);
       second_best_edge.Reset();
     }
