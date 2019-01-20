@@ -164,8 +164,8 @@ std::string DiscoverWeightsFile() {
     const gzFile file = gzopen(candidate.second.c_str(), "rb");
 
     if (!file) continue;
-    const unsigned char buf[256];
-    const int sz = gzread(file, buf, 256);
+    unsigned char buf[256];
+    int sz = gzread(file, buf, 256);
     gzclose(file);
     if (sz < 0) continue;
 
