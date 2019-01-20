@@ -132,5 +132,6 @@ TEST(PositionHistory, DidRepeatSinceLastZeroingMoveNeverRepeated) {
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
+  lczero::InitializeMagicBitboards();
   return RUN_ALL_TESTS();
 }
