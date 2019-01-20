@@ -35,6 +35,6 @@ struct OpenCLParams {
   bool tune_only = false;
   bool force_tune = false;
 
-  OpenCLTuneAlgo tune_algo = kTuneAlgoStochastic;
+  OpenCLTuneAlgo tune_algo = kTuneAlgoSystematic;
   OpenCLTuneEffort tune_effort = kTuneEffortNormal;
 };

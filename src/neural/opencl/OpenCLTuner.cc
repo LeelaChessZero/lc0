@@ -37,15 +37,49 @@ static const auto kTunerFilename = std::string("leelaz_opencl_tuning");
 
 // Maximum error from reference.
 static constexpr auto kMaxError = 1e-4;
-
-static constexpr int kMinTuneIters = 5;
+static constexpr auto kExpoDistroLambda = 0.5;
+static constexpr auto kMinCutoffRatio = 1.05;
 static constexpr int kMaxTuneIters = 10;
-static constexpr int kCutoffRatio = 1.5;
+
+static const std::vector<Configurations> kParamsSize1 = {
+    // Former smaller set
+    {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {32}},
+    {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
+    {"NDIMB", {8, 16, 32}}, {"KWI", {2}},           {"VWM", {1, 2, 4}},
+    {"VWN", {1, 2, 4}},     {"STRM", {0}},          {"STRN", {0}},
+    {"SA", {0, 1}},         {"SB", {0, 1}},
+};
+
+static const std::vector<Configurations> kParamsSize2 = {
+    // Former smaller set + KWG 32 and KWI 8
+    {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
+    {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
+    {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4}},
+    {"VWN", {1, 2, 4, 8}},  {"STRM", {0}},          {"STRN", {0}},
+    {"SA", {0, 1}},         {"SB", {0, 1}},
+};
+
+static const std::vector<Configurations> kParamsSize3 = {
+    // Former smaller set + KWG 32, KWI 8, VWN 8
+    {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
+    {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
+    {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4, 8}},
+    {"VWN", {1, 2, 4, 8}},  {"STRM", {0, 1}},       {"STRN", {0, 1}},
+    {"SA", {0, 1}},         {"SB", {0, 1}},
+};
+
+static const std::vector<Configurations> kParamsSize4 = {
+    // Former larger set
+    {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
+    {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
+    {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4, 8}},
+    {"VWN", {1, 2, 4, 8}},  {"STRM", {0, 1}},       {"STRN", {0, 1}},
+    {"SA", {0, 1}},         {"SB", {0, 1}},
+};
 
 // Stochastic search constants.
-static constexpr auto kSeeds = 10;
-static constexpr auto kWalkLength = 80;
-static constexpr auto kWalkMinChanges = 5;
+static constexpr auto kWalkLength = 100;
+static constexpr auto kWalkMinChanges = 6;
 
 static void sgemmBatched_ref(const std::vector<float>& a,
                              const std::vector<float>& b, std::vector<float>& c,
@@ -199,7 +233,7 @@ std::string OpenCLTuner::tune_sgemm(const int m, const int n, const int k,
   std::string defines;
   switch (m_params.tune_algo) {
     case kTuneAlgoSystematic:
-      defines = tune_sgemm_bruteforce(m, n, k, batch_size);
+      defines = tune_sgemm_systematic(m, n, k, batch_size);
       break;
     case kTuneAlgoStochastic:
       defines = tune_sgemm_stochastic(m, n, k, batch_size);
@@ -208,51 +242,31 @@ std::string OpenCLTuner::tune_sgemm(const int m, const int n, const int k,
   return defines;
 }
 
-std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
+std::string OpenCLTuner::tune_sgemm_systematic(const int m, const int n,
                                                const int k,
                                                const int batch_size) {
-  bool large_set = false;
-  int skip = 0;
-
+  bool large = true;
   auto opts = std::vector<Configurations>();
   switch (m_params.tune_effort) {
     case kTuneEffortFaster:
-      large_set = false;
-      skip = 4;
+      opts = kParamsSize1;
+      large = false;
       break;
 
     case kTuneEffortNormal:
-      large_set = false;
-      skip = 0;
+      opts = kParamsSize2;
+      large = false;
       break;
 
     case kTuneEffortSlower:
-      large_set = true;
-      skip = 4;
+      opts = kParamsSize3;
+      large = false;
       break;
 
     case kTuneEffortSlowest:
-      large_set = true;
-      skip = 16;
+      opts = kParamsSize4;
+      large = true;
       break;
-  }
-
-  if (large_set) {
-    opts = {
-        {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
-        {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
-        {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4, 8}},
-        {"VWN", {1, 2, 4, 8}},  {"STRM", {0, 1}},       {"STRN", {0, 1}},
-        {"SA", {0, 1}},         {"SB", {0, 1}},
-    };
-  } else {
-    opts = {
-        {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {32}},
-        {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
-        {"NDIMB", {8, 16, 32}}, {"KWI", {2}},           {"VWM", {1, 2, 4}},
-        {"VWN", {1, 2, 4}},     {"STRM", {0}},          {"STRN", {0}},
-        {"SA", {0, 1}},         {"SB", {0, 1}},
-    };
   }
 
   // This needs to be at minimum the maximum (MNK/WG) values above.
@@ -292,18 +306,16 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
     cfgs *= opts[c].second.size();
   }
 
-  auto& random = lczero::Random::Get();
   for (auto i = 0; i < cfgs; i++) {
     TuneParameters param = get_parameters_by_int(opts, i);
-    if (valid_config_sgemm(param, large_set)) {
-      if (skip > 1 && random.GetInt(1, skip) != 1) continue;
+    if (valid_config_sgemm(param, large)) {
       valid_params.emplace_back(i);
     }
   }
 
   CERR << "Will try " << valid_params.size() << " valid configurations.";
 
-  std::string best_params;
+  std::string best_params, best_params_str;
 
   auto queue = cl::CommandQueue(m_context, m_device, CL_QUEUE_PROFILING_ENABLE);
   auto event = cl::Event();
@@ -314,7 +326,9 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
   auto k_ceil_prev = 0;
   auto param_counter = size_t{0};
   double best_time_us = 0;
-
+  auto last_log_counter = size_t{0};
+  shuffle(valid_params.begin(), valid_params.end(),
+          std::default_random_engine(0));
   for (const auto& i : valid_params) {
     param_counter++;
 
@@ -364,9 +378,9 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
                               (n_ceil * p["NDIMC"]) / p["NWG"],
                               (size_t)batch_size};
     float max_error = 0.0;
-    cl_long min_elapsed = 0;
+    cl_ulong min_elapsed = 0;
 
-    for (auto r = 0; r < kMaxTuneIters; r++) {
+    for (auto r = size_t{0}; r < kMaxTuneIters; r++) {
       try {
         queue.enqueueNDRangeKernel(sgemm_kernel, cl::NullRange, size_sgemm,
                                    local_sgemm, nullptr, &event);
@@ -386,10 +400,11 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
 
         if (r == 0 || elapsed < min_elapsed) {
           min_elapsed = elapsed;
-          if (r >= kMinTuneIters) {
-            double time_us = 1e-3 * elapsed;
-            if (best_time_us > 0 && time_us > best_time_us * kCutoffRatio)
-              break;
+          double cutoffRatio =
+              std::max(kMinCutoffRatio, 1 + kExpoDistroLambda / (r + 1));
+          double time_us = 1e-3 * elapsed;
+          if (best_time_us > 0 && time_us > best_time_us * cutoffRatio) {
+            break;
           }
         }
 
@@ -400,18 +415,22 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
       }
     }
 
+    bool log_progress = ++last_log_counter >= 500 && param_counter % 1000 == 0;
     double time_us = 1e-3 * min_elapsed;
     if (max_error < kMaxError &&
         (best_time_us == 0 || time_us < best_time_us)) {
-      auto param_str = parameters_to_string(p);
-      // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out.
-      auto kernel_gflops = total_flops / min_elapsed;
-      CERR << std::fixed << std::setprecision(1) << "(" << param_counter << "/"
-           << valid_params.size() << ") " << param_str << " " << time_us
-           << " us (" << kernel_gflops << " GFLOPS)";
-
       best_time_us = time_us;
       best_params = defines;
+      best_params_str = parameters_to_string(p);
+      log_progress = true;
+    }
+
+    if (log_progress) {
+      auto kernel_gflops = 1e-3 * total_flops / best_time_us;
+      CERR << std::fixed << std::setprecision(1) << "(" << param_counter << "/"
+           << valid_params.size() << ") " << best_params_str << " "
+           << best_time_us << " us (" << kernel_gflops << " GFLOPS)";
+      last_log_counter = 0;
     }
   }
   if (best_time_us == 0) {
@@ -425,36 +444,24 @@ std::string OpenCLTuner::tune_sgemm_bruteforce(const int m, const int n,
 std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
                                                const int k,
                                                const int batch_size) {
-  auto opts = std::vector<Configurations>();
-  opts = {
-      {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
-      {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
-      {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4, 8}},
-      {"VWN", {1, 2, 4, 8}},  {"STRM", {0, 1}},       {"STRN", {0, 1}},
-      {"SA", {0, 1}},         {"SB", {0, 1}}};
-
-  auto seeds = kSeeds;
+  auto seeds = 1;
   auto walkLength = kWalkLength;
 
   switch (m_params.tune_effort) {
     case kTuneEffortFaster:
-      seeds = kSeeds / 2;
-      walkLength = kWalkLength / 2;
+      seeds = 3;
       break;
 
     case kTuneEffortNormal:
-      seeds = kSeeds;
-      walkLength = kWalkLength;
+      seeds = 10;
       break;
 
     case kTuneEffortSlower:
-      seeds = kSeeds * 2;
-      walkLength = kWalkLength * 2;
+      seeds = 50;
       break;
 
     case kTuneEffortSlowest:
-      seeds = kSeeds * 4;
-      walkLength = kWalkLength * 4;
+      seeds = 500;
       break;
   }
 
@@ -490,6 +497,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
                             sizeof(float) * c_size, nullptr, nullptr);
 
   size_t cfgs = 1;
+  const auto& opts = kParamsSize4;
   for (auto c = size_t{0}; c < opts.size(); c++) {
     cfgs *= opts[c].second.size();
   }
@@ -603,9 +611,9 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
                                 (size_t)batch_size};
 
       float max_error = 0.0;
-      cl_long min_elapsed = 0;
+      cl_ulong min_elapsed = 0;
 
-      for (int r = 0; r < kMaxTuneIters; r++) {
+      for (auto r = size_t{0}; r < kMaxTuneIters; r++) {
         try {
           queue.enqueueNDRangeKernel(sgemm_kernel, cl::NullRange, size_sgemm,
                                      local_sgemm, nullptr, &event);
@@ -625,11 +633,14 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
 
           if (r == 0 || elapsed < min_elapsed) {
             min_elapsed = elapsed;
-            if (r >= kMinTuneIters) {
-              double time_us = 1e-3 * elapsed;
-              if (best_time_us > 0 && time_us > best_time_us * kCutoffRatio)
-                break;
-            }
+          }
+
+          double cutoffRatio =
+              std::max(kMinCutoffRatio, 1 + kExpoDistroLambda / (r + 1));
+          double time_us = 1e-3 * elapsed;
+          if (walk_best_time_us > 0 &&
+              time_us > walk_best_time_us * cutoffRatio) {
+            break;
           }
 
         } catch (const cl::Error&) {
@@ -664,9 +675,9 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
 
     }  // march
 
-    CERR << std::fixed << std::setprecision(1) << "(" << seed << "/" << seeds
-         << ") " << best_string << " " << best_time_us << " us (" << best_gflops
-         << " GFLOPS)";
+    CERR << std::fixed << std::setprecision(1) << "(" << (seed + 1) << "/"
+         << seeds << ") " << best_string << " " << best_time_us << " us ("
+         << best_gflops << " GFLOPS)";
 
   }  // seed
 
