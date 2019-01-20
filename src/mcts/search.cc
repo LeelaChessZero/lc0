@@ -984,10 +984,10 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
-      node->MakeTerminal(GameResult::DRAW);
-      return;
-    }
+    //if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
+    //  node->MakeTerminal(GameResult::DRAW);
+    //  return;
+    //}
 
     if (history_.Last().GetRepetitions() >= 2) {
       node->MakeTerminal(GameResult::DRAW);

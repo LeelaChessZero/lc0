@@ -1623,7 +1623,7 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   // Obtain 50-move counter for the root position
-  int cnt50 = pos.GetNoCaptureNoPawnPly();
+  int cnt50 = 0;
   // Check whether a position was repeated since the last zeroing move.
   bool rep = has_repeated;
   int dtz;
