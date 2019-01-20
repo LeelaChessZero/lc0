@@ -857,8 +857,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
-        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
-        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+        return NodeToProcess::TerminalHit(node, depth, 1);
       } else {
         return NodeToProcess::Extension(node, depth);
       }
