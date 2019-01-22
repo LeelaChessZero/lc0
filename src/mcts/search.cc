@@ -988,15 +988,9 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (params_.GetRepetitionsIsDraw() == 2) {
-      // Old behaviour
-      if (history_.Last().GetRepetitions() >= 2) {
-        node->MakeTerminal(GameResult::DRAW);
-        return;
-      }
-    } else {
-      // New draw scoring
-      if (history_.Last().GetRepetitions() >= 1) {
+    if (params_.GetTwoFoldRepsIsDraw()) {
+      // Two fold reps are scored as draws during search
+      if (history_.Last().GetRepetitions() > 0) {
         int repeats_required = 1;
         const auto& played_history = search_->played_history_;
         for (int idx = played_history.GetLength() - 1; idx >= 0; --idx) {
@@ -1010,6 +1004,12 @@ void SearchWorker::ExtendNode(Node* node) {
           node->MakeTerminal(GameResult::DRAW);
           return;
         }
+      }
+    } else {
+      // Old behaviour
+      if (history_.Last().GetRepetitions() >= 2) {
+        node->MakeTerminal(GameResult::DRAW);
+        return;
       }
     }
 
