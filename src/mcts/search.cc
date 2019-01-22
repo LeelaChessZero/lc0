@@ -660,7 +660,8 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  if (!stop_.load(std::memory_order_acquire) || !bestmove_is_sent_) {
+  if (!stop_.load(std::memory_order_acquire) ||
+      (!bestmove_is_sent_ && !ok_to_respond_bestmove_)) {
     bestmove_is_sent_ = true;
     FireStopInternal();
   }
