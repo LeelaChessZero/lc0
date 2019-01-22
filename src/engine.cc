@@ -58,10 +58,11 @@ const OptionId kMoveOverheadId{
     "Amount of time, in milliseconds, that the engine subtracts from it's "
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
-const OptionId kMoveDelayId{"move-delay-ratio", "MoveDelayRatio",
-                            "Ratio of move time, that the engine delays "
-                            "before starting to think. This is an option meant "
-                            "to limit the engine's strength."};
+const OptionId kStrengthRatioId{"strength-ratio", "StrengthRatio",
+                                "An option to reduce engine strength. Works by "
+                                "delaying the search for a portion of the "
+                                "allocated time. Set to zero for the minimum "
+                                "strength, one for the maximum."};
 const OptionId kTimeMidpointMoveId{
     "time-midpoint-move", "TimeMidpointMove",
     "The move where the time budgeting algorithm guesses half of all "
@@ -136,7 +137,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-  options->Add<FloatOption>(kMoveDelayId, 0.0f, 1.0f) = 0;
+  options->Add<FloatOption>(kStrengthRatioId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
   options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
@@ -388,11 +389,12 @@ void EngineController::Go(const GoParams& params) {
     };
   }
 
-  float move_delay_ratio = options_.Get<float>(kMoveDelayId.GetId());
-  if (move_delay_ratio != 0.0f && limits.search_deadline) {
+  float strength_ratio = options_.Get<float>(kStrengthRatioId.GetId());
+  if (strength_ratio != 1.0f && limits.search_deadline) {
+    // A delay of 1 - strength_ratio^2 approximates a linear strength reduction.
     auto move_delay =
         (*limits.search_deadline - std::chrono::steady_clock::now()) *
-        move_delay_ratio;
+        (1.0f - strength_ratio * strength_ratio);
     LOGFILE << "Sleeping for "
             << std::chrono::duration_cast<std::chrono::milliseconds>(move_delay)
                    .count()
