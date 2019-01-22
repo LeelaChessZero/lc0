@@ -33,7 +33,7 @@
 #include <sstream>
 #include "utils/exception.h"
 
-#if not defined(NO_PEXT)
+#ifndef NO_PEXT
 // Include header for pext instruction.
 #include <immintrin.h>
 #endif
