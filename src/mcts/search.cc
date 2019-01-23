@@ -197,9 +197,9 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
   const float init = params.GetCpuct();
-  const float k = params.GetCpuctFactor();
   const float base = params.GetCpuctBase();
-  return init + (k ? k * FastLog((N + base) / base) : 0.0f);
+  // Double Cpuct because our Q is [-1,1] vs A0 [0,1].
+  return 2 * (init + FastLog((1 + N + base) / base));
 }
 }  // namespace
 
@@ -850,7 +850,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
       if (!is_root_node) {
-        IncrementNInFlight(node->GetParent(), search_->root_node_, collision_limit - 1);
+        IncrementNInFlight(node->GetParent(), search_->root_node_,
+                           collision_limit - 1);
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }

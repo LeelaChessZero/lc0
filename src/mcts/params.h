@@ -42,15 +42,12 @@ class SearchParams {
   static void Populate(OptionsParser* options);
 
   // Parameter getters.
-  int GetMiniBatchSize() const {
-    return kMiniBatchSize;
-  }
+  int GetMiniBatchSize() const { return kMiniBatchSize; }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
-  float GetCpuctFactor() const { return kCpuctFactor; }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -94,7 +91,6 @@ class SearchParams {
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
-  static const OptionId kCpuctFactorId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
@@ -126,7 +122,6 @@ class SearchParams {
   //            trivial search optimiations.
   const float kCpuct;
   const float kCpuctBase;
-  const float kCpuctFactor;
   const bool kNoise;
   const float kSmartPruningFactor;
   const bool kFpuAbsolute;
