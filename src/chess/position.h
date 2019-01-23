@@ -126,6 +126,10 @@ class PositionHistory {
   // Checks for any repetitions since the last time 50 move rule was reset.
   bool DidRepeatSinceLastZeroingMove() const;
 
+  // Verifies if the given position exists in the position history since the
+  // last time 50 move rule was reset.
+  bool IsContainedInHistorySinceLastZeroingMove(const ChessBoard& board) const;
+
  private:
   int ComputeLastMoveRepetitions() const;
 

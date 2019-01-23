@@ -127,6 +127,15 @@ bool PositionHistory::DidRepeatSinceLastZeroingMove() const {
   return false;
 }
 
+bool PositionHistory::IsContainedInHistorySinceLastZeroingMove(
+    const ChessBoard& board) const {
+  for (int idx = positions_.size(); idx >= 0; idx--) {
+    if (board == positions_[idx].GetBoard()) return true;
+    if (positions_[idx].GetNoCaptureNoPawnPly() == 0) return false;
+  }
+  return false;
+}
+
 uint64_t PositionHistory::HashLast(int positions) const {
   uint64_t hash = positions;
   for (auto iter = positions_.rbegin(), end = positions_.rend(); iter != end;

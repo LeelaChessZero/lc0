@@ -991,15 +991,13 @@ void SearchWorker::ExtendNode(Node* node) {
     if (params_.GetTwoFoldRepsIsDraw()) {
       // Two fold reps are scored as draws during search
       if (history_.Last().GetRepetitions() > 0) {
-        int repeats_required = 1;
-        const auto& played_history = search_->played_history_;
-        for (int idx = played_history.GetLength() - 1; idx >= 0; --idx) {
-          if (history_.Last().GetBoard() ==
-              played_history.GetPositionAt(idx).GetBoard()) {
-            repeats_required = 2;
-            break;
-          }
-        }
+        // If the previous position was repeated in the played history, then at
+        // least two repetitions are required for Draw scoring.
+        int repeats_required =
+            search_->played_history_.IsContainedInHistorySinceLastZeroingMove(
+                history_.Last().GetBoard())
+                ? 2
+                : 1;
         if (history_.Last().GetRepetitions() >= repeats_required) {
           node->MakeTerminal(GameResult::DRAW);
           return;
