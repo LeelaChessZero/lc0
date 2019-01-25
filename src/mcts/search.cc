@@ -660,7 +660,8 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  if (!stop_.load(std::memory_order_acquire) || !bestmove_is_sent_) {
+  if (!stop_.load(std::memory_order_acquire) ||
+      (!bestmove_is_sent_ && !ok_to_respond_bestmove_)) {
     bestmove_is_sent_ = true;
     FireStopInternal();
   }
@@ -858,8 +859,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
-        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
-        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+        return NodeToProcess::TerminalHit(node, depth, 1);
       } else {
         return NodeToProcess::Extension(node, depth);
       }
