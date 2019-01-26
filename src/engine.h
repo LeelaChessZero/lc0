@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <boost/asio.hpp>
 #include "chess/uciloop.h"
 #include "mcts/search.h"
 #include "neural/cache.h"
@@ -121,7 +122,7 @@ class EngineController {
 
 class EngineLoop : public UciLoop {
  public:
-  EngineLoop();
+  EngineLoop(boost::asio::ip::tcp::iostream&& stream);
 
   void RunLoop() override;
   void CmdUci() override;
@@ -134,10 +135,13 @@ class EngineLoop : public UciLoop {
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
+  bool ReadLine(std::string& line) override;
+  void SendResponses(const std::vector<std::string>& responses) override;
 
  private:
   OptionsParser options_;
   EngineController engine_;
+  boost::asio::ip::tcp::iostream stream_;
 };
 
 }  // namespace lczero

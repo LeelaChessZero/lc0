@@ -426,6 +426,8 @@ endif
       dirs: ['/usr/local/lib'], required: false)
   endif
 
+  deps += dependency('boost')
+
 
 #############################################################################
 ## Main Executable

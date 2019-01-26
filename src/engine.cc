@@ -404,10 +404,11 @@ void EngineController::Stop() {
   if (search_) search_->Stop();
 }
 
-EngineLoop::EngineLoop()
+EngineLoop::EngineLoop(boost::asio::ip::tcp::iostream&& stream)
     : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
-              options_.GetOptionsDict()) {
+              options_.GetOptionsDict()),
+      stream_(std::move(stream)) {
   engine_.PopulateOptions(&options_);
   options_.Add<StringOption>(kLogFileId);
 }
@@ -417,6 +418,19 @@ void EngineLoop::RunLoop() {
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId.GetId()));
   UciLoop::RunLoop();
+}
+
+bool EngineLoop::ReadLine(std::string& line) {
+  return !!std::getline(stream_, line);
+}
+
+void EngineLoop::SendResponses(const std::vector<std::string>& responses) {
+  static std::mutex output_mutex;
+  std::lock_guard<std::mutex> lock(output_mutex);
+  for (auto& response : responses) {
+    LOGFILE << "<< " << response;
+    stream_ << response << std::endl;
+  }
 }
 
 void EngineLoop::CmdUci() {
