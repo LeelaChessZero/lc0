@@ -59,7 +59,7 @@ int main(int argc, const char** argv) {
   } else {
     // Consuming optional "server" mode.
     CommandLine::ConsumeCommand("server");
-    boost::asio::io_context io_context;
+    boost::asio::io_service io_context;
     boost::asio::ip::tcp::acceptor acceptor(
         io_context,
         boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 45312));
