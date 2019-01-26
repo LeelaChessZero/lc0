@@ -128,7 +128,7 @@ class EngineController {
 
 class EngineLoop : public UciLoop {
  public:
-  EngineLoop(boost::asio::ip::tcp::iostream&& stream);
+  EngineLoop(boost::asio::ip::tcp::socket&& socket);
 
   void RunLoop() override;
   void CmdUci() override;

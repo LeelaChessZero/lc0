@@ -65,10 +65,10 @@ int main(int argc, const char** argv) {
         boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 45312));
     std::vector<std::thread> threads;
     for (;;) {
-      boost::asio::ip::tcp::iostream stream;
-      acceptor.accept(*stream.rdbuf());
-      threads.emplace_back([stream{std::move(stream)}]() mutable {
-        EngineLoop loop(std::move(stream));
+      boost::asio::ip::tcp::socket socket(io_context);
+      acceptor.accept(socket);
+      threads.emplace_back([socket{std::move(socket)}]() mutable {
+        EngineLoop loop(std::move(socket));
         loop.RunLoop();
       });
     }
