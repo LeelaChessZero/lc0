@@ -1174,7 +1174,17 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (!node_to_process->nn_queried) {
     // Terminal nodes don't involve the neural NetworkComputation, nor do
     // they require any further processing after value retrieval.
+	  
     node_to_process->v = node->GetQ();
+	Node* parent = node->GetParent();
+	if (parent != nullptr) {
+		if (node_to_process->v == 1.0f) { // assume opposite won
+			parent->MakeTerminal(GameResult::BLACK_WON);
+		}
+		else {  // Cursed wins and blessed losses count as draws.
+			parent->MakeTerminal(GameResult::DRAW);
+		}
+	}
     return;
   }
   // For NN results, we need to populate policy as well as value.
