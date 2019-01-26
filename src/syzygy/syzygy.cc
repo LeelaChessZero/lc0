@@ -44,6 +44,7 @@
 
 #include "syzygy/syzygy.h"
 
+#include "utils/exception.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
@@ -1042,8 +1043,7 @@ class SyzygyTablebaseImpl {
     if (fd == -1) return nullptr;
     fstat(fd, &statbuf);
     if (statbuf.st_size % 64 != 16) {
-      CERR << "Corrupt tablebase file " << fname;
-      throw std::runtime_error("Corrupt tablebase file.");
+      throw Exception("Corrupt tablebase file " + fname);
     }
     *mapping = statbuf.st_size;
     base_address = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
@@ -1060,8 +1060,7 @@ class SyzygyTablebaseImpl {
     DWORD size_high;
     DWORD size_low = GetFileSize(fd, &size_high);
     if (size_low % 64 != 16) {
-      CERR << "Corrupt tablebase file " << fname;
-      throw std::runtime_error("Corrupt tablebase file.");
+      throw Exception("Corrupt tablebase file " + fname);
     }
     HANDLE mmap = CreateFileMapping(fd, nullptr, PAGE_READONLY, size_high,
                                     size_low, nullptr);
