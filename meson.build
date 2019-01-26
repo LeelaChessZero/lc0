@@ -435,6 +435,10 @@ if not get_option('popcnt')
   add_project_arguments('-DNO_POPCNT', language : 'cpp')
 endif
 
+if not get_option('pext')
+  add_project_arguments('-DNO_PEXT', language : 'cpp')
+endif
+
 executable('lc0', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
