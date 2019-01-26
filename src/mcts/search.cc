@@ -539,9 +539,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(
-        (params_.GetCertaintyPropagation())
-            ? edge.edge()->GetEQ()
+    edges.emplace_back((params_.GetCertaintyPropagation())
+                           ? edge.edge()->GetEQ() * (edge.IsTerminal()+1)
             : 0,
         edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
