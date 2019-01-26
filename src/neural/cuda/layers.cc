@@ -224,28 +224,7 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
     }
   }
 #else
-  else if (use_relu_ && use_bias_ && input2 == nullptr) {
-    ReportCUDNNErrors(cudnnConvolutionForward(
-        cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
-        conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
-        output));
-    ReportCUDNNErrors(cudnnAddTensor(cudnn, &alpha, bias_desc_, biases, &alpha,
-                                     out_tensor_desc_, output));
-    ReportCUDNNErrors(cudnnActivationForward(cudnn, activation_, &alpha,
-                                             out_tensor_desc_, output, &beta,
-                                             out_tensor_desc_, output));
-  } else if (use_relu_ && use_bias_ && input2 == output) {
-    ReportCUDNNErrors(cudnnConvolutionForward(
-        cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
-        conv_desc_, conv_algo_, scratch, scratch_size, &alpha, out_tensor_desc_,
-        output));
-    ReportCUDNNErrors(cudnnAddTensor(cudnn, &alpha, bias_desc_, biases, &alpha,
-                                     out_tensor_desc_, output));
-    ReportCUDNNErrors(cudnnActivationForward(cudnn, activation_, &alpha,
-                                             out_tensor_desc_, output, &beta,
-                                             out_tensor_desc_, output));
-  } else {
-    // probably never taken
+  else {
     ReportCUDNNErrors(cudnnConvolutionForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, conv_algo_, scratch, scratch_size,
