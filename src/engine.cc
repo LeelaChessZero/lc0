@@ -432,7 +432,7 @@ EngineLoop::EngineLoop(boost::asio::ip::tcp::socket&& socket)
     : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
-  stream_.socket() = std::move(socket);
+  stream_.rdbuf()->assign(boost::asio::ip::tcp::v4(), socket.release());
   engine_.PopulateOptions(&options_);
   options_.Add<StringOption>(kLogFileId);
 }
