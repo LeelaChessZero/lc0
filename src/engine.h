@@ -100,14 +100,20 @@ class EngineController {
 
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
-  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
-  std::unique_ptr<Network> network_;
+  std::shared_ptr<SyzygyTablebase> syzygy_tb_;
+  std::shared_ptr<Network> network_;
   NNCache cache_;
 
   // Store current TB and network settings to track when they change so that
   // they are reloaded.
   std::string tb_paths_;
   NetworkFactory::BackendConfiguration network_configuration_;
+  static Mutex config_cache_mutex_;
+  static std::unordered_map<NetworkFactory::BackendConfiguration,
+                            std::weak_ptr<Network>, NetworkFactory::BackendConfigurationHash>
+      networks_;
+  static std::unordered_map<std::string, std::weak_ptr<SyzygyTablebase>>
+      syzygy_tbs_;
 
   // The current position as given with SetPosition. For normal (ie. non-ponder)
   // search, the tree is set up with this position, however, during ponder we

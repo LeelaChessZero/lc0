@@ -116,7 +116,12 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
 }
 
 }  // namespace
-
+Mutex EngineController::config_cache_mutex_;
+std::unordered_map<NetworkFactory::BackendConfiguration, std::weak_ptr<Network>,
+                   NetworkFactory::BackendConfigurationHash>
+    EngineController::networks_;
+std::unordered_map<std::string, std::weak_ptr<SyzygyTablebase>>
+    EngineController::syzygy_tbs_;
 EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
                                    ThinkingInfo::Callback info_callback,
                                    const OptionsDict& options)
@@ -250,24 +255,43 @@ SearchLimits EngineController::PopulateSearchLimits(
 // Updates values from Uci options.
 void EngineController::UpdateFromUciOptions() {
   SharedLock lock(busy_mutex_);
+  std::lock_guard<Mutex> guard(config_cache_mutex_);
 
   // Syzygy tablebases.
   std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId.GetId());
   if (!tb_paths.empty() && tb_paths != tb_paths_) {
-    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-    CERR << "Loading Syzygy tablebases from " << tb_paths;
-    if (!syzygy_tb_->init(tb_paths)) {
-      CERR << "Failed to load Syzygy tablebases!";
-      syzygy_tb_ = nullptr;
-    } else {
-      tb_paths_ = tb_paths;
+    syzygy_tb_ = nullptr;
+    if (syzygy_tbs_.count(tb_paths)) {
+      syzygy_tb_ = syzygy_tbs_[tb_paths].lock();
     }
+    if (!syzygy_tb_) {
+		syzygy_tb_ = std::make_shared<SyzygyTablebase>();
+		CERR << "Loading Syzygy tablebases from " << tb_paths;
+		if (!syzygy_tb_->init(tb_paths)) {
+		  CERR << "Failed to load Syzygy tablebases!";
+		  syzygy_tb_ = nullptr;
+		} else {
+		}
+                if (syzygy_tb_) {
+                  syzygy_tbs_[tb_paths_] = syzygy_tb_;
+                }
+    }
+    if (syzygy_tb_) {
+      tb_paths_ = tb_paths;
+	}
   }
 
   // Network.
   auto network_configuration = NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
-    network_ = NetworkFactory::LoadNetwork(options_);
+    network_ = nullptr;
+    if (networks_.count(network_configuration)) {
+      network_ = networks_[network_configuration].lock();
+    }
+    if (!network_) {
+      network_ = NetworkFactory::LoadNetwork(options_);
+      networks_[network_configuration] = network_;
+	}
     network_configuration_ = network_configuration;
   }
 

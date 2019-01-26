@@ -84,6 +84,14 @@ class NetworkFactory {
       return !operator==(other);
     }
   };
+  struct BackendConfigurationHash {
+    std::size_t operator()(BackendConfiguration const& s) const noexcept {
+      std::size_t h1 = std::hash<std::string>{}(s.weights_path);
+      std::size_t h2 = std::hash<std::string>{}(s.backend);
+      std::size_t h3 = std::hash<std::string>{}(s.backend_options);
+      return (h1 ^ (h2 * 33))*33 ^ (h3);
+    }
+  };
 
  private:
   void RegisterNetwork(const std::string& name, FactoryFunc factory,
@@ -108,7 +116,6 @@ class NetworkFactory {
   std::vector<Factory> factories_;
   friend class Register;
 };
-
 #define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)        \
   namespace {                                                                \
   static NetworkFactory::Register regH38fhs##counter(                        \
