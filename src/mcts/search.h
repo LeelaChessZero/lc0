@@ -252,27 +252,29 @@ class SearchWorker {
     float v;
     int multivisit = 0;
     uint16_t depth;
+    uint16_t piececount;
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
 
-    static NodeToProcess Collision(Node* node, uint16_t depth,
+    static NodeToProcess Collision(Node* node, uint16_t depth, uint16_t piececount,
                                    int collision_count) {
-      return NodeToProcess(node, depth, true, collision_count);
+      return NodeToProcess(node, depth, piececount, true, collision_count);
     }
-    static NodeToProcess Extension(Node* node, uint16_t depth) {
-      return NodeToProcess(node, depth, false, 1);
+    static NodeToProcess Extension(Node* node, uint16_t depth, uint16_t piececount) {
+      return NodeToProcess(node, depth, piececount, false, 1);
     }
-    static NodeToProcess TerminalHit(Node* node, uint16_t depth,
+    static NodeToProcess TerminalHit(Node* node, uint16_t depth, uint16_t piececount,
                                      int visit_count) {
-      return NodeToProcess(node, depth, false, visit_count);
+      return NodeToProcess(node, depth, piececount, false, visit_count);
     }
 
    private:
-    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit)
+    NodeToProcess(Node* node, uint16_t depth, uint16_t piececount, bool is_collision, int multivisit)
         : node(node),
           multivisit(multivisit),
           depth(depth),
+          piececount(piececount),
           is_collision(is_collision) {}
   };
 

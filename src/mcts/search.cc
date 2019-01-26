@@ -25,7 +25,6 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-
 #include "mcts/search.h"
 
 #include <algorithm>
@@ -833,6 +832,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   uint16_t depth = 0;
+  uint16_t piececount;
   bool node_already_updated = true;
 
   while (true) {
@@ -848,6 +848,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     best_edge.Reset();
     depth++;
+    piececount = (history_.Last().GetBoard().ours()).count() + (history_.Last().GetBoard().theirs()).count();
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
@@ -855,14 +856,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         IncrementNInFlight(node->GetParent(), search_->root_node_,
                            collision_limit - 1);
       }
-      return NodeToProcess::Collision(node, depth, collision_limit);
+      return NodeToProcess::Collision(node, depth, piececount, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
-        return NodeToProcess::TerminalHit(node, depth, 1);
+        return NodeToProcess::TerminalHit(node, depth, piececount, 1);
       } else {
-        return NodeToProcess::Extension(node, depth);
+        return NodeToProcess::Extension(node, depth, piececount);
       }
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
@@ -1180,7 +1181,19 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  node_to_process->v = -computation_->GetQVal(idx_in_computation);
+  // Trade Penalty defaults to off, ie 0.0, so we only calculate penalty if it's set to != 0:
+  if (params_.GetTradePenalty() != 0.0f) {
+    auto penalty = params_.GetTradePenalty() * (node_to_process->piececount - params_.GetTradePenalty2());
+    // We flip penalty sign for Leela's moves (odd depths)
+    // (opponent depth is even depths and has opposite sign):
+    if(node_to_process->depth % 2 == 1)
+      penalty = -penalty;
+    node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty;
+    // penalty shouldn't put v outside (-1, 1), and we will clip if it is:
+    node_to_process->v = std::max(-0.9999f, std::min(0.9999f, node_to_process->v));
+  } else {
+    node_to_process->v = -computation_->GetQVal(idx_in_computation);
+  }
   // ...and secondly, the policy data.
   float total = 0.0;
   for (auto edge : node->Edges()) {
