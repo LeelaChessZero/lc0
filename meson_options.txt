@@ -113,6 +113,11 @@ option('popcnt',
        value: true,
        description: 'Use the popcnt instruction')
 
+option('pext',
+       type: 'boolean',
+       value: false,
+       description: 'Use the pext instruction')
+
 option('gtest',
        type: 'boolean',
        value: true,

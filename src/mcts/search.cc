@@ -709,7 +709,8 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  if (!stop_.load(std::memory_order_acquire) || !bestmove_is_sent_) {
+  if (!stop_.load(std::memory_order_acquire) ||
+      (!bestmove_is_sent_ && !ok_to_respond_bestmove_)) {
     bestmove_is_sent_ = true;
     FireStopInternal();
   }
@@ -901,16 +902,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
       if (!is_root_node) {
-        IncrementNInFlight(node->GetParent(), search_->root_node_, collision_limit - 1);
+        IncrementNInFlight(node->GetParent(), search_->root_node_,
+                           collision_limit - 1);
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal/certain or unexamined leaf node -- the end of this playout.
     if (node->IsCertain()) {
-      int multivisit =
-          (params_.GetCertaintyPropagation()) ? 1 : collision_limit;
-      IncrementNInFlight(node, search_->root_node_, multivisit - 1);
-      return NodeToProcess::TerminalHit(node, depth, multivisit);
+      return NodeToProcess::TerminalHit(node, depth, 1);
     } else if (!node->HasChildren()) {
       return NodeToProcess::Extension(node, depth);
     }
@@ -1067,7 +1066,7 @@ void SearchWorker::EvalPosition(Node* node, MoveList& legal_moves,
     if (!search_->root_syzygy_rank_ && search_->syzygy_tb_ &&
         board.castlings().no_legal_castle() &&
         history_.Last().GetNoCaptureNoPawnPly() == 0 &&
-        (board.ours() + board.theirs()).count() <=
+        (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
