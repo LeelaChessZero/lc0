@@ -1043,7 +1043,7 @@ class SyzygyTablebaseImpl {
     fstat(fd, &statbuf);
     if (statbuf.st_size % 64 != 16) {
       CERR << "Corrupt tablebase file " << fname;
-      exit(1);
+      throw std::runtime_error("Corrupt tablebase file.");
     }
     *mapping = statbuf.st_size;
     base_address = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
@@ -1061,7 +1061,7 @@ class SyzygyTablebaseImpl {
     DWORD size_low = GetFileSize(fd, &size_high);
     if (size_low % 64 != 16) {
       CERR << "Corrupt tablebase file " << fname;
-      exit(1);
+      throw std::runtime_error("Corrupt tablebase file.");
     }
     HANDLE mmap = CreateFileMapping(fd, nullptr, PAGE_READONLY, size_high,
                                     size_low, nullptr);
