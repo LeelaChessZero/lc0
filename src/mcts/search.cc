@@ -144,13 +144,12 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     }
 
     // Mate display if certain win (or loss) with distance to mate set to
-    // length of pv (average  mate) + NegaBoundSearch depth.
+    // length of pv (average  mate).
     // If win is based on propagated TB bit, length of mate is
     // adjusted by +1000; For root filtered TB moves +500.
     if (params_.GetCertaintyPropagation()) {
       if (edge.IsCertain() && edge.GetEQ() != 0)
-        uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 +
-                                        params_.GetCertaintyPropagationDepth() +
+        uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 + 1 +
                                         (edge.IsPropagatedTBHit() ? 1000 : 0));
       else if (root_syzygy_rank_) {
         int sign = (root_syzygy_rank_ - 1 > 0) - (root_syzygy_rank_ - 1 < 0);
@@ -475,7 +474,7 @@ int Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   // moves are syzygy root filtered.
   auto board = played_history_.Last().GetBoard();
   if (!syzygy_tb_ || !board.castlings().no_legal_castle() ||
-      (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
+      (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return 0;
   }
 
@@ -947,7 +946,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
             search_->remaining_playouts_ < best_node_n - child.GetN()) {
           continue;
         }
-        // If CertaintyPropagation >= 1 play certain win and don't search other
+        // If play certain win and don't search other
         // moves at root. If search limit infinite continue searching other
         // moves.
         if (params_.GetCertaintyPropagation() &&
@@ -1126,93 +1125,8 @@ void SearchWorker::ExtendNode(Node* node) {
   }
   // Add legal moves as edges of this node.
   node->CreateEdges(legal_moves);
-
-  // Certainty Propagation:
-  // Look-ahead-search of moves to establish bounds and/or certainty.
-  // TODO: Hashtable, Move-Gen speed, move ordering.
-  if (params_.GetCertaintyPropagation() &&
-      params_.GetCertaintyPropagationDepth() > 0) {
-    int node_lowerbound = -1;
-    int node_upperbound = -1;
-    bool based_on_propagated_tbhit = false;
-    for (auto iter : node->Edges()) {
-      // Eval each edge: Append -> Search -> Pop
-      history_.Append(iter.GetMove());
-      struct Bounds bounds = SearchWorker::NegaBoundSearch(
-          params_.GetCertaintyPropagationDepth() - 1, -1, 1);
-      history_.Pop();
-      if (bounds.lowerbound == bounds.upperbound) {
-        iter.edge()->MakeCertain(-bounds.lowerbound,
-                                 bounds.based_on_tbhit
-                                     ? CertaintyTrigger::TB_HIT
-                                     : CertaintyTrigger::NORMAL);
-        based_on_propagated_tbhit |= bounds.based_on_tbhit;
-      } else {
-        if (bounds.lowerbound > -1) iter.edge()->UBound(-bounds.lowerbound);
-        if (bounds.upperbound < 1) iter.edge()->LBound(-bounds.upperbound);
-      }
-      if (-bounds.upperbound > node_lowerbound)
-        node_lowerbound = -bounds.upperbound;
-      if (-bounds.lowerbound > node_upperbound)
-        node_upperbound = -bounds.lowerbound;
-    }
-    if (node != search_->root_node_) {
-      if (node_lowerbound == node_upperbound) {
-        node->MakeCertain(-node_lowerbound, based_on_propagated_tbhit
-                                                ? CertaintyTrigger::TB_HIT
-                                                : CertaintyTrigger::NORMAL);
-      } else {
-        if (node_lowerbound > -1) node->UBound(-node_lowerbound);
-        if (node_upperbound < 1) node->LBound(-node_upperbound);
-      }
-    }
-  }
 }
 
-struct SearchWorker::Bounds SearchWorker::NegaBoundSearch(int depth,
-                                                          int lowerbound,
-                                                          int upperbound) {
-  struct Bounds returnbound;
-  const auto& board = history_.Last().GetBoard();
-  auto legal_moves_child = board.GenerateLegalMoves();
-  GameResult result = GameResult::UNDECIDED;
-  CertaintyTrigger trigger = CertaintyTrigger::NONE;
-  EvalPosition(nullptr, legal_moves_child, board, result, trigger);
-
-  if (trigger != CertaintyTrigger::NONE) {
-    returnbound.based_on_tbhit |= (trigger == CertaintyTrigger::TB_HIT);
-    int score = (result == GameResult::WHITE_WON)
-                    ? -1
-                    : (result == GameResult::BLACK_WON ? 1 : 0);
-    returnbound.lowerbound = score;
-    returnbound.upperbound = score;
-    return returnbound;
-  }
-  // Singular-extend positions with only one legal move.
-  if ((depth == 0 && legal_moves_child.size() != 1) || depth < -1) {
-    returnbound.lowerbound = -1;
-    returnbound.upperbound = 1;
-    return returnbound;
-  }
-
-  int myupperbound = -1;
-  for (auto iter : legal_moves_child) {
-    history_.Append(iter);
-    // Call recursive  NegaBoundSearch with bounds reversed for opponent.
-    struct Bounds bound = NegaBoundSearch(depth - 1, -upperbound, -lowerbound);
-    int rlower = -bound.upperbound;
-    int rupper = -bound.lowerbound;
-    returnbound.based_on_tbhit |= bound.based_on_tbhit;
-    history_.Pop();
-    if (rlower >= lowerbound) lowerbound = rlower;
-    if (rupper >= myupperbound) myupperbound = rupper;
-    // Alpha-Bound cutoff.
-    if (lowerbound >= upperbound) break;
-  }
-  returnbound.lowerbound = lowerbound;
-  returnbound.upperbound = myupperbound;
-  return returnbound;
-}
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {

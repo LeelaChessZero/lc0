@@ -241,12 +241,7 @@ class SearchWorker {
   void UpdateCounters();
 
  private:
-  struct Bounds {
-    int lowerbound;
-    int upperbound;
-    bool based_on_tbhit = false;
-  };
-
+ 
   struct NodeToProcess {
     bool IsExtendable() const { return !is_collision && !node->IsCertain(); }
     bool IsCollision() const { return is_collision; }
@@ -286,7 +281,6 @@ class SearchWorker {
   void EvalPosition(Node* node, MoveList& legal_moves, const ChessBoard& board,
                     GameResult& result, CertaintyTrigger& trigger);
   void ExtendNode(Node* node);
-  struct Bounds NegaBoundSearch(int depth, int lowerbound, int upperbound);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
