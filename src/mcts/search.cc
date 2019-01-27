@@ -475,7 +475,7 @@ int Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   // moves are syzygy root filtered.
   auto board = played_history_.Last().GetBoard();
   if (!syzygy_tb_ || !board.castlings().no_legal_castle() ||
-      (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
+      (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return 0;
   }
 
