@@ -1231,9 +1231,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
+  float fpu_visits = params_.GetFpuVisits();
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, node_to_process.multivisit, fpu_visits);
     // Q will be flipped for opponent.
     v = -v;
 
