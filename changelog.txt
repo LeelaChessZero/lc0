@@ -1,3 +1,14 @@
+v0.20.2-rc1 (2019-01-27)
+~~~~~~~~~~~
+
+* no terminal multivisits (#683)
+* better fix for issue 651 (#693)
+* Changed output of --help flag to stdout rather than stderr (#687)
+* Movegen speedup via magic bitboards (#640)
+* modify default benchmark setting to run for 10 seconds (#681)
+* Fix incorrect index in OpenCL Winograd output transform (#676)
+* Update OpenCL (#655)
+
 v0.20.1 (2019-01-07)
 ~~~~~~~
 
