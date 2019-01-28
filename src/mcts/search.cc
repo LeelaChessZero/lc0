@@ -209,16 +209,15 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float drawScore = params_.GetDrawScore();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff, &drawScore](EdgeAndNode a, EdgeAndNode b) {
-        return std::forward_as_tuple(a.GetN(), a.GetQD(fpu, drawScore) + a.GetU(U_coeff)) <
-               std::forward_as_tuple(b.GetN(), b.GetQD(fpu, drawScore) + b.GetU(U_coeff));
+      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
+        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff)) <
+               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff));
       });
 
   std::vector<std::string> infos;
@@ -881,8 +880,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      float QD = child.GetQD(fpu, params_.GetDrawScore());
-      const float score = child.GetU(puct_mult) + QD;
+      float Q = child.GetQ(fpu);
+      const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1074,7 +1073,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQD(fpu, params_.GetDrawScore()), edge);
+    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu), edge);
   }
 
   size_t first_unsorted_index = 0;
@@ -1104,7 +1103,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQD(-fpu, params_.GetDrawScore());
+      const float q = edge.GetQ(-fpu);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -

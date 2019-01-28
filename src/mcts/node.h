@@ -308,10 +308,6 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQD(float default_q, float drawScore) const {
-    float d = drawScore * GetD();
-    return (node_ && node_->GetN() > 0) ? node_->GetQ() + d : default_q;
-  }
   float GetQ(float default_q) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
   }
