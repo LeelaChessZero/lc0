@@ -160,10 +160,23 @@ class CudnnNetwork : public Network {
     ReportCUDNNErrors(cudnnCreate(&cudnn_));
     ReportCUBLASErrors(cublasCreate(&cublas_));
 
+    cudaDeviceProp deviceProp = {};
+    cudaGetDeviceProperties(&deviceProp, gpu_id_);
+    CERR << "GPU: " << deviceProp.name;
+    CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
+         << " Gb";
+    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+    CERR << "GPU compute capability: " << deviceProp.major << "."
+         << deviceProp.minor;
+    int version;
+    cudaRuntimeGetVersion(&version);
+    CERR << "CUDA Runtime version: " << version;
+    CERR << "Cudnn version: " << cudnnGetVersion();
+    cudaDriverGetVersion(&version);
+    CERR << "Latest version of CUDA supported by the driver: " << version;
+
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support fp16 (Volta+).
-      cudaDeviceProp deviceProp = {};
-      cudaGetDeviceProperties(&deviceProp, gpu_id_);
       if (deviceProp.major >= 7) {
         // Enable Tensor cores!
         ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
