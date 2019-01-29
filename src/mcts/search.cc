@@ -149,7 +149,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     // adjusted by +1000; For root filtered TB moves +500.
     if (params_.GetCertaintyPropagation()) {
       if (edge.IsCertain() && edge.GetEQ() != 0)
-        uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 + 1 +
+        uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2  +
                                         (edge.IsPropagatedTBHit() ? 1000 : 0));
       else if (root_syzygy_rank_) {
         int sign = (root_syzygy_rank_ - 1 > 0) - (root_syzygy_rank_ - 1 < 0);
