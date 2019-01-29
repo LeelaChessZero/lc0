@@ -1055,7 +1055,7 @@ void SearchWorker::EvalPosition(Node* node, MoveList& legal_moves,
     }
 
     if ((history_.Last().GetRepetitions() >= 1) &&
-        params_.GetCertaintyPropagation()) {
+        params_.GetTwoFoldDrawScoring()) {
       result = GameResult::DRAW;
       trigger = CertaintyTrigger::TWO_FOLD;
       return;
