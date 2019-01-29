@@ -278,8 +278,7 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  void EvalPosition(Node* node, MoveList& legal_moves, const ChessBoard& board,
-                    GameResult& result, CertaintyTrigger& trigger);
+  void EvalPosition(Node * node, MoveList & legal_moves, const ChessBoard & board, CertaintyResult & certaintyResult);
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);

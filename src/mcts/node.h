@@ -89,7 +89,7 @@ class Edge {
   void MakeTerminal(GameResult result);
 
   // Sets flags for certainty, trigger of certainty and result by GameResult.
-  void MakeCertain(GameResult result, CertaintyTrigger trigger);
+  void MakeCertain(CertaintyResult certaintyResult);
 
   // Sets flags for certainty, trigger of certainty and result (by Q).
   void MakeCertain(int q, CertaintyTrigger trigger);
@@ -274,8 +274,8 @@ class Node {
   void MakeTerminal(GameResult result) {
     if (GetOwnEdge()) GetOwnEdge()->MakeTerminal(result);
   }
-  void MakeCertain(GameResult result, CertaintyTrigger trigger) {
-    if (GetOwnEdge()) GetOwnEdge()->MakeCertain(result, trigger);
+  void MakeCertain(CertaintyResult certaintyResult) {
+    if (GetOwnEdge()) GetOwnEdge()->MakeCertain(certaintyResult);
   }
   void MakeCertain(int q, CertaintyTrigger trigger) {
     if (GetOwnEdge()) GetOwnEdge()->MakeCertain(q, trigger);

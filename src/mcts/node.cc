@@ -172,16 +172,16 @@ void Edge::MakeTerminal(GameResult result) {
   }
 }
 
-void Edge::MakeCertain(GameResult result, CertaintyTrigger trigger) {
+void Edge::MakeCertain(CertaintyResult certaintyResult) { // GameResult result, CertaintyTrigger trigger) {
   certainty_state_ |= kCertainMask | kUpperBound | kLowerBound;
   certainty_state_ &= kGameResultClear;
-  if (result == GameResult::WHITE_WON) {
+  if (certaintyResult.gameResult == GameResult::WHITE_WON) {
     certainty_state_ |= kGameResultWin;
-  } else if (result == GameResult::BLACK_WON) {
+  } else if (certaintyResult.gameResult == GameResult::BLACK_WON) {
     certainty_state_ |= kGameResultLoss;
   }
-  if (trigger == CertaintyTrigger::TB_HIT) certainty_state_ |= kTBHit;
-  if (trigger == CertaintyTrigger::TWO_FOLD) certainty_state_ |= kTwoFold;
+  if (certaintyResult.trigger == CertaintyTrigger::TB_HIT) certainty_state_ |= kTBHit;
+  if (certaintyResult.trigger == CertaintyTrigger::TWO_FOLD) certainty_state_ |= kTwoFold;
 }
 
 void Edge::MakeCertain(int q, CertaintyTrigger trigger) {
