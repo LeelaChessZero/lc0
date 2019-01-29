@@ -163,7 +163,11 @@ const OptionId SearchParams::kHistoryFillId{
 const OptionId SearchParams::kCertaintyPropagationId{
     "certainty-propagation", "CertaintyPropagation", 
     "Propagates certain scores more efficiently in the search tree, "
-    "proves and displays mates. Uses two-fold draw scoring."};
+    "proves and displays mates."};
+const OptionId SearchParams::kTwoFoldDrawScoringId{
+    "two-fold-draw-scoring", "TwoFoldDrawScoring",
+    "Scores two-folds as draws (0.00) in search to use visits more "
+    "efficiently. Recommended in conjunction with certainty propagation."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -198,6 +202,7 @@ void SearchParams::Populate(OptionsParser* options) {
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<BoolOption>(kCertaintyPropagationId) = false;
+  options->Add<BoolOption>(kTwoFoldDrawScoringId) = false;
 }
 
 
@@ -219,6 +224,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
       kCertaintyPropagation(options.Get<bool>(kCertaintyPropagationId.GetId())),
+      kTwoFoldDrawScoring(options.Get<bool>(kTwoFoldDrawScoringId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
