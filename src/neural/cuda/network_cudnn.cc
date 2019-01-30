@@ -170,10 +170,37 @@ class CudnnNetwork : public Network {
          << deviceProp.minor;
     int version;
     cudaRuntimeGetVersion(&version);
-    CERR << "CUDA Runtime version: " << version;
-    CERR << "Cudnn version: " << cudnnGetVersion();
+    int major = version / 1000;
+    int minor = (version - major * 1000) / 10;
+    int pl = version - major * 1000 - minor * 10;
+    CERR << "CUDA Runtime version: " << major << "." << minor << "." << pl;
+    if (version != CUDART_VERSION) {
+      major = CUDART_VERSION / 1000;
+      minor = (CUDART_VERSION - major * 1000) / 10;
+      pl = CUDART_VERSION - major * 1000 - minor * 10;
+      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+              "version "
+           << major << "." << minor << "." << pl;
+    }
+    version = cudnnGetVersion();
+    major = version / 1000;
+    minor = (version - major * 1000) / 100;
+    pl = version - major * 1000 - minor * 100;
+    CERR << "Cudnn version: " << major << "." << minor << "." << pl;
+    if (version != CUDNN_VERSION) {
+      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+              "version "
+           << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
+    }
     cudaDriverGetVersion(&version);
-    CERR << "Latest version of CUDA supported by the driver: " << version;
+    major = version / 1000;
+    minor = (version - major * 1000) / 10;
+    pl = version - major * 1000 - minor * 10;
+    CERR << "Latest version of CUDA supported by the driver: " << major << "."
+         << minor << "." << pl;
+    if (version < CUDART_VERSION) {
+      CERR << "WARNING: code was compiled with unsupported CUDA version.";
+    }
 
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support fp16 (Volta+).
