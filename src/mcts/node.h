@@ -174,7 +174,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, int multivisit, float fpu_visits);
+  void FinalizeScoreUpdate(float v, int multivisit, float value_pessimism);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.

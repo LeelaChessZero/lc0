@@ -88,7 +88,7 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  float GetFpuVisits() const { return kFpuVisits; }
+  float GetValuePessimism() const { return kValuePessimism; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -116,7 +116,7 @@ class SearchParams {
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
-  static const OptionId kFpuVisitsId;
+  static const OptionId kValuePessimismId;
 
  private:
   const OptionsDict& options_;
@@ -141,7 +141,7 @@ class SearchParams {
   const bool kOutOfOrderEval;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
-  const float kFpuVisits;
+  const float kValuePessimism;
 };
 
 }  // namespace lczero
