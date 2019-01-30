@@ -210,6 +210,9 @@ class CudnnNetwork : public Network {
       } else {
         throw Exception("Your GPU doesn't support FP16");
       }
+    } else if (deviceProp.major >= 7) {
+      CERR << "WARNING: you will probably get better performance from the "
+              "cudnn-fp16 backend.";
     }
 
     const int kNumInputPlanes = kInputPlanes;
