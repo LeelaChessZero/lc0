@@ -162,45 +162,7 @@ class CudnnNetwork : public Network {
 
     cudaDeviceProp deviceProp = {};
     cudaGetDeviceProperties(&deviceProp, gpu_id_);
-    CERR << "GPU: " << deviceProp.name;
-    CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
-         << " Gb";
-    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
-    CERR << "GPU compute capability: " << deviceProp.major << "."
-         << deviceProp.minor;
-    int version;
-    cudaRuntimeGetVersion(&version);
-    int major = version / 1000;
-    int minor = (version - major * 1000) / 10;
-    int pl = version - major * 1000 - minor * 10;
-    CERR << "CUDA Runtime version: " << major << "." << minor << "." << pl;
-    if (version != CUDART_VERSION) {
-      major = CUDART_VERSION / 1000;
-      minor = (CUDART_VERSION - major * 1000) / 10;
-      pl = CUDART_VERSION - major * 1000 - minor * 10;
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
-              "version "
-           << major << "." << minor << "." << pl;
-    }
-    version = cudnnGetVersion();
-    major = version / 1000;
-    minor = (version - major * 1000) / 100;
-    pl = version - major * 1000 - minor * 100;
-    CERR << "Cudnn version: " << major << "." << minor << "." << pl;
-    if (version != CUDNN_VERSION) {
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
-              "version "
-           << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
-    }
-    cudaDriverGetVersion(&version);
-    major = version / 1000;
-    minor = (version - major * 1000) / 10;
-    pl = version - major * 1000 - minor * 10;
-    CERR << "Latest version of CUDA supported by the driver: " << major << "."
-         << minor << "." << pl;
-    if (version < CUDART_VERSION) {
-      CERR << "WARNING: code was compiled with unsupported CUDA version.";
-    }
+    showInfo(deviceProp);
 
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support fp16 (Volta+).
@@ -210,9 +172,6 @@ class CudnnNetwork : public Network {
       } else {
         throw Exception("Your GPU doesn't support FP16");
       }
-    } else if (deviceProp.major >= 7) {
-      CERR << "WARNING: you will probably get better performance from the "
-              "cudnn-fp16 backend.";
     }
 
     const int kNumInputPlanes = kInputPlanes;
@@ -625,6 +584,52 @@ class CudnnNetwork : public Network {
         block.biases[o] = -block.bn_means[o];
         block.bn_means[o] = 0.0f;
       }
+    }
+  }
+
+  void showInfo(const cudaDeviceProp& deviceProp) const {
+    CERR << "GPU: " << deviceProp.name;
+    CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
+         << " Gb";
+    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+    CERR << "GPU compute capability: " << deviceProp.major << "."
+         << deviceProp.minor;
+    int version;
+    cudaRuntimeGetVersion(&version);
+    int major = version / 1000;
+    int minor = (version - major * 1000) / 10;
+    int pl = version - major * 1000 - minor * 10;
+    CERR << "CUDA Runtime version: " << major << "." << minor << "." << pl;
+    if (version != CUDART_VERSION) {
+      major = CUDART_VERSION / 1000;
+      minor = (CUDART_VERSION - major * 1000) / 10;
+      pl = CUDART_VERSION - major * 1000 - minor * 10;
+      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+              "version "
+           << major << "." << minor << "." << pl;
+    }
+    version = cudnnGetVersion();
+    major = version / 1000;
+    minor = (version - major * 1000) / 100;
+    pl = version - major * 1000 - minor * 100;
+    CERR << "Cudnn version: " << major << "." << minor << "." << pl;
+    if (version != CUDNN_VERSION) {
+      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+              "version "
+           << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
+    }
+    cudaDriverGetVersion(&version);
+    major = version / 1000;
+    minor = (version - major * 1000) / 10;
+    pl = version - major * 1000 - minor * 10;
+    CERR << "Latest version of CUDA supported by the driver: " << major << "."
+         << minor << "." << pl;
+    if (version < CUDART_VERSION) {
+      CERR << "WARNING: code was compiled with unsupported CUDA version.";
+    }
+    if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
+       CERR << "WARNING: you will probably get better performance from the "
+              "cudnn-fp16 backend.";
     }
   }
 };
