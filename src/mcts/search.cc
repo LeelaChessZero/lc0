@@ -815,7 +815,7 @@ void SearchWorker::GatherMinibatch() {
       ExtendNode(node);
 
       // Only send non-terminal nodes to a neural network.
-      if (!node->IsCertain() && !node->IsTerminal()) {
+      if (!node->IsCertain()) {
         picked_node.nn_queried = true;
         picked_node.is_cache_hit = AddNodeToComputation(node, true);
       }
