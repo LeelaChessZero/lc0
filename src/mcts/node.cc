@@ -192,8 +192,10 @@ void Edge::MakeCertain(int q, CertaintyTrigger trigger) {
   } else if (q == -1) {
     certainty_state_ |= kGameResultLoss;
   }
-  if (trigger == CertaintyTrigger::TB_HIT) certainty_state_ |= kTBHit;
-  if (trigger == CertaintyTrigger::TWO_FOLD) certainty_state_ |= kTwoFold;
+  if (trigger == CertaintyTrigger::TB_HIT) 
+    certainty_state_ |= kTBHit;
+  if (trigger == CertaintyTrigger::TWO_FOLD) 
+    certainty_state_ |= kTwoFold;
 }
 void Edge::SetEQ(int eq) {
   certainty_state_ &= kGameResultClear;
@@ -248,9 +250,6 @@ void Node::CreateEdges(const MoveList& moves) {
 Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
 Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
-// Recalculate n_ from real children visits.
-// This is needed if a node was proved to be certain in a prior
-// search and later gets to be root of search.
 void Node::RecomputeNfromChildren() {
   if (n_ > 1) {
     uint32_t visits = 1;

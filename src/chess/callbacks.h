@@ -69,7 +69,7 @@ struct ThinkingInfo {
   int hashfull = -1;
   // Win in centipawns.
   optional<int> score;
-  // Distance to Mate
+  // Distance to mate.
   optional<int> mate;
   // Number of successful TB probes (not the same as playouts ending in TB hit).
   int tb_hits = -1;

@@ -137,7 +137,7 @@ class Edge {
             !(certainty_state_ & ~kGameResultClear));
   };
 
-  // Returns true if certainty prove based on a TB hit.
+  // Returns true if certainty proof based on a TB hit.
   bool IsPropagatedTBHit() const { return certainty_state_ & kTBHit; };
 
   // Query bounds.
@@ -230,6 +230,9 @@ class Node {
   bool HasChildren() const { return edges_; }
 
   // Recalculate n_ from real children visits.
+  // This is needed if a node was proved to be certain in a prior
+  // search and later gets to be root of search.
+
   void RecomputeNfromChildren();
 
   // Returns sum of policy priors which have had at least one playout.
