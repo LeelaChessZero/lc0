@@ -280,7 +280,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     }
     oss << ") ";
 
-    oss << " C:" << std::bitset<8>(edge.edge()->GetCertaintyStatus());
+    oss << " C:" << std::bitset<8>(edge.edge()->GetCertaintyState());
 
     infos.emplace_back(oss.str());
   }

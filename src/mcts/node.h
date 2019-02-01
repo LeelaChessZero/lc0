@@ -145,7 +145,7 @@ class Edge {
   bool IsLBounded() const { return certainty_state_ & kLowerBound; };
 
   // Return all stats flags.
-  uint8_t GetCertaintyStatus() const { return certainty_state_; };
+  uint8_t GetCertaintyState() const { return certainty_state_; };
 
   int GetEQ() const;
 
@@ -273,7 +273,7 @@ class Node {
   }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
-  // Makes the node terminal or certain and sets it's score.
+  // Makes the node terminal or certain and sets its score.
   void MakeTerminal(GameResult result) {
     if (GetOwnEdge()) GetOwnEdge()->MakeTerminal(result);
   }
@@ -452,7 +452,7 @@ class EdgeAndNode {
     return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
   }
 
-  // Gets the edges Q, if edge is certain this
+  // Gets the edge's Q, if edge is certain this
   // is the proven game result (-1, 0, +1).
   int GetEQ() const { return edge_->GetEQ(); }
 
