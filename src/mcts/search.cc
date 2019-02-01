@@ -450,7 +450,7 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   }
   auto board = played_history_.Last().GetBoard();
   if (!syzygy_tb_ || !board.castlings().no_legal_castle() ||
-      (board.ours() + board.theirs()).count() > syzygy_tb_->max_cardinality()) {
+      (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
   return syzygy_tb_->root_probe(played_history_.Last(),
@@ -660,7 +660,8 @@ void Search::Stop() {
 
 void Search::Abort() {
   Mutex::Lock lock(counters_mutex_);
-  if (!stop_.load(std::memory_order_acquire) || !bestmove_is_sent_) {
+  if (!stop_.load(std::memory_order_acquire) ||
+      (!bestmove_is_sent_ && !ok_to_respond_bestmove_)) {
     bestmove_is_sent_ = true;
     FireStopInternal();
   }
@@ -850,15 +851,15 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
       if (!is_root_node) {
-        IncrementNInFlight(node->GetParent(), search_->root_node_, collision_limit - 1);
+        IncrementNInFlight(node->GetParent(), search_->root_node_,
+                           collision_limit - 1);
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
-        IncrementNInFlight(node, search_->root_node_, collision_limit - 1);
-        return NodeToProcess::TerminalHit(node, depth, collision_limit);
+        return NodeToProcess::TerminalHit(node, depth, 1);
       } else {
         return NodeToProcess::Extension(node, depth);
       }
@@ -996,7 +997,7 @@ void SearchWorker::ExtendNode(Node* node) {
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
         history_.Last().GetNoCaptureNoPawnPly() == 0 &&
-        (board.ours() + board.theirs()).count() <=
+        (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);

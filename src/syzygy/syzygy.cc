@@ -187,15 +187,15 @@ int count_pieces(const ChessBoard& pos, int type, bool theirs) {
     case KING:
       return 1;
     case QUEEN:
-      return (all * pos.queens()).count_few();
+      return (all & pos.queens()).count_few();
     case ROOK:
-      return (all * pos.rooks()).count_few();
+      return (all & pos.rooks()).count_few();
     case BISHOP:
-      return (all * pos.bishops()).count_few();
+      return (all & pos.bishops()).count_few();
     case KNIGHT:
       return (theirs ? pos.their_knights() : pos.our_knights()).count_few();
     case PAWN:
-      return (all * pos.pawns()).count_few();
+      return (all & pos.pawns()).count_few();
     default:
       assert(false);
   }
@@ -208,15 +208,15 @@ BitBoard pieces(const ChessBoard& pos, int type, bool theirs) {
     case KING:
       return theirs ? pos.their_king() : pos.our_king();
     case QUEEN:
-      return all * pos.queens();
+      return all & pos.queens();
     case ROOK:
-      return all * pos.rooks();
+      return all & pos.rooks();
     case BISHOP:
-      return all * pos.bishops();
+      return all & pos.bishops();
     case KNIGHT:
       return theirs ? pos.their_knights() : pos.our_knights();
     case PAWN:
-      return all * pos.pawns();
+      return all & pos.pawns();
     default:
       assert(false);
   }
