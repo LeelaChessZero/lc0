@@ -454,6 +454,7 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
     return false;
   }
   return syzygy_tb_->root_probe(played_history_.Last(),
+                                params_.GetSyzygyFastPlay() ||
                                 played_history_.DidRepeatSinceLastZeroingMove(),
                                 root_moves) ||
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
