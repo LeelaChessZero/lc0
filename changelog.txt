@@ -1,3 +1,9 @@
+v0.20.2 (2019-02-01)
+~~~~~~~
+
+* Favor winning moves that minimize DTZ to reduce shuffling by assuming repeated position by default (#708)
+* Print cuda and gpu info, warn if mismatches are noticed (#711)
+
 v0.20.2-rc1 (2019-01-27)
 ~~~~~~~~~~~
 
