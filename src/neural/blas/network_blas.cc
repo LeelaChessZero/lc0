@@ -233,7 +233,7 @@ void BlasComputation::ComputeBlocking() {
           nullptr, false);
 
       // Mapping from convolutional policy to lc0 policy
-      for (auto batch = 0; batch < batch_size; batch++) {
+      for (auto batch = size_t{0}; batch < batch_size; batch++) {
         for (auto i = 0; i < kPolicyUsedPlanes * kSquares; i++) {
           auto j = kConvPolicyMap[i];
           if (j >= 0) {
