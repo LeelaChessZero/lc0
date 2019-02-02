@@ -198,6 +198,8 @@ class CudnnNetwork : public Network {
     }
     if (conv_policy_) {
       processConvBlock(weights.policy1, true, 1);
+      // weights.policy doesn't have batch norm with convolutional policy
+      // so no need to call processConvBlock for it.
     } else {
       processConvBlock(weights.policy, true, 1);
     }
