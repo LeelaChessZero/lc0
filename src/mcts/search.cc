@@ -280,7 +280,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     }
     oss << ") ";
 
-    oss << " C:" << std::bitset<8>(edge.edge()->GetCertaintyStatus());
+    oss << " C:" << std::bitset<8>(edge.edge()->GetCertaintyState());
 
     infos.emplace_back(oss.str());
   }
@@ -524,7 +524,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   }
   // Best child is selected using the following criteria:
   // with Certainty Propagation:
-  // * Prefer certain wins, avoid certain losses
+  // * Prefer terminal wins, then certain wins.
+  // * Avoid losses, but prefer certain losses over terminal losses.
   // Otherwise:
   // * Largest number of playouts.
   // * If two nodes have equal number:
@@ -539,9 +540,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
       continue;
     }
     edges.emplace_back((params_.GetCertaintyPropagation())
-                           ? edge.edge()->GetEQ() * (edge.IsTerminal()+1)
-            : 0,
-        edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+                           ? edge.edge()->GetEQ() * (edge.IsTerminal() + 1)
+                           : 0,
+                       edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
   // In case of certain draws, insert
   // these draws at first N (descending) where Q<=0.
@@ -814,7 +815,7 @@ void SearchWorker::GatherMinibatch() {
       // Node was never visited, extend it.
       ExtendNode(node);
 
-      // Only send non-terminal nodes to a neural network.
+      // Only send uncertain nodes to a neural network.
       if (!node->IsCertain()) {
         picked_node.nn_queried = true;
         picked_node.is_cache_hit = AddNodeToComputation(node, true);
@@ -972,7 +973,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       if (params_.GetCertaintyPropagation()) {
         // Prefers lower bounded childs over drawing children.
         if (child.edge()->IsOnlyLBounded() && child.GetQ(0) <= 0.0f) Q = 0.01f;
-        // Perfers drawing children over upper bounded childs.
+        // Prefers drawing children over upper bounded childs.
         if (child.edge()->IsOnlyUBounded() && child.GetQ(0) >= 0.0f) Q = -0.01f;
         // Penalize exploring suboptimal childs throughout the tree.
         if (parent_upperbounded) {
