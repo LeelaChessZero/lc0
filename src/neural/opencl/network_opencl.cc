@@ -351,13 +351,27 @@ class OpenCLNetwork : public Network {
 std::unique_ptr<Network> MakeOpenCLNetwork(const WeightsFile& weights,
                                            const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE) {
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
         " is not supported by OpenCL backend.");
+  }
+  if (weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CLASSICAL &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by OpenCL backend.");
+  }
+  if (weights.format().network_format().value() !=
+      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by OpenCL backend.");
   }
   return std::make_unique<OpenCLNetwork>(weights, options);
 }

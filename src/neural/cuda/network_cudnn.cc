@@ -35,9 +35,9 @@
 #include "layers.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
+#include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
-#include "neural/shared/policy_map.h"
 
 //#define DEBUG_RAW_NPS
 
@@ -318,7 +318,7 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(conv2));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
-        getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
+          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
       policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
 
       network_.emplace_back(std::move(policymap));
@@ -669,13 +669,27 @@ template <typename DataType>
 std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
                                           const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE) {
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
         " is not supported by CuDNN backend.");
+  }
+  if (weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CLASSICAL &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by CuDNN backend.");
+  }
+  if (weights.format().network_format().value() !=
+      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by CuDNN backend.");
   }
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }

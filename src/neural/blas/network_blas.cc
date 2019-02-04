@@ -407,13 +407,27 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
 std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                                          const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE) {
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
         " is not supported by BLAS backend.");
+  }
+  if (weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CLASSICAL &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by BLAS backend.");
+  }
+  if (weights.format().network_format().value() !=
+      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by BLAS backend.");
   }
   return std::make_unique<BlasNetwork>(weights, options);
 }
