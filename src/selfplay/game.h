@@ -56,6 +56,11 @@ struct PlayerOptions {
   SelfPlayLimits search_limits;
 };
 
+struct ResumableGame {
+  std::shared_ptr<NodeTree> tree[2];
+  bool blacks_move;
+};
+
 // Plays a single game vs itself.
 class SelfPlayGame {
  public:
