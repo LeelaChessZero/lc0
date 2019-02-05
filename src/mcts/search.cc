@@ -437,6 +437,12 @@ std::pair<Move, Move> Search::GetBestMove() {
           final_pondermove_.GetMove(!played_history_.IsBlackToMove())};
 }
 
+Move Search::GetBestMoveNoTemp() {
+  SharedMutex::Lock lock(nodes_mutex_);
+  auto best_move = GetBestChildNoTemperature(root_node_);
+  return best_move.GetMove(played_history_.IsBlackToMove());
+}
+
 std::int64_t Search::GetTotalPlayouts() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   return total_playouts_;
