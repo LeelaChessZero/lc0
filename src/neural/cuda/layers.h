@@ -24,6 +24,11 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#pragma once
+
+#include <cstddef>
+#include <cublas_v2.h>
+#include <cudnn.h>
 
 namespace lczero {
 namespace cudnn_backend {

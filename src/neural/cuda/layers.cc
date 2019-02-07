@@ -24,12 +24,12 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#include "layers.h"
 #include <cassert>
 #include <cstring>
 #include <vector>
 #include "cuda_common.h"
 #include "kernels.h"
-#include "layers.h"
 namespace lczero {
 namespace cudnn_backend {
 
@@ -603,14 +603,16 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
 
 template <typename DataType>
 void PolicyMapLayer<DataType>::Eval(int N, DataType* output_tensor,
-                          const DataType* input_tensor, const DataType* /*input2*/,
-                          void* /*scratch*/, size_t /*scratch_size*/,
-                          cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/) {
-
-    int inputSize = this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
-    int outputSize = this->C * this->H * this->W;
-    PolicyMap(N, output_tensor, input_tensor, weights_,
-        inputSize, usedSize, outputSize);
+                                    const DataType* input_tensor,
+                                    const DataType* /*input2*/,
+                                    void* /*scratch*/, size_t /*scratch_size*/,
+                                    cudnnHandle_t /*cudnn*/,
+                                    cublasHandle_t /*cublas*/) {
+  int inputSize =
+      this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
+  int outputSize = this->C * this->H * this->W;
+  PolicyMap(N, output_tensor, input_tensor, weights_, inputSize, usedSize,
+            outputSize);
 }
 
 template <typename DataType>

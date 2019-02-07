@@ -49,14 +49,12 @@ void copyTypeConverted(DstType* op, SrcType* ip, int N);
 
 // Perform batch normilization.
 template <typename T>
-void batchNorm(T* output, const T* input, const T* skipInput, int N,
-               int C, int H, int W, float* means, float* var_multipliers,
-               bool relu);
+void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
+               int H, int W, float* means, float* var_multipliers, bool relu);
 
 // Unpack planes (input to network).
 void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
                             const float* values, int n);
-
 
 void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
                             const float* values, int n);
@@ -78,8 +76,7 @@ void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
 
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
-        int inputSize, int usedSize, int outputSize);
+               int inputSize, int usedSize, int outputSize);
 
 }  // namespace cudnn_backend
 }  // namespace lczero
-
