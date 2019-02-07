@@ -228,8 +228,14 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   std::list<std::unique_ptr<SelfPlayGame>>::iterator game_iter;
   {
     Mutex::Lock lock(mutex_);
-    games_.emplace_front(
-        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
+    if (resumable_games_.empty()) {
+      games_.emplace_front(
+          std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
+    } else {
+      games_.emplace_front(std::make_unique<SelfPlayGame>(
+          options[0], options[1], resumable_games_.front()));
+      resumable_games_.pop();
+    }
     game_iter = games_.begin();
   }
   auto& game = **game_iter;
@@ -238,8 +244,17 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
 
   // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining,
-            enable_resign);
+  auto new_resumable_games = game.Play(
+      kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining, enable_resign);
+
+  // Add all of the resulting sub-games the list of resumable sub-games.
+  {
+    Mutex::Lock lock(mutex_);
+    while (!new_resumable_games.empty()) {
+      resumable_games_.push(new_resumable_games.front());
+      new_resumable_games.pop();
+    }
+  }
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {

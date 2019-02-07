@@ -76,6 +76,7 @@ class SelfPlayTournament {
   // Abort(). Stored as list and not vector so that threads can keep iterators
   // to them and not worry that it becomes invalid.
   std::list<std::unique_ptr<SelfPlayGame>> games_ GUARDED_BY(mutex_);
+  std::queue<ResumableGame> resumable_games_ GUARDED_BY(mutex_);
   // Place to store tournament stats.
   TournamentInfo tournament_info_ GUARDED_BY(mutex_);
 

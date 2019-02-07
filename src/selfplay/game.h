@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <queue>
+
 #include "chess/position.h"
 #include "chess/uciloop.h"
 #include "mcts/search.h"
@@ -69,13 +71,14 @@ class SelfPlayGame {
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
   SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree);
+  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, ResumableGame game_to_resume);
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
 
   // Starts the game and blocks until the game is finished.
-  void Play(int white_threads, int black_threads, bool training,
-            bool enable_resign = true);
+  std::queue<ResumableGame> Play(int white_threads, int black_threads,
+                                 bool training, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
@@ -95,6 +98,7 @@ class SelfPlayGame {
   // Node tree for player1 and player2. If the tree is shared between players,
   // tree_[0] == tree_[1].
   std::shared_ptr<NodeTree> tree_[2];
+  bool blacks_move_;
 
   // Search that is currently in progress. Stored in members so that Abort()
   // can stop it.
