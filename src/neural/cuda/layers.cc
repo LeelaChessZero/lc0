@@ -24,14 +24,19 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#include <cassert>
+#include <cstring>
+#include <vector>
 #include "cuda_common.h"
 #include "kernels.h"
 #include "layers.h"
-#include <cassert>
-#include <cstring>
-
 namespace lczero {
 namespace cudnn_backend {
+
+// Use Single kernel for entire SE operation.
+// Right now supported only for fp16 and it's quite a bit faster
+// than using multiple passes. The flag can be set to false for debugging.
+static constexpr bool kUseFusedSELayer = true;
 
 template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
@@ -112,7 +117,7 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
         cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH));
 
   // TODO: dynamic selection of algorithm!
-  if ((C > 32) && (!fp16)) {
+  if ((C > 32) && (!fp16) && (filter_size_ > 1)) {
     conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
   } else {
     conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
@@ -253,14 +258,197 @@ void BNLayer<float>::Eval(int N, float* output, const float* input,
                           const float* input2, void* /*scratch*/,
                           size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
                           cublasHandle_t /*cublas*/) {
-  batchNorm(output, input, input2, N, C, H, W, means_, variances_,
-                   use_relu_);
+  batchNorm(output, input, input2, N, C, H, W, means_, variances_, use_relu_);
 }
 
 template <typename DataType>
 BNLayer<DataType>::~BNLayer() {
   ReportCUDAErrors(cudaFree(means_));
   ReportCUDAErrors(cudaFree(variances_));
+}
+
+template <typename DataType>
+SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
+                           bool addPrevLayerBias)
+    : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip),
+      numFc1Out_(fc1Outputs),
+      addPrevLayerBias_(addPrevLayerBias) {
+  ReportCUDAErrors(cudaMalloc(&w1_, C * numFc1Out_ * sizeof(DataType)));
+  ReportCUDAErrors(cudaMalloc(&w2_, 2 * C * numFc1Out_ * sizeof(DataType)));
+
+  ReportCUDAErrors(cudaMalloc(&b1_, numFc1Out_ * sizeof(DataType)));
+  ReportCUDAErrors(cudaMalloc(&b2_, 2 * C * sizeof(DataType)));
+
+  ReportCUDAErrors(cudaMalloc(&bPrev_, C * sizeof(DataType)));
+}
+
+template <typename DataType>
+SELayer<DataType>::~SELayer() {
+  ReportCUDAErrors(cudaFree(w1_));
+  ReportCUDAErrors(cudaFree(w2_));
+  ReportCUDAErrors(cudaFree(b1_));
+  ReportCUDAErrors(cudaFree(b2_));
+  ReportCUDAErrors(cudaFree(bPrev_));
+}
+
+template <>
+void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
+                                 float* prevLayerBias, void* /*scratch*/) {
+  size_t num_weights1 = C * numFc1Out_;
+  size_t weight_size1 = sizeof(float) * num_weights1;
+
+  size_t weight_size2 = 2 * weight_size1;
+
+  // Weight for the first FC layer.
+  ReportCUDAErrors(
+      cudaMemcpyAsync(w1_, w1, weight_size1, cudaMemcpyHostToDevice));
+
+  // Weight for the second FC layer.
+  ReportCUDAErrors(
+      cudaMemcpyAsync(w2_, w2, weight_size2, cudaMemcpyHostToDevice));
+
+  // Bias for the first FC layer.
+  ReportCUDAErrors(cudaMemcpyAsync(b1_, b1, numFc1Out_ * sizeof(float),
+                                   cudaMemcpyHostToDevice));
+
+  // Bias for the second FC layer.
+  ReportCUDAErrors(
+      cudaMemcpyAsync(b2_, b2, 2 * C * sizeof(float), cudaMemcpyHostToDevice));
+
+  // Bias for previous layer (Convolution).
+  if (prevLayerBias) {
+    ReportCUDAErrors(cudaMemcpyAsync(bPrev_, prevLayerBias, C * sizeof(float),
+                                     cudaMemcpyHostToDevice));
+  }
+}
+
+void cpuTranspose(float* op, float* ip, int rows, int cols) {
+  for (int i = 0; i < rows; i++)
+    for (int j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
+}
+
+template <>
+void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
+                                float* prevLayerBias, void* scratch) {
+  size_t num_weights1 = C * numFc1Out_;
+  size_t weight_size1 = sizeof(float) * num_weights1;
+
+  size_t num_weights2 = 2 * num_weights1;
+  size_t weight_size2 = 2 * weight_size1;
+
+  // Transpose the weight matrices for the fused path.
+  std::vector<float> temp(weight_size2);
+
+  // Weight for the first FC layer.
+  if (kUseFusedSELayer) {
+    cpuTranspose(temp.data(), w1, numFc1Out_, C);
+    ReportCUDAErrors(cudaMemcpyAsync(scratch, temp.data(), weight_size1,
+                                     cudaMemcpyHostToDevice));
+  } else {
+    ReportCUDAErrors(
+        cudaMemcpyAsync(scratch, w1, weight_size1, cudaMemcpyHostToDevice));
+  }
+  copyTypeConverted((half*)w1_, (float*)scratch, num_weights1);
+
+  // Weight for the second FC layer.
+  if (kUseFusedSELayer) {
+    cpuTranspose(temp.data(), w2, 2 * C, numFc1Out_);
+    ReportCUDAErrors(cudaMemcpyAsync(scratch, temp.data(), weight_size2,
+                                     cudaMemcpyHostToDevice));
+  } else {
+    ReportCUDAErrors(
+        cudaMemcpyAsync(scratch, w2, weight_size2, cudaMemcpyHostToDevice));
+  }
+  copyTypeConverted((half*)w2_, (float*)scratch, num_weights2);
+
+  // Bias for the first FC layer.
+  ReportCUDAErrors(cudaMemcpyAsync(scratch, b1, numFc1Out_ * sizeof(float),
+                                   cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)b1_, (float*)scratch, numFc1Out_);
+
+  // Bias for the second FC layer.
+  ReportCUDAErrors(cudaMemcpyAsync(scratch, b2, 2 * C * sizeof(float),
+                                   cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)b2_, (float*)scratch, 2 * C);
+
+  // Bias for previous layer (Convolution).
+  if (prevLayerBias) {
+    ReportCUDAErrors(cudaMemcpyAsync(scratch, prevLayerBias, C * sizeof(float),
+                                     cudaMemcpyHostToDevice));
+    copyTypeConverted((half*)bPrev_, (float*)scratch, C);
+  }
+}
+
+template <>
+void SELayer<float>::Eval(int N, float* output, const float* input,
+                          const float* /*input2*/, void* scratch,
+                          size_t scratch_size, cudnnHandle_t /*cudnn*/,
+                          cublasHandle_t cublas) {
+  // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
+  float* op1 = (float*)scratch;
+  float* op2 = (float*)scratch + scratch_size / sizeof(float) / 2;
+
+  // 1. Global avg pooling (also adds previous layer bias before computing
+  // averages).
+  globalAvgPool(N, C, op2, input, bPrev_);
+
+  // 2. First fully connected layer.
+  float alpha = 1.0f, beta = 0.0f;
+  ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numFc1Out_,
+                                 N, C, &alpha, w1_, C, op2, C, &beta, op1,
+                                 numFc1Out_));
+  addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, true,
+             false, false);
+
+  // 3. Second fully connected layer.
+  ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
+                                 numFc1Out_, &alpha, w2_, numFc1Out_, op1,
+                                 numFc1Out_, &beta, op2, 2 * C));
+  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false);
+
+  // 4. (Optional prev layer bias add), Global scale, residual add, relu and
+  // bias.
+  globalScale(N, C, output, input, op2, bPrev_);
+}
+
+template <>
+void SELayer<half>::Eval(int N, half* output, const half* input,
+                         const half* input2, void* scratch, size_t scratch_size,
+                         cudnnHandle_t /*cudnn*/, cublasHandle_t cublas) {
+  if (kUseFusedSELayer) {
+    Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_, b1_, w2_, b2_,
+                 bPrev_);
+  } else {
+    assert(output == input2);
+    // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
+    half* op1 = (half*)scratch;
+    half* op2 = (half*)scratch + scratch_size / sizeof(half) / 2;
+
+    // 1. Global avg pooling (also adds previous layer bias before computing
+    // averages).
+    globalAvgPool(N, C, op2, input, bPrev_);
+
+    // 2. First fully connected layer.
+    __half_raw one_h{0x3C00};
+    __half_raw zero_h{0};
+    half alpha = one_h;
+    half beta = zero_h;
+    ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numFc1Out_,
+                                   N, C, &alpha, w1_, C, op2, C, &beta, op1,
+                                   numFc1Out_));
+    addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, true,
+               false, false);
+
+    // 3. Second fully connected layer.
+    ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
+                                   numFc1Out_, &alpha, w2_, numFc1Out_, op1,
+                                   numFc1Out_, &beta, op2, 2 * C));
+    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false);
+
+    // 4. (Optional prev layer bias add), Global scale, residual add, relu and
+    // bias.
+    globalScale(N, C, output, input, op2, bPrev_);
+  }
 }
 
 template <typename DataType>
@@ -333,12 +521,10 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   // half alpha = float2half_rn(1.0f), beta = float2half_rn(0.0f);
-  std::uint16_t one_h = 0x3c00;
-  std::uint16_t zero_h = 0;
-  half alpha;
-  half beta;
-  memcpy(&alpha, &one_h, sizeof(half));
-  memcpy(&beta, &zero_h, sizeof(half));
+  __half_raw one_h{0x3C00};
+  __half_raw zero_h{0};
+  half alpha = one_h;
+  half beta = zero_h;
   ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
                                  N, num_inputs, &alpha, weights_, num_inputs,
                                  input_tensor, num_inputs, &beta, output_tensor,
@@ -378,8 +564,7 @@ FCLayer<DataType>::~FCLayer() {
   ReportCUDAErrors(cudaFree(biases_));
 }
 
-
-// Template instantiation
+// Template instantiation.
 template class ConvLayer<half>;
 template class ConvLayer<float>;
 
@@ -392,7 +577,10 @@ template class BNLayer<float>;
 template class SoftMaxLayer<half>;
 template class SoftMaxLayer<float>;
 
-// misc error handling stuff
+template class SELayer<half>;
+template class SELayer<float>;
+
+// Misc error handling stuff.
 void CudnnError(cudnnStatus_t status, const char* file, const int& line) {
   if (status != CUDNN_STATUS_SUCCESS) {
     char message[128];

@@ -33,6 +33,11 @@
 #include <sstream>
 #include "utils/exception.h"
 
+#if not defined(NO_PEXT)
+// Include header for pext instruction.
+#include <immintrin.h>
+#endif
+
 namespace lczero {
 
 using std::string;
@@ -180,14 +185,257 @@ static const Move::Promotion kPromotions[] = {
     Move::Promotion::Knight,
 };
 
+// Magic bitboard routines and structures.
+// We use so-called "fancy" magic bitboards.
+
+// Structure holding all relevant magic parameters per square.
+struct MagicParams {
+  // Relevant occupancy mask.
+  uint64_t mask_;
+  // Pointer to lookup table.
+  BitBoard* attacks_table_;
+#if defined(NO_PEXT)
+  // Magic number.
+  uint64_t magic_number_;
+  // Number of bits to shift.
+  uint8_t shift_bits_;
+#endif
+};
+
+#if defined(NO_PEXT)
+// Magic numbers determined via trial and error with random number generator
+// such that the number of relevant occupancy bits suffice to index the attacks
+// tables with only constructive collisions.
+static const BitBoard kRookMagicNumbers[] = {
+    0x088000102088C001ULL, 0x10C0200040001000ULL, 0x83001041000B2000ULL,
+    0x0680280080041000ULL, 0x488004000A080080ULL, 0x0100180400010002ULL,
+    0x040001C401021008ULL, 0x02000C04A980C302ULL, 0x0000800040082084ULL,
+    0x5020C00820025000ULL, 0x0001002001044012ULL, 0x0402001020400A00ULL,
+    0x00C0800800040080ULL, 0x4028800200040080ULL, 0x00A0804200802500ULL,
+    0x8004800040802100ULL, 0x0080004000200040ULL, 0x1082810020400100ULL,
+    0x0020004010080040ULL, 0x2004818010042800ULL, 0x0601010008005004ULL,
+    0x4600808002001400ULL, 0x0010040009180210ULL, 0x020412000406C091ULL,
+    0x040084228000C000ULL, 0x8000810100204000ULL, 0x0084110100402000ULL,
+    0x0046001A00204210ULL, 0x2001040080080081ULL, 0x0144020080800400ULL,
+    0x0840108400080229ULL, 0x0480308A0000410CULL, 0x0460324002800081ULL,
+    0x620080A001804000ULL, 0x2800802000801006ULL, 0x0002809000800800ULL,
+    0x4C09040080802800ULL, 0x4808800C00800200ULL, 0x0200311004001802ULL,
+    0x0400008402002141ULL, 0x0410800140008020ULL, 0x000080C001050020ULL,
+    0x004080204A020010ULL, 0x0224201001010038ULL, 0x0109001108010004ULL,
+    0x0282004844020010ULL, 0x8228180110040082ULL, 0x0001000080C10002ULL,
+    0x024000C120801080ULL, 0x0001406481060200ULL, 0x0101243200418600ULL,
+    0x0108800800100080ULL, 0x4022080100100D00ULL, 0x0000843040600801ULL,
+    0x8301000200CC0500ULL, 0x1000004500840200ULL, 0x1100104100800069ULL,
+    0x2001008440001021ULL, 0x2002008830204082ULL, 0x0010145000082101ULL,
+    0x01A2001004200842ULL, 0x1007000608040041ULL, 0x000A08100203028CULL,
+    0x02D4048040290402ULL};
+static const BitBoard kBishopMagicNumbers[] = {
+    0x0008201802242020ULL, 0x0021040424806220ULL, 0x4006360602013080ULL,
+    0x0004410020408002ULL, 0x2102021009001140ULL, 0x08C2021004000001ULL,
+    0x6001031120200820ULL, 0x1018310402201410ULL, 0x401CE00210820484ULL,
+    0x001029D001004100ULL, 0x2C00101080810032ULL, 0x0000082581000010ULL,
+    0x10000A0210110020ULL, 0x200002016C202000ULL, 0x0201018821901000ULL,
+    0x006A0300420A2100ULL, 0x0010014005450400ULL, 0x1008C12008028280ULL,
+    0x00010010004A0040ULL, 0x3000820802044020ULL, 0x0000800405A02820ULL,
+    0x8042004300420240ULL, 0x10060801210D2000ULL, 0x0210840500511061ULL,
+    0x0008142118509020ULL, 0x0021109460040104ULL, 0x00A1480090019030ULL,
+    0x0102008808008020ULL, 0x884084000880E001ULL, 0x040041020A030100ULL,
+    0x3000810104110805ULL, 0x04040A2006808440ULL, 0x0044040404C01100ULL,
+    0x4122B80800245004ULL, 0x0044020502380046ULL, 0x0100400888020200ULL,
+    0x01C0002060020080ULL, 0x4008811100021001ULL, 0x8208450441040609ULL,
+    0x0408004900008088ULL, 0x0294212051220882ULL, 0x000041080810E062ULL,
+    0x10480A018E005000ULL, 0x80400A0204201600ULL, 0x2800200204100682ULL,
+    0x0020200400204441ULL, 0x0A500600A5002400ULL, 0x801602004A010100ULL,
+    0x0801841008040880ULL, 0x10010880C4200028ULL, 0x0400004424040000ULL,
+    0x0401000142022100ULL, 0x00A00010020A0002ULL, 0x1010400204010810ULL,
+    0x0829910400840000ULL, 0x0004235204010080ULL, 0x1002008143082000ULL,
+    0x11840044440C2080ULL, 0x2802A02104030440ULL, 0x6100000900840401ULL,
+    0x1C20A15A90420200ULL, 0x0088414004480280ULL, 0x0000204242881100ULL,
+    0x0240080802809010ULL};
+#endif
+
+// Magic parameters for rooks/bishops.
+static MagicParams rook_magic_params[64];
+static MagicParams bishop_magic_params[64];
+
+// Precomputed attacks bitboard tables.
+static BitBoard rook_attacks_table[102400];
+static BitBoard bishop_attacks_table[5248];
+
+// Builds rook or bishop attacks table.
+static void BuildAttacksTable(MagicParams* magic_params,
+                              BitBoard* attacks_table,
+                              const std::pair<int, int>* directions) {
+  // Offset into lookup table.
+  uint32_t table_offset = 0;
+
+  // Initialize for all board squares.
+  for (unsigned square = 0; square < 64; square++) {
+    const BoardSquare b_sq(square);
+
+    // Calculate relevant occupancy masks.
+    BitBoard mask = {0};
+
+    for (int j = 0; j < 4; j++) {
+      auto direction = directions[j];
+      auto dst_row = b_sq.row();
+      auto dst_col = b_sq.col();
+      while (true) {
+        dst_row += direction.first;
+        dst_col += direction.second;
+        // If the next square in this direction is invalid, the current square
+        // is at the board's edge and should not be added.
+        if (!BoardSquare::IsValid(dst_row + direction.first,
+                                  dst_col + direction.second))
+          break;
+        const BoardSquare destination(dst_row, dst_col);
+        mask.set(destination);
+      }
+    }
+
+    // Set mask.
+    magic_params[square].mask_ = mask.as_int();
+
+    // Cache relevant occupancy board squares.
+    std::vector<BoardSquare> occupancy_squares;
+
+    for (auto occ_sq : BitBoard(magic_params[square].mask_)) {
+      occupancy_squares.emplace_back(occ_sq);
+    }
+
+#if defined(NO_PEXT)
+    // Set number of shifted bits. The magic numbers have been chosen such that
+    // the number of relevant occupancy bits suffice to index the attacks table.
+    magic_params[square].shift_bits_ = 64 - occupancy_squares.size();
+#endif
+
+    // Set pointer to lookup table.
+    magic_params[square].attacks_table_ = &attacks_table[table_offset];
+
+    // Clear attacks table (used for sanity check later on).
+    for (int i = 0; i < (1 << occupancy_squares.size()); i++) {
+      attacks_table[table_offset + i] = 0;
+    }
+
+    // Build square attacks table for every possible relevant occupancy
+    // bitboard.
+    for (int i = 0; i < (1 << occupancy_squares.size()); i++) {
+      BitBoard occupancy(0);
+
+      for (size_t bit = 0; bit < occupancy_squares.size(); bit++) {
+        occupancy.set_if(occupancy_squares[bit], (1 << bit) & i);
+      }
+
+      // Calculate attacks bitboard corresponding to this occupancy bitboard.
+      BitBoard attacks(0);
+
+      for (int j = 0; j < 4; j++) {
+        auto direction = directions[j];
+        auto dst_row = b_sq.row();
+        auto dst_col = b_sq.col();
+        while (true) {
+          dst_row += direction.first;
+          dst_col += direction.second;
+          if (!BoardSquare::IsValid(dst_row, dst_col)) break;
+          const BoardSquare destination(dst_row, dst_col);
+          attacks.set(destination);
+          if (occupancy.get(destination)) break;
+        }
+      }
+
+#if defined(NO_PEXT)
+      // Calculate magic index.
+      uint64_t index = occupancy.as_int();
+      index *= magic_params[square].magic_number_;
+      index >>= magic_params[square].shift_bits_;
+
+      // Sanity check. The magic numbers have been chosen such that
+      // the number of relevant occupancy bits suffice to index the attacks
+      // table. If the table already contains an attacks bitboard, possible
+      // collisions should be constructive.
+      if (attacks_table[table_offset + index] != 0 &&
+          attacks_table[table_offset + index] != attacks) {
+        throw Exception("Invalid magic number!");
+      }
+#else
+      uint64_t index =
+          _pext_u64(occupancy.as_int(), magic_params[square].mask_);
+#endif
+
+      // Update table.
+      attacks_table[table_offset + index] = attacks;
+    }
+
+    // Update table offset.
+    table_offset += (1 << occupancy_squares.size());
+  }
+}
+
+// Returns the rook attacks bitboard for the given rook board square and the
+// given occupied piece bitboard.
+static inline BitBoard GetRookAttacks(const BoardSquare rook_square,
+                                      const BitBoard pieces) {
+  // Calculate magic index.
+  const uint8_t square = rook_square.as_int();
+
+#if defined(NO_PEXT)
+  uint64_t index = pieces.as_int() & rook_magic_params[square].mask_;
+  index *= rook_magic_params[square].magic_number_;
+  index >>= rook_magic_params[square].shift_bits_;
+#else
+  uint64_t index = _pext_u64(pieces.as_int(), rook_magic_params[square].mask_);
+#endif
+
+  // Return attacks bitboard.
+  return rook_magic_params[square].attacks_table_[index];
+}
+
+// Returns the bishop attacks bitboard for the given bishop board square and
+// the given occupied piece bitboard.
+static inline BitBoard GetBishopAttacks(const BoardSquare bishop_square,
+                                        const BitBoard pieces) {
+  // Calculate magic index.
+  const uint8_t square = bishop_square.as_int();
+
+#if defined(NO_PEXT)
+  uint64_t index = pieces.as_int() & bishop_magic_params[square].mask_;
+  index *= bishop_magic_params[square].magic_number_;
+  index >>= bishop_magic_params[square].shift_bits_;
+#else
+  uint64_t index =
+      _pext_u64(pieces.as_int(), bishop_magic_params[square].mask_);
+#endif
+
+  // Return attacks bitboard.
+  return bishop_magic_params[square].attacks_table_[index];
+}
+
 }  // namespace
 
-BitBoard ChessBoard::pawns() const { return pawns_ * kPawnMask; }
+void InitializeMagicBitboards() {
+#if defined(NO_PEXT)
+  // Set magic numbers for all board squares.
+  for (unsigned square = 0; square < 64; square++) {
+    rook_magic_params[square].magic_number_ =
+        kRookMagicNumbers[square].as_int();
+    bishop_magic_params[square].magic_number_ =
+        kBishopMagicNumbers[square].as_int();
+  }
+#endif
+
+  // Build attacks tables.
+  BuildAttacksTable(rook_magic_params, rook_attacks_table, kRookDirections);
+  BuildAttacksTable(bishop_magic_params, bishop_attacks_table,
+                    kBishopDirections);
+}
+
+BitBoard ChessBoard::pawns() const { return pawns_ & kPawnMask; }
 
 BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
+  result.reserve(60);
   for (auto source : our_pieces_) {
     // King
     if (source == our_king_) {
@@ -249,40 +497,26 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     // Rook (and queen)
     if (rooks_.get(source)) {
       processed_piece = true;
-      for (const auto& direction : kRookDirections) {
-        auto dst_row = source.row();
-        auto dst_col = source.col();
-        while (true) {
-          dst_row += direction.first;
-          dst_col += direction.second;
-          if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-          const BoardSquare destination(dst_row, dst_col);
-          if (our_pieces_.get(destination)) break;
-          result.emplace_back(source, destination);
-          if (their_pieces_.get(destination)) break;
-        }
+      BitBoard attacked =
+          GetRookAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
+
+      for (const auto& destination : attacked) {
+        result.emplace_back(source, destination);
       }
     }
     // Bishop (and queen)
     if (bishops_.get(source)) {
       processed_piece = true;
-      for (const auto& direction : kBishopDirections) {
-        auto dst_row = source.row();
-        auto dst_col = source.col();
-        while (true) {
-          dst_row += direction.first;
-          dst_col += direction.second;
-          if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-          const BoardSquare destination(dst_row, dst_col);
-          if (our_pieces_.get(destination)) break;
-          result.emplace_back(source, destination);
-          if (their_pieces_.get(destination)) break;
-        }
+      BitBoard attacked =
+          GetBishopAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
+
+      for (const auto& destination : attacked) {
+        result.emplace_back(source, destination);
       }
     }
     if (processed_piece) continue;
     // Pawns.
-    if ((pawns_ * kPawnMask).get(source)) {
+    if ((pawns_ & kPawnMask).get(source)) {
       // Moves forward.
       {
         const auto dst_row = source.row() + 1;
@@ -336,8 +570,8 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     }
     // Knight.
     {
-      for (const auto destination : kKnightAttacks[source.as_int()]) {
-        if (our_pieces_.get(destination)) continue;
+      for (const auto destination :
+           kKnightAttacks[source.as_int()] - our_pieces_) {
         result.emplace_back(source, destination);
       }
     }
@@ -378,7 +612,7 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // Remove en passant flags.
-  pawns_ *= kPawnMask;
+  pawns_ &= kPawnMask;
 
   // If pawn was moved, reset 50 move draw counter.
   reset_50_moves |= pawns_.get(from);
@@ -404,9 +638,6 @@ bool ChessBoard::ApplyMove(Move move) {
     }
     return reset_50_moves;
   }
-
-  // Now destination square for our piece is known.
-  our_pieces_.set(to);
 
   // Promotion
   if (move.promotion() != Move::Promotion::None) {
@@ -446,7 +677,7 @@ bool ChessBoard::ApplyMove(Move move) {
   // Set en passant flag.
   if (to_row - from_row == 2 && pawns_.get(to)) {
     BoardSquare ep_sq(to_row - 1, to_col);
-    if (kPawnAttacks[ep_sq.as_int()].intersects(their_pieces_ * pawns_)) {
+    if (kPawnAttacks[ep_sq.as_int()].intersects(their_pieces_ & pawns_)) {
       pawns_.set(0, to_col);
     }
   }
@@ -456,74 +687,165 @@ bool ChessBoard::ApplyMove(Move move) {
 bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   const int row = square.row();
   const int col = square.col();
-  // Check king
+  // Check king.
   {
     const int krow = their_king_.row();
     const int kcol = their_king_.col();
     if (std::abs(krow - row) <= 1 && std::abs(kcol - col) <= 1) return true;
   }
-  // Check Rooks (and queen)
-  if (kRookAttacks[square.as_int()].intersects(their_pieces_ * rooks_)) {
-    for (const auto& direction : kRookDirections) {
-      auto dst_row = row;
-      auto dst_col = col;
-      while (true) {
-        dst_row += direction.first;
-        dst_col += direction.second;
-        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-        const BoardSquare destination(dst_row, dst_col);
-        if (our_pieces_.get(destination)) break;
-        if (their_pieces_.get(destination)) {
-          if (rooks_.get(destination)) return true;
-          break;
-        }
-      }
-    }
-  }
-  // Check Bishops
-  if (kBishopAttacks[square.as_int()].intersects(their_pieces_ * bishops_)) {
-    for (const auto& direction : kBishopDirections) {
-      auto dst_row = row;
-      auto dst_col = col;
-      while (true) {
-        dst_row += direction.first;
-        dst_col += direction.second;
-        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-        const BoardSquare destination(dst_row, dst_col);
-        if (our_pieces_.get(destination)) break;
-        if (their_pieces_.get(destination)) {
-          if (bishops_.get(destination)) return true;
-          break;
-        }
-      }
-    }
-  }
-  // Check pawns
-  if (kPawnAttacks[square.as_int()].intersects(their_pieces_ * pawns_)) {
+  // Check rooks (and queens).
+  if (GetRookAttacks(square, our_pieces_ | their_pieces_)
+          .intersects(their_pieces_ & rooks_)) {
     return true;
   }
-  // Check knights
+  // Check bishops.
+  if (GetBishopAttacks(square, our_pieces_ | their_pieces_)
+          .intersects(their_pieces_ & bishops_)) {
+    return true;
+  }
+  // Check pawns.
+  if (kPawnAttacks[square.as_int()].intersects(their_pieces_ & pawns_)) {
+    return true;
+  }
+  // Check knights.
   {
     if (kKnightAttacks[square.as_int()].intersects(their_pieces_ - their_king_ -
                                                    rooks_ - bishops_ -
-                                                   (pawns_ * kPawnMask))) {
+                                                   (pawns_ & kPawnMask))) {
       return true;
     }
   }
   return false;
 }
 
-bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
+KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
+  KingAttackInfo king_attack_info;
+
+  // Number of attackers that give check (used for double check detection).
+  unsigned num_king_attackers = 0;
+
+  const int row = our_king_.row();
+  const int col = our_king_.col();
+  // King checks are unnecessary, as kings cannot give check.
+  // Check rooks (and queens).
+  if (kRookAttacks[our_king_.as_int()].intersects(their_pieces_ & rooks_)) {
+    for (const auto& direction : kRookDirections) {
+      auto dst_row = row;
+      auto dst_col = col;
+      BitBoard attack_line(0);
+      bool possible_pinned_piece_found = false;
+      BoardSquare possible_pinned_piece;
+      while (true) {
+        dst_row += direction.first;
+        dst_col += direction.second;
+        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
+        const BoardSquare destination(dst_row, dst_col);
+        if (our_pieces_.get(destination)) {
+          if (possible_pinned_piece_found) {
+            // No pieces pinned.
+            break;
+          } else {
+            // This is a possible pinned piece.
+            possible_pinned_piece_found = true;
+            possible_pinned_piece = destination;
+          }
+        }
+        if (!possible_pinned_piece_found) {
+          attack_line.set(destination);
+        }
+        if (their_pieces_.get(destination)) {
+          if (rooks_.get(destination)) {
+            if (possible_pinned_piece_found) {
+              // Store the pinned piece.
+              king_attack_info.pinned_pieces_.set(possible_pinned_piece);
+            } else {
+              // Update attack lines.
+              king_attack_info.attack_lines_ =
+                  king_attack_info.attack_lines_ | attack_line;
+              num_king_attackers++;
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+  // Check bishops.
+  if (kBishopAttacks[our_king_.as_int()].intersects(their_pieces_ & bishops_)) {
+    for (const auto& direction : kBishopDirections) {
+      auto dst_row = row;
+      auto dst_col = col;
+      BitBoard attack_line(0);
+      bool possible_pinned_piece_found = false;
+      BoardSquare possible_pinned_piece;
+      while (true) {
+        dst_row += direction.first;
+        dst_col += direction.second;
+        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
+        const BoardSquare destination(dst_row, dst_col);
+        if (our_pieces_.get(destination)) {
+          if (possible_pinned_piece_found) {
+            // No pieces pinned.
+            break;
+          } else {
+            // This is a possible pinned piece.
+            possible_pinned_piece_found = true;
+            possible_pinned_piece = destination;
+          }
+        }
+        if (!possible_pinned_piece_found) {
+          attack_line.set(destination);
+        }
+        if (their_pieces_.get(destination)) {
+          if (bishops_.get(destination)) {
+            if (possible_pinned_piece_found) {
+              // Store the pinned piece.
+              king_attack_info.pinned_pieces_.set(possible_pinned_piece);
+            } else {
+              // Update attack lines.
+              king_attack_info.attack_lines_ =
+                  king_attack_info.attack_lines_ | attack_line;
+              num_king_attackers++;
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+  // Check pawns.
+  const BitBoard attacking_pawns =
+      kPawnAttacks[our_king_.as_int()] & their_pieces_ & pawns_;
+  king_attack_info.attack_lines_ =
+      king_attack_info.attack_lines_ | attacking_pawns;
+
+  if (attacking_pawns.as_int()) {
+    // No more than one pawn can give check.
+    num_king_attackers++;
+  }
+
+  // Check knights.
+  const BitBoard attacking_knights =
+      kKnightAttacks[our_king_.as_int()] &
+      (their_pieces_ - their_king_ - rooks_ - bishops_ - (pawns_ & kPawnMask));
+  king_attack_info.attack_lines_ =
+      king_attack_info.attack_lines_ | attacking_knights;
+
+  if (attacking_knights.as_int()) {
+    // No more than one knight can give check.
+    num_king_attackers++;
+  }
+
+  assert(num_king_attackers <= 2);
+  king_attack_info.double_check_ = (num_king_attackers == 2);
+
+  return king_attack_info;
+}
+
+bool ChessBoard::IsLegalMove(Move move,
+                             const KingAttackInfo& king_attack_info) const {
   const auto& from = move.from();
   const auto& to = move.to();
-
-  // If we are already under check, also apply move and check if valid.
-  // TODO(mooskagh) Optimize this case
-  if (was_under_check) {
-    ChessBoard board(*this);
-    board.ApplyMove(move);
-    return !board.IsUnderCheck();
-  }
 
   // En passant. Complex but rare. Just apply
   // and check that we are not under check.
@@ -534,80 +856,69 @@ bool ChessBoard::IsLegalMove(Move move, bool was_under_check) const {
     return !board.IsUnderCheck();
   }
 
-  // If it's kings move, check that destination
-  // is not under attack.
-  if (from == our_king_) {
-    // Castlings were checked earlier.
-    if (std::abs(static_cast<int>(from.col()) - static_cast<int>(to.col())) > 1)
-      return true;
-    return !IsUnderAttack(to);
+  // Check if we are already under check.
+  if (king_attack_info.in_check()) {
+    // King move.
+    if (from == our_king_) {
+      // Just apply and check that we are not under check.
+      ChessBoard board(*this);
+      board.ApplyMove(move);
+      return !board.IsUnderCheck();
+    }
+
+    // Pinned pieces can never resolve a check.
+    if (king_attack_info.is_pinned(from)) {
+      return false;
+    }
+
+    // The piece to move is no king and is not pinned.
+    if (king_attack_info.in_double_check()) {
+      // Only a king move can resolve the double check.
+      return false;
+    } else {
+      // Only one attacking piece gives check.
+      // Our piece is free to move (not pinned). Check if the attacker is
+      // captured or interposed after the piece has moved to its destination
+      // square.
+      return king_attack_info.is_on_attack_line(to);
+    }
   }
 
-  // Not check that piece was pinned. And it was, check that after the move
-  // it is still on like of attack.
-  int dx = from.col() - our_king_.col();
-  int dy = from.row() - our_king_.row();
+  // Castlings were checked earlier.
+  // Moreover, no pseudolegal king moves to an attacked square are generated.
+  // If it's king's move at this moment, its certainly legal.
+  if (from == our_king_) {
+    return true;
+  }
 
-  // If it's not on the same file/rank/diagonal as our king, cannot be pinned.
-  if (dx != 0 && dy != 0 && std::abs(dx) != std::abs(dy)) return true;
-  dx = (dx > 0) - (dx < 0);  // Sign.
-  dy = (dy > 0) - (dy < 0);
-  auto col = our_king_.col();
-  auto row = our_king_.row();
-  while (true) {
-    col += dx;
-    row += dy;
-    // Attacking line left board, good.
-    if (!BoardSquare::IsValid(row, col)) return true;
-    const BoardSquare square(row, col);
-    // The source square of the move is now free.
-    if (square == from) continue;
-    // The destination square if the move is our piece. King is not under
-    // attack.
-    if (square == to) return true;
-    // Our piece on the line. Not under attack.
-    if (our_pieces_.get(square)) return true;
-    if (their_pieces_.get(square)) {
-      if (dx == 0 || dy == 0) {
-        // Have to be afraid of rook-like piece.
-        return !rooks_.get(square);
-      } else {
-        // Have to be afraid of bishop-like piece.
-        return !bishops_.get(square);
-      }
-      return true;
-    }
+  // If we get here, we are not under check.
+  // If the piece is not pinned, it is free to move anywhere.
+  if (!king_attack_info.is_pinned(from)) return true;
+
+  // The piece is pinned. Now check that it stays on the same line w.r.t. the
+  // king.
+  int dx_from = from.col() - our_king_.col();
+  int dy_from = from.row() - our_king_.row();
+  int dx_to = to.col() - our_king_.col();
+  int dy_to = to.row() - our_king_.row();
+
+  if (dx_from == 0 || dx_to == 0) {
+    return (dx_from == dx_to);
+  } else {
+    return (dx_from * dy_to == dx_to * dy_from);
   }
 }
 
 MoveList ChessBoard::GenerateLegalMoves() const {
-  const bool was_under_check = IsUnderCheck();
+  const KingAttackInfo king_attack_info = GenerateKingAttackInfo();
   MoveList move_list = GeneratePseudolegalMoves();
   MoveList result;
   result.reserve(move_list.size());
 
   for (Move m : move_list) {
-    if (IsLegalMove(m, was_under_check)) result.emplace_back(m);
+    if (IsLegalMove(m, king_attack_info)) result.emplace_back(m);
   }
 
-  return result;
-}
-
-std::vector<MoveExecution> ChessBoard::GenerateLegalMovesAndPositions() const {
-  MoveList move_list = GeneratePseudolegalMoves();
-  std::vector<MoveExecution> result;
-
-  for (const auto& move : move_list) {
-    result.emplace_back();
-    auto& newboard = result.back().board;
-    newboard = *this;
-    result.back().reset_50_moves = newboard.ApplyMove(move);
-    if (newboard.IsUnderCheck()) {
-      result.pop_back();
-      continue;
-    }
-    result.back().move = move;
-  }
   return result;
 }
 
@@ -709,7 +1020,7 @@ bool ChessBoard::HasMatingMaterial() const {
     return true;
   }
 
-  if ((our_pieces_ + their_pieces_).count() < 4) {
+  if ((our_pieces_ | their_pieces_).count() < 4) {
     // K v K, K+B v K, K+N v K.
     return false;
   }
@@ -749,7 +1060,7 @@ string ChessBoard::DebugString() const {
         continue;
       }
       char c = '?';
-      if ((pawns_ * kPawnMask).get(i, j)) {
+      if ((pawns_ & kPawnMask).get(i, j)) {
         c = 'p';
       } else if (bishops_.get(i, j)) {
         if (rooks_.get(i, j))

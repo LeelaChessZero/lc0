@@ -60,6 +60,10 @@ std::string DecompressGzip(const std::string& filename) {
   if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
     int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
+    if (sz < 0) {
+      int errnum;
+      throw Exception(gzerror(file, &errnum));
+    }
     if (sz == static_cast<int>(buffer.size()) - bytes_read) {
       bytes_read = buffer.size();
       buffer.resize(buffer.size() * 2);
@@ -160,7 +164,7 @@ std::string DiscoverWeightsFile() {
     gzFile file = gzopen(candidate.second.c_str(), "rb");
 
     if (!file) continue;
-    char buf[256];
+    unsigned char buf[256];
     int sz = gzread(file, buf, 256);
     gzclose(file);
     if (sz < 0) continue;
@@ -176,8 +180,10 @@ std::string DiscoverWeightsFile() {
 
     // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
     // our own magic should suffice.
-    auto magic = reinterpret_cast<std::uint32_t*>(buf + 1);
-    if (*magic == kWeightMagic) {
+    auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
+                 (static_cast<uint32_t>(buf[3]) << 16) |
+                 (static_cast<uint32_t>(buf[4]) << 24);
+    if (magic == kWeightMagic) {
       CERR << "Found pb network file: " << candidate.second;
       return candidate.second;
     }

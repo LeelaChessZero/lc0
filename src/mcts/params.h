@@ -43,12 +43,14 @@ class SearchParams {
 
   // Parameter getters.
   int GetMiniBatchSize() const {
-    return options_.Get<int>(kMiniBatchSizeId.GetId());
+    return kMiniBatchSize;
   }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   float GetCpuct() const { return kCpuct; }
+  float GetCpuctBase() const { return kCpuctBase; }
+  float GetCpuctFactor() const { return kCpuctFactor; }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -58,17 +60,30 @@ class SearchParams {
   int GetTempDecayMoves() const {
     return options_.Get<int>(kTempDecayMovesId.GetId());
   }
+  int GetTemperatureCutoffMove() const {
+    return options_.Get<int>(kTemperatureCutoffMoveId.GetId());
+  }
+  float GetTemperatureEndgame() const {
+    return options_.Get<float>(kTemperatureEndgameId.GetId());
+  }
+  float GetTemperatureWinpctCutoff() const {
+    return options_.Get<float>(kTemperatureWinpctCutoffId.GetId());
+  }
+
   bool GetNoise() const { return kNoise; }
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
   float GetSmartPruningFactor() const { return kSmartPruningFactor; }
+  bool GetFpuAbsolute() const { return kFpuAbsolute; }
   float GetFpuReduction() const { return kFpuReduction; }
+  float GetFpuValue() const { return kFpuValue; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
+  bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
   std::string GetScoreType() const {
     return options_.Get<std::string>(kScoreTypeId.GetId());
@@ -79,18 +94,26 @@ class SearchParams {
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
+  static const OptionId kCpuctBaseId;
+  static const OptionId kCpuctFactorId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
+  static const OptionId kTemperatureCutoffMoveId;
+  static const OptionId kTemperatureEndgameId;
+  static const OptionId kTemperatureWinpctCutoffId;
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
   static const OptionId kVerboseStatsId;
   static const OptionId kSmartPruningFactorId;
+  static const OptionId kFpuStrategyId;
   static const OptionId kFpuReductionId;
+  static const OptionId kFpuValueId;
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
   static const OptionId kMaxCollisionEventsId;
   static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
+  static const OptionId kSyzygyFastPlayId;
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
@@ -104,15 +127,21 @@ class SearchParams {
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimiations.
   const float kCpuct;
+  const float kCpuctBase;
+  const float kCpuctFactor;
   const bool kNoise;
   const float kSmartPruningFactor;
+  const bool kFpuAbsolute;
   const float kFpuReduction;
+  const float kFpuValue;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
+  const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
+  const int kMiniBatchSize;
 };
 
 }  // namespace lczero

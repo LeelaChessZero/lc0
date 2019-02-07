@@ -40,7 +40,7 @@ inline unsigned long GetLowestBit(std::uint64_t value) {
     return result;
 #elif defined(_MSC_VER)
     unsigned long result;
-    if (value_ & 0xFFFFFFFF) {
+    if (value & 0xFFFFFFFF) {
       _BitScanForward(&result, value);
     } else {
       _BitScanForward(&result, value >> 32);

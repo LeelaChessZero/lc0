@@ -33,7 +33,25 @@
 
 namespace lczero {
 
-struct MoveExecution;
+// Initializes internal magic bitboard structures.
+void InitializeMagicBitboards();
+
+// Represents king attack info used during legal move detection.
+class KingAttackInfo {
+ public:
+  bool in_check() const { return attack_lines_.as_int(); }
+  bool in_double_check() const { return double_check_; }
+  bool is_pinned(const BoardSquare square) const {
+    return pinned_pieces_.get(square);
+  }
+  bool is_on_attack_line(const BoardSquare square) const {
+    return attack_lines_.get(square);
+  }
+
+  bool double_check_ = 0;
+  BitBoard pinned_pieces_ = {0};
+  BitBoard attack_lines_ = {0};
+};
 
 // Represents a board position.
 // Unlike most chess engines, the board is mirrored for black.
@@ -66,23 +84,25 @@ class ChessBoard {
   bool ApplyMove(Move move);
   // Checks if the square is under attack from "theirs" (black).
   bool IsUnderAttack(BoardSquare square) const;
+  // Generates the king attack info used for legal move detection.
+  KingAttackInfo GenerateKingAttackInfo() const;
   // Checks if "our" (white) king is under check.
   bool IsUnderCheck() const { return IsUnderAttack(our_king_); }
-  // Checks whether at least one of the sides has mating material.
 
+  // Checks whether at least one of the sides has mating material.
   bool HasMatingMaterial() const;
   // Generates legal moves.
   MoveList GenerateLegalMoves() const;
   // Check whether pseudolegal move is legal.
-  bool IsLegalMove(Move move, bool was_under_check) const;
-  // Returns a list of legal moves and board positions after the move is made.
-  std::vector<MoveExecution> GenerateLegalMovesAndPositions() const;
+  bool IsLegalMove(Move move, const KingAttackInfo& king_attack_info) const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
                     rooks_.as_int(), bishops_.as_int(), pawns_.as_int(),
-                    our_king_.as_int(), their_king_.as_int(),
-                    castlings_.as_int(), flipped_});
+                    (static_cast<uint32_t>(our_king_.as_int()) << 24) |
+                        (static_cast<uint32_t>(their_king_.as_int()) << 16) |
+                        (static_cast<uint32_t>(castlings_.as_int()) << 8) |
+                        static_cast<uint32_t>(flipped_)});
   }
 
   class Castlings {
@@ -133,7 +153,7 @@ class ChessBoard {
   BitBoard en_passant() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
-  BitBoard queens() const { return rooks_ * bishops_; }
+  BitBoard queens() const { return rooks_ & bishops_; }
   BitBoard our_knights() const {
     return our_pieces_ - pawns() - our_king_ - rooks_ - bishops_;
   }
@@ -168,20 +188,13 @@ class ChessBoard {
   // Pawns.
   // Ranks 1 and 8 have special meaning. Pawn at rank 1 means that
   // corresponding white pawn on rank 4 can be taken en passant. Rank 8 is the
-  // same for black pawns. Those "fake" pawns are not present in white_ and
-  // black_ bitboards.
+  // same for black pawns. Those "fake" pawns are not present in our_pieces_ and
+  // their_pieces_ bitboards.
   BitBoard pawns_;
   BoardSquare our_king_;
   BoardSquare their_king_;
   Castlings castlings_;
   bool flipped_ = false;  // aka "Black to move".
-};
-
-// Stores the move and state of the board after the move is done.
-struct MoveExecution {
-  Move move;
-  ChessBoard board;
-  bool reset_50_moves;
 };
 
 }  // namespace lczero
