@@ -360,6 +360,22 @@ std::string EdgeAndNode::DebugString() const {
 // NodeTree
 /////////////////////////////////////////////////////////////////////////
 
+void NodeTree::CloneCurrentHeadBranch(NodeTree& cloned) {
+  std::vector<Move> moves;
+  bool flip = !IsBlackToMove();
+  for (Node* node = GetCurrentHead(); node != GetGameBeginNode();
+       node = node->GetParent()) {
+    moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove(flip));
+    flip = !flip;
+  }
+  std::reverse(moves.begin(), moves.end());
+
+  cloned.ResetToPosition(ChessBoard::kStartposFen, {});
+  for (auto m : moves) {
+    cloned.MakeMove(m);
+  }
+}
+
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 

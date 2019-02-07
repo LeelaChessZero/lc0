@@ -509,6 +509,7 @@ class Node::NodeRange {
 class NodeTree {
  public:
   ~NodeTree() { DeallocateTree(); }
+  void CloneCurrentHeadBranch(NodeTree & cloned);
   // Adds a move to current_head_.
   void MakeMove(Move move);
   // Resets the current head to ensure it doesn't carry over details from a

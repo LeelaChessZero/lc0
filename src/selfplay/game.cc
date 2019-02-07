@@ -128,11 +128,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       // Play the temperature-chosen move and store the resulting game state so
       // a new match can be started from that position.
       ResumableGame resumable_game;
-      resumable_game.tree[0] = std::make_shared<NodeTree>(tree_[0]);
-      resumable_game.tree[1] = std::make_shared<NodeTree>(tree_[1]);
-      resumable_game.tree[0]->MakeMove(move);
-      if (resumable_game.tree[0] != resumable_game.tree[1]) {
-        resumable_game.tree[1]->MakeMove(move);
+      for (auto idx : {0, 1}) {
+        resumable_game.tree[idx] = std::make_shared<NodeTree>();
+        tree_[idx]->CloneCurrentHeadBranch(*resumable_game.tree[idx]);
+        resumable_game.tree[idx]->MakeMove(move);
       }
       resumable_game.blacks_move = !blacks_move;
     }
