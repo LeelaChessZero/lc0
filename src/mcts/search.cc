@@ -1190,9 +1190,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
       // Flush denormals to zero.
       p = p < 1.17549435E-38
               ? 0.0
-              : FastPow2(FastLog2(p) / params_.GetPolicySoftmaxTemp());
+              : FastPow2(FastLog2(p) / (params_.GetPolicySoftmaxTemp() * FastLog2(node->GetN()+1) ));
     }
-    edge.edge()->SetP(p);
+    edge.edge()->SetP(p);1
     // Edge::SetP does some rounding, so only add to the total after rounding.
     total += edge.edge()->GetP();
   }
