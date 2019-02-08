@@ -389,19 +389,6 @@ void EngineController::Go(const GoParams& params) {
     };
   }
 
-  float strength_ratio = options_.Get<float>(kStrengthRatioId.GetId());
-  if (strength_ratio != 1.0f && limits.search_deadline) {
-    // A delay of 1 - strength_ratio^2 approximates a linear strength reduction.
-    auto move_delay =
-        (*limits.search_deadline - std::chrono::steady_clock::now()) *
-        (1.0f - strength_ratio * strength_ratio);
-    LOGFILE << "Sleeping for "
-            << std::chrono::duration_cast<std::chrono::milliseconds>(move_delay)
-                   .count()
-            << " ms.";
-    std::this_thread::sleep_for(move_delay);
-  }
-
   search_ = std::make_unique<Search>(*tree_, network_.get(), best_move_callback,
                                      info_callback, limits, options_, &cache_,
                                      syzygy_tb_.get());
@@ -410,6 +397,19 @@ void EngineController::Go(const GoParams& params) {
     LOGFILE << "Timer started at "
             << FormatTime(SteadyClockToSystemClock(move_start_time_));
   }
+
+  float strength_ratio = options_.Get<float>(kStrengthRatioId.GetId());
+  if (strength_ratio != 1.0f && limits.search_deadline) {
+    // A delay of 1 - strength_ratio^2 approximates a linear strength reduction.
+    auto move_delay =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            (*limits.search_deadline - std::chrono::steady_clock::now()) *
+            (1.0f - strength_ratio * strength_ratio))
+            .count();
+    LOGFILE << "Sleeping for " << move_delay << " ms.";
+    search_->Delay(move_delay);
+  }
+
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 

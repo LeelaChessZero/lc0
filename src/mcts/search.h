@@ -94,6 +94,10 @@ class Search {
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
   const SearchParams& GetParams() const { return params_; }
+  // Delay starting the search for the given number of milliseconds.
+  void Delay(const int delay_ms) {
+    delay_ = std::chrono::milliseconds(delay_ms);
+  }
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
@@ -166,6 +170,7 @@ class Search {
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
   optional<std::chrono::steady_clock::time_point> nps_start_time_;
+  optional<std::chrono::milliseconds> delay_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
@@ -196,14 +201,7 @@ class SearchWorker {
       : search_(search), history_(search_->played_history_), params_(params) {}
 
   // Runs iterations while needed.
-  void RunBlocking() {
-    LOGFILE << "Started search thread.";
-    // A very early stop may arrive before this point, so the test is at the end
-    // to ensure at least one iteration runs before exiting.
-    do {
-      ExecuteOneIteration();
-    } while (search_->IsSearchActive());
-  }
+  void RunBlocking();
 
   // Does one full iteration of MCTS search:
   // 1. Initialize internal structures.

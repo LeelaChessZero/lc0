@@ -686,6 +686,25 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
+void SearchWorker::RunBlocking() {
+  if (search_->delay_) {
+    auto move_delay = *search_->delay_;
+    constexpr auto kMaxWaitTime = std::chrono::milliseconds(100);
+    while (move_delay > std::chrono::milliseconds::zero() &&
+           search_->IsSearchActive()) {
+      std::this_thread::sleep_for(std::min(move_delay, kMaxWaitTime));
+      move_delay -= kMaxWaitTime;
+    }
+  }
+
+  LOGFILE << "Started search thread.";
+  // A very early stop may arrive before this point, so the test is at the end
+  // to ensure at least one iteration runs before exiting.
+  do {
+    ExecuteOneIteration();
+  } while (search_->IsSearchActive());
+}
+
 void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
   InitializeIteration(search_->network_->NewComputation());
