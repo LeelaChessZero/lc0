@@ -51,7 +51,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree)
-    : options_{player1, player2} {
+    : options_{player1, player2}, black_moved_first_(false) {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 
@@ -61,21 +61,20 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
     tree_[1] = std::make_shared<NodeTree>();
     tree_[1]->ResetToPosition(ChessBoard::kStartposFen, {});
   }
-  blacks_move_ = false;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            ResumableGame game_to_resume)
-    : options_{player1, player2} {
+    : options_{player1, player2}, black_moved_first_(game_to_resume.blacks_move) {
   tree_[0] = game_to_resume.tree[0];
   tree_[1] = game_to_resume.tree[1];
-  blacks_move_ = game_to_resume.blacks_move;
 }
 
 std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
                                              int black_threads, bool training,
                                              bool enable_resign) {
   std::queue<ResumableGame> sub_games;
+  bool blacks_move = black_moved_first_;
 
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
@@ -85,7 +84,7 @@ std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
     if (game_result_ != GameResult::UNDECIDED) break;
 
     // Initialize search.
-    const int idx = blacks_move_ ? 1 : 0;
+    const int idx = blacks_move ? 1 : 0;
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
       tree_[idx]->TrimTreeAtHead();
     }
@@ -105,7 +104,7 @@ std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
     }
 
     // Do search.
-    search_->RunBlocking(blacks_move_ ? black_threads : white_threads);
+    search_->RunBlocking(blacks_move ? black_threads : white_threads);
     if (abort_) break;
 
     if (training) {
@@ -126,7 +125,7 @@ std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
           100;
       if (eval < resignpct) {  // always false when resignpct == 0
         game_result_ =
-            blacks_move_ ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+            blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
         break;
       }
     }
@@ -143,12 +142,12 @@ std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
         tree_[idx]->CloneCurrentHeadBranch(*resumable_game.tree[idx]);
         resumable_game.tree[idx]->MakeMove(move);
       }
-      resumable_game.blacks_move = !blacks_move_;
+      resumable_game.blacks_move = !blacks_move;
       sub_games.push(resumable_game);
     }
     tree_[0]->MakeMove(no_temp_move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(no_temp_move);
-    blacks_move_ = !blacks_move_;
+    blacks_move = !blacks_move;
   }
 
   return sub_games;
@@ -180,8 +179,7 @@ void SelfPlayGame::Abort() {
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   assert(!training_data_.empty());
-  bool black_to_move =
-      tree_[0]->GetPositionHistory().Starting().IsBlackToMove();
+  bool black_to_move = black_moved_first_;
   for (auto chunk : training_data_) {
     if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;
