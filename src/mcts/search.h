@@ -174,6 +174,11 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int64_t>::max();
+  // If kdgain minimum checks enabled, this was the visit distribution at the
+  // last kdgain interval triggering.
+  std::vector<uint32_t> prev_dist_;
+  // Total visits at the last time prev_dist_ was cached.
+  uint32_t prev_dist_visits_total_ = 0;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.

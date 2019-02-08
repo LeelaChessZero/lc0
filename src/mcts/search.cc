@@ -317,9 +317,43 @@ void Search::MaybeTriggerStop() {
   if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
+  bool kdgain_too_small = false;
+  if (params_.GetMinimumKDGainPerNode() > 0 &&
+      total_playouts_ + initial_visits_ >
+          prev_dist_visits_total_ + params_.GetKDGainAverageInterval()) {
+    std::vector<uint32_t> new_visits;
+    for (auto edge : root_node_->Edges()) {
+      new_visits.push_back(edge.GetN());
+    }
+    if (prev_dist_.size() != 0) {
+      double sum1 = 0.0;
+      double sum2 = 0.0;
+      for (int i = 0; i < new_visits.size(); i++) {
+        sum1 += prev_dist_[i];
+        sum2 += new_visits[i];
+      }
+      double dev1 = 0.0;
+      for (int i = 0; i < new_visits.size(); i++) {
+        double o_p = prev_dist_[i] / sum1;
+        double n_p = new_visits[i] / sum2;
+        if (prev_dist_[i] != 0) {
+          dev1 += o_p * log(o_p / n_p);
+        }
+      }
+      if (dev1 / (sum2 - sum1) < params_.GetMinimumKDGainPerNode()) {
+        kdgain_too_small = true;
+      }
+    }
+    prev_dist_.swap(new_visits);
+    prev_dist_visits_total_ = total_playouts_ + initial_visits_;
+  }
 
   // If not yet stopped, try to stop for different reasons.
   if (!stop_.load(std::memory_order_acquire)) {
+    if (kdgain_too_small) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: KDGain per node too small.";
+    }
     // If smart pruning tells to stop (best move found), stop.
     if (only_one_possible_move_left_) {
       FireStopInternal();
