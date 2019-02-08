@@ -318,10 +318,10 @@ void Search::MaybeTriggerStop() {
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
 
-  bool kdgain_too_small = false;
-  if (params_.GetMinimumKDGainPerNode() > 0 &&
+  bool kldgain_too_small = false;
+  if (params_.GetMinimumKLDGainPerNode() > 0 &&
       total_playouts_ + initial_visits_ >
-          prev_dist_visits_total_ + params_.GetKDGainAverageInterval()) {
+          prev_dist_visits_total_ + params_.GetKLDGainAverageInterval()) {
     std::vector<uint32_t> new_visits;
     for (auto edge : root_node_->Edges()) {
       new_visits.push_back(edge.GetN());
@@ -341,8 +341,8 @@ void Search::MaybeTriggerStop() {
           kdgain += o_p * log(o_p / n_p);
         }
       }
-      if (kdgain / (sum2 - sum1) < params_.GetMinimumKDGainPerNode()) {
-        kdgain_too_small = true;
+      if (kdgain / (sum2 - sum1) < params_.GetMinimumKLDGainPerNode()) {
+        kldgain_too_small = true;
       }
     }
     prev_dist_.swap(new_visits);
@@ -351,7 +351,7 @@ void Search::MaybeTriggerStop() {
 
   // If not yet stopped, try to stop for different reasons.
   if (!stop_.load(std::memory_order_acquire)) {
-    if (kdgain_too_small) {
+    if (kldgain_too_small) {
       FireStopInternal();
       LOGFILE << "Stopped search: KDGain per node too small.";
     }
