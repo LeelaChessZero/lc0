@@ -317,6 +317,7 @@ void Search::MaybeTriggerStop() {
   if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
+
   bool kdgain_too_small = false;
   if (params_.GetMinimumKDGainPerNode() > 0 &&
       total_playouts_ + initial_visits_ >
@@ -332,15 +333,15 @@ void Search::MaybeTriggerStop() {
         sum1 += prev_dist_[i];
         sum2 += new_visits[i];
       }
-      double dev1 = 0.0;
+      double kdgain = 0.0;
       for (int i = 0; i < new_visits.size(); i++) {
         double o_p = prev_dist_[i] / sum1;
         double n_p = new_visits[i] / sum2;
         if (prev_dist_[i] != 0) {
-          dev1 += o_p * log(o_p / n_p);
+          kdgain += o_p * log(o_p / n_p);
         }
       }
-      if (dev1 / (sum2 - sum1) < params_.GetMinimumKDGainPerNode()) {
+      if (kdgain / (sum2 - sum1) < params_.GetMinimumKDGainPerNode()) {
         kdgain_too_small = true;
       }
     }
