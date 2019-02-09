@@ -479,7 +479,8 @@ int Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   }
 
   int best_rank = syzygy_tb_->root_probe(
-      played_history_.Last(), played_history_.DidRepeatSinceLastZeroingMove(),
+      played_history_.Last(), params_.GetSyzygyFastPlay() || 
+      played_history_.DidRepeatSinceLastZeroingMove(),
       root_moves);
   if (!best_rank)
     best_rank = syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
@@ -1174,7 +1175,6 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // nodes which are likely useful in future.
   // TODO(Videodr0me) Maybe use bounds here to more efficiently select nodes.
   if (search_->stop_.load(std::memory_order_acquire)) return;
-
   if (computation_->GetCacheMisses() > 0 &&
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());

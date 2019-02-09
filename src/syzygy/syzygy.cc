@@ -44,6 +44,7 @@
 
 #include "syzygy/syzygy.h"
 
+#include "utils/exception.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
@@ -1041,6 +1042,9 @@ class SyzygyTablebaseImpl {
     int fd = ::open(fname.c_str(), O_RDONLY);
     if (fd == -1) return nullptr;
     fstat(fd, &statbuf);
+    if (statbuf.st_size % 64 != 16) {
+      throw Exception("Corrupt tablebase file " + fname);
+    }
     *mapping = statbuf.st_size;
     base_address = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
     ::close(fd);
@@ -1055,6 +1059,9 @@ class SyzygyTablebaseImpl {
     if (fd == INVALID_HANDLE_VALUE) return nullptr;
     DWORD size_high;
     DWORD size_low = GetFileSize(fd, &size_high);
+    if (size_low % 64 != 16) {
+      throw Exception("Corrupt tablebase file " + fname);
+    }
     HANDLE mmap = CreateFileMapping(fd, nullptr, PAGE_READONLY, size_high,
                                     size_low, nullptr);
     CloseHandle(fd);
