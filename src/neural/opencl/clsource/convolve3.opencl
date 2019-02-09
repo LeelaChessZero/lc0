@@ -147,7 +147,7 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
   int y = 2*block_y;
   int a_ind = y * W + x;
   if (k < K && block < P) {
-    const int kHW = batch * Kpad * BOARD_SQUARES + k * BOARD_SQUARES;
+    const int kHW = batch * K * BOARD_SQUARES + k * BOARD_SQUARES;
     float o[4];
     __out_transform_eq(M, o, Kpad, Ppad, block, batch);
     

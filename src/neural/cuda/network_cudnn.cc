@@ -35,6 +35,7 @@
 #include "layers.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
+#include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
@@ -162,6 +163,9 @@ class CudnnNetwork : public Network {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
+    conv_policy_ = file.format().network_format().policy() ==
+                   pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
     int total_gpus;
@@ -176,10 +180,12 @@ class CudnnNetwork : public Network {
     ReportCUDNNErrors(cudnnCreate(&cudnn_));
     ReportCUBLASErrors(cublasCreate(&cublas_));
 
+    cudaDeviceProp deviceProp = {};
+    cudaGetDeviceProperties(&deviceProp, gpu_id_);
+    showInfo(deviceProp);
+
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support fp16 (Volta+).
-      cudaDeviceProp deviceProp = {};
-      cudaGetDeviceProperties(&deviceProp, gpu_id_);
       if (deviceProp.major >= 7) {
         // Enable Tensor cores!
         ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
@@ -209,7 +215,13 @@ class CudnnNetwork : public Network {
       processConvBlock(weights.residual[i].conv1, true, 3);
       processConvBlock(weights.residual[i].conv2, true, 3);
     }
-    processConvBlock(weights.policy, true, 1);
+    if (conv_policy_) {
+      processConvBlock(weights.policy1, true, 1);
+      // weights.policy doesn't have batch norm with convolutional policy
+      // so no need to call processConvBlock for it.
+    } else {
+      processConvBlock(weights.policy, true, 1);
+    }
     processConvBlock(weights.value, true, 1);
 
     // 1. Allocate scratch space (used internally by cudnn to run convolutions,
@@ -308,7 +320,32 @@ class CudnnNetwork : public Network {
     resi_last_ = getLastLayer();
 
     // Policy head.
-    {
+    if (conv_policy_) {
+      auto conv1 = std::make_unique<ConvLayer<DataType>>(
+          resi_last_, kNumFilters, 8, 8, 3, kNumFilters, true, true);
+      conv1->LoadWeights(&weights.policy1.weights[0],
+                         &weights.policy1.biases[0], scratch_mem_);
+      network_.emplace_back(std::move(conv1));
+
+      auto pol_channels = weights.policy.biases.size();
+
+      // No relu
+      auto conv2 = std::make_unique<ConvLayer<DataType>>(
+          getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, false, true);
+      conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
+                         scratch_mem_);
+      network_.emplace_back(std::move(conv2));
+
+      auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
+      policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
+
+      network_.emplace_back(std::move(policymap));
+
+      auto softmaxPol =
+          std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
+      network_.emplace_back(std::move(softmaxPol));
+    } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.policy.bn_means.size(), 8, 8, 1, kNumFilters,
           true, true);
@@ -343,8 +380,8 @@ class CudnnNetwork : public Network {
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal1));
 
-      wdl_ = file.format().network_format().output() ==
-             pblczero::NetworkFormat::OUTPUT_WDL;
+      wdl_ = file.format().network_format().value() ==
+             pblczero::NetworkFormat::VALUE_WDL;
       auto fc2_tanh = !wdl_;
 
       auto FCVal2 = std::make_unique<FCLayer<DataType>>(
@@ -431,23 +468,49 @@ class CudnnNetwork : public Network {
     }
 
     // Policy head.
-    network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                        scratch_mem_, scratch_size_, cudnn_,
-                        cublas_);  // pol conv
-    network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                        scratch_mem_, scratch_size_, cudnn_,
-                        cublas_);  // pol FC
-    if (std::is_same<half, DataType>::value) {
-      // TODO: consider softmax layer that writes directly to fp32.
+    if (conv_policy_) {
+      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_,
+                          cublas_);  // conv1
+
+      network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_,
+                          cublas_);  // conv1
+
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // pol softmax
-      copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
-                        batchSize * kNumOutputPolicy);  // POLICY
+                          cublas_);  // pol FC
+      if (std::is_same<half, DataType>::value) {
+        // TODO: consider softmax layer that writes directly to fp32
+        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol softmax
+        copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
+                          batchSize * kNumOutputPolicy);  // POLICY
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0],
+                            nullptr, scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol softmax  // POLICY
+      }
     } else {
-      network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1], nullptr,
+      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // pol softmax  // POLICY
+                          cublas_);  // pol conv
+      network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_,
+                          cublas_);  // pol FC
+      if (std::is_same<half, DataType>::value) {
+        // TODO: consider softmax layer that writes directly to fp32.
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol softmax
+        copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
+                          batchSize * kNumOutputPolicy);  // POLICY
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1],
+                            nullptr, scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol softmax  // POLICY
+      }
     }
 
     // Copy policy output from device memory to host memory.
@@ -574,6 +637,7 @@ class CudnnNetwork : public Network {
 
   int numBlocks_;
   bool has_se_;
+  bool conv_policy_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
@@ -632,6 +696,52 @@ class CudnnNetwork : public Network {
       }
     }
   }
+
+  void showInfo(const cudaDeviceProp& deviceProp) const {
+    CERR << "GPU: " << deviceProp.name;
+    CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
+         << " Gb";
+    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+    CERR << "GPU compute capability: " << deviceProp.major << "."
+         << deviceProp.minor;
+    int version;
+    cudaRuntimeGetVersion(&version);
+    int major = version / 1000;
+    int minor = (version - major * 1000) / 10;
+    int pl = version - major * 1000 - minor * 10;
+    CERR << "CUDA Runtime version: " << major << "." << minor << "." << pl;
+    if (version != CUDART_VERSION) {
+      major = CUDART_VERSION / 1000;
+      minor = (CUDART_VERSION - major * 1000) / 10;
+      pl = CUDART_VERSION - major * 1000 - minor * 10;
+      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+              "version "
+           << major << "." << minor << "." << pl;
+    }
+    version = cudnnGetVersion();
+    major = version / 1000;
+    minor = (version - major * 1000) / 100;
+    pl = version - major * 1000 - minor * 100;
+    CERR << "Cudnn version: " << major << "." << minor << "." << pl;
+    if (version != CUDNN_VERSION) {
+      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+              "version "
+           << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
+    }
+    cudaDriverGetVersion(&version);
+    major = version / 1000;
+    minor = (version - major * 1000) / 10;
+    pl = version - major * 1000 - minor * 10;
+    CERR << "Latest version of CUDA supported by the driver: " << major << "."
+         << minor << "." << pl;
+    if (version < CUDART_VERSION) {
+      CERR << "WARNING: code was compiled with unsupported CUDA version.";
+    }
+    if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
+       CERR << "WARNING: you will probably get better performance from the "
+              "cudnn-fp16 backend.";
+    }
+  }
 };
 
 template <typename DataType>
@@ -656,13 +766,29 @@ template <typename DataType>
 std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
                                           const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE) {
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
         " is not supported by CuDNN backend.");
+  }
+  if (weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CLASSICAL &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by CuDNN backend.");
+  }
+  if (weights.format().network_format().value() !=
+          pblczero::NetworkFormat::VALUE_CLASSICAL &&
+      weights.format().network_format().value() !=
+          pblczero::NetworkFormat::VALUE_WDL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by CuDNN backend.");
   }
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }

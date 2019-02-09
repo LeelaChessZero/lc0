@@ -113,7 +113,17 @@ option('popcnt',
        value: true,
        description: 'Use the popcnt instruction')
 
+option('pext',
+       type: 'boolean',
+       value: false,
+       description: 'Use the pext instruction')
+
 option('gtest',
        type: 'boolean',
        value: true,
        description: 'Build gtest tests')
+
+option('protobuf-3-6-0',
+       type: 'boolean',
+       value: false,
+       description: 'Use the protobuf 3.6.0 subproject')
