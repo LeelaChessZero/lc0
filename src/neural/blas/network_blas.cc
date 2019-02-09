@@ -26,6 +26,7 @@
 #include "neural/network_legacy.h"
 #include "neural/shared/activation.h"
 #include "neural/shared/batchnorm.h"
+#include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
 
 #include <algorithm>
@@ -38,7 +39,8 @@ namespace {
 
 class BlasComputation : public NetworkComputation {
  public:
-  BlasComputation(const LegacyWeights& weights, const size_t max_batch_size);
+  BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
+                  const bool conv_policy);
 
   virtual ~BlasComputation() {}
 
@@ -65,12 +67,17 @@ class BlasComputation : public NetworkComputation {
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
   static constexpr auto kSquares = kWidth * kHeight;
+  static constexpr auto kPolicyOutputs = 1858;
+  // Number of used planes with convolutional policy.
+  // The real number of planes is higher because of padding.
+  static constexpr auto kPolicyUsedPlanes = 73;
 
   const LegacyWeights& weights_;
   size_t max_batch_size_;
   std::vector<InputPlanes> planes_;
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
+  bool conv_policy_;
 };
 
 class BlasNetwork : public Network {
@@ -79,7 +86,8 @@ class BlasNetwork : public Network {
   virtual ~BlasNetwork(){};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<BlasComputation>(weights_, max_batch_size_);
+    return std::make_unique<BlasComputation>(weights_, max_batch_size_,
+                                             conv_policy_);
   }
 
  private:
@@ -88,21 +96,24 @@ class BlasNetwork : public Network {
 
   LegacyWeights weights_;
   size_t max_batch_size_;
+  bool conv_policy_;
 };
 
 BlasComputation::BlasComputation(const LegacyWeights& weights,
-                                 const size_t max_batch_size)
+                                 const size_t max_batch_size,
+                                 const bool conv_policy)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
-      q_values_(0) {}
+      q_values_(0),
+      conv_policy_(conv_policy) {}
 
 void BlasComputation::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
   const auto num_value_channels = weights_.ip1_val_b.size();
   const auto num_value_input_planes = weights_.value.bn_means.size();
   const auto num_policy_input_planes = weights_.policy.bn_means.size();
-  const auto num_output_policy = weights_.ip_pol_b.size();
+  const auto num_output_policy = kPolicyOutputs;
   const auto output_channels = weights_.input.biases.size();
 
   // max_channels is the maximum number of input channels of any
@@ -204,28 +215,59 @@ void BlasComputation::ComputeBlocking() {
       }
     }
 
-    Convolution1::Forward(batch_size, output_channels, num_policy_input_planes,
-                          conv_out, weights_.policy.weights.data(),
-                          policy_buffer.data());
+    if (conv_policy_) {
+      // Need to preserve conv_out which is used for value head
+      convolve3.Forward(batch_size, output_channels, output_channels, conv_out,
+                        &weights_.policy1.weights[0], res);
 
+      ApplyBatchNormalization(batch_size, output_channels, &res[0],
+                              weights_.policy1.bn_means.data(),
+                              weights_.policy1.bn_stddivs.data());
+
+      convolve3.Forward(batch_size, output_channels, num_policy_input_planes,
+                        res, &weights_.policy.weights[0], policy_buffer.data());
+
+      ApplyBatchNormalization(
+          batch_size, num_policy_input_planes, &policy_buffer.data()[0],
+          weights_.policy.bn_means.data(), weights_.policy.bn_stddivs.data(),
+          nullptr, false);
+
+      // Mapping from convolutional policy to lc0 policy
+      for (auto batch = size_t{0}; batch < batch_size; batch++) {
+        for (auto i = 0; i < kPolicyUsedPlanes * kSquares; i++) {
+          auto j = kConvPolicyMap[i];
+          if (j >= 0) {
+            output_pol[batch * num_output_policy + j] =
+                policy_buffer[batch * num_policy_input_planes * kSquares + i];
+          }
+        }
+      }
+
+    } else {
+      Convolution1::Forward(
+          batch_size, output_channels, num_policy_input_planes, conv_out,
+          weights_.policy.weights.data(), policy_buffer.data());
+
+      ApplyBatchNormalization(
+          batch_size, num_policy_input_planes, &policy_buffer[0],
+          weights_.policy.bn_means.data(), weights_.policy.bn_stddivs.data());
+
+      FullyConnectedLayer::Forward1D(
+          batch_size, num_policy_input_planes * kSquares, num_output_policy,
+          policy_buffer.data(), weights_.ip_pol_w.data(),
+          weights_.ip_pol_b.data(),
+          false,  // Relu Off
+          output_pol.data());
+    }
+
+    // Value head
     Convolution1::Forward(batch_size, output_channels, num_value_input_planes,
                           conv_out, weights_.value.weights.data(),
                           value_buffer.data());
 
-    ApplyBatchNormalization(batch_size, num_policy_input_planes,
-                            &policy_buffer[0], weights_.policy.bn_means.data(),
-                            weights_.policy.bn_stddivs.data());
-
     ApplyBatchNormalization(batch_size, num_value_input_planes,
                             &value_buffer[0], weights_.value.bn_means.data(),
                             weights_.value.bn_stddivs.data());
-
-    FullyConnectedLayer::Forward1D(
-        batch_size, num_policy_input_planes * kSquares, num_output_policy,
-        policy_buffer.data(), weights_.ip_pol_w.data(),
-        weights_.ip_pol_b.data(),
-        false,  // Relu Off
-        output_pol.data());
 
     FullyConnectedLayer::Forward1D(
         batch_size, num_value_input_planes * kSquares, num_value_channels,
@@ -238,8 +280,8 @@ void BlasComputation::ComputeBlocking() {
       std::vector<float> policy(num_output_policy);
 
       // Get the moves
-      SoftmaxActivation(
-          num_output_policy, &output_pol[j * num_output_policy], policy.data());
+      SoftmaxActivation(num_output_policy, &output_pol[j * num_output_policy],
+                        policy.data());
 
       policies_.emplace_back(std::move(policy));
 
@@ -267,6 +309,9 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
+
+  conv_policy_ = file.format().network_format().policy() ==
+                 pblczero::NetworkFormat::POLICY_CONVOLUTION;
 
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;
@@ -298,8 +343,24 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     conv2.InvertStddev();
   }
 
-  weights_.policy.OffsetMeans();
-  weights_.policy.InvertStddev();
+  if (conv_policy_) {
+    weights_.policy1.OffsetMeans();
+    weights_.policy1.InvertStddev();
+
+    weights_.policy1.weights =
+        WinogradFilterTransformF(weights_.policy1.weights, channels, channels);
+    auto pol_channels = weights_.policy.biases.size();
+    weights_.policy.weights = WinogradFilterTransformF(weights_.policy.weights,
+                                                       pol_channels, channels);
+    // Move bias to batchnorm
+    for (auto i = size_t{0}; i < pol_channels; i++) {
+      weights_.policy.bn_means.emplace_back(-weights_.policy.biases[i]);
+      weights_.policy.bn_stddivs.emplace_back(1.0f);
+    }
+  } else {
+    weights_.policy.OffsetMeans();
+    weights_.policy.InvertStddev();
+  }
   weights_.value.OffsetMeans();
   weights_.value.InvertStddev();
 
@@ -346,13 +407,27 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
 std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                                          const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE) {
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
         " is not supported by BLAS backend.");
+  }
+  if (weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CLASSICAL &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by BLAS backend.");
+  }
+  if (weights.format().network_format().value() !=
+      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by BLAS backend.");
   }
   return std::make_unique<BlasNetwork>(weights, options);
 }

@@ -24,12 +24,12 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#include "layers.h"
 #include <cassert>
 #include <cstring>
 #include <vector>
 #include "cuda_common.h"
 #include "kernels.h"
-#include "layers.h"
 namespace lczero {
 namespace cudnn_backend {
 
@@ -564,6 +564,62 @@ FCLayer<DataType>::~FCLayer() {
   ReportCUDAErrors(cudaFree(biases_));
 }
 
+template <typename DataType>
+PolicyMapLayer<DataType>::PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H,
+                                         int W, int usedSize)
+    : BaseLayer<DataType>(C, H, W, ip), usedSize(usedSize) {
+  size_t weight_size = sizeof(short) * this->input_->GetC() * 64;
+  ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
+}
+
+template <typename DataType>
+void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
+                                           void* /*scratch*/) {
+  size_t weight_size = sizeof(short) * usedSize;
+
+  if (std::is_same<half, DataType>::value) {
+    // convert CHW to HWC
+    int C = usedSize / 64;
+    int Cin = this->input_->GetC();
+    usedSize = Cin * 64;
+    short* convertedWeights = new short[usedSize];
+
+    for (int hw = 0; hw < 64; hw++)
+      for (int c = 0; c < Cin; c++) {
+        if (c < C)
+          convertedWeights[c * Cin + hw] = cpuWeight[hw * 64 + c];
+        else
+          convertedWeights[c * Cin + hw] = -1;
+      }
+    ReportCUDAErrors(cudaMemcpyAsync(weights_, convertedWeights,
+                                     usedSize * sizeof(short),
+                                     cudaMemcpyHostToDevice));
+    delete[] convertedWeights;
+  } else {
+    ReportCUDAErrors(cudaMemcpyAsync(weights_, cpuWeight, weight_size,
+                                     cudaMemcpyHostToDevice));
+  }
+}
+
+template <typename DataType>
+void PolicyMapLayer<DataType>::Eval(int N, DataType* output_tensor,
+                                    const DataType* input_tensor,
+                                    const DataType* /*input2*/,
+                                    void* /*scratch*/, size_t /*scratch_size*/,
+                                    cudnnHandle_t /*cudnn*/,
+                                    cublasHandle_t /*cublas*/) {
+  int inputSize =
+      this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
+  int outputSize = this->C * this->H * this->W;
+  PolicyMap(N, output_tensor, input_tensor, weights_, inputSize, usedSize,
+            outputSize);
+}
+
+template <typename DataType>
+PolicyMapLayer<DataType>::~PolicyMapLayer() {
+  ReportCUDAErrors(cudaFree(weights_));
+}
+
 // Template instantiation.
 template class ConvLayer<half>;
 template class ConvLayer<float>;
@@ -579,6 +635,9 @@ template class SoftMaxLayer<float>;
 
 template class SELayer<half>;
 template class SELayer<float>;
+
+template class PolicyMapLayer<half>;
+template class PolicyMapLayer<float>;
 
 // Misc error handling stuff.
 void CudnnError(cudnnStatus_t status, const char* file, const int& line) {

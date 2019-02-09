@@ -75,6 +75,9 @@ class OpenCLBuffers {
                           cl::Buffer& bufferResidual,
                           int batch_size);
 
+  void policymap(int N, const cl::Buffer& input, cl::Buffer& output, const cl::Buffer& indices,
+        int inputSize, int usedSize, int outputSize);
+
   const OpenCL_Network& m_opencl_net;
   const OpenCL& m_opencl;
 
@@ -88,6 +91,7 @@ class OpenCLBuffers {
   cl::Kernel m_out_transform_bn_in_kernel;
   cl::Kernel m_global_avg_pooling_kernel;
   cl::Kernel m_apply_se_kernel;
+  cl::Kernel m_policymap_kernel;
   cl::Buffer m_inBuffer;
   cl::Buffer m_inBuffer2;
   cl::Buffer m_VBuffer;
