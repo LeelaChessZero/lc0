@@ -47,9 +47,10 @@ struct V4TrainingData {
   uint8_t rule50_count;
   uint8_t move_count;
   int8_t result;
+  float root_q;
   float best_q;
 } PACKED_STRUCT;
-static_assert(sizeof(V4TrainingData) == 8280, "Wrong struct size");
+static_assert(sizeof(V4TrainingData) == 8284, "Wrong struct size");
 
 #pragma pack(pop)
 
