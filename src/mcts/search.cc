@@ -333,15 +333,15 @@ void Search::MaybeTriggerStop() {
         sum1 += prev_dist_[i];
         sum2 += new_visits[i];
       }
-      double kdgain = 0.0;
+      double kldgain = 0.0;
       for (int i = 0; i < new_visits.size(); i++) {
         double o_p = prev_dist_[i] / sum1;
         double n_p = new_visits[i] / sum2;
         if (prev_dist_[i] != 0) {
-          kdgain += o_p * log(o_p / n_p);
+          kldgain += o_p * log(o_p / n_p);
         }
       }
-      if (kdgain / (sum2 - sum1) < params_.GetMinimumKLDGainPerNode()) {
+      if (kldgain / (sum2 - sum1) < params_.GetMinimumKLDGainPerNode()) {
         kldgain_too_small = true;
       }
     }
