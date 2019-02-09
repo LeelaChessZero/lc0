@@ -544,8 +544,12 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                            : 0,
                        edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
   }
-  // In case of certain draws, insert
-  // these draws at first N (descending) where Q<=0.
+  // Ensure that certain draws have at least as many virtual visits as the
+  // first move with Q<=0 (these visits are used during final sort).
+  // The result is that they're always preferred over moves with Q<0. 
+  // Certain draws with more visits are left as is, so that they are 
+  // preferred over all less-explored moves, even if those moves have Q>0;
+  // in this respect behaviour is identical to normal leela.
   if (params_.GetCertaintyPropagation()) {
     std::partial_sort(edges.begin(), edges.end(), edges.end(),
                       std::greater<El>());
@@ -558,7 +562,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         std::get<1>(*it) = largest_N;
     }
   }
-  // Final sort pass
+  // Final sort pass.
   auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
                                                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
@@ -1127,7 +1131,6 @@ void SearchWorker::ExtendNode(Node* node) {
   // Add legal moves as edges of this node.
   node->CreateEdges(legal_moves);
 }
-
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {

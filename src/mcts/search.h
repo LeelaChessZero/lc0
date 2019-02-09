@@ -30,7 +30,6 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
-#include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"

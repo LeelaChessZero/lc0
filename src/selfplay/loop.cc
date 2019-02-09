@@ -24,9 +24,6 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-#include <sstream>
-#include <iostream>
-#include <iomanip>
 
 #include "selfplay/loop.h"
 #include "selfplay/tournament.h"

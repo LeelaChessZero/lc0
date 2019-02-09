@@ -205,8 +205,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kTwoFoldDrawScoringId) = false;
 }
 
-
-
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),

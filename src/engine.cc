@@ -456,6 +456,4 @@ void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
 
-
-
 }  // namespace lczero

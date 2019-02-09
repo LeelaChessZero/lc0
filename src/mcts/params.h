@@ -120,7 +120,6 @@ class SearchParams {
   static const OptionId kCertaintyPropagationId;
   static const OptionId kTwoFoldDrawScoringId;
 
-
  private:
   const OptionsDict& options_;
   // Cached parameter values. Values have to be cached if either:
