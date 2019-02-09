@@ -38,8 +38,10 @@ const OptionId kNNCacheSizeId{
     "nncache", "NNCacheSize",
     "Number of positions to store in a memory cache. A large cache can speed "
     "up searching, but takes memory."};
-const OptionId  kNodesId{"nodes", "", "Number of nodes to run as a benchmark"};
-const OptionId  kFenId{"fen", "", "Benchmark initial position FEN"};
+const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
+const OptionId kMovetimeId{"movetime", "",
+                           "Benchmark time allocation, in milliseconds."};
+const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 }  // namespace
 
@@ -48,8 +50,9 @@ void Benchmark::Run() {
   NetworkFactory::PopulateOptions(&options);
   SearchParams::Populate(&options);
 
-  options.Add<IntOption>(kNodesId, -1, 999999999) = 30000;
-  options.Add<StringOption>(kFenId) = ChessBoard::kStartingFen;
+  options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
+  options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
+  options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
@@ -60,9 +63,6 @@ void Benchmark::Run() {
 
     auto network = NetworkFactory::LoadNetwork(option_dict);
 
-    SearchLimits limits;
-    limits.visits = option_dict.Get<int>(kNodesId.GetId());
-
     NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId.GetId()), {});
 
@@ -70,6 +70,16 @@ void Benchmark::Run() {
     cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId.GetId()));
 
     auto start = std::chrono::steady_clock::now();
+
+    SearchLimits limits;
+    int visits = option_dict.Get<int>(kNodesId.GetId());
+    int movetime = option_dict.Get<int>(kMovetimeId.GetId());
+    if (movetime > -1) {
+      limits.search_deadline = start + std::chrono::milliseconds(movetime);
+    }
+    if (visits > -1) {
+        limits.visits = visits;
+    }
 
     auto search = std::make_unique<Search>(
         tree, network.get(),
@@ -91,7 +101,9 @@ void Benchmark::Run() {
   }
 }
 
-void Benchmark::OnBestMove(const BestMoveInfo& /*move*/) {}
+void Benchmark::OnBestMove(const BestMoveInfo& move) {
+  std::cout << "bestmove " << move.bestmove.as_string() << std::endl;
+}
 
 void Benchmark::OnInfo(const std::vector<ThinkingInfo>& infos) {
   std::string line = "Benchmark time " + std::to_string(infos[0].time);

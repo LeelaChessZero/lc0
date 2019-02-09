@@ -85,7 +85,7 @@ class Search {
 
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
-  std::pair<Move, Move> GetBestMove() const;
+  std::pair<Move, Move> GetBestMove();
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
@@ -96,8 +96,8 @@ class Search {
   const SearchParams& GetParams() const { return params_; }
 
  private:
-  // Returns the best move, maybe with temperature (according to the settings).
-  std::pair<Move, Move> GetBestMoveInternal() const;
+  // Computes the best move, maybe with temperature (according to the settings).
+  void EnsureBestMoveKnown();
 
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
@@ -126,8 +126,12 @@ class Search {
   // Returns true if the population came from tablebase.
   bool PopulateRootMoveLimit(MoveList* root_moves) const;
 
-  // We only need first ply for debug output, but could be easily generalized.
-  NNCacheLock GetCachedFirstPlyResult(EdgeAndNode) const;
+  // Returns verbose information about given node, as vector of strings.
+  std::vector<std::string> GetVerboseStats(Node* node,
+                                           bool is_black_to_move) const;
+
+  // Returns NN eval for a given node from cache, if that node is cached.
+  NNCacheLock GetCachedNNEval(Node* node) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -140,12 +144,13 @@ class Search {
   bool ok_to_respond_bestmove_ GUARDED_BY(counters_mutex_) = true;
   // There is already one thread that responded bestmove, other threads
   // should not do that.
-  bool responded_bestmove_ GUARDED_BY(counters_mutex_) = false;
+  bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
   // Becomes true when smart pruning decides that no better move can be found.
-  bool found_best_move_ GUARDED_BY(counters_mutex_) = false;
+  bool only_one_possible_move_left_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
-  std::pair<Move, Move> best_move_ GUARDED_BY(counters_mutex_);
+  EdgeAndNode final_bestmove_ GUARDED_BY(counters_mutex_);
+  EdgeAndNode final_pondermove_ GUARDED_BY(counters_mutex_);
 
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
@@ -163,8 +168,8 @@ class Search {
   optional<std::chrono::steady_clock::time_point> nps_start_time_;
 
   mutable SharedMutex nodes_mutex_;
-  EdgeAndNode best_move_edge_ GUARDED_BY(nodes_mutex_);
-  Edge* last_outputted_best_move_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
+  EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
+  Edge* last_outputted_info_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
@@ -193,9 +198,11 @@ class SearchWorker {
   // Runs iterations while needed.
   void RunBlocking() {
     LOGFILE << "Started search thread.";
-    while (search_->IsSearchActive()) {
+    // A very early stop may arrive before this point, so the test is at the end
+    // to ensure at least one iteration runs before exiting.
+    do {
       ExecuteOneIteration();
-    }
+    } while (search_->IsSearchActive());
   }
 
   // Does one full iteration of MCTS search:
@@ -287,6 +294,7 @@ class SearchWorker {
   bool root_move_filter_populated_ = false;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
+  std::unique_ptr<Node> precached_node_;
 };
 
 }  // namespace lczero

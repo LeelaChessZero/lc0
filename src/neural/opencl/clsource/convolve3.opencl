@@ -127,12 +127,12 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
                                      __global net_t * restrict Y,
                                      const int K,
                                      const int Kpad, const int Ppad,
+                                     const int relu,
                                      __global const net_t * restrict residual,
                                      __constant const net_t * restrict means,
                                      __constant const net_t * restrict stddivs) {
   const int W = 8;
   const int H = 8;
-  const int BOARD_SQUARES = W * H;
   const int WTILES = (W + 1) / 2;
   const int P = WTILES * WTILES;
   
@@ -147,7 +147,7 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
   int y = 2*block_y;
   int a_ind = y * W + x;
   if (k < K && block < P) {
-    const int kHW = batch * Kpad * BOARD_SQUARES + k * BOARD_SQUARES;
+    const int kHW = batch * K * BOARD_SQUARES + k * BOARD_SQUARES;
     float o[4];
     __out_transform_eq(M, o, Kpad, Ppad, block, batch);
     
@@ -164,7 +164,9 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
         if (residual) {
           o[i] += vload_net_t(kHW + a[i], residual);
         }
-        o[i] = o[i] > 0 ? o[i] : 0.0f;
+        if (relu) {
+          o[i] = o[i] > 0 ? o[i] : 0.0f;
+        }
         vstore_net_t(o[i], kHW + a[i], Y);
       }
     }
@@ -183,7 +185,6 @@ __kernel void out_transform_fused_bn_in(
                                         __local float * ybuf) {
   const int W = 8;
   const int H = 8;
-  const int BOARD_SQUARES = W * H;
   const int WTILES = (W + 1) / 2;
   const int P = WTILES * WTILES;
   

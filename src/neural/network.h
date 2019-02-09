@@ -34,39 +34,6 @@ namespace lczero {
 
 const int kInputPlanes = 112;
 
-struct Weights {
-  using Vec = std::vector<float>;
-  struct ConvBlock {
-    Vec weights;
-    Vec biases;
-    Vec bn_means;
-    Vec bn_stddivs;
-  };
-
-  struct Residual {
-    ConvBlock conv1;
-    ConvBlock conv2;
-  };
-
-  // Input convnet.
-  ConvBlock input;
-
-  // Residual tower.
-  std::vector<Residual> residual;
-
-  // Policy head
-  ConvBlock policy;
-  Vec ip_pol_w;
-  Vec ip_pol_b;
-
-  // Value head
-  ConvBlock value;
-  Vec ip1_val_w;
-  Vec ip1_val_b;
-  Vec ip2_val_w;
-  Vec ip2_val_b;
-};
-
 // All input planes are 64 value vectors, every element of which is either
 // 0 or some value, unique for the plane. Therefore, input is defined as
 // a bitmask showing where to set the value, and the value itself.

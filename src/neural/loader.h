@@ -31,20 +31,17 @@
 #include <vector>
 
 #include "neural/network.h"
+#include "proto/net.pb.h"
 
 namespace lczero {
 
 using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
 
-// Read from protobuf.
-FloatVectors LoadFloatsFromPbFile(const std::string& buffer);
+using WeightsFile = pblczero::Net;
 
-// Read space separated file of floats and return it as a vector of vectors.
-FloatVectors LoadFloatsFromFile(std::string* buffer);
-
-// Read v2 weights file and fill the weights structure.
-Weights LoadWeightsFromFile(const std::string& filename);
+// Read weights file and fill the weights structure.
+WeightsFile LoadWeightsFromFile(const std::string& filename);
 
 // Tries to find a file which looks like a weights file, and located in
 // directory of binary_name or one of subdirectories. If there are several such

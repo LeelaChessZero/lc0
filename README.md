@@ -9,7 +9,7 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 
 Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
 
-For essentially all purposes, including selfplay game generation and match play, we highly recommend using the `release` branch, which is equivalent to using the latest version tag.
+For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.19`), which is equivalent to using the latest version tag.
 
 Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the versions output by the client and engine.
 
@@ -17,11 +17,11 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 Download using git:
 
 ```
-git clone -b release --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+git clone -b release/0.19 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
 ```
 
 If downloading an archive, you need to also download and place the submodule:
- * Download https://github.com/LeelaChessZero/lc0/archive/release.zip ([.tar.gz](https://github.com/LeelaChessZero/lc0/archive/release.tar.gz) archive is also available)
+ * Download https://github.com/LeelaChessZero/lc0/archive/release/0.19.zip ([.tar.gz](https://github.com/LeelaChessZero/lc0/archive/release/0.19.tar.gz) archive is also available)
  * Extract
  * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
  * Move the second archive into the first archive's `libs/lczero-common/` folder and extract
@@ -82,7 +82,7 @@ in ("Deep Learning").
 
 For Ubuntu 18.04 you need the latest version of meson and clang-6.0 before performing the steps above:
 
-    sudo apt-get install clang-6.0 ninja-build protobuf-compiler libprotobuf-dev meson
+    sudo apt-get install clang-6.0 ninja-build pkg-config protobuf-compiler libprotobuf-dev meson
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
@@ -133,6 +133,7 @@ Or.
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
+5. When using Mojave install SDK headers: installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /
 6. Run `./build.sh`
 7. The resulting binary will be in build/release
 

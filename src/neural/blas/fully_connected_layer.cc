@@ -107,18 +107,4 @@ float FullyConnectedLayer::Forward0D(const size_t size, const float* x,
   return cblas_sdot((int)size, x, 1, y, 1);
 }
 
-void FullyConnectedLayer::Softmax(const size_t size, const float* input,
-                                  float* output) {
-  auto alpha = *std::max_element(input, input + size);
-
-  auto denom = 0.0f;
-  for (size_t i = 0; i < size; i++) {
-    auto val = std::exp(input[i] - alpha);
-    output[i] = val;
-    denom += val;
-  }
-  for (size_t i = 0; i < size; i++) {
-    output[i] = output[i] / denom;
-  }
-}
 }  // namespace lczero
