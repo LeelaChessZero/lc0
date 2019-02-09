@@ -266,6 +266,8 @@ class Node {
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
   float q_ = 0.0f;
+  // Averaged draw probability. Works similarly to Q, except that D is not
+  // flipped depending on the side to move.
   float d_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
