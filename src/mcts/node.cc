@@ -297,9 +297,10 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V4TrainingData Node::GetV4TrainingData(
-    GameResult game_result, const PositionHistory& history,
-    FillEmptyHistory fill_empty_history, float best_eval) const {
+V4TrainingData Node::GetV4TrainingData(GameResult game_result,
+                                       const PositionHistory& history,
+                                       FillEmptyHistory fill_empty_history,
+                                       float best_eval) const {
   V4TrainingData result;
 
   // Set version.
@@ -342,7 +343,7 @@ V4TrainingData Node::GetV4TrainingData(
   } else {
     result.result = 0;
   }
-  
+
   // Aggregate evaluation Q.
   result.root_q = -GetQ();
   result.best_q = best_eval;
