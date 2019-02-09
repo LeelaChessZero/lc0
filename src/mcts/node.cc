@@ -310,6 +310,7 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
   float total_n = static_cast<float>(GetChildrenVisits());
   // Prevent garbage/invalid training data from being uploaded to server.
   if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
+  // Set illegal moves to have -1 probability.
   std::memset(result.probabilities, -1, sizeof(result.probabilities));
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
