@@ -297,19 +297,21 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V3TrainingData Node::GetV3TrainingData(
-    GameResult game_result, const PositionHistory& history,
-    FillEmptyHistory fill_empty_history) const {
-  V3TrainingData result;
+V4TrainingData Node::GetV4TrainingData(GameResult game_result,
+                                       const PositionHistory& history,
+                                       FillEmptyHistory fill_empty_history,
+                                       float best_eval) const {
+  V4TrainingData result;
 
   // Set version.
-  result.version = 3;
+  result.version = 4;
 
   // Populate probabilities.
   float total_n = static_cast<float>(GetChildrenVisits());
   // Prevent garbage/invalid training data from being uploaded to server.
   if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
-  std::memset(result.probabilities, 0, sizeof(result.probabilities));
+  // Set illegal moves to have -1 probability.
+  std::memset(result.probabilities, -1, sizeof(result.probabilities));
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
         child.GetN() / total_n;
@@ -342,6 +344,14 @@ V3TrainingData Node::GetV3TrainingData(
   } else {
     result.result = 0;
   }
+
+  // Aggregate evaluation Q.
+  result.root_q = -GetQ();
+  result.best_q = best_eval;
+
+  // Draw probability of WDL head.
+  result.root_d = 0.0;
+  result.best_d = 0.0;
 
   return result;
 }

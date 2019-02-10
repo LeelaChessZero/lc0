@@ -204,9 +204,10 @@ class Node {
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
 
-  V3TrainingData GetV3TrainingData(GameResult result,
+  V4TrainingData GetV4TrainingData(GameResult result,
                                    const PositionHistory& history,
-                                   FillEmptyHistory fill_empty_history) const;
+                                   FillEmptyHistory fill_empty_history,
+                                   float best_eval) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
