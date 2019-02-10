@@ -91,7 +91,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       const auto& board = history.Last().GetBoard();
       if (board.castlings().no_legal_castle() &&
           history.Last().GetNoCaptureNoPawnPly() == 0 &&
-          (board.ours() + board.theirs()).count() <=
+          (board.ours() | board.theirs()).count() <=
               tablebase->max_cardinality()) {
         ProbeState state;
         WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
@@ -140,7 +140,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       const auto& board = history.Last().GetBoard();
       if (board.castlings().no_legal_castle() &&
           history.Last().GetNoCaptureNoPawnPly() != 0 &&
-          (board.ours() + board.theirs()).count() <=
+          (board.ours() | board.theirs()).count() <=
               tablebase->max_cardinality()) {
         ProbeState state;
         WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
@@ -226,11 +226,13 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       for (auto& chunk : fileContents) {
         float sum = 0.0;
         for (auto& prob : chunk.probabilities) {
+          if (prob < 0) continue;
           prob = std::max(0.0f, prob + distOffset);
           prob = std::pow(prob, 1.0f / distTemp);
           sum += prob;
         }
         for (auto& prob : chunk.probabilities) {
+          if (prob < 0) continue;
           prob /= sum;
         }
       }
@@ -249,7 +251,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       history.Append(moves[i]);
       const auto& board = history.Last().GetBoard();
       if (board.castlings().no_legal_castle() &&
-          (board.ours() + board.theirs()).count() <= 3 &&
+          (board.ours() | board.theirs()).count() <= 3 &&
           board.pawns().empty()) {
         ProbeState state;
         WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
