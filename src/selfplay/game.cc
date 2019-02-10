@@ -138,21 +138,23 @@ void SelfPlayGame::ProcessMoveEnd() {
 
   // Append training data. The GameResult is overwritten later, for now just
   // use UNDECIDED.
+  auto best_eval = search_->GetBestEval();
+  auto best_q = best_eval.first;
+  auto best_d = best_eval.second;
   training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV4TrainingData(
       GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-      search_->GetParams().GetHistoryFill(), search_->GetBestEval()));
+      search_->GetParams().GetHistoryFill(), best_q, best_d));
 
   // Handle possible resign.
-  float eval = search_->GetBestEval();
-  eval = (eval + 1) / 2;
-  if (eval < min_eval_[idx]) min_eval_[idx] = eval;
+  best_q = (best_q + 1) / 2;
+  if (best_q < min_eval_[idx]) min_eval_[idx] = best_q;
   int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
   if (enable_resign_ && move_number >= options_[idx].uci_options->Get<int>(
                                            kResignEarliestMoveId.GetId())) {
     const float resignpct =
         options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
         100;
-    if (eval < resignpct) {  // always false when resignpct == 0
+    if (best_q < resignpct) {  // always false when resignpct == 0
       game_result_ =
           black_to_move_ ? GameResult::WHITE_WON : GameResult::BLACK_WON;
       return;
