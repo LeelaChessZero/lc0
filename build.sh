@@ -14,20 +14,22 @@ esac
 
 BUILDDIR=build/${BUILDTYPE}
 
-if [ -d ${BUILDDIR} ]
+if [ -f ${BUILDDIR}/build.ninja ]
 then
-  meson configure ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
+  meson configure ${BUILDDIR} -Dbuildtype=${BUILDTYPE} -Dprefix=${INSTALL_PREFIX:-/usr/local} "$@"
 else
   meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
 fi
 
 pushd ${BUILDDIR}
 
+NINJA=$(awk '/ninja/ {ninja=$4} END {print ninja}' meson-logs/meson-log.txt)
+
 if [ -n "${INSTALL_PREFIX}" ]
 then
-  ninja install
+  ${NINJA} install
 else
-  ninja
+  ${NINJA}
 fi
 
 popd

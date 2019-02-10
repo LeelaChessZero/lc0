@@ -43,6 +43,7 @@ class optional {
     return *this;
   }
   void reset() { has_value_ = false; }
+  T value_or(const T& def) const { return has_value_ ? value_ : def; }
 
  private:
   T value_;

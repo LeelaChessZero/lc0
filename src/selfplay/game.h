@@ -36,6 +36,11 @@
 
 namespace lczero {
 
+struct SelfPlayLimits : SearchLimits {
+  // Movetime
+  std::int64_t movetime;
+};
+
 struct PlayerOptions {
   // Network to use by the player.
   Network* network;
@@ -48,7 +53,7 @@ struct PlayerOptions {
   // User options dictionary.
   const OptionsDict* uci_options;
   // Limits to use for every move.
-  SearchLimits search_limits;
+  SelfPlayLimits search_limits;
 };
 
 // Plays a single game vs itself.
@@ -97,7 +102,7 @@ class SelfPlayGame {
   std::mutex mutex_;
 
   // Training data to send.
-  std::vector<V3TrainingData> training_data_;
+  std::vector<V4TrainingData> training_data_;
 };
 
 }  // namespace lczero

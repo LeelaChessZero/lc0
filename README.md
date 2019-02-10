@@ -9,7 +9,7 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 
 Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
 
-For essentially all purposes, including selfplay game generation and match play, we highly recommend using the `release` branch, which is equivalent to using the latest version tag.
+For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.19`), which is equivalent to using the latest version tag.
 
 Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the versions output by the client and engine.
 
@@ -17,11 +17,11 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 Download using git:
 
 ```
-git clone -b release --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+git clone -b release/0.19 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
 ```
 
 If downloading an archive, you need to also download and place the submodule:
- * Download https://github.com/LeelaChessZero/lc0/archive/release.zip ([.tar.gz](https://github.com/LeelaChessZero/lc0/archive/release.tar.gz) archive is also available)
+ * Download https://github.com/LeelaChessZero/lc0/archive/release/0.19.zip ([.tar.gz](https://github.com/LeelaChessZero/lc0/archive/release/0.19.tar.gz) archive is also available)
  * Extract
  * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
  * Move the second archive into the first archive's `libs/lczero-common/` folder and extract
@@ -56,6 +56,36 @@ Given those basics, the OS and backend specific instructions are below.
 If you want to build with a different compiler, pass the `CC` and `CXX` environment variables:
 
     CC=clang-6.0 CXX=clang++-6.0 ./build.sh
+
+#### Note on installing CUDA on Ubuntu
+
+Nvidia provides .deb packages. CUDA will be installed in `/usr/local/cuda-10.0` and requires 3GB of diskspace.
+If your `/usr/local` partition doesn't have that much space left you can create a symbolic link before
+doing the install; for example: `sudo ln -s /opt/cuda-10.0 /usr/local/cuda-10.0`
+
+The instructions given on the nvidia website tell you to finish with `apt install cuda`. However, this
+might not work (missing dependencies). In that case use `apt install cuda-10-0`. Afterwards you can
+install the meta package `cuda` which will cause an automatic upgrade to a newer version when that
+comes available (assuming you use `Installer Type deb (network)`, if you'd want that (just cuda-10-0 will
+stay at version 10). If you don't know what to do, only install cuda-10-0.
+
+cuDNN exists of two packages, the Runtime Library and the Developer Library (both a .deb package).
+
+Before you can download the latter you need to create a (free) "developer" account with nvidia for
+which at least a legit email address is required (their website says: The e-mail address is not made public
+and will only be used if you wish to receive a new password or wish to receive certain news or notifications
+by e-mail.). Further they ask for a name, date of birth (not visible later on), country, organisation ("LeelaZero"
+if you have none), primary industry segment ("Other"/none) and which development areas you are interested
+in ("Deep Learning").
+
+#### Ubuntu 18.04
+
+For Ubuntu 18.04 you need the latest version of meson and clang-6.0 before performing the steps above:
+
+    sudo apt-get install clang-6.0 ninja-build pkg-config protobuf-compiler libprotobuf-dev meson
+    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
+
+Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
 
 #### Ubuntu 16.04
 
@@ -103,8 +133,51 @@ Or.
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
+5. When using Mojave install SDK headers: installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /
 6. Run `./build.sh`
 7. The resulting binary will be in build/release
+
+### Raspberry Pi
+
+1. Install OpenBLAS
+
+```
+git clone https://github.com/xianyi/OpenBLAS.git
+cd OpenBLAS/
+make
+sudo make PREFIX=/usr install
+cd ..
+```
+
+2. Install Meson
+
+```
+pip3 install meson
+```
+
+3. Install clang
+
+```
+wget http://releases.llvm.org/6.0.0/clang+llvm-6.0.0-armv7a-linux-gnueabihf.tar.xz
+tar -xf clang+llvm-6.0.0-armv7a-linux-gnueabihf.tar.xz
+rm clang+llvm-6.0.0-armv7a-linux-gnueabihf.tar.xz
+mv clang+llvm-6.0.0-armv7a-linux-gnueabihf clang_6.0.0
+sudo mv clang_6.0.0 /usr/local
+echo 'export PATH=/usr/local/clang_6.0.0/bin:~/.local/bin:$PATH' >> .bashrc
+echo 'export LD_LIBRARY_PATH=/usr/local/clang_6.0.0/lib:$LD_LIBRARY_PATH' >> .bashrc
+source .bashrc
+```
+
+4. Clone lc0 and compile
+
+```
+git clone https://github.com/LeelaChessZero/lc0.git
+cd lc0
+git submodule update --init --recursive
+CC=clang CXX=clang++ ./build.sh -Ddefault_library=static
+```
+
+5. The resulting binary will be in build/release
 
 ## License
 

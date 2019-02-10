@@ -35,7 +35,8 @@
 namespace lczero {
 
 namespace {
-const char* kInteractive = "Run in interactive mode with uci-like interface";
+const OptionId kInteractiveId{
+    "interactive", "", "Run in interactive mode with UCI-like interface."};
 const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
 const char* kInputDirStr = "Directory with gzipped files in need of rescoring.";
 const char* kOutputDirStr = "Directory to write rescored files.";
@@ -60,8 +61,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     TrainingDataReader reader(file);
     std::string fileName = file.substr(file.find_last_of("/\\") + 1);
     TrainingDataWriter writer(outputDir + "/" + fileName);
-    std::vector<V3TrainingData> fileContents;
-    V3TrainingData data;
+    std::vector<V4TrainingData> fileContents;
+    V4TrainingData data;
     while (reader.ReadChunk(&data)) {
       fileContents.push_back(data);
     }
@@ -80,7 +81,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     int rule50ply;
     int gameply;
     ChessBoard board;
-    board.SetFromFen(ChessBoard::kStartingFen, &rule50ply, &gameply);
+    board.SetFromFen(ChessBoard::kStartposFen, &rule50ply, &gameply);
     history.Reset(board, rule50ply, gameply);
     int last_rescore = -1;
     orig_counts[fileContents[0].result + 1]++;
@@ -132,7 +133,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
     }
-    board.SetFromFen(ChessBoard::kStartingFen, &rule50ply, &gameply);
+    board.SetFromFen(ChessBoard::kStartposFen, &rule50ply, &gameply);
     history.Reset(board, rule50ply, gameply);
     for (int i = 0; i < moves.size(); i++) {
       history.Append(moves[i]);
@@ -373,11 +374,11 @@ SelfPlayLoop::~SelfPlayLoop() {
 }
 
 void SelfPlayLoop::RunLoop() {
-  options_.Add<BoolOption>(kInteractive, "interactive") = false;
+  options_.Add<BoolOption>(kInteractiveId) = false;
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;
-  if (options_.GetOptionsDict().Get<bool>(kInteractive)) {
+  if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
     UciLoop::RunLoop();
   } else {
     // Send id before starting tournament to allow wrapping client to know
@@ -403,7 +404,6 @@ void SelfPlayLoop::CmdUci() {
 
 void SelfPlayLoop::CmdStart() {
   if (tournament_) return;
-  options_.SendAllOptions();
   tournament_ = std::make_unique<SelfPlayTournament>(
       options_.GetOptionsDict(),
       std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
@@ -449,7 +449,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
 void SelfPlayLoop::CmdSetOption(const std::string& name,
                                 const std::string& value,
                                 const std::string& context) {
-  options_.SetOption(name, value, context);
+  options_.SetUciOption(name, value, context);
 }
 
 void SelfPlayLoop::SendTournament(const TournamentInfo& info) {

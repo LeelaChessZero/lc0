@@ -46,7 +46,7 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-InputPlanes PlanesFromTrainingData(const V3TrainingData& data) { InputPlanes result;
+InputPlanes PlanesFromTrainingData(const V4TrainingData& data) { InputPlanes result;
   for (int i = 0; i < 104; i++) {
     result.emplace_back();
     result.back().mask = ReverseBitsInBytes(data.planes[i]);
@@ -67,8 +67,26 @@ TrainingDataReader::~TrainingDataReader() {
   gzclose(fin_);
 }
 
-bool TrainingDataReader::ReadChunk(V3TrainingData* data){
-  return gzread(fin_, reinterpret_cast<void*>(data), sizeof(*data)) == sizeof(*data);
+bool TrainingDataReader::ReadChunk(V4TrainingData* data){
+  if (format_v4) {
+    return gzread(fin_, reinterpret_cast<void*>(data), sizeof(*data)) == sizeof(*data);
+  } else {
+    size_t v4_extra = 16;
+    size_t v3_size = sizeof(*data) - v4_extra;
+    int read_size = gzread(fin_, reinterpret_cast<void*>(data), v3_size);
+    if (read_size != v3_size) return false;
+    if (data->version == 3) {
+      data->best_d = 0.0f;
+      data->best_q = 0.0f;
+      data->root_d = 0.0f;
+      data->root_q = 0.0f;
+      return true;
+    } else {
+      format_v4 = true;
+      return gzread(fin_, reinterpret_cast<void*>(data) + v3_size, v4_extra) == v4_extra;
+    }
+  
+  }
 }
 
 TrainingDataWriter::TrainingDataWriter(int game_id) {
@@ -91,8 +109,7 @@ TrainingDataWriter::TrainingDataWriter(std::string filename) : filename_(filenam
   if (!fout_) throw Exception("Cannot create gzip file " + filename_);
 }
 
-
-void TrainingDataWriter::WriteChunk(const V3TrainingData& data) {
+void TrainingDataWriter::WriteChunk(const V4TrainingData& data) {
   auto bytes_written =
       gzwrite(fout_, reinterpret_cast<const char*>(&data), sizeof(data));
   if (bytes_written != sizeof(data)) {
