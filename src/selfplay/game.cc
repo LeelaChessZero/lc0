@@ -123,7 +123,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
           100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
-        auto best_w = (best_eval.first + 1 - best_eval.second) / 2;
+        auto best_w = (best_eval.first + 1.0f - best_eval.second) / 2.0f;
         auto best_d = best_eval.second;
         auto best_l = best_w - best_eval.first;
         auto threshold = 1.0f - resignpct;
