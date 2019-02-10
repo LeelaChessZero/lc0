@@ -313,6 +313,41 @@ NNCacheLock Search::GetCachedNNEval(Node* node) const {
   return nneval;
 }
 
+void Search::UpdateKLDGain() {
+  if (params_.GetMinimumKLDGainPerNode() <= 0) return;
+
+  SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
+  if (total_playouts_ + initial_visits_ >=
+      prev_dist_visits_total_ + params_.GetKLDGainAverageInterval()) {
+    std::vector<uint32_t> new_visits;
+    for (auto edge : root_node_->Edges()) {
+      new_visits.push_back(edge.GetN());
+    }
+    if (prev_dist_.size() != 0) {
+      double sum1 = 0.0;
+      double sum2 = 0.0;
+      for (int i = 0; i < new_visits.size(); i++) {
+        sum1 += prev_dist_[i];
+        sum2 += new_visits[i];
+      }
+      double kldgain = 0.0;
+      for (int i = 0; i < new_visits.size(); i++) {
+        double o_p = prev_dist_[i] / sum1;
+        double n_p = new_visits[i] / sum2;
+        if (prev_dist_[i] != 0) {
+          kldgain += o_p * log(o_p / n_p);
+        }
+      }
+      if (kldgain / (sum2 - sum1) < params_.GetMinimumKLDGainPerNode()) {
+        kldgain_too_small_ = true;
+      }
+    }
+    prev_dist_.swap(new_visits);
+    prev_dist_visits_total_ = total_playouts_ + initial_visits_;
+  }
+}
+
 void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
@@ -323,6 +358,10 @@ void Search::MaybeTriggerStop() {
 
   // If not yet stopped, try to stop for different reasons.
   if (!stop_.load(std::memory_order_acquire)) {
+    if (kldgain_too_small_) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: KLDGain per node too small.";
+    }
     // If smart pruning tells to stop (best move found), stop.
     if (only_one_possible_move_left_) {
       FireStopInternal();
@@ -1262,6 +1301,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.
+  search_->UpdateKLDGain();
   search_->MaybeTriggerStop();
   search_->MaybeOutputInfo();
 

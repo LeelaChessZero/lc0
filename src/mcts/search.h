@@ -112,6 +112,7 @@ class Search {
   int64_t GetTimeSinceStart() const;
   int64_t GetTimeToDeadline() const;
   void UpdateRemainingMoves();
+  void UpdateKLDGain();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
@@ -175,6 +176,13 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int64_t>::max();
+  // If kldgain minimum checks enabled, this was the visit distribution at the
+  // last kldgain interval triggering.
+  std::vector<uint32_t> prev_dist_ GUARDED_BY(counters_mutex_);
+  // Total visits at the last time prev_dist_ was cached.
+  uint32_t prev_dist_visits_total_ GUARDED_BY(counters_mutex_) = 0;
+  // If true, search should exit as kldgain evaluation showed too little change.
+  bool kldgain_too_small_ GUARDED_BY(counters_mutex_) = false;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
