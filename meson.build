@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-project('lc0', 'cpp',
+project('rescorer', 'cpp',
         default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
         meson_version: '>=0.45')
 
@@ -439,7 +439,7 @@ if not get_option('pext')
   add_project_arguments('-DNO_PEXT', language : 'cpp')
 endif
 
-executable('lc0', 'src/main.cc',
+executable('rescorer', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
 
