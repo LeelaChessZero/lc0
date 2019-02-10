@@ -37,13 +37,18 @@ namespace lczero {
 namespace {
 const OptionId kInteractiveId{
     "interactive", "", "Run in interactive mode with UCI-like interface."};
-const char* kSyzygyTablebaseStr = "List of Syzygy tablebase directories";
-const char* kInputDirStr = "Directory with gzipped files in need of rescoring.";
-const char* kOutputDirStr = "Directory to write rescored files.";
-const char* kThreadsStr = "Number of concurrent threads to rescore with.";
-const char* kTempStr = "Additional temperature to apply to policy target.";
-const char* kDistributionOffsetStr =
-    "Additional offset to apply to policy target before temperature.";
+const OptionId kSyzygyTablebaseId{"syzygy-paths", "",
+                                  "List of Syzygy tablebase directories"};
+const OptionId kInputDirId{
+    "input", "", "Directory with gzipped files in need of rescoring."};
+const OptionId kOutputDirId{"output", "", "Directory to write rescored files."};
+const OptionId kThreadsId{"threads", "",
+                          "Number of concurrent threads to rescore with."};
+const OptionId kTempId{"temperature", "",
+                       "Additional temperature to apply to policy target."};
+const OptionId kDistributionOffsetId{
+    "dist_offset", "",
+    "Additional offset to apply to policy target before temperature."};
 
 int games = 0;
 int positions = 0;
@@ -280,13 +285,15 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           if (no_reps) {
             int depth = tablebase->probe_dtz(history.Last(), &state);
             if (state != FAIL) {
-              // if depth == -1 this is wrong, since that is mate and the answer should be 0, but the move before depth is -2.
-              // Since data never contains mate position, ignore that discrepency.
+              // if depth == -1 this is wrong, since that is mate and the answer
+              // should be 0, but the move before depth is -2. Since data never
+              // contains mate position, ignore that discrepency.
               int converted_ply_remaining = std::abs(depth);
               // This should be able to be <= 99 safely, but I've not
               // convinced myself thats true.
               if (steps + std::abs(depth) < 99) {
-                fileContents[i + 1].move_count = std::min(255, converted_ply_remaining / 2);
+                fileContents[i + 1].move_count =
+                    std::min(255, converted_ply_remaining / 2);
               }
               if (steps == 0) {
                 for (int j = i; j >= 0; j--) {
@@ -321,26 +328,26 @@ RescoreLoop::RescoreLoop() {}
 RescoreLoop::~RescoreLoop() {}
 
 void RescoreLoop::RunLoop() {
-  options_.Add<StringOption>(kSyzygyTablebaseStr, "syzygy-paths", 's');
-  options_.Add<StringOption>(kInputDirStr, "input", 'i');
-  options_.Add<StringOption>(kOutputDirStr, "output", 'o');
-  options_.Add<IntOption>(kThreadsStr, 1, 20, "threads", 't') = 1;
-  options_.Add<FloatOption>(kTempStr, 0.001, 100, "temperature") = 1;
+  options_.Add<StringOption>(kSyzygyTablebaseId);
+  options_.Add<StringOption>(kInputDirId);
+  options_.Add<StringOption>(kOutputDirId);
+  options_.Add<IntOption>(kThreadsId, 1, 20) = 1;
+  options_.Add<FloatOption>(kTempId, 0.001, 100) = 1;
   // Positive dist offset requires knowing the legal move set, so not supported
   // for now.
-  options_.Add<FloatOption>(kDistributionOffsetStr, -0.999, 0, "dist_offset") =
-      0;
+  options_.Add<FloatOption>(kDistributionOffsetId, -0.999, 0) = 0;
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;
   SyzygyTablebase tablebase;
-  if (!tablebase.init(
-          options_.GetOptionsDict().Get<std::string>(kSyzygyTablebaseStr)) ||
+  if (!tablebase.init(options_.GetOptionsDict().Get<std::string>(
+          kSyzygyTablebaseId.GetId())) ||
       tablebase.max_cardinality() < 3) {
     std::cerr << "FAILED TO LOAD SYZYGY" << std::endl;
     return;
   }
-  auto inputDir = options_.GetOptionsDict().Get<std::string>(kInputDirStr);
+  auto inputDir =
+      options_.GetOptionsDict().Get<std::string>(kInputDirId.GetId());
   auto files = GetFileList(inputDir);
   if (files.size() == 0) {
     std::cerr << "No files to process" << std::endl;
@@ -350,11 +357,12 @@ void RescoreLoop::RunLoop() {
     files[i] = inputDir + "/" + files[i];
   }
   // TODO: support threads option.
-  ProcessFiles(files, &tablebase,
-               options_.GetOptionsDict().Get<std::string>(kOutputDirStr),
-               options_.GetOptionsDict().Get<float>(kTempStr),
-               options_.GetOptionsDict().Get<float>(kDistributionOffsetStr), 0,
-               1);
+  ProcessFiles(
+      files, &tablebase,
+      options_.GetOptionsDict().Get<std::string>(kOutputDirId.GetId()),
+      options_.GetOptionsDict().Get<float>(kTempId.GetId()),
+      options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()), 0,
+      1);
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;
   std::cout << "Rescores performed: " << rescored << std::endl;

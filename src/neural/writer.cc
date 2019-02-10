@@ -67,9 +67,10 @@ TrainingDataReader::~TrainingDataReader() {
   gzclose(fin_);
 }
 
-bool TrainingDataReader::ReadChunk(V4TrainingData* data){
+bool TrainingDataReader::ReadChunk(V4TrainingData* data) {
   if (format_v4) {
-    return gzread(fin_, reinterpret_cast<void*>(data), sizeof(*data)) == sizeof(*data);
+    return gzread(fin_, reinterpret_cast<void*>(data), sizeof(*data)) ==
+           sizeof(*data);
   } else {
     size_t v4_extra = 16;
     size_t v3_size = sizeof(*data) - v4_extra;
@@ -83,9 +84,11 @@ bool TrainingDataReader::ReadChunk(V4TrainingData* data){
       return true;
     } else {
       format_v4 = true;
-      return gzread(fin_, reinterpret_cast<void*>(data) + v3_size, v4_extra) == v4_extra;
+      return gzread(fin_,
+                    reinterpret_cast<void*>(reinterpret_cast<char*>(data) +
+                                            v3_size),
+                    v4_extra) == v4_extra;
     }
-  
   }
 }
 
