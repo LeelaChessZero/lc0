@@ -310,18 +310,13 @@ NNCacheLock Search::GetCachedNNEval(Node* node) const {
   return nneval;
 }
 
-void Search::MaybeTriggerStop() {
+void Search::UpdateKLDGain() {
+  if (params_.GetMinimumKLDGainPerNode() <= 0) return;
+
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
-  // Already responded bestmove, nothing to do here.
-  if (bestmove_is_sent_) return;
-  // Don't stop when the root node is not yet expanded.
-  if (total_playouts_ == 0) return;
-
-  bool kldgain_too_small = false;
-  if (params_.GetMinimumKLDGainPerNode() > 0 &&
-      total_playouts_ + initial_visits_ >
-          prev_dist_visits_total_ + params_.GetKLDGainAverageInterval()) {
+  if (total_playouts_ + initial_visits_ >=
+      prev_dist_visits_total_ + params_.GetKLDGainAverageInterval()) {
     std::vector<uint32_t> new_visits;
     for (auto edge : root_node_->Edges()) {
       new_visits.push_back(edge.GetN());
@@ -342,18 +337,27 @@ void Search::MaybeTriggerStop() {
         }
       }
       if (kldgain / (sum2 - sum1) < params_.GetMinimumKLDGainPerNode()) {
-        kldgain_too_small = true;
+        kldgain_too_small_ = true;
       }
     }
     prev_dist_.swap(new_visits);
     prev_dist_visits_total_ = total_playouts_ + initial_visits_;
   }
+}
+
+void Search::MaybeTriggerStop() {
+  SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
+  // Already responded bestmove, nothing to do here.
+  if (bestmove_is_sent_) return;
+  // Don't stop when the root node is not yet expanded.
+  if (total_playouts_ == 0) return;
 
   // If not yet stopped, try to stop for different reasons.
   if (!stop_.load(std::memory_order_acquire)) {
-    if (kldgain_too_small) {
+    if (kldgain_too_small_) {
       FireStopInternal();
-      LOGFILE << "Stopped search: KDGain per node too small.";
+      LOGFILE << "Stopped search: KLDGain per node too small.";
     }
     // If smart pruning tells to stop (best move found), stop.
     if (only_one_possible_move_left_) {
@@ -1290,6 +1294,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.
+  search_->UpdateKLDGain();
   search_->MaybeTriggerStop();
   search_->MaybeOutputInfo();
 
