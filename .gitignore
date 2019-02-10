@@ -1,0 +1,10 @@
+build/
+testdata/
+LC0VSProj/
+CUDA_NN/
+.DS_Store
+xcuserdata
+subprojects/*
+!subprojects/*.wrap
+lc0.xcodeproj/
+*.swp
