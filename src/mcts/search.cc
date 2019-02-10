@@ -949,7 +949,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      float Q = child.GetQ(fpu);
+      float Q = child.GetAdjustedQ(fpu, params_.GetValuePessimism());
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
@@ -1278,10 +1278,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
-  float value_pessimism = params_.GetValuePessimism();
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit, value_pessimism);
+    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
     // Q will be flipped for opponent.
     v = -v;
 

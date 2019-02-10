@@ -175,7 +175,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, float d, int multivisit, float value_pessimism);
+  void FinalizeScoreUpdate(float v, float d, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -266,8 +266,7 @@ class Node {
   // subtree. For terminal nodes, eval is stored. This is from the perspective
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
-  // Initialized to loss (-1).
-  float q_ = -1.0f;
+  float q_ = 0.0f;
   // Averaged draw probability. Works similarly to Q, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -340,6 +339,17 @@ class EdgeAndNode {
   }
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
+  }
+  // Decrease Q of moves with low amount of visits.
+  // Helps mainly with batching.
+  float GetAdjustedQ(float default_q, float value_pessimism) const {
+    if (node_ && node_->GetN() > 0) {
+        float n = node_->GetN();
+        float q = node_->GetQ();
+        float adjust = value_pessimism * (1.0f + q) / (value_pessimism + n);
+        return q - adjust;
+    }
+    return default_q;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
