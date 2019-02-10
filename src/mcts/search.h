@@ -194,7 +194,7 @@ class SearchWorker {
  public:
   SearchWorker(Search* search)
       : search_(search),
-        history_(search_->played_history_),
+        history_(search->played_history_),
         params_(search->params_) {}
 
   // Runs iterations while needed.
