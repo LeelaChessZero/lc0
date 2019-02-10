@@ -305,7 +305,7 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 V4TrainingData Node::GetV4TrainingData(GameResult game_result,
                                        const PositionHistory& history,
                                        FillEmptyHistory fill_empty_history,
-                                       float best_eval) const {
+                                       float best_q, float best_d) const {
   V4TrainingData result;
 
   // Set version.
@@ -352,11 +352,11 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
 
   // Aggregate evaluation Q.
   result.root_q = -GetQ();
-  result.best_q = best_eval;
+  result.best_q = best_q;
 
   // Draw probability of WDL head.
-  result.root_d = 0.0;
-  result.best_d = 0.0;
+  result.root_d = GetD();
+  result.best_d = best_d;
 
   return result;
 }

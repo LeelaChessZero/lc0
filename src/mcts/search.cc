@@ -423,13 +423,14 @@ void Search::UpdateRemainingMoves() {
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
 // settings. So, somethimes, they may return results of different moves.
-float Search::GetBestEval() const {
+std::pair<float, float> Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
   float parent_q = -root_node_->GetQ();
-  if (!root_node_->HasChildren()) return parent_q;
+  float parent_d = root_node_->GetD();
+  if (!root_node_->HasChildren()) return {parent_q, parent_d};
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
-  return best_edge.GetQ(parent_q);
+  return {best_edge.GetQ(parent_q), best_edge.GetD()};
 }
 
 std::pair<Move, Move> Search::GetBestMove() {

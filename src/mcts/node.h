@@ -208,7 +208,7 @@ class Node {
   V4TrainingData GetV4TrainingData(GameResult result,
                                    const PositionHistory& history,
                                    FillEmptyHistory fill_empty_history,
-                                   float best_eval) const;
+                                   float best_q, float best_d) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;

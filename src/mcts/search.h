@@ -89,7 +89,8 @@ class Search {
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  float GetBestEval() const;
+  // Returns pair {Q, D}.
+  std::pair<float, float> GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
