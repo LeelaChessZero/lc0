@@ -100,12 +100,15 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     if (training) {
       // Append training data. The GameResult is later overwritten.
+      auto best_eval = search_->GetBestEval();
+      auto best_q = best_eval.first;
+      auto best_d = best_eval.second;
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV4TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(), search_->GetBestEval()));
+          search_->GetParams().GetHistoryFill(), best_q, best_d));
     }
 
-    float eval = search_->GetBestEval();
+    float eval = search_->GetBestEval().first;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
     int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;

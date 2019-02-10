@@ -219,7 +219,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {
 }
 
 }  // namespace lczero
