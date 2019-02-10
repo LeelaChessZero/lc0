@@ -349,7 +349,7 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
   result.root_q = -GetQ();
   result.best_q = best_eval;
 
-  // Draw probability of WDL head
+  // Draw probability of WDL head.
   result.root_d = 0.0;
   result.best_d = 0.0;
 
