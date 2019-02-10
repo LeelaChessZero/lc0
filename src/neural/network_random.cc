@@ -26,6 +26,7 @@
 */
 
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <thread>
@@ -65,8 +66,12 @@ class RandomNetworkComputation : public NetworkComputation {
   }
 
   float GetDVal(int sample) const override {
+    // Maximum D value is 1 - abs(Q) for W, D, L to be in range [0.0, 1.0].
+    float q = GetQVal(sample);
+    float max_d = 1.0f - std::fabs(q);
     // Hash in arbitrary constant to make D return different value from Q.
-    return (HashCat({inputs_[sample], 1234}) % 10000) / 10000.0;
+    float d = max_d * (HashCat({inputs_[sample], 1234}) % 10000) / 10000.0;
+    return d;
   }
 
   float GetPVal(int sample, int move_id) const override {
