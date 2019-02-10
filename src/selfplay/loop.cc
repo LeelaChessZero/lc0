@@ -243,7 +243,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     }
     // Correct move_count using DTM. Since we don't actually have DTM, use DTZ
     // for 3 piece no-pawn positions only.
-    board.SetFromFen(ChessBoard::kStartingFen, &rule50ply, &gameply);
+    board.SetFromFen(ChessBoard::kStartposFen, &rule50ply, &gameply);
     history.Reset(board, rule50ply, gameply);
     for (int i = 0; i < moves.size(); i++) {
       history.Append(moves[i]);
