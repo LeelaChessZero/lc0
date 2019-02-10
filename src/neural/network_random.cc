@@ -26,9 +26,10 @@
 */
 
 #include <chrono>
+#include <cmath>
+#include <cstring>
 #include <functional>
 #include <thread>
-#include <cstring>
 #include "neural/factory.h"
 #include "utils/hashcat.h"
 
@@ -39,6 +40,7 @@ class RandomNetworkComputation : public NetworkComputation {
  public:
   RandomNetworkComputation(int delay, int seed)
       : delay_ms_(delay), seed_(seed) {}
+
   void AddInput(InputPlanes&& input) override {
     std::uint64_t hash = seed_;
     for (const auto& plane : input) {
@@ -50,6 +52,7 @@ class RandomNetworkComputation : public NetworkComputation {
     }
     inputs_.push_back(hash);
   }
+
   void ComputeBlocking() override {
     if (delay_ms_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
@@ -57,9 +60,20 @@ class RandomNetworkComputation : public NetworkComputation {
   }
 
   int GetBatchSize() const override { return inputs_.size(); }
+
   float GetQVal(int sample) const override {
     return (int(inputs_[sample] % 200000) - 100000) / 100000.0;
   }
+
+  float GetDVal(int sample) const override {
+    // Maximum D value is 1 - abs(Q) for W, D, L to be in range [0.0, 1.0].
+    float q = GetQVal(sample);
+    float max_d = 1.0f - std::fabs(q);
+    // Hash in arbitrary constant to make D return different value from Q.
+    float d = max_d * (HashCat({inputs_[sample], 1234}) % 10000) / 10000.0;
+    return d;
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return (HashCat({inputs_[sample], static_cast<unsigned long>(move_id)}) %
             10000) /

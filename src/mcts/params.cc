@@ -146,6 +146,10 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "in the cache or is terminal, evaluate it right away without sending the "
     "batch to the NN. When off, this may only happen with the very first node "
     "of a batch; when on, this can happen with any node."};
+const OptionId SearchParams::kSyzygyFastPlayId{
+    "syzygy-fast-play", "SyzygyFastPlay",
+    "With DTZ tablebase files, only allow the network pick from winning moves "
+    "that have shortest DTZ to play faster (but not necessarily optimally)."};
 const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV",
     "Number of game play lines (principal variations) to show in UCI info "
@@ -164,6 +168,14 @@ const OptionId SearchParams::kValuePessimismId{
     "value-pessimism", "ValuePessimism",
     "Add one loss to value of a node after it has been evaluated once and "
     "weight it in the value calculation as if it had this many visits."};
+const OptionId SearchParams::kMinimumKLDGainPerNode{
+    "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
+    "If greater than 0 search will abort unless the last KLDGainAverageInterval "
+    "nodes have an average gain per node of at least this much."};
+const OptionId SearchParams::kKLDGainAverageInterval{
+    "kldgain-average-interval", "KLDGainAverageInterval",
+    "Used to decide how frequently to evaluate the average KLDGainPerNode to "
+    "check the MinimumKLDGainPerNode, if specified."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -192,12 +204,15 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
+  options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kValuePessimismId, 0.0f, 2.0f) = 0.6f;
+  options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
+  options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -216,6 +231,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
+      kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
