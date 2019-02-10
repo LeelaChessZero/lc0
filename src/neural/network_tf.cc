@@ -320,6 +320,18 @@ std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
         std::to_string(weights.format().network_format().network()) +
         " is not supported by Tensorflow backend.");
   }
+  if (weights.format().network_format().policy() !=
+      pblczero::NetworkFormat::POLICY_CLASSICAL) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by Tensorflow backend.");
+  }
+  if (weights.format().network_format().value() !=
+      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by Tensorflow backend.");
+  }
   return std::make_unique<TFNetwork<CPU>>(weights, options);
 }
 

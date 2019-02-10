@@ -113,7 +113,7 @@ class SelfPlayGame {
   std::mutex mutex_;
 
   // Training data to send.
-  std::vector<V3TrainingData> training_data_;
+  std::vector<V4TrainingData> training_data_;
 
   bool black_to_move_ = false;
   bool search_ended_ = false;

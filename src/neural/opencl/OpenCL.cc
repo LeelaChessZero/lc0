@@ -54,6 +54,10 @@ const std::string sourceCode_se =
 #include "clsource/se.opencl"
     ;
 
+const std::string sourceCode_policymap =
+#include "clsource/policymap.opencl"
+    ;
+
 const std::string sourceCode_blast_level3_common =
 #include "clblast_level3/common.opencl"
     ;
@@ -99,6 +103,18 @@ void OpenCL_Network::add_weights(size_t layer, size_t size,
   m_layers.back().weights.emplace_back(
       m_opencl.m_context, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_ONLY, weightSize,
       const_cast<net_t*>(converted_weights.data()));
+}
+
+void OpenCL_Network::add_weights_short(size_t layer, size_t size,
+                                       const short* weights) {
+  if (layer >= m_layers.size()) {
+    m_layers.push_back(Layer());
+  }
+
+  auto weightSize = size * sizeof(short);
+  m_layers.back().weights.emplace_back(
+      m_opencl.m_context, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_ONLY, weightSize,
+      (void*)weights);
 }
 
 template <class T>
@@ -320,12 +336,10 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   // Make program of the source code in the context.
   try {
     m_program =
-        cl::Program(m_context, sourceCode_config +
-                               sourceCode_convolve1 +
-                               sourceCode_convolve3 +
-                               sourceCode_se +
-                               sourceCode_sgemm +
-                               sourceCode_sgemv);
+        cl::Program(m_context, sourceCode_config + sourceCode_convolve1 +
+                                   sourceCode_convolve3 + sourceCode_se +
+                                   sourceCode_sgemm + sourceCode_sgemv +
+                                   sourceCode_policymap);
   } catch (const cl::Error& e) {
     CERR << "Error getting kernels: " << e.what() << ": " << e.err();
     throw std::runtime_error("Error getting OpenCL kernels.");

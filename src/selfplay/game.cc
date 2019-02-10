@@ -138,9 +138,9 @@ void SelfPlayGame::ProcessMoveEnd() {
 
   // Append training data. The GameResult is overwritten later, for now just
   // use UNDECIDED.
-  training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
+  training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV4TrainingData(
       GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-      search_->GetParams().GetHistoryFill()));
+      search_->GetParams().GetHistoryFill(), search_->GetBestEval()));
 
   // Handle possible resign.
   float eval = search_->GetBestEval();

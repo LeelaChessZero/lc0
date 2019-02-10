@@ -24,6 +24,11 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#pragma once
+
+#include <cstddef>
+#include <cublas_v2.h>
+#include <cudnn.h>
 
 namespace lczero {
 namespace cudnn_backend {
@@ -149,6 +154,22 @@ class FCLayer : public BaseLayer<DataType> {
   const bool use_sigmoid_;
   DataType* weights_ = nullptr;
   DataType* biases_ = nullptr;
+};
+
+template <typename DataType>
+class PolicyMapLayer: public BaseLayer<DataType> {
+ public:
+  PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize);
+  ~PolicyMapLayer();
+
+  void LoadWeights(const short* cpuWeight, void* scratch);
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2, void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  int usedSize; // Size of the input without padding
+  short* weights_ = nullptr;
 };
 
 // Fused SE layer:

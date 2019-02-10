@@ -39,6 +39,7 @@ void OffsetVector(std::vector<float>* means, const std::vector<float>& biases) {
 
 LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
     : input(weights.input()),
+      policy1(weights.policy1()),
       policy(weights.policy()),
       ip_pol_w(LayerAdapter(weights.ip_pol_w()).as_vector()),
       ip_pol_b(LayerAdapter(weights.ip_pol_b()).as_vector()),
