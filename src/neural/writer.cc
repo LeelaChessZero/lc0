@@ -77,6 +77,7 @@ bool TrainingDataReader::ReadChunk(V4TrainingData* data) {
     int read_size = gzread(fin_, reinterpret_cast<void*>(data), v3_size);
     if (read_size != v3_size) return false;
     if (data->version == 3) {
+      data->version = 4;
       data->root_q = 0.0f;
       data->best_q = 0.0f;
       data->root_d = 0.0f;
