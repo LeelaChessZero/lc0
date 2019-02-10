@@ -121,10 +121,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
   int multipv = 0;
   for (const auto& edge : edges) {
-    float score = (edge.HasNode() && edge.node()->GetParent())
-                      ? edge.GetQ(-edge.node()->GetParent()->GetQ())
-                      : edge.GetQ(0);
-
+    float score = edge.GetQ(-edge.node()->GetParent()->GetQ());
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
@@ -148,14 +145,16 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     // If win is based on propagated TB bit, length of mate is
     // adjusted by +1000; For root filtered TB moves +500.
     if (params_.GetCertaintyPropagation()) {
-      if (edge.IsCertain() && edge.GetEQ() != 0)
-        uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2  +
+      if (edge.IsCertain() && edge.GetEQ() != 0) {
+        uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 +
                                         (edge.IsPropagatedTBHit() ? 1000 : 0));
-      else if (root_syzygy_rank_) {
+      } else if (root_syzygy_rank_) {
         int sign = (root_syzygy_rank_ - 1 > 0) - (root_syzygy_rank_ - 1 < 0);
         if (sign) {
           uci_info.mate = sign * (-500 + abs(root_syzygy_rank_));
-        } else uci_info.score = 0;
+        } else {
+          uci_info.score = 0;
+        }
       }
     }
   }
@@ -268,7 +267,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(V: ";
     optional<float> v;
     if (edge.IsCertain()) {
-      v = (float)edge.edge()->GetEQ();
+      v = edge.edge()->GetEQ();
     } else {
       NNCacheLock nneval = GetCachedNNEval(edge.node());
       if (nneval) v = -nneval->q;
@@ -479,8 +478,9 @@ int Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   }
 
   int best_rank = syzygy_tb_->root_probe(
-      played_history_.Last(), params_.GetSyzygyFastPlay() || 
-      played_history_.DidRepeatSinceLastZeroingMove(),
+      played_history_.Last(),
+      params_.GetSyzygyFastPlay() ||
+          played_history_.DidRepeatSinceLastZeroingMove(),
       root_moves);
   if (!best_rank)
     best_rank = syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
@@ -547,8 +547,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   }
   // Ensure that certain draws have at least as many virtual visits as the
   // first move with Q<=0 (these visits are used during final sort).
-  // The result is that they're always preferred over moves with Q<0. 
-  // Certain draws with more visits are left as is, so that they are 
+  // The result is that they're always preferred over moves with Q<0.
+  // Certain draws with more visits are left as is, so that they are
   // preferred over all less-explored moves, even if those moves have Q>0;
   // in this respect behaviour is identical to normal leela.
   if (params_.GetCertaintyPropagation()) {
@@ -912,7 +912,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
-    // Either terminal/certain or unexamined leaf node -- the end of this playout.
+    // Either terminal/certain or unexamined leaf node -- the end of this
+    // playout.
     if (node->IsCertain()) {
       return NodeToProcess::TerminalHit(node, depth, 1);
     } else if (!node->HasChildren()) {
@@ -923,7 +924,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       // Add two here to reverse the conservatism that goes into calculating the
       // remaining cache visits.
       collision_limit =
-        std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
+          std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
       is_root_node = false;
       node = possible_shortcut_child;
       node_already_updated = true;
@@ -940,7 +941,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
-    bool parent_upperbounded = node->IsOnlyUBounded(); 
+    bool parent_upperbounded = node->IsOnlyUBounded();
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -955,14 +956,15 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // If play certain win and don't search other
         // moves at root. If search limit infinite continue searching other
         // moves.
-        if (params_.GetCertaintyPropagation() &&
-            child.edge()->IsCertainWin()) {
+        if (params_.GetCertaintyPropagation() && child.edge()->IsCertainWin()) {
           if (!search_->limits_.infinite) {
             best_edge = child;
             possible_moves = 1;
             break;
-          } else if (search_->current_best_edge_ == child && possible_moves > 0)
+          } else if (search_->current_best_edge_ == child &&
+                     possible_moves > 0) {
             continue;
+          }
         }
         // If root move filter exists, make sure move is in the list.
         if (!root_move_filter_.empty() &&

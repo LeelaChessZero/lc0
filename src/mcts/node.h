@@ -98,8 +98,11 @@ class Edge {
   void SetEQ(int eq);
   // Clears Certainty but keeps bounds.
   void ClearCertaintyState() {
-    (certainty_state_ & kCertainMask) ? certainty_state_ = 0
-                                      : certainty_state_ &= kClearKeepBounds;
+    if (certainty_state_ & kCertainMask) {
+      certainty_state_ = 0;
+    } else {
+      certainty_state_ &= kClearKeepBounds;
+      }
   };
   // Sets (U)pper and (L)ower bounds.
   void UBound(int eq) {
