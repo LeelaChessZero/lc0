@@ -65,7 +65,8 @@ class RandomNetworkComputation : public NetworkComputation {
   }
 
   float GetDVal(int sample) const override {
-    return (int(inputs_[sample] % 200000) - 100000) / 100000.0;
+    // Hash in arbitrary constant to make D return different value from Q.
+    return (HashCat({inputs_[sample], 1234}) % 10000) / 10000.0;
   }
 
   float GetPVal(int sample, int move_id) const override {
