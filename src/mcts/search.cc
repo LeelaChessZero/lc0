@@ -143,18 +143,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     // Mate display if certain win (or loss) with distance to mate set to
     // length of pv (average  mate).
     // If win is based on propagated TB bit, length of mate is
-    // adjusted by +1000; For root filtered TB moves +500.
+    // adjusted by +1000; If root filtered TB moves are draw display 0.
     if (params_.GetCertaintyPropagation()) {
       if (edge.IsCertain() && edge.GetEQ() != 0) {
         uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 +
                                         (edge.IsPropagatedTBHit() ? 1000 : 0));
-      } else if (root_syzygy_rank_) {
-        int sign = (root_syzygy_rank_ - 1 > 0) - (root_syzygy_rank_ - 1 < 0);
-        if (sign) {
-          uci_info.mate = sign * (-500 + abs(root_syzygy_rank_));
-        } else {
+      } else if (root_syzygy_rank_==1) {
           uci_info.score = 0;
-        }
       }
     }
   }

@@ -123,7 +123,11 @@ class Search {
 
   // Populates the given list with allowed root moves.
   // Returns best_rank != 0 if the population came from tablebase.
-  // 1 for draw, > 1 for win and < 1 for loss
+  // WDL and DTZ ranks of +1000 are certain wins, -1000 certain losses,
+  // 1 is a certain draw. For more info on in-between ranks 
+  // (cursed wins, blessed losses, adjusted by dtz) see syzygy probe code.
+  // Currently only rank = 1 is used to correct score display when
+  // moves are root filtered, because kSyzygyFastPlayId sets the rep flag.
   int PopulateRootMoveLimit(MoveList* root_moves) const;
 
   // Returns verbose information about given node, as vector of strings.

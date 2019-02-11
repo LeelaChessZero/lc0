@@ -436,6 +436,9 @@ void NodeTree::MakeMove(Move move) {
   current_head_->ReleaseChildrenExceptOne(new_head);
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
+  // If certain and no children, reset node (so that n_ =  0).
+  if (current_head_->IsCertain() && !current_head_->HasChildren()) TrimTreeAtHead();
+  // Clear certainty flag but keep bounds.
   if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearCertaintyState();
   current_head_->RecomputeNfromChildren();
   history_.Append(move);
@@ -480,12 +483,15 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  // Also, if the current_head_ is terminal, reset that as well to allow forced
-  // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  if (!seen_old_head) TrimTreeAtHead(); 
-
-  // Certainty Propagation: No need to trim the head, just resetting certainty
-  // state except bounds, and recomputing N should suffices even with WDL hits.
+  // Also, if the current_head_ is certain and has no children, reset that 
+  // as well to allow forced analysis of WDL hits, or possibly 2 or 3 fold 
+  // or 50 move "draws", etc.
+  if (!seen_old_head || (current_head_->IsCertain() && !current_head_->HasChildren()))
+    TrimTreeAtHead();
+  // Certainty Propagation: No need to trim the head for certain nodes with
+  // children (these became certain through backpropagation), just resetting 
+  // certainty state except bounds, and recomputing N suffices. TrimTreeAtHead
+  // sets n_ to 0 this remains 0 after RecomputeNfromChildren.
   if (current_head_->GetParent()) current_head_->GetOwnEdge()->ClearCertaintyState();
   current_head_->RecomputeNfromChildren();
   return seen_old_head;
