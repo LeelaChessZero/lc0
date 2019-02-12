@@ -87,7 +87,8 @@ class Search {
   // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove();
   // Returns best move, from the point of view of white player. Without temp.
-  Move GetBestMoveNoTemp();
+  Move GetBestMoveNoTemp() const;
+  bool CurrentlyUsingEndgameTemperature() const;
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.

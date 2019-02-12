@@ -437,10 +437,16 @@ std::pair<Move, Move> Search::GetBestMove() {
           final_pondermove_.GetMove(!played_history_.IsBlackToMove())};
 }
 
-Move Search::GetBestMoveNoTemp() {
+Move Search::GetBestMoveNoTemp() const {
   SharedMutex::Lock lock(nodes_mutex_);
   auto best_move = GetBestChildNoTemperature(root_node_);
   return best_move.GetMove(played_history_.IsBlackToMove());
+}
+
+bool Search::CurrentlyUsingEndgameTemperature() const {
+  const int cutoff_move = params_.GetTemperatureCutoffMove();
+  const int moves = played_history_.Last().GetGamePly() / 2;
+  return cutoff_move && (moves + 1) >= cutoff_move;
 }
 
 std::int64_t Search::GetTotalPlayouts() const {
@@ -473,9 +479,8 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   if (!root_node_->HasChildren()) return;
 
   float temperature = params_.GetTemperature();
-  const int cutoff_move = params_.GetTemperatureCutoffMove();
   const int moves = played_history_.Last().GetGamePly() / 2;
-  if (cutoff_move && (moves + 1) >= cutoff_move) {
+  if (CurrentlyUsingEndgameTemperature()) {
     temperature = params_.GetTemperatureEndgame();
   } else if (temperature && params_.GetTempDecayMoves()) {
     if (moves >= params_.GetTempDecayMoves()) {
