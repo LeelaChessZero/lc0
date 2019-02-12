@@ -65,7 +65,8 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            ResumableGame game_to_resume)
-    : options_{player1, player2}, black_moved_first_(game_to_resume.blacks_move) {
+    : options_{player1, player2},
+      black_moved_first_(game_to_resume.blacks_move) {
   tree_[0] = game_to_resume.tree[0];
   tree_[1] = game_to_resume.tree[1];
 }
@@ -130,23 +131,30 @@ std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
       }
     }
 
-    // Add best move to the tree.
+    // If we are AFTER temperature move cutoff (in "endgame temp mode"), the
+    // temperature influenced moves will be played in their own sub-game and
+    // current match will progress with zero temp moves only. Otherwise, if we
+    // are BEFORE temperature move cutoff temperature moves are played normally.
     Move move = search_->GetBestMove().first;
-    Move no_temp_move = search_->GetBestMoveNoTemp();
-    if (move != no_temp_move) {
-      // Play the temperature-chosen move and store the resulting game state so
-      // a new match can be started from that position.
-      ResumableGame resumable_game;
-      for (auto idx : {0, 1}) {
-        resumable_game.tree[idx] = std::make_shared<NodeTree>();
-        tree_[idx]->CloneCurrentHeadBranch(*resumable_game.tree[idx]);
-        resumable_game.tree[idx]->MakeMove(move);
+    if (search_->CurrentlyUsingEndgameTemperature()) {
+      Move no_temp_move = search_->GetBestMoveNoTemp();
+      if (move != no_temp_move) {
+        // Play the temperature-chosen move and store the resulting game state
+        // so a new match can be started from that position.
+        ResumableGame resumable_game;
+        for (auto idx : {0, 1}) {
+          resumable_game.tree[idx] = std::make_shared<NodeTree>();
+          tree_[idx]->CloneCurrentHeadBranch(*resumable_game.tree[idx]);
+          resumable_game.tree[idx]->MakeMove(move);
+        }
+        resumable_game.blacks_move = !blacks_move;
+        sub_games.push(resumable_game);
       }
-      resumable_game.blacks_move = !blacks_move;
-      sub_games.push(resumable_game);
+      move = no_temp_move;
     }
-    tree_[0]->MakeMove(no_temp_move);
-    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(no_temp_move);
+
+    tree_[0]->MakeMove(move);
+    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
   }
 
