@@ -31,6 +31,7 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
+#include <queue>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
@@ -71,6 +72,7 @@ class Search {
   void StartThreads(size_t how_many);
 
   void OpenUciHelper();
+  void UCIHWorker();
 
   // Starts search with k threads and wait until it finishes.
   void RunBlocking(size_t threads);
@@ -201,9 +203,14 @@ class Search {
   ThinkingInfo::Callback info_callback_;
   const SearchParams params_;
 
+  void DoUCIHelp(Node* n);
   boost::process::ipstream ucih_is_;
   boost::process::opstream ucih_os_;
-  boost::process::child ucih_c_{"../Stockfish/src/stockfish", boost::process::std_in < ucih_os_, boost::process::std_out > ucih_is_};
+  boost::process::child ucih_c_;
+  std::queue<Node*> ucih_queue_;
+  std::mutex ucih_mutex_;
+  std::condition_variable ucih_cv_;
+  std::vector<std::thread> ucih_threads_;
 
   friend class SearchWorker;
 };

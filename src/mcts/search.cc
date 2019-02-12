@@ -652,6 +652,11 @@ void Search::StartThreads(size_t how_many) {
 
 void Search::OpenUciHelper() {
   // TODO: Move the current_uci_ part to constructor?
+  auto path = params_.GetUCIHelpPath();
+  if (path == "") return;
+  LOGFILE << "aolsen " << path;
+  ucih_c_ = boost::process::child(path, boost::process::std_in < ucih_os_, boost::process::std_out > ucih_is_);
+  LOGFILE << "aolsen ";
   if (current_position_fen_ == "") {
     current_position_fen_ = ChessBoard::kStartposFen; // TODO
   }
@@ -663,7 +668,9 @@ void Search::OpenUciHelper() {
   current_uci_ = "position fen " + current_position_fen_ + " moves " + current_uci_;
   LOGFILE << "aolsen " << current_uci_;
 
+  // magic setting SF specific stuff
   ucih_os_ << "setoption name Debug Log File value ucihlog.txt" << std::endl;
+  ucih_os_ << "setoption name Hash value 64" << std::endl;
   ucih_os_ << "uci" << std::endl;
   std::string line;
   while(std::getline(ucih_is_, line)) {
@@ -672,6 +679,8 @@ void Search::OpenUciHelper() {
       break;
     }
   }
+  ucih_threads_.emplace_back([this]() { UCIHWorker(); });
+
   LOGFILE << "aolsen";
 }
 
@@ -1290,6 +1299,79 @@ void SearchWorker::DoBackupUpdate() {
   }
 }
 
+void Search::UCIHWorker() {
+  Node* n;
+  LOGFILE << "aolsen uciworker start";
+  while (!stop_.load(std::memory_order_acquire)) {
+    {
+      std::unique_lock<std::mutex> lock(ucih_mutex_);
+
+      // Wait until there's some work to compute.
+      ucih_cv_.wait(lock, [&] { return stop_.load(std::memory_order_acquire) || !ucih_queue_.empty(); });
+      if (stop_.load(std::memory_order_acquire)) break;
+      n = ucih_queue_.front();
+      ucih_queue_.pop();
+    }
+    // release lock
+
+    LOGFILE << "aolsen uciworker: " << n->GetOwnEdge()->GetMove().as_string();
+    DoUCIHelp(n);
+  }
+  LOGFILE << "aolsen uciworker end";
+}
+
+void Search::DoUCIHelp(Node* n) {
+  // TODO: Get root_node_ working also
+  if (n != root_node_) {
+    int depth = 0;
+    for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
+      depth++;
+    }
+    LOGFILE << "aolsen DoUCIHelp depth " << depth;
+    std::string s = "";
+    //bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 1);
+    bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
+    for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
+      s = n2->GetOwnEdge()->GetMove(flip).as_string() + " " + s;
+      flip = !flip;
+    }
+    LOGFILE << "aolsen add pv=" << s;
+    s = current_uci_ + " " + s;
+    LOGFILE << "aolsen " << s;
+    ucih_os_ << s << std::endl;
+    ucih_os_ << "go depth 20" << std::endl; // magic number
+    std::string line;
+    std::string token;
+    while(std::getline(ucih_is_, line)) {
+      LOGFILE << "aolsen ucih:" + line;
+      std::istringstream iss(line);
+      iss >> token >> std::ws;
+      if (token == "bestmove") {
+        iss >> token;
+        break;
+      }
+    }
+    //flip = played_history_.IsBlackToMove() ^ (depth % 2 == 1);
+    flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
+    LOGFILE << "aolsen thismove:" << n->GetOwnEdge()->GetMove(flip).as_string();
+    auto bestmove = Move(token, !flip);
+    LOGFILE << "aolsen bestanswer:" << token << " " << bestmove.as_nn_index();
+
+    // Take the lock and update the P value of the bestmove
+    SharedMutex::Lock lock(nodes_mutex_);
+    for (const auto& edge : n->Edges()) {
+      // TODO: I think we don't pass flip when we want to do as_nn_index?
+      // because as_nn_index assumes side to move is going up.
+      // So it should always act like we are white?
+      // Need to figure this out, but for now this seems to work for the one case I'm testing
+      if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
+        edge.edge()->SetP(edge.GetP() + params_.GetUCIHelpBoost()/100.0f);
+      }
+      LOGFILE << "aolsen edges " << edge.GetMove(!flip).as_string() << " " << edge.GetMove().as_nn_index() << " " << edge.GetP()*100;
+    }
+  }
+}
+
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
   Node* node = node_to_process.node;
@@ -1319,48 +1401,13 @@ void SearchWorker::DoBackupUpdateSingleNode(
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
-    if (params_.GetUCIHelpThreshold() > 0 && n->GetN() >= params_.GetUCIHelpThreshold() && !n->ucih_done_) {
-      n->ucih_done_ = true; // TODO: For now just do this serially
-      LOGFILE << "aolsen add " << n->GetN();
-      if (n != search_->root_node_) {
-        std::string s = "";
-        bool flip = search_->played_history_.IsBlackToMove() ^ (depth % 2 == 1);
-        for (Node* n2 = n; n2 != search_->root_node_;
-             n2 = n2->GetParent()) {
-          s = n2->GetOwnEdge()->GetMove(flip).as_string() + " " + s;
-          flip = !flip;
-        }
-        LOGFILE << "aolsen add pv=" << s;
-        s = search_->current_uci_ + " " + s;
-        LOGFILE << "aolsen " << s;
-        search_->ucih_os_ << s << std::endl;
-        search_->ucih_os_ << "go depth 20" << std::endl; // magic number
-        std::string line;
-        std::string token;
-        while(std::getline(search_->ucih_is_, line)) {
-          LOGFILE << "aolsen ucih:" + line;
-          std::istringstream iss(line);
-          iss >> token >> std::ws;
-          if (token == "bestmove") {
-            iss >> token;
-            break;
-          }
-        }
-        flip = search_->played_history_.IsBlackToMove() ^ (depth % 2 == 1);
-        LOGFILE << "aolsen thismove:" << n->GetOwnEdge()->GetMove(flip).as_string();
-        auto bestmove = Move(token, !flip);
-        LOGFILE << "aolsen bestanswer:" << token << " " << bestmove.as_nn_index();
-        for (const auto& edge : n->Edges()) {
-          // TODO: I think we don't pass flip when we want to do as_nn_index?
-          // because as_nn_index assumes side to move is going up.
-          // So it should always act like we are white?
-          // Need to figure this out, but for now this seems to work for the one case I'm testing
-          if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
-            edge.edge()->SetP(edge.GetP() + params_.GetUCIHelpBoost()/100.0f);
-          }
-          LOGFILE << "aolsen edges " << edge.GetMove(!flip).as_string() << " " << edge.GetMove().as_nn_index() << " " << edge.GetP()*100;
-        }
-      }
+    if (params_.GetUCIHelpPath() != "" && n->GetN() >= params_.GetUCIHelpThreshold() && !n->ucih_done_) {
+      n->ucih_done_ = true;
+      LOGFILE << "aolsen DoBackup depth " << depth << " " << n->GetOwnEdge()->GetMove().as_string();
+      //DoUCIHelp(n, depth);
+      std::lock_guard<std::mutex> lock(search_->ucih_mutex_);
+      search_->ucih_queue_.push(n);
+      search_->ucih_cv_.notify_one();
     }
     depth--;
   }

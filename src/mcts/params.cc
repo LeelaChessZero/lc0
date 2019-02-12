@@ -172,11 +172,13 @@ const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
-const OptionId SearchParams::kUCIHelpThreshold{
+const OptionId SearchParams::kUCIHelpPathId{
+    "uci-help-path", "UCIHelpPath",
+    "Path to uci chess engine to help."};
+const OptionId SearchParams::kUCIHelpThresholdId{
     "uci-help-threshold", "UCIHelpThreshold",
-    "How many visits a node gets before the UCI Helper program is called. "
-    "Zero disables the feature"};
-const OptionId SearchParams::kUCIHelpBoost{
+    "How many visits a node gets before the UCI Helper program is called."};
+const OptionId SearchParams::kUCIHelpBoostId{
     "uci-help-boost", "UCIHelpBoost",
     "How much to boost P, in percentage"};
 
@@ -215,8 +217,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
-  options->Add<IntOption>(kUCIHelpThreshold, 0, 1000000) = 0;
-  options->Add<FloatOption>(kUCIHelpBoost, 0.0f, 100.0f) = 10.0f;
+  options->Add<StringOption>(kUCIHelpPathId);
+  options->Add<IntOption>(kUCIHelpThresholdId, 1, 1000000) = 100;
+  options->Add<FloatOption>(kUCIHelpBoostId, 0.0f, 100.0f) = 10.0f;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)

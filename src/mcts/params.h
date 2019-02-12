@@ -95,11 +95,14 @@ class SearchParams {
   float GetMinimumKLDGainPerNode() const {
     return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
   }
+  std::string GetUCIHelpPath() const {
+    return options_.Get<std::string>(kUCIHelpPathId.GetId());
+  }
   int GetUCIHelpThreshold() const {
-    return options_.Get<int>(kUCIHelpThreshold.GetId());
+    return options_.Get<int>(kUCIHelpThresholdId.GetId());
   }
   float GetUCIHelpBoost() const {
-    return options_.Get<float>(kUCIHelpBoost.GetId());
+    return options_.Get<float>(kUCIHelpBoostId.GetId());
   }
 
   // Search parameter IDs.
@@ -131,8 +134,9 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
-  static const OptionId kUCIHelpThreshold;
-  static const OptionId kUCIHelpBoost;
+  static const OptionId kUCIHelpPathId;
+  static const OptionId kUCIHelpThresholdId;
+  static const OptionId kUCIHelpBoostId;
 
  private:
   const OptionsDict& options_;
