@@ -124,53 +124,53 @@ void SelfPlayLoop::CmdSetOption(const std::string& name,
 
 void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   const int winp1 = info.results[0][0] + info.results[0][1];
-  const int loosep1 = info.results[2][0] + info.results[2][1];
+  const int losep1 = info.results[2][0] + info.results[2][1];
   const int draws = info.results[1][0] + info.results[1][1];
 
-  // Initialize variables
+  // Initialize variables.
   float percentage = -1;
-  float elo = 10000;
-  float los = 10000;
+  optional<float> elo;
+  optional<float> los;
 
   // Only caculate percentage if any games at all (avoid divide by 0).
-  if ((winp1 + loosep1 + draws) > 0)
+  if ((winp1 + losep1 + draws) > 0) {
     percentage =
-        (static_cast<float>(draws) / 2 + winp1) / (winp1 + loosep1 + draws);
-
+        (static_cast<float>(draws) / 2 + winp1) / (winp1 + losep1 + draws);
+    }
   // Calculate elo and los if percentage strictly between 0 and 1 (avoids divide
   // by 0 or overflow).
   if ((percentage < 1) && (percentage > 0))
     elo = -400 * log(1 / percentage - 1) / log(10);
-  if ((winp1 + loosep1) > 0)
-    los = .5 +
-          .5 * std::erf((winp1 - loosep1) / std::sqrt(2.0 * (winp1 + loosep1)));
-
+  if ((winp1 + losep1) > 0) {
+    los = .5f +
+          .5f * std::erf((winp1 - losep1) / std::sqrt(2.0 * (winp1 + losep1)));
+    }
   std::string res = "tournamentstatus";
   if (info.finished) res += " final";
-  res += " P1: +" + std::to_string(winp1) + " -" + std::to_string(loosep1) +
+  res += " P1: +" + std::to_string(winp1) + " -" + std::to_string(losep1) +
          " =" + std::to_string(draws);
 
   if (percentage > 0) {
     std::ostringstream oss;
     oss << std::fixed << std::setw(5) << std::setprecision(2)
-        << (percentage * 100) << "%";
+        << (percentage * 100.0f) << "%";
     res += " Win: " + oss.str();
   }
-  if (elo < 10000) {
+  if (elo) {
     std::ostringstream oss;
-    oss << std::fixed << std::setw(5) << std::setprecision(2) << (elo);
+    oss << std::fixed << std::setw(5) << std::setprecision(2) << (elo.value_or(0.0f));
     res += " Elo: " + oss.str();
   }
-  if (los < 10000) {
+  if (los) {
     std::ostringstream oss;
-    oss << std::fixed << std::setw(5) << std::setprecision(2) << (los * 100)
+    oss << std::fixed << std::setw(5) << std::setprecision(2) << (los.value_or(0.0f) * 100.0f)
         << "%";
     res += " LOS: " + oss.str();
   }
   res += " P1-W: +" + std::to_string(info.results[0][0]) + " -" +
          std::to_string(info.results[2][0]) + " =" +
          std::to_string(info.results[1][0]);
-  // Might be redundant to also list P1-B:
+
   res += " P1-B: +" + std::to_string(info.results[0][1]) + " -" +
          std::to_string(info.results[2][1]) + " =" +
          std::to_string(info.results[1][1]);
