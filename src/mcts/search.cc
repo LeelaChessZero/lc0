@@ -1319,7 +1319,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
-    if (n->GetN() >= 100 && !n->ucih_done_) { // magic number
+    if (params_.GetUCIHelpThreshold() > 0 && n->GetN() >= params_.GetUCIHelpThreshold() && !n->ucih_done_) {
       n->ucih_done_ = true; // TODO: For now just do this serially
       LOGFILE << "aolsen add " << n->GetN();
       if (n != search_->root_node_) {
@@ -1356,7 +1356,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
           // So it should always act like we are white?
           // Need to figure this out, but for now this seems to work for the one case I'm testing
           if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
-            edge.edge()->SetP(edge.GetP() + 0.1); // magic number
+            edge.edge()->SetP(edge.GetP() + params_.GetUCIHelpBoost()/100.0f);
           }
           LOGFILE << "aolsen edges " << edge.GetMove(!flip).as_string() << " " << edge.GetMove().as_nn_index() << " " << edge.GetP()*100;
         }
