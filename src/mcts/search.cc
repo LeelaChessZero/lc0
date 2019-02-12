@@ -656,8 +656,8 @@ void Search::OpenUciHelper() {
     current_position_fen_ = ChessBoard::kStartposFen; // TODO
   }
   if (current_position_moves_.size()) {
-    for (auto move : current_position_moves_) {
-      current_uci_ = move + " " + current_uci_;
+    for (auto i = current_position_moves_.size(); i-- > 0;) {
+      current_uci_ = current_position_moves_[i] + " " + current_uci_;
     }
   }
   current_uci_ = "position fen " + current_position_fen_ + " moves " + current_uci_;
@@ -1319,15 +1319,12 @@ void SearchWorker::DoBackupUpdateSingleNode(
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
-    if (n->GetN() >= 5 && !n->ucih_done_) {
-      // TODO how to get information about the board state here?
+    if (n->GetN() >= 100 && !n->ucih_done_) { // magic number
+      n->ucih_done_ = true; // TODO: For now just do this serially
       LOGFILE << "aolsen add " << n->GetN();
-      n->ucih_done_ = true;
       if (n != search_->root_node_) {
-        LOGFILE << "aolsen add m=" << n->GetOwnEdge()->GetMove().as_string();
         std::string s = "";
         bool flip = search_->played_history_.IsBlackToMove() ^ (depth % 2 == 1);
-        LOGFILE << "aolsen flip " << flip << " " << search_->played_history_.IsBlackToMove() << " " << depth;
         for (Node* n2 = n; n2 != search_->root_node_;
              n2 = n2->GetParent()) {
           s = n2->GetOwnEdge()->GetMove(flip).as_string() + " " + s;
@@ -1337,20 +1334,31 @@ void SearchWorker::DoBackupUpdateSingleNode(
         s = search_->current_uci_ + " " + s;
         LOGFILE << "aolsen " << s;
         search_->ucih_os_ << s << std::endl;
-        search_->ucih_os_ << "go depth 5" << std::endl;
+        search_->ucih_os_ << "go depth 20" << std::endl; // magic number
         std::string line;
+        std::string token;
         while(std::getline(search_->ucih_is_, line)) {
           LOGFILE << "aolsen ucih:" + line;
           std::istringstream iss(line);
-          std::string token;
           iss >> token >> std::ws;
-          //if (line.compare(0, 8, "bestmove") == 0) {
           if (token == "bestmove") {
-            LOGFILE << "aolsen bestmove found";
             iss >> token;
-            LOGFILE << "aolsen bestmove:" << token;
             break;
           }
+        }
+        flip = search_->played_history_.IsBlackToMove() ^ (depth % 2 == 1);
+        LOGFILE << "aolsen thismove:" << n->GetOwnEdge()->GetMove(flip).as_string();
+        auto bestmove = Move(token, !flip);
+        LOGFILE << "aolsen bestanswer:" << token << " " << bestmove.as_nn_index();
+        for (const auto& edge : n->Edges()) {
+          // TODO: I think we don't pass flip when we want to do as_nn_index?
+          // because as_nn_index assumes side to move is going up.
+          // So it should always act like we are white?
+          // Need to figure this out, but for now this seems to work for the one case I'm testing
+          if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
+            edge.edge()->SetP(edge.GetP() + 0.1); // magic number
+          }
+          LOGFILE << "aolsen edges " << edge.GetMove(!flip).as_string() << " " << edge.GetMove().as_nn_index() << " " << edge.GetP()*100;
         }
       }
     }
