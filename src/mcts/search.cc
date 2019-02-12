@@ -28,6 +28,7 @@
 #include "mcts/search.h"
 
 #include <algorithm>
+#include <boost/process.hpp>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -635,6 +636,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
+  OpenUciHelper();
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
     threads_.emplace_back([this]() { WatchdogThread(); });
@@ -646,6 +648,31 @@ void Search::StartThreads(size_t how_many) {
       worker.RunBlocking();
     });
   }
+}
+
+void Search::OpenUciHelper() {
+  // TODO: Move the current_uci_ part to constructor?
+  if (current_position_fen_ == "") {
+    current_position_fen_ = ChessBoard::kStartposFen; // TODO
+  }
+  if (current_position_moves_.size()) {
+    for (auto move : current_position_moves_) {
+      current_uci_ = move + " " + current_uci_;
+    }
+  }
+  current_uci_ = "position fen " + current_position_fen_ + " moves " + current_uci_;
+  LOGFILE << "aolsen " << current_uci_;
+
+  ucih_os_ << "setoption name Debug Log File value ucihlog.txt" << std::endl;
+  ucih_os_ << "uci" << std::endl;
+  std::string line;
+  while(std::getline(ucih_is_, line)) {
+    LOGFILE << line;
+    if (line == "uciok") {
+      break;
+    }
+  }
+  LOGFILE << "aolsen";
 }
 
 void Search::RunBlocking(size_t threads) {
@@ -1278,6 +1305,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
+  int depth = node_to_process.depth;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
     n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
@@ -1291,6 +1319,42 @@ void SearchWorker::DoBackupUpdateSingleNode(
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
+    if (n->GetN() >= 5 && !n->ucih_done_) {
+      // TODO how to get information about the board state here?
+      LOGFILE << "aolsen add " << n->GetN();
+      n->ucih_done_ = true;
+      if (n != search_->root_node_) {
+        LOGFILE << "aolsen add m=" << n->GetOwnEdge()->GetMove().as_string();
+        std::string s = "";
+        bool flip = search_->played_history_.IsBlackToMove() ^ (depth % 2 == 1);
+        LOGFILE << "aolsen flip " << flip << " " << search_->played_history_.IsBlackToMove() << " " << depth;
+        for (Node* n2 = n; n2 != search_->root_node_;
+             n2 = n2->GetParent()) {
+          s = n2->GetOwnEdge()->GetMove(flip).as_string() + " " + s;
+          flip = !flip;
+        }
+        LOGFILE << "aolsen add pv=" << s;
+        s = search_->current_uci_ + " " + s;
+        LOGFILE << "aolsen " << s;
+        search_->ucih_os_ << s << std::endl;
+        search_->ucih_os_ << "go depth 5" << std::endl;
+        std::string line;
+        while(std::getline(search_->ucih_is_, line)) {
+          LOGFILE << "aolsen ucih:" + line;
+          std::istringstream iss(line);
+          std::string token;
+          iss >> token >> std::ws;
+          //if (line.compare(0, 8, "bestmove") == 0) {
+          if (token == "bestmove") {
+            LOGFILE << "aolsen bestmove found";
+            iss >> token;
+            LOGFILE << "aolsen bestmove:" << token;
+            break;
+          }
+        }
+      }
+    }
+    depth--;
   }
   search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;

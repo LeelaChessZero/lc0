@@ -137,7 +137,9 @@ else
     ]
 endif
 
-
+# Or this?  https://mesonbuild.com/Dependencies.html#boost
+# But this way worked.
+deps += [ cc.find_library('boost_system'), ]
 
 #############################################################################
 ## BACKENDS

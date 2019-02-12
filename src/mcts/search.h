@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <boost/process.hpp>
 #include <functional>
 #include <shared_mutex>
 #include <thread>
@@ -69,6 +70,8 @@ class Search {
   // Starts worker threads and returns immediately.
   void StartThreads(size_t how_many);
 
+  void OpenUciHelper();
+
   // Starts search with k threads and wait until it finishes.
   void RunBlocking(size_t threads);
 
@@ -95,6 +98,11 @@ class Search {
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
   const SearchParams& GetParams() const { return params_; }
+
+  //CurrentPosition current_position_;
+  std::string current_position_fen_;
+  std::vector<std::string> current_position_moves_;
+  std::string current_uci_;
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
@@ -192,6 +200,10 @@ class Search {
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
   const SearchParams params_;
+
+  boost::process::ipstream ucih_is_;
+  boost::process::opstream ucih_os_;
+  boost::process::child ucih_c_{"../Stockfish/src/stockfish", boost::process::std_in < ucih_os_, boost::process::std_out > ucih_is_};
 
   friend class SearchWorker;
 };
