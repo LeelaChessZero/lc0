@@ -64,7 +64,7 @@ int main(int argc, const char** argv) {
       loop.RunLoop();
     }
   } catch (Exception& e) {
-    e.what();
+    std::cerr << e.what() << std::endl;
     exit(1);
   }
 }
