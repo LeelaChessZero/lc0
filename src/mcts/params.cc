@@ -178,6 +178,9 @@ const OptionId SearchParams::kUCIHelpPathId{
 const OptionId SearchParams::kUCIHelpThresholdId{
     "uci-help-threshold", "UCIHelpThreshold",
     "How many visits a node gets before the UCI Helper program is called."};
+const OptionId SearchParams::kUCIHelpDepthId{
+    "uci-help-depth", "UCIHelpDepth",
+    "Depth the uci engine will search."};
 const OptionId SearchParams::kUCIHelpBoostId{
     "uci-help-boost", "UCIHelpBoost",
     "How much to boost P, in percentage"};
@@ -219,6 +222,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
   options->Add<StringOption>(kUCIHelpPathId);
   options->Add<IntOption>(kUCIHelpThresholdId, 1, 1000000) = 100;
+  options->Add<IntOption>(kUCIHelpDepthId, 1, 100) = 20;
   options->Add<FloatOption>(kUCIHelpBoostId, 0.0f, 100.0f) = 10.0f;
 }
 

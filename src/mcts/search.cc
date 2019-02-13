@@ -670,7 +670,7 @@ void Search::OpenUciHelper() {
 
   // magic setting SF specific stuff
   ucih_os_ << "setoption name Debug Log File value ucihlog.txt" << std::endl;
-  ucih_os_ << "setoption name Hash value 64" << std::endl;
+  ucih_os_ << "setoption name Hash value 1024" << std::endl;
   ucih_os_ << "uci" << std::endl;
   std::string line;
   while(std::getline(ucih_is_, line)) {
@@ -1339,7 +1339,7 @@ void Search::DoUCIHelp(Node* n) {
     s = current_uci_ + " " + s;
     LOGFILE << "aolsen " << s;
     ucih_os_ << s << std::endl;
-    ucih_os_ << "go depth 20" << std::endl; // magic number
+    ucih_os_ << "go depth " << params_.GetUCIHelpDepth() << std::endl;
     std::string line;
     std::string token;
     while(std::getline(ucih_is_, line)) {
