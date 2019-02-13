@@ -95,17 +95,17 @@ class SearchParams {
   float GetMinimumKLDGainPerNode() const {
     return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
   }
-  std::string GetUCIHelpPath() const {
-    return options_.Get<std::string>(kUCIHelpPathId.GetId());
+  std::string GetAuxEnginePath() const {
+    return options_.Get<std::string>(kAuxEnginePathId.GetId());
   }
-  int GetUCIHelpThreshold() const {
-    return options_.Get<int>(kUCIHelpThresholdId.GetId());
+  int GetAuxEngineThreshold() const {
+    return options_.Get<int>(kAuxEngineThresholdId.GetId());
   }
-  int GetUCIHelpDepth() const {
-    return options_.Get<int>(kUCIHelpDepthId.GetId());
+  int GetAuxEngineDepth() const {
+    return options_.Get<int>(kAuxEngineDepthId.GetId());
   }
-  float GetUCIHelpBoost() const {
-    return options_.Get<float>(kUCIHelpBoostId.GetId());
+  float GetAuxEngineBoost() const {
+    return options_.Get<float>(kAuxEngineBoostId.GetId());
   }
 
   // Search parameter IDs.
@@ -137,10 +137,10 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
-  static const OptionId kUCIHelpPathId;
-  static const OptionId kUCIHelpThresholdId;
-  static const OptionId kUCIHelpDepthId;
-  static const OptionId kUCIHelpBoostId;
+  static const OptionId kAuxEnginePathId;
+  static const OptionId kAuxEngineThresholdId;
+  static const OptionId kAuxEngineDepthId;
+  static const OptionId kAuxEngineBoostId;
 
  private:
   const OptionsDict& options_;

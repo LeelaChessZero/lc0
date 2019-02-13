@@ -234,7 +234,7 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
-  bool ucih_done_ = false;
+  bool auxengine_done_ = false;
 
  private:
   // Performs construction time type initialization. For use only with a node

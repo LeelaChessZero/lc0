@@ -71,8 +71,8 @@ class Search {
   // Starts worker threads and returns immediately.
   void StartThreads(size_t how_many);
 
-  void OpenUciHelper();
-  void UCIHWorker();
+  void OpenAuxEngine();
+  void AuxEngineWorker();
 
   // Starts search with k threads and wait until it finishes.
   void RunBlocking(size_t threads);
@@ -203,14 +203,14 @@ class Search {
   ThinkingInfo::Callback info_callback_;
   const SearchParams params_;
 
-  void DoUCIHelp(Node* n);
-  boost::process::ipstream ucih_is_;
-  boost::process::opstream ucih_os_;
-  boost::process::child ucih_c_;
-  std::queue<Node*> ucih_queue_;
-  std::mutex ucih_mutex_;
-  std::condition_variable ucih_cv_;
-  std::vector<std::thread> ucih_threads_;
+  void DoAuxEngine(Node* n);
+  boost::process::ipstream auxengine_is_;
+  boost::process::opstream auxengine_os_;
+  boost::process::child auxengine_c_;
+  std::queue<Node*> auxengine_queue_;
+  std::mutex auxengine_mutex_;
+  std::condition_variable auxengine_cv_;
+  std::vector<std::thread> auxengine_threads_;
 
   friend class SearchWorker;
 };

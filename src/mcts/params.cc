@@ -172,17 +172,17 @@ const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
-const OptionId SearchParams::kUCIHelpPathId{
-    "uci-help-path", "UCIHelpPath",
+const OptionId SearchParams::kAuxEnginePathId{
+    "auxengine-path", "AuxEnginePath",
     "Path to uci chess engine to help."};
-const OptionId SearchParams::kUCIHelpThresholdId{
-    "uci-help-threshold", "UCIHelpThreshold",
+const OptionId SearchParams::kAuxEngineThresholdId{
+    "auxengine-threshold", "AuxEngineThreshold",
     "How many visits a node gets before the UCI Helper program is called."};
-const OptionId SearchParams::kUCIHelpDepthId{
-    "uci-help-depth", "UCIHelpDepth",
+const OptionId SearchParams::kAuxEngineDepthId{
+    "auxengine-depth", "AuxEngineDepth",
     "Depth the uci engine will search."};
-const OptionId SearchParams::kUCIHelpBoostId{
-    "uci-help-boost", "UCIHelpBoost",
+const OptionId SearchParams::kAuxEngineBoostId{
+    "auxengine-boost", "AuxEngineBoost",
     "How much to boost P, in percentage"};
 
 void SearchParams::Populate(OptionsParser* options) {
@@ -220,10 +220,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
-  options->Add<StringOption>(kUCIHelpPathId);
-  options->Add<IntOption>(kUCIHelpThresholdId, 1, 1000000) = 100;
-  options->Add<IntOption>(kUCIHelpDepthId, 1, 100) = 20;
-  options->Add<FloatOption>(kUCIHelpBoostId, 0.0f, 100.0f) = 10.0f;
+  options->Add<StringOption>(kAuxEnginePathId);
+  options->Add<IntOption>(kAuxEngineThresholdId, 1, 1000000) = 100;
+  options->Add<IntOption>(kAuxEngineDepthId, 1, 100) = 20;
+  options->Add<FloatOption>(kAuxEngineBoostId, 0.0f, 100.0f) = 10.0f;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)

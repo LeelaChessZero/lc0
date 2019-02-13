@@ -636,7 +636,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
-  OpenUciHelper();
+  OpenAuxEngine();
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
     threads_.emplace_back([this]() { WatchdogThread(); });
@@ -650,12 +650,12 @@ void Search::StartThreads(size_t how_many) {
   }
 }
 
-void Search::OpenUciHelper() {
+void Search::OpenAuxEngine() {
   // TODO: Move the current_uci_ part to constructor?
-  auto path = params_.GetUCIHelpPath();
+  auto path = params_.GetAuxEnginePath();
   if (path == "") return;
   LOGFILE << "aolsen " << path;
-  ucih_c_ = boost::process::child(path, boost::process::std_in < ucih_os_, boost::process::std_out > ucih_is_);
+  auxengine_c_ = boost::process::child(path, boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
   LOGFILE << "aolsen ";
   if (current_position_fen_ == "") {
     current_position_fen_ = ChessBoard::kStartposFen; // TODO
@@ -669,17 +669,17 @@ void Search::OpenUciHelper() {
   LOGFILE << "aolsen " << current_uci_;
 
   // magic setting SF specific stuff
-  ucih_os_ << "setoption name Debug Log File value ucihlog.txt" << std::endl;
-  ucih_os_ << "setoption name Hash value 1024" << std::endl;
-  ucih_os_ << "uci" << std::endl;
+  auxengine_os_ << "setoption name Debug Log File value auxenginelog.txt" << std::endl;
+  auxengine_os_ << "setoption name Hash value 1024" << std::endl;
+  auxengine_os_ << "uci" << std::endl;
   std::string line;
-  while(std::getline(ucih_is_, line)) {
+  while(std::getline(auxengine_is_, line)) {
     LOGFILE << line;
     if (line == "uciok") {
       break;
     }
   }
-  ucih_threads_.emplace_back([this]() { UCIHWorker(); });
+  auxengine_threads_.emplace_back([this]() { AuxEngineWorker(); });
 
   LOGFILE << "aolsen";
 }
@@ -1299,35 +1299,35 @@ void SearchWorker::DoBackupUpdate() {
   }
 }
 
-void Search::UCIHWorker() {
+void Search::AuxEngineWorker() {
   Node* n;
   LOGFILE << "aolsen uciworker start";
   while (!stop_.load(std::memory_order_acquire)) {
     {
-      std::unique_lock<std::mutex> lock(ucih_mutex_);
+      std::unique_lock<std::mutex> lock(auxengine_mutex_);
 
       // Wait until there's some work to compute.
-      ucih_cv_.wait(lock, [&] { return stop_.load(std::memory_order_acquire) || !ucih_queue_.empty(); });
+      auxengine_cv_.wait(lock, [&] { return stop_.load(std::memory_order_acquire) || !auxengine_queue_.empty(); });
       if (stop_.load(std::memory_order_acquire)) break;
-      n = ucih_queue_.front();
-      ucih_queue_.pop();
+      n = auxengine_queue_.front();
+      auxengine_queue_.pop();
     }
     // release lock
 
     LOGFILE << "aolsen uciworker: " << n->GetOwnEdge()->GetMove().as_string();
-    DoUCIHelp(n);
+    DoAuxEngine(n);
   }
   LOGFILE << "aolsen uciworker end";
 }
 
-void Search::DoUCIHelp(Node* n) {
+void Search::DoAuxEngine(Node* n) {
   // TODO: Get root_node_ working also
   if (n != root_node_) {
     int depth = 0;
     for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
       depth++;
     }
-    LOGFILE << "aolsen DoUCIHelp depth " << depth;
+    LOGFILE << "aolsen DoAuxEngine depth " << depth;
     std::string s = "";
     //bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 1);
     bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
@@ -1338,12 +1338,12 @@ void Search::DoUCIHelp(Node* n) {
     LOGFILE << "aolsen add pv=" << s;
     s = current_uci_ + " " + s;
     LOGFILE << "aolsen " << s;
-    ucih_os_ << s << std::endl;
-    ucih_os_ << "go depth " << params_.GetUCIHelpDepth() << std::endl;
+    auxengine_os_ << s << std::endl;
+    auxengine_os_ << "go depth " << params_.GetAuxEngineDepth() << std::endl;
     std::string line;
     std::string token;
-    while(std::getline(ucih_is_, line)) {
-      LOGFILE << "aolsen ucih:" + line;
+    while(std::getline(auxengine_is_, line)) {
+      LOGFILE << "aolsen auxengine:" + line;
       std::istringstream iss(line);
       iss >> token >> std::ws;
       if (token == "bestmove") {
@@ -1365,7 +1365,7 @@ void Search::DoUCIHelp(Node* n) {
       // So it should always act like we are white?
       // Need to figure this out, but for now this seems to work for the one case I'm testing
       if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
-        edge.edge()->SetP(edge.GetP() + params_.GetUCIHelpBoost()/100.0f);
+        edge.edge()->SetP(edge.GetP() + params_.GetAuxEngineBoost()/100.0f);
       }
       LOGFILE << "aolsen edges " << edge.GetMove(!flip).as_string() << " " << edge.GetMove().as_nn_index() << " " << edge.GetP()*100;
     }
@@ -1401,13 +1401,13 @@ void SearchWorker::DoBackupUpdateSingleNode(
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
-    if (params_.GetUCIHelpPath() != "" && n->GetN() >= params_.GetUCIHelpThreshold() && !n->ucih_done_) {
-      n->ucih_done_ = true;
+    if (params_.GetAuxEnginePath() != "" && n->GetN() >= params_.GetAuxEngineThreshold() && !n->auxengine_done_) {
+      n->auxengine_done_ = true;
       LOGFILE << "aolsen DoBackup depth " << depth << " " << n->GetOwnEdge()->GetMove().as_string();
-      //DoUCIHelp(n, depth);
-      std::lock_guard<std::mutex> lock(search_->ucih_mutex_);
-      search_->ucih_queue_.push(n);
-      search_->ucih_cv_.notify_one();
+      //DoAuxEngine(n, depth);
+      std::lock_guard<std::mutex> lock(search_->auxengine_mutex_);
+      search_->auxengine_queue_.push(n);
+      search_->auxengine_cv_.notify_one();
     }
     depth--;
   }
