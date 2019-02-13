@@ -74,6 +74,8 @@ struct LegacyWeights {
   std::vector<Residual> residual;
 
   // Policy head
+  // Extra convolution for AZ-style policy head
+  ConvBlock policy1;
   ConvBlock policy;
   Vec ip_pol_w;
   Vec ip_pol_b;
