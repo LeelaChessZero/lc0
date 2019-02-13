@@ -587,9 +587,9 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
     for (int hw = 0; hw < 64; hw++)
       for (int c = 0; c < Cin; c++) {
         if (c < C)
-          convertedWeights[c * Cin + hw] = cpuWeight[hw * 64 + c];
+          convertedWeights[hw * Cin + c] = cpuWeight[c * 64 + hw];
         else
-          convertedWeights[c * Cin + hw] = -1;
+          convertedWeights[hw * Cin + c] = -1;
       }
     ReportCUDAErrors(cudaMemcpyAsync(weights_, convertedWeights,
                                      usedSize * sizeof(short),
