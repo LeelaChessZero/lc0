@@ -625,7 +625,7 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
                      Cin (80)    
     */
     // In HWC, because the padding is now part of each row
-    // we need to increase the size of weights mappnig to account
+    // we need to increase the size of weights to account
     // for it. 
     // The pad elements point to -1 (invalid output index) and the 
     // same kernel works for both HWC and CHW layouts after used_size_
