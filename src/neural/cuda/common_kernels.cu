@@ -482,7 +482,8 @@ __global__ void policyMap_kernel(T* output, const T* input,
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
                int inputSize, int usedSize, int outputSize) {
-  // Each thread writes one output.
+  // Each thread processes one input element
+  // Only some of the threads (with valid mapping) write output
   const int kBlockSize = 256;
   const int kBlocks = DivUp(N * usedSize, kBlockSize);
 
