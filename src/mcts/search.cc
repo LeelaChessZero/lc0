@@ -749,11 +749,18 @@ void Search::Abort() {
 }
 
 void Search::Wait() {
+  LOGFILE << "aolsen Wait start";
   Mutex::Lock lock(threads_mutex_);
   while (!threads_.empty()) {
     threads_.back().join();
     threads_.pop_back();
   }
+  while (!auxengine_threads_.empty()) {
+    LOGFILE << "aolsen Wait for auxengine_threads start";
+    auxengine_threads_.back().join();
+    auxengine_threads_.pop_back();
+  }
+  LOGFILE << "aolsen Wait for auxengine_threads done";
 }
 
 Search::~Search() {
