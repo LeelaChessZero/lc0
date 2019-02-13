@@ -102,7 +102,7 @@ class SelfPlayGame {
   std::mutex mutex_;
 
   // Training data to send.
-  std::vector<V3TrainingData> training_data_;
+  std::vector<V4TrainingData> training_data_;
 };
 
 }  // namespace lczero

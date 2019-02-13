@@ -89,6 +89,12 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
+  int GetKLDGainAverageInterval() const {
+    return options_.Get<int>(kKLDGainAverageInterval.GetId());
+  }
+  float GetMinimumKLDGainPerNode() const {
+    return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -117,6 +123,8 @@ class SearchParams {
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
+  static const OptionId kMinimumKLDGainPerNode;
+  static const OptionId kKLDGainAverageInterval;
 
  private:
   const OptionsDict& options_;

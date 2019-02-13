@@ -67,6 +67,10 @@ float SingleThreadBatchingNetworkComputation::GetQVal(int sample) const {
   return network_->parent_computation_->GetQVal(sample - start_idx_);
 }
 
+float SingleThreadBatchingNetworkComputation::GetDVal(int sample) const {
+  return network_->parent_computation_->GetDVal(sample - start_idx_);
+}
+
 float SingleThreadBatchingNetworkComputation::GetPVal(int sample,
                                                       int move_id) const {
   return network_->parent_computation_->GetPVal(sample - start_idx_, move_id);
