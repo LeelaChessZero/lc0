@@ -204,9 +204,10 @@ class Search {
   const SearchParams params_;
 
   void DoAuxEngine(Node* n);
-  boost::process::ipstream auxengine_is_;
-  boost::process::opstream auxengine_os_;
-  boost::process::child auxengine_c_;
+  static boost::process::ipstream auxengine_is_;
+  static boost::process::opstream auxengine_os_;
+  static boost::process::child auxengine_c_;
+  static bool auxengine_ready_;
   std::queue<Node*> auxengine_queue_;
   std::mutex auxengine_mutex_;
   std::condition_variable auxengine_cv_;

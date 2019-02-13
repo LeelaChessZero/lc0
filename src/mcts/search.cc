@@ -650,8 +650,13 @@ void Search::StartThreads(size_t how_many) {
   }
 }
 
+boost::process::ipstream Search::auxengine_is_;
+boost::process::opstream Search::auxengine_os_;
+boost::process::child Search::auxengine_c_;
+bool Search::auxengine_ready_ = false;
+
 void Search::OpenAuxEngine() {
-  // TODO: Move the current_uci_ part to constructor?
+  if (auxengine_ready_) return;
   auto path = params_.GetAuxEnginePath();
   if (path == "") return;
   LOGFILE << "aolsen " << path;
@@ -680,6 +685,7 @@ void Search::OpenAuxEngine() {
     }
   }
   auxengine_threads_.emplace_back([this]() { AuxEngineWorker(); });
+  auxengine_ready_ = true;
 
   LOGFILE << "aolsen";
 }
@@ -1328,54 +1334,51 @@ void Search::AuxEngineWorker() {
 }
 
 void Search::DoAuxEngine(Node* n) {
-  // TODO: Get root_node_ working also
-  if (n != root_node_) {
-    int depth = 0;
-    for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
-      depth++;
+  int depth = 0;
+  for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
+    depth++;
+  }
+  LOGFILE << "aolsen DoAuxEngine depth " << depth;
+  std::string s = "";
+  //bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 1);
+  bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
+  for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
+    s = n2->GetOwnEdge()->GetMove(flip).as_string() + " " + s;
+    flip = !flip;
+  }
+  LOGFILE << "aolsen add pv=" << s;
+  s = current_uci_ + " " + s;
+  LOGFILE << "aolsen " << s;
+  auxengine_os_ << s << std::endl;
+  auxengine_os_ << "go depth " << params_.GetAuxEngineDepth() << std::endl;
+  std::string line;
+  std::string token;
+  while(std::getline(auxengine_is_, line)) {
+    LOGFILE << "aolsen auxengine:" + line;
+    std::istringstream iss(line);
+    iss >> token >> std::ws;
+    if (token == "bestmove") {
+      iss >> token;
+      break;
     }
-    LOGFILE << "aolsen DoAuxEngine depth " << depth;
-    std::string s = "";
-    //bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 1);
-    bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
-    for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
-      s = n2->GetOwnEdge()->GetMove(flip).as_string() + " " + s;
-      flip = !flip;
-    }
-    LOGFILE << "aolsen add pv=" << s;
-    s = current_uci_ + " " + s;
-    LOGFILE << "aolsen " << s;
-    auxengine_os_ << s << std::endl;
-    auxengine_os_ << "go depth " << params_.GetAuxEngineDepth() << std::endl;
-    std::string line;
-    std::string token;
-    while(std::getline(auxengine_is_, line)) {
-      LOGFILE << "aolsen auxengine:" + line;
-      std::istringstream iss(line);
-      iss >> token >> std::ws;
-      if (token == "bestmove") {
-        iss >> token;
-        break;
-      }
-    }
-    //flip = played_history_.IsBlackToMove() ^ (depth % 2 == 1);
-    flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
-    LOGFILE << "aolsen thismove:" << n->GetOwnEdge()->GetMove(flip).as_string();
-    auto bestmove = Move(token, !flip);
-    LOGFILE << "aolsen bestanswer:" << token << " " << bestmove.as_nn_index();
+  }
+  //flip = played_history_.IsBlackToMove() ^ (depth % 2 == 1);
+  flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
+  LOGFILE << "aolsen thismove:" << n->GetOwnEdge()->GetMove(flip).as_string();
+  auto bestmove = Move(token, !flip);
+  LOGFILE << "aolsen bestanswer:" << token << " " << bestmove.as_nn_index();
 
-    // Take the lock and update the P value of the bestmove
-    SharedMutex::Lock lock(nodes_mutex_);
-    for (const auto& edge : n->Edges()) {
-      // TODO: I think we don't pass flip when we want to do as_nn_index?
-      // because as_nn_index assumes side to move is going up.
-      // So it should always act like we are white?
-      // Need to figure this out, but for now this seems to work for the one case I'm testing
-      if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
-        edge.edge()->SetP(edge.GetP() + params_.GetAuxEngineBoost()/100.0f);
-      }
-      LOGFILE << "aolsen edges " << edge.GetMove(!flip).as_string() << " " << edge.GetMove().as_nn_index() << " " << edge.GetP()*100;
+  // Take the lock and update the P value of the bestmove
+  SharedMutex::Lock lock(nodes_mutex_);
+  for (const auto& edge : n->Edges()) {
+    // TODO: I think we don't pass flip when we want to do as_nn_index?
+    // because as_nn_index assumes side to move is going up.
+    // So it should always act like we are white?
+    // Need to figure this out, but for now this seems to work for the one case I'm testing
+    if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
+      edge.edge()->SetP(edge.GetP() + params_.GetAuxEngineBoost()/100.0f);
     }
+    LOGFILE << "aolsen edges " << edge.GetMove(!flip).as_string() << " " << edge.GetMove().as_nn_index() << " " << edge.GetP()*100;
   }
 }
 
