@@ -656,11 +656,23 @@ boost::process::child Search::auxengine_c_;
 bool Search::auxengine_ready_ = false;
 
 void Search::OpenAuxEngine() {
-  if (auxengine_ready_) return;
   auto path = params_.GetAuxEnginePath();
   if (path == "") return;
   LOGFILE << "aolsen " << path;
-  auxengine_c_ = boost::process::child(path, boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
+  if (!auxengine_ready_) {
+    auxengine_c_ = boost::process::child(path, boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
+    // magic setting SF specific stuff
+    auxengine_os_ << "setoption name Debug Log File value auxenginelog.txt" << std::endl;
+    auxengine_os_ << "setoption name Hash value 1024" << std::endl;
+    auxengine_os_ << "uci" << std::endl;
+    std::string line;
+    while(std::getline(auxengine_is_, line)) {
+      LOGFILE << line;
+      if (line == "uciok") {
+        break;
+      }
+    }
+  }
   LOGFILE << "aolsen ";
   if (current_position_fen_ == "") {
     current_position_fen_ = ChessBoard::kStartposFen; // TODO
@@ -673,17 +685,6 @@ void Search::OpenAuxEngine() {
   current_uci_ = "position fen " + current_position_fen_ + " moves " + current_uci_;
   LOGFILE << "aolsen " << current_uci_;
 
-  // magic setting SF specific stuff
-  auxengine_os_ << "setoption name Debug Log File value auxenginelog.txt" << std::endl;
-  auxengine_os_ << "setoption name Hash value 1024" << std::endl;
-  auxengine_os_ << "uci" << std::endl;
-  std::string line;
-  while(std::getline(auxengine_is_, line)) {
-    LOGFILE << line;
-    if (line == "uciok") {
-      break;
-    }
-  }
   auxengine_threads_.emplace_back([this]() { AuxEngineWorker(); });
   auxengine_ready_ = true;
 
@@ -735,6 +736,7 @@ void Search::WatchdogThread() {
 void Search::FireStopInternal() {
   stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
+  auxengine_cv_.notify_all();
 }
 
 void Search::Stop() {
@@ -765,6 +767,11 @@ void Search::Wait() {
     LOGFILE << "aolsen Wait for auxengine_threads start";
     auxengine_threads_.back().join();
     auxengine_threads_.pop_back();
+  }
+  // TODO: For now with this simple queue method,
+  // just delete the queue. Next search iteration will fill it again.
+  while (!auxengine_queue_.empty()) {
+    auxengine_queue_.pop();
   }
   LOGFILE << "aolsen Wait for auxengine_threads done";
 }
@@ -1411,7 +1418,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
-    if (params_.GetAuxEnginePath() != "" && n->GetN() >= params_.GetAuxEngineThreshold() && !n->auxengine_done_) {
+    if (params_.GetAuxEnginePath() != "" &&
+        n->GetN() >= params_.GetAuxEngineThreshold() &&
+        !n->auxengine_done_ &&
+        !n->IsTerminal()) {
       n->auxengine_done_ = true;
       LOGFILE << "aolsen DoBackup depth " << depth << " " << n->GetOwnEdge()->GetMove().as_string();
       //DoAuxEngine(n, depth);
