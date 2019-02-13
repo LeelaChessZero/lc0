@@ -24,12 +24,12 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-#include "layers.h"
 #include <cassert>
 #include <cstring>
 #include <vector>
 #include "cuda_common.h"
 #include "kernels.h"
+#include "layers.h"
 namespace lczero {
 namespace cudnn_backend {
 
@@ -307,8 +307,7 @@ void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
 
   // Bias for the first FC layer.
   ReportCUDAErrors(
-      cudaMemcpy(b1_, b1, numFc1Out_ * sizeof(float),
-                                   cudaMemcpyHostToDevice));
+      cudaMemcpy(b1_, b1, numFc1Out_ * sizeof(float), cudaMemcpyHostToDevice));
 
   // Bias for the second FC layer.
   ReportCUDAErrors(
@@ -317,7 +316,7 @@ void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   // Bias for previous layer (Convolution).
   if (prevLayerBias) {
     ReportCUDAErrors(cudaMemcpy(bPrev_, prevLayerBias, C * sizeof(float),
-                                     cudaMemcpyHostToDevice));
+                                cudaMemcpyHostToDevice));
   }
 }
 
@@ -342,8 +341,7 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   if (kUseFusedSELayer) {
     cpuTranspose(temp.data(), w1, numFc1Out_, C);
     ReportCUDAErrors(
-        cudaMemcpy(scratch, temp.data(), weight_size1,
-                                     cudaMemcpyHostToDevice));
+        cudaMemcpy(scratch, temp.data(), weight_size1, cudaMemcpyHostToDevice));
   } else {
     ReportCUDAErrors(
         cudaMemcpy(scratch, w1, weight_size1, cudaMemcpyHostToDevice));
@@ -354,8 +352,7 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   if (kUseFusedSELayer) {
     cpuTranspose(temp.data(), w2, 2 * C, numFc1Out_);
     ReportCUDAErrors(
-        cudaMemcpy(scratch, temp.data(), weight_size2,
-                                     cudaMemcpyHostToDevice));
+        cudaMemcpy(scratch, temp.data(), weight_size2, cudaMemcpyHostToDevice));
   } else {
     ReportCUDAErrors(
         cudaMemcpy(scratch, w2, weight_size2, cudaMemcpyHostToDevice));
@@ -364,19 +361,18 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
 
   // Bias for the first FC layer.
   ReportCUDAErrors(cudaMemcpy(scratch, b1, numFc1Out_ * sizeof(float),
-                                   cudaMemcpyHostToDevice));
+                              cudaMemcpyHostToDevice));
   copyTypeConverted((half*)b1_, (float*)scratch, numFc1Out_);
 
   // Bias for the second FC layer.
   ReportCUDAErrors(
-      cudaMemcpy(scratch, b2, 2 * C * sizeof(float),
-                                   cudaMemcpyHostToDevice));
+      cudaMemcpy(scratch, b2, 2 * C * sizeof(float), cudaMemcpyHostToDevice));
   copyTypeConverted((half*)b2_, (float*)scratch, 2 * C);
 
   // Bias for previous layer (Convolution).
   if (prevLayerBias) {
     ReportCUDAErrors(cudaMemcpy(scratch, prevLayerBias, C * sizeof(float),
-                                     cudaMemcpyHostToDevice));
+                                cudaMemcpyHostToDevice));
     copyTypeConverted((half*)bPrev_, (float*)scratch, C);
   }
 }
@@ -507,8 +503,7 @@ void FCLayer<float>::LoadWeights(float* cpuWeight, float* cpuBias,
   size_t blas_size = sizeof(float) * num_biases;
 
   ReportCUDAErrors(
-      cudaMemcpy(weights_, cpuWeight, weight_size,
-                                   cudaMemcpyHostToDevice));
+      cudaMemcpy(weights_, cpuWeight, weight_size, cudaMemcpyHostToDevice));
   if (use_bias_) {
     ReportCUDAErrors(
         cudaMemcpy(biases_, cpuBias, blas_size, cudaMemcpyHostToDevice));
@@ -594,8 +589,8 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
     // one to one. Only few of the indices point to valid index in policy
     // vector. Invalid entries are set to -1.
 
-    // In fp16 mode, the tensor layout is NHWC so the weights need to be adjusted
-    // to make them work as intended.
+    // In fp16 mode, the tensor layout is NHWC so the weights need to be
+    // adjusted to make them work as intended.
 
     // This is how the original weights looks like (CHW layout):
     /*
@@ -604,7 +599,7 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
            |             |
            |             |
     C (73) |             |
-           |             |    
+           |             |
            |             |
        ------------------|   Cin (80)
            |  padding    |
@@ -619,15 +614,15 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
             |             | P |
             |             | a |
     HW (64) |             | d |
-            |             |   |  
             |             |   |
-            |-----------------| 
-                     Cin (80)    
+            |             |   |
+            |-----------------|
+                     Cin (80)
     */
     // In HWC, because the padding is now part of each row
     // we need to increase the size of weights to account
-    // for it. 
-    // The pad elements point to -1 (invalid output index) and the 
+    // for it.
+    // The pad elements point to -1 (invalid output index) and the
     // same kernel works for both HWC and CHW layouts after used_size_
     // is updated to include padding (80x64).
 
@@ -642,12 +637,11 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
           convertedWeights[hw * Cin + c] = -1;
       }
     ReportCUDAErrors(cudaMemcpy(weights_, &convertedWeights[0],
-                                     used_size_ * sizeof(short),
-                                     cudaMemcpyHostToDevice));
+                                used_size_ * sizeof(short),
+                                cudaMemcpyHostToDevice));
   } else {
     ReportCUDAErrors(
-        cudaMemcpy(weights_, cpuWeight, weight_size,
-                                     cudaMemcpyHostToDevice));
+        cudaMemcpy(weights_, cpuWeight, weight_size, cudaMemcpyHostToDevice));
   }
 }
 
