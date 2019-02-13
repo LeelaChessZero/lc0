@@ -132,7 +132,7 @@ The "network file" in the following is the file you should have downloaded in th
 If you built using the "install_openSUSE_lc0.sh" script, run the following
 ```
 
-mkdir Engine/lc0
+mkdir Engines/lc0
 cp -r /opt/lc0/build/release/* Engines/lc0/
 cp "network file" Engines/lc0/
 ```
