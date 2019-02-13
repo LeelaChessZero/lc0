@@ -139,7 +139,7 @@ cp "network file" Engines/lc0/
 If you installed using a RPM, run the following
 ```
 
-mkdir Engine/lc0
+mkdir Engines/lc0
 cp /usr/bin/lc0 Engines/lc0/
 cp "network file" Engines/lc0/
 ```
