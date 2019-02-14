@@ -769,8 +769,11 @@ void Search::Wait() {
     auxengine_threads_.pop_back();
   }
   // TODO: For now with this simple queue method,
-  // just delete the queue. Next search iteration will fill it again.
+  // mark unfinished nodes not done again, and delete the queue.
+  // Next search iteration will fill it again.
   while (!auxengine_queue_.empty()) {
+    auto n = auxengine_queue_.front();
+    n->auxengine_done_ = false;
     auxengine_queue_.pop();
   }
   LOGFILE << "aolsen Wait for auxengine_threads done";
