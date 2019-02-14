@@ -636,7 +636,7 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
         else
           convertedWeights[hw * Cin + c] = -1;
       }
-    ReportCUDAErrors(cudaMemcpy(weights_, &convertedWeights[0],
+    ReportCUDAErrors(cudaMemcpy(weights_, convertedWeights.data(),
                                 used_size_ * sizeof(short),
                                 cudaMemcpyHostToDevice));
   } else {
