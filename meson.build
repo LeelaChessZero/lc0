@@ -142,7 +142,9 @@ endif
 #deps += [ cc.find_library('boost_system'), ]
 # Appveyor build did not like the above.
 
-deps += [ dependency('boost') ]
+# I think boost::process is category system, so I need system?
+# Putting thread in also just in case.
+deps += [ dependency('boost'), modules : ['thread', 'system' ]
 
 #############################################################################
 ## BACKENDS
