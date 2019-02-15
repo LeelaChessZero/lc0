@@ -100,6 +100,10 @@ For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before perfo
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
 
+#### Docker
+
+Use https://github.com/vochicong/lc0-docker
+to run latest releases of lc0 and the client inside a Docker container.
 
 ### Windows
 
