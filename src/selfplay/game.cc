@@ -109,6 +109,12 @@ std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
     if (abort_) break;
 
     if (training) {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::ofstream outfile;
+        outfile.open("trainingdata_ply.txt", std::ios_base::app);
+        outfile << tree_[idx]->GetPlyCount() << "\n";
+      }
       // Append training data. The GameResult is later overwritten.
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),

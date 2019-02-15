@@ -228,10 +228,14 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   std::list<std::unique_ptr<SelfPlayGame>>::iterator game_iter;
   {
     Mutex::Lock lock(mutex_);
+    std::ofstream outfile;
+    outfile.open("starting_plies.txt", std::ios_base::app);
     if (resumable_games_.empty()) {
+      outfile << "0\n";
       games_.emplace_front(
           std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
     } else {
+      outfile << resumable_games_.front().tree[0]->GetPlyCount() << "\n";
       games_.emplace_front(std::make_unique<SelfPlayGame>(
           options[0], options[1], resumable_games_.front()));
       resumable_games_.pop();
