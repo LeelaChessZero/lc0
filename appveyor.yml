@@ -30,6 +30,7 @@ install:
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.3.1/cudnn-10.0-windows10-x64-v7.3.1.20.zip
 - cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-10.0-windows10-x64-v7.3.1.20.zip -oC:\cache
+- cmd: set BOOST_ROOT=C:\Libraries\boost_1_67_0
 - cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
 - cmd: pip3 install --upgrade meson
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
