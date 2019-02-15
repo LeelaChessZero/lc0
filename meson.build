@@ -139,7 +139,10 @@ endif
 
 # Or this?  https://mesonbuild.com/Dependencies.html#boost
 # But this way worked.
-deps += [ cc.find_library('boost_system'), ]
+#deps += [ cc.find_library('boost_system'), ]
+# Appveyor build did not like the above.
+
+deps += [ dependency('boost') ]
 
 #############################################################################
 ## BACKENDS
