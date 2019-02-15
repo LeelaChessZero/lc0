@@ -144,7 +144,7 @@ endif
 
 # I think boost::process is category system, so I need system?
 # Putting thread in also just in case.
-deps += [ dependency('boost'), modules : ['thread', 'system' ] ]
+deps += [ dependency('boost', modules : ['thread', 'system' ]) ]
 
 #############################################################################
 ## BACKENDS
