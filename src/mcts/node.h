@@ -170,6 +170,8 @@ class Node {
   bool TryStartScoreUpdate();
   // Decrements n-in-flight back.
   void CancelScoreUpdate(int multivisit);
+  // Clear best_child_cached_ pointer.
+  void InvalidateBestChild();
   // Updates the node with newly computed value v.
   // Updates:
   // * Q (weighted average of all V in a subtree)

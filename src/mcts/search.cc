@@ -662,7 +662,6 @@ void Search::OpenAuxEngine() {
   if (!auxengine_ready_) {
     auxengine_c_ = boost::process::child(path, boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
     // magic setting SF specific stuff
-    auxengine_os_ << "setoption name Debug Log File value auxenginelog.txt" << std::endl;
     auxengine_os_ << "setoption name Hash value 1024" << std::endl;
     auxengine_os_ << "uci" << std::endl;
     std::string line;
@@ -771,12 +770,12 @@ void Search::Wait() {
   // TODO: For now with this simple queue method,
   // mark unfinished nodes not done again, and delete the queue.
   // Next search iteration will fill it again.
+  LOGFILE << "aolsen done waiting. auxengine_queue_ size " << auxengine_queue_.size();
   while (!auxengine_queue_.empty()) {
     auto n = auxengine_queue_.front();
     n->auxengine_done_ = false;
     auxengine_queue_.pop();
   }
-  LOGFILE << "aolsen Wait for auxengine_threads done";
 }
 
 Search::~Search() {
@@ -1388,6 +1387,8 @@ void Search::DoAuxEngine(Node* n) {
     if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
       edge.edge()->SetP(edge.GetP() + params_.GetAuxEngineBoost()/100.0f);
     }
+    // Modifying P invalidates best child logic.
+    n->InvalidateBestChild();
     LOGFILE << "aolsen edges " << edge.GetMove(!flip).as_string() << " " << edge.GetMove().as_nn_index() << " " << edge.GetP()*100;
   }
 }
