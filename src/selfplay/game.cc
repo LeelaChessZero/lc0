@@ -54,12 +54,13 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
 }
 
-SelfPlayGame::SelfPlayGame(int game_number, PlayerOptions player1,
-                           PlayerOptions player2, bool shared_tree,
-                           bool enable_resign)
-    : options_{player1, player2},
+SelfPlayGame::SelfPlayGame(int game_number, PlayerOptions white_player,
+                           PlayerOptions black_player, bool shared_tree,
+                           bool enable_resign, bool player1_is_black)
+    : options_{white_player, black_player},
       game_number_(game_number),
-      enable_resign_(enable_resign) {
+      enable_resign_(enable_resign),
+      player1_black_(player1_is_black) {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 

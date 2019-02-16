@@ -210,13 +210,12 @@ std::unique_ptr<SelfPlayGame> SelfPlayTournament::CreateNewGame(
 
   return std::make_unique<SelfPlayGame>(game_number, options[color_idx[0]],
                                         options[color_idx[1]], kShareTree,
-                                        enable_resign);
+                                        enable_resign, player1_black);
 }
 
 // Called when the SelfPlayGame is finished, so that it's processed.
 void SelfPlayTournament::SendGameReport(const SelfPlayGame& game) {
   const int game_number = game.GetGameNumber();
-  const bool player1_black = (game_number % 2) != first_game_is_flipped_;
 
   // If game was aborted, it's still undecided, in this case don't output any
   // reports.
@@ -225,7 +224,7 @@ void SelfPlayTournament::SendGameReport(const SelfPlayGame& game) {
   // Prepare "game ended" callback.
   GameInfo game_info;
   game_info.game_result = game.GetGameResult();
-  game_info.is_black = player1_black;
+  game_info.is_black = game.IsPlayer1Black();
   game_info.game_id = game_number;
   game_info.moves = game.GetMoves();
   if (!game.IsResignEnabled()) {
@@ -248,8 +247,8 @@ void SelfPlayTournament::SendGameReport(const SelfPlayGame& game) {
     int result = game.GetGameResult() == GameResult::DRAW
                      ? 1
                      : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
-    if (player1_black) result = 2 - result;
-    ++tournament_info_.results[result][player1_black ? 1 : 0];
+    if (game.IsPlayer1Black()) result = 2 - result;
+    ++tournament_info_.results[result][game.IsPlayer1Black() ? 1 : 0];
     tournament_callback_(tournament_info_);
   }
 }

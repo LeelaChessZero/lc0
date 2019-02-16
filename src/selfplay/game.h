@@ -61,8 +61,9 @@ class SelfPlayGame {
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
-  SelfPlayGame(int game_number, PlayerOptions player1, PlayerOptions player2,
-               bool shared_tree, bool enable_resign);
+  SelfPlayGame(int game_number, PlayerOptions white_player,
+               PlayerOptions black_player, bool shared_tree, bool enable_resign,
+               bool player1_is_black);
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
@@ -85,6 +86,9 @@ class SelfPlayGame {
   // Returns whether white player is currently thinking or about to start
   // thinking.
   bool IsWhiteToMove() const { return !black_to_move_; }
+
+  // Returns whether player1 plays as black.
+  bool IsPlayer1Black() const { return player1_black_; }
 
   // Executes part of an iteration before NN evaluation.
   void PrepareBatch(std::unique_ptr<NetworkComputation>);
@@ -123,6 +127,7 @@ class SelfPlayGame {
 
   const int game_number_;
   const bool enable_resign_;
+  const bool player1_black_;
 };
 
 }  // namespace lczero
