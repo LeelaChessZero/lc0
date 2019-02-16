@@ -666,8 +666,11 @@ void Search::OpenAuxEngine() {
     auxengine_os_ << "uci" << std::endl;
     std::string line;
     while(std::getline(auxengine_is_, line)) {
-      LOGFILE << line;
-      if (line == "uciok") {
+      LOGFILE << "aolsen auxengine:" << line;
+      std::istringstream iss(line);
+      std::string token;
+      iss >> token >> std::ws;
+      if (token == "uciok") {
         break;
       }
     }
