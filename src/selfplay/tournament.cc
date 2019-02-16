@@ -39,10 +39,10 @@ const OptionId kShareTreesId{"share-trees", "ShareTrees",
                              "When on, game tree is shared for two players; "
                              "when off, each side has a separate tree."};
 const OptionId kTotalGamesId{"games", "Games", "Number of games to play."};
-const OptionId kThreadsId{"selfplay-threads", "SelfplayThreads",
-                          "Number of selfplay threads to run in parallel."};
+const OptionId kParallelismId{"parallelism", "Parallelism",
+                              "Number of selfplay threads to run in parallel."};
 const OptionId kThreadParallelismId{
-    "thread-parallelism", "ThreadParallelism",
+    "parallelism-per-thread", "ParallelismPerThread",
     "Number of games to play in parallel within single thread."};
 const OptionId kNnCacheSizeId{
     "nncache", "NNCache",
@@ -72,7 +72,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -1, 999999) = -1;
-  options->Add<IntOption>(kThreadsId, 1, 256) = 2;
+  options->Add<IntOption>(kParallelismId, 1, 256) = 2;
   options->Add<IntOption>(kThreadParallelismId, 1, 256) = 16;
   options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
   options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
@@ -100,6 +100,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<bool>(SearchParams::kNoiseId.GetId(), true);
   defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 0.0f);
   defaults->Set<std::string>(SearchParams::kHistoryFillId.GetId(), "no");
+  defaults->Set<std::string>(NetworkFactory::kBackendId.GetId(),
+                             "multiplexing");
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
@@ -115,7 +117,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       tournament_callback_(tournament_info),
       kTotalGames(options.Get<int>(kTotalGamesId.GetId())),
       kShareTree(options.Get<bool>(kShareTreesId.GetId())),
-      kThreads(options.Get<int>(kThreadsId.GetId())),
+      kThreads(options.Get<int>(kParallelismId.GetId())),
       kThreadParallelism(options.Get<int>(kThreadParallelismId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
