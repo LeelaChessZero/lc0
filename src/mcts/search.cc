@@ -125,7 +125,12 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     if (score_type == "centipawn") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+      constexpr int MAX_ABS_SCORE_CP = 12800;
+      uci_info.score = std::max(
+          -MAX_ABS_SCORE_CP,
+          std::min(MAX_ABS_SCORE_CP,
+                   static_cast<int>(
+                       -400.0 * log10(1 / (edge.GetQ(0) * 0.5 + 0.5) - 1))));
     } else if (score_type == "win_percentage") {
       uci_info.score = edge.GetQ(0) * 5000 + 5000;
     } else if (score_type == "Q") {
