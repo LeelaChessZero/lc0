@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -239,8 +239,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
         << ") ";
 
-    oss << "(D: " << std::setw(6) << std::setprecision(3)
-        << edge.GetD() << ") ";
+    oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
+        << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
@@ -327,12 +327,12 @@ void Search::UpdateKLDGain() {
     if (prev_dist_.size() != 0) {
       double sum1 = 0.0;
       double sum2 = 0.0;
-      for (int i = 0; i < new_visits.size(); i++) {
+      for (size_t i = 0; i < new_visits.size(); i++) {
         sum1 += prev_dist_[i];
         sum2 += new_visits[i];
       }
       double kldgain = 0.0;
-      for (int i = 0; i < new_visits.size(); i++) {
+      for (size_t i = 0; i < new_visits.size(); i++) {
         double o_p = prev_dist_[i] / sum1;
         double n_p = new_visits[i] / sum2;
         if (prev_dist_[i] != 0) {
@@ -496,10 +496,11 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
-  return syzygy_tb_->root_probe(played_history_.Last(),
-                                params_.GetSyzygyFastPlay() ||
-                                played_history_.DidRepeatSinceLastZeroingMove(),
-                                root_moves) ||
+  return syzygy_tb_->root_probe(
+             played_history_.Last(),
+             params_.GetSyzygyFastPlay() ||
+                 played_history_.DidRepeatSinceLastZeroingMove(),
+             root_moves) ||
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
