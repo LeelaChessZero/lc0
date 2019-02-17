@@ -114,14 +114,16 @@ bool OptionsParser::ProcessAllFlags() {
 }
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
+  auto show_help = false;
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
-    if (param == "-h" || param == "--help") {
-      ShowHelp();
-      return false;
-    }
     if (param == "--show-hidden") {
       ShowHidden();
+      continue;
+    }
+    if (param == "-h" || param == "--help") {
+      // Set a flag so that --show-hidden after --help works.
+      show_help = true;
       continue;
     }
 
@@ -179,6 +181,10 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
 
     CERR << "Unknown command line argument: " << *iter << ".\n";
     CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
+    return false;
+  }
+  if (show_help) {
+    ShowHelp();
     return false;
   }
   return true;
@@ -251,6 +257,8 @@ void OptionsParser::ShowHelp() const {
 
   std::cout << "\nAllowed command line flags for current mode:\n";
   std::cout << FormatFlag('h', "help", "Show help and exit.");
+  std::cout << FormatFlag('\0', "show-hidden",
+                          "Show hidden options. Use with --help.");
   for (const auto& option : options_) {
     if (!option->hidden_) std::cout << option->GetHelp(defaults_);
   }
