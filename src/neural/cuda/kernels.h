@@ -69,8 +69,9 @@ template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
                  const T* prevLayerBias);
 
-// Perform Squeeze-and-Excitation (SE).
-void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
+// Perform Squeeze-and-Excitation (SE) in a single fused kernel.
+// Returns false if the fused kernel can't handle the sizes.
+bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
                   const half* w2, const half* b2, const half* bPrev);
 

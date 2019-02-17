@@ -413,10 +413,12 @@ template <>
 void SELayer<half>::Eval(int N, half* output, const half* input,
                          const half* input2, void* scratch, size_t scratch_size,
                          cudnnHandle_t /*cudnn*/, cublasHandle_t cublas) {
+  bool se_done = false;
   if (kUseFusedSELayer) {
-    Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_, b1_, w2_, b2_,
-                 bPrev_);
-  } else {
+    se_done = Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_, b1_,
+                           w2_, b2_, bPrev_);
+  } 
+  if (!se_done) {
     assert(output == input2);
     // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
     half* op1 = (half*)scratch;
