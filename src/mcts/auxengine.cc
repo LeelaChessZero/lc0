@@ -53,7 +53,6 @@ bool Search::auxengine_ready_ = false;
 void Search::OpenAuxEngine() {
   auto path = params_.GetAuxEnginePath();
   if (path == "") return;
-  LOGFILE << "aolsen " << path;
   if (!auxengine_ready_) {
     auxengine_c_ = boost::process::child(path, boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
     {
@@ -66,7 +65,7 @@ void Search::OpenAuxEngine() {
     }
     std::string line;
     while(std::getline(auxengine_is_, line)) {
-      LOGFILE << "aolsen auxengine:" << line;
+      LOGFILE << line;
       std::istringstream iss(line);
       std::string token;
       iss >> token >> std::ws;
@@ -84,7 +83,7 @@ void Search::OpenAuxEngine() {
     }
   }
   current_uci_ = "position fen " + current_position_fen_ + " moves " + current_uci_;
-  LOGFILE << "aolsen " << current_uci_;
+  LOGFILE << current_uci_;
 
   auxengine_threads_.emplace_back([this]() { AuxEngineWorker(); });
   auxengine_ready_ = true;
@@ -104,7 +103,7 @@ void SearchWorker::AuxMaybeEnqueueNode(Node* n) {
 
 void Search::AuxEngineWorker() {
   Node* n;
-  LOGFILE << "aolsen uciworker start";
+  LOGFILE << "start";
   while (!stop_.load(std::memory_order_acquire)) {
     {
       std::unique_lock<std::mutex> lock(auxengine_mutex_);
@@ -118,7 +117,7 @@ void Search::AuxEngineWorker() {
     // release lock
     DoAuxEngine(n);
   }
-  LOGFILE << "aolsen uciworker end";
+  LOGFILE << "end";
 }
 
 void Search::DoAuxEngine(Node* n) {
@@ -132,14 +131,14 @@ void Search::DoAuxEngine(Node* n) {
     s = n2->GetOwnEdge()->GetMove(flip).as_string() + " " + s;
     flip = !flip;
   }
-  LOGFILE << "aolsen add pv=" << s;
+  LOGFILE << "add pv=" << s;
   s = current_uci_ + " " + s;
   auxengine_os_ << s << std::endl;
   auxengine_os_ << "go depth " << params_.GetAuxEngineDepth() << std::endl;
   std::string line;
   std::string token;
   while(std::getline(auxengine_is_, line)) {
-    //LOGFILE << "aolsen auxengine:" + line;
+    //LOGFILE << "auxe:" << line;
     std::istringstream iss(line);
     iss >> token >> std::ws;
     if (token == "bestmove") {
@@ -149,7 +148,7 @@ void Search::DoAuxEngine(Node* n) {
   }
   flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
   auto bestmove = Move(token, !flip);
-  LOGFILE << "aolsen bestanswer:" << token << " " << bestmove.as_nn_index();
+  LOGFILE << "bestanswer:" << token << " " << bestmove.as_nn_index();
 
   // Take the lock and update the P value of the bestmove
   SharedMutex::Lock lock(nodes_mutex_);
@@ -168,14 +167,14 @@ void Search::DoAuxEngine(Node* n) {
 
 void Search::AuxWait() {
   while (!auxengine_threads_.empty()) {
-    LOGFILE << "aolsen Wait for auxengine_threads start";
+    LOGFILE << "Wait for auxengine_threads";
     auxengine_threads_.back().join();
     auxengine_threads_.pop_back();
   }
   // TODO: For now with this simple queue method,
   // mark unfinished nodes not done again, and delete the queue.
   // Next search iteration will fill it again.
-  LOGFILE << "aolsen done waiting. auxengine_queue_ size " << auxengine_queue_.size();
+  LOGFILE << "done waiting. auxengine_queue_ size " << auxengine_queue_.size();
   while (!auxengine_queue_.empty()) {
     auto n = auxengine_queue_.front();
     n->auxengine_done_ = false;

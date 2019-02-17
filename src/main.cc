@@ -34,7 +34,8 @@
 #include "version.h"
 
 int main(int argc, const char** argv) {
-  LOGFILE << "Lc0 started.";
+  LOGFILE << "Leelafish, based on Lc0, started.";
+  CERR << "Leelafish, based on:";
   CERR << "       _";
   CERR << "|   _ | |";
   CERR << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__;
