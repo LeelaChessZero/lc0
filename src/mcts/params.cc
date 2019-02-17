@@ -174,16 +174,16 @@ const OptionId SearchParams::kKLDGainAverageInterval{
     "check the MinimumKLDGainPerNode, if specified."};
 const OptionId SearchParams::kAuxEnginePathId{
     "auxengine-path", "AuxEnginePath",
-    "Path to uci chess engine to help."};
+    "Path to auxiliary chess engine."};
 const OptionId SearchParams::kAuxEngineThresholdId{
     "auxengine-threshold", "AuxEngineThreshold",
-    "How many visits a node gets before the UCI Helper program is called."};
+    "The auxiliary engine is called when a node reaches this many visits"};
 const OptionId SearchParams::kAuxEngineDepthId{
     "auxengine-depth", "AuxEngineDepth",
-    "Depth the uci engine will search."};
+    "Depth for the auxiliary engine to search."};
 const OptionId SearchParams::kAuxEngineBoostId{
     "auxengine-boost", "AuxEngineBoost",
-    "How much to boost P, in percentage"};
+    "How much to boost Policy, in percentage"};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -223,7 +223,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<StringOption>(kAuxEnginePathId);
   options->Add<IntOption>(kAuxEngineThresholdId, 1, 1000000) = 100;
   options->Add<IntOption>(kAuxEngineDepthId, 1, 100) = 20;
-  options->Add<FloatOption>(kAuxEngineBoostId, 0.0f, 100.0f) = 10.0f;
+  options->Add<FloatOption>(kAuxEngineBoostId, 0.0f, 1000.0f) = 50.0f;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
