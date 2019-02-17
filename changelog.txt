@@ -1,3 +1,87 @@
+v0.21.0-rc1 (2019-02-16)
+~~~~~~~~~~~
+
+* Check Syzygy tablebase file sizes for corruption (#690)
+* search for nvcc on the path first (#709)
+* AZ-style policy head support (#712) 
+* Implement V4TrainingData (#722)
+* WDL value head support (#635)
+* Add option for doing kldgain thresholding rather than absolute visit
+  limiting (#721)
+* Easily run latest releases of lc0 and client using NVIDIA docker (#621)
+* Add WDL style resign option. (#724)
+* Add a uniform output option for random backend to support a0 seed data
+  style (#725)
+* Fix c hw switching in cudnn-fp16 mode with convolution policy head.
+  (#729)
+* misc (non-functional) changes to cudnn backend (#731)
+* handle 64 filter SE networks (#624)
+
+v0.20.2 (2019-02-01)
+~~~~~~~~~~~
+
+* Favor winning moves that minimize DTZ to reduce shuffling by assuming
+  repeated position by default (#708)
+* Print cuda and gpu info, warn if mismatches are noticed (#711)
+
+v0.20.2-rc1 (2019-01-27)
+~~~~~~~~~~~
+
+* no terminal multivisits (#683)
+* better fix for issue 651 (#693)
+* Changed output of --help flag to stdout rather than stderr (#687)
+* Movegen speedup via magic bitboards (#640)
+* modify default benchmark setting to run for 10 seconds (#681)
+* Fix incorrect index in OpenCL Winograd output transform (#676)
+* Update OpenCL (#655)
+
+v0.20.1 (2019-01-07)
+~~~~~~~~~~~
+
+* Change to atomic for cache capacity. (#665)
+
+v0.20.1-rc3 (2019-01-07)
+~~~~~~~~~~~
+
+* Remove ffast-math from the default flags (#661)
+
+v0.20.1-rc2 (2019-01-05)
+~~~~~~~~~~~
+
+* Don't use Winograd for 1x1 conv. (#659)
+* Fix issues with pondering and search limits. (#658)
+* Check for zero capacity in cache (#648)
+* fix undefined behavior in DiscoverWeightsFile() (#650)
+* fix fastmath.h undefined behavior and clean it up (#643)
+
+v0.20.1-rc1 (2019-01-01)
+~~~~~~~~~~~
+
+* Simplify movestogo approximator to use median residual time. (#634)
+* Replace time curve logic with movestogo approximator. (#271)
+* Cache best edge to improve PickNodeToExtend performance. (#619)
+* fix building with tensorflow 1.12 (#626)
+* Minor changes to `src/chess` (#606)
+* make uci search parameters the defaults ones (#609)
+* Preallocate nodes in advance of their need to avoid the allocation being
+  behind a mutex. (#613)
+* imrpove meson error when no backends enabled (#614)
+* allow building with the mklml library as an mkl alternative (#612)
+* Only build the history up if we are actually going to extend the position.
+  (#607)
+* fix warning (#604)
+
+v0.20.0 (2019-01-01)
+~~~~~~~~~~~
+
+* no lto builds by default (#625)
+
+v0.20.0-rc2 (2018-12-24)
+~~~~~~~~~~~
+
+* Fix for demux backend to match cuda expected threading model for 
+  computations. (#605)
+
 v0.20.0-rc1 (2018-12-22)
 ~~~~~~~~~~~
 

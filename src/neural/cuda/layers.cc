@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -126,10 +126,13 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
   if (use_relu_) {
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_RELU,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
-  } else {
+  }
+#if CUDNN_MAJOR != 7 || CUDNN_MINOR != 0
+  else {
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_IDENTITY,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
   }
+#endif
 }
 
 template <>
@@ -188,12 +191,14 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
 
   float alpha = 1.0f, beta = 0.0f;
 
-  if (!(use_relu_ || use_bias_)) {
+  if (!(use_relu_ || use_bias_ || input2)) {
     ReportCUDNNErrors(cudnnConvolutionForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
         output));
-  } else if (input2) {
+  }
+#if CUDNN_MAJOR != 7 || CUDNN_MINOR != 0
+  else if (input2) {
     // fused bias + sum + relu!
     ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
@@ -218,6 +223,27 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
           out_tensor_desc_, output));
     }
   }
+#else
+  else {
+    ReportCUDNNErrors(cudnnConvolutionForward(
+        cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+        conv_desc_, conv_algo_, scratch, scratch_size,
+        (input2 == output) ? &alpha : &beta, out_tensor_desc_, output));
+    if (input2 && input2 != output) {
+      ReportCUDNNErrors(cudnnAddTensor(cudnn, &alpha, out_tensor_desc_, input2,
+                                       &alpha, out_tensor_desc_, output));
+    }
+    if (use_bias_) {
+      ReportCUDNNErrors(cudnnAddTensor(cudnn, &alpha, bias_desc_, biases,
+                                       &alpha, out_tensor_desc_, output));
+    }
+    if (use_relu_) {
+      ReportCUDNNErrors(cudnnActivationForward(cudnn, activation_, &alpha,
+                                               out_tensor_desc_, output, &beta,
+                                               out_tensor_desc_, output));
+    }
+  }
+#endif
 }
 
 template <typename DataType>
