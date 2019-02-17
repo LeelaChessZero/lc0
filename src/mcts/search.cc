@@ -650,51 +650,6 @@ void Search::StartThreads(size_t how_many) {
   }
 }
 
-boost::process::ipstream Search::auxengine_is_;
-boost::process::opstream Search::auxengine_os_;
-boost::process::child Search::auxengine_c_;
-bool Search::auxengine_ready_ = false;
-
-void Search::OpenAuxEngine() {
-  auto path = params_.GetAuxEnginePath();
-  if (path == "") return;
-  LOGFILE << "aolsen " << path;
-  if (!auxengine_ready_) {
-    auxengine_c_ = boost::process::child(path, boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
-    {
-      std::istringstream iss(params_.GetAuxEngineOptions());
-      std::string token;
-      while(std::getline(iss, token, ';')) {
-        auxengine_os_ << "setoption name " << token << std::endl;
-      }
-      auxengine_os_ << "uci" << std::endl;
-    }
-    std::string line;
-    while(std::getline(auxengine_is_, line)) {
-      LOGFILE << "aolsen auxengine:" << line;
-      std::istringstream iss(line);
-      std::string token;
-      iss >> token >> std::ws;
-      if (token == "uciok") {
-        break;
-      }
-    }
-  }
-  if (current_position_fen_ == "") {
-    current_position_fen_ = ChessBoard::kStartposFen; // TODO
-  }
-  if (current_position_moves_.size()) {
-    for (auto i = current_position_moves_.size(); i-- > 0;) {
-      current_uci_ = current_position_moves_[i] + " " + current_uci_;
-    }
-  }
-  current_uci_ = "position fen " + current_position_fen_ + " moves " + current_uci_;
-  LOGFILE << "aolsen " << current_uci_;
-
-  auxengine_threads_.emplace_back([this]() { AuxEngineWorker(); });
-  auxengine_ready_ = true;
-}
-
 void Search::RunBlocking(size_t threads) {
   StartThreads(threads);
   Wait();
@@ -767,20 +722,7 @@ void Search::Wait() {
     threads_.back().join();
     threads_.pop_back();
   }
-  while (!auxengine_threads_.empty()) {
-    LOGFILE << "aolsen Wait for auxengine_threads start";
-    auxengine_threads_.back().join();
-    auxengine_threads_.pop_back();
-  }
-  // TODO: For now with this simple queue method,
-  // mark unfinished nodes not done again, and delete the queue.
-  // Next search iteration will fill it again.
-  LOGFILE << "aolsen done waiting. auxengine_queue_ size " << auxengine_queue_.size();
-  while (!auxengine_queue_.empty()) {
-    auto n = auxengine_queue_.front();
-    n->auxengine_done_ = false;
-    auxengine_queue_.pop();
-  }
+  AuxWait();
 }
 
 Search::~Search() {
@@ -1326,70 +1268,6 @@ void SearchWorker::DoBackupUpdate() {
   }
 }
 
-void Search::AuxEngineWorker() {
-  Node* n;
-  LOGFILE << "aolsen uciworker start";
-  while (!stop_.load(std::memory_order_acquire)) {
-    {
-      std::unique_lock<std::mutex> lock(auxengine_mutex_);
-
-      // Wait until there's some work to compute.
-      auxengine_cv_.wait(lock, [&] { return stop_.load(std::memory_order_acquire) || !auxengine_queue_.empty(); });
-      if (stop_.load(std::memory_order_acquire)) break;
-      n = auxengine_queue_.front();
-      auxengine_queue_.pop();
-    }
-    // release lock
-    DoAuxEngine(n);
-  }
-  LOGFILE << "aolsen uciworker end";
-}
-
-void Search::DoAuxEngine(Node* n) {
-  int depth = 0;
-  for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
-    depth++;
-  }
-  std::string s = "";
-  bool flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
-  for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
-    s = n2->GetOwnEdge()->GetMove(flip).as_string() + " " + s;
-    flip = !flip;
-  }
-  LOGFILE << "aolsen add pv=" << s;
-  s = current_uci_ + " " + s;
-  auxengine_os_ << s << std::endl;
-  auxengine_os_ << "go depth " << params_.GetAuxEngineDepth() << std::endl;
-  std::string line;
-  std::string token;
-  while(std::getline(auxengine_is_, line)) {
-    //LOGFILE << "aolsen auxengine:" + line;
-    std::istringstream iss(line);
-    iss >> token >> std::ws;
-    if (token == "bestmove") {
-      iss >> token;
-      break;
-    }
-  }
-  flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
-  auto bestmove = Move(token, !flip);
-  LOGFILE << "aolsen bestanswer:" << token << " " << bestmove.as_nn_index();
-
-  // Take the lock and update the P value of the bestmove
-  SharedMutex::Lock lock(nodes_mutex_);
-  for (const auto& edge : n->Edges()) {
-    // TODO: I think we don't pass flip when we want to do as_nn_index?
-    // because as_nn_index assumes side to move is going up.
-    // So it should always act like we are white?
-    // Need to figure this out, but for now this seems to work for the one case I'm testing
-    if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
-      edge.edge()->SetP(edge.GetP() + params_.GetAuxEngineBoost()/100.0f);
-    }
-    // Modifying P invalidates best child logic.
-    n->InvalidateBestChild();
-  }
-}
-
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
   Node* node = node_to_process.node;
@@ -1405,7 +1283,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
-  int depth = node_to_process.depth;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
     n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
@@ -1419,16 +1296,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
-    if (params_.GetAuxEnginePath() != "" &&
-        n->GetN() >= params_.GetAuxEngineThreshold() &&
-        !n->auxengine_done_ &&
-        !n->IsTerminal()) {
-      n->auxengine_done_ = true;
-      std::lock_guard<std::mutex> lock(search_->auxengine_mutex_);
-      search_->auxengine_queue_.push(n);
-      search_->auxengine_cv_.notify_one();
-    }
-    depth--;
+    AuxMaybeEnqueueNode(n);
   }
   search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;

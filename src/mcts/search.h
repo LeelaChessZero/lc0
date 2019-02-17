@@ -71,9 +71,6 @@ class Search {
   // Starts worker threads and returns immediately.
   void StartThreads(size_t how_many);
 
-  void OpenAuxEngine();
-  void AuxEngineWorker();
-
   // Starts search with k threads and wait until it finishes.
   void RunBlocking(size_t threads);
 
@@ -203,6 +200,9 @@ class Search {
   ThinkingInfo::Callback info_callback_;
   const SearchParams params_;
 
+  void OpenAuxEngine();
+  void AuxEngineWorker();
+  void AuxWait();
   void DoAuxEngine(Node* n);
   static boost::process::ipstream auxengine_is_;
   static boost::process::opstream auxengine_os_;
@@ -326,6 +326,8 @@ class SearchWorker {
   int number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
+
+  void AuxMaybeEnqueueNode(Node* n);
 };
 
 }  // namespace lczero
