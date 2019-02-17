@@ -131,6 +131,9 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
          std::to_string(info.results[2][1]);
   res += " draw " + std::to_string(info.results[1][0]) + " " +
          std::to_string(info.results[1][1]);
+  res += " npm " + std::to_string((double)info.nodes_total_ / info.move_count_);
+  res += " nodes " + std::to_string(info.nodes_total_);
+  res += " moves " + std::to_string(info.move_count_);
   SendResponse(res);
 }
 

@@ -83,6 +83,8 @@ class SelfPlayGame {
   // Gets the eval which required the biggest swing up to get the final outcome.
   // Eval is the expected outcome in the range 0<->1.
   float GetWorstEvalForWinnerOrDraw() const;
+  int move_count_ = 0;
+  uint64_t nodes_total_ = 0;
 
  private:
   // options_[0] is for white player, [1] for black.

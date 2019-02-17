@@ -101,6 +101,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // Do search.
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
+    move_count_++;
+    nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
     auto best_eval = search_->GetBestEval();
