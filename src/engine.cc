@@ -128,6 +128,9 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
+  NetworkFactory::PopulateOptions(options);
+  SearchParams::Populate(options);
+
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
@@ -141,13 +144,11 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
+  ConfigFile::PopulateOptions(options);
+
   // Hide time curve options.
   options->HideOption(kTimeMidpointMoveId);
   options->HideOption(kTimeSteepnessId);
-
-  NetworkFactory::PopulateOptions(options);
-  SearchParams::Populate(options);
-  ConfigFile::PopulateOptions(options);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(

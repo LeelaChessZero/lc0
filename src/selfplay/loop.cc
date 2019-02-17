@@ -44,8 +44,9 @@ SelfPlayLoop::~SelfPlayLoop() {
 }
 
 void SelfPlayLoop::RunLoop() {
-  options_.Add<BoolOption>(kInteractiveId) = false;
   SelfPlayTournament::PopulateOptions(&options_);
+
+  options_.Add<BoolOption>(kInteractiveId) = false;
 
   if (!options_.ProcessAllFlags()) return;
   if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
