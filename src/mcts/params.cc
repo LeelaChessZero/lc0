@@ -184,6 +184,10 @@ const OptionId SearchParams::kAuxEngineDepthId{
 const OptionId SearchParams::kAuxEngineBoostId{
     "auxengine-boost", "AuxEngineBoost",
     "How much to boost Policy, in percentage"};
+const OptionId SearchParams::kAuxEngineOptionsId{
+    "auxengine-options", "AuxEngineOptions",
+    "Semicolon separated list of UCI options for the auxiliary engine\n"
+    "e.g. 'Hash value 1024;Threads value 4'"};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -224,6 +228,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kAuxEngineThresholdId, 1, 1000000) = 100;
   options->Add<IntOption>(kAuxEngineDepthId, 1, 100) = 20;
   options->Add<FloatOption>(kAuxEngineBoostId, 0.0f, 1000.0f) = 50.0f;
+  options->Add<StringOption>(kAuxEngineOptionsId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)

@@ -661,9 +661,14 @@ void Search::OpenAuxEngine() {
   LOGFILE << "aolsen " << path;
   if (!auxengine_ready_) {
     auxengine_c_ = boost::process::child(path, boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
-    // magic setting SF specific stuff
-    auxengine_os_ << "setoption name Hash value 1024" << std::endl;
-    auxengine_os_ << "uci" << std::endl;
+    {
+      std::istringstream iss(params_.GetAuxEngineOptions());
+      std::string token;
+      while(std::getline(iss, token, ';')) {
+        auxengine_os_ << "setoption name " << token << std::endl;
+      }
+      auxengine_os_ << "uci" << std::endl;
+    }
     std::string line;
     while(std::getline(auxengine_is_, line)) {
       LOGFILE << "aolsen auxengine:" << line;
