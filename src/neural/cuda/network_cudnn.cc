@@ -174,15 +174,15 @@ class CudnnNetwork : public Network {
     if (gpu_id_ >= total_gpus)
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
 
+    cudaDeviceProp deviceProp = {};
+    cudaGetDeviceProperties(&deviceProp, gpu_id_);
+    showInfo(deviceProp);
+
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
 
     ReportCUDNNErrors(cudnnCreate(&cudnn_));
     ReportCUBLASErrors(cublasCreate(&cublas_));
-
-    cudaDeviceProp deviceProp = {};
-    cudaGetDeviceProperties(&deviceProp, gpu_id_);
-    showInfo(deviceProp);
 
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support fp16 (Volta+).
