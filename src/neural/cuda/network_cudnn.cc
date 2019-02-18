@@ -724,9 +724,13 @@ class CudnnNetwork : public Network {
     pl = version - major * 1000 - minor * 100;
     CERR << "Cudnn version: " << major << "." << minor << "." << pl;
     if (version != CUDNN_VERSION) {
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+      CERR << "WARNING: CUDNN Runtime version mismatch, was compiled with "
               "version "
            << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
+    }
+    if (version < 7301 && (deviceProp.major > 7 ||
+                           (deviceProp.major == 7 && deviceProp.minor > 5))) {
+      CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
     }
     cudaDriverGetVersion(&version);
     major = version / 1000;
