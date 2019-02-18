@@ -58,8 +58,13 @@ void Search::OpenAuxEngine() {
     {
       std::istringstream iss(params_.GetAuxEngineOptions());
       std::string token;
-      while(std::getline(iss, token, ';')) {
-        auxengine_os_ << "setoption name " << token << std::endl;
+      while(std::getline(iss, token, '=')) {
+        std::ostringstream oss;
+        oss << "setoption name " << token;
+        std::getline(iss, token, ';');
+        oss << " value " << token;
+        auxengine_os_ << oss.str() << std::endl;
+        LOGFILE << oss.str();
       }
       auxengine_os_ << "uci" << std::endl;
     }
@@ -148,7 +153,7 @@ void Search::DoAuxEngine(Node* n) {
   }
   flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
   auto bestmove = Move(token, !flip);
-  LOGFILE << "bestanswer:" << token << " " << bestmove.as_nn_index();
+  LOGFILE << "bestanswer:" << token;
 
   // Take the lock and update the P value of the bestmove
   SharedMutex::Lock lock(nodes_mutex_);

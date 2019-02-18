@@ -226,7 +226,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
   options->Add<StringOption>(kAuxEnginePathId);
   options->Add<IntOption>(kAuxEngineThresholdId, 1, 1000000) = 100;
-  options->Add<IntOption>(kAuxEngineDepthId, 1, 100) = 20;
+  options->Add<IntOption>(kAuxEngineDepthId, 1, 100) = 15;
   options->Add<FloatOption>(kAuxEngineBoostId, 0.0f, 1000.0f) = 50.0f;
   options->Add<StringOption>(kAuxEngineOptionsId);
 }
