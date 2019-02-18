@@ -729,7 +729,7 @@ class CudnnNetwork : public Network {
            << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
     }
     if (version < 7301 && (deviceProp.major > 7 ||
-                           (deviceProp.major == 7 && deviceProp.minor > 5))) {
+                           (deviceProp.major == 7 && deviceProp.minor >= 5))) {
       CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
     }
     cudaDriverGetVersion(&version);
