@@ -187,7 +187,7 @@ const OptionId SearchParams::kAuxEngineBoostId{
 const OptionId SearchParams::kAuxEngineOptionsId{
     "auxengine-options", "AuxEngineOptions",
     "Semicolon separated list of UCI options for the auxiliary engine\n"
-    "e.g. 'Hash value 1024;Threads value 4'"};
+    "e.g. 'Hash=1024;Threads=1'"};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
