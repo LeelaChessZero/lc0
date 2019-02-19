@@ -77,6 +77,8 @@ class SelfPlayTournament {
   // to them and not worry that it becomes invalid.
   std::list<std::unique_ptr<SelfPlayGame>> games_ GUARDED_BY(mutex_);
   std::queue<ResumableGame> resumable_games_ GUARDED_BY(mutex_);
+  size_t full_games_started_ = 0;
+  size_t sub_games_started_ = 0;
   // Place to store tournament stats.
   TournamentInfo tournament_info_ GUARDED_BY(mutex_);
 
@@ -100,6 +102,7 @@ class SelfPlayTournament {
   const size_t kParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
+  const float kSubgamesPercentage;
 };
 
 }  // namespace lczero

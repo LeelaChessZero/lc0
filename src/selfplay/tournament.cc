@@ -62,6 +62,9 @@ const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
 const OptionId kResignPlaythroughId{
     "resign-playthrough", "ResignPlaythrough",
     "The percentage of games which ignore resign."};
+const OptionId kSubgamesPercentageId{
+    "subgames-percentage", "SubgamesPercentage",
+    "The percentage of games which are splited sub-games."};
 
 }  // namespace
 
@@ -80,6 +83,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
+  options->Add<FloatOption>(kSubgamesPercentageId, 0.0f, 100.0f) = 20.0f;
 
   NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
@@ -121,7 +125,8 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kShareTree(options.Get<bool>(kShareTreesId.GetId())),
       kParallelism(options.Get<int>(kParallelGamesId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
-      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())) {
+      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
+      kSubgamesPercentage(options.Get<float>(kSubgamesPercentageId.GetId())) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     next_game_black_ = Random::Get().GetBool();
@@ -230,15 +235,20 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     Mutex::Lock lock(mutex_);
     std::ofstream outfile;
     outfile.open("starting_plies.txt", std::ios_base::app);
-    if (resumable_games_.empty()) {
+    const float kSubgamesRatio = kSubgamesPercentage / 100.0f;
+    if (resumable_games_.empty() || kSubgamesPercentage == 0.0f ||
+        static_cast<float>(sub_games_started_) / kSubgamesRatio >
+            static_cast<float>(full_games_started_)) {
       outfile << "0\n";
       games_.emplace_front(
           std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
+      full_games_started_++;
     } else {
       outfile << resumable_games_.front().tree[0]->GetPlyCount() << "\n";
       games_.emplace_front(std::make_unique<SelfPlayGame>(
           options[0], options[1], resumable_games_.front()));
       resumable_games_.pop();
+      sub_games_started_++;
     }
     game_iter = games_.begin();
   }
