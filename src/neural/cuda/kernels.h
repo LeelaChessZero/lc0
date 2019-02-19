@@ -78,5 +78,10 @@ template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
                int inputSize, int usedSize, int outputSize);
 
+// Hand tuned kernels for 3x3 convolutions of 8x8 planes
+bool convCuda3x3(float* output, const float* input, const float* weight,
+                 const float* bias, const float* skip, bool relu, int N, int K,
+                 int C);
+
 }  // namespace cudnn_backend
 }  // namespace lczero

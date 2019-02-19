@@ -493,6 +493,580 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+namespace ConvKernel0 {
+// Special kernel to get better performance for small batch size (N=1)
+//
+// Optimizations:
+// - Do multiple elements in H and W dimensions (4x4) per thread, to get some
+//   spatial reuse for input tensor as well as filter.
+// - More spatial reuse for input tensor using shfl for reading elements outside
+//   the 4x4 'tile'.
+// - The sum across C dimension is split across multiple threads (8), and
+//    summed in parallel using SHFL.
+
+// Do multiple elements in H and W dimensions (4x4).
+constexpr int wPerThread = 4;
+constexpr int hPerThread = 4;
+
+// 32 threads in block.
+// One board (4 threads, with 16 elements per thread).
+constexpr int blockWidth = 4; 
+
+// different 'C' dimensions
+constexpr int blockHeight = 8;
+
+#define INDEX_NCHW(n, c, h, w) ((n)*C * 64 + (c)*64 + (h)*8 + w)
+#define FILTER_IDX_NCHW(k, c, h, w) ((k)*C * 9 + (c)*9 + (h)*3 + w)
+#define SH_FILTER_IDX(k, c, h, w) ((k)*cPerIter * 9 + (c)*9 + (h)*3 + w)
+#define DIV_UP(a, b) (((a) + (b)-1) / (b))
+
+template <int K, int C, bool doRelu, bool biasAdd, bool skipAdd>
+__global__ void convKernel(float* output, const float* input,
+                           const float* weight, const float* bias,
+                           const float* skip, float alpha, float beta) {
+  int n = blockIdx.y;
+  int k = blockIdx.x;
+
+  int hStart = (threadIdx.x >> 1) * hPerThread;
+  int wStart = (threadIdx.x & 1) * wPerThread;
+  constexpr int cPerThread = C / blockHeight;
+  int cBase = threadIdx.y * cPerThread;
+
+  int threadInBlock = threadIdx.y * blockWidth + threadIdx.x;
+
+  __shared__ float shFilter[C * 9];
+
+  // Accumulators.
+  float op[4][4];
+  #pragma unroll
+  for (int y = 0; y < hPerThread; y++)
+    #pragma unroll
+    for (int x = 0; x < wPerThread; x++) op[y][x] = 0;
+
+  // load filters into shared memory
+  #pragma unroll
+  for (int i = 0; i < DIV_UP(C * 9, 32); i++) {
+    int localIndex = (32) * i + threadInBlock;
+    if (localIndex < C * 9)
+      shFilter[localIndex] = weight[k * (C * 9) + localIndex];
+  }
+
+  #pragma unroll 8
+  for (int lc = 0; lc < cPerThread; lc++) {
+    int c = cBase + lc;
+
+    // hardcoded for 3x3 filter, and 4x4 spatial elements per thread
+    float inEl[hPerThread + 2][wPerThread + 2];
+    #pragma unroll
+    for (int y = 0; y < hPerThread + 2; y++)
+      #pragma unroll
+      for (int x = 0; x < wPerThread + 2; x++) inEl[y][x] = 0.0f;
+
+    // assume wPerThread == 4, and use a 128 bit reads
+    *((uint4*)(&inEl[1][1])) =
+        *((uint4*)(&input[INDEX_NCHW(n, c, hStart, wStart)]));
+    *((uint4*)(&inEl[2][1])) =
+        *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 1, wStart)]));
+    *((uint4*)(&inEl[3][1])) =
+        *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 2, wStart)]));
+    *((uint4*)(&inEl[4][1])) =
+        *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 3, wStart)]));
+
+    // need temps because shfl needs all threads in warp to participate
+    float t01 = __shfl_up_sync(0xFFFFFFFF, inEl[4][1], 2);
+    float t02 = __shfl_up_sync(0xFFFFFFFF, inEl[4][2], 2);
+    float t03 = __shfl_up_sync(0xFFFFFFFF, inEl[4][3], 2);
+    float t04 = __shfl_up_sync(0xFFFFFFFF, inEl[4][4], 2);
+    if (hStart != 0) {
+      inEl[0][1] = t01;
+      inEl[0][2] = t02;
+      inEl[0][3] = t03;
+      inEl[0][4] = t04;
+    }
+
+    float t51 = __shfl_down_sync(0xFFFFFFFF, inEl[1][1], 2);
+    float t52 = __shfl_down_sync(0xFFFFFFFF, inEl[1][2], 2);
+    float t53 = __shfl_down_sync(0xFFFFFFFF, inEl[1][3], 2);
+    float t54 = __shfl_down_sync(0xFFFFFFFF, inEl[1][4], 2);
+    if (hStart == 0) {
+      inEl[5][1] = t51;
+      inEl[5][2] = t52;
+      inEl[5][3] = t53;
+      inEl[5][4] = t54;
+    }
+
+    float t00 = __shfl_up_sync(0xFFFFFFFF, inEl[0][4], 1);
+    float t10 = __shfl_up_sync(0xFFFFFFFF, inEl[1][4], 1);
+    float t20 = __shfl_up_sync(0xFFFFFFFF, inEl[2][4], 1);
+    float t30 = __shfl_up_sync(0xFFFFFFFF, inEl[3][4], 1);
+    float t40 = __shfl_up_sync(0xFFFFFFFF, inEl[4][4], 1);
+    float t50 = __shfl_up_sync(0xFFFFFFFF, inEl[5][4], 1);
+    if (wStart != 0) {
+      inEl[0][0] = t00;
+      inEl[1][0] = t10;
+      inEl[2][0] = t20;
+      inEl[3][0] = t30;
+      inEl[4][0] = t40;
+      inEl[5][0] = t50;
+    }
+
+    float t05 = __shfl_down_sync(0xFFFFFFFF, inEl[0][1], 1);
+    float t15 = __shfl_down_sync(0xFFFFFFFF, inEl[1][1], 1);
+    float t25 = __shfl_down_sync(0xFFFFFFFF, inEl[2][1], 1);
+    float t35 = __shfl_down_sync(0xFFFFFFFF, inEl[3][1], 1);
+    float t45 = __shfl_down_sync(0xFFFFFFFF, inEl[4][1], 1);
+    float t55 = __shfl_down_sync(0xFFFFFFFF, inEl[5][1], 1);
+    if (wStart == 0) {
+      inEl[0][5] = t05;
+      inEl[1][5] = t15;
+      inEl[2][5] = t25;
+      inEl[3][5] = t35;
+      inEl[4][5] = t45;
+      inEl[5][5] = t55;
+    }
+
+    #pragma unroll
+    for (int s = 0; s < 3; s++) {
+      #pragma unroll
+      for (int r = 0; r < 3; r++) {
+        float weight = (float)(shFilter[FILTER_IDX_NCHW(0, c, s, r)]);
+        #pragma unroll
+        for (int y = 0; y < hPerThread; y++) {
+          #pragma unroll
+          for (int x = 0; x < wPerThread; x++) {
+            op[y][x] += inEl[y + s][x + r] * weight;
+          }
+        }
+      }
+    }
+  }  // lc / c
+
+  float b = biasAdd ? bias[k] : 0;
+
+  #pragma unroll
+  for (int y = 0; y < hPerThread; y++) {
+    #pragma unroll
+    for (int x = 0; x < wPerThread; x++) {
+      // sum across C dimension
+      op[y][x] += __shfl_down_sync(0xFFFFFFFF, op[y][x], 4);
+      op[y][x] += __shfl_down_sync(0xFFFFFFFF, op[y][x], 8);
+      op[y][x] += __shfl_down_sync(0xFFFFFFFF, op[y][x], 16);
+
+      op[y][x] += b;
+
+      if (doRelu && op[y][x] < 0) op[y][x] = 0;
+    }
+  }
+
+  if (threadIdx.y == 0) {
+    ((uint4*)output)[INDEX_NCHW(n, k, hStart, wStart) >> 2] =
+        *((uint4*)&op[0][0]);
+    ((uint4*)output)[INDEX_NCHW(n, k, hStart + 1, wStart) >> 2] =
+        *((uint4*)&op[1][0]);
+    ((uint4*)output)[INDEX_NCHW(n, k, hStart + 2, wStart) >> 2] =
+        *((uint4*)&op[2][0]);
+    ((uint4*)output)[INDEX_NCHW(n, k, hStart + 3, wStart) >> 2] =
+        *((uint4*)&op[3][0]);
+  }
+}
+
+};  // ConvKernel0
+
+namespace ConvKernel1 {
+// Fastest kernel for small batch size (N=1).
+//  - Requires C to be a multiple of 64.
+//
+// Optimizations:
+// - Do multiple elements in H and W dimensions (4x4) per thread, to get some
+//   spatial reuse for input tensor as well as filter.
+// - More spatial reuse for input tensor using shfl for reading elements outside
+//   the 4x4 'tile'.
+// - C dimension is sliced into multiple chunks (of 32) to reduce shared memory
+//   usage and get better occupancy (allow more blocks per SM).
+// - Multiple elements (2) in K dimension processed by thread.
+//   -- This gets more reuse of the input tensor.
+// - Another slicing along C dimension to increase occupancy (using shared
+// memory)
+
+// output elements processed per thread
+constexpr int wPerThread = 4;
+constexpr int hPerThread = 4;
+
+// 32 threads in block.
+// One board (4 threads, with 16 elements per thread).
+constexpr int blockWidth = 4;
+// Different 'C' dimensions (summed in parallel using SHFL).
+constexpr int blockHeight = 8;
+
+// The code to do final sums and to write outputs below assumes this to be 2.
+// Again different 'C' dimension (in a block of
+// shared memory accessed by different warps).
+constexpr int blockDepth = 2;
+
+// These many filter elements from c dimension are loaded into
+// hhared memory at a time (should be a multiple of warp size).
+constexpr int cPerIter = 32;
+constexpr int cPerIterPerThread = cPerIter / (blockHeight);
+
+constexpr int kPerBlock = 2;
+
+template <int K, int C, bool doRelu, bool biasAdd, bool skipAdd>
+__global__ void convKernel(float* output, const float* input,
+                           const float* weight, const float* bias,
+                           const float* skip, float alpha, float beta) {
+  int n = blockIdx.y;
+  int kStart = blockIdx.x * kPerBlock;
+
+  int hStart = (threadIdx.x >> 1) * hPerThread;
+  int wStart = (threadIdx.x & 1) * wPerThread;
+
+  // extra offset
+  int cPerSlice = C / blockDepth;
+  int cStart = threadIdx.z * cPerSlice;
+  int shStart = (kPerBlock * cPerIter * 9) * threadIdx.z;
+
+  // offset to be added to get C index
+  int cOffset = threadIdx.y * cPerIterPerThread;
+
+  int threadInWarp = threadIdx.y * blockWidth + threadIdx.x;
+
+  __shared__ float shData[blockDepth * kPerBlock * cPerIter * 9];
+
+  // accumulators
+  float op[kPerBlock][4][4];
+
+  #pragma unroll
+  for (int lk = 0; lk < kPerBlock; lk++)
+    #pragma unroll
+    for (int y = 0; y < hPerThread; y++)
+      #pragma unroll
+      for (int x = 0; x < wPerThread; x++) op[lk][y][x] = 0;
+
+  // outer loop
+  for (int cBase = 0; cBase < cPerSlice; cBase += cPerIter) {
+    // load filters into shared memory
+    #pragma unroll
+    for (int lk = 0; lk < kPerBlock; lk++) {
+      int k = kStart + lk;
+      #pragma unroll
+      for (int i = 0; i < cPerIter * 9 / 32; i++) {
+        int localIndex = 32 * i + threadInWarp;
+        int sharedIndex = shStart + lk * (cPerIter * 9) + localIndex;
+        int globalIndex = k * C * 9 + (cStart + cBase) * 9 + localIndex;
+        shData[sharedIndex] = weight[globalIndex];
+      }
+    }
+
+    #pragma unroll
+    for (int lc = 0; lc < cPerIterPerThread; lc++) {
+      int shc = cOffset + lc;  // offset of filter for index c in shared memory
+      int c = cStart + cBase + shc;  // real c dimension
+
+      // hardcoded for 3x3 filter, and 4x4 spatial elements per thread
+      float inEl[hPerThread + 2][wPerThread + 2];
+      #pragma unroll
+      for (int y = 0; y < hPerThread + 2; y++)
+        #pragma unroll
+        for (int x = 0; x < wPerThread + 2; x++) inEl[y][x] = 0.0f;
+
+      // assume wPerThread == 4, and use a 128 bit reads
+      *((uint4*)(&inEl[1][1])) =
+          *((uint4*)(&input[INDEX_NCHW(n, c, hStart, wStart)]));
+      *((uint4*)(&inEl[2][1])) =
+          *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 1, wStart)]));
+      *((uint4*)(&inEl[3][1])) =
+          *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 2, wStart)]));
+      *((uint4*)(&inEl[4][1])) =
+          *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 3, wStart)]));
+
+      // need temps because shfl needs all threads in warp to participate
+      float t01 = __shfl_up_sync(0xFFFFFFFF, inEl[4][1], 2);
+      float t02 = __shfl_up_sync(0xFFFFFFFF, inEl[4][2], 2);
+      float t03 = __shfl_up_sync(0xFFFFFFFF, inEl[4][3], 2);
+      float t04 = __shfl_up_sync(0xFFFFFFFF, inEl[4][4], 2);
+      if (hStart != 0) {
+        inEl[0][1] = t01;
+        inEl[0][2] = t02;
+        inEl[0][3] = t03;
+        inEl[0][4] = t04;
+      }
+
+      float t51 = __shfl_down_sync(0xFFFFFFFF, inEl[1][1], 2);
+      float t52 = __shfl_down_sync(0xFFFFFFFF, inEl[1][2], 2);
+      float t53 = __shfl_down_sync(0xFFFFFFFF, inEl[1][3], 2);
+      float t54 = __shfl_down_sync(0xFFFFFFFF, inEl[1][4], 2);
+      if (hStart == 0) {
+        inEl[5][1] = t51;
+        inEl[5][2] = t52;
+        inEl[5][3] = t53;
+        inEl[5][4] = t54;
+      }
+
+      float t00 = __shfl_up_sync(0xFFFFFFFF, inEl[0][4], 1);
+      float t10 = __shfl_up_sync(0xFFFFFFFF, inEl[1][4], 1);
+      float t20 = __shfl_up_sync(0xFFFFFFFF, inEl[2][4], 1);
+      float t30 = __shfl_up_sync(0xFFFFFFFF, inEl[3][4], 1);
+      float t40 = __shfl_up_sync(0xFFFFFFFF, inEl[4][4], 1);
+      float t50 = __shfl_up_sync(0xFFFFFFFF, inEl[5][4], 1);
+      if (wStart != 0) {
+        inEl[0][0] = t00;
+        inEl[1][0] = t10;
+        inEl[2][0] = t20;
+        inEl[3][0] = t30;
+        inEl[4][0] = t40;
+        inEl[5][0] = t50;
+      }
+
+      float t05 = __shfl_down_sync(0xFFFFFFFF, inEl[0][1], 1);
+      float t15 = __shfl_down_sync(0xFFFFFFFF, inEl[1][1], 1);
+      float t25 = __shfl_down_sync(0xFFFFFFFF, inEl[2][1], 1);
+      float t35 = __shfl_down_sync(0xFFFFFFFF, inEl[3][1], 1);
+      float t45 = __shfl_down_sync(0xFFFFFFFF, inEl[4][1], 1);
+      float t55 = __shfl_down_sync(0xFFFFFFFF, inEl[5][1], 1);
+      if (wStart == 0) {
+        inEl[0][5] = t05;
+        inEl[1][5] = t15;
+        inEl[2][5] = t25;
+        inEl[3][5] = t35;
+        inEl[4][5] = t45;
+        inEl[5][5] = t55;
+      }
+
+      #pragma unroll
+      for (int s = 0; s < 3; s++) {
+        #pragma unroll
+        for (int r = 0; r < 3; r++) {
+          #pragma unroll
+          for (int lk = 0; lk < kPerBlock; lk++) {
+            float wt = (float)(shData[shStart + SH_FILTER_IDX(lk, shc, s, r)]);
+            #pragma unroll
+            for (int y = 0; y < hPerThread; y++) {
+              #pragma unroll
+              for (int x = 0; x < wPerThread; x++) {
+                op[lk][y][x] += inEl[y + s][x + r] * wt;
+              }  // x
+            }    // y
+          }      // k
+        }        // r
+      }          // s
+    }            // lc
+  }              // cBase
+
+  #pragma unroll
+  for (int y = 0; y < hPerThread; y++) {
+    #pragma unroll
+    for (int x = 0; x < wPerThread; x++) {
+      // sum across C dimension
+      #pragma unroll
+      for (int lk = 0; lk < kPerBlock; lk++) {
+        op[lk][y][x] += __shfl_down_sync(0xFFFFFFFF, op[lk][y][x], 4);
+        op[lk][y][x] += __shfl_down_sync(0xFFFFFFFF, op[lk][y][x], 8);
+        op[lk][y][x] += __shfl_down_sync(0xFFFFFFFF, op[lk][y][x], 16);
+      }
+    }
+  }
+
+  //__shared__ float shResult[blockWidth][kPerBlock][hPerThread][wPerThread];
+  static_assert(sizeof(shData) >= 2 * sizeof(float) * blockWidth * kPerBlock *
+                                      hPerThread * wPerThread,
+                "shared mem not enough");
+
+  if (threadIdx.y == 0 && threadIdx.z == 0) {
+    #pragma unroll
+    for (int lk = 0; lk < kPerBlock; lk++)
+      #pragma unroll
+      for (int y = 0; y < hPerThread; y++)
+        #pragma unroll
+        for (int x = 0; x < wPerThread; x++) {
+          // shResult[threadIdx.x][lk][y][x] = op[lk][y][x];
+          shData[threadIdx.x * kPerBlock * hPerThread * wPerThread +
+                 lk * hPerThread * wPerThread + y * wPerThread + x] =
+              op[lk][y][x];
+        }
+  }
+
+  __syncthreads();
+
+  if (threadIdx.y == 0 && threadIdx.z == 1) {
+    float b[kPerBlock];
+
+    if (biasAdd) {
+      #pragma unroll
+      for (int lk = 0; lk < kPerBlock; lk++)
+        b[lk] = bias ? bias[kStart + lk] : 0;
+    }
+
+    float sk[kPerBlock][4][4];
+    if (skipAdd) {
+      #pragma unroll
+      for (int lk = 0; lk < kPerBlock; lk++) {
+        int k = kStart + lk;
+        *((uint4*)&op[lk][0][0]) =
+            ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 0, wStart) >> 2];
+        *((uint4*)&op[lk][1][0]) =
+            ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 1, wStart) >> 2];
+        *((uint4*)&op[lk][2][0]) =
+            ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 2, wStart) >> 2];
+        *((uint4*)&op[lk][3][0]) =
+            ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 3, wStart) >> 2];
+      }
+    }
+
+    #pragma unroll
+    for (int y = 0; y < hPerThread; y++) {
+      // sum across C dimension
+      #pragma unroll
+      for (int lk = 0; lk < kPerBlock; lk++) {
+        // apply bias and relu
+        #pragma unroll
+        for (int x = 0; x < wPerThread; x++) {
+          // op[lk][y][x] += shResult[threadIdx.x][lk][y][x];
+          op[lk][y][x] +=
+              shData[threadIdx.x * kPerBlock * hPerThread * wPerThread +
+                     lk * hPerThread * wPerThread + y * wPerThread + x];
+
+          if (skipAdd) {
+            op[lk][y][x] = op[lk][y][x] * alpha + beta * sk[lk][y][x];
+          }
+
+          if (biasAdd) {
+            op[lk][y][x] += b[lk];
+          }
+
+          if (doRelu && op[lk][y][x] < 0) op[lk][y][x] = 0;
+        }
+      }
+    }
+
+    // final memory write
+    #pragma unroll
+    for (int lk = 0; lk < kPerBlock; lk++) {
+      int k = kStart + lk;
+      ((uint4*)output)[INDEX_NCHW(n, k, hStart, wStart) >> 2] =
+          *((uint4*)&op[lk][0][0]);
+      ((uint4*)output)[INDEX_NCHW(n, k, hStart + 1, wStart) >> 2] =
+          *((uint4*)&op[lk][1][0]);
+      ((uint4*)output)[INDEX_NCHW(n, k, hStart + 2, wStart) >> 2] =
+          *((uint4*)&op[lk][2][0]);
+      ((uint4*)output)[INDEX_NCHW(n, k, hStart + 3, wStart) >> 2] =
+          *((uint4*)&op[lk][3][0]);
+    }
+  }
+}
+
+};  // namespace ConvKernel1
+
+template <int K, int C>
+void launch_convCuda3x3_1(dim3 blockDim, dim3 gridDim, float* output,
+                          const float* input, const float* weight,
+                          const float* bias, const float* skip, bool relu) {
+  static_assert((C % 64 == 0) && (K % 64 == 0), "Channel count not supported");
+  if (skip) {
+    if (relu)
+      ConvKernel1::convKernel<K, C, true, true, true>
+          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+    else
+      ConvKernel1::convKernel<K, C, false, false, true>
+          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+  } else {
+    if (relu)
+      ConvKernel1::convKernel<K, C, true, true, false>
+          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+    else
+      ConvKernel1::convKernel<K, C, false, false, false>
+          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+  }
+}
+
+
+template <int K, int C>
+void launch_convCuda3x3_0(dim3 blockDim, dim3 gridDim, float* output,
+                          const float* input, const float* weight,
+                          const float* bias, const float* skip, bool relu) {
+  static_assert(C % 8 == 0, "Channel count not supported");
+  if (skip) {
+    if (relu)
+      ConvKernel0::convKernel<K, C, true, true, true>
+          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+    else
+      ConvKernel0::convKernel<K, C, false, false, true>
+          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+  } else {
+    if (relu)
+      ConvKernel0::convKernel<K, C, true, true, false>
+          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+    else
+      ConvKernel0::convKernel<K, C, false, false, false>
+          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+  }
+}
+
+
+// Use specialized kernels for 3x3 convolutions.
+// Faster for small batch sizes.
+// Returns false if the kernel isn't able to handle the given params.
+bool convCuda3x3(float* output, const float* input, const float* weight,
+                 const float* bias, const float* skip, bool relu, int N, int K,
+                 int C) {
+  // For computing each each of them need to do (3 * 3 * C) multiple-adds  (e.g:
+  // 2304 for C=256) Need to re-use input and filter elements to avoid making
+  // everything memory bound.
+
+  // Either need both bias and relu, or none of them (this is not a limitation
+  // of the kernels but just to avoid too much template param hard-coding)
+  if ((bias && !relu) || (!bias && relu))
+    return false;
+  //else
+    //return false;   // Ankan - test!
+
+  // N * K blocks used
+  // Each thread block processes 8x8 elements
+  if (C == 112) {
+    // this kernel is slower than the one used below, but supports not-multiple
+    // of 64 C. We use it only for the first convolution
+    dim3 gridDim(K, N);
+    dim3 blockDim(ConvKernel0::blockWidth, ConvKernel0::blockHeight, 1);
+
+    if (K == 64)
+      launch_convCuda3x3_0<64, 112>(blockDim, gridDim, output, input, weight,
+                                   bias, skip, relu);
+    else if (K == 128)
+      launch_convCuda3x3_0<128, 112>(blockDim, gridDim, output, input, weight,
+                                     bias, skip, relu);
+    else if (K == 192)
+      launch_convCuda3x3_0<128, 112>(blockDim, gridDim, output, input, weight,
+                                     bias, skip, relu);
+    else if (K == 256)
+      launch_convCuda3x3_0<128, 112>(blockDim, gridDim, output, input, weight,
+                                     bias, skip, relu);
+    else
+      return false;  // Add more template instantitations as needed
+  } else {
+    dim3 gridDim(K / ConvKernel1::kPerBlock, N);
+    dim3 blockDim(ConvKernel1::blockWidth, ConvKernel1::blockHeight,
+                  ConvKernel1::blockDepth);
+
+    // Supports only multiple of 64 channel counts
+    if (C == 64 && K == 64)
+      launch_convCuda3x3_1<64, 64>(blockDim, gridDim, output, input, weight,
+                                   bias, skip, relu);
+    else if (C == 128 && K == 128)
+      launch_convCuda3x3_1<128, 128>(blockDim, gridDim, output, input, weight,
+                                     bias, skip, relu);
+    else if (C == 192 && K == 192)
+      launch_convCuda3x3_1<128, 128>(blockDim, gridDim, output, input, weight,
+                                     bias, skip, relu);
+    else if (C == 256 && K == 256)
+      launch_convCuda3x3_1<128, 128>(blockDim, gridDim, output, input, weight,
+                                     bias, skip, relu);
+    else
+      return false; // Add more template instantitations as needed
+  }
+
+  ReportCUDAErrors(cudaGetLastError());
+  return true;
+}
+
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N);
 template void copyTypeConverted<float, half>(float* op, half* ip, int N);

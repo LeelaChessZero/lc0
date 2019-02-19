@@ -181,6 +181,15 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                cublasHandle_t /*cublas*/) {
   const bool fp16 = std::is_same<half, DataType>::value;
 
+  // try hand-tuned kernels first
+  // TODO: run some tuning instead of hardcoding N < 10 as the condition to run those kernels
+  if ((!fp16) && (filter_size_ == 3) && (N < 10)) {
+    bool convDone = convCuda3x3(
+        (float*)output, (const float*)input, (const float*)weights,
+        (const float*)biases, (const float*)input2, use_relu_, N, C, c_input_);
+    if (convDone) return;
+  }
+
   ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
       out_tensor_desc_, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
       fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, N, C, H, W));
