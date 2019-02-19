@@ -136,7 +136,7 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   if ((winp1 + losep1 + draws) > 0) {
     percentage =
         (static_cast<float>(draws) / 2 + winp1) / (winp1 + losep1 + draws);
-    }
+  }
   // Calculate elo and los if percentage strictly between 0 and 1 (avoids divide
   // by 0 or overflow).
   if ((percentage < 1) && (percentage > 0))
@@ -144,37 +144,30 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   if ((winp1 + losep1) > 0) {
     los = .5f +
           .5f * std::erf((winp1 - losep1) / std::sqrt(2.0 * (winp1 + losep1)));
-    }
-  std::string res = "tournamentstatus";
-  if (info.finished) res += " final";
-  res += " P1: +" + std::to_string(winp1) + " -" + std::to_string(losep1) +
-         " =" + std::to_string(draws);
+  }
+  std::ostringstream oss;
+  oss << "tournamentstatus";
+  if (info.finished) oss << " final";
+  oss << " P1: +" << winp1 << " -" << losep1 << " =" << draws;
 
   if (percentage > 0) {
-    std::ostringstream oss;
-    oss << std::fixed << std::setw(5) << std::setprecision(2)
+    oss << " Win: " << std::fixed << std::setw(5) << std::setprecision(2)
         << (percentage * 100.0f) << "%";
-    res += " Win: " + oss.str();
   }
   if (elo) {
-    std::ostringstream oss;
-    oss << std::fixed << std::setw(5) << std::setprecision(2) << (elo.value_or(0.0f));
-    res += " Elo: " + oss.str();
+    oss << " Elo: " << std::fixed << std::setw(5) << std::setprecision(2)
+        << (elo.value_or(0.0f));
   }
   if (los) {
-    std::ostringstream oss;
-    oss << std::fixed << std::setw(5) << std::setprecision(2) << (los.value_or(0.0f) * 100.0f)
-        << "%";
-    res += " LOS: " + oss.str();
+    oss << " LOS: " << std::fixed << std::setw(5) << std::setprecision(2)
+        << (los.value_or(0.0f) * 100.0f) << "%";
   }
-  res += " P1-W: +" + std::to_string(info.results[0][0]) + " -" +
-         std::to_string(info.results[2][0]) + " =" +
-         std::to_string(info.results[1][0]);
 
-  res += " P1-B: +" + std::to_string(info.results[0][1]) + " -" +
-         std::to_string(info.results[2][1]) + " =" +
-         std::to_string(info.results[1][1]);
-  SendResponse(res);
+  oss << " P1-W: +" << info.results[0][0] << " -" << info.results[2][0] << " ="
+      << info.results[1][0];
+  oss << " P1-B: +" << info.results[0][1] << " -" << info.results[2][1] << " ="
+      << info.results[1][1];
+  SendResponse(oss.str());
 }
 
 }  // namespace lczero
