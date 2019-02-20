@@ -174,6 +174,19 @@ void ConvLayer<float>::LoadWeights(float* pfilter, float* pBias,
   }
 }
 
+#if 0
+// Useful for debugging.
+void dumpTensor(char *message, void* tensor, int elements) {
+  int size = elements * sizeof(float);
+  float* temp = (float*)malloc(size);
+  cudaMemcpy(temp, tensor, size, cudaMemcpyDeviceToHost);
+  printf("\n%s\n", message);
+  for (int i = 0; i < elements; i++) printf("%7.4f ", temp[i]);
+  printf("\n");
+  free(temp);
+}
+#endif
+
 template <typename DataType>
 void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                const DataType* input2, void* scratch,
@@ -182,12 +195,15 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
   const bool fp16 = std::is_same<half, DataType>::value;
 
   // try hand-tuned kernels first
-  // TODO: run some tuning instead of hardcoding N < 10 as the condition to run those kernels
+  // TODO: run some tuning instead of hardcoding N < 10 as the condition to run
+  // those kernels
   if ((!fp16) && (filter_size_ == 3) && (N < 10)) {
     bool convDone = convCuda3x3(
         (float*)output, (const float*)input, (const float*)weights,
         (const float*)biases, (const float*)input2, use_relu_, N, C, c_input_);
-    if (convDone) return;
+
+    if (convDone) 
+      return;
   }
 
   ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
@@ -253,6 +269,7 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
     }
   }
 #endif
+
 }
 
 template <typename DataType>

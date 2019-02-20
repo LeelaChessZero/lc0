@@ -520,7 +520,7 @@ constexpr int blockHeight = 8;
 #define SH_FILTER_IDX(k, c, h, w) ((k)*cPerIter * 9 + (c)*9 + (h)*3 + w)
 #define DIV_UP(a, b) (((a) + (b)-1) / (b))
 
-template <int K, int C, bool doRelu, bool biasAdd, bool skipAdd>
+template <int K, int C, bool doRelu, bool biasAdd>
 __global__ void convKernel(float* output, const float* input,
                            const float* weight, const float* bias,
                            const float* skip, float alpha, float beta) {
@@ -901,13 +901,13 @@ __global__ void convKernel(float* output, const float* input,
       #pragma unroll
       for (int lk = 0; lk < kPerBlock; lk++) {
         int k = kStart + lk;
-        *((uint4*)&op[lk][0][0]) =
+        *((uint4*)&sk[lk][0][0]) =
             ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 0, wStart) >> 2];
-        *((uint4*)&op[lk][1][0]) =
+        *((uint4*)&sk[lk][1][0]) =
             ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 1, wStart) >> 2];
-        *((uint4*)&op[lk][2][0]) =
+        *((uint4*)&sk[lk][2][0]) =
             ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 2, wStart) >> 2];
-        *((uint4*)&op[lk][3][0]) =
+        *((uint4*)&sk[lk][3][0]) =
             ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 3, wStart) >> 2];
       }
     }
@@ -984,23 +984,13 @@ void launch_convCuda3x3_0(dim3 blockDim, dim3 gridDim, float* output,
                           const float* input, const float* weight,
                           const float* bias, const float* skip, bool relu) {
   static_assert(C % 8 == 0, "Channel count not supported");
-  if (skip) {
-    if (relu)
-      ConvKernel0::convKernel<K, C, true, true, true>
-          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
-    else
-      ConvKernel0::convKernel<K, C, false, false, true>
-          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
-  } else {
-    if (relu)
-      ConvKernel0::convKernel<K, C, true, true, false>
-          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
-    else
-      ConvKernel0::convKernel<K, C, false, false, false>
-          <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
-  }
+  if (relu)
+    ConvKernel0::convKernel<K, C, true, true>
+        <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+  else
+    ConvKernel0::convKernel<K, C, false, false>
+        <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
 }
-
 
 // Use specialized kernels for 3x3 convolutions.
 // Faster for small batch sizes.
@@ -1013,19 +1003,19 @@ bool convCuda3x3(float* output, const float* input, const float* weight,
   // everything memory bound.
 
   // Either need both bias and relu, or none of them (this is not a limitation
-  // of the kernels but just to avoid too much template param hard-coding)
+  // of the kernels but just to avoid too much template param hard-coding).
   if ((bias && !relu) || (!bias && relu))
     return false;
-  //else
-    //return false;   // Ankan - test!
 
   // N * K blocks used
-  // Each thread block processes 8x8 elements
+  // Each thread block processes 8x8 elements.
   if (C == 112) {
-    // this kernel is slower than the one used below, but supports not-multiple
-    // of 64 C. We use it only for the first convolution
+    // This kernel is slower than the one used below, but supports not-multiple
+    // of 64 C. We use it only for the first convolution.
     dim3 gridDim(K, N);
     dim3 blockDim(ConvKernel0::blockWidth, ConvKernel0::blockHeight, 1);
+
+    if (skip) return false; // Doesn't support skip connection add.
 
     if (K == 64)
       launch_convCuda3x3_0<64, 112>(blockDim, gridDim, output, input, weight,
@@ -1034,13 +1024,13 @@ bool convCuda3x3(float* output, const float* input, const float* weight,
       launch_convCuda3x3_0<128, 112>(blockDim, gridDim, output, input, weight,
                                      bias, skip, relu);
     else if (K == 192)
-      launch_convCuda3x3_0<128, 112>(blockDim, gridDim, output, input, weight,
+      launch_convCuda3x3_0<192, 112>(blockDim, gridDim, output, input, weight,
                                      bias, skip, relu);
     else if (K == 256)
-      launch_convCuda3x3_0<128, 112>(blockDim, gridDim, output, input, weight,
+      launch_convCuda3x3_0<256, 112>(blockDim, gridDim, output, input, weight,
                                      bias, skip, relu);
     else
-      return false;  // Add more template instantitations as needed
+      return false;  // Add more template instantiations as needed
   } else {
     dim3 gridDim(K / ConvKernel1::kPerBlock, N);
     dim3 blockDim(ConvKernel1::blockWidth, ConvKernel1::blockHeight,
@@ -1054,16 +1044,17 @@ bool convCuda3x3(float* output, const float* input, const float* weight,
       launch_convCuda3x3_1<128, 128>(blockDim, gridDim, output, input, weight,
                                      bias, skip, relu);
     else if (C == 192 && K == 192)
-      launch_convCuda3x3_1<128, 128>(blockDim, gridDim, output, input, weight,
+      launch_convCuda3x3_1<192, 192>(blockDim, gridDim, output, input, weight,
                                      bias, skip, relu);
     else if (C == 256 && K == 256)
-      launch_convCuda3x3_1<128, 128>(blockDim, gridDim, output, input, weight,
+      launch_convCuda3x3_1<256, 256>(blockDim, gridDim, output, input, weight,
                                      bias, skip, relu);
     else
-      return false; // Add more template instantitations as needed
+      return false; // Add more template instantiations as needed
   }
 
   ReportCUDAErrors(cudaGetLastError());
+
   return true;
 }
 
