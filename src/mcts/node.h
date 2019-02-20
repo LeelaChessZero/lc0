@@ -236,7 +236,8 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
-  bool auxengine_done_ = false;
+  uint16_t GetAuxEngineMove();
+  void SetAuxEngineMove(uint16_t move);
 
  private:
   // Performs construction time type initialization. For use only with a node
@@ -290,6 +291,9 @@ class Node {
   // Index of this node is parent's edge list.
   uint16_t index_;
 
+  // TODO: magic value!
+  uint16_t auxengine_move_ = 0xffff;
+
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
   bool is_terminal_ = false;
@@ -312,10 +316,9 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-// TODO
-//static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
 #else
-//static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+static_assert(sizeof(Node) == 80, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access

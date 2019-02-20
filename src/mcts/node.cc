@@ -207,6 +207,14 @@ Edge* Node::GetEdgeToNode(const Node* node) const {
 
 Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
 
+uint16_t Node::GetAuxEngineMove() {
+  return auxengine_move_;
+}
+
+void Node::SetAuxEngineMove(uint16_t move) {
+  auxengine_move_ = move;
+}
+
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_

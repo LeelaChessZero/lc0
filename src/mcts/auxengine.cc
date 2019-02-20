@@ -51,10 +51,25 @@ boost::process::child Search::auxengine_c_;
 bool Search::auxengine_ready_ = false;
 
 void Search::OpenAuxEngine() {
-  auto path = params_.GetAuxEnginePath();
-  if (path == "") return;
+  if (params_.GetAuxEnginePath() == "") return;
+  auxengine_threads_.emplace_back([this]() { AuxEngineWorker(); });
+}
+
+void SearchWorker::AuxMaybeEnqueueNode(Node* n) {
+  if (params_.GetAuxEnginePath() != "" &&
+      n->GetN() >= params_.GetAuxEngineThreshold() &&
+      n->GetAuxEngineMove() == 0xffff &&
+      !n->IsTerminal()) {
+    n->SetAuxEngineMove(0xfffe); // TODO: magic for pending
+    std::lock_guard<std::mutex> lock(search_->auxengine_mutex_);
+    search_->auxengine_queue_.push(n);
+    search_->auxengine_cv_.notify_one();
+  }
+}
+
+void Search::AuxEngineWorker() {
   if (!auxengine_ready_) {
-    auxengine_c_ = boost::process::child(path, boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
+    auxengine_c_ = boost::process::child(params_.GetAuxEnginePath(), boost::process::std_in < auxengine_os_, boost::process::std_out > auxengine_is_);
     {
       std::istringstream iss(params_.GetAuxEngineOptions());
       std::string token;
@@ -78,6 +93,7 @@ void Search::OpenAuxEngine() {
         break;
       }
     }
+    auxengine_ready_ = true;
   }
   if (current_position_fen_ == "") {
     current_position_fen_ = ChessBoard::kStartposFen; // TODO
@@ -90,23 +106,6 @@ void Search::OpenAuxEngine() {
   current_uci_ = "position fen " + current_position_fen_ + " moves " + current_uci_;
   LOGFILE << current_uci_;
 
-  auxengine_threads_.emplace_back([this]() { AuxEngineWorker(); });
-  auxengine_ready_ = true;
-}
-
-void SearchWorker::AuxMaybeEnqueueNode(Node* n) {
-  if (params_.GetAuxEnginePath() != "" &&
-      n->GetN() >= params_.GetAuxEngineThreshold() &&
-      !n->auxengine_done_ &&
-      !n->IsTerminal()) {
-    n->auxengine_done_ = true;
-    std::lock_guard<std::mutex> lock(search_->auxengine_mutex_);
-    search_->auxengine_queue_.push(n);
-    search_->auxengine_cv_.notify_one();
-  }
-}
-
-void Search::AuxEngineWorker() {
   Node* n;
   LOGFILE << "start";
   while (!stop_.load(std::memory_order_acquire)) {
@@ -118,14 +117,16 @@ void Search::AuxEngineWorker() {
       if (stop_.load(std::memory_order_acquire)) break;
       n = auxengine_queue_.front();
       auxengine_queue_.pop();
-    }
-    // release lock
+    } // release lock
     DoAuxEngine(n);
   }
   LOGFILE << "end";
 }
 
 void Search::DoAuxEngine(Node* n) {
+  if (n->GetAuxEngineMove() < 0xfffe) {
+    return;
+  }
   int depth = 0;
   for (Node* n2 = n; n2 != root_node_; n2 = n2->GetParent()) {
     depth++;
@@ -140,6 +141,7 @@ void Search::DoAuxEngine(Node* n) {
   s = current_uci_ + " " + s;
   auxengine_os_ << s << std::endl;
   auxengine_os_ << "go depth " << params_.GetAuxEngineDepth() << std::endl;
+  std::string prev_line;
   std::string line;
   std::string token;
   while(std::getline(auxengine_is_, line)) {
@@ -150,24 +152,67 @@ void Search::DoAuxEngine(Node* n) {
       iss >> token;
       break;
     }
+    prev_line = line;
   }
+  std::istringstream iss(prev_line);
+  std::string pv;
+  std::vector<uint16_t> pv_moves;
   flip = played_history_.IsBlackToMove() ^ (depth % 2 == 0);
-  auto bestmove = Move(token, !flip);
+  auto bestmove_packed_int = Move(token, !flip).as_packed_int();
+  while(iss >> pv >> std::ws) {
+    if (pv == "pv") {
+      while(iss >> pv >> std::ws) {
+        auto m = Move(pv, !flip);
+        pv_moves.push_back(m.as_packed_int());
+        flip = !flip;
+      }
+    }
+  }
+  LOGFILE << "pv:" << prev_line;
   LOGFILE << "bestanswer:" << token;
 
+  if (pv_moves[0] != bestmove_packed_int) {
+    // TODO: Is it possible for PV to not match bestmove?
+    LOGFILE << "error: pv doesn't match bestmove:" << pv_moves[0] << " " << "bm" << bestmove_packed_int;
+    pv_moves.clear();
+    pv_moves.push_back(bestmove_packed_int);
+  }
   // Take the lock and update the P value of the bestmove
   SharedMutex::Lock lock(nodes_mutex_);
-  for (const auto& edge : n->Edges()) {
-    // TODO: I think we don't pass flip when we want to do as_nn_index?
-    // because as_nn_index assumes side to move is going up.
-    // So it should always act like we are white?
-    // Need to figure this out, but for now this seems to work for the one case I'm testing
-    if (edge.GetMove().as_nn_index() == bestmove.as_nn_index()) {
-      edge.edge()->SetP(edge.GetP() + params_.GetAuxEngineBoost()/100.0f);
-    }
-    // Modifying P invalidates best child logic.
-    n->InvalidateBestChild();
+  AuxUpdateP(n, pv_moves, 0);
+}
+
+void Search::AuxUpdateP(Node* n, std::vector<uint16_t> pv_moves, int ply) {
+  if (n->GetAuxEngineMove() < 0xfffe) {
+    // This can happen because nodes are placed in the queue from
+    // deepest node first during DoBackupSingeNode
+    //if (n->GetAuxEngineMove() != pv_moves[ply]) {
+    //  LOGFILE << "already done: curr:" << n->GetAuxEngineMove() << " new:" << pv_moves[ply] << " (error? mismatch)";
+    //} else {
+    //  LOGFILE << "already done";
+    //}
+    return;
   }
+  for (const auto& edge : n->Edges()) {
+    if (edge.GetMove().as_packed_int() == pv_moves[ply]) {
+      edge.edge()->SetP(edge.GetP() + params_.GetAuxEngineBoost()/100.0f);
+      // Modifying P invalidates best child logic.
+      n->InvalidateBestChild();
+      // Stop after AuxEngineFollowPvDepth plies deep.
+      // or when e.g. ply=0, pv_moves.size()=1 (pv is exhasted)
+      // of the edge does not have a node yet.
+      // of the edge is a terminal.
+      if (ply < params_.GetAuxEngineFollowPvDepth() &&
+          ply+1 < pv_moves.size() &&
+          edge.HasNode() &&
+          !edge.IsTerminal()) {
+        AuxUpdateP(edge.node(), pv_moves, ply+1);
+      }
+      n->SetAuxEngineMove(pv_moves[ply]);
+      return;
+    }
+  }
+  LOGFILE << "error: move not found";
 }
 
 void Search::AuxWait() {
@@ -182,7 +227,10 @@ void Search::AuxWait() {
   LOGFILE << "done waiting. auxengine_queue_ size " << auxengine_queue_.size();
   while (!auxengine_queue_.empty()) {
     auto n = auxengine_queue_.front();
-    n->auxengine_done_ = false;
+    assert(n->GetAuxEngineMove() != 0xffff);
+    if (n->GetAuxEngineMove() == 0xfffe) {
+      n->SetAuxEngineMove(0xffff);
+    }
     auxengine_queue_.pop();
   }
 }
