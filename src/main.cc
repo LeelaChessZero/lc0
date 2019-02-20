@@ -40,14 +40,14 @@ int main(int argc, const char** argv) {
   CERR << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__;
   using namespace lczero;
 
-  InitializeMagicBitboards();
-
-  CommandLine::Init(argc, argv);
-  CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
-  CommandLine::RegisterMode("selfplay", "Play games with itself");
-  CommandLine::RegisterMode("benchmark", "Quick benchmark");
-
   try {
+    InitializeMagicBitboards();
+
+    CommandLine::Init(argc, argv);
+    CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
+    CommandLine::RegisterMode("selfplay", "Play games with itself");
+    CommandLine::RegisterMode("benchmark", "Quick benchmark");
+
     if (CommandLine::ConsumeCommand("selfplay")) {
       // Selfplay mode.
       SelfPlayLoop loop;
