@@ -177,12 +177,17 @@ void ConvLayer<float>::LoadWeights(float* pfilter, float* pBias,
 #if 0
 // Useful for debugging.
 void dumpTensor(char *message, void* tensor, int elements) {
+  FILE *fp = fopen("c:\\temp\\debug.txt", "a+");
   int size = elements * sizeof(float);
   float* temp = (float*)malloc(size);
   cudaMemcpy(temp, tensor, size, cudaMemcpyDeviceToHost);
-  printf("\n%s\n", message);
-  for (int i = 0; i < elements; i++) printf("%7.4f ", temp[i]);
-  printf("\n");
+  fprintf(fp, "\n%s", message);
+  for (int i = 0; i < elements; i++) {
+    if ((i % 8) == 0) fprintf(fp, "\n");
+    fprintf(fp, "%7.4f ", temp[i]);
+  }
+  fprintf(fp, "\n");
+  fclose(fp);
   free(temp);
 }
 #endif
@@ -202,8 +207,11 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
         (float*)output, (const float*)input, (const float*)weights,
         (const float*)biases, (const float*)input2, use_relu_, N, C, c_input_);
 
-    if (convDone) 
-      return;
+    if (convDone)
+    {
+        //dumpTensor("cuda c kernel output", output, 2*256*64);
+        return;
+    }
   }
 
   ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
@@ -269,7 +277,6 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
     }
   }
 #endif
-
 }
 
 template <typename DataType>

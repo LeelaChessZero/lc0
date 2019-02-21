@@ -516,6 +516,7 @@ constexpr int blockWidth = 4;
 constexpr int blockHeight = 8;
 
 #define INDEX_NCHW(n, c, h, w) ((n)*C * 64 + (c)*64 + (h)*8 + w)
+#define INDEX_NKHW(n, k, h, w) ((n)*K * 64 + (k)*64 + (h)*8 + w)
 #define FILTER_IDX_NCHW(k, c, h, w) ((k)*C * 9 + (c)*9 + (h)*3 + w)
 #define SH_FILTER_IDX(k, c, h, w) ((k)*cPerIter * 9 + (c)*9 + (h)*3 + w)
 #define DIV_UP(a, b) (((a) + (b)-1) / (b))
@@ -659,13 +660,13 @@ __global__ void convKernel(float* output, const float* input,
   }
 
   if (threadIdx.y == 0) {
-    ((uint4*)output)[INDEX_NCHW(n, k, hStart, wStart) >> 2] =
+    ((uint4*)output)[INDEX_NKHW(n, k, hStart, wStart) >> 2] =
         *((uint4*)&op[0][0]);
-    ((uint4*)output)[INDEX_NCHW(n, k, hStart + 1, wStart) >> 2] =
+    ((uint4*)output)[INDEX_NKHW(n, k, hStart + 1, wStart) >> 2] =
         *((uint4*)&op[1][0]);
-    ((uint4*)output)[INDEX_NCHW(n, k, hStart + 2, wStart) >> 2] =
+    ((uint4*)output)[INDEX_NKHW(n, k, hStart + 2, wStart) >> 2] =
         *((uint4*)&op[2][0]);
-    ((uint4*)output)[INDEX_NCHW(n, k, hStart + 3, wStart) >> 2] =
+    ((uint4*)output)[INDEX_NKHW(n, k, hStart + 3, wStart) >> 2] =
         *((uint4*)&op[3][0]);
   }
 }
@@ -902,13 +903,13 @@ __global__ void convKernel(float* output, const float* input,
       for (int lk = 0; lk < kPerBlock; lk++) {
         int k = kStart + lk;
         *((uint4*)&sk[lk][0][0]) =
-            ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 0, wStart) >> 2];
+            ((uint4*)skip)[INDEX_NKHW(n, k, hStart + 0, wStart) >> 2];
         *((uint4*)&sk[lk][1][0]) =
-            ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 1, wStart) >> 2];
+            ((uint4*)skip)[INDEX_NKHW(n, k, hStart + 1, wStart) >> 2];
         *((uint4*)&sk[lk][2][0]) =
-            ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 2, wStart) >> 2];
+            ((uint4*)skip)[INDEX_NKHW(n, k, hStart + 2, wStart) >> 2];
         *((uint4*)&sk[lk][3][0]) =
-            ((uint4*)skip)[INDEX_NCHW(n, k, hStart + 3, wStart) >> 2];
+            ((uint4*)skip)[INDEX_NKHW(n, k, hStart + 3, wStart) >> 2];
       }
     }
 
@@ -942,13 +943,13 @@ __global__ void convKernel(float* output, const float* input,
     #pragma unroll
     for (int lk = 0; lk < kPerBlock; lk++) {
       int k = kStart + lk;
-      ((uint4*)output)[INDEX_NCHW(n, k, hStart, wStart) >> 2] =
+      ((uint4*)output)[INDEX_NKHW(n, k, hStart, wStart) >> 2] =
           *((uint4*)&op[lk][0][0]);
-      ((uint4*)output)[INDEX_NCHW(n, k, hStart + 1, wStart) >> 2] =
+      ((uint4*)output)[INDEX_NKHW(n, k, hStart + 1, wStart) >> 2] =
           *((uint4*)&op[lk][1][0]);
-      ((uint4*)output)[INDEX_NCHW(n, k, hStart + 2, wStart) >> 2] =
+      ((uint4*)output)[INDEX_NKHW(n, k, hStart + 2, wStart) >> 2] =
           *((uint4*)&op[lk][2][0]);
-      ((uint4*)output)[INDEX_NCHW(n, k, hStart + 3, wStart) >> 2] =
+      ((uint4*)output)[INDEX_NKHW(n, k, hStart + 3, wStart) >> 2] =
           *((uint4*)&op[lk][3][0]);
     }
   }
