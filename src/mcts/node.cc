@@ -261,10 +261,14 @@ void Node::RecomputeNfromChildren() {
 float Node::GetVisitedPolicy() const { return visited_policy_; }
 
 float Node::GetQ() const {
-  if (parent_) {
-    auto edge = parent_->GetEdgeToNode(this);
-    if (edge->IsCertain()) return (float)edge->GetEQ();
-  }
+  // Currently all certain edges have a corresponding node (PR700) and
+  // that nodes q_ is set correctly. If we later allow edges to become
+  // certain without creating the node (PR487 through look-ahead-search),
+  // we need to revisit this getter or adapt search.
+  // if (parent_) {
+  //   auto edge = parent_->GetEdgeToNode(this);
+  //   if (edge->IsCertain()) return (float)edge->GetEQ();
+  // }
   return q_;
 }
 

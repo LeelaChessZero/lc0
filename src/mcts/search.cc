@@ -121,7 +121,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
   int multipv = 0;
   for (const auto& edge : edges) {
-    float score = edge.GetQ(-edge.node()->GetParent()->GetQ());
+    float score = edge.GetQ(-root_node_->GetQ());
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();

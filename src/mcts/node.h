@@ -149,7 +149,7 @@ class Edge {
 
   // Return all stats flags.
   uint8_t GetCertaintyState() const { return certainty_state_; };
-
+  // Returns the edges Q
   int GetEQ() const;
 
   // Debug information about the edge.
@@ -235,7 +235,6 @@ class Node {
   // Recalculate n_ from real children visits.
   // This is needed if a node was proved to be certain in a prior
   // search and later gets to be root of search.
-
   void RecomputeNfromChildren();
 
   // Returns sum of policy priors which have had at least one playout.
@@ -279,12 +278,27 @@ class Node {
   // Makes the node terminal or certain and sets its score.
   void MakeTerminal(GameResult result) {
     if (GetOwnEdge()) GetOwnEdge()->MakeTerminal(result);
+    if (result == GameResult::DRAW) {
+      q_ = 0.0f;
+    } else if (result == GameResult::WHITE_WON) {
+      q_ = 1.0f;
+    } else {
+      q_ = -1.0f;
+    }
   }
   void MakeCertain(GameResult result, CertaintyTrigger trigger) {
     if (GetOwnEdge()) GetOwnEdge()->MakeCertain(result, trigger);
+    if (result == GameResult::DRAW) {
+      q_ = 0.0f;
+    } else if (result == GameResult::WHITE_WON) {
+      q_ = 1.0f;
+    } else {
+      q_ = -1.0f;
+    }
   }
   void MakeCertain(int q, CertaintyTrigger trigger) {
     if (GetOwnEdge()) GetOwnEdge()->MakeCertain(q, trigger);
+    q_ = q;
   }
 
   // If this node is not in the process of being expanded by another thread
@@ -404,7 +418,7 @@ class Node {
   uint32_t best_child_cache_in_flight_limit_ = 0;
 
   // 2 byte fields.
-  // Index of this node is parent's edge list.
+  // Index of this node in parent's edge list.
   uint16_t index_;
 
   // TODO(mooskagh) Unfriend NodeTree.
