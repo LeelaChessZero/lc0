@@ -203,10 +203,10 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
   // TODO: run some tuning instead of hardcoding N < 10 as the condition to run
   // those kernels
   if ((!fp16) && (filter_size_ == 3) && (N < 10)) {
-    bool convDone = convCuda3x3(
-        (float*)output, (const float*)input, (const float*)weights,
-        (const float*)biases, (const float*)input2, use_relu_, N, C, c_input_);
-
+      bool convDone = convCuda3x3(
+          (float*)output, (const float*)input, (const float*)weights,
+          (const float*)(use_bias_ ? biases : nullptr), (const float*)input2, 
+          use_relu_, N, C, c_input_);
     if (convDone)
     {
         //dumpTensor("cuda c kernel output", output, 2*256*64);
