@@ -195,7 +195,8 @@ void Search::AuxUpdateP(Node* n, std::vector<uint16_t> pv_moves, int ply) {
   }
   for (const auto& edge : n->Edges()) {
     if (edge.GetMove().as_packed_int() == pv_moves[ply]) {
-      edge.edge()->SetP(edge.GetP() + params_.GetAuxEngineBoost()/100.0f);
+      auto new_p = edge.GetP() + params_.GetAuxEngineBoost()/100.0f;
+      edge.edge()->SetP(std::min(new_p, 1.0f));
       // Modifying P invalidates best child logic.
       n->InvalidateBestChild();
       // Stop after AuxEngineFollowPvDepth plies deep.

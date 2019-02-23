@@ -232,7 +232,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<StringOption>(kAuxEngineOptionsId);
   options->Add<IntOption>(kAuxEngineThresholdId, 1, 1000000) = 100;
   options->Add<IntOption>(kAuxEngineDepthId, 1, 100) = 15;
-  options->Add<FloatOption>(kAuxEngineBoostId, 0.0f, 1000.0f) = 50.0f;
+  options->Add<FloatOption>(kAuxEngineBoostId, 0.0f, 100.0f) = 50.0f;
   options->Add<IntOption>(kAuxEngineFollowPvDepthId, 1, 20) = 3;
 }
 
