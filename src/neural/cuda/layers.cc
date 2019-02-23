@@ -49,6 +49,12 @@ SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType>* ip)
 }
 
 template <typename DataType>
+SoftMaxLayer<DataType>::~SoftMaxLayer()
+{
+  cudnnDestroyTensorDescriptor(out_tensor_desc_);
+}
+
+template <typename DataType>
 void SoftMaxLayer<DataType>::Eval(int N, DataType* output,
                                   const DataType* input,
                                   const DataType* /*input2*/, void* /*scratch*/,
@@ -250,6 +256,13 @@ template <typename DataType>
 ConvLayer<DataType>::~ConvLayer() {
   ReportCUDAErrors(cudaFree(weights));
   ReportCUDAErrors(cudaFree(biases));
+
+  cudnnDestroyFilterDescriptor(filter_desc_);
+  cudnnDestroyConvolutionDescriptor(conv_desc_);
+  cudnnDestroyTensorDescriptor(bias_desc_);
+  cudnnDestroyTensorDescriptor(in_tensor_desc_);
+  cudnnDestroyTensorDescriptor(out_tensor_desc_);
+  cudnnDestroyActivationDescriptor(activation_);
 }
 
 template <typename DataType>

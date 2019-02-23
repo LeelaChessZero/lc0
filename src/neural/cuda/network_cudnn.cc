@@ -408,6 +408,10 @@ class CudnnNetwork : public Network {
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
     }
 
+    cudnnDestroyFilterDescriptor(wDesc);
+    cudnnDestroyConvolutionDescriptor(convDesc);
+    cudnnDestroyTensorDescriptor(xDesc);
+
 #ifdef DEBUG_RAW_NPS
     CERR << "allocated " << 3 * maxSize
          << " bytes of GPU memory to run the network";
