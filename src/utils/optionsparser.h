@@ -72,10 +72,12 @@ class OptionsParser {
 
    protected:
     std::string GetId() const { return id_.GetId(); }
-    std::string GetUciOption() const { return id_.uci_option; }
+    virtual std::string GetUciOption() const { return id_.uci_option; }
     std::string GetHelpText() const { return id_.help_text; }
     std::string GetLongFlag() const { return id_.long_flag; }
     char GetShortFlag() const { return id_.short_flag; }
+
+    const OptionId& id_;
 
    private:
     virtual std::string GetOptionString(const OptionsDict& dict) const = 0;
@@ -94,7 +96,6 @@ class OptionsParser {
     }
     virtual std::string GetHelp(const OptionsDict& dict) const = 0;
 
-    const OptionId& id_;
     bool hidden_ = false;
     friend class OptionsParser;
   };
@@ -252,6 +253,27 @@ class ChoiceOption : public OptionsParser::Option {
   void SetVal(OptionsDict* dict, const ValueType& val) const;
 
   std::vector<std::string> choices_;
+};
+
+class Separator : public OptionsParser::Option {
+ public:
+  using ValueType = std::string;
+  Separator(const OptionId& id) : Option(id) {}
+
+  void SetValue(const std::string& /*value*/, OptionsDict* /*dict*/) override {}
+
+ protected:
+  std::string GetUciOption() const override {
+    return "--- " + std::string(id_.long_flag) + " ---";
+  }
+
+ private:
+  std::string GetOptionString(const OptionsDict& /*dict*/) const override {
+    return "type combo default --- var ---";
+  }
+  std::string GetHelp(const OptionsDict& /*dict*/) const override {
+    return GetLongFlag() + ":\n";
+  }
 };
 
 }  // namespace lczero
