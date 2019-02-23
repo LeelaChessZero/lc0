@@ -42,6 +42,7 @@ const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
 const OptionId kMovetimeId{"movetime", "",
                            "Benchmark time allocation, in milliseconds."};
 const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
+const OptionId kSeparator{"Benchmark options"};
 
 }  // namespace
 
@@ -49,6 +50,8 @@ void Benchmark::Run() {
   OptionsParser options;
   NetworkFactory::PopulateOptions(&options);
   SearchParams::Populate(&options);
+
+  options.Add<Separator>(kSeparator);
 
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;

@@ -91,6 +91,7 @@ const OptionId kRamLimitMbId{
     "terminal node counted several times, and the estimation assumes that all "
     "positions have 30 possible moves. When set to 0, no RAM limit is "
     "enforced."};
+const OptionId kSeparator{"Engine options"};
 
 const size_t kAvgNodeSize = sizeof(Node) + kAvgMovesPerPosition * sizeof(Edge);
 const size_t kAvgCacheItemSize =
@@ -130,6 +131,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
+
+  options->Add<Separator>(kSeparator);
 
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;

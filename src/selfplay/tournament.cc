@@ -62,6 +62,7 @@ const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
 const OptionId kResignPlaythroughId{
     "resign-playthrough", "ResignPlaythrough",
     "The percentage of games which ignore resign."};
+const OptionId kSeparator{"Selfplay options"};
 
 }  // namespace
 
@@ -71,6 +72,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   NetworkFactory::PopulateOptions(options);
   SearchParams::Populate(options);
+
+  options->Add<Separator>(kSeparator);
 
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
   options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;

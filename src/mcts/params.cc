@@ -173,7 +173,10 @@ const OptionId SearchParams::kKLDGainAverageInterval{
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
 
+const OptionId kSeparator{"Search options"};
+
 void SearchParams::Populate(OptionsParser* options) {
+  options->Add<Separator>(kSeparator);
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
