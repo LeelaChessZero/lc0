@@ -97,6 +97,7 @@ class SyzygyTablebase {
   // Returns false if the position is not in the tablebase.
   // Safe moves are added to the safe_moves output paramater.
   bool root_probe_wdl(const Position& pos, std::vector<Move>* safe_moves);
+  std::string get_paths() { return paths_; }
 
  private:
   template <bool CheckZeroingMoves = false>

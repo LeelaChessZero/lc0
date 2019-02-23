@@ -91,6 +91,17 @@ void Search::AuxEngineWorker() {
       iss >> token >> std::ws;
       if (token == "uciok") {
         break;
+      } else if (token == "option") {
+        iss >> token >> std::ws;
+        if (token == "name") {
+          iss >> token >> std::ws;
+          if (token == "SyzygyPath") {
+            std::ostringstream oss;
+            oss << "setoption name SyzygyPath value " << syzygy_tb_->get_paths();
+            auxengine_os_ << oss.str() << std::endl;
+            LOGFILE << oss.str();
+          }
+        }
       }
     }
     auxengine_ready_ = true;
