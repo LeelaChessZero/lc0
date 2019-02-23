@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -91,7 +91,13 @@ class SearchParams {
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
   bool GetCertaintyPropagation() const { return kCertaintyPropagation; }
   bool GetTwoFoldDrawScoring() const { return kTwoFoldDrawScoring; }
-  
+  int GetKLDGainAverageInterval() const {
+    return options_.Get<int>(kKLDGainAverageInterval.GetId());
+  }
+  float GetMinimumKLDGainPerNode() const {
+    return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
+  }
+
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
@@ -121,6 +127,8 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kCertaintyPropagationId;
   static const OptionId kTwoFoldDrawScoringId;
+  static const OptionId kMinimumKLDGainPerNode;
+  static const OptionId kKLDGainAverageInterval;
 
  private:
   const OptionsDict& options_;

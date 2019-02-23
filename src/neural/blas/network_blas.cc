@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2019 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ namespace {
 class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
-                  const bool conv_policy);
+                  const bool wdl, const bool conv_policy);
 
   virtual ~BlasComputation() {}
 
@@ -54,7 +54,24 @@ class BlasComputation : public NetworkComputation {
   int GetBatchSize() const override { return static_cast<int>(planes_.size()); }
 
   // Returns Q value of @sample.
-  float GetQVal(int sample) const override { return q_values_[sample]; }
+  float GetQVal(int sample) const override {
+    if (wdl_) {
+      auto w = q_values_[3 * sample + 0];
+      auto l = q_values_[3 * sample + 2];
+      return w - l;
+    } else {
+      return q_values_[sample];
+    }
+  }
+
+  float GetDVal(int sample) const override {
+    if (wdl_) {
+      auto d = q_values_[3 * sample + 1];
+      return d;
+    } else {
+      return 0.0f;
+    }
+  }
 
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
@@ -77,6 +94,7 @@ class BlasComputation : public NetworkComputation {
   std::vector<InputPlanes> planes_;
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
+  bool wdl_;
   bool conv_policy_;
 };
 
@@ -87,7 +105,7 @@ class BlasNetwork : public Network {
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation>(weights_, max_batch_size_,
-                                             conv_policy_);
+            wdl_, conv_policy_);
   }
 
  private:
@@ -96,16 +114,19 @@ class BlasNetwork : public Network {
 
   LegacyWeights weights_;
   size_t max_batch_size_;
+  bool wdl_;
   bool conv_policy_;
 };
 
 BlasComputation::BlasComputation(const LegacyWeights& weights,
                                  const size_t max_batch_size,
+                                 const bool wdl,
                                  const bool conv_policy)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
       q_values_(0),
+      wdl_(wdl),
       conv_policy_(conv_policy) {}
 
 void BlasComputation::ComputeBlocking() {
@@ -284,14 +305,34 @@ void BlasComputation::ComputeBlocking() {
                         policy.data());
 
       policies_.emplace_back(std::move(policy));
+    }
 
-      // Now get the score
-      double winrate = FullyConnectedLayer::Forward0D(
-                           num_value_channels, weights_.ip2_val_w.data(),
-                           &output_val[j * num_value_channels]) +
-                       weights_.ip2_val_b[0];
+    // Now get the score
+    if (wdl_) {
+      std::vector<float> wdl(3 * batch_size);
+      FullyConnectedLayer::Forward1D(
+          batch_size, num_value_channels, 3, output_val.data(),
+          weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
+          false,  // Relu Off
+          wdl.data());
 
-      q_values_.emplace_back(std::tanh(winrate));
+      for (size_t j = 0; j < batch_size; j++) {
+        std::vector<float> wdl_softmax(3);
+        SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
+
+        q_values_.emplace_back(wdl_softmax[0]);
+        q_values_.emplace_back(wdl_softmax[1]);
+        q_values_.emplace_back(wdl_softmax[2]);
+      }
+    } else {
+      for (size_t j = 0; j < batch_size; j++) {
+        double winrate = FullyConnectedLayer::Forward0D(
+                             num_value_channels, weights_.ip2_val_w.data(),
+                             &output_val[j * num_value_channels]) +
+                         weights_.ip2_val_b[0];
+
+        q_values_.emplace_back(std::tanh(winrate));
+      }
     }
   }
 }
@@ -309,6 +350,9 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
+
+  wdl_ = file.format().network_format().value() ==
+         pblczero::NetworkFormat::VALUE_WDL;
 
   conv_policy_ = file.format().network_format().policy() ==
                  pblczero::NetworkFormat::POLICY_CONVOLUTION;
@@ -424,7 +468,9 @@ std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                     " is not supported by BLAS backend.");
   }
   if (weights.format().network_format().value() !=
-      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+          pblczero::NetworkFormat::VALUE_CLASSICAL &&
+      weights.format().network_format().value() !=
+          pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
                     std::to_string(weights.format().network_format().value()) +
                     " is not supported by BLAS backend.");

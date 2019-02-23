@@ -305,9 +305,11 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   // Recompute Q.
   q_ += multivisit * (v - q_) / (n_ + multivisit);
+  d_ += multivisit * (d - d_) / (n_ + multivisit);
+
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
@@ -364,19 +366,21 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V3TrainingData Node::GetV3TrainingData(
-    GameResult game_result, const PositionHistory& history,
-    FillEmptyHistory fill_empty_history) const {
-  V3TrainingData result;
+V4TrainingData Node::GetV4TrainingData(GameResult game_result,
+                                       const PositionHistory& history,
+                                       FillEmptyHistory fill_empty_history,
+                                       float best_q, float best_d) const {
+  V4TrainingData result;
 
   // Set version.
-  result.version = 3;
+  result.version = 4;
 
   // Populate probabilities.
   float total_n = static_cast<float>(GetChildrenVisits());
   // Prevent garbage/invalid training data from being uploaded to server.
   if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
-  std::memset(result.probabilities, 0, sizeof(result.probabilities));
+  // Set illegal moves to have -1 probability.
+  std::memset(result.probabilities, -1, sizeof(result.probabilities));
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
         child.GetN() / total_n;
@@ -409,6 +413,14 @@ V3TrainingData Node::GetV3TrainingData(
   } else {
     result.result = 0;
   }
+
+  // Aggregate evaluation Q.
+  result.root_q = -GetQ();
+  result.best_q = best_q;
+
+  // Draw probability of WDL head.
+  result.root_d = GetD();
+  result.best_d = best_d;
 
   return result;
 }

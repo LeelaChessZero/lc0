@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -164,6 +164,14 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SearchParams::kMinimumKLDGainPerNode{
+    "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
+    "If greater than 0 search will abort unless the last KLDGainAverageInterval "
+    "nodes have an average gain per node of at least this much."};
+const OptionId SearchParams::kKLDGainAverageInterval{
+    "kldgain-average-interval", "KLDGainAverageInterval",
+    "Used to decide how frequently to evaluate the average KLDGainPerNode to "
+    "check the MinimumKLDGainPerNode, if specified."};
 const OptionId SearchParams::kCertaintyPropagationId{
     "certainty-propagation", "CertaintyPropagation", 
     "Propagates certain scores more efficiently in the search tree, "
@@ -206,6 +214,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
+  options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kCertaintyPropagationId) = false;
   options->Add<BoolOption>(kTwoFoldDrawScoringId) = false;
 }
@@ -231,7 +241,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {
 }
 
 }  // namespace lczero

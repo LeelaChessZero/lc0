@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -168,7 +168,9 @@ class PolicyMapLayer: public BaseLayer<DataType> {
             cudnnHandle_t cudnn, cublasHandle_t cublas) override;
 
  private:
-  int usedSize; // Size of the input without padding
+  int used_size_; // Size of the input without padding (typically 73x64).
+                  // This is over-written to contain size with padding 
+                  // (typically 80x64) after CHW->HWC conversion for fp16.
   short* weights_ = nullptr;
 };
 
