@@ -246,7 +246,7 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-certain node and -1/0/1
   // for certain nodes.
-  float GetQ() const { return q_; }
+  float GetQ() const;
   float GetD() const { return d_; }
 
   // Returns whether the node is known to be draw/lose/win.
@@ -306,6 +306,11 @@ class Node {
   void MakeCertain(int q, CertaintyTrigger trigger) {
     if (GetOwnEdge()) GetOwnEdge()->MakeCertain(q, trigger);
     q_ = q;
+    if (q == 0) {
+      d_ = 1.0f;
+    } else {
+      d_ = 0.0f;
+    }
   }
 
   // If this node is not in the process of being expanded by another thread
@@ -345,10 +350,6 @@ class Node {
   int GetRemainingCacheVisits() {
     return best_child_cache_in_flight_limit_ - n_in_flight_;
   }
-
-  // Calculates the full depth if new depth is larger, updates it, returns
-  // in depth parameter, and returns true if it was indeed updated.
-  bool UpdateFullDepth(uint16_t* depth);
 
   V4TrainingData GetV4TrainingData(GameResult result,
                                    const PositionHistory& history,
