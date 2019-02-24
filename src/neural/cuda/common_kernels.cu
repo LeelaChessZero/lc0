@@ -493,6 +493,21 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+
+template <int C>
+__device__ constexpr inline int board_index_nchw(int n, int c, int h, int w) {
+    return n*C * 64 + c * 64 + h * 8 + w;
+}
+
+template <int C>
+__device__ constexpr inline int filter_index_kchw(int k, int c, int h, int w) {
+    return k*C * 9 + c * 9 + h * 3 + w;
+}
+
+__device__ constexpr inline int div_up(int a, int b) {
+    return  (a + b - 1) / b;
+}
+
 namespace ConvKernel0 {
 // Special kernel to get better performance for small batch size (N=1)
 //
@@ -514,12 +529,6 @@ constexpr int blockWidth = 4;
 
 // different 'C' dimensions
 constexpr int blockHeight = 8;
-
-#define INDEX_NCHW(n, c, h, w) ((n)*C * 64 + (c)*64 + (h)*8 + w)
-#define INDEX_NKHW(n, k, h, w) ((n)*K * 64 + (k)*64 + (h)*8 + w)
-#define FILTER_IDX_NCHW(k, c, h, w) ((k)*C * 9 + (c)*9 + (h)*3 + w)
-#define SH_FILTER_IDX(k, c, h, w) ((k)*cPerIter * 9 + (c)*9 + (h)*3 + w)
-#define DIV_UP(a, b) (((a) + (b)-1) / (b))
 
 template <int K, int C, bool doRelu, bool biasAdd>
 __global__ void convKernel(float* output, const float* input,
@@ -546,7 +555,7 @@ __global__ void convKernel(float* output, const float* input,
 
   // load filters into shared memory
   #pragma unroll
-  for (int i = 0; i < DIV_UP(C * 9, 32); i++) {
+  for (int i = 0; i < div_up(C * 9, 32); i++) {
     int localIndex = (32) * i + threadInBlock;
     if (localIndex < C * 9)
       shFilter[localIndex] = weight[k * (C * 9) + localIndex];
@@ -565,13 +574,13 @@ __global__ void convKernel(float* output, const float* input,
 
     // assume wPerThread == 4, and use a 128 bit reads
     *((uint4*)(&inEl[1][1])) =
-        *((uint4*)(&input[INDEX_NCHW(n, c, hStart, wStart)]));
+        *((uint4*)(&input[board_index_nchw<C>(n, c, hStart, wStart)]));
     *((uint4*)(&inEl[2][1])) =
-        *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 1, wStart)]));
+        *((uint4*)(&input[board_index_nchw<C>(n, c, hStart + 1, wStart)]));
     *((uint4*)(&inEl[3][1])) =
-        *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 2, wStart)]));
+        *((uint4*)(&input[board_index_nchw<C>(n, c, hStart + 2, wStart)]));
     *((uint4*)(&inEl[4][1])) =
-        *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 3, wStart)]));
+        *((uint4*)(&input[board_index_nchw<C>(n, c, hStart + 3, wStart)]));
 
     // need temps because shfl needs all threads in warp to participate
     float t01 = __shfl_up_sync(0xFFFFFFFF, inEl[4][1], 2);
@@ -630,7 +639,7 @@ __global__ void convKernel(float* output, const float* input,
     for (int s = 0; s < 3; s++) {
       #pragma unroll
       for (int r = 0; r < 3; r++) {
-        float weight = (float)(shFilter[FILTER_IDX_NCHW(0, c, s, r)]);
+        float weight = (float)(shFilter[filter_index_kchw<1>(0, c, s, r)]);
         #pragma unroll
         for (int y = 0; y < hPerThread; y++) {
           #pragma unroll
@@ -660,13 +669,13 @@ __global__ void convKernel(float* output, const float* input,
   }
 
   if (threadIdx.y == 0) {
-    ((uint4*)output)[INDEX_NKHW(n, k, hStart, wStart) >> 2] =
+    ((uint4*)output)[board_index_nchw<K>(n, k, hStart, wStart) >> 2] =
         *((uint4*)&op[0][0]);
-    ((uint4*)output)[INDEX_NKHW(n, k, hStart + 1, wStart) >> 2] =
+    ((uint4*)output)[board_index_nchw<K>(n, k, hStart + 1, wStart) >> 2] =
         *((uint4*)&op[1][0]);
-    ((uint4*)output)[INDEX_NKHW(n, k, hStart + 2, wStart) >> 2] =
+    ((uint4*)output)[board_index_nchw<K>(n, k, hStart + 2, wStart) >> 2] =
         *((uint4*)&op[2][0]);
-    ((uint4*)output)[INDEX_NKHW(n, k, hStart + 3, wStart) >> 2] =
+    ((uint4*)output)[board_index_nchw<K>(n, k, hStart + 3, wStart) >> 2] =
         *((uint4*)&op[3][0]);
   }
 }
@@ -705,7 +714,7 @@ constexpr int blockHeight = 8;
 constexpr int blockDepth = 2;
 
 // These many filter elements from c dimension are loaded into
-// hhared memory at a time (should be a multiple of warp size).
+// shared memory at a time (should be a multiple of warp size).
 constexpr int cPerIter = 32;
 constexpr int cPerIterPerThread = cPerIter / (blockHeight);
 
@@ -772,13 +781,13 @@ __global__ void convKernel(float* output, const float* input,
 
       // assume wPerThread == 4, and use a 128 bit reads
       *((uint4*)(&inEl[1][1])) =
-          *((uint4*)(&input[INDEX_NCHW(n, c, hStart, wStart)]));
+          *((uint4*)(&input[board_index_nchw<C>(n, c, hStart, wStart)]));
       *((uint4*)(&inEl[2][1])) =
-          *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 1, wStart)]));
+          *((uint4*)(&input[board_index_nchw<C>(n, c, hStart + 1, wStart)]));
       *((uint4*)(&inEl[3][1])) =
-          *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 2, wStart)]));
+          *((uint4*)(&input[board_index_nchw<C>(n, c, hStart + 2, wStart)]));
       *((uint4*)(&inEl[4][1])) =
-          *((uint4*)(&input[INDEX_NCHW(n, c, hStart + 3, wStart)]));
+          *((uint4*)(&input[board_index_nchw<C>(n, c, hStart + 3, wStart)]));
 
       // need temps because shfl needs all threads in warp to participate
       float t01 = __shfl_up_sync(0xFFFFFFFF, inEl[4][1], 2);
@@ -839,7 +848,7 @@ __global__ void convKernel(float* output, const float* input,
         for (int r = 0; r < 3; r++) {
           #pragma unroll
           for (int lk = 0; lk < kPerBlock; lk++) {
-            float wt = (float)(shData[shStart + SH_FILTER_IDX(lk, shc, s, r)]);
+            float wt = (float)(shData[shStart + filter_index_kchw<cPerIter>(lk, shc, s, r)]);
             #pragma unroll
             for (int y = 0; y < hPerThread; y++) {
               #pragma unroll
@@ -903,13 +912,13 @@ __global__ void convKernel(float* output, const float* input,
       for (int lk = 0; lk < kPerBlock; lk++) {
         int k = kStart + lk;
         *((uint4*)&sk[lk][0][0]) =
-            ((uint4*)skip)[INDEX_NKHW(n, k, hStart + 0, wStart) >> 2];
+            ((uint4*)skip)[board_index_nchw<K>(n, k, hStart + 0, wStart) >> 2];
         *((uint4*)&sk[lk][1][0]) =
-            ((uint4*)skip)[INDEX_NKHW(n, k, hStart + 1, wStart) >> 2];
+            ((uint4*)skip)[board_index_nchw<K>(n, k, hStart + 1, wStart) >> 2];
         *((uint4*)&sk[lk][2][0]) =
-            ((uint4*)skip)[INDEX_NKHW(n, k, hStart + 2, wStart) >> 2];
+            ((uint4*)skip)[board_index_nchw<K>(n, k, hStart + 2, wStart) >> 2];
         *((uint4*)&sk[lk][3][0]) =
-            ((uint4*)skip)[INDEX_NKHW(n, k, hStart + 3, wStart) >> 2];
+            ((uint4*)skip)[board_index_nchw<K>(n, k, hStart + 3, wStart) >> 2];
       }
     }
 
@@ -943,13 +952,13 @@ __global__ void convKernel(float* output, const float* input,
     #pragma unroll
     for (int lk = 0; lk < kPerBlock; lk++) {
       int k = kStart + lk;
-      ((uint4*)output)[INDEX_NKHW(n, k, hStart, wStart) >> 2] =
+      ((uint4*)output)[board_index_nchw<K>(n, k, hStart, wStart) >> 2] =
           *((uint4*)&op[lk][0][0]);
-      ((uint4*)output)[INDEX_NKHW(n, k, hStart + 1, wStart) >> 2] =
+      ((uint4*)output)[board_index_nchw<K>(n, k, hStart + 1, wStart) >> 2] =
           *((uint4*)&op[lk][1][0]);
-      ((uint4*)output)[INDEX_NKHW(n, k, hStart + 2, wStart) >> 2] =
+      ((uint4*)output)[board_index_nchw<K>(n, k, hStart + 2, wStart) >> 2] =
           *((uint4*)&op[lk][2][0]);
-      ((uint4*)output)[INDEX_NKHW(n, k, hStart + 3, wStart) >> 2] =
+      ((uint4*)output)[board_index_nchw<K>(n, k, hStart + 3, wStart) >> 2] =
           *((uint4*)&op[lk][3][0]);
     }
   }
