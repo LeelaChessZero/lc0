@@ -335,7 +335,7 @@ void Search::UpdateKLDGain() {
     interval = static_cast<int>(target_playouts *
                                 params_.GetAutoKLDGainIntervalRatio());
     threshold = params_.GetAutoKLDGainMultiplier() *
-                std::pow(expected_total_playouts + initial_visits_,
+                std::pow(target_playouts + initial_visits_,
                          params_.GetAutoKLDGainExponent());
   }
   if (total_playouts_ + initial_visits_ >= prev_dist_visits_total_ + interval) {
