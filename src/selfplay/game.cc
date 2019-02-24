@@ -119,15 +119,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
     int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
+    auto best_w = (best_eval.first + 1.0f - best_eval.second) / 2.0f;
+    auto best_d = best_eval.second;
+    auto best_l = best_w - best_eval.first;
+    max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
+    max_eval_[1] = std::max(max_eval_[1], best_d);
+    max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
     if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
                                             kResignEarliestMoveId.GetId())) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
           100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
-        auto best_w = (best_eval.first + 1.0f - best_eval.second) / 2.0f;
-        auto best_d = best_eval.second;
-        auto best_l = best_w - best_eval.first;
         auto threshold = 1.0f - resignpct;
         if (best_w > threshold) {
           game_result_ =
@@ -173,6 +176,15 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
 }
 
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
+  if (game_result_ == GameResult::WHITE_WON) {
+    std::cerr << "WDLStyleFPReport: " << std::max(max_eval_[1], max_eval_[2]) << std::endl;
+  } else if (game_result_ == GameResult::BLACK_WON) {
+    std::cerr << "WDLStyleFPReport: " << std::max(max_eval_[1], max_eval_[0])
+              << std::endl;  
+  } else {
+    std::cerr << "WDLStyleFPReport: " << std::max(max_eval_[2], max_eval_[0])
+              << std::endl;
+  }
   if (game_result_ == GameResult::WHITE_WON) return min_eval_[0];
   if (game_result_ == GameResult::BLACK_WON) return min_eval_[1];
   return std::min(min_eval_[0], min_eval_[1]);
