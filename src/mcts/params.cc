@@ -172,6 +172,24 @@ const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
+const OptionId SearchParams::kAutoKLDGainMoveFraction{
+    "auto-kldgain-move-fraction", "AutoKLDGainMoveFraction",
+    "If non-zero this fraction of the estimated total allowed playouts for the "
+    "move is used as input to the kld target estimation logic"};
+const OptionId SearchParams::kAutoKLDGainIntervalRatio{
+    "auto-kldgain-interval-ratio", "AutoKLDGainIntervalRatio",
+    "If AutoKLDGainMoveFraction is non-zero, this is a further multiplier to "
+    "calculate the interval of averaging."};
+const OptionId SearchParams::kAutoKLDGainMultiplier{
+    "auto-kldgain-multiplier", "AutoKLDGainMultiplier",
+    "If AutoKLDGainMoveFraction is non-zero, this is a constant multiplier to "
+    "calculate the target kldgain threshold."};
+const OptionId SearchParams::kAutoKLDGainExponent{
+    "auto-kldgain-exponent", "AutoKLDGainExponent",
+    "If AutoKLDGainMoveFraction is non-zero, this is the power to apply to the "
+    "fraction of the estimated total playouts in calculating the target "
+    "kldgain threshold."};
+
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -208,6 +226,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kAutoKLDGainMoveFraction, 0.0f, 10.0f) = 0.0f;
+  options->Add<FloatOption>(kAutoKLDGainIntervalRatio, 0.0f, 1.0f) = 0.125f;
+  options->Add<FloatOption>(kAutoKLDGainMultiplier, 0.0f, 1.0f) = 0.023f;
+  options->Add<FloatOption>(kAutoKLDGainExponent, -10.0f, 0.0f) = -1.21f;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)

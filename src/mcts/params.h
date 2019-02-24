@@ -95,6 +95,18 @@ class SearchParams {
   float GetMinimumKLDGainPerNode() const {
     return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
   }
+  float GetAutoKLDGainMoveFraction() const {
+    return options_.Get<float>(kAutoKLDGainMoveFraction.GetId());
+  }
+  float GetAutoKLDGainIntervalRatio() const {
+    return options_.Get<float>(kAutoKLDGainIntervalRatio.GetId());
+  }
+  float GetAutoKLDGainMultiplier() const {
+    return options_.Get<float>(kAutoKLDGainMultiplier.GetId());
+  }
+  float GetAutoKLDGainExponent() const {
+    return options_.Get<float>(kAutoKLDGainExponent.GetId());
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -125,6 +137,10 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
+  static const OptionId kAutoKLDGainMoveFraction;
+  static const OptionId kAutoKLDGainIntervalRatio;
+  static const OptionId kAutoKLDGainMultiplier;
+  static const OptionId kAutoKLDGainExponent;
 
  private:
   const OptionsDict& options_;

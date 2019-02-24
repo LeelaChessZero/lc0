@@ -314,12 +314,31 @@ NNCacheLock Search::GetCachedNNEval(Node* node) const {
 }
 
 void Search::UpdateKLDGain() {
-  if (params_.GetMinimumKLDGainPerNode() <= 0) return;
+  if (params_.GetMinimumKLDGainPerNode() <= 0 &&
+      params_.GetAutoKLDGainMoveFraction() <= 0)
+    return;
 
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
-  if (total_playouts_ + initial_visits_ >=
-      prev_dist_visits_total_ + params_.GetKLDGainAverageInterval()) {
+  int interval = params_.GetKLDGainAverageInterval();
+  double threshold = params_.GetMinimumKLDGainPerNode();
+  // Automode overrides above.
+  if (params_.GetAutoKLDGainMoveFraction() > 0) {
+    if (remaining_playouts_ == std::numeric_limits<int>::max()) {
+      // Need a remaining playouts estimate before we can think about correct
+      // threshold.
+      return;
+    }
+    int64_t expected_total_playouts = total_playouts_ + remaining_playouts_;
+    double target_playouts =
+        expected_total_playouts * params_.GetAutoKLDGainMoveFraction();
+    interval = static_cast<int>(target_playouts *
+                                params_.GetAutoKLDGainIntervalRatio());
+    threshold = params_.GetAutoKLDGainMultiplier() *
+                std::pow(expected_total_playouts + initial_visits_,
+                         params_.GetAutoKLDGainExponent());
+  }
+  if (total_playouts_ + initial_visits_ >= prev_dist_visits_total_ + interval) {
     std::vector<uint32_t> new_visits;
     for (auto edge : root_node_->Edges()) {
       new_visits.push_back(edge.GetN());
@@ -327,19 +346,19 @@ void Search::UpdateKLDGain() {
     if (prev_dist_.size() != 0) {
       double sum1 = 0.0;
       double sum2 = 0.0;
-      for (int i = 0; i < new_visits.size(); i++) {
+      for (size_t i = 0; i < new_visits.size(); i++) {
         sum1 += prev_dist_[i];
         sum2 += new_visits[i];
       }
       double kldgain = 0.0;
-      for (int i = 0; i < new_visits.size(); i++) {
+      for (size_t i = 0; i < new_visits.size(); i++) {
         double o_p = prev_dist_[i] / sum1;
         double n_p = new_visits[i] / sum2;
         if (prev_dist_[i] != 0) {
           kldgain += o_p * log(o_p / n_p);
         }
       }
-      if (kldgain / (sum2 - sum1) < params_.GetMinimumKLDGainPerNode()) {
+      if (kldgain / (sum2 - sum1) < threshold) {
         kldgain_too_small_ = true;
       }
     }
