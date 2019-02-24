@@ -524,7 +524,7 @@ constexpr int blockHeight = 8;
 template <int K, int C, bool doRelu, bool biasAdd>
 __global__ void convKernel(float* output, const float* input,
                            const float* weight, const float* bias,
-                           const float* skip, float alpha, float beta) {
+                           float alpha, float beta) {
   int n = blockIdx.y;
   int k = blockIdx.x;
 
@@ -983,14 +983,14 @@ void launch_convCuda3x3_1(dim3 blockDim, dim3 gridDim, float* output,
 template <int K, int C>
 void launch_convCuda3x3_0(dim3 blockDim, dim3 gridDim, float* output,
                           const float* input, const float* weight,
-                          const float* bias, const float* skip, bool relu) {
+                          const float* bias, bool relu) {
   static_assert(C % 8 == 0, "Channel count not supported");
   if (relu)
     ConvKernel0::convKernel<K, C, true, true>
-        <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+        <<<gridDim, blockDim>>>(output, input, weight, bias, 1, 1);
   else
     ConvKernel0::convKernel<K, C, false, false>
-        <<<gridDim, blockDim>>>(output, input, weight, bias, skip, 1, 1);
+        <<<gridDim, blockDim>>>(output, input, weight, bias, 1, 1);
 }
 
 // Use specialized kernels for 3x3 convolutions.
@@ -1008,11 +1008,12 @@ bool convCuda3x3(float* output, const float* input, const float* weight,
   if ((bias && !relu) || (!bias && relu))
     return false;
 
-  // N * K blocks used
-  // Each thread block processes 8x8 elements.
   if (C == 112) {
     // This kernel is slower than the one used below, but supports not-multiple
     // of 64 C. We use it only for the first convolution.
+
+    // N * K blocks used.
+    // Each thread block processes 8x8 elements.
     dim3 gridDim(K, N);
     dim3 blockDim(ConvKernel0::blockWidth, ConvKernel0::blockHeight, 1);
 
@@ -1020,19 +1021,21 @@ bool convCuda3x3(float* output, const float* input, const float* weight,
 
     if (K == 64)
       launch_convCuda3x3_0<64, 112>(blockDim, gridDim, output, input, weight,
-                                   bias, skip, relu);
+                                   bias, relu);
     else if (K == 128)
       launch_convCuda3x3_0<128, 112>(blockDim, gridDim, output, input, weight,
-                                     bias, skip, relu);
+                                     bias, relu);
     else if (K == 192)
       launch_convCuda3x3_0<192, 112>(blockDim, gridDim, output, input, weight,
-                                     bias, skip, relu);
+                                     bias, relu);
     else if (K == 256)
       launch_convCuda3x3_0<256, 112>(blockDim, gridDim, output, input, weight,
-                                     bias, skip, relu);
+                                     bias, relu);
     else
       return false;  // Add more template instantiations as needed
   } else {
+    // N * (K/2) blocks used.
+    // Each thread block processes 2x8x8 elements.
     dim3 gridDim(K / ConvKernel1::kPerBlock, N);
     dim3 blockDim(ConvKernel1::blockWidth, ConvKernel1::blockHeight,
                   ConvKernel1::blockDepth);
