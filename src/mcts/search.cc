@@ -28,6 +28,7 @@
 #include "mcts/search.h"
 
 #include <algorithm>
+#include <boost/process.hpp>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -239,6 +240,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
         << ") ";
 
+    oss << "(D: " << std::setw(6) << std::setprecision(3)
+        << edge.GetD() << ") ";
+
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
 
@@ -310,6 +314,41 @@ NNCacheLock Search::GetCachedNNEval(Node* node) const {
   return nneval;
 }
 
+void Search::UpdateKLDGain() {
+  if (params_.GetMinimumKLDGainPerNode() <= 0) return;
+
+  SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
+  if (total_playouts_ + initial_visits_ >=
+      prev_dist_visits_total_ + params_.GetKLDGainAverageInterval()) {
+    std::vector<uint32_t> new_visits;
+    for (auto edge : root_node_->Edges()) {
+      new_visits.push_back(edge.GetN());
+    }
+    if (prev_dist_.size() != 0) {
+      double sum1 = 0.0;
+      double sum2 = 0.0;
+      for (int i = 0; i < new_visits.size(); i++) {
+        sum1 += prev_dist_[i];
+        sum2 += new_visits[i];
+      }
+      double kldgain = 0.0;
+      for (int i = 0; i < new_visits.size(); i++) {
+        double o_p = prev_dist_[i] / sum1;
+        double n_p = new_visits[i] / sum2;
+        if (prev_dist_[i] != 0) {
+          kldgain += o_p * log(o_p / n_p);
+        }
+      }
+      if (kldgain / (sum2 - sum1) < params_.GetMinimumKLDGainPerNode()) {
+        kldgain_too_small_ = true;
+      }
+    }
+    prev_dist_.swap(new_visits);
+    prev_dist_visits_total_ = total_playouts_ + initial_visits_;
+  }
+}
+
 void Search::MaybeTriggerStop() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
@@ -320,6 +359,10 @@ void Search::MaybeTriggerStop() {
 
   // If not yet stopped, try to stop for different reasons.
   if (!stop_.load(std::memory_order_acquire)) {
+    if (kldgain_too_small_) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: KLDGain per node too small.";
+    }
     // If smart pruning tells to stop (best move found), stop.
     if (only_one_possible_move_left_) {
       FireStopInternal();
@@ -420,13 +463,14 @@ void Search::UpdateRemainingMoves() {
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
 // settings. So, somethimes, they may return results of different moves.
-float Search::GetBestEval() const {
+std::pair<float, float> Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
   float parent_q = -root_node_->GetQ();
-  if (!root_node_->HasChildren()) return parent_q;
+  float parent_d = root_node_->GetD();
+  if (!root_node_->HasChildren()) return {parent_q, parent_d};
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
-  return best_edge.GetQ(parent_q);
+  return {best_edge.GetQ(parent_q), best_edge.GetD()};
 }
 
 std::pair<Move, Move> Search::GetBestMove() {
@@ -454,6 +498,7 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
     return false;
   }
   return syzygy_tb_->root_probe(played_history_.Last(),
+                                params_.GetSyzygyFastPlay() ||
                                 played_history_.DidRepeatSinceLastZeroingMove(),
                                 root_moves) ||
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
@@ -591,6 +636,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
 
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
+  OpenAuxEngine();
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
     threads_.emplace_back([this]() { WatchdogThread(); });
@@ -649,6 +695,7 @@ void Search::WatchdogThread() {
 void Search::FireStopInternal() {
   stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
+  auxengine_cv_.notify_all();
 }
 
 void Search::Stop() {
@@ -674,6 +721,7 @@ void Search::Wait() {
     threads_.back().join();
     threads_.pop_back();
   }
+  AuxWait();
 }
 
 Search::~Search() {
@@ -1177,10 +1225,12 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // Terminal nodes don't involve the neural NetworkComputation, nor do
     // they require any further processing after value retrieval.
     node_to_process->v = node->GetQ();
+    node_to_process->d = node->GetD();
     return;
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
+
   // Trade Penalty defaults to off, ie 0.0, so we only calculate penalty if it's set to != 0:
   if (params_.GetTradePenalty() != 0.0f) {
     auto penalty = params_.GetTradePenalty() * (node_to_process->piececount - params_.GetTradePenalty2());
@@ -1189,11 +1239,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     if(node_to_process->depth % 2 == 1)
       penalty = -penalty;
     node_to_process->v = -computation_->GetQVal(idx_in_computation) + penalty;
-    // penalty shouldn't put v outside (-1, 1), and we will clip if it is:
-    node_to_process->v = std::max(-0.9999f, std::min(0.9999f, node_to_process->v));
   } else {
     node_to_process->v = -computation_->GetQVal(idx_in_computation);
   }
+  node_to_process->d = computation_->GetDVal(idx_in_computation);
+  
   // ...and secondly, the policy data.
   float total = 0.0;
   for (auto edge : node->Edges()) {
@@ -1245,9 +1295,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
+  float d = node_to_process.d;
   for (Node* n = node; n != search_->root_node_->GetParent();
        n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
     // Q will be flipped for opponent.
     v = -v;
 
@@ -1258,6 +1309,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
     }
+    AuxMaybeEnqueueNode(n);
   }
   search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
@@ -1268,6 +1320,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
   search_->UpdateRemainingMoves();  // Updates smart pruning counters.
+  search_->UpdateKLDGain();
   search_->MaybeTriggerStop();
   search_->MaybeOutputInfo();
 

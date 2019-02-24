@@ -154,6 +154,10 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "in the cache or is terminal, evaluate it right away without sending the "
     "batch to the NN. When off, this may only happen with the very first node "
     "of a batch; when on, this can happen with any node."};
+const OptionId SearchParams::kSyzygyFastPlayId{
+    "syzygy-fast-play", "SyzygyFastPlay",
+    "With DTZ tablebase files, only allow the network pick from winning moves "
+    "that have shortest DTZ to play faster (but not necessarily optimally)."};
 const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV",
     "Number of game play lines (principal variations) to show in UCI info "
@@ -168,6 +172,34 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SearchParams::kMinimumKLDGainPerNode{
+    "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
+    "If greater than 0 search will abort unless the last KLDGainAverageInterval "
+    "nodes have an average gain per node of at least this much."};
+const OptionId SearchParams::kKLDGainAverageInterval{
+    "kldgain-average-interval", "KLDGainAverageInterval",
+    "Used to decide how frequently to evaluate the average KLDGainPerNode to "
+    "check the MinimumKLDGainPerNode, if specified."};
+const OptionId SearchParams::kAuxEnginePathId{
+    "auxengine-path", "AuxEnginePath",
+    "Path to auxiliary chess engine."};
+const OptionId SearchParams::kAuxEngineOptionsId{
+    "auxengine-options", "AuxEngineOptions",
+    "Semicolon separated list of UCI options for the auxiliary engine\n"
+    "e.g. Hash=1024;Threads=1"};
+const OptionId SearchParams::kAuxEngineThresholdId{
+    "auxengine-threshold", "AuxEngineThreshold",
+    "The auxiliary engine is called when a node reaches this many visits"};
+const OptionId SearchParams::kAuxEngineDepthId{
+    "auxengine-depth", "AuxEngineDepth",
+    "Depth for the auxiliary engine to search."};
+const OptionId SearchParams::kAuxEngineBoostId{
+    "auxengine-boost", "AuxEngineBoost",
+    "How much to add to Policy, in percentage"};
+const OptionId SearchParams::kAuxEngineFollowPvDepthId{
+    "auxengine-follow-pv-depth", "AuxEngineFollowPvDepth",
+    "Add this many plies of the auxengine's PV at a time. "
+    "Higher is faster, but deeper PV moves are less accurate"};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -198,11 +230,20 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
+  options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
+  options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
+  options->Add<StringOption>(kAuxEnginePathId);
+  options->Add<StringOption>(kAuxEngineOptionsId);
+  options->Add<IntOption>(kAuxEngineThresholdId, 1, 1000000) = 100;
+  options->Add<IntOption>(kAuxEngineDepthId, 1, 100) = 15;
+  options->Add<FloatOption>(kAuxEngineBoostId, 0.0f, 100.0f) = 50.0f;
+  options->Add<IntOption>(kAuxEngineFollowPvDepthId, 1, 20) = 3;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -223,9 +264,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
+      kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {
 }
 
 }  // namespace lczero

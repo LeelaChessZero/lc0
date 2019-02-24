@@ -27,8 +27,8 @@
 
 #include "neural/loader.h"
 
-#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <zlib.h>
 #include <algorithm>
 #include <cctype>
@@ -81,6 +81,7 @@ std::string DecompressGzip(const std::string& filename) {
 WeightsFile ParseWeightsProto(const std::string& buffer) {
   WeightsFile net;
   using namespace google::protobuf::io;
+  using nf = pblczero::NetworkFormat;
 
   ArrayInputStream raw_input_stream(buffer.data(), buffer.size());
   CodedInputStream input_stream(&raw_input_stream);
@@ -112,10 +113,28 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   // Populate format fields with legacy (or "classical") formats.
   if (!net.format().has_network_format()) {
     auto net_format = net.mutable_format()->mutable_network_format();
-    using nf = pblczero::NetworkFormat;
     net_format->set_input(nf::INPUT_CLASSICAL_112_PLANE);
     net_format->set_output(nf::OUTPUT_CLASSICAL);
     net_format->set_network(nf::NETWORK_CLASSICAL);
+  }
+
+  // Populate policyFormat and valueFormat fields in old protobufs
+  // without these fields.
+  if (net.format().network_format().network() ==
+      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    auto net_format = net.mutable_format()->mutable_network_format();
+
+    net_format->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
+    net_format->set_value(nf::VALUE_CLASSICAL);
+    net_format->set_policy(nf::POLICY_CLASSICAL);
+
+  } else if (net.format().network_format().network() ==
+             pblczero::NetworkFormat::NETWORK_SE) {
+    auto net_format = net.mutable_format()->mutable_network_format();
+
+    net_format->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
+    net_format->set_value(nf::VALUE_CLASSICAL);
+    net_format->set_policy(nf::POLICY_CLASSICAL);
   }
 
   return net;

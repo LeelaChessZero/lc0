@@ -92,6 +92,7 @@ files += [
   'src/chess/board.cc',
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
+  'src/mcts/auxengine.cc',
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
@@ -137,7 +138,14 @@ else
     ]
 endif
 
+# Or this?  https://mesonbuild.com/Dependencies.html#boost
+# But this way worked.
+#deps += [ cc.find_library('boost_system'), ]
+# Appveyor build did not like the above.
 
+# I think boost::process is category system, so I need system?
+# Putting thread in also just in case.
+deps += [ dependency('boost', modules : ['thread', 'system' ], static : true) ]
 
 #############################################################################
 ## BACKENDS
@@ -344,8 +352,8 @@ if get_option('build_backends')
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-  nvcc = find_program('/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
-                      'nvcc', required: false)
+  nvcc = find_program('nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
+                      required: false)
 
   #.cc files
   cuda_files = [

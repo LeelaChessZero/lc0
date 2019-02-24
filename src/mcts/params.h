@@ -85,11 +85,36 @@ class SearchParams {
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
+  bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
   std::string GetScoreType() const {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
+  int GetKLDGainAverageInterval() const {
+    return options_.Get<int>(kKLDGainAverageInterval.GetId());
+  }
+  float GetMinimumKLDGainPerNode() const {
+    return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
+  }
+  std::string GetAuxEnginePath() const {
+    return options_.Get<std::string>(kAuxEnginePathId.GetId());
+  }
+  std::string GetAuxEngineOptions() const {
+    return options_.Get<std::string>(kAuxEngineOptionsId.GetId());
+  }
+  int GetAuxEngineThreshold() const {
+    return options_.Get<int>(kAuxEngineThresholdId.GetId());
+  }
+  int GetAuxEngineDepth() const {
+    return options_.Get<int>(kAuxEngineDepthId.GetId());
+  }
+  float GetAuxEngineBoost() const {
+    return options_.Get<float>(kAuxEngineBoostId.GetId());
+  }
+  int GetAuxEngineFollowPvDepth() const {
+    return options_.Get<int>(kAuxEngineFollowPvDepthId.GetId());
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -116,9 +141,18 @@ class SearchParams {
   static const OptionId kMaxCollisionEventsId;
   static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
+  static const OptionId kSyzygyFastPlayId;
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
+  static const OptionId kMinimumKLDGainPerNode;
+  static const OptionId kKLDGainAverageInterval;
+  static const OptionId kAuxEnginePathId;
+  static const OptionId kAuxEngineOptionsId;
+  static const OptionId kAuxEngineThresholdId;
+  static const OptionId kAuxEngineDepthId;
+  static const OptionId kAuxEngineBoostId;
+  static const OptionId kAuxEngineFollowPvDepthId;
 
  private:
   const OptionsDict& options_;
@@ -143,6 +177,7 @@ class SearchParams {
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
+  const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
 };
