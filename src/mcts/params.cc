@@ -228,8 +228,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kAutoKLDGainMoveFraction, 0.0f, 10.0f) = 0.0f;
   options->Add<FloatOption>(kAutoKLDGainIntervalRatio, 0.0f, 1.0f) = 0.125f;
-  options->Add<FloatOption>(kAutoKLDGainMultiplier, 0.0f, 1.0f) = 0.023f;
-  options->Add<FloatOption>(kAutoKLDGainExponent, -10.0f, 0.0f) = -1.21f;
+  options->Add<FloatOption>(kAutoKLDGainMultiplier, 0.0f, 1.0f) = 0.016f;
+  options->Add<FloatOption>(kAutoKLDGainExponent, -10.0f, 0.0f) = -1.16f;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
