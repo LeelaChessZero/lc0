@@ -100,6 +100,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<std::string>(SearchParams::kHistoryFillId.GetId(), "no");
   defaults->Set<std::string>(NetworkFactory::kBackendId.GetId(),
                              "multiplexing");
+  defaults->Set<float>(SearchParams::kValuePessimismId.GetId(), 0.0f);
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,

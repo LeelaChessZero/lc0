@@ -340,6 +340,17 @@ class EdgeAndNode {
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
+  // Decrease Q of moves with low amount of visits.
+  // Helps mainly with batching.
+  float GetAdjustedQ(float default_q, float value_pessimism) const {
+    if (node_ && node_->GetN() > 0) {
+        float n = node_->GetN();
+        float q = node_->GetQ();
+        float adjust = value_pessimism * (1.0f + q) / (value_pessimism + n);
+        return q - adjust;
+    }
+    return default_q;
+  }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }

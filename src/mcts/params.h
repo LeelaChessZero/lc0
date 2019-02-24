@@ -89,6 +89,7 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
+  float GetValuePessimism() const { return kValuePessimism; }
   int GetKLDGainAverageInterval() const {
     return options_.Get<int>(kKLDGainAverageInterval.GetId());
   }
@@ -123,6 +124,7 @@ class SearchParams {
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
+  static const OptionId kValuePessimismId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
 
@@ -150,6 +152,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const float kValuePessimism;
 };
 
 }  // namespace lczero

@@ -164,6 +164,10 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SearchParams::kValuePessimismId{
+    "value-pessimism", "ValuePessimism",
+    "Add one loss to value of a node after it has been evaluated once and "
+    "weight it in the value calculation as if it had this many visits."};
 const OptionId SearchParams::kMinimumKLDGainPerNode{
     "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
     "If greater than 0 search will abort unless the last KLDGainAverageInterval "
@@ -206,6 +210,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<FloatOption>(kValuePessimismId, 0.0f, 2.0f) = 0.6f;
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
 }
@@ -229,7 +234,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
+      kValuePessimism(options.Get<float>(kValuePessimismId.GetId())) {
 }
 
 }  // namespace lczero
