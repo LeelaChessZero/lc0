@@ -48,10 +48,10 @@ const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 void Benchmark::Run() {
   OptionsParser options;
   NetworkFactory::PopulateOptions(&options);
-  SearchParams::Populate(&options);
-
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
+  SearchParams::Populate(&options);
+
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
   options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;

@@ -129,10 +129,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
   NetworkFactory::PopulateOptions(options);
-  SearchParams::Populate(options);
-
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
+  SearchParams::Populate(options);
+
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
   options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
