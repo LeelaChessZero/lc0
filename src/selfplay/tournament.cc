@@ -71,12 +71,12 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player2");
 
   NetworkFactory::PopulateOptions(options);
+  options->Add<IntOption>(kThreadsId, 1, 8) = 1;
+  options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
   SearchParams::Populate(options);
 
   options->Add<Separator>(kSeparator);
 
-  options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -1, 999999) = -1;
   options->Add<IntOption>(kParallelGamesId, 1, 256) = 8;
