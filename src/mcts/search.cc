@@ -929,7 +929,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
-    const float fpu = GetFpu(params_, node, is_root_node);
+    const float fpu = is_root_node && params_.GetEarlyRootWidening() ? 1.0f :
+                          GetFpu(params_, node, is_root_node);
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with

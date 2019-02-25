@@ -75,6 +75,7 @@ class SearchParams {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
   float GetSmartPruningFactor() const { return kSmartPruningFactor; }
+  bool GetEarlyRootWidening() const { return kEarlyRootWidening; }
   bool GetFpuAbsolute() const { return kFpuAbsolute; }
   float GetFpuReduction() const { return kFpuReduction; }
   float GetFpuValue() const { return kFpuValue; }
@@ -111,6 +112,7 @@ class SearchParams {
   static const OptionId kNoiseId;
   static const OptionId kVerboseStatsId;
   static const OptionId kSmartPruningFactorId;
+  static const OptionId kEarlyRootWideningId;
   static const OptionId kFpuStrategyId;
   static const OptionId kFpuReductionId;
   static const OptionId kFpuValueId;
@@ -139,6 +141,7 @@ class SearchParams {
   const float kCpuctFactor;
   const bool kNoise;
   const float kSmartPruningFactor;
+  const bool kEarlyRootWidening;
   const bool kFpuAbsolute;
   const float kFpuReduction;
   const float kFpuValue;
