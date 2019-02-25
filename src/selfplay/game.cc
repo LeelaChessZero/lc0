@@ -74,7 +74,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
                                              int black_threads, bool training,
                                              bool enable_resign) {
-  std::queue<ResumableGame> sub_games;
+  std::vector<ResumableGame> sub_games_v;
   bool blacks_move = black_moved_first_;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -154,7 +154,7 @@ std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
           resumable_game.tree[idx]->MakeMove(move);
         }
         resumable_game.blacks_move = !blacks_move;
-        sub_games.push(resumable_game);
+        sub_games_v.push_back(resumable_game);
       }
       move = no_temp_move;
     }
@@ -162,6 +162,30 @@ std::queue<ResumableGame> SelfPlayGame::Play(int white_threads,
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
+  }
+
+  // Only return sub-games that start from an unique position with
+  // "GetNoCaptureNoPawnPly() == 0".
+  std::queue<ResumableGame> sub_games;
+  for (auto& sub_game : sub_games_v) {
+    const size_t idx = sub_game.blacks_move ? 1 : 0;
+    auto sub_game_startpos = sub_game.tree[idx]->HeadPosition();
+    auto& main_game_pos_history = tree_[idx]->GetPositionHistory();
+    bool skip_subgame = false;
+
+    for (int pos_idx = 0;
+         pos_idx < main_game_pos_history.GetLength() && !skip_subgame;
+         ++pos_idx) {
+      auto& main_game_pos = main_game_pos_history.GetPositionAt(pos_idx);
+      if (sub_game_startpos.GetNoCaptureNoPawnPly() > 0 ||
+          main_game_pos.Hash() == sub_game_startpos.Hash()) {
+        skip_subgame = true;
+      }
+    }
+
+    if (!skip_subgame) {
+      sub_games.push(sub_game);
+    }
   }
 
   return sub_games;
