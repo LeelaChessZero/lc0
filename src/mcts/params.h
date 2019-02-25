@@ -79,8 +79,10 @@ class SearchParams {
   }
   float GetSmartPruningFactor() const { return kSmartPruningFactor; }
   bool GetFpuAbsolute() const { return kFpuAbsolute; }
-  float GetFpuReduction() const { return kFpuReduction; }
   float GetFpuValue() const { return kFpuValue; }
+  bool GetFpuAbsoluteAtRoot() const { return kFpuAbsoluteAtRoot; }
+  bool GetFpuReductionAtRoot() const { return kFpuReductionAtRoot; }
+  float GetFpuValueAtRoot() const { return kFpuValueAtRoot; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
@@ -116,8 +118,9 @@ class SearchParams {
   static const OptionId kLogLiveStatsId;
   static const OptionId kSmartPruningFactorId;
   static const OptionId kFpuStrategyId;
-  static const OptionId kFpuReductionId;
   static const OptionId kFpuValueId;
+  static const OptionId kFpuStrategyAtRootId;
+  static const OptionId kFpuValueAtRootId;
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
   static const OptionId kMaxCollisionEventsId;
@@ -144,8 +147,10 @@ class SearchParams {
   const bool kNoise;
   const float kSmartPruningFactor;
   const bool kFpuAbsolute;
-  const float kFpuReduction;
   const float kFpuValue;
+  const bool kFpuAbsoluteAtRoot;
+  const bool kFpuReductionAtRoot;
+  const float kFpuValueAtRoot;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kMaxCollisionEvents;
