@@ -1,6 +1,6 @@
 /*
   Originally from cfish's tbprobe.c
-  Copyright (c) 2013-2018 Ronald de Man
+  Copyright (c) 2013-2019 Ronald de Man
   That file may be redistributed and/or modified without restrictions.
 
   This modified version is available under the GPL:
