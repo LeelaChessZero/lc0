@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -116,7 +116,7 @@ TEST(ChessBoard, MoveGenKiwipete) {
   EXPECT_EQ(Perft(board, 2), 2039);
   EXPECT_EQ(Perft(board, 3), 97862);
   EXPECT_EQ(Perft(board, 4), 4085603);
-//  EXPECT_EQ(Perft(board, 5), 193690690);
+  //  EXPECT_EQ(Perft(board, 5), 193690690);
 }
 
 TEST(ChessBoard, MoveGenPosition3) {
@@ -151,7 +151,7 @@ TEST(ChessBoard, MoveGenPosition5) {
   EXPECT_EQ(Perft(board, 2), 1486);
   EXPECT_EQ(Perft(board, 3), 62379);
   EXPECT_EQ(Perft(board, 4), 2103487);
-//  EXPECT_EQ(Perft(board, 5), 89941194);
+  //  EXPECT_EQ(Perft(board, 5), 89941194);
 }
 
 TEST(ChessBoard, MoveGenPosition6) {
@@ -240,5 +240,6 @@ TEST(ChessBoard, HasMatingMaterialMultipleBishopsNotSameColor) {
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
+  lczero::InitializeMagicBitboards();
   return RUN_ALL_TESTS();
 }

@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2019 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/shared/activation.h"
 #include "neural/shared/batchnorm.h"
+#include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
 
 #include <algorithm>
@@ -46,21 +47,24 @@ class OpenCLNetwork;
 struct OpenCLWeights {
   const std::vector<float> ip2_val_w;
   const std::vector<float> ip2_val_b;
-  const size_t num_output_policies;
+  const size_t num_output_policies = 1858;
   const size_t num_value_channels;
 
   OpenCLWeights(const WeightsFile& file)
       : ip2_val_w(LayerAdapter(file.weights().ip2_val_w()).as_vector()),
         ip2_val_b(LayerAdapter(file.weights().ip2_val_b()).as_vector()),
-        num_output_policies(LayerAdapter(file.weights().ip_pol_b()).size()),
         num_value_channels(LayerAdapter(file.weights().ip1_val_b()).size()) {}
 };
 
 class OpenCLComputation : public NetworkComputation {
  public:
   OpenCLComputation(const OpenCL_Network& opencl_net,
-                    const OpenCLWeights& weights)
-      : opencl_net_(opencl_net), weights_(weights), policies_(), q_values_() {
+                    const OpenCLWeights& weights, const bool wdl)
+      : opencl_net_(opencl_net),
+        weights_(weights),
+        policies_(),
+        q_values_(),
+        wdl_(wdl) {
     buffers_ = opencl_net.acquire_buffers();
   }
 
@@ -108,13 +112,32 @@ class OpenCLComputation : public NetworkComputation {
         policies_.emplace_back(std::move(policy));
 
         // Now get the score.
-        auto winrate = weights_.ip2_val_b[0];
-        auto ptr_weights = weights_.ip2_val_w.data();
-        auto ptr_outputs = &output_val[j * num_value_channels];
-        for (size_t i = 0; i < num_value_channels; i++)
-          winrate += ptr_weights[i] * ptr_outputs[i];
+        if (wdl_) {
+          std::vector<float> wdl(weights_.ip2_val_b);
+          auto ptr_weights = weights_.ip2_val_w.data();
+          auto ptr_outputs = &output_val[j * num_value_channels];
+          for (size_t q = 0; q < 3; q++) {
+            for (size_t i = 0; i < num_value_channels; i++) {
+              wdl[q] +=
+                  ptr_weights[i + q * num_value_channels] * ptr_outputs[i];
+            }
+          }
 
-        q_values_.emplace_back(std::tanh(winrate));
+          std::vector<float> wdl_softmax(3);
+          SoftmaxActivation(3, wdl.data(), wdl_softmax.data());
+
+          q_values_.emplace_back(wdl_softmax[0]);
+          q_values_.emplace_back(wdl_softmax[1]);
+          q_values_.emplace_back(wdl_softmax[2]);
+        } else {
+          auto winrate = weights_.ip2_val_b[0];
+          auto ptr_weights = weights_.ip2_val_w.data();
+          auto ptr_outputs = &output_val[j * num_value_channels];
+          for (size_t i = 0; i < num_value_channels; i++)
+            winrate += ptr_weights[i] * ptr_outputs[i];
+
+          q_values_.emplace_back(std::tanh(winrate));
+        }
       }
     }
   }
@@ -123,7 +146,24 @@ class OpenCLComputation : public NetworkComputation {
   int GetBatchSize() const override { return static_cast<int>(planes_.size()); }
 
   // Returns Q value of @sample.
-  float GetQVal(int sample) const override { return q_values_[sample]; }
+  float GetQVal(int sample) const override {
+    if (wdl_) {
+      auto w = q_values_[3 * sample + 0];
+      auto l = q_values_[3 * sample + 2];
+      return w - l;
+    } else {
+      return q_values_[sample];
+    }
+  }
+
+  float GetDVal(int sample) const override {
+    if (wdl_) {
+      auto d = q_values_[3 * sample + 1];
+      return d;
+    } else {
+      return 0.0f;
+    }
+  }
 
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
@@ -146,6 +186,7 @@ class OpenCLComputation : public NetworkComputation {
   std::vector<float> q_values_;
 
   std::unique_ptr<OpenCLBuffers> buffers_;
+  bool wdl_;
 };
 
 void OpenCLComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
@@ -163,14 +204,16 @@ class OpenCLNetwork : public Network {
 
   OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
       : weights_(file), params_(), opencl_(), opencl_net_(opencl_) {
-    const LegacyWeights weights(file.weights());
+    LegacyWeights weights(file.weights());
     params_.gpuId = options.GetOrDefault<int>("gpu", -1);
     params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
 
-    // By default batch size is 1, as many old cards may not support more.
+    wdl_ = file.format().network_format().output() ==
+           pblczero::NetworkFormat::OUTPUT_WDL;
+
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));
     if (max_batch_size_ > kHardMaxBatchSize) {
@@ -191,7 +234,7 @@ class OpenCLNetwork : public Network {
 
     const auto num_value_input_planes = weights.value.bn_means.size();
     const auto num_policy_input_planes = weights.policy.bn_means.size();
-    const auto num_output_policy = weights.ip_pol_b.size();
+    const auto num_output_policy = kPolicyOutputs;
     const auto num_value_channels = weights.ip1_val_b.size();
 
     // Typically
@@ -229,6 +272,9 @@ class OpenCLNetwork : public Network {
     opencl_net_.push_input_convolution(kWinogradAlpha, inputChannels, channels,
                                        Upad, input_batchnorm_means,
                                        input_batchnorm_stddivs);
+
+    auto conv_policy = file.format().network_format().policy() ==
+                       pblczero::NetworkFormat::POLICY_CONVOLUTION;
 
     // Residual blocks.
     for (auto i = size_t{0}; i < residual_blocks; i++) {
@@ -268,14 +314,55 @@ class OpenCLNetwork : public Network {
     constexpr unsigned int width = 8;
     constexpr unsigned int height = 8;
 
-    std::vector<float> bn_pol_means = weights.policy.GetOffsetMeans();
-    std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
+    if (conv_policy) {
+      auto& policy1 = weights.policy1;
+      auto& policy = weights.policy;
+      auto pol_channels = policy.biases.size();
 
-    opencl_net_.push_policy(channels, num_policy_input_planes,
-                            num_policy_input_planes * width * height,
-                            num_output_policy, weights.policy.weights,
-                            bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
-                            weights.ip_pol_b);
+      std::vector<float> conv_weights_1 =
+          WinogradFilterTransformF(policy1.weights, channels, channels);
+      auto W1 = WinogradFilterZeropadU(conv_weights_1, channels, channels,
+                                       m_ceil, m_ceil);
+
+      size_t m_ceil_pol = ceilMultiple(ceilMultiple(pol_channels, mwg), vwm);
+      size_t k_ceil_pol = ceilMultiple(ceilMultiple(channels, kwg), vwm);
+      std::vector<float> conv_weights_2 =
+          WinogradFilterTransformF(policy.weights, pol_channels, channels);
+      auto W2 = WinogradFilterZeropadU(conv_weights_2, pol_channels, channels,
+                                       m_ceil_pol, k_ceil_pol);
+
+      std::vector<float> pol_means, pol_stddivs;
+      for (auto i = size_t{0}; i < pol_channels; i++) {
+        // Move bias to batchnorm
+        pol_means.emplace_back(-weights.policy.biases[i]);
+        pol_stddivs.emplace_back(1.0f);
+      }
+
+      std::vector<short> indices;
+      for (auto i = size_t{0}; i < kPolicyUsedPlanes * 8 * 8; i++) {
+        indices.emplace_back(kConvPolicyMap[i]);
+      }
+
+      std::vector<float> bn_pol1_means = weights.policy1.GetOffsetMeans();
+      std::vector<float> bn_pol1_stddivs = weights.policy1.GetInvertedStddev();
+
+      std::vector<float> bn_pol_means = weights.policy.GetOffsetMeans();
+      std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
+
+      opencl_net_.push_conv_policy(
+          channels, pol_channels, kPolicyUsedPlanes * width * height,
+          num_output_policy, W1, bn_pol1_means, bn_pol1_stddivs, W2, pol_means,
+          pol_stddivs, indices);
+    } else {
+      std::vector<float> bn_pol_means = weights.policy.GetOffsetMeans();
+      std::vector<float> bn_pol_stddivs = weights.policy.GetInvertedStddev();
+
+      opencl_net_.push_policy(channels, num_policy_input_planes,
+                              num_policy_input_planes * width * height,
+                              num_output_policy, weights.policy.weights,
+                              bn_pol_means, bn_pol_stddivs, weights.ip_pol_w,
+                              weights.ip_pol_b);
+    }
 
     std::vector<float> bn_val_means = weights.value.GetOffsetMeans();
     std::vector<float> bn_val_stddivs = weights.value.GetInvertedStddev();
@@ -290,28 +377,47 @@ class OpenCLNetwork : public Network {
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<OpenCLComputation>(opencl_net_, weights_);
+    return std::make_unique<OpenCLComputation>(opencl_net_, weights_, wdl_);
   }
 
  private:
   static constexpr auto kHardMaxBatchSize = 16;
+  static constexpr auto kPolicyUsedPlanes = 73;
+  static constexpr auto kPolicyOutputs = 1858;
 
   OpenCLWeights weights_;
   OpenCLParams params_;
   OpenCL opencl_;
   OpenCL_Network opencl_net_;
+  bool wdl_;
 };
 
 std::unique_ptr<Network> MakeOpenCLNetwork(const WeightsFile& weights,
                                            const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL &&
+          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE) {
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
         " is not supported by OpenCL backend.");
+  }
+  if (weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CLASSICAL &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by OpenCL backend.");
+  }
+  if (weights.format().network_format().value() !=
+          pblczero::NetworkFormat::VALUE_CLASSICAL &&
+      weights.format().network_format().value() !=
+          pblczero::NetworkFormat::VALUE_WDL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by OpenCL backend.");
   }
   return std::make_unique<OpenCLNetwork>(weights, options);
 }

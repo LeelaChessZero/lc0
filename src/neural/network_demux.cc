@@ -52,6 +52,12 @@ class DemuxingComputation : public NetworkComputation {
     return parents_[idx]->GetQVal(offset);
   }
 
+  float GetDVal(int sample) const override {
+    int idx = sample / partial_size_;
+    int offset = sample % partial_size_;
+    return parents_[idx]->GetDVal(offset);
+  }
+
   float GetPVal(int sample, int move_id) const override {
     const int idx = sample / partial_size_;
     const int offset = sample % partial_size_;
@@ -151,7 +157,6 @@ class DemuxingNetwork : public Network {
 
         // While there is a work in queue, process it.
         while (true) {
-          
           DemuxingComputation* to_notify;
           {
             std::unique_lock<std::mutex> lock(mutex_);
@@ -159,8 +164,9 @@ class DemuxingNetwork : public Network {
             to_notify = queue_.front();
             queue_.pop();
           }
-          const long long net_idx = ++(counter_) % networks_.size();
-          NetworkComputation* to_compute = to_notify->AddParentFromNetwork(networks_[net_idx].get());
+          long long net_idx = ++(counter_) % networks_.size();
+          NetworkComputation* to_compute =
+              to_notify->AddParentFromNetwork(networks_[net_idx].get());
           to_compute->ComputeBlocking();
           to_notify->NotifyComplete();
         }
@@ -206,7 +212,7 @@ void DemuxingComputation::ComputeBlocking() {
 
   std::unique_lock<std::mutex> lock(mutex_);
   dataready_ = splits;
-  for (int j=0; j < splits; j++) {
+  for (int j = 0; j < splits; j++) {
     network_->Enqueue(this);
   }
   dataready_cv_.wait(lock, [this]() { return dataready_ == 0; });

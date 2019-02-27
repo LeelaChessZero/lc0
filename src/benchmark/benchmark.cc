@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -48,13 +48,13 @@ const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 void Benchmark::Run() {
   OptionsParser options;
   NetworkFactory::PopulateOptions(&options);
+  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   SearchParams::Populate(&options);
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
   options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
-  options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
-  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   if (!options.ProcessAllFlags()) return;
 
