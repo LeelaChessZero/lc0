@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -58,11 +58,11 @@ const OptionId kMoveOverheadId{
     "Amount of time, in milliseconds, that the engine subtracts from it's "
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
-const OptionId kTimeMidpointPlyId{
-    "time-midpoint-halfmove", "TimeMidpointPly",
-    "The halfmove where the time budgeting algorithm guesses half of all "
+const OptionId kTimeMidpointMoveId{
+    "time-midpoint-move", "TimeMidpointMove",
+    "The move where the time budgeting algorithm guesses half of all "
     "games to be completed by. Half of the time allocated for the first move "
-    "is allocated at approximately this halfmove."};
+    "is allocated at approximately this move."};
 const OptionId kTimeSteepnessId{
     "time-steepness", "TimeSteepness",
     "\"Steepness\" of the function the time budgeting algorithm uses to "
@@ -97,15 +97,22 @@ const size_t kAvgCacheItemSize =
     NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
     sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
 
-float ComputeSurvivalAtPly(int ply, float midpoint, float steepness) {
-  // This function is the survival function of the log-logistic distribution, it
-  // was chosen as it fit empirical analysis finding P(game ended at ply). We
-  // determine how many moves to plan time management for by summing over this
-  // function from ply to infinity (or some other reasonably large value).
-  // midpoint: The ply where the function is half its maximum value.
+float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
+  // An analysis of chess games shows that the distribution of game lengths
+  // looks like a log-logistic distribution. The mean residual time function
+  // calculates how many more moves are expected in the game given that we are
+  // at the current ply. Given that this function can be expensive to compute,
+  // we calculate the median residual time function instead. This is derived and
+  // shown to be similar to the mean residual time in "Some Useful Properties of
+  // Log-Logistic Random Variables for Health Care Simulations" (Clark &
+  // El-Taha, 2015).
+  // midpoint: The median length of games.
   // steepness: How quickly the function drops off from its maximum value,
   // around the midpoint.
-  return 1 / (1 + std::pow(ply / midpoint, steepness));
+  float move = ply / 2.0f;
+  return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
+                             1 / steepness) -
+         move;
 }
 
 }  // namespace
@@ -121,12 +128,15 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
+  NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
+  SearchParams::Populate(options);
+
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-  options->Add<FloatOption>(kTimeMidpointPlyId, 1.0f, 200.0f) = 100.0f;
-  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 9.0f;
+  options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
+  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
@@ -134,13 +144,11 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
-  // Hide time curve options.
-  options->HideOption(kTimeMidpointPlyId);
-  options->HideOption(kTimeSteepnessId);
-
-  NetworkFactory::PopulateOptions(options);
-  SearchParams::Populate(options);
   ConfigFile::PopulateOptions(options);
+
+  // Hide time curve options.
+  options->HideOption(kTimeMidpointMoveId);
+  options->HideOption(kTimeSteepnessId);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(
@@ -148,11 +156,6 @@ SearchLimits EngineController::PopulateSearchLimits(
     std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
   int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
-  if (params.movetime) {
-    limits.search_deadline = start_time + std::chrono::milliseconds(
-                                              *params.movetime - move_overhead);
-  }
-
   const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
@@ -161,6 +164,10 @@ SearchLimits EngineController::PopulateSearchLimits(
     }
   }
   limits.infinite = params.infinite || params.ponder;
+  if (params.movetime && !limits.infinite) {
+    limits.search_deadline = start_time + std::chrono::milliseconds(
+                                              *params.movetime - move_overhead);
+  }
   if (params.nodes) limits.visits = *params.nodes;
   int ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
   if (ram_limit) {
@@ -180,24 +187,11 @@ SearchLimits EngineController::PopulateSearchLimits(
 
   // How to scale moves time.
   float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  float time_curve_midpoint = options_.Get<float>(kTimeMidpointPlyId.GetId());
+  float time_curve_midpoint = options_.Get<float>(kTimeMidpointMoveId.GetId());
   float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
 
-  // Sum over the survival function to guess how many moves ahead are worth
-  // planning time for. All values must be scaled relative to the first value,
-  // so compute the first ply separately.
-  float this_move_survival =
-      ComputeSurvivalAtPly(ply, time_curve_midpoint, time_curve_steepness);
-
-  // Sum over a large range of plies to approximate summing to infinity.
-  float movestogo = 0.0f;
-  for (int i = ply + 2; i < ply + 300; i += 2) {
-    movestogo +=
-        ComputeSurvivalAtPly(i, time_curve_midpoint, time_curve_steepness);
-  }
-
-  // Normalize to account for the game being at the current ply.
-  movestogo = movestogo / this_move_survival + 1;
+  float movestogo =
+      ComputeEstimatedMovesToGo(ply, time_curve_midpoint, time_curve_steepness);
 
   // If the number of moves remaining until the time control are less than
   // the estimated number of moves left in the game, then use the number of

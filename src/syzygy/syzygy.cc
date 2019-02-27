@@ -6,7 +6,7 @@
   This modified version is available under the GPL:
 
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -44,6 +44,7 @@
 
 #include "syzygy/syzygy.h"
 
+#include "utils/exception.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
@@ -187,15 +188,15 @@ int count_pieces(const ChessBoard& pos, int type, bool theirs) {
     case KING:
       return 1;
     case QUEEN:
-      return (all * pos.queens()).count_few();
+      return (all & pos.queens()).count_few();
     case ROOK:
-      return (all * pos.rooks()).count_few();
+      return (all & pos.rooks()).count_few();
     case BISHOP:
-      return (all * pos.bishops()).count_few();
+      return (all & pos.bishops()).count_few();
     case KNIGHT:
       return (theirs ? pos.their_knights() : pos.our_knights()).count_few();
     case PAWN:
-      return (all * pos.pawns()).count_few();
+      return (all & pos.pawns()).count_few();
     default:
       assert(false);
   }
@@ -208,15 +209,15 @@ BitBoard pieces(const ChessBoard& pos, int type, bool theirs) {
     case KING:
       return theirs ? pos.their_king() : pos.our_king();
     case QUEEN:
-      return all * pos.queens();
+      return all & pos.queens();
     case ROOK:
-      return all * pos.rooks();
+      return all & pos.rooks();
     case BISHOP:
-      return all * pos.bishops();
+      return all & pos.bishops();
     case KNIGHT:
       return theirs ? pos.their_knights() : pos.our_knights();
     case PAWN:
-      return all * pos.pawns();
+      return all & pos.pawns();
     default:
       assert(false);
   }
@@ -1041,6 +1042,9 @@ class SyzygyTablebaseImpl {
     int fd = ::open(fname.c_str(), O_RDONLY);
     if (fd == -1) return nullptr;
     fstat(fd, &statbuf);
+    if (statbuf.st_size % 64 != 16) {
+      throw Exception("Corrupt tablebase file " + fname);
+    }
     *mapping = statbuf.st_size;
     base_address = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
     ::close(fd);
@@ -1055,6 +1059,9 @@ class SyzygyTablebaseImpl {
     if (fd == INVALID_HANDLE_VALUE) return nullptr;
     DWORD size_high;
     DWORD size_low = GetFileSize(fd, &size_high);
+    if (size_low % 64 != 16) {
+      throw Exception("Corrupt tablebase file " + fname);
+    }
     HANDLE mmap = CreateFileMapping(fd, nullptr, PAGE_READONLY, size_high,
                                     size_low, nullptr);
     CloseHandle(fd);

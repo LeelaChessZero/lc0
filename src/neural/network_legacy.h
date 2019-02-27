@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2019 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -74,6 +74,8 @@ struct LegacyWeights {
   std::vector<Residual> residual;
 
   // Policy head
+  // Extra convolution for AZ-style policy head
+  ConvBlock policy1;
   ConvBlock policy;
   Vec ip_pol_w;
   Vec ip_pol_b;

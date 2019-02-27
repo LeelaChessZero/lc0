@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -33,6 +33,26 @@
 
 namespace lczero {
 
+// Initializes internal magic bitboard structures.
+void InitializeMagicBitboards();
+
+// Represents king attack info used during legal move detection.
+class KingAttackInfo {
+ public:
+  bool in_check() const { return attack_lines_.as_int(); }
+  bool in_double_check() const { return double_check_; }
+  bool is_pinned(const BoardSquare square) const {
+    return pinned_pieces_.get(square);
+  }
+  bool is_on_attack_line(const BoardSquare square) const {
+    return attack_lines_.get(square);
+  }
+
+  bool double_check_ = 0;
+  BitBoard pinned_pieces_ = {0};
+  BitBoard attack_lines_ = {0};
+};
+
 // Represents a board position.
 // Unlike most chess engines, the board is mirrored for black.
 class ChessBoard {
@@ -64,6 +84,8 @@ class ChessBoard {
   bool ApplyMove(Move move);
   // Checks if the square is under attack from "theirs" (black).
   bool IsUnderAttack(BoardSquare square) const;
+  // Generates the king attack info used for legal move detection.
+  KingAttackInfo GenerateKingAttackInfo() const;
   // Checks if "our" (white) king is under check.
   bool IsUnderCheck() const { return IsUnderAttack(our_king_); }
 
@@ -72,7 +94,7 @@ class ChessBoard {
   // Generates legal moves.
   MoveList GenerateLegalMoves() const;
   // Check whether pseudolegal move is legal.
-  bool IsLegalMove(Move move, bool was_under_check) const;
+  bool IsLegalMove(Move move, const KingAttackInfo& king_attack_info) const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
@@ -131,7 +153,7 @@ class ChessBoard {
   BitBoard en_passant() const;
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
-  BitBoard queens() const { return rooks_ * bishops_; }
+  BitBoard queens() const { return rooks_ & bishops_; }
   BitBoard our_knights() const {
     return our_pieces_ - pawns() - our_king_ - rooks_ - bishops_;
   }

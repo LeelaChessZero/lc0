@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,6 +24,11 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#pragma once
+
+#include <cstddef>
+#include <cublas_v2.h>
+#include <cudnn.h>
 
 namespace lczero {
 namespace cudnn_backend {
@@ -100,6 +105,7 @@ class SoftMaxLayer : public BaseLayer<DataType> {
 
  public:
   SoftMaxLayer(BaseLayer<DataType>* ip);
+  ~SoftMaxLayer();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas) override;
@@ -149,6 +155,24 @@ class FCLayer : public BaseLayer<DataType> {
   const bool use_sigmoid_;
   DataType* weights_ = nullptr;
   DataType* biases_ = nullptr;
+};
+
+template <typename DataType>
+class PolicyMapLayer: public BaseLayer<DataType> {
+ public:
+  PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize);
+  ~PolicyMapLayer();
+
+  void LoadWeights(const short* cpuWeight, void* scratch);
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2, void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  int used_size_; // Size of the input without padding (typically 73x64).
+                  // This is over-written to contain size with padding 
+                  // (typically 80x64) after CHW->HWC conversion for fp16.
+  short* weights_ = nullptr;
 };
 
 // Fused SE layer:
