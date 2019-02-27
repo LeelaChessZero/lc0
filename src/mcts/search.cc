@@ -148,8 +148,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       if (edge.IsCertain() && edge.GetEQ() != 0) {
         uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 +
                                         (edge.IsPropagatedTBHit() ? 1000 : 0));
-      } else if (root_syzygy_rank_==1) {
-          uci_info.score = 0;
+      } else if (root_syzygy_rank_ == 1) {
+        uci_info.score = 0;
       }
     }
   }
@@ -253,8 +253,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
         << ") ";
 
-    oss << "(D: " << std::setw(6) << std::setprecision(3)
-        << edge.GetD() << ") ";
+    oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
+        << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
@@ -1062,49 +1062,41 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   }
 }
 
-void SearchWorker::EvalPosition(Node* node, MoveList& legal_moves,
-                                const ChessBoard& board, GameResult& result,
-                                CertaintyTrigger& trigger) {
+CertaintyResult SearchWorker::EvalPosition(const Node* node,
+                                           const MoveList& legal_moves,
+                                           const ChessBoard& board) {
+  CertaintyResult certaintyresult = { GameResult::UNDECIDED,
+                                      CertaintyTrigger::NONE };
   // Check whether it's a draw/lose by position. Importantly, we must check
   // these before doing the by-rule checks below.
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
-      result = GameResult::WHITE_WON;
-      trigger = CertaintyTrigger::TERMINAL;
+      certaintyresult = {GameResult::WHITE_WON, CertaintyTrigger::TERMINAL};
     } else {
-      result = GameResult::DRAW;
-      trigger = CertaintyTrigger::TERMINAL;
+      certaintyresult = {GameResult::DRAW, CertaintyTrigger::TERMINAL};
     }
-    return;
+    return certaintyresult;
   }
 
   // We can shortcircuit these draws-by-rule only if they aren't root;
   // if they are root, then thinking about them is the point.
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
-      result = GameResult::DRAW;
-      trigger = CertaintyTrigger::TERMINAL;
-      return;
+      return certaintyresult = {GameResult::DRAW, CertaintyTrigger::TERMINAL};
     }
 
     if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
-      result = GameResult::DRAW;
-      trigger = CertaintyTrigger::TERMINAL;
-      return;
+      return certaintyresult = {GameResult::DRAW, CertaintyTrigger::TERMINAL};
     }
 
     if (history_.Last().GetRepetitions() >= 2) {
-      result = GameResult::DRAW;
-      trigger = CertaintyTrigger::TERMINAL;
-      return;
+      return certaintyresult = {GameResult::DRAW, CertaintyTrigger::TERMINAL};
     }
 
     if ((history_.Last().GetRepetitions() >= 1) &&
         params_.GetTwoFoldDrawScoring()) {
-      result = GameResult::DRAW;
-      trigger = CertaintyTrigger::TWO_FOLD;
-      return;
+      return certaintyresult = {GameResult::DRAW, CertaintyTrigger::TWO_FOLD};
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
@@ -1120,20 +1112,17 @@ void SearchWorker::EvalPosition(Node* node, MoveList& legal_moves,
       if (state != FAIL) {
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          result = GameResult::BLACK_WON;
-          trigger = CertaintyTrigger::TB_HIT;
+          certaintyresult = { GameResult::BLACK_WON, CertaintyTrigger::TB_HIT };
         } else if (wdl == WDL_LOSS) {
-          result = GameResult::WHITE_WON;
-          trigger = CertaintyTrigger::TB_HIT;
+          certaintyresult = { GameResult::WHITE_WON, CertaintyTrigger::TB_HIT };
         } else {  // Cursed wins and blessed losses count as draws.
-          result = GameResult::DRAW;
-          trigger = CertaintyTrigger::NORMAL;
+          certaintyresult = { GameResult::DRAW, CertaintyTrigger::NORMAL };
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return;
       }
     }
   }
+  return certaintyresult;
 }
 
 void SearchWorker::ExtendNode(Node* node) {
@@ -1157,16 +1146,14 @@ void SearchWorker::ExtendNode(Node* node) {
   // N-in-flight=1 and will not touch this node.
   const auto& board = history_.Last().GetBoard();
   auto legal_moves = board.GenerateLegalMoves();
-  GameResult result = GameResult::UNDECIDED;
-  CertaintyTrigger trigger = CertaintyTrigger::NONE;
+  CertaintyResult certaintyresult =
+      EvalPosition(node, legal_moves, board);
 
-  EvalPosition(node, legal_moves, board, result, trigger);
-
-  if (trigger != CertaintyTrigger::NONE) {
-    if (trigger == CertaintyTrigger::TERMINAL)
-      node->MakeTerminal(result);
+  if (certaintyresult.trigger != CertaintyTrigger::NONE) {
+    if (certaintyresult.trigger == CertaintyTrigger::TERMINAL)
+      node->MakeTerminal(certaintyresult.gameresult);
     else
-      node->MakeCertain(result, trigger);
+      node->MakeCertain(certaintyresult);
     return;
   }
   // Add legal moves as edges of this node.
@@ -1442,7 +1429,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Certainty propagation: adjust Qs along the path as if all visits already
     // had propagated the certain result.
     if (params_.GetCertaintyPropagation() && (prev_q != -100.0f) &&
-      (prev_q != v) && n->IsCertain()) {
+        (prev_q != v) && n->IsCertain()) {
       v = v + (v - prev_q) * (n->GetN() - 1);
       d = d + (d - prev_d) * (n->GetN() - 1);
     }

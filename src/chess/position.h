@@ -84,6 +84,12 @@ class Position {
 enum class GameResult { UNDECIDED, WHITE_WON, DRAW, BLACK_WON };
 enum class CertaintyTrigger { NONE, TB_HIT, TWO_FOLD, TERMINAL, NORMAL };
 
+struct CertaintyResult {
+ public:
+  GameResult gameresult;
+  CertaintyTrigger trigger;
+};
+
 class PositionHistory {
  public:
   PositionHistory() = default;
