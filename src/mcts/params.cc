@@ -209,8 +209,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
-  options->Add<FloatOption>(kTradePenaltyId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kTradePenalty2Id, -1000.0f, 1000.0f) = 0.0f;
+  options->Add<FloatOption>(kTradePenaltyId, -1.0f, 1.0f) = 0.003f;
+  options->Add<FloatOption>(kTradePenalty2Id, -1000.0f, 1000.0f) = 28.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
