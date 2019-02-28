@@ -331,7 +331,7 @@ void Search::UpdateKLDGain() {
     }
     int64_t expected_total_playouts = total_playouts_ + remaining_playouts_;
     double target_playouts =
-        expected_total_playouts * params_.GetAutoKLDGainMoveFraction();
+        expected_total_playouts * params_.GetAutoKLDGainMoveFraction() / limits_.slowmover;
     interval = static_cast<int>(target_playouts *
                                 params_.GetAutoKLDGainIntervalRatio());
     threshold = params_.GetAutoKLDGainMultiplier() *

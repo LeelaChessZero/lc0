@@ -221,9 +221,12 @@ SearchLimits EngineController::PopulateSearchLimits(
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
   constexpr int kSmartPruningToleranceMs = 200;
+  float slowmover_effective = 1.0;
+  float orig_move_time = this_move_time;
   if (slowmover < 1.0 ||
       this_move_time * slowmover > kSmartPruningToleranceMs) {
     this_move_time *= slowmover;
+    slowmover_effective = slowmover;
     // If time is planned to be overused because of slowmover, remove excess
     // of that time from spared time.
     time_spared_ms_ -= this_move_time * (slowmover - 1);
@@ -240,10 +243,18 @@ SearchLimits EngineController::PopulateSearchLimits(
   this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
+  int64_t actual_duration =
+      std::min(static_cast<int64_t>(this_move_time), *time - move_overhead);
   limits.search_deadline =
       start_time +
-      std::chrono::milliseconds(std::min(static_cast<int64_t>(this_move_time),
-                                         *time - move_overhead));
+      std::chrono::milliseconds(actual_duration);
+  if (actual_duration < static_cast<int64_t>(this_move_time)) {
+    float actual_slowmover = actual_duration / orig_move_time;
+    if (actual_slowmover < slowmover) {
+      slowmover_effective = actual_slowmover;
+	}
+  }
+  limits.slowmover = slowmover_effective;
   return limits;
 }
 
