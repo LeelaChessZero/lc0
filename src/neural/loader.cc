@@ -56,10 +56,10 @@ std::string DecompressGzip(const std::string& filename) {
   int bytes_read = 0;
 
   // Read whole file into a buffer.
-  gzFile file = gzopen(filename.c_str(), "rb");
+  const gzFile file = gzopen(filename.c_str(), "rb");
   if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
-    int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
+    const int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
     if (sz < 0) {
       int errnum;
       throw Exception(gzerror(file, &errnum));
@@ -94,11 +94,11 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   if (net.magic() != kWeightMagic)
     throw Exception("Invalid weight file: bad header.");
 
-  auto min_version =
+  const auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch(), "");
-  auto lc0_ver = GetVersionInt();
-  auto net_ver =
+  const auto lc0_ver = GetVersionInt();
+  const auto net_ver =
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch());
 
@@ -161,7 +161,7 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
 std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
-  std::string root_path = CommandLine::BinaryDirectory();
+  const std::string root_path = CommandLine::BinaryDirectory();
 
   // Open all files in <binary dir> amd <binary dir>/networks,
   // ones which are >= kMinFileSize are candidates.
@@ -180,7 +180,7 @@ std::string DiscoverWeightsFile() {
   // read version for it. If version is 2 or if the file is our protobuf,
   // return it.
   for (const auto& candidate : time_and_filename) {
-    gzFile file = gzopen(candidate.second.c_str(), "rb");
+    const gzFile file = gzopen(candidate.second.c_str(), "rb");
 
     if (!file) continue;
     unsigned char buf[256];
@@ -199,7 +199,7 @@ std::string DiscoverWeightsFile() {
 
     // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
     // our own magic should suffice.
-    auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
+    const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
                  (static_cast<uint32_t>(buf[3]) << 16) |
                  (static_cast<uint32_t>(buf[4]) << 24);
     if (magic == kWeightMagic) {

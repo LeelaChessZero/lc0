@@ -73,10 +73,10 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
       bn_means(LayerAdapter(block.bn_means()).as_vector()),
       bn_stddivs(LayerAdapter(block.bn_stddivs()).as_vector()) {
   // Merge gammas to stddivs and beta to means for backwards compatibility
-  auto channels = bn_betas.size();
-  auto epsilon = 1e-5;
+  const auto channels = bn_betas.size();
+  const auto epsilon = 1e-5;
   for (auto i = size_t{0}; i < channels; i++) {
-    auto s = bn_gammas[i] / std::sqrt(bn_stddivs[i] + epsilon);
+    const auto s = bn_gammas[i] / std::sqrt(bn_stddivs[i] + epsilon);
     bn_stddivs[i] = 1.0f / (s * s) - epsilon;
     bn_means[i] -= bn_betas[i] / s;
     bn_gammas[i] = 1.0f;
