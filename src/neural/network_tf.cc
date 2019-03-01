@@ -205,6 +205,7 @@ class TFNetworkComputation : public NetworkComputation {
   float GetQVal(int sample) const override {
     return output_[0].template matrix<float>()(sample, 0);
   }
+  float GetDVal(int sample) const override { return 0.0f; }
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
