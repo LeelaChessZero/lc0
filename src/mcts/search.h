@@ -48,6 +48,7 @@ struct SearchLimits {
   // overflow it.
   std::int64_t visits = 4000000000;
   std::int64_t playouts = -1;
+  std::int64_t ram_limit = -1;
   int depth = -1;
   optional<std::chrono::steady_clock::time_point> search_deadline;
   bool infinite = false;
@@ -153,11 +154,21 @@ class Search {
   // consistent results.
   EdgeAndNode final_bestmove_ GUARDED_BY(counters_mutex_);
   EdgeAndNode final_pondermove_ GUARDED_BY(counters_mutex_);
+  void UpdateTreeSize(Node* n);
 
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
   Node* root_node_;
+  uint64_t initial_num_edges_ GUARDED_BY(nodes_mutex_) {0};
+  uint64_t initial_num_nodes_ GUARDED_BY(nodes_mutex_) {0};
+  uint64_t num_edges_ GUARDED_BY(nodes_mutex_) {0};
+  uint64_t num_nodes_ GUARDED_BY(nodes_mutex_) {0};
+  // Number of extra visits to terminal nodes.
+  uint64_t num_terminals_ GUARDED_BY(nodes_mutex_) {0};
+  uint64_t num_cache_hits_ GUARDED_BY(nodes_mutex_) {0};
+  uint64_t num_multivisits_ GUARDED_BY(nodes_mutex_) {0};
+  uint64_t num_prefetches_ GUARDED_BY(nodes_mutex_) {0};
   NNCache* cache_;
   SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.

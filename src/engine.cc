@@ -169,16 +169,16 @@ SearchLimits EngineController::PopulateSearchLimits(
                                               *params.movetime - move_overhead);
   }
   if (params.nodes) limits.visits = *params.nodes;
-  const int ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
+  const int64_t ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
   if (ram_limit) {
     const auto cache_size =
         options_.Get<int>(kNNCacheSizeId.GetId()) * kAvgCacheItemSize;
-    int64_t limit = (ram_limit * 1000000LL - cache_size) / kAvgNodeSize;
+    limits.ram_limit = ram_limit * 1000000LL - cache_size;
+    if (limits.ram_limit < 0) limits.ram_limit = 0;
+    int64_t approx_nodes_limit = limits.ram_limit / int64_t(kAvgNodeSize);
     LOGFILE << "RAM limit " << ram_limit << "MB. Cache takes "
-            << cache_size / 1000000 << "MB. Remaining memory is enough for "
-            << limit << " nodes.";
-    if (limit < 0) limit = 0;
-    if (limit < limits.visits) limits.visits = limit;
+            << cache_size / 1000000 << "MB. Remaining memory is enough for approximately "
+            << approx_nodes_limit << " nodes.";
   }
   if (params.depth) limits.depth = *params.depth;
   if (limits.infinite || !time) return limits;

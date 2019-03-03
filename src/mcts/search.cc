@@ -207,7 +207,8 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node,
-                                                 bool is_black_to_move) const {
+                                                 bool is_black_to_move) const
+    REQUIRES(nodes_mutex_) {
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
@@ -269,10 +270,37 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     if (edge.IsTerminal()) oss << "(T) ";
     infos.emplace_back(oss.str());
   }
+  std::ostringstream oss;
+  oss << "Stats including tree reuse:";
+  oss << " P:" << total_playouts_ + initial_visits_;
+  oss << " E:" << num_edges_;
+  oss << " N:" << num_nodes_;
+  infos.emplace_back(oss.str());
+  oss.str("");
+  oss << "Stats excluding tree reuse:";
+  oss << " P:" << total_playouts_;
+  oss << " E:" << num_edges_ - initial_num_edges_;
+  oss << " N:" << num_nodes_ - initial_num_nodes_;
+  oss << " T:" << num_terminals_;
+  oss << " C:" << num_cache_hits_;
+  oss << " PF:" << num_prefetches_;
+  oss << " MV:" << num_multivisits_;
+  infos.emplace_back(oss.str());
+  oss.str("");
+  auto tss = GetTimeSinceStart();
+  oss << "Rate stats:";
+  oss << " P:" << (tss ? total_playouts_ * 1000 / tss : 0);
+  oss << " E:" << (tss ? num_edges_ * 1000 / tss : 0);
+  oss << " N:" << (tss ? num_nodes_ * 1000 / tss : 0);
+  oss << " T:" << (tss ? num_terminals_ * 1000 / tss : 0);
+  oss << " C:" << (tss ? num_cache_hits_ * 1000 / tss : 0);
+  oss << " PF:" << (tss ? num_prefetches_ * 1000 / tss : 0);
+  oss << " MV:" << (tss ? num_multivisits_ * 1000 / tss : 0);
+  infos.emplace_back(oss.str());
   return infos;
 }
 
-void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
+void Search::SendMovesStats() const REQUIRES(nodes_mutex_, counters_mutex_) {
   const bool is_black_to_move = played_history_.IsBlackToMove();
   auto move_stats = GetVerboseStats(root_node_, is_black_to_move);
 
@@ -382,6 +410,14 @@ void Search::MaybeTriggerStop() {
       FireStopInternal();
       LOGFILE << "Stopped search: Reached visits limit: "
               << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
+    }
+    if (limits_.ram_limit >= 0 &&
+        num_edges_ * sizeof(Edge) + num_nodes_ * sizeof(Node) >=
+        limits_.ram_limit) {
+      FireStopInternal();
+      LOGFILE << "Stopped search: Reached ram limit: "
+              << num_edges_ * sizeof(Edge) + num_nodes_ * sizeof(Node)
+              << ">=" << limits_.ram_limit;
     }
     // Stop if reached time limit.
     if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
@@ -639,7 +675,24 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   return {};
 }
 
+void Search::UpdateTreeSize(Node* n) REQUIRES(nodes_mutex_) {
+  num_nodes_++;
+  for (const auto& edge : n->Edges()) {
+    num_edges_++;
+    if (edge.HasNode()) {
+      UpdateTreeSize(edge.node());
+    }
+  }
+}
+
 void Search::StartThreads(size_t how_many) {
+  // Do not double count root if it's not extended yet.
+  if (root_node_->HasChildren()) {
+    SharedMutex::Lock lock(nodes_mutex_);
+    UpdateTreeSize(root_node_);
+    initial_num_edges_ = num_edges_;
+    initial_num_nodes_ = num_nodes_;
+  }
   Mutex::Lock lock(threads_mutex_);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
@@ -819,6 +872,15 @@ void SearchWorker::GatherMinibatch() {
         picked_node.nn_queried = true;
         picked_node.is_cache_hit = AddNodeToComputation(node, true);
       }
+
+      SharedMutex::Lock lock(search_->nodes_mutex_);
+      search_->UpdateTreeSize(node);
+      if (picked_node.is_cache_hit) {
+        search_->num_cache_hits_++;
+      }
+    } else {
+      SharedMutex::Lock lock(search_->nodes_mutex_);
+      search_->num_terminals_++;
     }
 
     // If out of order eval is enabled and the node to compute we added last
@@ -1125,7 +1187,8 @@ void SearchWorker::MaybePrefetchIntoCache() {
 
 // Prefetches up to @budget nodes into cache. Returns number of nodes
 // prefetched.
-int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
+int SearchWorker::PrefetchIntoCache(Node* node, int budget)
+    REQUIRES(search_->nodes_mutex_) {
   if (budget <= 0) return 0;
 
   // We are in a leaf, which is not yet being processed.
@@ -1137,6 +1200,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
       // easy to find what to cache.
       return 1;
     }
+    search_->num_prefetches_++;
     return 1;
   }
 
