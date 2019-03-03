@@ -688,10 +688,17 @@ void Search::UpdateTreeSize(Node* n) REQUIRES(nodes_mutex_) {
 void Search::StartThreads(size_t how_many) {
   // Do not double count root if it's not extended yet.
   if (root_node_->HasChildren()) {
+    auto start = std::chrono::steady_clock::now();
     SharedMutex::Lock lock(nodes_mutex_);
     UpdateTreeSize(root_node_);
     initial_num_edges_ = num_edges_;
     initial_num_nodes_ = num_nodes_;
+    auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - start)
+                   .count();
+    LOGFILE << "UpdateTreeSize took " << dur
+            << "ms. edges:" << initial_num_edges_
+            << " nodes:" << initial_num_nodes_;
   }
   Mutex::Lock lock(threads_mutex_);
   // First thread is a watchdog thread.
