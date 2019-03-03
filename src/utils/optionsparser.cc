@@ -304,11 +304,18 @@ std::string EscapeMd(const std::string& input) {
 }  // namespace
 
 void OptionsParser::ShowHelpMd() const {
+  const std::string kHeader =
+      "\n*Flag*|*UCI option*|Description\n---|---|------\n";
   std::cout << "\n# Lc0 options\n";
-  std::cout << "\n*Flag*|*UCI option*|Description\n---|---|------\n";
+  std::cout << kHeader;
   std::cout << "**--help**, **-h**||Show help and exit.\n";
   for (const auto& option : options_) {
     if (option->hidden_) continue;
+    if (typeid(*option) == typeid(Separator)) {
+      std::cout << "\n## " << option->GetLongFlag() << "\n";
+      std::cout << kHeader;
+      continue;
+    }
     if (!option->GetLongFlag().empty()) {
       std::cout << "**--" << option->GetLongFlag() << "**";
     }
