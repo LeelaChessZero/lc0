@@ -105,9 +105,9 @@ class CudnnNetworkComputation : public NetworkComputation {
   ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
-    auto iter_mask =
+    const auto iter_mask =
         &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
-    auto iter_val =
+    const auto iter_val =
         &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
 
     int i = 0;

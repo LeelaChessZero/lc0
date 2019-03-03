@@ -85,10 +85,10 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
       use_relu_(relu),
       use_bias_(bias) {
   // Allocate memory for weights (filter tensor) and biases.
-  size_t weight_size = sizeof(DataType) * Cin * C * filter_size_ * filter_size_;
+  const size_t weight_size = sizeof(DataType) * Cin * C * filter_size_ * filter_size_;
   ReportCUDAErrors(cudaMalloc(&weights, weight_size));
 
-  size_t blas_size = sizeof(DataType) * C;
+  const size_t blas_size = sizeof(DataType) * C;
   ReportCUDAErrors(cudaMalloc(&biases, blas_size));
 
   const bool fp16 = std::is_same<half, DataType>::value;
@@ -110,7 +110,7 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
       bias_desc_, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
       fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, 1, C, 1, 1));
 
-  int padding = filter_size_ / 2;
+  const int padding = filter_size_ / 2;
   const bool crossCorr = 1;
 
   ReportCUDNNErrors(cudnnSetConvolution2dDescriptor(
@@ -143,9 +143,9 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
 
 template <>
 void ConvLayer<half>::LoadWeights(float* pfilter, float* pBias, void* scratch) {
-  size_t weight_size =
+  const size_t weight_size =
       sizeof(float) * c_input_ * C * filter_size_ * filter_size_;
-  size_t blas_size = sizeof(float) * C;
+  const size_t blas_size = sizeof(float) * C;
   // Also need to convert from fp32 NCHW to fp16 NHWC
   // first copy from CPU memory to scratch space in GPU memory
   // and then do the type / layout conversion using a kernel.
@@ -166,9 +166,9 @@ void ConvLayer<half>::LoadWeights(float* pfilter, float* pBias, void* scratch) {
 template <>
 void ConvLayer<float>::LoadWeights(float* pfilter, float* pBias,
                                    void* /*scratch*/) {
-  size_t weight_size =
+  const size_t weight_size =
       sizeof(float) * c_input_ * C * filter_size_ * filter_size_;
-  size_t blas_size = sizeof(float) * C;
+  const size_t blas_size = sizeof(float) * C;
   ReportCUDAErrors(
       cudaMemcpy(weights, pfilter, weight_size, cudaMemcpyHostToDevice));
 
@@ -269,7 +269,7 @@ template <typename DataType>
 BNLayer<DataType>::BNLayer(BaseLayer<DataType>* ip, bool relu)
     : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip),
       use_relu_(relu) {
-  size_t weight_size = sizeof(float) * C;
+    const size_t weight_size = sizeof(float) * C;
 
   ReportCUDAErrors(cudaMalloc(&means_, weight_size));
   ReportCUDAErrors(cudaMalloc(&variances_, weight_size));
@@ -277,7 +277,7 @@ BNLayer<DataType>::BNLayer(BaseLayer<DataType>* ip, bool relu)
 
 template <typename DataType>
 void BNLayer<DataType>::LoadWeights(float* cpuMeans, float* cpuVar) {
-  size_t weight_size = sizeof(float) * C;
+  const size_t weight_size = sizeof(float) * C;
   ReportCUDAErrors(
       cudaMemcpy(means_, cpuMeans, weight_size, cudaMemcpyHostToDevice));
   ReportCUDAErrors(
@@ -333,10 +333,10 @@ SELayer<DataType>::~SELayer() {
 template <>
 void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
                                  float* prevLayerBias, void* /*scratch*/) {
-  size_t num_weights1 = C * numFc1Out_;
-  size_t weight_size1 = sizeof(float) * num_weights1;
+  const size_t num_weights1 = C * numFc1Out_;
+  const size_t weight_size1 = sizeof(float) * num_weights1;
 
-  size_t weight_size2 = 2 * weight_size1;
+  const size_t weight_size2 = 2 * weight_size1;
 
   // Weight for the first FC layer.
   ReportCUDAErrors(cudaMemcpy(w1_, w1, weight_size1, cudaMemcpyHostToDevice));
@@ -367,10 +367,10 @@ void cpuTranspose(float* op, float* ip, int rows, int cols) {
 template <>
 void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
                                 float* prevLayerBias, void* scratch) {
-  size_t num_weights1 = C * numFc1Out_;
+  const size_t num_weights1 = C * numFc1Out_;
   size_t weight_size1 = sizeof(float) * num_weights1;
 
-  size_t num_weights2 = 2 * num_weights1;
+  const size_t num_weights2 = 2 * num_weights1;
   size_t weight_size2 = 2 * weight_size1;
 
   // Transpose the weight matrices for the fused path.
@@ -498,9 +498,9 @@ FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
       use_relu_(relu),
       use_tanh_(tanh),
       use_sigmoid_(sigmoid) {
-  size_t weight_size =
+    const size_t weight_size =
       sizeof(DataType) * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
-  size_t blas_size = sizeof(DataType) * C * H * W;
+    const size_t blas_size = sizeof(DataType) * C * H * W;
   ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
   if (use_bias_) {
     ReportCUDAErrors(cudaMalloc(&biases_, blas_size));
@@ -512,11 +512,11 @@ FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
 template <>
 void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
                                 void* scratch) {
-  size_t num_weights =
+  const size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
-  size_t weight_size = sizeof(float) * num_weights;
-  size_t num_biases = C * H * W;
-  size_t blas_size = sizeof(float) * num_biases;
+  const size_t weight_size = sizeof(float) * num_weights;
+  const size_t num_biases = C * H * W;
+  const size_t blas_size = sizeof(float) * num_biases;
 
   // also need to convert from fp32 to fp16
   assert(scratch);
@@ -537,11 +537,11 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
 template <>
 void FCLayer<float>::LoadWeights(float* cpuWeight, float* cpuBias,
                                  void* /*scratch*/) {
-  size_t num_weights =
+  const size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
-  size_t weight_size = sizeof(float) * num_weights;
-  size_t num_biases = C * H * W;
-  size_t blas_size = sizeof(float) * num_biases;
+  const size_t weight_size = sizeof(float) * num_weights;
+  const size_t num_biases = C * H * W;
+  const size_t blas_size = sizeof(float) * num_biases;
 
   ReportCUDAErrors(
       cudaMemcpy(weights_, cpuWeight, weight_size, cudaMemcpyHostToDevice));
@@ -556,12 +556,12 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
                          const half* /*input2*/, void* /*scratch*/,
                          size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
                          cublasHandle_t cublas) {
-  int num_outputs = C * H * W;
-  int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
+  const int num_outputs = C * H * W;
+  const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   // half alpha = float2half_rn(1.0f), beta = float2half_rn(0.0f);
-  __half_raw one_h{0x3C00};
-  __half_raw zero_h{0};
+  const __half_raw one_h{0x3C00};
+  const __half_raw zero_h{0};
   half alpha = one_h;
   half beta = zero_h;
   ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
@@ -581,8 +581,8 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
                           const float* input_tensor, const float* /*input2*/,
                           void* /*scratch*/, size_t /*scratch_size*/,
                           cudnnHandle_t /*cudnn*/, cublasHandle_t cublas) {
-  int num_outputs = C * H * W;
-  int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
+  const int num_outputs = C * H * W;
+  const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   float alpha = 1.0f, beta = 0.0f;
   ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,

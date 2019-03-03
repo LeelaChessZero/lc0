@@ -45,7 +45,7 @@ void PrintAligned(const std::string& what, int aligned) {
 std::string Format(const std::string& format, double value) {
   static const int kMaxBufferSize = 32;
   char buffer[kMaxBufferSize];
-  int len = snprintf(buffer, kMaxBufferSize, format.c_str(), value);
+  const int len = snprintf(buffer, kMaxBufferSize, format.c_str(), value);
   return std::string(buffer, buffer + len);
 }
 }  // namespace
@@ -70,27 +70,27 @@ void Histogram::Clear() {
 }
 
 void Histogram::Add(double value) {
-  int index = GetIndex(std::abs(value));
-  int count = ++buckets_[index];
+  const int index = GetIndex(std::abs(value));
+  const int count = ++buckets_[index];
   total_++;
   if (count > max_) max_ = count;
 }
 
 void Histogram::Dump() const {
-  double ymax = 0.02 + max_ / (double)total_;
+  const double ymax = 0.02 + max_ / (double)total_;
   for (int i = 0; i < 100; i++) {
-    double yscale = 1 - i * 0.01;
+    const double yscale = 1 - i * 0.01;
     if (yscale > ymax) continue;
-    bool scale = i % 5 == 0;
+    const bool scale = i % 5 == 0;
     if (scale) {
       PrintAligned(Format("%.2g", yscale), 5);
       Print(" +");
     } else {
       Print("      |");
     }
-    double ymin = (99 - i) * 0.01;
+    const double ymin = (99 - i) * 0.01;
     for (size_t j = 0; j < buckets_.size(); j++) {
-      double val = buckets_[j] / (double)total_;
+      const double val = buckets_[j] / (double)total_;
       if (val > ymin) {
         Print("#");
       } else {
@@ -106,14 +106,14 @@ void Histogram::Dump() const {
   }
   Print("      +");
   for (int j = 0; j <= major_scales_; j++) {
-    int size = j == 0 ? 5 : minor_scales_;
+    const int size = j == 0 ? 5 : minor_scales_;
     for (int k = 0; k < size - 1; k++) Print("-");
     Print("+");
   }
   Print("\n");
   Print("   -inf");
   for (int j = 0; j < major_scales_; j++) {
-    int size = j == 0 ? 5 : minor_scales_;
+    const int size = j == 0 ? 5 : minor_scales_;
     Print(" ");
     PrintAligned(Format("%g", min_exp_ + j), size - 1);
   }
@@ -124,11 +124,11 @@ void Histogram::Dump() const {
 
 int Histogram::GetIndex(double val) const {
   if (val <= 0) return 0;
-  double log10 = std::log10(val);
+  const double log10 = std::log10(val);
   // 2: -15 :    -15.1 ... -14.9          2 ... 3
   // 1:          -15.3 ... -15.1
   // 0:          -15.5 ... -15.3          0 ... 1
-  int index =
+  const int index =
       static_cast<int>(std::floor(2.5 + minor_scales_ * (log10 - min_exp_)));
   if (index < 0) return 0;
   if (index >= total_scales_) return total_scales_ + 3;
