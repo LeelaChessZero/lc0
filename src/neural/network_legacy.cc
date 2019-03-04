@@ -35,6 +35,7 @@ void OffsetVector(std::vector<float>* means, const std::vector<float>& biases) {
                  std::minus<float>());
 }
 
+
 }  // namespace
 
 LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
@@ -72,16 +73,17 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
       bn_betas(LayerAdapter(block.bn_betas()).as_vector()),
       bn_means(LayerAdapter(block.bn_means()).as_vector()),
       bn_stddivs(LayerAdapter(block.bn_stddivs()).as_vector()) {
-  // Merge gammas to stddivs and beta to means for backwards compatibility
-  const auto channels = bn_betas.size();
-  const auto epsilon = 1e-5;
-  for (auto i = size_t{0}; i < channels; i++) {
-    const auto s = bn_gammas[i] / std::sqrt(bn_stddivs[i] + epsilon);
-    bn_stddivs[i] = 1.0f / (s * s) - epsilon;
-    bn_means[i] -= bn_betas[i] / std::abs(s);
-    bn_gammas[i] = 1.0f;
-    bn_betas[i] = 0.0f;
-    biases.emplace_back(0.0f);
+  if (bn_betas.size() == 0) {
+    // Old net without gamma and beta.
+    for (auto i = size_t{0}; i < bn_means.size(); i++) {
+      bn_betas.emplace_back(0.0f);
+      bn_gammas.emplace_back(1.0f);
+    }
+  }
+  if (biases.size() == 0) {
+    for (auto i = size_t{0}; i < bn_means.size(); i++) {
+      biases.emplace_back(0.0f);
+    }
   }
 }
 
@@ -101,6 +103,36 @@ std::vector<float> LegacyWeights::ConvBlock::GetOffsetMeans() const {
   std::vector<float> means = bn_means;  // Copy.
   OffsetVector(&means, biases);
   return means;
+}
+
+
+// Get rid of the BN layer by adjusting weights and biases of the
+// convolution.
+void LegacyWeights::ConvBlock::FoldBN(size_t filterSize) {
+  const float epsilon = 1e-5f;
+
+  // Variance to gamma.
+  for (auto i = size_t{0}; i < bn_stddivs.size(); i++) {
+    bn_gammas[i] *= 1.0f / std::sqrt(bn_stddivs[i] + epsilon);
+    bn_stddivs[i] = 1.0f;
+  }
+
+  auto spatialSize = filterSize * filterSize;
+  auto outputs = biases.size();
+  auto inputs = weights.size() / (outputs * spatialSize);
+
+  for (auto o = size_t{0}; o < outputs; o++) {
+    for (auto c = size_t{0}; c < inputs; c++) {
+      for (auto i = size_t{0}; i < spatialSize; i++) {
+        weights[o * inputs * spatialSize + c * spatialSize + i] *=
+            bn_gammas[o];
+      }
+    }
+
+    biases[o] = -bn_gammas[o] * bn_means[o] + bn_betas[o];
+    bn_means[o] = 0.0f;
+    bn_betas[o] = 0.0f;
+  }
 }
 
 }  // namespace lczero

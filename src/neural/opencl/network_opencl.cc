@@ -21,7 +21,6 @@
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/shared/activation.h"
-#include "neural/shared/batchnorm.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
 

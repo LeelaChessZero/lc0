@@ -42,6 +42,7 @@ struct LegacyWeights {
     std::vector<float> GetInvertedStddev() const;
     // Return a vector of bn_means offset by biases of a ConvBlock.
     std::vector<float> GetOffsetMeans() const;
+    void FoldBN(size_t filterSize);
 
     Vec weights;
     Vec biases;

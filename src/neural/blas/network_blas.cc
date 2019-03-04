@@ -25,7 +25,6 @@
 #include "neural/network.h"
 #include "neural/network_legacy.h"
 #include "neural/shared/activation.h"
-#include "neural/shared/batchnorm.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
 
@@ -132,8 +131,8 @@ BlasComputation::BlasComputation(const LegacyWeights& weights,
 void BlasComputation::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
   const auto num_value_channels = weights_.ip1_val_b.size();
-  const auto num_value_input_planes = weights_.value.bn_means.size();
-  const auto num_policy_input_planes = weights_.policy.bn_means.size();
+  const auto num_value_input_planes = weights_.value.biases.size();
+  const auto num_policy_input_planes = weights_.policy.biases.size();
   const auto num_output_policy = kPolicyOutputs;
   const auto output_channels = weights_.input.biases.size();
 
@@ -192,9 +191,8 @@ void BlasComputation::ComputeBlocking() {
     convolve3.Forward(batch_size, kInputPlanes, output_channels, conv_in,
                       &weights_.input.weights[0], conv_out);
 
-    ApplyBatchNormalization(batch_size, output_channels, conv_out,
-                            weights_.input.bn_means.data(),
-                            weights_.input.bn_stddivs.data());
+    BiasResidualRelu(batch_size, output_channels, conv_out,
+                     weights_.input.biases.data());
 
     // Residual tower
 
@@ -208,8 +206,8 @@ void BlasComputation::ComputeBlocking() {
       convolve3.Forward(batch_size, output_channels, output_channels, conv_in,
                         &conv1.weights[0], conv_out);
 
-      ApplyBatchNormalization(batch_size, output_channels, &conv_out[0],
-                              conv1.bn_means.data(), conv1.bn_stddivs.data());
+      BiasResidualRelu(batch_size, output_channels, &conv_out[0],
+                       conv1.biases.data());
 
       std::swap(conv_in, res);
       std::swap(conv_out, conv_in);
@@ -219,9 +217,8 @@ void BlasComputation::ComputeBlocking() {
 
       if (residual.has_se) {
         // No relu if followed by SE-unit and residual is added later
-        ApplyBatchNormalization(batch_size, output_channels, conv_out,
-                                conv2.bn_means.data(), conv2.bn_stddivs.data(),
-                                nullptr, false);
+        BiasResidualRelu(batch_size, output_channels, &conv_out[0],
+                       conv2.biases.data(), nullptr, false);
 
         std::swap(conv_out, conv_in);
 
@@ -230,9 +227,8 @@ void BlasComputation::ComputeBlocking() {
                     se.w1.data(), se.b1.data(), se.w2.data(), se.b2.data(),
                     conv_out);
       } else {
-        ApplyBatchNormalization(batch_size, output_channels, conv_out,
-                                conv2.bn_means.data(), conv2.bn_stddivs.data(),
-                                res);
+        BiasResidualRelu(batch_size, output_channels, &conv_out[0],
+                       conv2.biases.data(), res);
       }
     }
 
@@ -241,17 +237,15 @@ void BlasComputation::ComputeBlocking() {
       convolve3.Forward(batch_size, output_channels, output_channels, conv_out,
                         &weights_.policy1.weights[0], res);
 
-      ApplyBatchNormalization(batch_size, output_channels, &res[0],
-                              weights_.policy1.bn_means.data(),
-                              weights_.policy1.bn_stddivs.data());
+      BiasResidualRelu(batch_size, output_channels, &res[0],
+                       weights_.policy1.biases.data());
 
       convolve3.Forward(batch_size, output_channels, num_policy_input_planes,
                         res, &weights_.policy.weights[0], policy_buffer.data());
 
-      ApplyBatchNormalization(
-          batch_size, num_policy_input_planes, &policy_buffer.data()[0],
-          weights_.policy.bn_means.data(), weights_.policy.bn_stddivs.data(),
-          nullptr, false);
+      BiasResidualRelu(batch_size, num_policy_input_planes,
+                       &policy_buffer.data()[0],
+                       weights_.policy.biases.data(), nullptr, false);
 
       // Mapping from convolutional policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
@@ -269,9 +263,8 @@ void BlasComputation::ComputeBlocking() {
           batch_size, output_channels, num_policy_input_planes, conv_out,
           weights_.policy.weights.data(), policy_buffer.data());
 
-      ApplyBatchNormalization(
-          batch_size, num_policy_input_planes, &policy_buffer[0],
-          weights_.policy.bn_means.data(), weights_.policy.bn_stddivs.data());
+      BiasResidualRelu(batch_size, num_policy_input_planes, &policy_buffer[0],
+                       weights_.policy.biases.data());
 
       FullyConnectedLayer::Forward1D(
           batch_size, num_policy_input_planes * kSquares, num_output_policy,
@@ -286,9 +279,8 @@ void BlasComputation::ComputeBlocking() {
                           conv_out, weights_.value.weights.data(),
                           value_buffer.data());
 
-    ApplyBatchNormalization(batch_size, num_value_input_planes,
-                            &value_buffer[0], weights_.value.bn_means.data(),
-                            weights_.value.bn_stddivs.data());
+    BiasResidualRelu(batch_size, num_value_input_planes, &value_buffer[0],
+                       weights_.value.biases.data());
 
     FullyConnectedLayer::Forward1D(
         batch_size, num_value_input_planes * kSquares, num_value_channels,
@@ -366,11 +358,10 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   const auto channels = static_cast<int>(weights_.input.biases.size());
   const auto residual_blocks = weights_.residual.size();
 
+  // Important to FoldBN before transforming weights.
+  weights_.input.FoldBN(3);
   weights_.input.weights =
       WinogradFilterTransformF(weights_.input.weights, channels, inputChannels);
-
-  weights_.input.OffsetMeans();
-  weights_.input.InvertStddev();
 
   // residual blocks
   for (size_t i = 0; i < residual_blocks; i++) {
@@ -378,35 +369,24 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     auto& conv1 = residual.conv1;
     auto& conv2 = residual.conv2;
 
+    conv1.FoldBN(3);
+    conv2.FoldBN(3);
     conv1.weights = WinogradFilterTransformF(conv1.weights, channels, channels);
     conv2.weights = WinogradFilterTransformF(conv2.weights, channels, channels);
-
-    conv1.OffsetMeans();
-    conv2.OffsetMeans();
-    conv1.InvertStddev();
-    conv2.InvertStddev();
   }
 
   if (conv_policy_) {
-    weights_.policy1.OffsetMeans();
-    weights_.policy1.InvertStddev();
+    weights_.policy1.FoldBN(3);
 
     weights_.policy1.weights =
         WinogradFilterTransformF(weights_.policy1.weights, channels, channels);
     auto pol_channels = weights_.policy.biases.size();
     weights_.policy.weights = WinogradFilterTransformF(weights_.policy.weights,
                                                        pol_channels, channels);
-    // Move bias to batchnorm
-    for (auto i = size_t{0}; i < pol_channels; i++) {
-      weights_.policy.bn_means.emplace_back(-weights_.policy.biases[i]);
-      weights_.policy.bn_stddivs.emplace_back(1.0f);
-    }
   } else {
-    weights_.policy.OffsetMeans();
-    weights_.policy.InvertStddev();
+    weights_.policy.FoldBN(1);
   }
-  weights_.value.OffsetMeans();
-  weights_.value.InvertStddev();
+  weights_.value.FoldBN(1);
 
 #ifdef USE_OPENBLAS
   int num_procs = openblas_get_num_procs();

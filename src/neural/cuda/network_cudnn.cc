@@ -207,22 +207,22 @@ class CudnnNetwork : public Network {
     // Hardcoded right now:
     //  3 for input and residual block convolutions.
     //  1 for policy and value head convolutions.
-    processConvBlock(weights.input, true, 3);
+    weights.input.FoldBN(3);
     for (int i = 0; i < numBlocks_; i++) {
       if (weights.residual[i].has_se) {
         has_se_ = true;
       }
-      processConvBlock(weights.residual[i].conv1, true, 3);
-      processConvBlock(weights.residual[i].conv2, true, 3);
+      weights.residual[i].conv1.FoldBN(3);
+      weights.residual[i].conv2.FoldBN(3);
     }
     if (conv_policy_) {
-      processConvBlock(weights.policy1, true, 1);
+      weights.policy1.FoldBN(3);
       // weights.policy doesn't have batch norm with convolutional policy
       // so no need to call processConvBlock for it.
     } else {
-      processConvBlock(weights.policy, true, 1);
+      weights.policy.FoldBN(1);
     }
-    processConvBlock(weights.value, true, 1);
+    weights.value.FoldBN(1);
 
     // 1. Allocate scratch space (used internally by cudnn to run convolutions,
     //     and also for format/layout conversion for weights).
@@ -660,11 +660,11 @@ class CudnnNetwork : public Network {
                         int filterSize) {
     const float epsilon = 1e-5f;
 
-    // Compute reciprocal of std-dev from the variances (so that it can be
-    // just multiplied).
+    // Variance to gamma.
     std::vector<float>& stddev = block.bn_stddivs;
-    for (auto&& w : stddev) {
-      w = 1.0f / std::sqrt(w + epsilon);
+    for (auto i = 0; i < block.bn_stddivs.size(); i++) {
+      block.bn_gammas[i] *= 1.0f / std::sqrt(block.bn_stddivs[i] + epsilon);
+      block.bn_stddivs[i] = 1.0f;
     }
 
     // Biases are not calculated and are typically zero but some networks
@@ -676,8 +676,7 @@ class CudnnNetwork : public Network {
     }
 
     // Get rid of the BN layer by adjusting weights and biases of the
-    // convolution idea proposed by Henrik Forstén and first implemented in
-    // leela go zero.
+    // convolution.
     if (foldBNLayer) {
       const int spatialSize = filterSize * filterSize;
       const int outputs = block.biases.size();
