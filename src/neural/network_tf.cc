@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -205,6 +205,7 @@ class TFNetworkComputation : public NetworkComputation {
   float GetQVal(int sample) const override {
     return output_[0].template matrix<float>()(sample, 0);
   }
+  float GetDVal(int sample) const override { return 0.0f; }
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }

@@ -34,7 +34,7 @@ Position::Position(const Position& parent, Move m)
     : no_capture_ply_(parent.no_capture_ply_ + 1),
       ply_count_(parent.ply_count_ + 1) {
   them_board_ = parent.us_board_;
-  bool capture = them_board_.ApplyMove(m);
+  const bool capture = them_board_.ApplyMove(m);
   us_board_ = them_board_;
   us_board_.Mirror();
   if (capture) no_capture_ply_ = 0;

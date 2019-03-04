@@ -44,8 +44,9 @@ SelfPlayLoop::~SelfPlayLoop() {
 }
 
 void SelfPlayLoop::RunLoop() {
-  options_.Add<BoolOption>(kInteractiveId) = false;
   SelfPlayTournament::PopulateOptions(&options_);
+
+  options_.Add<BoolOption>(kInteractiveId) = false;
 
   if (!options_.ProcessAllFlags()) return;
   if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
@@ -123,15 +124,51 @@ void SelfPlayLoop::CmdSetOption(const std::string& name,
 }
 
 void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
-  std::string res = "tournamentstatus";
-  if (info.finished) res += " final";
-  res += " win " + std::to_string(info.results[0][0]) + " " +
-         std::to_string(info.results[0][1]);
-  res += " lose " + std::to_string(info.results[2][0]) + " " +
-         std::to_string(info.results[2][1]);
-  res += " draw " + std::to_string(info.results[1][0]) + " " +
-         std::to_string(info.results[1][1]);
-  SendResponse(res);
+  const int winp1 = info.results[0][0] + info.results[0][1];
+  const int losep1 = info.results[2][0] + info.results[2][1];
+  const int draws = info.results[1][0] + info.results[1][1];
+
+  // Initialize variables.
+  float percentage = -1;
+  optional<float> elo;
+  optional<float> los;
+
+  // Only caculate percentage if any games at all (avoid divide by 0).
+  if ((winp1 + losep1 + draws) > 0) {
+    percentage =
+        (static_cast<float>(draws) / 2 + winp1) / (winp1 + losep1 + draws);
+  }
+  // Calculate elo and los if percentage strictly between 0 and 1 (avoids divide
+  // by 0 or overflow).
+  if ((percentage < 1) && (percentage > 0))
+    elo = -400 * log(1 / percentage - 1) / log(10);
+  if ((winp1 + losep1) > 0) {
+    los = .5f +
+          .5f * std::erf((winp1 - losep1) / std::sqrt(2.0 * (winp1 + losep1)));
+  }
+  std::ostringstream oss;
+  oss << "tournamentstatus";
+  if (info.finished) oss << " final";
+  oss << " P1: +" << winp1 << " -" << losep1 << " =" << draws;
+
+  if (percentage > 0) {
+    oss << " Win: " << std::fixed << std::setw(5) << std::setprecision(2)
+        << (percentage * 100.0f) << "%";
+  }
+  if (elo) {
+    oss << " Elo: " << std::fixed << std::setw(5) << std::setprecision(2)
+        << (elo.value_or(0.0f));
+  }
+  if (los) {
+    oss << " LOS: " << std::fixed << std::setw(5) << std::setprecision(2)
+        << (los.value_or(0.0f) * 100.0f) << "%";
+  }
+
+  oss << " P1-W: +" << info.results[0][0] << " -" << info.results[2][0] << " ="
+      << info.results[1][0];
+  oss << " P1-B: +" << info.results[0][1] << " -" << info.results[2][1] << " ="
+      << info.results[1][1];
+  SendResponse(oss.str());
 }
 
 }  // namespace lczero
