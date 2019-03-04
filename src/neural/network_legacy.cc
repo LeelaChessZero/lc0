@@ -78,7 +78,7 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
   for (auto i = size_t{0}; i < channels; i++) {
     const auto s = bn_gammas[i] / std::sqrt(bn_stddivs[i] + epsilon);
     bn_stddivs[i] = 1.0f / (s * s) - epsilon;
-    bn_means[i] -= bn_betas[i] / s;
+    bn_means[i] -= bn_betas[i] / std::abs(s);
     bn_gammas[i] = 1.0f;
     bn_betas[i] = 0.0f;
     biases.emplace_back(0.0f);
