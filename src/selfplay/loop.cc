@@ -50,14 +50,14 @@ const OptionId kDistributionOffsetId{
     "dist_offset", "",
     "Additional offset to apply to policy target before temperature."};
 
-int games = 0;
-int positions = 0;
-int rescored = 0;
-int delta = 0;
-int rescored2 = 0;
-int rescored3 = 0;
-int orig_counts[3] = {0, 0, 0};
-int fixed_counts[3] = {0, 0, 0};
+std::atomic<int> games = 0;
+std::atomic<int> positions = 0;
+std::atomic<int> rescored = 0;
+std::atomic<int> delta = 0;
+std::atomic<int> rescored2 = 0;
+std::atomic<int> rescored3 = 0;
+std::atomic<int> orig_counts[3] = {0, 0, 0};
+std::atomic<int> fixed_counts[3] = {0, 0, 0};
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset) {
@@ -317,6 +317,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 void ProcessFiles(const std::vector<std::string>& files,
                   SyzygyTablebase* tablebase, std::string outputDir,
                   float distTemp, float distOffset, int offset, int mod) {
+  std::cerr << "Thread: " << offset << " starting" << std::endl;
   for (int i = offset; i < files.size(); i += mod) {
     ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset);
   }
@@ -356,13 +357,34 @@ void RescoreLoop::RunLoop() {
   for (int i = 0; i < files.size(); i++) {
     files[i] = inputDir + "/" + files[i];
   }
-  // TODO: support threads option.
-  ProcessFiles(
-      files, &tablebase,
-      options_.GetOptionsDict().Get<std::string>(kOutputDirId.GetId()),
-      options_.GetOptionsDict().Get<float>(kTempId.GetId()),
-      options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()), 0,
-      1);
+  int threads = options_.GetOptionsDict().Get<int>(kThreadsId.GetId());
+  if (threads > 1) {
+    std::vector<std::thread> threads_;
+    int offset = 0;
+    while (threads_.size() <= threads) {
+      int offset_val = offset;
+      offset++;
+      threads_.emplace_back([this, offset_val, files, &tablebase, threads]() {
+        ProcessFiles(
+            files, &tablebase,
+            options_.GetOptionsDict().Get<std::string>(kOutputDirId.GetId()),
+            options_.GetOptionsDict().Get<float>(kTempId.GetId()),
+            options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()),
+            offset_val, threads);
+      });
+    }
+    for (int i = 0; i < threads_.size(); i++) {
+      threads_[i].join();
+    }
+
+  } else {
+    ProcessFiles(
+        files, &tablebase,
+        options_.GetOptionsDict().Get<std::string>(kOutputDirId.GetId()),
+        options_.GetOptionsDict().Get<float>(kTempId.GetId()),
+        options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()), 0,
+        1);
+  }
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;
   std::cout << "Rescores performed: " << rescored << std::endl;
