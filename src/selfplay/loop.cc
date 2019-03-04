@@ -50,12 +50,12 @@ const OptionId kDistributionOffsetId{
     "dist_offset", "",
     "Additional offset to apply to policy target before temperature."};
 
-std::atomic<int> games = 0;
-std::atomic<int> positions = 0;
-std::atomic<int> rescored = 0;
-std::atomic<int> delta = 0;
-std::atomic<int> rescored2 = 0;
-std::atomic<int> rescored3 = 0;
+std::atomic<int> games(0);
+std::atomic<int> positions(0);
+std::atomic<int> rescored(0);
+std::atomic<int> delta(0);
+std::atomic<int> rescored2(0);
+std::atomic<int> rescored3(0);
 std::atomic<int> orig_counts[3];
 std::atomic<int> fixed_counts[3];
 
