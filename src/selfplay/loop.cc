@@ -56,8 +56,8 @@ std::atomic<int> rescored = 0;
 std::atomic<int> delta = 0;
 std::atomic<int> rescored2 = 0;
 std::atomic<int> rescored3 = 0;
-std::atomic<int> orig_counts[3] = {0, 0, 0};
-std::atomic<int> fixed_counts[3] = {0, 0, 0};
+std::atomic<int> orig_counts[3];
+std::atomic<int> fixed_counts[3];
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset) {
@@ -329,6 +329,12 @@ RescoreLoop::RescoreLoop() {}
 RescoreLoop::~RescoreLoop() {}
 
 void RescoreLoop::RunLoop() {
+  orig_counts[0] = 0;
+  orig_counts[1] = 0;
+  orig_counts[2] = 0;
+  fixed_counts[0] = 0;
+  fixed_counts[1] = 0;
+  fixed_counts[2] = 0;
   options_.Add<StringOption>(kSyzygyTablebaseId);
   options_.Add<StringOption>(kInputDirId);
   options_.Add<StringOption>(kOutputDirId);
