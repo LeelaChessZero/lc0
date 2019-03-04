@@ -367,7 +367,7 @@ void RescoreLoop::RunLoop() {
   if (threads > 1) {
     std::vector<std::thread> threads_;
     int offset = 0;
-    while (threads_.size() <= threads) {
+    while (threads_.size() < threads) {
       int offset_val = offset;
       offset++;
       threads_.emplace_back([this, offset_val, files, &tablebase, threads]() {
