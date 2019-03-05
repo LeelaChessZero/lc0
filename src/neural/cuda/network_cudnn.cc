@@ -329,7 +329,7 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(softmaxPol));
     } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.policy.bn_means.size(), 8, 8, 1, kNumFilters,
+          resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters,
           true, true);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);

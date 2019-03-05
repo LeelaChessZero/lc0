@@ -25,17 +25,6 @@
 namespace lczero {
 namespace {
 static constexpr float kEpsilon = 1e-5f;
-
-void InvertVector(std::vector<float>* vec) {
-  for (auto& x : *vec) x = 1.0f / std::sqrt(x + kEpsilon);
-}
-
-void OffsetVector(std::vector<float>* means, const std::vector<float>& biases) {
-  std::transform(means->begin(), means->end(), biases.begin(), means->begin(),
-                 std::minus<float>());
-}
-
-
 }  // namespace
 
 LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
@@ -91,15 +80,16 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
     }
   }
 
-  // Fold batch norm into weights and biases.
-  const auto epsilon = 1e-5f;
+  if (bn_means.size() == 0) {
+      // No batch norm.
+      return;
+  }
 
+  // Fold batch norm into weights and biases.
   // Variance to gamma.
   for (auto i = size_t{0}; i < bn_stddivs.size(); i++) {
-    bn_gammas[i] *= 1.0f / std::sqrt(bn_stddivs[i] + epsilon);
-    bn_stddivs[i] = 1.0f;
+    bn_gammas[i] *= 1.0f / std::sqrt(bn_stddivs[i] + kEpsilon);
     bn_means[i] -= biases[i];
-    biases[i] = 0.0f;
   }
 
   auto outputs = biases.size();
@@ -113,28 +103,12 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
     }
 
     biases[o] = -bn_gammas[o] * bn_means[o] + bn_betas[o];
-    bn_means[o] = 0.0f;
-    bn_betas[o] = 0.0f;
-    bn_gammas[o] = 1.0f;
   }
+
+  // Batch norm weights are not needed anymore.
+  bn_stddivs.clear();
+  bn_means.clear();
+  bn_betas.clear();
+  bn_gammas.clear();
 }
-
-void LegacyWeights::ConvBlock::InvertStddev() { InvertVector(&bn_stddivs); }
-
-void LegacyWeights::ConvBlock::OffsetMeans() {
-  OffsetVector(&bn_means, biases);
-}
-
-std::vector<float> LegacyWeights::ConvBlock::GetInvertedStddev() const {
-  std::vector<float> stddivs = bn_stddivs;  // Copy.
-  InvertVector(&stddivs);
-  return stddivs;
-}
-
-std::vector<float> LegacyWeights::ConvBlock::GetOffsetMeans() const {
-  std::vector<float> means = bn_means;  // Copy.
-  OffsetVector(&means, biases);
-  return means;
-}
-
 }  // namespace lczero
