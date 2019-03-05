@@ -57,13 +57,13 @@ class OpenCLBuffers {
   void convolve3(int channels, int outputs, cl::Buffer& bufferIn,
                  cl::Buffer& bufferOut, cl::Buffer& bufferV,
                  cl::Buffer& bufferM, weight_slice_t weights,
-                 cl::Buffer* bufferResidual, weight_slice_t bn_weights,
+                 cl::Buffer* bufferResidual, weight_slice_t biases,
                  bool skip_in_transform, bool fuse_in_transform,
                  bool store_inout, bool relu, int batch_size);
 
   void convolve1(int channels, int outputs, cl::Buffer& bufferInput,
                  cl::Buffer& bufferOutput, cl::Buffer& bufferMerge,
-                 weight_slice_t weights, int batch_size);
+                 weight_slice_t weights, weight_slice_t biases, int batch_size);
 
   void innerproduct(cl::Buffer& input, weight_slice_t weights,
                     weight_slice_t biases, cl::Buffer& output, const int inputs,

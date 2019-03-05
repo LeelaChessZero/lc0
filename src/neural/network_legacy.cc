@@ -73,6 +73,11 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
       bn_betas(LayerAdapter(block.bn_betas()).as_vector()),
       bn_means(LayerAdapter(block.bn_means()).as_vector()),
       bn_stddivs(LayerAdapter(block.bn_stddivs()).as_vector()) {
+  if (weights.size() == 0) {
+      // Empty ConvBlock.
+      return;
+  }
+
   if (bn_betas.size() == 0) {
     // Old net without gamma and beta.
     for (auto i = size_t{0}; i < bn_means.size(); i++) {
@@ -99,11 +104,6 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
 
   auto outputs = biases.size();
 
-  if (outputs == 0) {
-      // Empty ConvBlock.
-      return;
-  }
-
   // We can treat the [inputs, filter_size, filter_size] dimensions as one.
   auto inputs = weights.size() / outputs;
 
@@ -115,6 +115,7 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
     biases[o] = -bn_gammas[o] * bn_means[o] + bn_betas[o];
     bn_means[o] = 0.0f;
     bn_betas[o] = 0.0f;
+    bn_gammas[o] = 1.0f;
   }
 }
 
