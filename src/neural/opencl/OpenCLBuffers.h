@@ -69,17 +69,14 @@ class OpenCLBuffers {
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
                     const int outputs, const int relu, int batch_size);
 
-  void squeeze_excitation(int channels,
-                          int fc_outputs,
-                          cl::Buffer& bufferIn,
-                          cl::Buffer& bufferTemp1,
-                          cl::Buffer& bufferTemp2,
-                          weight_slice_t weights,
-                          cl::Buffer& bufferResidual,
+  void squeeze_excitation(int channels, int fc_outputs, cl::Buffer& bufferIn,
+                          cl::Buffer& bufferTemp1, cl::Buffer& bufferTemp2,
+                          weight_slice_t weights, cl::Buffer& bufferResidual,
                           int batch_size);
 
-  void policymap(int N, const cl::Buffer& input, cl::Buffer& output, const cl::Buffer& indices,
-        int inputSize, int usedSize, int outputSize);
+  void policymap(int N, const cl::Buffer& input, cl::Buffer& output,
+                 const cl::Buffer& indices, int inputSize, int usedSize,
+                 int outputSize);
 
   const OpenCL_Network& m_opencl_net;
   const OpenCL& m_opencl;

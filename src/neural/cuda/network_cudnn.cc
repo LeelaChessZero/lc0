@@ -329,8 +329,8 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(softmaxPol));
     } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters,
-          true, true);
+          resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters, true,
+          true);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convPol));
@@ -683,7 +683,7 @@ class CudnnNetwork : public Network {
       CERR << "WARNING: code was compiled with unsupported CUDA version.";
     }
     if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
-       CERR << "WARNING: you will probably get better performance from the "
+      CERR << "WARNING: you will probably get better performance from the "
               "cudnn-fp16 backend.";
     }
   }

@@ -84,11 +84,12 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
                  alloc_vm_size);
 
   try {
-      m_pinnedOutBuffer_pol =
-          cl::Buffer(m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                     max_batch_size * finalSize_pol);
+    m_pinnedOutBuffer_pol = cl::Buffer(
+        m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
+        max_batch_size * finalSize_pol);
   } catch (const cl::Error& e) {
-    CERR << "Error in m_pinnedOutBuffer_pol: " << e.what() << ": " << e.err() << std::endl;
+    CERR << "Error in m_pinnedOutBuffer_pol: " << e.what() << ": " << e.err()
+         << std::endl;
     throw;
   }
 
@@ -237,7 +238,7 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
                 batch_size);     // batch_size
 
       policymap(batch_size, m_inBuffer2, m_pinnedOutBuffer_pol, indices[0],
-            layer.outputs * 8 * 8, layer.ip_in_size, layer.ip_out_size);
+                layer.outputs * 8 * 8, layer.ip_in_size, layer.ip_out_size);
 
     } else {
       assert(layer.is_value || layer.is_policy);
@@ -285,10 +286,9 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
 void OpenCLBuffers::convolve3(int channels, int outputs, cl::Buffer& bufferIn,
                               cl::Buffer& bufferOut, cl::Buffer& bufferV,
                               cl::Buffer& bufferM, weight_slice_t weights,
-                              cl::Buffer* bufferResidual,
-                              weight_slice_t biases, bool skip_in_transform,
-                              bool fuse_in_transform, bool store_inout,
-                              bool relu, int batch_size) {
+                              cl::Buffer* bufferResidual, weight_slice_t biases,
+                              bool skip_in_transform, bool fuse_in_transform,
+                              bool store_inout, bool relu, int batch_size) {
   auto mwg = m_opencl.m_sgemm_tuners.mwg;
   auto nwg = m_opencl.m_sgemm_tuners.nwg;
   auto kwg = m_opencl.m_sgemm_tuners.kwg;
@@ -350,7 +350,8 @@ void OpenCLBuffers::convolve3(int channels, int outputs, cl::Buffer& bufferIn,
     m_commandqueue.enqueueNDRangeKernel(m_sgemm_kernel, cl::NullRange,
                                         size_sgemm, local_sgemm);
   } catch (const cl::Error& e) {
-    CERR << "Error in convolve3/sgemm: " << e.what() << ": " << e.err() << std::endl;
+    CERR << "Error in convolve3/sgemm: " << e.what() << ": " << e.err()
+         << std::endl;
     throw;
   }
 
@@ -404,7 +405,8 @@ void OpenCLBuffers::convolve3(int channels, int outputs, cl::Buffer& bufferIn,
           cl::NDRange(outputs, wgs, batch_size));
     }
   } catch (const cl::Error& e) {
-    CERR << "Error in convolve3/out: " << e.what() << ": " << e.err() << std::endl;
+    CERR << "Error in convolve3/out: " << e.what() << ": " << e.err()
+         << std::endl;
     throw;
   }
 }
@@ -454,9 +456,9 @@ void OpenCLBuffers::squeeze_excitation(
 
 void OpenCLBuffers::convolve1(int channels, int outputs,
                               cl::Buffer& bufferInput, cl::Buffer& bufferOutput,
-                              cl::Buffer& bufferMerge, weight_slice_t conv_weights,
-                              weight_slice_t conv_biases,
-                              int batch_size) {
+                              cl::Buffer& bufferMerge,
+                              weight_slice_t conv_weights,
+                              weight_slice_t conv_biases, int batch_size) {
   // fixed for 8x8.
   constexpr int width = 8;
   constexpr int height = 8;
@@ -556,9 +558,9 @@ void OpenCLBuffers::innerproduct(cl::Buffer& input, weight_slice_t weights,
   }
 }
 
-void OpenCLBuffers::policymap(int N, const cl::Buffer& input, cl::Buffer& output,
-        const cl::Buffer& indices, int inputSize, int usedSize, int outputSize) {
-
+void OpenCLBuffers::policymap(int N, const cl::Buffer& input,
+                              cl::Buffer& output, const cl::Buffer& indices,
+                              int inputSize, int usedSize, int outputSize) {
   try {
     m_policymap_kernel.setArg(0, input);
     m_policymap_kernel.setArg(1, output);
@@ -571,8 +573,7 @@ void OpenCLBuffers::policymap(int N, const cl::Buffer& input, cl::Buffer& output
     m_commandqueue.enqueueNDRangeKernel(m_policymap_kernel, cl::NullRange,
                                         cl::NDRange(N * usedSize));
   } catch (const cl::Error& e) {
-    CERR << "Error in policymap: " << e.what() << ": " << e.err()
-         << std::endl;
+    CERR << "Error in policymap: " << e.what() << ": " << e.err() << std::endl;
     throw;
   }
 }

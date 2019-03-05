@@ -103,8 +103,8 @@ class BlasNetwork : public Network {
   virtual ~BlasNetwork(){};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<BlasComputation>(weights_, max_batch_size_,
-            wdl_, conv_policy_);
+    return std::make_unique<BlasComputation>(weights_, max_batch_size_, wdl_,
+                                             conv_policy_);
   }
 
  private:
@@ -118,8 +118,7 @@ class BlasNetwork : public Network {
 };
 
 BlasComputation::BlasComputation(const LegacyWeights& weights,
-                                 const size_t max_batch_size,
-                                 const bool wdl,
+                                 const size_t max_batch_size, const bool wdl,
                                  const bool conv_policy)
     : weights_(weights),
       max_batch_size_(max_batch_size),
@@ -218,7 +217,7 @@ void BlasComputation::ComputeBlocking() {
       if (residual.has_se) {
         // No relu if followed by SE-unit and residual is added later
         BiasResidualRelu(batch_size, output_channels, &conv_out[0],
-                       conv2.biases.data(), nullptr, false);
+                         conv2.biases.data(), nullptr, false);
 
         std::swap(conv_out, conv_in);
 
@@ -228,7 +227,7 @@ void BlasComputation::ComputeBlocking() {
                     conv_out);
       } else {
         BiasResidualRelu(batch_size, output_channels, &conv_out[0],
-                       conv2.biases.data(), res);
+                         conv2.biases.data(), res);
       }
     }
 
@@ -241,11 +240,12 @@ void BlasComputation::ComputeBlocking() {
                        weights_.policy1.biases.data());
 
       convolve3.Forward(batch_size, output_channels, num_policy_input_planes,
-                        res, weights_.policy.weights.data(), policy_buffer.data());
+                        res, weights_.policy.weights.data(),
+                        policy_buffer.data());
 
       BiasResidualRelu(batch_size, num_policy_input_planes,
-                       &policy_buffer.data()[0],
-                       weights_.policy.biases.data(), nullptr, false);
+                       &policy_buffer.data()[0], weights_.policy.biases.data(),
+                       nullptr, false);
 
       // Mapping from convolutional policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
@@ -280,7 +280,7 @@ void BlasComputation::ComputeBlocking() {
                           value_buffer.data());
 
     BiasResidualRelu(batch_size, num_value_input_planes, &value_buffer[0],
-                       weights_.value.biases.data());
+                     weights_.value.biases.data());
 
     FullyConnectedLayer::Forward1D(
         batch_size, num_value_input_planes * kSquares, num_value_channels,

@@ -149,12 +149,13 @@ class OpenCL_Network {
     m_layers[layer].ip_out_size = ip_out;
   }
 
-  void push_conv_policy(
-      unsigned int channels, unsigned int outputs, unsigned int ip_in,
-      unsigned int ip_out, const std::vector<float>& weights_1,
-      const std::vector<float>& biases_1,
-      const std::vector<float>& weights_2, const std::vector<float>& biases_2,
-      const std::vector<short>& indices) {
+  void push_conv_policy(unsigned int channels, unsigned int outputs,
+                        unsigned int ip_in, unsigned int ip_out,
+                        const std::vector<float>& weights_1,
+                        const std::vector<float>& biases_1,
+                        const std::vector<float>& weights_2,
+                        const std::vector<float>& biases_2,
+                        const std::vector<short>& indices) {
     size_t layer = get_layer_count();
     push_weights(layer, weights_1);
     push_weights(layer, biases_1);

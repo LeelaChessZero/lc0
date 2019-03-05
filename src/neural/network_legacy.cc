@@ -18,8 +18,8 @@
 
 #include "neural/network_legacy.h"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include "utils/weights_adapter.h"
 
 namespace lczero {
@@ -63,8 +63,8 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
       bn_means(LayerAdapter(block.bn_means()).as_vector()),
       bn_stddivs(LayerAdapter(block.bn_stddivs()).as_vector()) {
   if (weights.size() == 0) {
-      // Empty ConvBlock.
-      return;
+    // Empty ConvBlock.
+    return;
   }
 
   if (bn_betas.size() == 0) {
@@ -81,8 +81,8 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
   }
 
   if (bn_means.size() == 0) {
-      // No batch norm.
-      return;
+    // No batch norm.
+    return;
   }
 
   // Fold batch norm into weights and biases.
