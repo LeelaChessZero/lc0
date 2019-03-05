@@ -201,28 +201,10 @@ class CudnnNetwork : public Network {
 
     has_se_ = false;
 
-    // 0. Process weights.
-
-    // TODO: Get filter sizes from proto file?
-    // Hardcoded right now:
-    //  3 for input and residual block convolutions.
-    //  1 for policy and value head convolutions.
-    weights.input.FoldBN(3);
-    for (int i = 0; i < numBlocks_; i++) {
-      if (weights.residual[i].has_se) {
-        has_se_ = true;
-      }
-      weights.residual[i].conv1.FoldBN(3);
-      weights.residual[i].conv2.FoldBN(3);
+    // 0. Check for SE.
+    if (weights.residual[0].has_se) {
+      has_se_ = true;
     }
-    if (conv_policy_) {
-      weights.policy1.FoldBN(3);
-      // weights.policy doesn't have batch norm with convolutional policy
-      // so no need to call processConvBlock for it.
-    } else {
-      weights.policy.FoldBN(1);
-    }
-    weights.value.FoldBN(1);
 
     // 1. Allocate scratch space (used internally by cudnn to run convolutions,
     //     and also for format/layout conversion for weights).

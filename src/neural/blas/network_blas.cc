@@ -358,10 +358,7 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   const auto channels = static_cast<int>(weights_.input.biases.size());
   const auto residual_blocks = weights_.residual.size();
 
-  // Important to FoldBN before transforming weights.
-  weights_.input.FoldBN(3);
-  weights_.input.weights =
-      WinogradFilterTransformF(weights_.input.weights, channels, inputChannels);
+  WinogradFilterTransformF(weights_.input.weights, channels, inputChannels);
 
   // residual blocks
   for (size_t i = 0; i < residual_blocks; i++) {
@@ -369,24 +366,17 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     auto& conv1 = residual.conv1;
     auto& conv2 = residual.conv2;
 
-    conv1.FoldBN(3);
-    conv2.FoldBN(3);
     conv1.weights = WinogradFilterTransformF(conv1.weights, channels, channels);
     conv2.weights = WinogradFilterTransformF(conv2.weights, channels, channels);
   }
 
   if (conv_policy_) {
-    weights_.policy1.FoldBN(3);
-
     weights_.policy1.weights =
         WinogradFilterTransformF(weights_.policy1.weights, channels, channels);
     auto pol_channels = weights_.policy.biases.size();
     weights_.policy.weights = WinogradFilterTransformF(weights_.policy.weights,
                                                        pol_channels, channels);
-  } else {
-    weights_.policy.FoldBN(1);
   }
-  weights_.value.FoldBN(1);
 
 #ifdef USE_OPENBLAS
   int num_procs = openblas_get_num_procs();

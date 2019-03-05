@@ -85,6 +85,37 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
       biases.emplace_back(0.0f);
     }
   }
+
+  // Fold batch norm into weights and biases.
+  const auto epsilon = 1e-5f;
+
+  // Variance to gamma.
+  for (auto i = size_t{0}; i < bn_stddivs.size(); i++) {
+    bn_gammas[i] *= 1.0f / std::sqrt(bn_stddivs[i] + epsilon);
+    bn_stddivs[i] = 1.0f;
+    bn_means[i] -= biases[i];
+    biases[i] = 0.0f;
+  }
+
+  auto outputs = biases.size();
+
+  if (outputs == 0) {
+      // Empty ConvBlock.
+      return;
+  }
+
+  // We can treat the [inputs, filter_size, filter_size] dimensions as one.
+  auto inputs = weights.size() / outputs;
+
+  for (auto o = size_t{0}; o < outputs; o++) {
+    for (auto c = size_t{0}; c < inputs; c++) {
+      weights[o * inputs + c] *= bn_gammas[o];
+    }
+
+    biases[o] = -bn_gammas[o] * bn_means[o] + bn_betas[o];
+    bn_means[o] = 0.0f;
+    bn_betas[o] = 0.0f;
+  }
 }
 
 void LegacyWeights::ConvBlock::InvertStddev() { InvertVector(&bn_stddivs); }
@@ -103,38 +134,6 @@ std::vector<float> LegacyWeights::ConvBlock::GetOffsetMeans() const {
   std::vector<float> means = bn_means;  // Copy.
   OffsetVector(&means, biases);
   return means;
-}
-
-
-// Get rid of the BN layer by adjusting weights and biases of the
-// convolution.
-void LegacyWeights::ConvBlock::FoldBN(size_t filterSize) {
-  const float epsilon = 1e-5f;
-
-  // Variance to gamma.
-  for (auto i = size_t{0}; i < bn_stddivs.size(); i++) {
-    bn_gammas[i] *= 1.0f / std::sqrt(bn_stddivs[i] + epsilon);
-    bn_stddivs[i] = 1.0f;
-    bn_means[i] -= biases[i];
-    biases[i] = 0.0f;
-  }
-
-  auto spatialSize = filterSize * filterSize;
-  auto outputs = biases.size();
-  auto inputs = weights.size() / (outputs * spatialSize);
-
-  for (auto o = size_t{0}; o < outputs; o++) {
-    for (auto c = size_t{0}; c < inputs; c++) {
-      for (auto i = size_t{0}; i < spatialSize; i++) {
-        weights[o * inputs * spatialSize + c * spatialSize + i] *=
-            bn_gammas[o];
-      }
-    }
-
-    biases[o] = -bn_gammas[o] * bn_means[o] + bn_betas[o];
-    bn_means[o] = 0.0f;
-    bn_betas[o] = 0.0f;
-  }
 }
 
 }  // namespace lczero
