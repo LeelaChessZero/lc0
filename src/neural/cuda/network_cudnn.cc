@@ -656,50 +656,6 @@ class CudnnNetwork : public Network {
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void processConvBlock(LegacyWeights::ConvBlock& block, bool foldBNLayer,
-                        int filterSize) {
-    const float epsilon = 1e-5f;
-
-    // Variance to gamma.
-    std::vector<float>& stddev = block.bn_stddivs;
-    for (auto i = 0; i < block.bn_stddivs.size(); i++) {
-      block.bn_gammas[i] *= 1.0f / std::sqrt(block.bn_stddivs[i] + epsilon);
-      block.bn_stddivs[i] = 1.0f;
-    }
-
-    // Biases are not calculated and are typically zero but some networks
-    // might still have non-zero biases. Move biases to batchnorm means to
-    // make the output match without having to separately add the biases.
-    for (auto j = size_t{0}; j < block.bn_means.size(); j++) {
-      block.bn_means[j] -= block.biases[j];
-      block.biases[j] = 0.0f;
-    }
-
-    // Get rid of the BN layer by adjusting weights and biases of the
-    // convolution.
-    if (foldBNLayer) {
-      const int spatialSize = filterSize * filterSize;
-      const int outputs = block.biases.size();
-      const int channels = block.weights.size() / (outputs * spatialSize);
-
-      for (auto o = 0; o < outputs; o++) {
-        for (auto c = 0; c < channels; c++) {
-          for (auto i = 0; i < spatialSize; i++) {
-            block.weights[o * channels * spatialSize + c * spatialSize + i] *=
-                block.bn_stddivs[o];
-          }
-        }
-
-        block.bn_means[o] *= block.bn_stddivs[o];
-        block.bn_stddivs[o] = 1.0f;
-
-        // Move means to convolution biases.
-        block.biases[o] = -block.bn_means[o];
-        block.bn_means[o] = 0.0f;
-      }
-    }
-  }
-
   void showInfo(const cudaDeviceProp& deviceProp) const {
     CERR << "GPU: " << deviceProp.name;
     CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)

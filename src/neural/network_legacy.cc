@@ -115,6 +115,8 @@ void LegacyWeights::ConvBlock::FoldBN(size_t filterSize) {
   for (auto i = size_t{0}; i < bn_stddivs.size(); i++) {
     bn_gammas[i] *= 1.0f / std::sqrt(bn_stddivs[i] + epsilon);
     bn_stddivs[i] = 1.0f;
+    bn_means[i] -= biases[i];
+    biases[i] = 0.0f;
   }
 
   auto spatialSize = filterSize * filterSize;
