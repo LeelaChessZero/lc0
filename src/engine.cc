@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -109,7 +109,7 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
   // midpoint: The median length of games.
   // steepness: How quickly the function drops off from its maximum value,
   // around the midpoint.
-  float move = ply / 2.0f;
+  const float move = ply / 2.0f;
   return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
                              1 / steepness) -
          move;
@@ -128,8 +128,11 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
+  NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
+  SearchParams::Populate(options);
+
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
   options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
@@ -141,20 +144,18 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
+  ConfigFile::PopulateOptions(options);
+
   // Hide time curve options.
   options->HideOption(kTimeMidpointMoveId);
   options->HideOption(kTimeSteepnessId);
-
-  NetworkFactory::PopulateOptions(options);
-  SearchParams::Populate(options);
-  ConfigFile::PopulateOptions(options);
 }
 
 SearchLimits EngineController::PopulateSearchLimits(
     int ply, bool is_black, const GoParams& params,
     std::chrono::steady_clock::time_point start_time) {
   SearchLimits limits;
-  int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
+  const int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
   const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   if (!params.searchmoves.empty()) {
     limits.searchmoves.reserve(params.searchmoves.size());
@@ -168,7 +169,7 @@ SearchLimits EngineController::PopulateSearchLimits(
                                               *params.movetime - move_overhead);
   }
   if (params.nodes) limits.visits = *params.nodes;
-  int ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
+  const int ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
   if (ram_limit) {
     const auto cache_size =
         options_.Get<int>(kNNCacheSizeId.GetId()) * kAvgCacheItemSize;
@@ -182,12 +183,12 @@ SearchLimits EngineController::PopulateSearchLimits(
   if (params.depth) limits.depth = *params.depth;
   if (limits.infinite || !time) return limits;
   const optional<int64_t>& inc = is_black ? params.binc : params.winc;
-  int increment = inc ? std::max(int64_t(0), *inc) : 0;
+  const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
   // How to scale moves time.
-  float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  float time_curve_midpoint = options_.Get<float>(kTimeMidpointMoveId.GetId());
-  float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
+  const float slowmover = options_.Get<float>(kSlowMoverId.GetId());
+  const float time_curve_midpoint = options_.Get<float>(kTimeMidpointMoveId.GetId());
+  const float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
 
   float movestogo =
       ComputeEstimatedMovesToGo(ply, time_curve_midpoint, time_curve_steepness);
@@ -265,7 +266,7 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Network.
-  auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+  const auto network_configuration = NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
     network_ = NetworkFactory::LoadNetwork(options_);
     network_configuration_ = network_configuration;
@@ -316,7 +317,7 @@ void EngineController::SetupPosition(
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  bool is_same_game = tree_->ResetToPosition(fen, moves);
+  const bool is_same_game = tree_->ResetToPosition(fen, moves);
   if (!is_same_game) time_spared_ms_ = 0;
 }
 
@@ -325,7 +326,7 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
-  auto start_time = move_start_time_;
+  const auto start_time = move_start_time_;
   go_params_ = params;
 
   ThinkingInfo::Callback info_callback(info_callback_);

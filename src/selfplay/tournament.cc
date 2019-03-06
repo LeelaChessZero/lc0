@@ -69,11 +69,14 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player1");
   options->AddContext("player2");
 
+  NetworkFactory::PopulateOptions(options);
+  options->Add<IntOption>(kThreadsId, 1, 8) = 1;
+  options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
+  SearchParams::Populate(options);
+
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -1, 999999) = -1;
   options->Add<IntOption>(kParallelGamesId, 1, 256) = 8;
-  options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
   options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
   options->Add<IntOption>(kVisitsId, -1, 999999999) = -1;
   options->Add<IntOption>(kTimeMsId, -1, 999999999) = -1;
@@ -81,9 +84,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
 
-  NetworkFactory::PopulateOptions(options);
-  SearchParams::Populate(options);
   SelfPlayGame::PopulateUciParams(options);
+
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 32);
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 1.2f);
@@ -235,7 +237,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   auto& game = **game_iter;
 
   // If kResignPlaythrough == 0, then this comparison is unconditionally true
-  bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
+  const bool enable_resign = Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
 
   // PLAY GAME!
   game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining,
