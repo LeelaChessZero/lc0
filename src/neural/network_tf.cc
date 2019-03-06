@@ -314,6 +314,9 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 template <bool CPU>
 std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
                                        const OptionsDict& options) {
+  // Tensorflow backend needs to be updated to use folded batch norms.
+  throw Exception("Tensorflow backend is not supported.");
+
   if (weights.format().network_format().network() !=
       pblczero::NetworkFormat::NETWORK_CLASSICAL) {
     throw Exception(
