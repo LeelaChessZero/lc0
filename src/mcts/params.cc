@@ -104,6 +104,12 @@ const OptionId SearchParams::kSmartPruningFactorId{
     "promising moves from being considered even earlier. Values less than 1 "
     "causes hopeless moves to still have some attention. When set to 0, smart "
     "pruning is deactivated."};
+const OptionId SearchParams::kEarlyRootWideningId{
+    "early-root-widening", "EarlyRootWidening",
+    "Visit root children earlier than when MCTS would normally pick them so "
+    "search is guided by the network eval instead of unvisited node behavior. "
+    "This emulates AlphaZero's TPU behavior of visiting children like these "
+    "for free when attempting to fill up a batch for evaluation."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
     "How is an eval of unvisited node determined. \"reduction\" subtracts "
@@ -199,6 +205,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
+  options->Add<BoolOption>(kEarlyRootWideningId) = true;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 1.2f;
@@ -227,6 +234,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
+      kEarlyRootWidening(options.Get<bool>(kEarlyRootWideningId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
       kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
