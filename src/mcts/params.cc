@@ -202,7 +202,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
   fpu_strategy.push_back("same");
-  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "absolute";
+  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
@@ -232,10 +232,13 @@ SearchParams::SearchParams(const OptionsDict& options)
                    "absolute"),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),
       kFpuAbsoluteAtRoot(
+          (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
+           kFpuAbsolute) ||
           options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "absolute"),
-      kFpuReductionAtRoot(options.Get<std::string>(
-                              kFpuStrategyAtRootId.GetId()) == "reduction"),
-      kFpuValueAtRoot(options.Get<float>(kFpuValueAtRootId.GetId())),
+      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId.GetId()) ==
+                              "same"
+                          ? kFpuValue
+                          : options.Get<float>(kFpuValueAtRootId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),

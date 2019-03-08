@@ -78,11 +78,8 @@ class SearchParams {
     return options_.Get<bool>(kLogLiveStatsId.GetId());
   }
   float GetSmartPruningFactor() const { return kSmartPruningFactor; }
-  bool GetFpuAbsolute() const { return kFpuAbsolute; }
-  float GetFpuValue() const { return kFpuValue; }
-  bool GetFpuAbsoluteAtRoot() const { return kFpuAbsoluteAtRoot; }
-  bool GetFpuReductionAtRoot() const { return kFpuReductionAtRoot; }
-  float GetFpuValueAtRoot() const { return kFpuValueAtRoot; }
+  bool GetFpuAbsolute(bool at_root) const { return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute; }
+  float GetFpuValue(bool at_root) const { return at_root ? kFpuValueAtRoot : kFpuValue; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
@@ -149,7 +146,6 @@ class SearchParams {
   const bool kFpuAbsolute;
   const float kFpuValue;
   const bool kFpuAbsoluteAtRoot;
-  const bool kFpuReductionAtRoot;
   const float kFpuValueAtRoot;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
