@@ -96,6 +96,9 @@ const OptionId SearchParams::kNoiseId{
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move."};
+const OptionId SearchParams::kLogLiveStatsId{
+    "log-live-stats", "LogLiveStats",
+    "Do VerboseMoveStats on every info update."};
 const OptionId SearchParams::kSmartPruningFactorId{
     "smart-pruning-factor", "SmartPruningFactor",
     "Do not spend time on the moves which cannot become bestmove given the "
@@ -204,6 +207,7 @@ void SearchParams::Populate(OptionsParser* options) {
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
+  options->Add<BoolOption>(kLogLiveStatsId) = false;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   options->Add<BoolOption>(kEarlyRootWideningId) = true;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
@@ -223,6 +227,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
+
+  options->HideOption(kLogLiveStatsId);
   options->Add<BoolOption>(kCertaintyPropagationId) = false;
   options->Add<BoolOption>(kTwoFoldDrawScoringId) = false;
 }

@@ -104,7 +104,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
-  auto score_type = params_.GetScoreType();
+  const auto score_type = params_.GetScoreType();
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -176,6 +176,9 @@ void Search::MaybeOutputInfo() {
        last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
            GetTimeSinceStart())) {
     SendUciInfo();
+    if (params_.GetLogLiveStats()) {
+      SendMovesStats();
+    }
     if (stop_.load(std::memory_order_acquire) && !ok_to_respond_bestmove_) {
       ThinkingInfo info;
       info.comment =
@@ -323,7 +326,7 @@ NNCacheLock Search::GetCachedNNEval(Node* node) const {
   for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
     history.Append(*iter);
   }
-  auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
+  const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
   NNCacheLock nneval(cache_, hash);
   return nneval;
 }
@@ -430,18 +433,19 @@ void Search::UpdateRemainingMoves() {
   if (limits_.search_deadline && !nps_start_time_) {
     nps_start_time_ = std::chrono::steady_clock::now();
   } else if (limits_.search_deadline) {
-    auto time_since_start =
+    const auto time_since_start =
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - *nps_start_time_)
             .count();
     if (time_since_start > kSmartPruningToleranceMs) {
-      auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
+      const auto nps = 1000LL *
+                           (total_playouts_ + kSmartPruningToleranceNodes) /
                      time_since_start +
                  1;
-      int64_t remaining_time = GetTimeToDeadline();
+      const int64_t remaining_time = GetTimeToDeadline();
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
-      int64_t remaining_playouts =
+      const int64_t remaining_playouts =
           remaining_time * nps / params_.GetSmartPruningFactor() / 1000;
       // Don't assign directly to remaining_playouts_ as overflow is possible.
       if (remaining_playouts < remaining_playouts_)
@@ -452,7 +456,8 @@ void Search::UpdateRemainingMoves() {
   if (limits_.visits >= 0) {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
-    auto remaining_visits = limits_.visits - total_playouts_ - initial_visits_ +
+    const auto remaining_visits = limits_.visits - total_playouts_ -
+                                  initial_visits_ +
                             params_.GetMiniBatchSize() - 1;
 
     if (remaining_visits < remaining_playouts_)
@@ -461,7 +466,7 @@ void Search::UpdateRemainingMoves() {
   if (limits_.playouts >= 0) {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
-    auto remaining_playouts =
+    const auto remaining_playouts =
         limits_.visits - total_playouts_ + params_.GetMiniBatchSize() + 1;
     if (remaining_playouts < remaining_playouts_)
       remaining_playouts_ = remaining_playouts;
@@ -629,7 +634,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   float max_n = 0.0;
-  float offset = params_.GetTemperatureVisitOffset();
+  const float offset = params_.GetTemperatureVisitOffset();
   float max_eval = -1.0f;
   const float fpu = GetFpu(params_, parent, parent == root_node_);
 
@@ -663,7 +668,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   }
   assert(sum);
 
-  float toss = Random::Get().GetFloat(cumulative_sums.back());
+  const float toss = Random::Get().GetFloat(cumulative_sums.back());
   int idx =
       std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
       cumulative_sums.begin();
@@ -921,7 +926,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
-  int64_t best_node_n = search_->current_best_edge_.GetN();
+  const int64_t best_node_n = search_->current_best_edge_.GetN();
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
@@ -973,7 +978,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     const float cpuct = ComputeCpuct(params_, node->GetN());
-    float puct_mult =
+    const float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
@@ -1107,7 +1112,8 @@ CertaintyResult SearchWorker::EvalPosition(const Node* node,
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
-      WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
+      const WDLScore wdl =
+          search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
       if (state != FAIL) {
@@ -1163,7 +1169,7 @@ void SearchWorker::ExtendNode(Node* node) {
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
-  auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
+  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) return true;
@@ -1239,7 +1245,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
   const float cpuct = ComputeCpuct(params_, node->GetN());
-  float puct_mult = cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const float puct_mult =
+      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
@@ -1339,7 +1346,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // Normalize P values to add up to 1.0.
   if (total > 0.0f) {
-    float scale = 1.0f / total;
+    const float scale = 1.0f / total;
     for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
   }
   // Add Dirichlet noise if enabled and at root.

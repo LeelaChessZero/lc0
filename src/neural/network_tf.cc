@@ -205,6 +205,7 @@ class TFNetworkComputation : public NetworkComputation {
   float GetQVal(int sample) const override {
     return output_[0].template matrix<float>()(sample, 0);
   }
+  float GetDVal(int sample) const override { return 0.0f; }
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
@@ -313,6 +314,9 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 template <bool CPU>
 std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
                                        const OptionsDict& options) {
+  // Tensorflow backend needs to be updated to use folded batch norms.
+  throw Exception("Tensorflow backend is not supported.");
+
   if (weights.format().network_format().network() !=
       pblczero::NetworkFormat::NETWORK_CLASSICAL) {
     throw Exception(
