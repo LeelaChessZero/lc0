@@ -174,9 +174,9 @@ void Edge::MakeTerminal(GameResult result) {
 void Edge::MakeCertain(CertaintyResult certaintyresult) {
   certainty_state_ |= kCertainMask | kUpperBound | kLowerBound;
   certainty_state_ &= kGameResultClear;
-  if (certaintyresult.gameresult == GameResult::WHITE_WON) {
+  if (certaintyresult.gameResult == GameResult::WHITE_WON) {
     certainty_state_ |= kGameResultWin;
-  } else if (certaintyresult.gameresult == GameResult::BLACK_WON) {
+  } else if (certaintyresult.gameResult == GameResult::BLACK_WON) {
     certainty_state_ |= kGameResultLoss;
   }
   if (certaintyresult.trigger == CertaintyTrigger::TB_HIT) certainty_state_ |= kTBHit;
