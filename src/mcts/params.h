@@ -42,15 +42,14 @@ class SearchParams {
   static void Populate(OptionsParser* options);
 
   // Parameter getters.
-  int GetMiniBatchSize() const {
-    return kMiniBatchSize;
-  }
+  int GetMiniBatchSize() const { return kMiniBatchSize; }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
+  float GetStdDevFactor() const { return kStdDevFactor; }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -78,8 +77,12 @@ class SearchParams {
     return options_.Get<bool>(kLogLiveStatsId.GetId());
   }
   float GetSmartPruningFactor() const { return kSmartPruningFactor; }
-  bool GetFpuAbsolute(bool at_root) const { return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute; }
-  float GetFpuValue(bool at_root) const { return at_root ? kFpuValueAtRoot : kFpuValue; }
+  bool GetFpuAbsolute(bool at_root) const {
+    return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute;
+  }
+  float GetFpuValue(bool at_root) const {
+    return at_root ? kFpuValueAtRoot : kFpuValue;
+  }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
@@ -104,6 +107,7 @@ class SearchParams {
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
+  static const OptionId kStdDevFactorId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
@@ -141,6 +145,7 @@ class SearchParams {
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
+  const float kStdDevFactor;
   const bool kNoise;
   const float kSmartPruningFactor;
   const bool kFpuAbsolute;

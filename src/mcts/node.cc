@@ -242,7 +242,11 @@ void Node::CancelScoreUpdate(int multivisit) {
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
-  // Recompute Q.
+  // Update the sum of squared differences.
+  sum_squared_diff_q_ +=
+      (v - q_) * (v - q_) * multivisit * n_ / (n_ + multivisit);
+
+  // Recompute Q and D.
   q_ += multivisit * (v - q_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
 

@@ -209,15 +209,18 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const float stddev_factor = params_.GetStdDevFactor();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
-        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff)) <
-               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff));
+      [&fpu, &U_coeff, &stddev_factor](EdgeAndNode a, EdgeAndNode b) {
+        return std::forward_as_tuple(
+                   a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, stddev_factor)) <
+               std::forward_as_tuple(
+                   b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, stddev_factor));
       });
 
   std::vector<std::string> infos;
@@ -239,14 +242,15 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
         << ") ";
 
-    oss << "(D: " << std::setw(6) << std::setprecision(3)
-        << edge.GetD() << ") ";
-
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
+    oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
+    oss << "(U: " << std::setw(6) << std::setprecision(5)
+        << edge.GetU(U_coeff, params_.GetStdDevFactor()) << ") ";
+
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(fpu) + edge.GetU(U_coeff, params_.GetStdDevFactor())
+        << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -422,8 +426,8 @@ void Search::UpdateRemainingMoves() {
     if (time_since_start > kSmartPruningToleranceMs) {
       const auto nps = 1000LL *
                            (total_playouts_ + kSmartPruningToleranceNodes) /
-                     time_since_start +
-                 1;
+                           time_since_start +
+                       1;
       const int64_t remaining_time = GetTimeToDeadline();
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
@@ -439,8 +443,8 @@ void Search::UpdateRemainingMoves() {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     const auto remaining_visits = limits_.visits - total_playouts_ -
-                                  initial_visits_ +
-                            params_.GetMiniBatchSize() - 1;
+                                  initial_visits_ + params_.GetMiniBatchSize() -
+                                  1;
 
     if (remaining_visits < remaining_playouts_)
       remaining_playouts_ = remaining_visits;
@@ -498,10 +502,11 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
-  return syzygy_tb_->root_probe(played_history_.Last(),
-                                params_.GetSyzygyFastPlay() ||
-                                played_history_.DidRepeatSinceLastZeroingMove(),
-                                root_moves) ||
+  return syzygy_tb_->root_probe(
+             played_history_.Last(),
+             params_.GetSyzygyFastPlay() ||
+                 played_history_.DidRepeatSinceLastZeroingMove(),
+             root_moves) ||
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
@@ -558,7 +563,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
-                                                         : edges.end();
+                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
 
   std::vector<EdgeAndNode> res;
@@ -953,7 +958,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
-      const float score = child.GetU(puct_mult) + Q;
+      const float score = child.GetU(puct_mult, params_.GetStdDevFactor()) + Q;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -966,6 +971,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
+      // TODO(ddobbelaere): Investigate if stddev term has to be taken into
+      // account.
       int estimated_visits_to_change_best =
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
@@ -1153,7 +1160,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu), edge);
+    scores.emplace_back(
+        -edge.GetU(puct_mult, params_.GetStdDevFactor()) - edge.GetQ(fpu),
+        edge);
   }
 
   size_t first_unsorted_index = 0;

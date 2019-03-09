@@ -155,6 +155,10 @@ class Node {
   // for terminal nodes.
   float GetQ() const { return q_; }
   float GetD() const { return d_; }
+  // Returns standard deviation of value head in subtree.
+  float GetQStdDev() const {
+    return n_ > 0 ? sqrt(sum_squared_diff_q_ / n_) : 0.0f;
+  }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -267,6 +271,9 @@ class Node {
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
   float q_ = 0.0f;
+  // Sum of squared differences of the value head of the neural network over all
+  // visited nodes in subtree w.r.t. the average q_.
+  float sum_squared_diff_q_ = 0.0f;
   // Averaged draw probability. Works similarly to Q, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -340,6 +347,7 @@ class EdgeAndNode {
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
+  float GetQStdDev() const { return node_ ? node_->GetQStdDev() : 0.0f; }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
@@ -354,10 +362,11 @@ class EdgeAndNode {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
 
-  // Returns U = numerator * p / N.
+  // Returns U = numerator * p / N + stddev_factor * GetQStdDev().
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+  float GetU(float numerator, float stddev_factor) const {
+    return numerator * GetP() / (1 + GetNStarted()) +
+           stddev_factor * GetQStdDev();
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
