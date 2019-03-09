@@ -980,8 +980,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
-    const float fpu = is_root_node && params_.GetEarlyRootWidening() ? 1.0f :
-                          GetFpu(params_, node, is_root_node);
+	const float fpu = GetFpu(params_, node, is_root_node);
     bool parent_upperbounded = node->IsOnlyUBounded();
     for (auto child : node->Edges()) {
       if (is_root_node) {
