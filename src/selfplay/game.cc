@@ -118,7 +118,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     float eval = best_eval.first;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
-    int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
+    const int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
     auto best_w = (best_eval.first + 1.0f - best_eval.second) / 2.0f;
     auto best_d = best_eval.second;
     auto best_l = best_w - best_eval.first;
@@ -156,7 +156,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     }
 
     // Add best move to the tree.
-    Move move = search_->GetBestMove().first;
+    const Move move = search_->GetBestMove().first;
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;

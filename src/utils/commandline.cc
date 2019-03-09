@@ -59,7 +59,7 @@ void CommandLine::RegisterMode(const std::string& mode,
 
 std::string CommandLine::BinaryDirectory() {
   std::string path = binary_;
-  auto pos = path.find_last_of("\\/");
+  const auto pos = path.find_last_of("\\/");
   if (pos == std::string::npos) {
     return ".";
   }
