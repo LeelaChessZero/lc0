@@ -47,8 +47,8 @@ class DemuxingComputation : public NetworkComputation {
   int GetBatchSize() const override { return planes_.size(); }
 
   float GetQVal(int sample) const override {
-    int idx = sample / partial_size_;
-    int offset = sample % partial_size_;
+    const int idx = sample / partial_size_;
+    const int offset = sample % partial_size_;
     return parents_[idx]->GetQVal(offset);
   }
 
@@ -59,8 +59,8 @@ class DemuxingComputation : public NetworkComputation {
   }
 
   float GetPVal(int sample, int move_id) const override {
-    int idx = sample / partial_size_;
-    int offset = sample % partial_size_;
+    const int idx = sample / partial_size_;
+    const int offset = sample % partial_size_;
     return parents_[idx]->GetPVal(offset, move_id);
   }
 
@@ -75,7 +75,7 @@ class DemuxingComputation : public NetworkComputation {
   NetworkComputation* AddParentFromNetwork(Network* network) {
     std::unique_lock<std::mutex> lock(mutex_);
     parents_.emplace_back(network->NewComputation());
-    int cur_idx = (parents_.size() - 1) * partial_size_;
+    const int cur_idx = (parents_.size() - 1) * partial_size_;
     for (int i = cur_idx; i < std::min(GetBatchSize(), cur_idx + partial_size_);
          i++) {
       parents_.back()->AddInput(std::move(planes_[i]));
@@ -208,7 +208,7 @@ void DemuxingComputation::ComputeBlocking() {
   if (partial_size_ < network_->minimum_split_size_) {
     partial_size_ = std::min(GetBatchSize(), network_->minimum_split_size_);
   }
-  int splits = (GetBatchSize() + partial_size_ - 1) / partial_size_;
+  const int splits = (GetBatchSize() + partial_size_ - 1) / partial_size_;
 
   std::unique_lock<std::mutex> lock(mutex_);
   dataready_ = splits;
