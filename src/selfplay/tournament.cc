@@ -98,7 +98,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(SearchParams::kSmartPruningFactorId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kTemperatureId.GetId(), 1.0f);
   defaults->Set<bool>(SearchParams::kNoiseId.GetId(), true);
-  defaults->Set<float>(SearchParams::kFpuReductionId.GetId(), 0.0f);
+  defaults->Set<float>(SearchParams::kFpuValueId.GetId(), 0.0f);
   defaults->Set<std::string>(SearchParams::kHistoryFillId.GetId(), "no");
   defaults->Set<std::string>(NetworkFactory::kBackendId.GetId(),
                              "multiplexing");
