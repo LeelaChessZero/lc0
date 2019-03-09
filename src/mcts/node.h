@@ -362,11 +362,11 @@ class EdgeAndNode {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
 
-  // Returns U = numerator * p / N + stddev_factor * GetQStdDev().
+  // Returns U = numerator * p / N + stddev_multiplier * GetQStdDev().
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator, float stddev_factor) const {
+  float GetU(float numerator, float stddev_multiplier) const {
     return numerator * GetP() / (1 + GetNStarted()) +
-           stddev_factor * GetQStdDev();
+           stddev_multiplier * GetQStdDev();
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
