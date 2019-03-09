@@ -1155,7 +1155,7 @@ void SearchWorker::ExtendNode(Node* node) {
 
   if (certaintyresult.trigger != CertaintyTrigger::NONE) {
     if (certaintyresult.trigger == CertaintyTrigger::TERMINAL)
-      node->MakeTerminal(certaintyresult.gameresult);
+      node->MakeTerminal(certaintyresult.gameResult);
     else
       node->MakeCertain(certaintyresult);
     return;

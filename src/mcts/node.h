@@ -292,10 +292,10 @@ class Node {
   }
   void MakeCertain(CertaintyResult certaintyresult) {
     if (GetOwnEdge()) GetOwnEdge()->MakeCertain(certaintyresult);
-    if (certaintyresult.gameresult == GameResult::DRAW) {
+    if (certaintyresult.gameResult == GameResult::DRAW) {
       q_ = 0.0f;
       d_ = 1.0f;
-    } else if (certaintyresult.gameresult == GameResult::WHITE_WON) {
+    } else if (certaintyresult.gameResult == GameResult::WHITE_WON) {
       q_ = 1.0f;
       d_ = 0.0f;
     } else {
