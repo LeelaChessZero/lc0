@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2019 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -34,14 +34,6 @@ struct LegacyWeights {
   using Vec = std::vector<float>;
   struct ConvBlock {
     explicit ConvBlock(const pblczero::Weights::ConvBlock& block);
-    // Invert the bn_stddivs elements of a ConvBlock.
-    void InvertStddev();
-    // Offset bn_means by biases of a ConvBlock.
-    void OffsetMeans();
-    // Return a vector of inverted bn_stddivs of a ConvBlock.
-    std::vector<float> GetInvertedStddev() const;
-    // Return a vector of bn_means offset by biases of a ConvBlock.
-    std::vector<float> GetOffsetMeans() const;
 
     Vec weights;
     Vec biases;
@@ -74,6 +66,8 @@ struct LegacyWeights {
   std::vector<Residual> residual;
 
   // Policy head
+  // Extra convolution for AZ-style policy head
+  ConvBlock policy1;
   ConvBlock policy;
   Vec ip_pol_w;
   Vec ip_pol_b;
