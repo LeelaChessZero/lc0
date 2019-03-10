@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -96,6 +96,9 @@ const OptionId SearchParams::kNoiseId{
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move."};
+const OptionId SearchParams::kLogLiveStatsId{
+    "log-live-stats", "LogLiveStats",
+    "Do VerboseMoveStats on every info update."};
 const OptionId SearchParams::kSmartPruningFactorId{
     "smart-pruning-factor", "SmartPruningFactor",
     "Do not spend time on the moves which cannot become bestmove given the "
@@ -106,24 +109,27 @@ const OptionId SearchParams::kSmartPruningFactorId{
     "pruning is deactivated."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
-    "How is an eval of unvisited node determined. \"reduction\" subtracts "
-    "--fpu-reduction value from the parent eval. \"absolute\" sets eval of "
-    "unvisited nodes to the value specified in --fpu-value."};
-// TODO(crem) Make FPU in "reduction" mode use fpu-value too. For now it's kept
-// for backwards compatibility.
-const OptionId SearchParams::kFpuReductionId{
-    "fpu-reduction", "FpuReduction",
-    "\"First Play Urgency\" reduction (used when FPU strategy is "
-    "\"reduction\"). Normally when a move has no visits, "
-    "it's eval is assumed to be equal to parent's eval. With non-zero FPU "
-    "reduction, eval of unvisited move is decreased by that value, "
-    "discouraging visits of unvisited moves, and saving those visits for "
-    "(hopefully) more promising moves."};
+    "How is an eval of unvisited node determined. \"First Play Urgency\" "
+    "changes search behavior to visit unvisited nodes earlier or later by "
+    "using a placeholder eval before checking the network. The value specified "
+    "with --fpu-value results in \"reduction\" subtracting that value from the "
+    "parent eval while \"absolute\" directly uses that value."};
 const OptionId SearchParams::kFpuValueId{
     "fpu-value", "FpuValue",
-    "\"First Play Urgency\" value. When FPU strategy is \"absolute\", value of "
-    "unvisited node is assumed to be equal to this value, and does not depend "
-    "on parent eval."};
+    "\"First Play Urgency\" value used to adjust unvisited node eval based on "
+    "--fpu-strategy."};
+const OptionId SearchParams::kFpuStrategyAtRootId{
+    "fpu-strategy-at-root", "FpuStrategyAtRoot",
+    "How is an eval of unvisited root children determined. Just like "
+    "--fpu-strategy except only at the root level and adjusts unvisited root "
+    "children eval with --fpu-value-at-root. In addition to matching the "
+    "strategies from --fpu-strategy, this can be \"same\" to disable the "
+    "special root behavior."};
+const OptionId SearchParams::kFpuValueAtRootId{
+    "fpu-value-at-root", "FpuValueAtRoot",
+    "\"First Play Urgency\" value used to adjust unvisited root children eval "
+    "based on --fpu-strategy-at-root. Has no effect if --fpu-strategy-at-root "
+    "is \"same\"."};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
     "Length of history, in half-moves, to include into the cache key. When "
@@ -190,11 +196,14 @@ void SearchParams::Populate(OptionsParser* options) {
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
+  options->Add<BoolOption>(kLogLiveStatsId) = false;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
-  options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 1.2f;
-  options->Add<FloatOption>(kFpuValueId, -1.0f, 1.0f) = -1.0f;
+  options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
+  fpu_strategy.push_back("same");
+  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
+  options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
@@ -208,6 +217,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
+
+  options->HideOption(kLogLiveStatsId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -219,8 +230,15 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
-      kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),
+      kFpuAbsoluteAtRoot(
+          (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
+           kFpuAbsolute) ||
+          options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "absolute"),
+      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId.GetId()) ==
+                              "same"
+                          ? kFpuValue
+                          : options.Get<float>(kFpuValueAtRootId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
