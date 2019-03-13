@@ -209,18 +209,18 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float stddev_multiplier = cpuct * params_.GetStdDevFactor();
+  const float stderr_multiplier = cpuct * params_.GetStdErrFactor();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff, &stddev_multiplier](EdgeAndNode a, EdgeAndNode b) {
+      [&fpu, &U_coeff, &stderr_multiplier](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
-                   a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, stddev_multiplier)) <
+                   a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, stderr_multiplier)) <
                std::forward_as_tuple(
-                   b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, stddev_multiplier));
+                   b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, stderr_multiplier));
       });
 
   std::vector<std::string> infos;
@@ -246,10 +246,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5)
-        << edge.GetU(U_coeff, stddev_multiplier) << ") ";
+        << edge.GetU(U_coeff, stderr_multiplier) << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff, stddev_multiplier) << ") ";
+        << edge.GetQ(fpu) + edge.GetU(U_coeff, stderr_multiplier) << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -958,7 +958,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       const float Q = child.GetQ(fpu);
       const float score =
-          child.GetU(puct_mult, cpuct * params_.GetStdDevFactor()) + Q;
+          child.GetU(puct_mult, cpuct * params_.GetStdErrFactor()) + Q;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -971,7 +971,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
-      // TODO(ddobbelaere): Investigate if stddev term has to be taken into
+      // TODO(ddobbelaere): Investigate if stderr term has to be taken into
       // account.
       int estimated_visits_to_change_best =
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
@@ -1161,7 +1161,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     scores.emplace_back(
-        -edge.GetU(puct_mult, cpuct * params_.GetStdDevFactor()) -
+        -edge.GetU(puct_mult, cpuct * params_.GetStdErrFactor()) -
             edge.GetQ(fpu),
         edge);
   }

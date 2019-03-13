@@ -155,9 +155,9 @@ class Node {
   // for terminal nodes.
   float GetQ() const { return q_; }
   float GetD() const { return d_; }
-  // Returns standard deviation of value head in subtree.
-  float GetQStdDev() const {
-    return n_ > 0 ? sqrt(sum_squared_diff_q_ / n_) : 0.0f;
+  // Returns standard error of value head in subtree.
+  float GetQStdErr() const {
+    return n_ > 0 ? sqrt(sum_squared_diff_q_) / n_ : 0.0f;
   }
 
   // Returns whether the node is known to be draw/lose/win.
@@ -347,7 +347,7 @@ class EdgeAndNode {
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
-  float GetQStdDev() const { return node_ ? node_->GetQStdDev() : 0.0f; }
+  float GetQStdErr() const { return node_ ? node_->GetQStdErr() : 0.0f; }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
@@ -362,11 +362,11 @@ class EdgeAndNode {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
 
-  // Returns U = numerator * p / N + stddev_multiplier * GetQStdDev().
+  // Returns U = numerator * p / N + stderr_multiplier * GetQStdErr().
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator, float stddev_multiplier) const {
+  float GetU(float numerator, float stderr_multiplier) const {
     return numerator * GetP() / (1 + GetNStarted()) +
-           stddev_multiplier * GetQStdDev();
+           stderr_multiplier * GetQStdErr();
   }
 
   int GetVisitsToReachU(float target_score, float numerator,

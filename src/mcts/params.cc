@@ -60,9 +60,9 @@ const OptionId SearchParams::kCpuctBaseId{
     "higher growth of Cpuct as number of node visits grows."};
 const OptionId SearchParams::kCpuctFactorId{
     "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
-const OptionId SearchParams::kStdDevFactorId{
-    "stddev-factor", "StdDevFactor",
-    "Multiplier for the standard deviation of Q in the uncertainty \"UCT "
+const OptionId SearchParams::kStdErrFactorId{
+    "stderr-factor", "StdErrFactor",
+    "Multiplier for the standard error of Q in the uncertainty \"UCT "
     "search\" term."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
@@ -192,7 +192,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
-  options->Add<FloatOption>(kStdDevFactorId, -1000.0f, 1000.0f) = 0.0f;
+  options->Add<FloatOption>(kStdErrFactorId, -1000.0f, 1000.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
@@ -232,7 +232,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
-      kStdDevFactor(options.Get<float>(kStdDevFactorId.GetId())),
+      kStdErrFactor(options.Get<float>(kStdErrFactorId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
