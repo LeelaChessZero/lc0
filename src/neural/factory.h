@@ -72,6 +72,7 @@ class NetworkFactory {
   static const OptionId kWeightsId;
   static const OptionId kBackendId;
   static const OptionId kBackendOptionsId;
+  static const OptionId kChannel33MultiplierId;
 
   struct BackendConfiguration {
     BackendConfiguration() = default;

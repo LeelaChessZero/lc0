@@ -26,6 +26,7 @@
 */
 
 #include "neural/loader.h"
+#include "utils/weights_adapter.h"
 
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
@@ -78,7 +79,7 @@ std::string DecompressGzip(const std::string& filename) {
   return buffer;
 }
 
-WeightsFile ParseWeightsProto(const std::string& buffer) {
+WeightsFile ParseWeightsProto(const std::string& buffer, float channel33Multiplier) {
   WeightsFile net;
   using namespace google::protobuf::io;
   using nf = pblczero::NetworkFormat;
@@ -137,12 +138,29 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
     net_format->set_policy(nf::POLICY_CLASSICAL);
   }
 
+  auto values = LayerAdapter(net.weights().policy().bn_gammas()).as_vector();
+  if (values.size() > 33) {
+    values[33] *= channel33Multiplier;
+    float max = std::max(values[33], net.weights().policy().bn_gammas().max_val());
+    float min = std::min(values[33], net.weights().policy().bn_gammas().min_val());
+    net.mutable_weights()->mutable_policy()->mutable_bn_gammas()->set_min_val(min);
+    net.mutable_weights()->mutable_policy()->mutable_bn_gammas()->set_max_val(max);
+    uint16_t* data = const_cast<uint16_t*>(reinterpret_cast<const uint16_t*>(net.mutable_weights()
+                                                 ->mutable_policy()
+                                                 ->mutable_bn_gammas()
+                                                 ->mutable_params()
+                                                 ->data()));
+    for (int i = 0; i < values.size(); i++) {
+      data[i] = static_cast<uint16_t>((values[i] - min) / (max - min) * 65535);
+	}
+  }
+
   return net;
 }
 
 }  // namespace
 
-WeightsFile LoadWeightsFromFile(const std::string& filename) {
+WeightsFile LoadWeightsFromFile(const std::string& filename, float chanel33Multiplier) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
 
@@ -155,7 +173,7 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
         "Text format weights files are no longer supported. Use a command line "
         "tool to convert it to the new format.");
 
-  return ParseWeightsProto(buffer);
+  return ParseWeightsProto(buffer, chanel33Multiplier);
 }
 
 std::string DiscoverWeightsFile() {

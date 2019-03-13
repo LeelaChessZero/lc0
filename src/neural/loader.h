@@ -41,7 +41,7 @@ using FloatVectors = std::vector<FloatVector>;
 using WeightsFile = pblczero::Net;
 
 // Read weights file and fill the weights structure.
-WeightsFile LoadWeightsFromFile(const std::string& filename);
+WeightsFile LoadWeightsFromFile(const std::string& filename, float channel33Multiplier);
 
 // Tries to find a file which looks like a weights file, and located in
 // directory of binary_name or one of subdirectories. If there are several such

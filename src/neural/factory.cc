@@ -46,6 +46,10 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Parameters of neural network backend. "
     "Exact parameters differ per backend.",
     'o'};
+const OptionId NetworkFactory::kChannel33MultiplierId{
+    "channel33-multiplier", "Channel33Multiplier",
+    "Multiplier to apply to the gamma for channel 33 of the policy head "
+    "convolution, if such a channel exists."};
 const char* kAutoDiscover = "<autodiscover>";
 
 NetworkFactory* NetworkFactory::Get() {
@@ -64,6 +68,7 @@ void NetworkFactory::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(NetworkFactory::kBackendOptionsId);
+  options->Add<FloatOption>(NetworkFactory::kChannel33MultiplierId, 0, 1000.0) = 1.0f;
 }
 
 void NetworkFactory::RegisterNetwork(const std::string& name,
@@ -114,7 +119,7 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
-  const WeightsFile weights = LoadWeightsFromFile(net_path);
+  const WeightsFile weights = LoadWeightsFromFile(net_path, options.Get<float>(kChannel33MultiplierId.GetId()));
 
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
