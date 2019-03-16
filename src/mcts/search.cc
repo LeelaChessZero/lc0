@@ -1015,7 +1015,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q = child.GetQ(fpu);
       float Q = child.GetQ(fpu);
 
       // Certainty Propagation. Avoid suboptimal childs.
