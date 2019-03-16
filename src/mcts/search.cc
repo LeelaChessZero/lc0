@@ -209,18 +209,18 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float stderr_multiplier = cpuct * params_.GetStdErrFactor();
+  const float stderr_factor = params_.GetStdErrFactor();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff, &stderr_multiplier](EdgeAndNode a, EdgeAndNode b) {
+      [&fpu, &U_coeff, &stderr_factor](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
-                   a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, stderr_multiplier)) <
+                   a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, stderr_factor)) <
                std::forward_as_tuple(
-                   b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, stderr_multiplier));
+                   b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, stderr_factor));
       });
 
   std::vector<std::string> infos;
@@ -246,10 +246,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5)
-        << edge.GetU(U_coeff, stderr_multiplier) << ") ";
+        << edge.GetU(U_coeff, stderr_factor) << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff, stderr_multiplier) << ") ";
+        << edge.GetQ(fpu) + edge.GetU(U_coeff, stderr_factor) << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -937,6 +937,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
+    const float stderr_factor = params_.GetStdErrFactor();
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -957,8 +958,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
-      const float score =
-          child.GetU(puct_mult, cpuct * params_.GetStdErrFactor()) + Q;
+      const float score = child.GetU(puct_mult, stderr_factor) + Q;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1157,13 +1157,12 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
+  const float stderr_factor = params_.GetStdErrFactor();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(
-        -edge.GetU(puct_mult, cpuct * params_.GetStdErrFactor()) -
-            edge.GetQ(fpu),
-        edge);
+    scores.emplace_back(-edge.GetU(puct_mult, stderr_factor) - edge.GetQ(fpu),
+                        edge);
   }
 
   size_t first_unsorted_index = 0;
