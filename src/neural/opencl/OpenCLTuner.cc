@@ -51,7 +51,8 @@ static const std::vector<Configurations> kParamsSize1 = {
 };
 
 static const std::vector<Configurations> kParamsSize2 = {
-    // Former smaller set + KWG 32 and KWI 8
+    // kParamsSize1 + KWG 16, VWN 8, KWI 8
+    // kParamsSize3 - STRM 1, STRN 1
     {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
     {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
     {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4}},
@@ -60,15 +61,6 @@ static const std::vector<Configurations> kParamsSize2 = {
 };
 
 static const std::vector<Configurations> kParamsSize3 = {
-    // Former smaller set + KWG 32, KWI 8, VWN 8
-    {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
-    {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
-    {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4, 8}},
-    {"VWN", {1, 2, 4, 8}},  {"STRM", {0, 1}},       {"STRN", {0, 1}},
-    {"SA", {0, 1}},         {"SB", {0, 1}},
-};
-
-static const std::vector<Configurations> kParamsSize4 = {
     // Former larger set
     {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
     {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
@@ -134,6 +126,9 @@ bool OpenCLTuner::valid_config_sgemm(TuneParameters p, bool exhaustive) {
       return false;
     }
     if (p["SA"] != p["SB"]) {
+      return false;
+    }
+    if (p["STRM"] != p["STRN"]) {
       return false;
     }
   }
@@ -264,7 +259,7 @@ std::string OpenCLTuner::tune_sgemm_systematic(const int m, const int n,
       break;
 
     case kTuneEffortSlowest:
-      opts = kParamsSize4;
+      opts = kParamsSize3;
       large = true;
       break;
   }
@@ -497,7 +492,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
                             sizeof(float) * c_size, nullptr, nullptr);
 
   size_t cfgs = 1;
-  const auto& opts = kParamsSize4;
+  const auto& opts = kParamsSize3;
   for (auto c = size_t{0}; c < opts.size(); c++) {
     cfgs *= opts[c].second.size();
   }
