@@ -982,7 +982,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
+    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite &&
+        params_.GetSmartPruningFactor()) {
       // If there is only one move theoretically possible within remaining time,
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
