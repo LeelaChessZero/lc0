@@ -342,12 +342,12 @@ void Search::UpdateKLDGain() {
     if (prev_dist_.size() != 0) {
       double sum1 = 0.0;
       double sum2 = 0.0;
-      for (int i = 0; i < new_visits.size(); i++) {
+      for (decltype(new_visits)::size_type i = 0; i < new_visits.size(); i++) {
         sum1 += prev_dist_[i];
         sum2 += new_visits[i];
       }
       double kldgain = 0.0;
-      for (int i = 0; i < new_visits.size(); i++) {
+      for (decltype(new_visits)::size_type i = 0; i < new_visits.size(); i++) {
         double o_p = prev_dist_[i] / sum1;
         double n_p = new_visits[i] / sum2;
         if (prev_dist_[i] != 0) {
@@ -437,8 +437,8 @@ void Search::UpdateRemainingMoves() {
     if (time_since_start > kSmartPruningToleranceMs) {
       const auto nps = 1000LL *
                            (total_playouts_ + kSmartPruningToleranceNodes) /
-                     time_since_start +
-                 1;
+                           time_since_start +
+                       1;
       const int64_t remaining_time = GetTimeToDeadline();
       // Put early_exit scaler here so calculation doesn't have to be done on
       // every node.
@@ -454,8 +454,8 @@ void Search::UpdateRemainingMoves() {
     // Add kMiniBatchSize, as it's possible to exceed visits limit by that
     // number.
     const auto remaining_visits = limits_.visits - total_playouts_ -
-                                  initial_visits_ +
-                            params_.GetMiniBatchSize() - 1;
+                                  initial_visits_ + params_.GetMiniBatchSize() -
+                                  1;
 
     if (remaining_visits < remaining_playouts_)
       remaining_playouts_ = remaining_visits;
@@ -516,15 +516,12 @@ int Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return 0;
   }
-
-  int best_rank = syzygy_tb_->root_probe(
-      played_history_.Last(),
-      params_.GetSyzygyFastPlay() ||
-          played_history_.DidRepeatSinceLastZeroingMove(),
-      root_moves);
-  if (!best_rank)
-    best_rank = syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
-  return best_rank;
+  return syzygy_tb_->root_probe(
+             played_history_.Last(),
+             params_.GetSyzygyFastPlay() ||
+                 played_history_.DidRepeatSinceLastZeroingMove(),
+             root_moves) ||
+         syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
 // Computes the best move, maybe with temperature (according to the settings).
@@ -606,7 +603,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   // Final sort pass.
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
-                                                         : edges.end();
+                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
 
   std::vector<EdgeAndNode> res;
