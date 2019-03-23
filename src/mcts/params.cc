@@ -84,9 +84,9 @@ const OptionId SearchParams::kTemperatureWinpctCutoffId{
     "probability less than X than the best move) are not considered at all."};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset",
-    "Reduces visits by this value when picking a move with a temperature. When "
-    "the offset is less than number of visits for a particular move, that move "
-    "is not picked at all."};
+    "Adjusts visits by this value when picking a move with a temperature. If a "
+    "negative offset reduces visits for a particular move below zero, that "
+    "move is not picked. If no moves can be picked, no temperature is used."};
 const OptionId SearchParams::kNoiseId{
     "noise", "DirichletNoise",
     "Add Dirichlet noise to root node prior probabilities. This allows the "
@@ -109,24 +109,27 @@ const OptionId SearchParams::kSmartPruningFactorId{
     "pruning is deactivated."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
-    "How is an eval of unvisited node determined. \"reduction\" subtracts "
-    "--fpu-reduction value from the parent eval. \"absolute\" sets eval of "
-    "unvisited nodes to the value specified in --fpu-value."};
-// TODO(crem) Make FPU in "reduction" mode use fpu-value too. For now it's kept
-// for backwards compatibility.
-const OptionId SearchParams::kFpuReductionId{
-    "fpu-reduction", "FpuReduction",
-    "\"First Play Urgency\" reduction (used when FPU strategy is "
-    "\"reduction\"). Normally when a move has no visits, "
-    "it's eval is assumed to be equal to parent's eval. With non-zero FPU "
-    "reduction, eval of unvisited move is decreased by that value, "
-    "discouraging visits of unvisited moves, and saving those visits for "
-    "(hopefully) more promising moves."};
+    "How is an eval of unvisited node determined. \"First Play Urgency\" "
+    "changes search behavior to visit unvisited nodes earlier or later by "
+    "using a placeholder eval before checking the network. The value specified "
+    "with --fpu-value results in \"reduction\" subtracting that value from the "
+    "parent eval while \"absolute\" directly uses that value."};
 const OptionId SearchParams::kFpuValueId{
     "fpu-value", "FpuValue",
-    "\"First Play Urgency\" value. When FPU strategy is \"absolute\", value of "
-    "unvisited node is assumed to be equal to this value, and does not depend "
-    "on parent eval."};
+    "\"First Play Urgency\" value used to adjust unvisited node eval based on "
+    "--fpu-strategy."};
+const OptionId SearchParams::kFpuStrategyAtRootId{
+    "fpu-strategy-at-root", "FpuStrategyAtRoot",
+    "How is an eval of unvisited root children determined. Just like "
+    "--fpu-strategy except only at the root level and adjusts unvisited root "
+    "children eval with --fpu-value-at-root. In addition to matching the "
+    "strategies from --fpu-strategy, this can be \"same\" to disable the "
+    "special root behavior."};
+const OptionId SearchParams::kFpuValueAtRootId{
+    "fpu-value-at-root", "FpuValueAtRoot",
+    "\"First Play Urgency\" value used to adjust unvisited root children eval "
+    "based on --fpu-strategy-at-root. Has no effect if --fpu-strategy-at-root "
+    "is \"same\"."};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
     "Length of history, in half-moves, to include into the cache key. When "
@@ -189,7 +192,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
-  options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
+  options->Add<FloatOption>(kTemperatureVisitOffsetId, -1000.0f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
@@ -197,8 +200,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
-  options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 1.2f;
-  options->Add<FloatOption>(kFpuValueId, -1.0f, 1.0f) = -1.0f;
+  options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
+  fpu_strategy.push_back("same");
+  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
+  options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
@@ -225,8 +230,15 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
-      kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),
+      kFpuAbsoluteAtRoot(
+          (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
+           kFpuAbsolute) ||
+          options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "absolute"),
+      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId.GetId()) ==
+                              "same"
+                          ? kFpuValue
+                          : options.Get<float>(kFpuValueAtRootId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
