@@ -27,6 +27,7 @@
 
 #include "chess/board.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -911,14 +912,11 @@ bool ChessBoard::IsLegalMove(Move move,
 
 MoveList ChessBoard::GenerateLegalMoves() const {
   const KingAttackInfo king_attack_info = GenerateKingAttackInfo();
-  MoveList move_list = GeneratePseudolegalMoves();
-  MoveList result;
-  result.reserve(move_list.size());
-
-  for (Move m : move_list) {
-    if (IsLegalMove(m, king_attack_info)) result.emplace_back(m);
-  }
-
+  MoveList result = GeneratePseudolegalMoves();
+  result.erase(
+      std::remove_if(result.begin(), result.end(),
+                     [&](Move m) { return !IsLegalMove(m, king_attack_info); }),
+      result.end());
   return result;
 }
 
