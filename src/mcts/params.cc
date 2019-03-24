@@ -186,6 +186,11 @@ const OptionId SearchParams::kTwoFoldDrawScoringId{
     "two-fold-draw-scoring", "TwoFoldDrawScoring",
     "Scores two-folds as draws (0.00) in search to use visits more "
     "efficiently. Recommended in conjunction with certainty propagation."};
+const OptionId SearchParams::kEdgeDiscardFactor{
+	"edge-discard-factor", "EdgeDiscardFactor",
+	"Factor used for discarding thinking time for moves that can not reach bestmoves nodes. Factor of 1.00 is default "
+	"higher factor will sooner discard other edges thereby saving time for future moves." };
+
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -227,6 +232,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kCertaintyPropagationId) = false;
   options->Add<BoolOption>(kTwoFoldDrawScoringId) = false;
+  options->Add<FloatOption>(kEdgeDiscardFactor, 1.0f, 5.0f) = 1.0f;
 
   options->HideOption(kLogLiveStatsId);
 }
