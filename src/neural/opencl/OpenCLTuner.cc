@@ -470,11 +470,11 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
       break;
 
     case kTuneEffortSlower:
-      seeds = 50;
+      seeds = 30;
       break;
 
     case kTuneEffortSlowest:
-      seeds = 500;
+      seeds = 300;
       break;
   }
 
