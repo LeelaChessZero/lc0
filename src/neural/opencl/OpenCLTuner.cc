@@ -80,20 +80,11 @@ static const std::vector<Configurations> kParamsSize2 = {
 
 static const std::vector<Configurations> kParamsSize3 = {
     // Former larger set
-    {"MWG", {16, 32, 64}},
-    {"NWG", {16, 32, 64}},
-    {"KWG", {16, 32}},
-    {"MDIMC", {8, 16, 32}},
-    {"NDIMC", {8, 16, 32}},
-    {"MDIMA", {8, 16, 32}},
-    {"NDIMB", {8, 16, 32}},
-    {"KWI", {2, 8}},
-    {"VWM", {1, 2, 4, 8}},
-    {"VWN", {1, 2, 4, 8}},
-    {"STRM", {0, 1}},
-    {"STRN", {0, 1}},
-    {"SA", {1}},
-    {"SB", {1}},
+    {"MWG", {16, 32, 64}},  {"NWG", {16, 32, 64}},  {"KWG", {16, 32}},
+    {"MDIMC", {8, 16, 32}}, {"NDIMC", {8, 16, 32}}, {"MDIMA", {8, 16, 32}},
+    {"NDIMB", {8, 16, 32}}, {"KWI", {2, 8}},        {"VWM", {1, 2, 4, 8}},
+    {"VWN", {1, 2, 4, 8}},  {"STRM", {0, 1}},       {"STRN", {0, 1}},
+    {"SA", {0, 1}},         {"SB", {0, 1}},
 };
 
 // Stochastic search constants.
