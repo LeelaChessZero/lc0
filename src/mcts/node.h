@@ -360,7 +360,7 @@ class EdgeAndNode {
     int decay = 800;
     float w = decay / (decay + numerator);
     float U = (numerator / 1 + GetNStarted());
-    return (1-w)*(U * GetP()) + w * U;
+    return (1-w) * (U * GetP()) + w * U;
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
