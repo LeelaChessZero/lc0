@@ -359,7 +359,7 @@ class EdgeAndNode {
   float GetU(float numerator) const {
     int decay = 800;
     float w = decay / (decay + numerator);
-    float U = (numerator / 1 + GetNStarted());
+    float U = numerator / (1 + GetNStarted());
     return (1-w) * (U * GetP()) + w * U;
   }
 
