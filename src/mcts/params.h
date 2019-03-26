@@ -142,7 +142,6 @@ class SearchParams {
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimiations.
-  const int policyDecay;
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;

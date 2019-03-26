@@ -227,7 +227,7 @@ void SearchParams::Populate(OptionsParser* options) {
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
-      policyDecay(options.Get<float>(policyDecay.GetId())),
+      policyDecay(options.Get<int>(policyDecay.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
