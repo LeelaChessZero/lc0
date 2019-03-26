@@ -157,7 +157,9 @@ class Node {
   float GetD() const { return d_; }
   // Returns standard error of value head in subtree.
   float GetQStdErr() const {
-    return n_ > 0 ? sqrt(sum_squared_diff_q_) / n_ : 0.0f;
+    // Note that we use an unbiased standard deviation estimator (sqrt(n_-1)
+    // denominator).
+    return n_ > 1 ? sqrt(sum_squared_diff_q_ / (n_ - 1) / n_) : 0.0f;
   }
 
   // Returns whether the node is known to be draw/lose/win.
