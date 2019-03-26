@@ -359,7 +359,7 @@ class EdgeAndNode {
   float GetU(float numerator, int decay) const {
     float w = decay / (decay + numerator);
     float U = numerator / (1 + GetNStarted());
-    return (1 - w) * (U * GetP()) + w * U;
+    return w * (U * GetP()) + (1 - w) * U;
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
