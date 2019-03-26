@@ -209,6 +209,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const int policy_decay = params_.GetPolicyDecay();
   const float decay = policy_decay / (policy_decay + node->GetN());
+  const float policy_limit = params_.GetPolicyLimit();
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
       
@@ -217,9 +218,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff, &decay](EdgeAndNode a, EdgeAndNode b) {
-        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, decay)) <
-               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, decay));
+      [&fpu, &U_coeff, &decay, &limit](EdgeAndNode a, EdgeAndNode b) {
+        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, decay, limit)) <
+               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, decay, limit));
       });
 
   std::vector<std::string> infos;
@@ -244,11 +245,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, decay)
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, decay, limit)
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff, decay) << ") ";
+        << edge.GetQ(fpu) + edge.GetU(U_coeff, decay, limit) << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -938,6 +939,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     const float fpu = GetFpu(params_, node, is_root_node);
     const int policy_decay = params_.GetPolicyDecay();
     const float decay = policy_decay / (policy_decay + node->GetN());
+  const float policy_limit = params_.GetPolicyLimit();
     
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -959,7 +961,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
-      const float score = child.GetU(puct_mult, decay) + Q;
+      const float score = child.GetU(puct_mult, decay, limit) + Q;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1158,10 +1160,11 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   const int policy_decay = params_.GetPolicyDecay();
   const float decay = policy_decay / (policy_decay + node->GetN());
+  const float policy_limit = params_.GetPolicyLimit();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult, decay) - edge.GetQ(fpu), edge);
+    scores.emplace_back(-edge.GetU(puct_mult, decay, limit) - edge.GetQ(fpu), edge);
   }
 
   size_t first_unsorted_index = 0;
