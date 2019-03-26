@@ -207,8 +207,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
                                                  bool is_black_to_move) const {
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
-  const int policy_decay = params_.GetPolicyDecay();
-  const float decay = policy_decay / (policy_decay + node->GetN());
+  const float decay = params_.GetPolicyDecay(node->GetN());
   const float policy_limit = params_.GetPolicyLimit();
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -937,8 +936,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
-    const int policy_decay = params_.GetPolicyDecay();
-    const float decay = policy_decay / (policy_decay + node->GetN());
+    const float decay = params_.GetPolicyDecay(node->GetN());
   const float policy_limit = params_.GetPolicyLimit();
     
     for (auto child : node->Edges()) {
@@ -1158,8 +1156,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
-  const int policy_decay = params_.GetPolicyDecay();
-  const float decay = policy_decay / (policy_decay + node->GetN());
+  const float decay = params_.GetPolicyDecay(node->GetN());
   const float policy_limit = params_.GetPolicyLimit();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
