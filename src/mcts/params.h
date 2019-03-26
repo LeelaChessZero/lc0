@@ -102,7 +102,7 @@ class SearchParams {
   }
 
   // Search parameter IDs.
-  const const OptionId policyDecay;
+  static const OptionId policyDecay;
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
