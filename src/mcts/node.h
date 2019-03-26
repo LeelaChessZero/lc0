@@ -357,7 +357,7 @@ class EdgeAndNode {
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    int decay = 800;
+    int decay = params_.GetPolicyDecay();
     float w = decay / (decay + numerator);
     float U = numerator / (1 + GetNStarted());
     return (1-w) * (U * GetP()) + w * U;

@@ -45,6 +45,9 @@ class SearchParams {
   int GetMiniBatchSize() const {
     return kMiniBatchSize;
   }
+  int GetPolicyDecay() const {
+    return policyDecay;
+  }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
@@ -99,6 +102,7 @@ class SearchParams {
   }
 
   // Search parameter IDs.
+  const const OptionId policyDecay;
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
@@ -138,6 +142,7 @@ class SearchParams {
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimiations.
+  const int policyDecay;
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
