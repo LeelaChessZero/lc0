@@ -46,7 +46,7 @@ class SearchParams {
     return kMiniBatchSize;
   }
   int GetPolicyDecay() const {
-    return options_.Get<int>(policyDecay.GetId());
+    return options_.Get<int>(policyDecayId.GetId());
   }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
