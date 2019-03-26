@@ -102,7 +102,7 @@ class SearchParams {
   }
 
   // Search parameter IDs.
-  static const OptionId policyDecay;
+  static const OptionId policyDecayId;
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
@@ -159,6 +159,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const int policyDecay;
 };
 
 }  // namespace lczero
