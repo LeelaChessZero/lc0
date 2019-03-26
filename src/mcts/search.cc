@@ -938,7 +938,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
     const int policy_decay = params_.GetPolicyDecay()
-    const float decay = policy_decay / (policy_decay + node->getN());
+    const float decay = policy_decay / (policy_decay + node->GetN());
     
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -1158,7 +1158,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   const int policy_decay = params_.GetPolicyDecay()
-  const float decay = policy_decay / (policy_decay + node->getN());
+  const float decay = policy_decay / (policy_decay + node->GetN());
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
