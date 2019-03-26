@@ -211,8 +211,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float decay = policy_decay / (policy_decay + node->GetN());
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float limit = params_.GetPolicyLimit();
-
+      
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
