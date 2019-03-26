@@ -330,12 +330,12 @@ void Search::UpdateKLDGain() {
     if (prev_dist_.size() != 0) {
       double sum1 = 0.0;
       double sum2 = 0.0;
-      for (int i = 0; i < new_visits.size(); i++) {
+      for (decltype(new_visits)::size_type i = 0; i < new_visits.size(); i++) {
         sum1 += prev_dist_[i];
         sum2 += new_visits[i];
       }
       double kldgain = 0.0;
-      for (int i = 0; i < new_visits.size(); i++) {
+      for (decltype(new_visits)::size_type i = 0; i < new_visits.size(); i++) {
         double o_p = prev_dist_[i] / sum1;
         double n_p = new_visits[i] / sum2;
         if (prev_dist_[i] != 0) {
