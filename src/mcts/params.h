@@ -45,11 +45,10 @@ class SearchParams {
   int GetMiniBatchSize() const {
     return kMiniBatchSize;
   }
-  float GetPolicyDecay(int N) const {
-    float decay = (float) options_.Get<int>(policyDecayId.GetId());
-    return decay / (decay+N);
+  int GetPolicyDecay() const {
+    return options_.Get<int>(policyDecayId.GetId());
   }
-  int GetPolicyLimit() const {
+  float GetPolicyLimit() const {
     return options_.Get<float>(policyLimitId.GetId());
   }
   int GetMaxPrefetchBatch() const {
