@@ -44,7 +44,7 @@ const OptionId SearchParams::kMiniBatchSizeId{
     "How many positions the engine tries to batch together for parallel NN "
     "computation. Larger batches may reduce strength a bit, especially with a "
     "small number of playouts."};
-const OptionId SearchParams::policyDecay{
+const OptionId SearchParams::policyDecayId{
     "policy-decay", "PolicyDecay", "how fast policy decays."};
 const OptionId SearchParams::kMaxPrefetchBatchId{
     "max-prefetch", "MaxPrefetch",
@@ -184,7 +184,7 @@ const OptionId SearchParams::kKLDGainAverageInterval{
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
-  options->Add<IntOption>(policyDecay, 1, 100000000) = 800;
+  options->Add<IntOption>(policyDecayId, 1, 100000000) = 800;
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
@@ -227,7 +227,7 @@ void SearchParams::Populate(OptionsParser* options) {
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
-      policyDecay(options.Get<int>(policyDecay.GetId())),
+      policyDecay(options.Get<int>(policyDecayId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
