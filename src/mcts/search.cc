@@ -209,18 +209,18 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float stddev_multiplier = cpuct * params_.GetStdDevFactor();
+  const float stddev_factor = params_.GetStdDevFactor();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff, &stddev_multiplier](EdgeAndNode a, EdgeAndNode b) {
+      [&fpu, &U_coeff, &stddev_factor](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
-                   a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, stddev_multiplier)) <
+                   a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, stddev_factor)) <
                std::forward_as_tuple(
-                   b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, stddev_multiplier));
+                   b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, stddev_factor));
       });
 
   std::vector<std::string> infos;
@@ -246,10 +246,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5)
-        << edge.GetU(U_coeff, stddev_multiplier) << ") ";
+        << edge.GetU(U_coeff, stddev_factor) << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff, stddev_multiplier) << ") ";
+        << edge.GetQ(fpu) + edge.GetU(U_coeff, stddev_factor) << ") ";
 
     oss << "(V: ";
     optional<float> v;

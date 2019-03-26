@@ -159,7 +159,7 @@ class Node {
   float GetQStdDev() const {
     // Note that we use an unbiased standard deviation estimator (sqrt(n_-1)
     // denominator).
-    return n_ > 0 ? sqrt(sum_squared_diff_q_ / (n_ - 1)) : 0.0f;
+    return n_ > 1 ? sqrt(sum_squared_diff_q_ / (n_ - 1)) : 0.0f;
   }
 
   // Returns whether the node is known to be draw/lose/win.
@@ -364,11 +364,11 @@ class EdgeAndNode {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
 
-  // Returns U = numerator * p / N + stddev_multiplier * GetQStdDev().
+  // Returns U = numerator * p / N + stddev_factor * GetQStdDev().
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator, float stddev_multiplier) const {
+  float GetU(float numerator, float stddev_factor) const {
     return numerator * GetP() / (1 + GetNStarted()) +
-           stddev_multiplier * GetQStdDev();
+           stddev_factor * GetQStdDev();
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
