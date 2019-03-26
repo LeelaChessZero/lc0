@@ -216,7 +216,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
+      [&fpu, &U_coeff &decay](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, decay)) <
                std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, decay));
       });
