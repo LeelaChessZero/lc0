@@ -242,7 +242,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, params_.GetPolicyDecay();)
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, params_.GetPolicyDecay())
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
