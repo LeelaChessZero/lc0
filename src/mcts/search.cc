@@ -1154,7 +1154,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   const int decay = params_.GetPolicyDecay();
-  const float limit = params_.GetPolicyLimit()
+  const float limit = params_.GetPolicyLimit();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
