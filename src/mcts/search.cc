@@ -207,6 +207,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
                                                  bool is_black_to_move) const {
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
+  const int decay = params_.GetPolicyDecay();
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
 
@@ -216,8 +217,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   std::sort(
       edges.begin(), edges.end(),
       [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
-        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, params_.GetPolicyDecay())) <
-               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, params_.GetPolicyDecay()));
+        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff, decay)) <
+               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff, decay));
       });
 
   std::vector<std::string> infos;
@@ -242,11 +243,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, params_.GetPolicyDecay())
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, decay)
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff, params_.GetPolicyDecay()) << ") ";
+        << edge.GetQ(fpu) + edge.GetU(U_coeff, decay) << ") ";
 
     oss << "(V: ";
     optional<float> v;
