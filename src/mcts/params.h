@@ -48,9 +48,6 @@ class SearchParams {
   int GetPolicyDecay() const {
     return options_.Get<int>(policyDecayId.GetId());
   }
-  float GetPolicyLimit() const {
-    return options_.Get<float>(policyLimitId.GetId());
-  }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
@@ -106,7 +103,6 @@ class SearchParams {
 
   // Search parameter IDs.
   static const OptionId policyDecayId;
-  static const OptionId policyLimitId;
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
@@ -164,7 +160,6 @@ class SearchParams {
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
   const int policyDecay;
-  const float policyLimit;
 };
 
 }  // namespace lczero
