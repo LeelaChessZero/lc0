@@ -187,7 +187,7 @@ void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(policyDecayId, 1, 100000000) = 800;
-  options->Add<FloatOption>(policyLimitId, 0.0f, 1.0f) = .2;
+  options->Add<FloatOption>(policyLimitId, 0.0f, 1.0f) = 0.2f;
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
