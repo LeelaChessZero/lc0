@@ -49,7 +49,7 @@ class SearchParams {
     return options_.Get<int>(policyDecayId.GetId());
   }
   float GetPolicyLimit() const {
-    return options_.Get<int>(policyLimitId.GetId());
+    return options_.Get<float>(policyLimitId.GetId());
   }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
