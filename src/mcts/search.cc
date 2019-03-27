@@ -543,13 +543,26 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
   }
+  unsigned int max_n = 0;
+  for (auto edge : parent->Edges()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
+      continue;
+    }
+    if (edge.GetN() > max_n) max_n = edge.GetN();
+  }
+
+  float min_ratio = max_n * params_.GetMinimumLCBNRatio();
+
   // Best child is selected using the following criteria:
+  // * Minimum LCB node ratio exceeded.
   // * Largest lower confidence bound.
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<float, uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<bool, float, uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -557,8 +570,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetQLCB(), edge.GetN(), edge.GetQ(0), edge.GetP(),
-                       edge);
+    edges.emplace_back(edge.GetN() > min_ratio, edge.GetQLCB(), edge.GetN(),
+                       edge.GetQ(0), edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
@@ -567,7 +580,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
   std::vector<EdgeAndNode> res;
   std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<4>(x); });
+                 [](const El& x) { return std::get<5>(x); });
   return res;
 }
 

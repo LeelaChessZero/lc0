@@ -97,6 +97,9 @@ class SearchParams {
   float GetMinimumKLDGainPerNode() const {
     return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
   }
+  float GetMinimumLCBNRatio() const {
+    return options_.Get<float>(kMinimumLCBNRatioId.GetId());
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -129,6 +132,7 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
+  static const OptionId kMinimumLCBNRatioId;
 
  private:
   const OptionsDict& options_;
