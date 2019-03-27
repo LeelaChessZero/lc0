@@ -33,6 +33,7 @@
 #include "mcts/search.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
+#include "utils/stats.h"
 
 namespace lczero {
 namespace {
@@ -91,6 +92,10 @@ const OptionId kRamLimitMbId{
     "terminal node counted several times, and the estimation assumes that all "
     "positions have 30 possible moves. When set to 0, no RAM limit is "
     "enforced."};
+const OptionId kCIAlphaId{"cialpha", "CIAlpha",
+                          "Confidence interval certainty used for calculating "
+                          "the confidence interval "
+                          "of moves evaluation."};
 
 const size_t kAvgNodeSize = sizeof(Node) + kAvgMovesPerPosition * sizeof(Edge);
 const size_t kAvgCacheItemSize =
@@ -143,12 +148,15 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
+  options->Add<FloatOption>(kCIAlphaId, 0.0f, 1.0f) = 1e-5f;
 
   ConfigFile::PopulateOptions(options);
 
   // Hide time curve options.
   options->HideOption(kTimeMidpointMoveId);
   options->HideOption(kTimeSteepnessId);
+
+  CreatezTable(options_.Get<float>(kCIAlphaId.GetId()));
 }
 
 SearchLimits EngineController::PopulateSearchLimits(
@@ -187,8 +195,10 @@ SearchLimits EngineController::PopulateSearchLimits(
 
   // How to scale moves time.
   const float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  const float time_curve_midpoint = options_.Get<float>(kTimeMidpointMoveId.GetId());
-  const float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
+  const float time_curve_midpoint =
+      options_.Get<float>(kTimeMidpointMoveId.GetId());
+  const float time_curve_steepness =
+      options_.Get<float>(kTimeSteepnessId.GetId());
 
   float movestogo =
       ComputeEstimatedMovesToGo(ply, time_curve_midpoint, time_curve_steepness);
@@ -266,7 +276,8 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Network.
-  const auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+  const auto network_configuration =
+      NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
     network_ = NetworkFactory::LoadNetwork(options_);
     network_configuration_ = network_configuration;

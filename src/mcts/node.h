@@ -38,6 +38,7 @@
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
+#include "utils/stats.h"
 
 namespace lczero {
 
@@ -155,6 +156,7 @@ class Node {
   // for terminal nodes.
   float GetQ() const { return q_; }
   float GetD() const { return d_; }
+  float GetSquaredDiff() const { return q_squared_diff_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -270,6 +272,8 @@ class Node {
   // Averaged draw probability. Works similarly to Q, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
+  // Sum of squared differences to mean. Used for calculating variance.
+  float q_squared_diff_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
@@ -308,7 +312,7 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
 #else
 static_assert(sizeof(Node) == 80, "Unexpected size of Node");
 #endif
@@ -339,6 +343,27 @@ class EdgeAndNode {
   }
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
+  }
+  float GetVariance(float default_var) const {
+    if (node_ && node_->GetN() > 1) {
+      return node_->GetSquaredDiff() / (node_->GetN() - 1);
+    }
+    return default_var;
+  }
+  float GetQLCB() const {
+    if (!node_) {
+      return -1e6f;
+    }
+    auto visits = node_->GetN();
+    if (visits < 2) {
+      // Return large negative value if not enough visits.
+      return -1e6f + visits;
+    }
+
+    auto stddev = std::sqrt(GetVariance(1.0f) / visits);
+    auto z = CachedtQuantile(visits - 1);
+
+    return (0.5f + 0.5f * node_->GetQ()) - z * stddev;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
