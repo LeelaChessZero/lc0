@@ -86,6 +86,12 @@ class Edge {
   float GetP() const;
   void SetP(float val);
 
+  // Returns or sets value of Move policy prior returned from the neural net
+  // (but can be changed by adding Dirichlet noise). Must be in [0,1].
+  float GetQInit() const;
+  void SetQInit(float val);
+
+
   // Debug information about the edge.
   std::string DebugString() const;
 
@@ -100,6 +106,7 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
+  float qInit_ = 0.0;
 
   friend class EdgeList;
 };
@@ -137,6 +144,7 @@ class Node {
 
   // Creates edges from a movelist. There has to be no edges before that.
   void CreateEdges(const MoveList& moves);
+
 
   // Gets parent node.
   Node* GetParent() const { return parent_; }
@@ -335,7 +343,16 @@ class EdgeAndNode {
 
   // Proxy functions for easier access to node/edge.
   float GetQ(float default_q) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
+	  
+  //  return (node_ && node_->GetN() > 0)
+       //        ? node_->GetQ()
+           //    : (node_->GetOwnEdge()) ? node_->GetOwnEdge()->GetQInit()
+                        //               : default_q;
+
+	      return (node_ && node_->GetN() > 0)
+             ? node_->GetQ()
+             : edge_->GetQInit();
+
   }
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;

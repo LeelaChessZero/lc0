@@ -160,6 +160,13 @@ float Edge::GetP() const {
   return ret;
 }
 
+float Edge::GetQInit() const { return qInit_; }
+
+void Edge::SetQInit(float val) {
+  assert(-1.0f <= val && val <= 1.0f);
+  qInit_ = val;
+}
+
 std::string Edge::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
@@ -192,6 +199,7 @@ void Node::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   assert(!child_);
   edges_ = EdgeList(moves);
+
 }
 
 Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
@@ -270,8 +278,9 @@ void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
 
-void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
 
+
+void Node::ReleaseChildren() { gNodeGc.AddToGcQueue(std::move(child_)); }
 void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
