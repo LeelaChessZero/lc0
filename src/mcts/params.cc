@@ -186,8 +186,8 @@ const OptionId SearchParams::kKLDGainAverageInterval{
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
-  options->Add<IntOption>(policyDecayId, 1, 100000000) = 800;
-  options->Add<FloatOption>(policyLimitId, 0.0f, 1.0f) = 0.2f;
+  options->Add<FloatOption>(policyDecayId, 1.0f, 1000000000.0f) = 5000.0f;
+  options->Add<FloatOption>(policyLimitId, 0.0f, 1.0f) = 0.12f;
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
@@ -230,7 +230,7 @@ void SearchParams::Populate(OptionsParser* options) {
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
-      policyDecay(options.Get<int>(policyDecayId.GetId())),
+      policyDecay(options.Get<float>(policyDecayId.GetId())),
       policyLimit(options.Get<float>(policyLimitId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),

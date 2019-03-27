@@ -356,10 +356,9 @@ class EdgeAndNode {
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator, int decay, float t) const {
-    float w = decay / (decay + numerator);
+  float GetU(float numerator, float decay, float t) const {
     float U = numerator / (1 + GetNStarted());
-    return w * (U * GetP()) + (1 - w) * U * t;
+    return decay * (U * GetP()) + (1 - decay) * U * t;
   }
 
   int GetVisitsToReachU(float target_score, float numerator,

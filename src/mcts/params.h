@@ -45,8 +45,9 @@ class SearchParams {
   int GetMiniBatchSize() const {
     return kMiniBatchSize;
   }
-  int GetPolicyDecay() const {
-    return options_.Get<int>(policyDecayId.GetId());
+  float GetPolicyDecay(float numerator) const {
+    float decay = options_.Get<float>(policyDecayId.GetId());
+    return decay / (decay + numerator);
   }
   float GetPolicyLimit() const {
     return options_.Get<float>(policyLimitId.GetId());
@@ -163,7 +164,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
-  const int policyDecay;
+  const float policyDecay;
   const float policyLimit;
 };
 

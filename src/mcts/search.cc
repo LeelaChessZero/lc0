@@ -207,9 +207,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
                                                  bool is_black_to_move) const {
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
-  const int decay = params_.GetPolicyDecay();
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const float decay = params_.GetPolicyDecay(U_coeff);
   const float limit = params_.GetPolicyLimit();
 
   std::vector<EdgeAndNode> edges;
@@ -936,6 +936,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
+    const float decay = params_.GetPolicyDecay(puct_mult);
+    const float limit = params_.GetPolicyLimit();
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -956,7 +958,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
-      const float score = child.GetU(puct_mult, params_.GetPolicyDecay(), params_.GetPolicyLimit()) + Q;
+      const float score = child.GetU(puct_mult, decay, limit) + Q;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1153,7 +1155,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
-  const int decay = params_.GetPolicyDecay();
+  const float decay = params_.GetPolicyDecay(puct_mult);
   const float limit = params_.GetPolicyLimit();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
