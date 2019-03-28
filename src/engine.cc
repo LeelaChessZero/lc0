@@ -148,7 +148,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
-  options->Add<FloatOption>(kCIAlphaId, 0.0f, 1.0f) = 1e-5f;
+  options->Add<FloatOption>(kCIAlphaId, 0.0f, 1.0f) = 2e-5f;
 
   ConfigFile::PopulateOptions(options);
 
