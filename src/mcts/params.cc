@@ -84,9 +84,9 @@ const OptionId SearchParams::kTemperatureWinpctCutoffId{
     "probability less than X than the best move) are not considered at all."};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset",
-    "Reduces visits by this value when picking a move with a temperature. When "
-    "the offset is less than number of visits for a particular move, that move "
-    "is not picked at all."};
+    "Adjusts visits by this value when picking a move with a temperature. If a "
+    "negative offset reduces visits for a particular move below zero, that "
+    "move is not picked. If no moves can be picked, no temperature is used."};
 const OptionId SearchParams::kNoiseId{
     "noise", "DirichletNoise",
     "Add Dirichlet noise to root node prior probabilities. This allows the "
@@ -192,7 +192,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
-  options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
+  options->Add<FloatOption>(kTemperatureVisitOffsetId, -1000.0f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
