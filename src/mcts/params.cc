@@ -186,8 +186,8 @@ const OptionId SearchParams::kKLDGainAverageInterval{
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
-  options->Add<FloatOption>(policyDecayId, 1.0f, 1000000000.0f) = 5000.0f;
-  options->Add<FloatOption>(policyLimitId, 0.0f, 1.0f) = 0.12f;
+  options->Add<FloatOption>(policyDecayId, 1.0f, 1000000000.0f) = 4000.0f;
+  options->Add<FloatOption>(policyLimitId, 0.0f, 1.0f) = 0.2f;
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
@@ -211,7 +211,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
-  options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
+  options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.6f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
