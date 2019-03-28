@@ -243,12 +243,11 @@ void Node::CancelScoreUpdate(int multivisit) {
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   // Recompute Q.
-  float old_delta = (v - q_);
+  // Need to divide by 4 to scale to 0..1 range probability.
+  q_squared_diff_ +=
+      0.25f * (v - q_) * (v - q_) * multivisit * n_ / (n_ + multivisit);
   q_ += multivisit * (v - q_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
-  float new_delta = (v - q_);
-  // Need to divide by 4 to scale to 0..1 range probability.
-  q_squared_diff_ += 0.25f * old_delta * new_delta;
 
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
