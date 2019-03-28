@@ -201,6 +201,17 @@ struct MagicParams {
   // Number of bits to shift.
   uint8_t shift_bits_;
 #endif
+
+  uint64_t Index(BitBoard occupancy) const {
+#if defined(NO_PEXT)
+    uint64_t index = occupancy.as_int() & mask_;
+    index *= magic_number_;
+    index >>= shift_bits_;
+    return index;
+#else
+    return _pext_u64(occupancy.as_int(), mask_);
+#endif
+  }
 };
 
 #if defined(NO_PEXT)
@@ -344,12 +355,10 @@ static void BuildAttacksTable(MagicParams* magic_params,
         }
       }
 
-#if defined(NO_PEXT)
       // Calculate magic index.
-      uint64_t index = occupancy.as_int();
-      index *= magic_params[square].magic_number_;
-      index >>= magic_params[square].shift_bits_;
+      uint64_t index = magic_params[square].Index(occupancy);
 
+#if defined(NO_PEXT)
       // Sanity check. The magic numbers have been chosen such that
       // the number of relevant occupancy bits suffice to index the attacks
       // table. If the table already contains an attacks bitboard, possible
@@ -358,9 +367,6 @@ static void BuildAttacksTable(MagicParams* magic_params,
           attacks_table[table_offset + index] != attacks) {
         throw Exception("Invalid magic number!");
       }
-#else
-      uint64_t index =
-          _pext_u64(occupancy.as_int(), magic_params[square].mask_);
 #endif
 
       // Update table.
@@ -378,14 +384,7 @@ static inline BitBoard GetRookAttacks(const BoardSquare rook_square,
                                       const BitBoard pieces) {
   // Calculate magic index.
   const uint8_t square = rook_square.as_int();
-
-#if defined(NO_PEXT)
-  uint64_t index = pieces.as_int() & rook_magic_params[square].mask_;
-  index *= rook_magic_params[square].magic_number_;
-  index >>= rook_magic_params[square].shift_bits_;
-#else
-  uint64_t index = _pext_u64(pieces.as_int(), rook_magic_params[square].mask_);
-#endif
+  uint64_t index = rook_magic_params[square].Index(pieces);
 
   // Return attacks bitboard.
   return rook_magic_params[square].attacks_table_[index];
@@ -397,15 +396,7 @@ static inline BitBoard GetBishopAttacks(const BoardSquare bishop_square,
                                         const BitBoard pieces) {
   // Calculate magic index.
   const uint8_t square = bishop_square.as_int();
-
-#if defined(NO_PEXT)
-  uint64_t index = pieces.as_int() & bishop_magic_params[square].mask_;
-  index *= bishop_magic_params[square].magic_number_;
-  index >>= bishop_magic_params[square].shift_bits_;
-#else
-  uint64_t index =
-      _pext_u64(pieces.as_int(), bishop_magic_params[square].mask_);
-#endif
+  uint64_t index = bishop_magic_params[square].Index(pieces);
 
   // Return attacks bitboard.
   return bishop_magic_params[square].attacks_table_[index];
