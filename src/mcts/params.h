@@ -45,12 +45,13 @@ class SearchParams {
   int GetMiniBatchSize() const {
     return kMiniBatchSize;
   }
+  //Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetPolicyDecay(float numerator) const {
-    float decay = options_.Get<float>(policyDecayId.GetId());
+    float decay = options_.Get<float>(kpolicyDecayId.GetId());
     return decay / (decay + numerator);
   }
   float GetPolicyLimit() const {
-    return options_.Get<float>(policyLimitId.GetId());
+    return options_.Get<float>(kpolicyLimitId.GetId());
   }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
@@ -106,8 +107,8 @@ class SearchParams {
   }
 
   // Search parameter IDs.
-  static const OptionId policyDecayId;
-  static const OptionId policyLimitId;
+  static const OptionId kpolicyDecayId;
+  static const OptionId kpolicyLimitId;
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
@@ -164,8 +165,8 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
-  const float policyDecay;
-  const float policyLimit;
+  const float kpolicyDecay;
+  const float kpolicyLimit;
 };
 
 }  // namespace lczero

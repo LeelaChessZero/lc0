@@ -44,10 +44,13 @@ const OptionId SearchParams::kMiniBatchSizeId{
     "How many positions the engine tries to batch together for parallel NN "
     "computation. Larger batches may reduce strength a bit, especially with a "
     "small number of playouts."};
-const OptionId SearchParams::policyDecayId{
-    "policy-decay", "PolicyDecay", "how fast policy decays."};
-const OptionId SearchParams::policyLimitId{
-    "policy-limit", "PolicyLimit", "What policy decays to."};
+const OptionId SearchParams::kpolicyDecayId{
+    "policy-decay", "PolicyDecay",
+    "Base constant for policy decay. Lower value means policy is removed from"
+    "search more quickly."};
+const OptionId SearchParams::kpolicyLimitId{
+    "policy-limit", "PolicyLimit",
+    "The value policies decay to in search at large numbers of node."};
 const OptionId SearchParams::kMaxPrefetchBatchId{
     "max-prefetch", "MaxPrefetch",
     "When the engine cannot gather a large enough batch for immediate use, try "
@@ -186,8 +189,8 @@ const OptionId SearchParams::kKLDGainAverageInterval{
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
-  options->Add<FloatOption>(policyDecayId, 1.0f, 1000000000.0f) = 5000.0f;
-  options->Add<FloatOption>(policyLimitId, 0.0f, 1.0f) = 0.12f;
+  options->Add<FloatOption>(kpolicyDecayId, 1.0f, 1000000000.0f) = 5000.0f;
+  options->Add<FloatOption>(kpolicyLimitId, 0.0f, 1.0f) = 0.12f;
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
@@ -230,8 +233,8 @@ void SearchParams::Populate(OptionsParser* options) {
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
-      policyDecay(options.Get<float>(policyDecayId.GetId())),
-      policyLimit(options.Get<float>(policyLimitId.GetId())),
+      kpolicyDecay(options.Get<float>(kpolicyDecayId.GetId())),
+      kpolicyLimit(options.Get<float>(kpolicyLimitId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
