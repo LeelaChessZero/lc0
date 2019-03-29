@@ -230,6 +230,17 @@ void Node::MakeTerminal(GameResult result) {
   }
 }
 
+void Node::MakeNotTerminal() {
+  is_terminal_ = false;
+  n_ = 0;
+
+  // If we have edges, we've been extended (1 visit), so include children too.
+  if (edges_) {
+    n_++;
+    for (const auto& child : Edges()) n_ += child.GetN();
+  }
+}
+
 bool Node::TryStartScoreUpdate() {
   if (n_ == 0 && n_in_flight_ > 0) return false;
   ++n_in_flight_;
@@ -430,9 +441,11 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  // Also, if the current_head_ is terminal, reset that as well to allow forced
-  // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
+  if (!seen_old_head) TrimTreeAtHead();
+
+  // Make sure the head is not terminal, so search can extend or visit children
+  // of "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
+  if (current_head_->IsTerminal()) current_head_->MakeNotTerminal();
 
   return seen_old_head;
 }

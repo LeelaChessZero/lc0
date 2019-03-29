@@ -271,12 +271,8 @@ class SearchWorker {
                                    int collision_count) {
       return NodeToProcess(node, depth, true, collision_count);
     }
-    static NodeToProcess Extension(Node* node, uint16_t depth) {
+    static NodeToProcess Visit(Node* node, uint16_t depth) {
       return NodeToProcess(node, depth, false, 1);
-    }
-    static NodeToProcess TerminalHit(Node* node, uint16_t depth,
-                                     int visit_count) {
-      return NodeToProcess(node, depth, false, visit_count);
     }
 
    private:
