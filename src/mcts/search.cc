@@ -112,7 +112,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   common_info.seldepth = max_depth_;
   common_info.time = GetTimeSinceStart();
-  common_info.nodes = total_playouts_ + initial_visits_;
   common_info.hashfull =
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   common_info.nps =
@@ -124,6 +123,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
+    uci_info.nodes = edge.GetN();
     if (score_type == "centipawn") {
       uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
     } else if (score_type == "win_percentage") {
