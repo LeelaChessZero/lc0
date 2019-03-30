@@ -61,6 +61,7 @@ std::atomic<int> rescored2(0);
 std::atomic<int> rescored3(0);
 std::atomic<int> orig_counts[3];
 std::atomic<int> fixed_counts[3];
+std::atomic<int> policy_bump(0);
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset, float dtzBoost) {
@@ -251,6 +252,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         for (auto& prob : chunk.probabilities) {
           float offset =
               distOffset + (boost_probs[prob_index] ? dtzBoost : 0.0f);
+          if (dtzBoost != 0.0f && boost_probs[prob_index]) policy_bump++;
           prob_index++;
           if (prob < 0 || std::isnan(prob)) continue;
           prob = std::max(0.0f, prob + offset);
@@ -425,6 +427,8 @@ void RescoreLoop::RunLoop() {
   std::cout << "Cumulative outcome change: " << delta << std::endl;
   std::cout << "Secondary rescores performed: " << rescored2 << std::endl;
   std::cout << "Secondary rescores performed used dtz: " << rescored3
+            << std::endl;
+  std::cout << "Number of policy values boosted by dtz " << policy_bump
             << std::endl;
   std::cout << "Original L: " << orig_counts[0] << " D: " << orig_counts[1]
             << " W: " << orig_counts[2] << std::endl;
