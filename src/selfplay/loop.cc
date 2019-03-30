@@ -366,6 +366,7 @@ void RescoreLoop::RunLoop() {
   // Positive dist offset requires knowing the legal move set, so not supported
   // for now.
   options_.Add<FloatOption>(kDistributionOffsetId, -0.999, 0) = 0;
+  options_.Add<FloatOption>(kMinDTZBoostId, 0, 1) = 0;
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;
