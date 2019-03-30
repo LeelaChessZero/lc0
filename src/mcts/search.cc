@@ -1279,7 +1279,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
   }
 
   // For the first visit to a terminal, maybe convert ancestors to terminal too.
-  auto can_convert = node->IsTerminal() && !node->GetN();
+  auto can_convert =
+      params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
 
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
