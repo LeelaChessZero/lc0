@@ -252,7 +252,10 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         for (auto& prob : chunk.probabilities) {
           float offset =
               distOffset + (boost_probs[prob_index] ? dtzBoost : 0.0f);
-          if (dtzBoost != 0.0f && boost_probs[prob_index]) policy_bump++;
+          if (dtzBoost != 0.0f && boost_probs[prob_index]) {
+            if (prob < 0 || std::isnan(prob)) std::cerr << "Bump for move that is illegal????" << std::endl;
+            policy_bump++;
+		  }
           prob_index++;
           if (prob < 0 || std::isnan(prob)) continue;
           prob = std::max(0.0f, prob + offset);
