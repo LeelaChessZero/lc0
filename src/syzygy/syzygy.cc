@@ -1625,7 +1625,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 // Use the DTZ tables to rank root moves.
 //
 // A return value false indicates that not all probes were successful.
-bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
+bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated, bool win_only,
                                  std::vector<Move>* safe_moves) {
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
@@ -1636,7 +1636,7 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
   int dtz;
   std::vector<int> ranks;
   ranks.reserve(root_moves.size());
-  int best_rank = -1000;
+  int best_rank = (win_only ? 1 : -1000);
   // Probe and rank each move
   for (auto& m : root_moves) {
     Position next_pos = Position(pos, m);

@@ -49,6 +49,9 @@ const OptionId kTempId{"temperature", "",
 const OptionId kDistributionOffsetId{
     "dist_offset", "",
     "Additional offset to apply to policy target before temperature."};
+const OptionId kMinDTZBoostId{
+    "dtz_policy_boost", "",
+    "Additional offset to apply to policy target before temperature for moves that are best dtz option."};
 
 std::atomic<int> games(0);
 std::atomic<int> positions(0);
@@ -60,7 +63,7 @@ std::atomic<int> orig_counts[3];
 std::atomic<int> fixed_counts[3];
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
-                 std::string outputDir, float distTemp, float distOffset) {
+                 std::string outputDir, float distTemp, float distOffset, float dtzBoost) {
   // Scope to ensure reader and writer are closed before deleting source file.
   {
     TrainingDataReader reader(file);
@@ -227,20 +230,40 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
     }
-    if (distTemp != 1.0f || distOffset != 0.0f) {
+    if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
+      board.SetFromFen(ChessBoard::kStartposFen, &rule50ply, &gameply);
+      history.Reset(board, rule50ply, gameply);
+      int move_index = 0;
       for (auto& chunk : fileContents) {
+        const auto& board = history.Last().GetBoard();
+        std::vector<bool> boost_probs(1858, false);
+        if (dtzBoost != 0.0f && board.castlings().no_legal_castle() &&
+            (board.ours() | board.theirs()).count() <=
+                tablebase->max_cardinality()) {
+          MoveList to_boost;
+          tablebase->root_probe(history.Last(), true, true, &to_boost);
+          for (auto& move : to_boost) {
+            boost_probs[move.as_nn_index()] = true;
+	      }
+        }
         float sum = 0.0;
+        int prob_index = 0;
         for (auto& prob : chunk.probabilities) {
-          if (prob < 0) continue;
-          prob = std::max(0.0f, prob + distOffset);
+          float offset =
+              distOffset + (boost_probs[prob_index] ? dtzBoost : 0.0f);
+          prob_index++;
+          if (prob < 0 || std::isnan(prob)) continue;
+          prob = std::max(0.0f, prob + offset);
           prob = std::pow(prob, 1.0f / distTemp);
           sum += prob;
         }
         for (auto& prob : chunk.probabilities) {
-          if (prob < 0) continue;
+          if (prob < 0 || std::isnan(prob)) continue;
           prob /= sum;
         }
-      }
+        history.Append(moves[move_index]);
+        move_index++;
+	  }
     }
 
     int offset = 0;
@@ -316,10 +339,10 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 
 void ProcessFiles(const std::vector<std::string>& files,
                   SyzygyTablebase* tablebase, std::string outputDir,
-                  float distTemp, float distOffset, int offset, int mod) {
+                  float distTemp, float distOffset, float dtzBoost, int offset, int mod) {
   std::cerr << "Thread: " << offset << " starting" << std::endl;
   for (int i = offset; i < files.size(); i += mod) {
-    ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset);
+    ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset, dtzBoost);
   }
 }
 }  // namespace
@@ -363,6 +386,8 @@ void RescoreLoop::RunLoop() {
   for (int i = 0; i < files.size(); i++) {
     files[i] = inputDir + "/" + files[i];
   }
+  float dtz_boost =
+      options_.GetOptionsDict().Get<float>(kMinDTZBoostId.GetId());
   int threads = options_.GetOptionsDict().Get<int>(kThreadsId.GetId());
   if (threads > 1) {
     std::vector<std::thread> threads_;
@@ -370,12 +395,13 @@ void RescoreLoop::RunLoop() {
     while (threads_.size() < threads) {
       int offset_val = offset;
       offset++;
-      threads_.emplace_back([this, offset_val, files, &tablebase, threads]() {
+      threads_.emplace_back([this, offset_val, files, &tablebase, threads, dtz_boost]() {
         ProcessFiles(
             files, &tablebase,
             options_.GetOptionsDict().Get<std::string>(kOutputDirId.GetId()),
             options_.GetOptionsDict().Get<float>(kTempId.GetId()),
             options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()),
+            dtz_boost,
             offset_val, threads);
       });
     }
@@ -388,7 +414,8 @@ void RescoreLoop::RunLoop() {
         files, &tablebase,
         options_.GetOptionsDict().Get<std::string>(kOutputDirId.GetId()),
         options_.GetOptionsDict().Get<float>(kTempId.GetId()),
-        options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()), 0,
+        options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()), 
+		dtz_boost, 0,
         1);
   }
   std::cout << "Games processed: " << games << std::endl;
