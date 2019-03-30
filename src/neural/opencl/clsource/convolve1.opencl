@@ -89,8 +89,7 @@ __kernel void merge_bn(
                        __global const net_t * restrict in,
                        __global net_t * restrict out,
                        __private const int channels,
-                       __constant const net_t * restrict means,
-                       __constant const net_t * restrict stddivs) {
+                       __constant const net_t * restrict biases) {
   // cl::NDRange global(outputs, 8*8);
   const int gx = get_global_id(0);
   const int gy = get_global_id(1);
@@ -107,11 +106,10 @@ __kernel void merge_bn(
     sum += vload_net_t(batch * channels * boardsize * outputs +
 	    (c * boardsize + b) * outputs + o, in);
   }
-  if (means) {
-    const float mean = vload_net_t(o, means);
-    const float scale_stddiv = vload_net_t(o, stddivs);
-    
-    sum = scale_stddiv * (sum - mean);
+  if (biases) {
+    const float bias = vload_net_t(o, biases);
+
+    sum = sum + bias;
     sum = sum > 0 ? sum : 0.0f;
   }
   vstore_net_t(sum, batch * outputs * boardsize + o * boardsize + b, out);

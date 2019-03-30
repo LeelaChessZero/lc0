@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -101,13 +101,13 @@ class CudnnNetwork;
 template <typename DataType>
 class CudnnNetworkComputation : public NetworkComputation {
  public:
-  CudnnNetworkComputation(CudnnNetwork<DataType>* network);
+  CudnnNetworkComputation(CudnnNetwork<DataType>* network, bool wdl);
   ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
-    auto iter_mask =
+    const auto iter_mask =
         &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
-    auto iter_val =
+    const auto iter_val =
         &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
 
     int i = 0;
@@ -125,8 +125,24 @@ class CudnnNetworkComputation : public NetworkComputation {
   int GetBatchSize() const override { return batch_size_; }
 
   float GetQVal(int sample) const override {
-    return inputs_outputs_->op_value_mem_[sample];
+    if (wdl_) {
+      auto w = inputs_outputs_->op_value_mem_[3 * sample + 0];
+      auto l = inputs_outputs_->op_value_mem_[3 * sample + 2];
+      return w - l;
+    } else {
+      return inputs_outputs_->op_value_mem_[sample];
+    }
   }
+
+  float GetDVal(int sample) const override {
+    if (wdl_) {
+      auto d = inputs_outputs_->op_value_mem_[3 * sample + 1];
+      return d;
+    } else {
+      return 0.0f;
+    }
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
@@ -135,6 +151,7 @@ class CudnnNetworkComputation : public NetworkComputation {
   // Memory holding inputs, outputs.
   std::unique_ptr<InputsOutputs> inputs_outputs_;
   int batch_size_;
+  bool wdl_;
 
   CudnnNetwork<DataType>* network_;
 };
@@ -157,15 +174,15 @@ class CudnnNetwork : public Network {
     if (gpu_id_ >= total_gpus)
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
 
+    cudaDeviceProp deviceProp = {};
+    cudaGetDeviceProperties(&deviceProp, gpu_id_);
+    showInfo(deviceProp);
+
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
 
     ReportCUDNNErrors(cudnnCreate(&cudnn_));
     ReportCUBLASErrors(cublasCreate(&cublas_));
-
-    cudaDeviceProp deviceProp = {};
-    cudaGetDeviceProperties(&deviceProp, gpu_id_);
-    showInfo(deviceProp);
 
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support fp16 (Volta+).
@@ -184,28 +201,10 @@ class CudnnNetwork : public Network {
 
     has_se_ = false;
 
-    // 0. Process weights.
-
-    // TODO: Get filter sizes from proto file?
-    // Hardcoded right now:
-    //  3 for input and residual block convolutions.
-    //  1 for policy and value head convolutions.
-    processConvBlock(weights.input, true, 3);
-    for (int i = 0; i < numBlocks_; i++) {
-      if (weights.residual[i].has_se) {
-        has_se_ = true;
-      }
-      processConvBlock(weights.residual[i].conv1, true, 3);
-      processConvBlock(weights.residual[i].conv2, true, 3);
+    // 0. Check for SE.
+    if (weights.residual[0].has_se) {
+      has_se_ = true;
     }
-    if (conv_policy_) {
-      processConvBlock(weights.policy1, true, 1);
-      // weights.policy doesn't have batch norm with convolutional policy
-      // so no need to call processConvBlock for it.
-    } else {
-      processConvBlock(weights.policy, true, 1);
-    }
-    processConvBlock(weights.value, true, 1);
 
     // 1. Allocate scratch space (used internally by cudnn to run convolutions,
     //     and also for format/layout conversion for weights).
@@ -330,8 +329,8 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(softmaxPol));
     } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.policy.bn_means.size(), 8, 8, 1, kNumFilters,
-          true, true);
+          resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters, true,
+          true);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convPol));
@@ -363,11 +362,22 @@ class CudnnNetwork : public Network {
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal1));
 
-      auto FCVal2 = std::make_unique<FCLayer<DataType>>(getLastLayer(), 1, 1, 1,
-                                                        false, true, true);
+      wdl_ = file.format().network_format().value() ==
+             pblczero::NetworkFormat::VALUE_WDL;
+      auto fc2_tanh = !wdl_;
+
+      auto FCVal2 = std::make_unique<FCLayer<DataType>>(
+          getLastLayer(), weights.ip2_val_b.size(), 1, 1, false, true,
+          fc2_tanh);
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
+
+      if (wdl_) {
+        auto softmaxVal =
+            std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
+        network_.emplace_back(std::move(softmaxVal));
+      }
     }
     value_out_ = getLastLayer();
 
@@ -379,6 +389,10 @@ class CudnnNetwork : public Network {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
     }
+
+    cudnnDestroyFilterDescriptor(wDesc);
+    cudnnDestroyConvolutionDescriptor(convDesc);
+    cudnnDestroyTensorDescriptor(xDesc);
 
 #ifdef DEBUG_RAW_NPS
     CERR << "allocated " << 3 * maxSize
@@ -499,16 +513,36 @@ class CudnnNetwork : public Network {
                         scratch_mem_, scratch_size_, cudnn_,
                         cublas_);  // value FC1
 
-    if (std::is_same<half, DataType>::value) {
-      // TODO: consider fusing the bias-add of FC2 with format conversion.
+    if (wdl_) {
       network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // value FC2
-      copyTypeConverted(opVal, (half*)(tensor_mem_[2]), batchSize);  // VALUE
-    } else {
-      network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // value FC2    // VALUE
+
+      // Value softmax
+      if (std::is_same<half, DataType>::value) {
+        // TODO: consider fusing the bias-add of FC2 with format conversion.
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // value FC2
+        copyTypeConverted(opVal, (half*)(tensor_mem_[0]),
+                          3 * batchSize);  // VALUE
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[2],
+                            nullptr, scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // value FC2    // VALUE
+      }
+    } else {
+      if (std::is_same<half, DataType>::value) {
+        // TODO: consider fusing the bias-add of FC2 with format conversion.
+        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // value FC2
+        copyTypeConverted(opVal, (half*)(tensor_mem_[2]), batchSize);  // VALUE
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
+                            nullptr, scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // value FC2    // VALUE
+      }
     }
     ReportCUDAErrors(cudaDeviceSynchronize());
 
@@ -551,7 +585,7 @@ class CudnnNetwork : public Network {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
-    return std::make_unique<CudnnNetworkComputation<DataType>>(this);
+    return std::make_unique<CudnnNetworkComputation<DataType>>(this, wdl_);
   }
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
@@ -581,6 +615,7 @@ class CudnnNetwork : public Network {
   cublasHandle_t cublas_;
   int gpu_id_;
   int max_batch_size_;
+  bool wdl_;
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
@@ -602,51 +637,6 @@ class CudnnNetwork : public Network {
 
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
-
-  void processConvBlock(LegacyWeights::ConvBlock& block, bool foldBNLayer,
-                        int filterSize) {
-    const float epsilon = 1e-5f;
-
-    // Compute reciprocal of std-dev from the variances (so that it can be
-    // just multiplied).
-    std::vector<float>& stddev = block.bn_stddivs;
-    for (auto&& w : stddev) {
-      w = 1.0f / std::sqrt(w + epsilon);
-    }
-
-    // Biases are not calculated and are typically zero but some networks
-    // might still have non-zero biases. Move biases to batchnorm means to
-    // make the output match without having to separately add the biases.
-    for (auto j = size_t{0}; j < block.bn_means.size(); j++) {
-      block.bn_means[j] -= block.biases[j];
-      block.biases[j] = 0.0f;
-    }
-
-    // Get rid of the BN layer by adjusting weights and biases of the
-    // convolution idea proposed by Henrik Forstén and first implemented in
-    // leela go zero.
-    if (foldBNLayer) {
-      const int spatialSize = filterSize * filterSize;
-      const int outputs = block.biases.size();
-      const int channels = block.weights.size() / (outputs * spatialSize);
-
-      for (auto o = 0; o < outputs; o++) {
-        for (auto c = 0; c < channels; c++) {
-          for (auto i = 0; i < spatialSize; i++) {
-            block.weights[o * channels * spatialSize + c * spatialSize + i] *=
-                block.bn_stddivs[o];
-          }
-        }
-
-        block.bn_means[o] *= block.bn_stddivs[o];
-        block.bn_stddivs[o] = 1.0f;
-
-        // Move means to convolution biases.
-        block.biases[o] = -block.bn_means[o];
-        block.bn_means[o] = 0.0f;
-      }
-    }
-  }
 
   void showInfo(const cudaDeviceProp& deviceProp) const {
     CERR << "GPU: " << deviceProp.name;
@@ -675,9 +665,13 @@ class CudnnNetwork : public Network {
     pl = version - major * 1000 - minor * 100;
     CERR << "Cudnn version: " << major << "." << minor << "." << pl;
     if (version != CUDNN_VERSION) {
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+      CERR << "WARNING: CUDNN Runtime version mismatch, was compiled with "
               "version "
            << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
+    }
+    if (version < 7301 && (deviceProp.major > 7 ||
+                           (deviceProp.major == 7 && deviceProp.minor >= 5))) {
+      CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
     }
     cudaDriverGetVersion(&version);
     major = version / 1000;
@@ -689,7 +683,7 @@ class CudnnNetwork : public Network {
       CERR << "WARNING: code was compiled with unsupported CUDA version.";
     }
     if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
-       CERR << "WARNING: you will probably get better performance from the "
+      CERR << "WARNING: you will probably get better performance from the "
               "cudnn-fp16 backend.";
     }
   }
@@ -697,8 +691,8 @@ class CudnnNetwork : public Network {
 
 template <typename DataType>
 CudnnNetworkComputation<DataType>::CudnnNetworkComputation(
-    CudnnNetwork<DataType>* network)
-    : network_(network) {
+    CudnnNetwork<DataType>* network, bool wdl)
+    : wdl_(wdl), network_(network) {
   batch_size_ = 0;
   inputs_outputs_ = network_->GetInputsOutputs();
 }
@@ -734,7 +728,9 @@ std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
                     " is not supported by CuDNN backend.");
   }
   if (weights.format().network_format().value() !=
-      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+          pblczero::NetworkFormat::VALUE_CLASSICAL &&
+      weights.format().network_format().value() !=
+          pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
                     std::to_string(weights.format().network_format().value()) +
                     " is not supported by CuDNN backend.");

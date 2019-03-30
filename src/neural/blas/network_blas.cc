@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2019 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -25,7 +25,6 @@
 #include "neural/network.h"
 #include "neural/network_legacy.h"
 #include "neural/shared/activation.h"
-#include "neural/shared/batchnorm.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
 
@@ -40,7 +39,7 @@ namespace {
 class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
-                  const bool conv_policy);
+                  const bool wdl, const bool conv_policy);
 
   virtual ~BlasComputation() {}
 
@@ -54,7 +53,24 @@ class BlasComputation : public NetworkComputation {
   int GetBatchSize() const override { return static_cast<int>(planes_.size()); }
 
   // Returns Q value of @sample.
-  float GetQVal(int sample) const override { return q_values_[sample]; }
+  float GetQVal(int sample) const override {
+    if (wdl_) {
+      auto w = q_values_[3 * sample + 0];
+      auto l = q_values_[3 * sample + 2];
+      return w - l;
+    } else {
+      return q_values_[sample];
+    }
+  }
+
+  float GetDVal(int sample) const override {
+    if (wdl_) {
+      auto d = q_values_[3 * sample + 1];
+      return d;
+    } else {
+      return 0.0f;
+    }
+  }
 
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
@@ -77,6 +93,7 @@ class BlasComputation : public NetworkComputation {
   std::vector<InputPlanes> planes_;
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
+  bool wdl_;
   bool conv_policy_;
 };
 
@@ -86,7 +103,7 @@ class BlasNetwork : public Network {
   virtual ~BlasNetwork(){};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<BlasComputation>(weights_, max_batch_size_,
+    return std::make_unique<BlasComputation>(weights_, max_batch_size_, wdl_,
                                              conv_policy_);
   }
 
@@ -96,23 +113,25 @@ class BlasNetwork : public Network {
 
   LegacyWeights weights_;
   size_t max_batch_size_;
+  bool wdl_;
   bool conv_policy_;
 };
 
 BlasComputation::BlasComputation(const LegacyWeights& weights,
-                                 const size_t max_batch_size,
+                                 const size_t max_batch_size, const bool wdl,
                                  const bool conv_policy)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
       q_values_(0),
+      wdl_(wdl),
       conv_policy_(conv_policy) {}
 
 void BlasComputation::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
   const auto num_value_channels = weights_.ip1_val_b.size();
-  const auto num_value_input_planes = weights_.value.bn_means.size();
-  const auto num_policy_input_planes = weights_.policy.bn_means.size();
+  const auto num_value_input_planes = weights_.value.biases.size();
+  const auto num_policy_input_planes = weights_.policy.biases.size();
   const auto num_output_policy = kPolicyOutputs;
   const auto output_channels = weights_.input.biases.size();
 
@@ -169,11 +188,10 @@ void BlasComputation::ComputeBlocking() {
     // Input convolution
 
     convolve3.Forward(batch_size, kInputPlanes, output_channels, conv_in,
-                      &weights_.input.weights[0], conv_out);
+                      weights_.input.weights.data(), conv_out);
 
-    ApplyBatchNormalization(batch_size, output_channels, conv_out,
-                            weights_.input.bn_means.data(),
-                            weights_.input.bn_stddivs.data());
+    BiasResidualRelu(batch_size, output_channels, conv_out,
+                     weights_.input.biases.data());
 
     // Residual tower
 
@@ -185,22 +203,21 @@ void BlasComputation::ComputeBlocking() {
       std::swap(conv_out, conv_in);
 
       convolve3.Forward(batch_size, output_channels, output_channels, conv_in,
-                        &conv1.weights[0], conv_out);
+                        conv1.weights.data(), conv_out);
 
-      ApplyBatchNormalization(batch_size, output_channels, &conv_out[0],
-                              conv1.bn_means.data(), conv1.bn_stddivs.data());
+      BiasResidualRelu(batch_size, output_channels, &conv_out[0],
+                       conv1.biases.data());
 
       std::swap(conv_in, res);
       std::swap(conv_out, conv_in);
 
       convolve3.Forward(batch_size, output_channels, output_channels, conv_in,
-                        &conv2.weights[0], conv_out);
+                        conv2.weights.data(), conv_out);
 
       if (residual.has_se) {
         // No relu if followed by SE-unit and residual is added later
-        ApplyBatchNormalization(batch_size, output_channels, conv_out,
-                                conv2.bn_means.data(), conv2.bn_stddivs.data(),
-                                nullptr, false);
+        BiasResidualRelu(batch_size, output_channels, &conv_out[0],
+                         conv2.biases.data(), nullptr, false);
 
         std::swap(conv_out, conv_in);
 
@@ -209,28 +226,26 @@ void BlasComputation::ComputeBlocking() {
                     se.w1.data(), se.b1.data(), se.w2.data(), se.b2.data(),
                     conv_out);
       } else {
-        ApplyBatchNormalization(batch_size, output_channels, conv_out,
-                                conv2.bn_means.data(), conv2.bn_stddivs.data(),
-                                res);
+        BiasResidualRelu(batch_size, output_channels, &conv_out[0],
+                         conv2.biases.data(), res);
       }
     }
 
     if (conv_policy_) {
       // Need to preserve conv_out which is used for value head
       convolve3.Forward(batch_size, output_channels, output_channels, conv_out,
-                        &weights_.policy1.weights[0], res);
+                        weights_.policy1.weights.data(), res);
 
-      ApplyBatchNormalization(batch_size, output_channels, &res[0],
-                              weights_.policy1.bn_means.data(),
-                              weights_.policy1.bn_stddivs.data());
+      BiasResidualRelu(batch_size, output_channels, &res[0],
+                       weights_.policy1.biases.data());
 
       convolve3.Forward(batch_size, output_channels, num_policy_input_planes,
-                        res, &weights_.policy.weights[0], policy_buffer.data());
+                        res, weights_.policy.weights.data(),
+                        policy_buffer.data());
 
-      ApplyBatchNormalization(
-          batch_size, num_policy_input_planes, &policy_buffer.data()[0],
-          weights_.policy.bn_means.data(), weights_.policy.bn_stddivs.data(),
-          nullptr, false);
+      BiasResidualRelu(batch_size, num_policy_input_planes,
+                       &policy_buffer.data()[0], weights_.policy.biases.data(),
+                       nullptr, false);
 
       // Mapping from convolutional policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
@@ -248,9 +263,8 @@ void BlasComputation::ComputeBlocking() {
           batch_size, output_channels, num_policy_input_planes, conv_out,
           weights_.policy.weights.data(), policy_buffer.data());
 
-      ApplyBatchNormalization(
-          batch_size, num_policy_input_planes, &policy_buffer[0],
-          weights_.policy.bn_means.data(), weights_.policy.bn_stddivs.data());
+      BiasResidualRelu(batch_size, num_policy_input_planes, &policy_buffer[0],
+                       weights_.policy.biases.data());
 
       FullyConnectedLayer::Forward1D(
           batch_size, num_policy_input_planes * kSquares, num_output_policy,
@@ -265,9 +279,8 @@ void BlasComputation::ComputeBlocking() {
                           conv_out, weights_.value.weights.data(),
                           value_buffer.data());
 
-    ApplyBatchNormalization(batch_size, num_value_input_planes,
-                            &value_buffer[0], weights_.value.bn_means.data(),
-                            weights_.value.bn_stddivs.data());
+    BiasResidualRelu(batch_size, num_value_input_planes, &value_buffer[0],
+                     weights_.value.biases.data());
 
     FullyConnectedLayer::Forward1D(
         batch_size, num_value_input_planes * kSquares, num_value_channels,
@@ -284,14 +297,34 @@ void BlasComputation::ComputeBlocking() {
                         policy.data());
 
       policies_.emplace_back(std::move(policy));
+    }
 
-      // Now get the score
-      double winrate = FullyConnectedLayer::Forward0D(
-                           num_value_channels, weights_.ip2_val_w.data(),
-                           &output_val[j * num_value_channels]) +
-                       weights_.ip2_val_b[0];
+    // Now get the score
+    if (wdl_) {
+      std::vector<float> wdl(3 * batch_size);
+      FullyConnectedLayer::Forward1D(
+          batch_size, num_value_channels, 3, output_val.data(),
+          weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
+          false,  // Relu Off
+          wdl.data());
 
-      q_values_.emplace_back(std::tanh(winrate));
+      for (size_t j = 0; j < batch_size; j++) {
+        std::vector<float> wdl_softmax(3);
+        SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
+
+        q_values_.emplace_back(wdl_softmax[0]);
+        q_values_.emplace_back(wdl_softmax[1]);
+        q_values_.emplace_back(wdl_softmax[2]);
+      }
+    } else {
+      for (size_t j = 0; j < batch_size; j++) {
+        double winrate = FullyConnectedLayer::Forward0D(
+                             num_value_channels, weights_.ip2_val_w.data(),
+                             &output_val[j * num_value_channels]) +
+                         weights_.ip2_val_b[0];
+
+        q_values_.emplace_back(std::tanh(winrate));
+      }
     }
   }
 }
@@ -310,6 +343,9 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
+  wdl_ = file.format().network_format().value() ==
+         pblczero::NetworkFormat::VALUE_WDL;
+
   conv_policy_ = file.format().network_format().policy() ==
                  pblczero::NetworkFormat::POLICY_CONVOLUTION;
 
@@ -325,9 +361,6 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   weights_.input.weights =
       WinogradFilterTransformF(weights_.input.weights, channels, inputChannels);
 
-  weights_.input.OffsetMeans();
-  weights_.input.InvertStddev();
-
   // residual blocks
   for (size_t i = 0; i < residual_blocks; i++) {
     auto& residual = weights_.residual[i];
@@ -336,33 +369,15 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
 
     conv1.weights = WinogradFilterTransformF(conv1.weights, channels, channels);
     conv2.weights = WinogradFilterTransformF(conv2.weights, channels, channels);
-
-    conv1.OffsetMeans();
-    conv2.OffsetMeans();
-    conv1.InvertStddev();
-    conv2.InvertStddev();
   }
 
   if (conv_policy_) {
-    weights_.policy1.OffsetMeans();
-    weights_.policy1.InvertStddev();
-
     weights_.policy1.weights =
         WinogradFilterTransformF(weights_.policy1.weights, channels, channels);
     auto pol_channels = weights_.policy.biases.size();
     weights_.policy.weights = WinogradFilterTransformF(weights_.policy.weights,
                                                        pol_channels, channels);
-    // Move bias to batchnorm
-    for (auto i = size_t{0}; i < pol_channels; i++) {
-      weights_.policy.bn_means.emplace_back(-weights_.policy.biases[i]);
-      weights_.policy.bn_stddivs.emplace_back(1.0f);
-    }
-  } else {
-    weights_.policy.OffsetMeans();
-    weights_.policy.InvertStddev();
   }
-  weights_.value.OffsetMeans();
-  weights_.value.InvertStddev();
 
 #ifdef USE_OPENBLAS
   int num_procs = openblas_get_num_procs();
@@ -424,7 +439,9 @@ std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                     " is not supported by BLAS backend.");
   }
   if (weights.format().network_format().value() !=
-      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+          pblczero::NetworkFormat::VALUE_CLASSICAL &&
+      weights.format().network_format().value() !=
+          pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
                     std::to_string(weights.format().network_format().value()) +
                     " is not supported by BLAS backend.");
