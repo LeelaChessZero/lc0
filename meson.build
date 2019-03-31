@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-project('rescorer', 'cpp',
+project('lc0', 'cpp',
         default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
         meson_version: '>=0.45')
 
