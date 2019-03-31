@@ -87,6 +87,9 @@ class SearchParams {
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
+  bool GetMultiPVDisaggregatedNodecount() const {
+    return options_.Get<bool>(kMultiPVDisaggregatedNodecountId.GetId());
+  }
   std::string GetScoreType() const {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
@@ -125,6 +128,7 @@ class SearchParams {
   static const OptionId kOutOfOrderEvalId;
   static const OptionId kSyzygyFastPlayId;
   static const OptionId kMultiPvId;
+  static const OptionId kMultiPVDisaggregatedNodecountId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;

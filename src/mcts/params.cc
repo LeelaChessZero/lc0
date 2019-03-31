@@ -160,6 +160,10 @@ const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV",
     "Number of game play lines (principal variations) to show in UCI info "
     "output."};
+const OptionId SearchParams::kMultiPVDisaggregatedNodecountId{
+    "multipv-disaggregated-nodecount", "MultiPVDisaggregatedNodecount",
+    "Report number of subnodes in each Principal Variation when MultiPV "
+    "is greater than one."};
 const OptionId SearchParams::kScoreTypeId{
     "score-type", "ScoreType",
     "What to display as score. Either centipawns (the UCI default), win "
@@ -211,6 +215,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
+  options->Add<BoolOption>(kMultiPVDisaggregatedNodecountId) = false;
   std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
