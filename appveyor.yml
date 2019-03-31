@@ -79,7 +79,7 @@ after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\COPYING .\dist\CUDA.txt .\dist\CUDNN.txt
 artifacts:
-  - path: build/lc0.exe
+  - path: build/rescorer.exe
     name: lc0-$(NAME)
   - path: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
