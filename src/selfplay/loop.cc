@@ -63,6 +63,7 @@ std::atomic<int> rescored3(0);
 std::atomic<int> orig_counts[3];
 std::atomic<int> fixed_counts[3];
 std::atomic<int> policy_bump(0);
+std::atomic<int> policy_nobump_total_hist[11];
 std::atomic<int> policy_bump_total_hist[11];
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
@@ -241,7 +242,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       for (auto& chunk : fileContents) {
         const auto& board = history.Last().GetBoard();
         std::vector<bool> boost_probs(1858, false);
-        bool any_boost = false;
+        int boost_count = 0;
+
         if (dtzBoost != 0.0f && board.castlings().no_legal_castle() &&
             (board.ours() | board.theirs()).count() <=
                 tablebase->max_cardinality()) {
@@ -249,15 +251,17 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           tablebase->root_probe(history.Last(), true, true, &to_boost);
           for (auto& move : to_boost) {
             boost_probs[move.as_nn_index()] = true;
-            any_boost = true;
           }
+          boost_count = to_boost.size();
         }
         float sum = 0.0;
         int prob_index = 0;
+        float preboost_sum = 0.0f;
         for (auto& prob : chunk.probabilities) {
           float offset =
-              distOffset + (boost_probs[prob_index] ? dtzBoost : 0.0f);
+              distOffset + (boost_probs[prob_index] ? (dtzBoost / boost_count): 0.0f);
           if (dtzBoost != 0.0f && boost_probs[prob_index]) {
+            preboost_sum += prob;
             if (prob < 0 || std::isnan(prob))
               std::cerr << "Bump for move that is illegal????" << std::endl;
             policy_bump++;
@@ -278,7 +282,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           if (prob < 0 || std::isnan(prob)) continue;
           prob /= sum;
         }
-        if (any_boost) {
+        if (boost_count > 0) {
+          policy_nobump_total_hist[(int)(preboost_sum * 10)]++;
           policy_bump_total_hist[(int)(boost_sum * 10)]++;
         }
         history.Append(moves[move_index]);
@@ -380,6 +385,7 @@ void RescoreLoop::RunLoop() {
   fixed_counts[1] = 0;
   fixed_counts[2] = 0;
   for (int i = 0; i < 11; i++) policy_bump_total_hist[i] = 0;
+  for (int i = 0; i < 11; i++) policy_nobump_total_hist[i] = 0;
   options_.Add<StringOption>(kSyzygyTablebaseId);
   options_.Add<StringOption>(kInputDirId);
   options_.Add<StringOption>(kOutputDirId);
@@ -449,11 +455,19 @@ void RescoreLoop::RunLoop() {
             << std::endl;
   std::cout << "Number of policy values boosted by dtz " << policy_bump
             << std::endl;
-  std::cout << "Boosted policy_sum dist:";
+  std::cout << "Orig policy_sum dist of boost candidate:";
+  std::cout << std::endl;
   int event_sum = 0;
   for (int i = 0; i < 11; i++) event_sum += policy_bump_total_hist[i];
   for (int i = 0; i < 11; i++) {
-    std::cout << " " << std::setprecision(4) << ((float)policy_bump_total_hist[i] / (float)event_sum);
+    std::cout << " " << std::setprecision(4) << ((float)policy_nobump_total_hist[i] / (float)event_sum);
+  }
+  std::cout << std::endl;
+  std::cout << "Boosted policy_sum dist of boost candidate:";
+  std::cout << std::endl;
+  for (int i = 0; i < 11; i++) {
+    std::cout << " " << std::setprecision(4)
+              << ((float)policy_bump_total_hist[i] / (float)event_sum);
   }
   std::cout << std::endl;
   std::cout << "Original L: " << orig_counts[0] << " D: " << orig_counts[1]
