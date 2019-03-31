@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -48,7 +48,7 @@ void TestValidRootExpectation(SyzygyTablebase* tablebase,
   board.SetFromFen(fen, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
   MoveList allowed_moves_dtz;
-  tablebase->root_probe(history.Last(), has_repeated, &allowed_moves_dtz);
+  tablebase->root_probe(history.Last(), has_repeated, false, &allowed_moves_dtz);
   MoveList allowed_moves_wdl;
   tablebase->root_probe_wdl(history.Last(), &allowed_moves_wdl);
   for (auto move : valid_moves) {

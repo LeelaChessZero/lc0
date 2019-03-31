@@ -28,6 +28,7 @@
 #include <zlib.h>
 #include <fstream>
 #include "utils/cppattributes.h"
+#include "neural/network.h"
 
 #pragma once
 
@@ -35,7 +36,7 @@ namespace lczero {
 
 #pragma pack(push, 1)
 
-struct V3TrainingData {
+struct V4TrainingData {
   uint32_t version;
   float probabilities[1858];
   uint64_t planes[104];
@@ -47,8 +48,14 @@ struct V3TrainingData {
   uint8_t rule50_count;
   uint8_t move_count;
   int8_t result;
+  float root_q;
+  float best_q;
+  float root_d;
+  float best_d;
 } PACKED_STRUCT;
-static_assert(sizeof(V3TrainingData) == 8276, "Wrong struct size");
+static_assert(sizeof(V4TrainingData) == 8292, "Wrong struct size");
+
+InputPlanes PlanesFromTrainingData(const V4TrainingData& data);
 
 #pragma pack(pop)
 
@@ -57,13 +64,14 @@ class TrainingDataWriter {
   // Creates a new file to write in data directory. It will has @game_id
   // somewhere in the filename.
   TrainingDataWriter(int game_id);
+  TrainingDataWriter(std::string filename);
 
   ~TrainingDataWriter() {
     if (fout_) Finalize();
   }
 
   // Writes a chunk.
-  void WriteChunk(const V3TrainingData& data);
+  void WriteChunk(const V4TrainingData& data);
 
   // Flushes file and closes it.
   void Finalize();
@@ -74,6 +82,25 @@ class TrainingDataWriter {
  private:
   std::string filename_;
   gzFile fout_;
+};
+
+class TrainingDataReader {
+ public:
+  // Opens the given file to read chunk data from.
+  TrainingDataReader(std::string filename);
+
+  ~TrainingDataReader();
+
+  // Reads a chunk. Returns true if a chunk was read.
+  bool ReadChunk(V4TrainingData* data);
+
+  // Gets full filename of the file being read.
+  std::string GetFileName() const { return filename_; }
+
+ private:
+  std::string filename_;
+  gzFile fin_;
+  bool format_v4 = false;
 };
 
 }  // namespace lczero

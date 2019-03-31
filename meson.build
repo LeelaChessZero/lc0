@@ -1,5 +1,5 @@
 # This file is part of Leela Chess Zero.
-# Copyright (C) 2018 The LCZero Authors
+# Copyright (C) 2018-2019 The LCZero Authors
 #
 # Leela Chess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-project('lc0', 'cpp',
+project('rescorer', 'cpp',
         default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
         meson_version: '>=0.45')
 
@@ -278,7 +278,6 @@ if get_option('build_backends')
 
     shared_files = [
     'src/neural/shared/activation.cc',
-    'src/neural/shared/batchnorm.cc',
     'src/neural/shared/winograd_filter.cc',
     ]
 
@@ -325,7 +324,6 @@ if get_option('build_backends')
 
     shared_files = [
     'src/neural/shared/activation.cc',
-    'src/neural/shared/batchnorm.cc',
     'src/neural/shared/winograd_filter.cc',
     ]
 
@@ -439,7 +437,7 @@ if not get_option('pext')
   add_project_arguments('-DNO_PEXT', language : 'cpp')
 endif
 
-executable('lc0', 'src/main.cc',
+executable('rescorer', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
 
