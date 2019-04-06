@@ -28,9 +28,8 @@ install:
 - cmd: IF DEFINED CUDA_INSTALL appveyor DownloadFile https://developer.nvidia.com/compute/cuda/10.0/Prod/network_installers/cuda_10.0.130_win10_network
 - cmd: IF DEFINED CUDA_INSTALL cuda_10.0.130_win10_network -s nvcc_10.0 cublas_dev_10.0 cublas_10.0 cudart_10.0
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
-- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.3.1/cudnn-10.0-windows10-x64-v7.3.1.20.zip
-- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-10.0-windows10-x64-v7.3.1.20.zip -oC:\cache
-- cmd: set BOOST_ROOT=C:\Libraries\boost_1_67_0
+- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.4.2/cudnn-10.0-windows10-x64-v7.4.2.24.zip
+- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-10.0-windows10-x64-v7.4.2.24.zip -oC:\cache
 - cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
 - cmd: pip3 install --upgrade meson
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
@@ -80,7 +79,7 @@ after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\COPYING .\dist\CUDA.txt .\dist\CUDNN.txt
 artifacts:
-  - path: build/lc0.exe
+  - path: build/rescorer.exe
     name: lc0-$(NAME)
   - path: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip

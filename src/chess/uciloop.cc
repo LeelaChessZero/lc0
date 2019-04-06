@@ -72,7 +72,7 @@ ParseCommand(const std::string& line) {
   // If empty line, return empty command.
   if (token.empty()) return {};
 
-  auto command = kKnownCommands.find(token);
+  const auto command = kKnownCommands.find(token);
   if (command == kKnownCommands.end()) {
     throw Exception("Unknown command: " + line);
   }
@@ -96,14 +96,14 @@ ParseCommand(const std::string& line) {
 std::string GetOrEmpty(
     const std::unordered_map<std::string, std::string>& params,
     const std::string& key) {
-  auto iter = params.find(key);
+  const auto iter = params.find(key);
   if (iter == params.end()) return {};
   return iter->second;
 }
 
 int GetNumeric(const std::unordered_map<std::string, std::string>& params,
                const std::string& key) {
-  auto iter = params.find(key);
+  const auto iter = params.find(key);
   if (iter == params.end()) {
     throw Exception("Unexpected error");
   }
@@ -156,7 +156,7 @@ bool UciLoop::DispatchCommand(
     if (ContainsKey(params, "fen") == ContainsKey(params, "startpos")) {
       throw Exception("Position requires either fen or startpos");
     }
-    std::vector<std::string> moves =
+    const std::vector<std::string> moves =
         StrSplitAtWhitespace(GetOrEmpty(params, "moves"));
     CmdPosition(GetOrEmpty(params, "fen"), moves);
   } else if (command == "go") {

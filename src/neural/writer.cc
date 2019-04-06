@@ -28,6 +28,7 @@
 #include "neural/writer.h"
 
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include "utils/commandline.h"
 #include "utils/exception.h"
@@ -35,6 +36,62 @@
 #include "utils/random.h"
 
 namespace lczero {
+namespace {
+// Reverse bits in every byte of a number
+uint64_t ReverseBitsInBytes(uint64_t v) {
+  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
+  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
+  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
+  return v;
+}
+}  // namespace
+
+InputPlanes PlanesFromTrainingData(const V4TrainingData& data) { InputPlanes result;
+  for (int i = 0; i < 104; i++) {
+    result.emplace_back();
+    result.back().mask = ReverseBitsInBytes(data.planes[i]);
+  }
+  // TODO: set up the special input planes.
+  return result;
+}
+
+TrainingDataReader::TrainingDataReader(std::string filename)
+    : filename_(filename) {
+  fin_ = gzopen(filename_.c_str(), "rb");
+  if (!fin_) {
+    throw Exception("Cannot open gzip file " + filename_);
+  }
+}
+
+TrainingDataReader::~TrainingDataReader() {
+  gzclose(fin_);
+}
+
+bool TrainingDataReader::ReadChunk(V4TrainingData* data) {
+  if (format_v4) {
+    return gzread(fin_, reinterpret_cast<void*>(data), sizeof(*data)) ==
+           sizeof(*data);
+  } else {
+    size_t v4_extra = 16;
+    size_t v3_size = sizeof(*data) - v4_extra;
+    int read_size = gzread(fin_, reinterpret_cast<void*>(data), v3_size);
+    if (read_size != v3_size) return false;
+    if (data->version == 3) {
+      data->version = 4;
+      data->root_q = 0.0f;
+      data->best_q = 0.0f;
+      data->root_d = 0.0f;
+      data->best_d = 0.0f;
+      return true;
+    } else {
+      format_v4 = true;
+      return gzread(fin_,
+                    reinterpret_cast<void*>(reinterpret_cast<char*>(data) +
+                                            v3_size),
+                    v4_extra) == v4_extra;
+    }
+  }
+}
 
 TrainingDataWriter::TrainingDataWriter(int game_id) {
   static std::string directory =
@@ -47,6 +104,11 @@ TrainingDataWriter::TrainingDataWriter(int game_id) {
       << game_id << ".gz";
 
   filename_ = oss.str();
+  fout_ = gzopen(filename_.c_str(), "wb");
+  if (!fout_) throw Exception("Cannot create gzip file " + filename_);
+}
+
+TrainingDataWriter::TrainingDataWriter(std::string filename) : filename_(filename) {
   fout_ = gzopen(filename_.c_str(), "wb");
   if (!fout_) throw Exception("Cannot create gzip file " + filename_);
 }

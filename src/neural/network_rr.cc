@@ -60,7 +60,7 @@ class RoundRobinNetwork : public Network {
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    long long val = ++counter_;
+    const long long val = ++counter_;
     return networks_[val % networks_.size()]->NewComputation();
   }
 

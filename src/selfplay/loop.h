@@ -41,6 +41,7 @@ class SelfPlayLoop : public UciLoop {
 
   void RunLoop() override;
   void CmdStart() override;
+  void CmdStop() override;
   void CmdUci() override;
   void CmdSetOption(const std::string& name, const std::string& value,
                     const std::string& context) override;
@@ -54,6 +55,18 @@ class SelfPlayLoop : public UciLoop {
 
   std::unique_ptr<SelfPlayTournament> tournament_;
   std::unique_ptr<std::thread> thread_;
+};
+
+class RescoreLoop : public UciLoop {
+ public:
+  RescoreLoop();
+  ~RescoreLoop();
+
+  void RunLoop() override;
+
+ private:
+  OptionsParser options_;
+
 };
 
 }  // namespace lczero
