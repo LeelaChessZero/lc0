@@ -1,0 +1,17 @@
+*.o
+tags
+attic
+.depend
+.DS_Store
+*.dylib
+*.so
+*.a
+*.gcda
+*.gcno
+tbprobe
+errors_comp.txt
+errors_link.txt
+*.rb
+version*
+errors.txt
+*~

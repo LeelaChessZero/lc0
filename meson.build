@@ -121,8 +121,28 @@ files += [
   'src/utils/string.cc',
   'src/utils/transpose.cc',
   'src/utils/weights_adapter.cc',
+  'src/gaviotatb/gtb-probe.c',
+  'src/gaviotatb/gtb-dec.c',
+  'src/gaviotatb/gtb-att.c',
+  'src/gaviotatb/sysport/sysport.c',
+  'src/gaviotatb/compression/wrap.c',
+  'src/gaviotatb/compression/huffman/hzip.c',
+  'src/gaviotatb/compression/liblzf/lzf_c.c',
+  'src/gaviotatb/compression/liblzf/lzf_d.c',
+  'src/gaviotatb/compression/lzma/LzmaEnc.c',
+  'src/gaviotatb/compression/lzma/LzmaDec.c',
+  'src/gaviotatb/compression/lzma/Alloc.c',
+  'src/gaviotatb/compression/lzma/LzFind.c',
+  'src/gaviotatb/compression/lzma/Lzma86Enc.c',
+  'src/gaviotatb/compression/lzma/Lzma86Dec.c',
+  'src/gaviotatb/compression/lzma/Bra86.c',
 ]
 includes += include_directories('src')
+includes += include_directories('src/gaviotatb/sysport')
+includes += include_directories('src/gaviotatb/compression')
+includes += include_directories('src/gaviotatb/compression/huffman')
+includes += include_directories('src/gaviotatb/compression/liblzf')
+includes += include_directories('src/gaviotatb/compression/lzma')
 
 
 #############################################################################
