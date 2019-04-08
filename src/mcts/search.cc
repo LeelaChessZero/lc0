@@ -498,12 +498,13 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
+  MoveList ignore;
   return syzygy_tb_->root_probe(
              played_history_.Last(),
              params_.GetSyzygyFastPlay() ||
                  played_history_.DidRepeatSinceLastZeroingMove(),
 	         false, 
-             root_moves) ||
+             &ignore, root_moves) ||
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 

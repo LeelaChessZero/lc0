@@ -248,7 +248,14 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             (board.ours() | board.theirs()).count() <=
                 tablebase->max_cardinality()) {
           MoveList to_boost;
-          tablebase->root_probe(history.Last(), true, true, &to_boost);
+          MoveList maybe_boost;
+          tablebase->root_probe(history.Last(),
+                                history.DidRepeatSinceLastZeroingMove(),
+                                true, &to_boost, &maybe_boost);
+		  // If there is only one move, dtm fixup is not helpful.
+          if (maybe_boost.size() > 1) {
+			  // TODO: integrate gaviotatb lookup for maybe_boost entries.
+          }
           for (auto& move : to_boost) {
             boost_probs[move.as_nn_index()] = true;
           }

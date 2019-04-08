@@ -1626,7 +1626,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 //
 // A return value false indicates that not all probes were successful.
 bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated, bool win_only,
-                                 std::vector<Move>* safe_moves) {
+                                 std::vector<Move>* safe_moves, std::vector<Move>* less_safe_moves) {
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   // Obtain 50-move counter for the root position
@@ -1636,7 +1636,10 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated, bool wi
   int dtz;
   std::vector<int> ranks;
   ranks.reserve(root_moves.size());
+  std::vector<int> ranks_2;
+  ranks_2.reserve(root_moves.size());
   int best_rank = (win_only ? 1 : -1000);
+  int best_rank_2 = (win_only ? 1 : -1000);
   // Probe and rank each move
   for (auto& m : root_moves) {
     Position next_pos = Position(pos, m);
@@ -1665,11 +1668,26 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated, bool wi
                           : 0;
     if (r > best_rank) best_rank = r;
     ranks.push_back(r);
+    r = dtz > 0
+                ? (1000 - (dtz + cnt50))
+                : dtz < 0 ? (-dtz * 2 + cnt50 < 100 ? -1000
+                                                    : -1000 + (-dtz + cnt50))
+                          : 0;
+    if (r > best_rank_2) best_rank_2 = r;
+    ranks_2.push_back(r);
   }
   // Disable all but the equal best moves.
   int counter = 0;
   for (auto& m : root_moves) {
     if (ranks[counter] == best_rank) {
+      less_safe_moves->push_back(m);
+    }
+    counter++;
+  }
+  // Disable all but the equal best moves.
+  counter = 0;
+  for (auto& m : root_moves) {
+    if (ranks_2[counter] == best_rank_2) {
       safe_moves->push_back(m);
     }
     counter++;
