@@ -32,6 +32,8 @@
 #include "utils/configfile.h"
 #include "utils/filesystem.h"
 
+#include "gaviotatb/gtb-probe.h"
+
 namespace lczero {
 
 namespace {
@@ -39,6 +41,8 @@ const OptionId kInteractiveId{
     "interactive", "", "Run in interactive mode with UCI-like interface."};
 const OptionId kSyzygyTablebaseId{"syzygy-paths", "",
                                   "List of Syzygy tablebase directories"};
+const OptionId kGaviotaTablebaseId{"gaviotatb-paths", "",
+                                  "List of Gaviota tablebase directories"};
 const OptionId kInputDirId{
     "input", "", "Directory with gzipped files in need of rescoring."};
 const OptionId kOutputDirId{"output", "", "Directory to write rescored files."};
@@ -65,6 +69,7 @@ std::atomic<int> fixed_counts[3];
 std::atomic<int> policy_bump(0);
 std::atomic<int> policy_nobump_total_hist[11];
 std::atomic<int> policy_bump_total_hist[11];
+bool gaviotaEnabled = false;
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
@@ -384,6 +389,12 @@ RescoreLoop::RescoreLoop() {}
 
 RescoreLoop::~RescoreLoop() {}
 
+#ifdef _WIN32
+#define SEP_CHAR ';'
+#else
+#define SEP_CHAR ':'
+#endif
+
 void RescoreLoop::RunLoop() {
   orig_counts[0] = 0;
   orig_counts[1] = 0;
@@ -394,6 +405,7 @@ void RescoreLoop::RunLoop() {
   for (int i = 0; i < 11; i++) policy_bump_total_hist[i] = 0;
   for (int i = 0; i < 11; i++) policy_nobump_total_hist[i] = 0;
   options_.Add<StringOption>(kSyzygyTablebaseId);
+  options_.Add<StringOption>(kGaviotaTablebaseId);
   options_.Add<StringOption>(kInputDirId);
   options_.Add<StringOption>(kOutputDirId);
   options_.Add<IntOption>(kThreadsId, 1, 20) = 1;
@@ -411,6 +423,22 @@ void RescoreLoop::RunLoop() {
       tablebase.max_cardinality() < 3) {
     std::cerr << "FAILED TO LOAD SYZYGY" << std::endl;
     return;
+  }
+  auto dtmPaths = options_.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId.GetId());
+  if (dtmPaths.size() != 0) {
+    std::stringstream path_string_stream(dtmPaths);
+    std::string path;
+    auto paths = tbpaths_init();
+    while (std::getline(path_string_stream, path, SEP_CHAR)) {
+      paths = tbpaths_add(paths, path.c_str());
+    }
+    tb_init(0, tb_CP4, paths);
+    tbcache_init(64*1024*1024, 64);
+    if (tb_availability() != 63) {
+      std::cerr << "UNEXPECTED gaviota availability" << std::endl;
+      return;
+	}
+    gaviotaEnabled = true;
   }
   auto inputDir =
       options_.GetOptionsDict().Get<std::string>(kInputDirId.GetId());
