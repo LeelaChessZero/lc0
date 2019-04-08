@@ -42,7 +42,7 @@ const OptionId kInteractiveId{
 const OptionId kSyzygyTablebaseId{"syzygy-paths", "",
                                   "List of Syzygy tablebase directories"};
 const OptionId kGaviotaTablebaseId{"gaviotatb-paths", "",
-                                  "List of Gaviota tablebase directories"};
+                                   "List of Gaviota tablebase directories"};
 const OptionId kInputDirId{
     "input", "", "Directory with gzipped files in need of rescoring."};
 const OptionId kOutputDirId{"output", "", "Directory to write rescored files."};
@@ -69,6 +69,7 @@ std::atomic<int> fixed_counts[3];
 std::atomic<int> policy_bump(0);
 std::atomic<int> policy_nobump_total_hist[11];
 std::atomic<int> policy_bump_total_hist[11];
+std::atomic<int> policy_dtm_bump(0);
 bool gaviotaEnabled = false;
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
@@ -255,11 +256,124 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           MoveList to_boost;
           MoveList maybe_boost;
           tablebase->root_probe(history.Last(),
-                                history.DidRepeatSinceLastZeroingMove(),
-                                true, &to_boost, &maybe_boost);
-		  // If there is only one move, dtm fixup is not helpful.
-          if (maybe_boost.size() > 1) {
-			  // TODO: integrate gaviotatb lookup for maybe_boost entries.
+                                history.DidRepeatSinceLastZeroingMove(), true,
+                                &to_boost, &maybe_boost);
+          // If there is only one move, dtm fixup is not helpful.
+          // This code assumes all gaviota 3-4-5 tbs are present, as checked at
+          // startup.
+          if (gaviotaEnabled && maybe_boost.size() > 1 &&
+              (board.ours() | board.theirs()).count() <= 5) {
+            std::vector<int> dtms;
+            dtms.resize(maybe_boost.size());
+            int mininum_dtm = 1000;
+            // Only safe moves being considered, boost the smallest dtm amongst
+            // them.
+            unsigned int wsq[17];
+            unsigned int bsq[17];
+            unsigned char wpc[17];
+            unsigned char bpc[17];
+            for (auto& move : maybe_boost) {
+              Position next_pos = Position(history.Last(), move);
+              auto stm = next_pos.IsBlackToMove() ? tb_BLACK_TO_MOVE
+                                                  : tb_WHITE_TO_MOVE;
+              auto& board = next_pos.IsBlackToMove() ? next_pos.GetThemBoard()
+                                                     : next_pos.GetBoard();
+              auto epsq = tb_NOSQUARE;
+              for (auto sq : board.en_passant()) {
+                // Our internal representation stores en_passant 2 rows away
+                // from the actual sq.
+                if (sq.row() == 0) {
+                  epsq = (TB_squares)(sq.as_int() + 16);
+                } else {
+                  epsq = (TB_squares)(sq.as_int() - 16);
+                }
+              }
+              int idx = 0;
+              for (auto sq : board.our_king()) {
+                wsq[idx] = (TB_squares)sq.as_int();
+                wpc[idx] = tb_KING;
+                idx++;
+              }
+              for (auto sq : board.our_knights()) {
+                wsq[idx] = (TB_squares)sq.as_int();
+                wpc[idx] = tb_KNIGHT;
+                idx++;
+              }
+              for (auto sq : (board.ours() & board.queens())) {
+                wsq[idx] = (TB_squares)sq.as_int();
+                wpc[idx] = tb_QUEEN;
+                idx++;
+              }
+              for (auto sq : (board.ours() & board.rooks())) {
+                wsq[idx] = (TB_squares)sq.as_int();
+                wpc[idx] = tb_ROOK;
+                idx++;
+              }
+              for (auto sq : (board.ours() & board.bishops())) {
+                wsq[idx] = (TB_squares)sq.as_int();
+                wpc[idx] = tb_BISHOP;
+                idx++;
+              }
+              for (auto sq : (board.ours() & board.pawns())) {
+                wsq[idx] = (TB_squares)sq.as_int();
+                wpc[idx] = tb_PAWN;
+                idx++;
+              }
+              wsq[idx] = tb_NOSQUARE;
+              wpc[idx] = tb_NOPIECE;
+
+              idx = 0;
+              for (auto sq : board.their_king()) {
+                bsq[idx] = (TB_squares)sq.as_int();
+                bpc[idx] = tb_KING;
+                idx++;
+              }
+              for (auto sq : board.their_knights()) {
+                bsq[idx] = (TB_squares)sq.as_int();
+                bpc[idx] = tb_KNIGHT;
+                idx++;
+              }
+              for (auto sq : (board.theirs() & board.queens())) {
+                bsq[idx] = (TB_squares)sq.as_int();
+                bpc[idx] = tb_QUEEN;
+                idx++;
+              }
+              for (auto sq : (board.theirs() & board.rooks())) {
+                bsq[idx] = (TB_squares)sq.as_int();
+                bpc[idx] = tb_ROOK;
+                idx++;
+              }
+              for (auto sq : (board.theirs() & board.bishops())) {
+                bsq[idx] = (TB_squares)sq.as_int();
+                bpc[idx] = tb_BISHOP;
+                idx++;
+              }
+              for (auto sq : (board.theirs() & board.pawns())) {
+                bsq[idx] = (TB_squares)sq.as_int();
+                bpc[idx] = tb_PAWN;
+                idx++;
+              }
+              bsq[idx] = tb_NOSQUARE;
+              bpc[idx] = tb_NOPIECE;
+
+              unsigned int info;
+              unsigned int dtm;
+              tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info,
+                            &dtm);
+              dtms.push_back(dtm);
+              if (dtm < mininum_dtm) mininum_dtm = dtm;
+            }
+            if (mininum_dtm < 1000) {
+              to_boost.clear();
+              int dtm_idx = 0;
+              for (auto& move : maybe_boost) {
+                if (dtms[dtm_idx] == mininum_dtm) {
+                  to_boost.push_back(move);
+                }
+                dtm_idx++;
+              }
+              policy_dtm_bump++;
+            }
           }
           for (auto& move : to_boost) {
             boost_probs[move.as_nn_index()] = true;
@@ -271,7 +385,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         float preboost_sum = 0.0f;
         for (auto& prob : chunk.probabilities) {
           float offset =
-              distOffset + (boost_probs[prob_index] ? (dtzBoost / boost_count): 0.0f);
+              distOffset +
+              (boost_probs[prob_index] ? (dtzBoost / boost_count) : 0.0f);
           if (dtzBoost != 0.0f && boost_probs[prob_index]) {
             preboost_sum += prob;
             if (prob < 0 || std::isnan(prob))
@@ -320,8 +435,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           board.pawns().empty()) {
         ProbeState state;
         WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
-        // Only fail state means the WDL is wrong, probe_wdl may produce correct
-        // result with a stat other than OK.
+        // Only fail state means the WDL is wrong, probe_wdl may produce
+        // correct result with a stat other than OK.
         if (state != FAIL) {
           int8_t score_to_apply = 0;
           if (wdl == WDL_WIN) {
@@ -345,9 +460,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           if (no_reps) {
             int depth = tablebase->probe_dtz(history.Last(), &state);
             if (state != FAIL) {
-              // if depth == -1 this is wrong, since that is mate and the answer
-              // should be 0, but the move before depth is -2. Since data never
-              // contains mate position, ignore that discrepency.
+              // if depth == -1 this is wrong, since that is mate and the
+              // answer should be 0, but the move before depth is -2. Since
+              // data never contains mate position, ignore that discrepency.
               int converted_ply_remaining = std::abs(depth);
               // This should be able to be <= 99 safely, but I've not
               // convinced myself thats true.
@@ -424,7 +539,8 @@ void RescoreLoop::RunLoop() {
     std::cerr << "FAILED TO LOAD SYZYGY" << std::endl;
     return;
   }
-  auto dtmPaths = options_.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId.GetId());
+  auto dtmPaths =
+      options_.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId.GetId());
   if (dtmPaths.size() != 0) {
     std::stringstream path_string_stream(dtmPaths);
     std::string path;
@@ -433,11 +549,11 @@ void RescoreLoop::RunLoop() {
       paths = tbpaths_add(paths, path.c_str());
     }
     tb_init(0, tb_CP4, paths);
-    tbcache_init(64*1024*1024, 64);
+    tbcache_init(64 * 1024 * 1024, 64);
     if (tb_availability() != 63) {
       std::cerr << "UNEXPECTED gaviota availability" << std::endl;
       return;
-	}
+    }
     gaviotaEnabled = true;
   }
   auto inputDir =
@@ -488,14 +604,17 @@ void RescoreLoop::RunLoop() {
   std::cout << "Secondary rescores performed: " << rescored2 << std::endl;
   std::cout << "Secondary rescores performed used dtz: " << rescored3
             << std::endl;
-  std::cout << "Number of policy values boosted by dtz " << policy_bump
+  std::cout << "Number of policy values boosted by dtz or dtm " << policy_bump
+            << std::endl;
+  std::cout << "Number of policy values boosted by dtm " << policy_dtm_bump
             << std::endl;
   std::cout << "Orig policy_sum dist of boost candidate:";
   std::cout << std::endl;
   int event_sum = 0;
   for (int i = 0; i < 11; i++) event_sum += policy_bump_total_hist[i];
   for (int i = 0; i < 11; i++) {
-    std::cout << " " << std::setprecision(4) << ((float)policy_nobump_total_hist[i] / (float)event_sum);
+    std::cout << " " << std::setprecision(4)
+              << ((float)policy_nobump_total_hist[i] / (float)event_sum);
   }
   std::cout << std::endl;
   std::cout << "Boosted policy_sum dist of boost candidate:";
