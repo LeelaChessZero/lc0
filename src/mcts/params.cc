@@ -186,6 +186,14 @@ const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
+const OptionId SearchParams::kCertaintyPropagationId{
+    "certainty-propagation", "CertaintyPropagation", 
+    "Propagates certain scores more efficiently in the search tree, "
+    "proves and displays mates."};
+const OptionId SearchParams::kTwoFoldDrawScoringId{
+    "two-fold-draw-scoring", "TwoFoldDrawScoring",
+    "Scores two-folds as draws (0.00) in search to use visits more "
+    "efficiently. Recommended in conjunction with certainty propagation."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -227,6 +235,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
+  options->Add<BoolOption>(kCertaintyPropagationId) = false;
+  options->Add<BoolOption>(kTwoFoldDrawScoringId) = false;
 
   options->HideOption(kLogLiveStatsId);
 }
@@ -256,6 +266,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
+      kCertaintyPropagation(options.Get<bool>(kCertaintyPropagationId.GetId())),
+      kTwoFoldDrawScoring(options.Get<bool>(kTwoFoldDrawScoringId.GetId())),
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),

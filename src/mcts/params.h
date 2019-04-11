@@ -93,6 +93,8 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
+  bool GetCertaintyPropagation() const { return kCertaintyPropagation; }
+  bool GetTwoFoldDrawScoring() const { return kTwoFoldDrawScoring; }
   int GetKLDGainAverageInterval() const {
     return options_.Get<int>(kKLDGainAverageInterval.GetId());
   }
@@ -131,6 +133,8 @@ class SearchParams {
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
+  static const OptionId kCertaintyPropagationId;
+  static const OptionId kTwoFoldDrawScoringId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
 
@@ -158,6 +162,8 @@ class SearchParams {
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
+  const bool kCertaintyPropagation;
+  const bool kTwoFoldDrawScoring;
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
