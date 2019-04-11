@@ -200,11 +200,11 @@ void SearchParams::Populate(OptionsParser* options) {
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
-  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
-  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
+  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.4f;
+  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 10000.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
-  options->Add<FloatOption>(kTradePenaltyId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kTradePenalty2Id, -1000.0f, 1000.0f) = 0.0f;
+  options->Add<FloatOption>(kTradePenaltyId, -1.0f, 1.0f) = 0.003f;
+  options->Add<FloatOption>(kTradePenalty2Id, -1000.0f, 1000.0f) = 27.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
@@ -220,7 +220,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
   fpu_strategy.push_back("same");
-  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
+  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "absolute";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
@@ -235,8 +235,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
-  options->Add<BoolOption>(kCertaintyPropagationId) = false;
-  options->Add<BoolOption>(kTwoFoldDrawScoringId) = false;
+  options->Add<BoolOption>(kCertaintyPropagationId) = true;
+  options->Add<BoolOption>(kTwoFoldDrawScoringId) = true;
 
   options->HideOption(kLogLiveStatsId);
 }
