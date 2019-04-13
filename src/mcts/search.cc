@@ -120,16 +120,17 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
+  const auto default_q = -root_node_->GetQ();
   for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     if (score_type == "centipawn") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(default_q));
     } else if (score_type == "win_percentage") {
-      uci_info.score = edge.GetQ(0) * 5000 + 5000;
+      uci_info.score = edge.GetQ(default_q) * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = edge.GetQ(0) * 10000;
+      uci_info.score = edge.GetQ(default_q) * 10000;
     }
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
