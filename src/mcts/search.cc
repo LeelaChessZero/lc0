@@ -1301,10 +1301,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // A non-winning terminal move needs all other moves to have the same value.
     if (can_convert && v != 1.0f) {
-      auto edges = p->Edges();
-      can_convert = std::all_of(edges.begin(), edges.end(), [&](const auto& e) {
-        return e.IsTerminal() && e.GetQ(0.0f) == v;
-      });
+      for (const auto& edge : p->Edges()) {
+        can_convert = can_convert && edge.IsTerminal() && edge.GetQ(0.0f) == v;
+      }
     }
 
     // Convert the parent to a terminal loss if at least one move is winning or
