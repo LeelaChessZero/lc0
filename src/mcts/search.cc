@@ -526,6 +526,12 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
                      params_.GetTempDecayMoves();
     }
   }
+  for (auto edge : root_node_->Edges()) {
+    // For visit 1 purposes.
+    if (edge.GetN() != 1) {
+      throw Exception("One visit mode didn't do one visit per node!!!");
+    }
+  }
 
   final_bestmove_ = temperature
                         ? GetBestChildWithTemperature(root_node_, temperature)
@@ -908,21 +914,24 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       if (node->IsTerminal()) {
-        return NodeToProcess::TerminalHit(node, depth, 1);
+        // For 1 visit purposes, we must only 'extend' a terminal once. Never
+        // terminal hit. (If root node is terminal, then game is over, but we
+        // should not fall through....)
+        if (is_root_node) {
+          return NodeToProcess::TerminalHit(node, depth, 1);
+        }
+        // Fall through to the fake collision path below.
       } else {
         return NodeToProcess::Extension(node, depth);
       }
     }
-    Node* possible_shortcut_child = node->GetCachedBestChild();
-    if (possible_shortcut_child) {
-      // Add two here to reverse the conservatism that goes into calculating the
-      // remaining cache visits.
-      collision_limit =
-          std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
-      is_root_node = false;
-      node = possible_shortcut_child;
-      node_already_updated = true;
-      continue;
+    if (!is_root_node) {
+      IncrementNInFlight(node->GetParent(), search_->root_node_,
+                         collision_limit - 1);
+      // Hack, collisions don't think that n_in_flight_ for the new node should
+      // have been updated.
+      node->CancelScoreUpdate(1);
+      return NodeToProcess::Collision(node, depth, collision_limit);
     }
     node_already_updated = false;
 
@@ -936,6 +945,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
     for (auto child : node->Edges()) {
+      // We must choose an edge even if they are all done.
+      if (best == std::numeric_limits<float>::lowest()) best_edge = child;
+      // Never want to visit anywhere more than once if trying for a depth one
+      // value evaluation. Doing this before the next if statement means batch
+      // gathering terminates when there are no more unvisited children due to
+      // the possible_moves count not ever getting incremented.
+      if (child.GetNStarted() > 0) {
+        // We want to continue based on GetNStarted to optimize gathering a
+        // bigger batch but we don't want to trigger the flag set unless the
+        // results have arrived.
+        if (child.GetN() == 0) ++possible_moves;
+        continue;
+      }
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
         // remaining playouts, don't consider it.
@@ -981,7 +1003,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
+    if (is_root_node && possible_moves <= 0) {
       // If there is only one move theoretically possible within remaining time,
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
