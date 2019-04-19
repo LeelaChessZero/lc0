@@ -1083,4 +1083,73 @@ string ChessBoard::DebugString() const {
   return result;
 }
 
+// PrintFen outputs a FEN notation of the board. 
+// based on https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation#Examples
+string ChessBoard::PrintFEN() const {
+	string result;
+	string enpassant;
+	int emptycounter = 0;
+	for (int i = 7; i >= 0; --i) {
+		for (int j = 0; j < 8; ++j) {
+			if (emptycounter > 0 &&
+				(our_king_ == i * 8 + j ||
+					their_king_ == i * 8 + j ||
+					(pawns_ & kPawnMask).get(i, j) ||
+					our_pieces_.get(i, j) ||
+					their_pieces_.get(i, j))) {
+				result += std::to_string(emptycounter);
+				emptycounter = 0;
+			}
+
+			if (our_king_.as_int() == (i * 8 + j)) {
+				result += 'K';
+				continue;
+			}
+			if (their_king_.as_int() == (i * 8 + j)) {
+				result += 'k';
+				continue;
+			}
+			if (our_pieces_.get(i, j) || their_pieces_.get(i, j)) {
+				char c = '?';
+				if ((pawns_ & kPawnMask).get(i, j)) {
+					c = 'p'; // should be capital P for Black
+				}
+				else if (bishops_.get(i, j)) {
+					if (rooks_.get(i, j))
+						c = 'q';
+					else
+						c = 'b';
+				}
+				else if (rooks_.get(i, j)) {
+					c = 'r';
+				}
+				else {
+					c = 'n';
+				}
+				if (our_pieces_.get(i, j)) c = std::toupper(c); // capitals are for Black
+				result += c;
+			}
+			else {
+				emptycounter++;
+			}
+			if (!our_pieces_.get(i, j) && !their_pieces_.get(i, j)) {
+				// en passant information
+				if (i == 2 && pawns_.get(0, j))
+					enpassant += BoardSquare(i * 8 + j).as_string();
+				else if (i == 5 && pawns_.get(7, j))
+					enpassant += BoardSquare(i * 8 + j).as_string();;
+			}
+		}
+		if (emptycounter > 0) result += std::to_string(emptycounter);
+		if (i > 0) result += "/";
+		emptycounter = 0;
+	}
+	result += flipped() ? " b" : " w"; // who to move
+	result += " " + castlings_.as_string();
+	result += " " + enpassant.empty() ? " -" : enpassant;		
+	result += " 1 1";// should be number of capture_halfmoves and fullmoves;
+
+	return result;
+}
+
 }  // namespace lczero
