@@ -119,21 +119,6 @@ TEST(ChessBoard, MoveGenKiwipete) {
   //  EXPECT_EQ(Perft(board, 5), 193690690);
 }
 
-TEST(ChessBoard, ReadFenPrintFen) {
-	ChessBoard board;
-	std::string source_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 1 1";
-	board.SetFromFen(
-		source_fen);
-
-	EXPECT_EQ(Perft(board, 1), 48);
-	EXPECT_EQ(Perft(board, 2), 2039);
-	EXPECT_EQ(Perft(board, 3), 97862);
-	EXPECT_EQ(Perft(board, 4), 4085603);
-
-	std::string target_fen = board.PrintFEN();
-	EXPECT_EQ(source_fen, target_fen);
-}
-
 TEST(ChessBoard, MoveGenPosition3) {
   ChessBoard board;
   board.SetFromFen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 1 1");
