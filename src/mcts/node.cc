@@ -393,6 +393,9 @@ void NodeTree::MakeMove(Move move) {
   for (auto& n : current_head_->Edges()) {
     if (n.GetMove() == move) {
       new_head = n.GetOrSpawnNode(current_head_);
+      // Ensure head is not terminal, so search can extend or visit children of
+      // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
+      if (new_head->IsTerminal()) new_head->MakeNotTerminal();
       break;
     }
   }
@@ -442,11 +445,6 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
   if (!seen_old_head) TrimTreeAtHead();
-
-  // Make sure the head is not terminal, so search can extend or visit children
-  // of "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
-  if (current_head_->IsTerminal()) current_head_->MakeNotTerminal();
-
   return seen_old_head;
 }
 
