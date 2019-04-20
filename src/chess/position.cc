@@ -217,11 +217,11 @@ string Position::GetFen()  {
 			enpassant = ((BoardSquare)(sq.as_int() - 16)).as_string();
 		}
 	}
-	result += board.flipped() ? " b" : " w";
+	result += IsBlackToMove() ? " b" : " w";
 	result += " " + castlings_no_fenflip;
 	result += " " + enpassant;
 	result += " " + std::to_string(GetNoCaptureNoPawnPly());
-	result += " " + std::to_string(  ply_count_ ); 
+	result += " " + std::to_string(ply_count_); 
 	return result;
 }
 
