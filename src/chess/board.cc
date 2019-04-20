@@ -1083,5 +1083,4 @@ string ChessBoard::DebugString() const {
   return result;
 }
 
-
 }  // namespace lczero
