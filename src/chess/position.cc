@@ -196,12 +196,7 @@ string Position::GetFen()  {
 			}
 			else {
 				emptycounter++;
-			}
-			// en passant information
-			if (i == 0 && board.en_passant().get(0,j))
-				enpassant = BoardSquare(i * 8 + j).as_string();
-			else if (i == 7 && board.en_passant().get(7, j))
-				enpassant = BoardSquare(i * 8 + j).as_string();
+			}			
 		}
 		if (emptycounter > 0) result += std::to_string(emptycounter);
 		if (i > 0) result += "/";
@@ -211,9 +206,20 @@ string Position::GetFen()  {
 	if (fenflipped) {
 		board.Mirror();
 	}
+	enpassant = "-";
+	for (auto sq : board.en_passant()) {
+		// Our internal representation stores en_passant 2 rows away
+		// from the actual sq.
+		if (sq.row() == 0) {
+			enpassant = ((BoardSquare)(sq.as_int() + 16)).as_string();
+		}
+		else {
+			enpassant = ((BoardSquare)(sq.as_int() - 16)).as_string();
+		}
+	}
 	result += board.flipped() ? " b" : " w";
 	result += " " + castlings_no_fenflip;
-	result += " " + enpassant.empty() ? " -" : enpassant;
+	result += " " + enpassant;
 	result += " " + std::to_string(GetNoCaptureNoPawnPly());
 	result += " " + std::to_string(  ply_count_ ); 
 	return result;

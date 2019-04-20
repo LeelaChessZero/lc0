@@ -29,7 +29,7 @@ TEST(Position, SetFenGetFen) {
 		std::vector<std::string> fen_splitted;
 		std::vector<std::string> source_fens = {
 			"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 1 1" ,
-			//"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq e3 1 1" , // has en_passent space e3
+			"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq e3 1 1" , // has en_passent space e3
 			"8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 1 1",
 			"r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1",
 			"3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30",
