@@ -148,24 +148,24 @@ string Position::GetFen()  {
 	string result;
 	string enpassant;
 	ChessBoard board = GetBoard();
-	
+	bool fenflipped = false;
+	if (board.flipped()) {
+		board.Mirror();
+		fenflipped = true;
+	}
 	int emptycounter = 0;
 	for (int i = 7; i >= 0; --i) {
 		for (int j = 0; j < 8; ++j) {
 			if (emptycounter > 0 &&
-				(//board.our_king().as_int() == i * 8 + j ||
-					//board.their_king().as_int() == i * 8 + j ||
+				(
 				    board.our_king().get(i,j) ||
 					board.their_king().get(i,j) ||
-
 					board.pawns().get(i,j) ||
-					//(pawns_ & kPawnMask).get(i, j) ||
 					board.ours().get(i, j) ||
 					board.theirs().get(i, j))) {
 				result += std::to_string(emptycounter);
 				emptycounter = 0;
 			}
-
 			if (board.our_king().get(i,j)) {
 				result += 'K';
 				continue;
@@ -177,7 +177,7 @@ string Position::GetFen()  {
 			if (board.ours().get(i, j) || board.theirs().get(i, j)) {
 				char c = '?';
 				if (board.pawns().get(i, j)) {
-					c = 'p'; // should be capital P for Black
+					c = 'p';
 				}
 				else if (board.bishops().get(i, j)) {
 					c = 'b';
@@ -197,24 +197,25 @@ string Position::GetFen()  {
 			else {
 				emptycounter++;
 			}
-			if (!board.ours().get(i, j) && !board.theirs().get(i, j)) {
-				// en passant information
-				if (i == 2 && board.pawns().get(0, j))
-					enpassant += BoardSquare(i * 8 + j).as_string();
-				else if (i == 5 && board.pawns().get(7, j))
-					enpassant += BoardSquare(i * 8 + j).as_string();;
-			}
+			// en passant information
+			if (i == 0 && board.en_passant().get(0,j))
+				enpassant = BoardSquare(i * 8 + j).as_string();
+			else if (i == 7 && board.en_passant().get(7, j))
+				enpassant = BoardSquare(i * 8 + j).as_string();
 		}
 		if (emptycounter > 0) result += std::to_string(emptycounter);
 		if (i > 0) result += "/";
 		emptycounter = 0;
 	}
-	result += board.flipped() ? " b" : " w"; // who to move
-	result += " " + board.castlings().as_string();
+	string castlings_no_fenflip = board.castlings().as_string();
+	if (fenflipped) {
+		board.Mirror();
+	}
+	result += board.flipped() ? " b" : " w";
+	result += " " + castlings_no_fenflip;
 	result += " " + enpassant.empty() ? " -" : enpassant;
 	result += " " + std::to_string(GetNoCaptureNoPawnPly());
-	result += " " + std::to_string(  ply_count_ ); // should be number of capture_halfmoves and fullmoves;
-
+	result += " " + std::to_string(  ply_count_ ); 
 	return result;
 }
 
