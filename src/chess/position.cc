@@ -144,7 +144,7 @@ uint64_t PositionHistory::HashLast(int positions) const {
 
 // PrintFen outputs a FEN notation of the board. 
 // based on https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation#Examples
-string Position::GetFen()  {
+string Position::GetFen() const  {
 	string result;
 	string enpassant;
 	ChessBoard board = GetBoard();
