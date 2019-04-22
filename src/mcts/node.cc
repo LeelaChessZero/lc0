@@ -237,7 +237,18 @@ void Node::MakeNotTerminal() {
   // If we have edges, we've been extended (1 visit), so include children too.
   if (edges_) {
     n_++;
-    for (const auto& child : Edges()) n_ += child.GetN();
+    for (const auto& child : Edges()) {
+      const auto n = child.GetN();
+      if (n > 0) {
+        n_ += n;
+        q_ -= child.GetQ(0.0f) * n;
+        d_ += child.GetD() * n;
+      }
+    }
+
+    // Recompute with current eval (instead of network's) and children's eval
+    q_ /= n_;
+    d_ /= n_;
   }
 }
 
