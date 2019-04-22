@@ -241,12 +241,13 @@ void Node::MakeNotTerminal() {
       const auto n = child.GetN();
       if (n > 0) {
         n_ += n;
-        q_ -= child.GetQ(0.0f) * n;
+        // Flip Q for opponent.
+        q_ += -child.GetQ(0.0f) * n;
         d_ += child.GetD() * n;
       }
     }
 
-    // Recompute with current eval (instead of network's) and children's eval
+    // Recompute with current eval (instead of network's) and children's eval.
     q_ /= n_;
     d_ /= n_;
   }
