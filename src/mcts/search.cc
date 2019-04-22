@@ -906,12 +906,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) {
-      if (node->IsTerminal()) {
-        return NodeToProcess::TerminalHit(node, depth, 1);
-      } else {
-        return NodeToProcess::Extension(node, depth);
-      }
+    if (node->IsTerminal() || !node->HasChildren()) {
+      return NodeToProcess::Visit(node, depth);
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
     if (possible_shortcut_child) {
@@ -1282,18 +1278,48 @@ void SearchWorker::DoBackupUpdateSingleNode(
     return;
   }
 
+  // For the first visit to a terminal, maybe convert ancestors to terminal too.
+  auto can_convert =
+      params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
+
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
-  for (Node* n = node; n != search_->root_node_->GetParent();
-       n = n->GetParent()) {
+  for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
+    p = n->GetParent();
+
+    // Current node might have become terminal from some other descendant, so
+    // backup the rest of the way with more accurate values.
+    if (n->IsTerminal()) {
+      v = n->GetQ();
+      d = n->GetD();
+    }
     n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+
+    // Convert parents to terminals except the root or those already converted.
+    can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
+
+    // A non-winning terminal move needs all other moves to have the same value.
+    if (can_convert && v != 1.0f) {
+      for (const auto& edge : p->Edges()) {
+        can_convert = can_convert && edge.IsTerminal() && edge.GetQ(0.0f) == v;
+      }
+    }
+
+    // Convert the parent to a terminal loss if at least one move is winning or
+    // to a terminal win or draw if all moves are loss or draw respectively.
+    if (can_convert) {
+      p->MakeTerminal(v == 1.0f ? GameResult::BLACK_WON
+                                : v == -1.0f ? GameResult::WHITE_WON
+                                             : GameResult::DRAW);
+    }
+
     // Q will be flipped for opponent.
     v = -v;
 
     // Update the stats.
     // Best move.
-    if (n->GetParent() == search_->root_node_ &&
+    if (p == search_->root_node_ &&
         search_->current_best_edge_.GetN() <= n->GetN()) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
