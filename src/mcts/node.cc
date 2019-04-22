@@ -100,6 +100,15 @@ class NodeGarbageCollector {
 };  // namespace
 
 NodeGarbageCollector gNodeGc;
+
+float erfinv_approx(float x) {
+  const auto sign = x > 0.0f ? 1.0f : -1.0f;
+  const auto tmp = (1.0f - x) * (1.0f + x);
+  const auto tt1 = 4.330747f + 0.5f * std::log(tmp);
+  const auto tt2 = std::log(tmp) / 0.147f;
+  return sign * std::sqrt(-tt1 + std::sqrt(tt1 * tt1 - tt2));
+}
+
 }  // namespace
 
 /////////////////////////////////////////////////////////////////////////
@@ -198,6 +207,7 @@ Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
 Node::Iterator Node::Edges() { return {edges_, &child_}; }
 
 float Node::GetVisitedPolicy() const { return visited_policy_; }
+float Node::GetFpuPredictionValue() const { return fpu_prediction_value_; }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
@@ -264,7 +274,7 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, int multivisit, bool prediction) {
   // Recompute Q.
   q_ += multivisit * (v - q_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
@@ -272,6 +282,23 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
+    if (prediction) {
+      float max_policy = 0.0f;
+      float max_unvisited_policy = 0.0f;
+	  // Assumes the first visit is always to max policy.
+      for (auto edge : parent_->Edges()) {
+        if (edge.GetN() > 0 || (edge.GetNInFlight() > 0 && edge.GetOrSpawnNode(parent_) == this)) {
+          max_policy =
+              std::max(max_policy, edge.GetP());
+        } else {
+          max_unvisited_policy =
+              std::max(max_unvisited_policy, edge.GetP());
+        }
+      }
+      auto policyratio = (max_policy - max_unvisited_policy) /
+                               (max_policy + max_unvisited_policy);
+      parent_->fpu_prediction_value_ = erfinv_approx(policyratio);
+    }
   }
   // Increment N.
   n_ += multivisit;

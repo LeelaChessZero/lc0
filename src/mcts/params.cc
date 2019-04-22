@@ -205,7 +205,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<BoolOption>(kLogLiveStatsId) = false;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
-  std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
+  std::vector<std::string> fpu_strategy = {"reduction", "absolute", "prediction"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
   fpu_strategy.push_back("same");
@@ -238,11 +238,17 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
+      kFpuPrediction(options.Get<std::string>(kFpuStrategyId.GetId()) ==
+                   "prediction"),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),
       kFpuAbsoluteAtRoot(
           (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
            kFpuAbsolute) ||
           options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "absolute"),
+      kFpuPredictionAtRoot(
+          (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
+           kFpuPrediction) ||
+          options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "prediction"),
       kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId.GetId()) ==
                               "same"
                           ? kFpuValue

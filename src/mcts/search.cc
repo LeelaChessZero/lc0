@@ -193,7 +193,10 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ() - value * std::sqrt(node->GetVisitedPolicy());
+             : (params.GetFpuPrediction(is_root_node)
+                    ? -node->GetQ() - value * node->GetFpuPredictionValue()
+                    : -node->GetQ() -
+                          value * std::sqrt(node->GetVisitedPolicy()));
 }
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
@@ -1294,7 +1297,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = n->GetQ();
       d = n->GetD();
     }
-    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit, search_->params_.GetFpuPrediction(p == search_->root_node_));
 
     // Convert parents to terminals except the root or those already converted.
     can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
