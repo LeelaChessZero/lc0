@@ -966,8 +966,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         break;
       }
       if (child.GetNStarted() == 0) {
-		// One more loop will get 2 unvisited nodes, which is sufficient to ensure second best is correct.
-		// This relies upon the fact that edges are sorted in policy decreasing order.
+        // One more loop will get 2 unvisited nodes, which is sufficient to
+        // ensure second best is correct. This relies upon the fact that edges
+        // are sorted in policy decreasing order.
         can_exit = true;
       }
     }
