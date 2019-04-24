@@ -113,6 +113,7 @@ class EdgeList {
   Edge& operator[](size_t idx) const { return edges_[idx]; }
   operator bool() const { return static_cast<bool>(edges_); }
   uint16_t size() const { return size_; }
+  void Sort();
 
  private:
   std::unique_ptr<Edge[]> edges_;
@@ -215,6 +216,8 @@ class Node {
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
+
+  void SortEdges();
 
   class NodeRange;
   // Returns range for iterating over nodes. Note that there may be edges

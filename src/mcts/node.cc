@@ -176,6 +176,12 @@ EdgeList::EdgeList(MoveList moves)
   for (const auto move : moves) edge++->SetMove(move);
 }
 
+void EdgeList::Sort() {
+  // Sort by descending policy.
+  std::sort(edges_.get(), (edges_.get() + size_),
+            [](Edge& a, Edge& b) { return a.GetP() > b.GetP(); });
+}
+
 /////////////////////////////////////////////////////////////////////////
 // Node
 /////////////////////////////////////////////////////////////////////////
@@ -192,6 +198,13 @@ void Node::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   assert(!child_);
   edges_ = EdgeList(moves);
+}
+
+void Node::SortEdges() {
+  // Must have edges to sort, but child must not yet be populated.
+  assert(edges_);
+  assert(!child_);
+  edges_.Sort();
 }
 
 Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
