@@ -283,20 +283,22 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit, bool prediction
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
     if (prediction) {
-      float max_policy = 0.0f;
+      float visited_policy = 0.0f;
+      int counter = 0;
       float max_unvisited_policy = 0.0f;
-	  // Assumes the first visit is always to max policy.
       for (auto edge : parent_->Edges()) {
         if (edge.GetN() > 0 || (edge.GetNInFlight() > 0 && edge.GetOrSpawnNode(parent_) == this)) {
-          max_policy =
-              std::max(max_policy, edge.GetP());
+          int weighting = std::max(1u, edge.GetN());
+          counter += weighting;
+          visited_policy += edge.GetP() * weighting;
         } else {
           max_unvisited_policy =
               std::max(max_unvisited_policy, edge.GetP());
         }
       }
-      auto policyratio = (max_policy - max_unvisited_policy) /
-                               (max_policy + max_unvisited_policy);
+      visited_policy /= counter;
+      auto policyratio = (visited_policy - max_unvisited_policy) /
+                         (visited_policy + max_unvisited_policy);
       parent_->fpu_prediction_value_ = erfinv_approx(policyratio);
     }
   }
