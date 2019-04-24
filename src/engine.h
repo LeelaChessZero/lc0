@@ -82,12 +82,15 @@ class EngineController {
       const GoParams& params,
       std::chrono::steady_clock::time_point start_time);
 
+  std::string  GetPosition();
+
  private:
   void UpdateFromUciOptions();
 
   void SetupPosition(const std::string& fen,
                      const std::vector<std::string>& moves);
 
+  
   const OptionsDict& options_;
 
   BestMoveInfo::Callback best_move_callback_;
@@ -131,6 +134,7 @@ class EngineLoop : public UciLoop {
   void CmdUciNewGame() override;
   void CmdPosition(const std::string& position,
                    const std::vector<std::string>& moves) override;
+  void CmdGetFen();
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;

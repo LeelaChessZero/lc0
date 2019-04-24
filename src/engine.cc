@@ -306,6 +306,12 @@ void EngineController::SetPosition(const std::string& fen,
   search_.reset();
 }
 
+std::string EngineController::GetPosition() {
+	if (tree_ != nullptr) {
+		return tree_->HeadPosition().GetFen();
+	}
+	return "need a 'go nodes..' before returning fen position.";
+}
 void EngineController::SetupPosition(
     const std::string& fen, const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
@@ -446,10 +452,17 @@ void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
   std::string fen = position;
-  if (fen.empty()) fen = ChessBoard::kStartposFen;
+  if (fen.empty()) {
+	  fen = ChessBoard::kStartposFen;
+  }
   engine_.SetPosition(fen, moves);
 }
 
+void EngineLoop::CmdGetFen() {
+ 	std::string fen = engine_.GetPosition();
+	return SendResponse(fen);
+
+}
 void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
