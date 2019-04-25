@@ -37,6 +37,7 @@
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
+#include "utils/fastmath.h" 
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -103,10 +104,10 @@ NodeGarbageCollector gNodeGc;
 
 float erfinv_approx(float x) {
   const auto sign = x > 0.0f ? 1.0f : -1.0f;
-  const auto tmp = std::log((1.0f - x) * (1.0f + x));
-  const auto tt1 = 4.330747f + 0.5f * tmp;
-  const auto tt2 = tmp / 0.147f;
-  return sign * std::sqrt(-tt1 + std::sqrt(tt1 * tt1 - tt2));
+  const auto tmp = FastLog2((1.0f - x) * (1.0f + x));
+  return sign *
+         (std::sqrt(-0.614226351693f * tmp) +
+          0.142958311714f * x * (x - 0.066398217886f) * (x - 1.357506047023f));
 }
 
 }  // namespace
