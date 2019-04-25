@@ -88,6 +88,7 @@ void CachingComputation::ComputeBlocking() {
       req->p[idx++] =
           std::make_pair(x, parent_->GetPVal(item.idx_in_parent, x));
     }
+	// TODO - sort probabilities_to_cache by policy, exactly how it is sorted by node->Sort().
     cache_->Insert(item.hash, std::move(req));
   }
 }
