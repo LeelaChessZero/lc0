@@ -6,7 +6,7 @@
   This modified version is available under the GPL:
 
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -44,6 +44,7 @@
 
 #include "syzygy/syzygy.h"
 
+#include "utils/exception.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
@@ -182,20 +183,20 @@ int sign_of(T val) {
 }
 
 int count_pieces(const ChessBoard& pos, int type, bool theirs) {
-  BitBoard all = theirs ? pos.theirs() : pos.ours();
+  const BitBoard all = theirs ? pos.theirs() : pos.ours();
   switch (type) {
     case KING:
       return 1;
     case QUEEN:
-      return (all * pos.queens()).count_few();
+      return (all & pos.queens()).count_few();
     case ROOK:
-      return (all * pos.rooks()).count_few();
+      return (all & pos.rooks()).count_few();
     case BISHOP:
-      return (all * pos.bishops()).count_few();
+      return (all & pos.bishops()).count_few();
     case KNIGHT:
       return (theirs ? pos.their_knights() : pos.our_knights()).count_few();
     case PAWN:
-      return (all * pos.pawns()).count_few();
+      return (all & pos.pawns()).count_few();
     default:
       assert(false);
   }
@@ -203,20 +204,20 @@ int count_pieces(const ChessBoard& pos, int type, bool theirs) {
 }
 
 BitBoard pieces(const ChessBoard& pos, int type, bool theirs) {
-  BitBoard all = theirs ? pos.theirs() : pos.ours();
+  const BitBoard all = theirs ? pos.theirs() : pos.ours();
   switch (type) {
     case KING:
       return theirs ? pos.their_king() : pos.our_king();
     case QUEEN:
-      return all * pos.queens();
+      return all & pos.queens();
     case ROOK:
-      return all * pos.rooks();
+      return all & pos.rooks();
     case BISHOP:
-      return all * pos.bishops();
+      return all & pos.bishops();
     case KNIGHT:
       return theirs ? pos.their_knights() : pos.our_knights();
     case PAWN:
-      return all * pos.pawns();
+      return all & pos.pawns();
     default:
       assert(false);
   }
@@ -239,7 +240,7 @@ constexpr char kPieceToChar[] = " PNBRQK  pnbrqk";
 // "KQP" represents the white pieces if flip == false and the black pieces
 // if flip == true.
 void prt_str(const ChessBoard& pos, char* str, bool flip) {
-  bool first_theirs = flip ^ pos.flipped();
+  const bool first_theirs = flip ^ pos.flipped();
 
   for (int pt = KING; pt >= PAWN; pt--) {
     for (int i = count_pieces(pos, pt, first_theirs); i > 0; i--) {
@@ -444,7 +445,7 @@ void initonce_indicies() { std::call_once(indicies_flag, init_indices); }
 Key calc_key_from_pcs(int* pcs, bool flip) {
   Key key = 0;
 
-  int color = !flip ? 0 : 8;
+  const int color = !flip ? 0 : 8;
   for (int i = W_PAWN; i <= B_KING; i++) key += MaterialHash[i][pcs[i ^ color]];
 
   return key;
@@ -465,7 +466,7 @@ Key calc_key_from_pieces(uint8_t* piece, int num) {
 
 Key calc_key_from_position(const ChessBoard& pos) {
   Key key = 0;
-  bool flipped = pos.flipped();
+  const bool flipped = pos.flipped();
   for (int i = PAWN; i <= KING; i++) {
     // White pieces - ours if not flipped.
     key += MaterialHash[i][count_pieces(pos, i, flipped)];
@@ -483,7 +484,7 @@ int leading_pawn(int* p, BaseEntry* be, const int enc) {
 }
 
 size_t encode(int* p, EncInfo* ei, BaseEntry* be, const int enc) {
-  int n = be->num;
+  const int n = be->num;
   size_t idx;
   int k;
 
@@ -509,8 +510,8 @@ size_t encode(int* p, EncInfo* ei, BaseEntry* be, const int enc) {
       idx = kKKIdx[kTriangle[p[0]]][p[1]];
       k = 2;
     } else {
-      int s1 = (p[1] > p[0]);
-      int s2 = (p[2] > p[0]) + (p[2] > p[1]);
+      const int s1 = (p[1] > p[0]);
+      const int s2 = (p[2] > p[0]) + (p[2] > p[1]);
 
       if (kOffDiag[p[0]]) {
         idx = kTriangle[p[0]] * 63 * 62 + (p[1] - s1) * 62 + (p[2] - s2);
@@ -544,7 +545,7 @@ size_t encode(int* p, EncInfo* ei, BaseEntry* be, const int enc) {
 
     // Pawns of other color
     if (be->pawns[1]) {
-      int t = k + be->pawns[1];
+      const int t = k + be->pawns[1];
       for (int i = k; i < t; i++) {
         for (int j = i + 1; j < t; j++) {
           if (p[i] > p[j]) Swap(p[i], p[j]);
@@ -552,7 +553,7 @@ size_t encode(int* p, EncInfo* ei, BaseEntry* be, const int enc) {
       }
       size_t s = 0;
       for (int i = k; i < t; i++) {
-        int sq = p[i];
+        const int sq = p[i];
         int skips = 0;
         for (int j = 0; j < k; j++) skips += (sq > p[j]);
         s += Binomial[i - k + 1][sq - skips - 8];
@@ -563,7 +564,7 @@ size_t encode(int* p, EncInfo* ei, BaseEntry* be, const int enc) {
   }
 
   for (; k < n;) {
-    int t = k + ei->norm[k];
+    const int t = k + ei->norm[k];
     for (int i = k; i < t; i++) {
       for (int j = i + 1; j < t; j++) {
         if (p[i] > p[j]) Swap(p[i], p[j]);
@@ -571,7 +572,7 @@ size_t encode(int* p, EncInfo* ei, BaseEntry* be, const int enc) {
     }
     size_t s = 0;
     for (int i = k; i < t; i++) {
-      int sq = p[i];
+      const int sq = p[i];
       int skips = 0;
       for (int j = 0; j < k; j++) skips += (sq > p[j]);
       s += Binomial[i - k + 1][sq - skips];
@@ -609,15 +610,15 @@ size_t subfactor(size_t k, size_t n) {
 
 size_t init_enc_info(EncInfo* ei, BaseEntry* be, uint8_t* tb, int shift, int t,
                      const int enc) {
-  bool more_pawns = enc != PIECE_ENC && be->pawns[1] > 0;
+  const bool more_pawns = enc != PIECE_ENC && be->pawns[1] > 0;
 
   for (int i = 0; i < be->num; i++) {
     ei->pieces[i] = (tb[i + 1 + more_pawns] >> shift) & 0x0f;
     ei->norm[i] = 0;
   }
 
-  int order = (tb[0] >> shift) & 0x0f;
-  int order2 = more_pawns ? (tb[1] >> shift) & 0x0f : 0x0f;
+  const int order = (tb[0] >> shift) & 0x0f;
+  const int order2 = more_pawns ? (tb[1] >> shift) & 0x0f : 0x0f;
 
   int k = ei->norm[0] = enc != PIECE_ENC ? be->pawns[0] : be->kk_enc ? 2 : 3;
 
@@ -658,11 +659,11 @@ size_t init_enc_info(EncInfo* ei, BaseEntry* be, uint8_t* tb, int shift, int t,
 
 void calc_symLen(PairsData* d, uint32_t s, char* tmp) {
   uint8_t* w = d->symPat + 3 * s;
-  uint32_t s2 = (w[2] << 4) | (w[1] >> 4);
+  const uint32_t s2 = (w[2] << 4) | (w[1] >> 4);
   if (s2 == 0x0fff)
     d->symLen[s] = 0;
   else {
-    uint32_t s1 = ((w[1] & 0xf) << 8) | w[0];
+    const uint32_t s1 = ((w[1] & 0xf) << 8) | w[0];
     if (!tmp[s1]) calc_symLen(d, s1, tmp);
     if (!tmp[s2]) calc_symLen(d, s2, tmp);
     d->symLen[s] = d->symLen[s1] + d->symLen[s2] + 1;
@@ -731,14 +732,14 @@ PairsData* setup_pairs(uint8_t** ptr, size_t tb_size, size_t* size,
     return d;
   }
 
-  uint8_t block_size = data[1];
-  uint8_t idx_bits = data[2];
-  uint32_t real_num_blocks = read_le_u32(&data[4]);
-  uint32_t num_blocks = real_num_blocks + data[3];
-  int max_len = data[8];
-  int min_len = data[9];
-  int h = max_len - min_len + 1;
-  uint32_t num_syms = read_le_u16(&data[10 + 2 * h]);
+  const uint8_t block_size = data[1];
+  const uint8_t idx_bits = data[2];
+  const uint32_t real_num_blocks = read_le_u32(&data[4]);
+  const uint32_t num_blocks = real_num_blocks + data[3];
+  const int max_len = data[8];
+  const int min_len = data[9];
+  const int h = max_len - min_len + 1;
+  const uint32_t num_syms = read_le_u16(&data[10 + 2 * h]);
   d = static_cast<PairsData*>(
       malloc(sizeof(*d) + h * sizeof(uint64_t) + num_syms));
   d->blockSize = block_size;
@@ -749,7 +750,7 @@ PairsData* setup_pairs(uint8_t** ptr, size_t tb_size, size_t* size,
   d->minLen = min_len;
   *ptr = &data[12 + 2 * h + 3 * num_syms + (num_syms & 1)];
 
-  size_t num_indices = (tb_size + (1ULL << idx_bits) - 1) >> idx_bits;
+  const size_t num_indices = (tb_size + (1ULL << idx_bits) - 1) >> idx_bits;
   size[0] = 6ULL * num_indices;
   size[1] = 2ULL * num_blocks;
   size[2] = static_cast<size_t>(real_num_blocks) << block_size;
@@ -778,14 +779,14 @@ PairsData* setup_pairs(uint8_t** ptr, size_t tb_size, size_t* size,
 uint8_t* decompress_pairs(PairsData* d, size_t idx) {
   if (!d->idxBits) return d->constValue;
 
-  uint32_t main_idx = idx >> d->idxBits;
+  const uint32_t main_idx = idx >> d->idxBits;
   int lit_idx = (idx & ((static_cast<size_t>(1) << d->idxBits) - 1)) -
                 (static_cast<size_t>(1) << (d->idxBits - 1));
   uint32_t block;
   memcpy(&block, d->indexTable + 6 * main_idx, sizeof(block));
   block = from_le_u32(block);
 
-  uint16_t idx_offset =
+  const uint16_t idx_offset =
       *reinterpret_cast<uint16_t*>(d->indexTable + 6 * main_idx + 4);
   lit_idx += from_le_u16(idx_offset);
 
@@ -798,7 +799,7 @@ uint8_t* decompress_pairs(PairsData* d, size_t idx) {
   uint32_t* ptr = reinterpret_cast<uint32_t*>(
       d->data + (static_cast<size_t>(block) << d->blockSize));
 
-  int m = d->minLen;
+  const int m = d->minLen;
   uint16_t* offset = d->offset;
   uint64_t* base = d->base - m;
   uint8_t* sym_len = d->symLen;
@@ -819,7 +820,7 @@ uint8_t* decompress_pairs(PairsData* d, size_t idx) {
     bit_cnt += l;
     if (bit_cnt >= 32) {
       bit_cnt -= 32;
-      uint32_t tmp = from_be_u32(*ptr++);
+      const uint32_t tmp = from_be_u32(*ptr++);
       code |= static_cast<uint64_t>(tmp) << bit_cnt;
     }
   }
@@ -827,7 +828,7 @@ uint8_t* decompress_pairs(PairsData* d, size_t idx) {
   uint8_t* symPat = d->symPat;
   while (sym_len[sym] != 0) {
     uint8_t* w = symPat + (3 * sym);
-    int s1 = ((w[1] & 0xf) << 8) | w[0];
+    const int s1 = ((w[1] & 0xf) << 8) | w[0];
     if (lit_idx < static_cast<int>(sym_len[s1]) + 1) {
       sym = s1;
     } else {
@@ -1041,6 +1042,9 @@ class SyzygyTablebaseImpl {
     int fd = ::open(fname.c_str(), O_RDONLY);
     if (fd == -1) return nullptr;
     fstat(fd, &statbuf);
+    if (statbuf.st_size % 64 != 16) {
+      throw Exception("Corrupt tablebase file " + fname);
+    }
     *mapping = statbuf.st_size;
     base_address = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
     ::close(fd);
@@ -1049,12 +1053,15 @@ class SyzygyTablebaseImpl {
       exit(1);
     }
 #else
-    HANDLE fd =
+    const HANDLE fd =
         CreateFileA(fname.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (fd == INVALID_HANDLE_VALUE) return nullptr;
     DWORD size_high;
     DWORD size_low = GetFileSize(fd, &size_high);
+    if (size_low % 64 != 16) {
+      throw Exception("Corrupt tablebase file " + fname);
+    }
     HANDLE mmap = CreateFileMapping(fd, nullptr, PAGE_READONLY, size_high,
                                     size_low, nullptr);
     CloseHandle(fd);
@@ -1112,10 +1119,10 @@ class SyzygyTablebaseImpl {
       }
     }
 
-    Key key = calc_key_from_pcs(pcs, false);
-    Key key2 = calc_key_from_pcs(pcs, true);
+    const Key key = calc_key_from_pcs(pcs, false);
+    const Key key2 = calc_key_from_pcs(pcs, true);
 
-    bool has_pawns = pcs[W_PAWN] || pcs[B_PAWN];
+    const bool has_pawns = pcs[W_PAWN] || pcs[B_PAWN];
 
     BaseEntry* be =
         has_pawns
@@ -1160,7 +1167,7 @@ class SyzygyTablebaseImpl {
     for (int type = 0; type < 3; type++) {
       if (atomic_load_explicit(&be->ready[type], std::memory_order_relaxed)) {
         unmap_file(be->data[type], be->mapping[type]);
-        int num = num_tables(be, type);
+        const int num = num_tables(be, type);
         EncInfo* ei = first_ei(be, type);
         for (int t = 0; t < num; t++) {
           free(ei[t].precomp);
@@ -1185,15 +1192,15 @@ class SyzygyTablebaseImpl {
 
     be->data[type] = data;
 
-    bool split = type != DTZ && (data[4] & 0x01);
+    const bool split = type != DTZ && (data[4] & 0x01);
     if (type == DTM) be->dtmLossOnly = data[4] & 0x04;
 
     data += 5;
 
     size_t tb_size[6][2];
-    int num = num_tables(be, type);
+    const int num = num_tables(be, type);
     EncInfo* ei = first_ei(be, type);
-    int enc = !be->hasPawns ? PIECE_ENC : type != DTM ? FILE_ENC : RANK_ENC;
+    const int enc = !be->hasPawns ? PIECE_ENC : type != DTM ? FILE_ENC : RANK_ENC;
 
     for (int t = 0; t < num; t++) {
       tb_size[t][0] = init_enc_info(&ei[t], be, data, 0, t, enc);
@@ -1311,7 +1318,7 @@ class SyzygyTablebaseImpl {
 
   int probe_table(const ChessBoard& pos, int s, int* success, const int type) {
     // Obtain the position's material-signature key
-    Key key = calc_key_from_position(pos);
+    const Key key = calc_key_from_position(pos);
 
     // Test for KvK
     if (type == WDL && pos.ours() == pos.our_king() &&
@@ -1415,7 +1422,7 @@ class SyzygyTablebaseImpl {
       }
     } else {
       if (flags & 2) {
-        int m = kWdlToMap[s + 2];
+        const int m = kWdlToMap[s + 2];
         if (!(flags & 16)) {
           v = be->hasPawns
                   ? static_cast<uint8_t*>(
@@ -1487,7 +1494,7 @@ WDLScore SyzygyTablebase::search(const Position& pos, ProbeState* result) {
   WDLScore value;
   WDLScore best_value = WDL_LOSS;
   auto move_list = pos.GetBoard().GenerateLegalMoves();
-  size_t total_count = move_list.size();
+  const size_t total_count = move_list.size();
   size_t move_count = 0;
   for (const Move& move : move_list) {
     if (!is_capture(pos.GetBoard(), move) &&
@@ -1512,7 +1519,7 @@ WDLScore SyzygyTablebase::search(const Position& pos, ProbeState* result) {
   // result of probe_wdl_table is wrong. Also in case of only capture moves, for
   // instance here 4K3/4q3/6p1/2k5/6p1/8/8/8 w - - 0 7, we have to return with
   // ZEROING_BEST_MOVE set.
-  bool no_more_moves = (move_count && move_count == total_count);
+  const bool no_more_moves = (move_count && move_count == total_count);
   if (no_more_moves) {
     value = best_value;
   } else {
@@ -1571,7 +1578,7 @@ WDLScore SyzygyTablebase::probe_wdl(const Position& pos, ProbeState* result) {
 // then do not accept moves leading to dtz + 50-move-counter == 100.
 int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   *result = OK;
-  WDLScore wdl = search<true>(pos, result);
+  const WDLScore wdl = search<true>(pos, result);
   if (*result == FAIL || wdl == WDL_DRAW) {  // DTZ tables don't store draws
     return 0;
   }
@@ -1592,7 +1599,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
   int min_DTZ = 0xFFFF;
   for (const Move& move : pos.GetBoard().GenerateLegalMoves()) {
     Position next_pos = Position(pos, move);
-    bool zeroing = next_pos.GetNoCaptureNoPawnPly() == 0;
+    const bool zeroing = next_pos.GetNoCaptureNoPawnPly() == 0;
     // For zeroing moves we want the dtz of the move _before_ doing it,
     // otherwise we will get the dtz of the next move sequence. Search the
     // position after the move to get the score sign (because even in a winning
@@ -1623,9 +1630,9 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   // Obtain 50-move counter for the root position
-  int cnt50 = pos.GetNoCaptureNoPawnPly();
+  const int cnt50 = pos.GetNoCaptureNoPawnPly();
   // Check whether a position was repeated since the last zeroing move.
-  bool rep = has_repeated;
+  const bool rep = has_repeated;
   int dtz;
   std::vector<int> ranks;
   ranks.reserve(root_moves.size());
@@ -1636,7 +1643,7 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
     // Calculate dtz for the current move counting from the root position
     if (next_pos.GetNoCaptureNoPawnPly() == 0) {
       // In case of a zeroing move, dtz is one of -101/-1/0/1/101
-      WDLScore wdl = static_cast<WDLScore>(-probe_wdl(next_pos, &result));
+      const WDLScore wdl = static_cast<WDLScore>(-probe_wdl(next_pos, &result));
       dtz = dtz_before_zeroing(wdl);
     } else {
       // Otherwise, take dtz for the new position and correct by 1 ply
@@ -1685,7 +1692,7 @@ bool SyzygyTablebase::root_probe_wdl(const Position& pos,
   // Probe and rank each move
   for (auto& m : root_moves) {
     Position nextPos = Position(pos, m);
-    WDLScore wdl = static_cast<WDLScore>(-probe_wdl(nextPos, &result));
+    const WDLScore wdl = static_cast<WDLScore>(-probe_wdl(nextPos, &result));
     if (result == FAIL) return false;
     ranks.push_back(WDL_to_rank[wdl + 2]);
     if (ranks.back() > best_rank) best_rank = ranks.back();

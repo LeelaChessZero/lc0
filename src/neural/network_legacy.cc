@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2019 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -18,27 +18,18 @@
 
 #include "neural/network_legacy.h"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include "utils/weights_adapter.h"
 
 namespace lczero {
 namespace {
 static constexpr float kEpsilon = 1e-5f;
-
-void InvertVector(std::vector<float>* vec) {
-  for (auto& x : *vec) x = 1.0f / std::sqrt(x + kEpsilon);
-}
-
-void OffsetVector(std::vector<float>* means, const std::vector<float>& biases) {
-  std::transform(means->begin(), means->end(), biases.begin(), means->begin(),
-                 std::minus<float>());
-}
-
 }  // namespace
 
 LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
     : input(weights.input()),
+      policy1(weights.policy1()),
       policy(weights.policy()),
       ip_pol_w(LayerAdapter(weights.ip_pol_w()).as_vector()),
       ip_pol_b(LayerAdapter(weights.ip_pol_b()).as_vector()),
@@ -71,35 +62,53 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
       bn_betas(LayerAdapter(block.bn_betas()).as_vector()),
       bn_means(LayerAdapter(block.bn_means()).as_vector()),
       bn_stddivs(LayerAdapter(block.bn_stddivs()).as_vector()) {
-  // Merge gammas to stddivs and beta to means for backwards compatibility
-  auto channels = bn_betas.size();
-  auto epsilon = 1e-5;
-  for (auto i = size_t{0}; i < channels; i++) {
-    auto s = bn_gammas[i] / std::sqrt(bn_stddivs[i] + epsilon);
-    bn_stddivs[i] = 1.0f / (s * s) - epsilon;
-    bn_means[i] -= bn_betas[i] / s;
-    bn_gammas[i] = 1.0f;
-    bn_betas[i] = 0.0f;
-    biases.emplace_back(0.0f);
+  if (weights.size() == 0) {
+    // Empty ConvBlock.
+    return;
   }
+
+  if (bn_betas.size() == 0) {
+    // Old net without gamma and beta.
+    for (auto i = size_t{0}; i < bn_means.size(); i++) {
+      bn_betas.emplace_back(0.0f);
+      bn_gammas.emplace_back(1.0f);
+    }
+  }
+  if (biases.size() == 0) {
+    for (auto i = size_t{0}; i < bn_means.size(); i++) {
+      biases.emplace_back(0.0f);
+    }
+  }
+
+  if (bn_means.size() == 0) {
+    // No batch norm.
+    return;
+  }
+
+  // Fold batch norm into weights and biases.
+  // Variance to gamma.
+  for (auto i = size_t{0}; i < bn_stddivs.size(); i++) {
+    bn_gammas[i] *= 1.0f / std::sqrt(bn_stddivs[i] + kEpsilon);
+    bn_means[i] -= biases[i];
+  }
+
+  auto outputs = biases.size();
+
+  // We can treat the [inputs, filter_size, filter_size] dimensions as one.
+  auto inputs = weights.size() / outputs;
+
+  for (auto o = size_t{0}; o < outputs; o++) {
+    for (auto c = size_t{0}; c < inputs; c++) {
+      weights[o * inputs + c] *= bn_gammas[o];
+    }
+
+    biases[o] = -bn_gammas[o] * bn_means[o] + bn_betas[o];
+  }
+
+  // Batch norm weights are not needed anymore.
+  bn_stddivs.clear();
+  bn_means.clear();
+  bn_betas.clear();
+  bn_gammas.clear();
 }
-
-void LegacyWeights::ConvBlock::InvertStddev() { InvertVector(&bn_stddivs); }
-
-void LegacyWeights::ConvBlock::OffsetMeans() {
-  OffsetVector(&bn_means, biases);
-}
-
-std::vector<float> LegacyWeights::ConvBlock::GetInvertedStddev() const {
-  std::vector<float> stddivs = bn_stddivs;  // Copy.
-  InvertVector(&stddivs);
-  return stddivs;
-}
-
-std::vector<float> LegacyWeights::ConvBlock::GetOffsetMeans() const {
-  std::vector<float> means = bn_means;  // Copy.
-  OffsetVector(&means, biases);
-  return means;
-}
-
 }  // namespace lczero

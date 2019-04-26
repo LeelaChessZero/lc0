@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,8 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "engine.h"
 #include "benchmark/benchmark.h"
+#include "chess/board.h"
+#include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
 #include "utils/logging.h"
@@ -38,6 +39,9 @@ int main(int argc, const char** argv) {
   CERR << "|   _ | |";
   CERR << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__;
   using namespace lczero;
+
+  InitializeMagicBitboards();
+
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
   CommandLine::RegisterMode("selfplay", "Play games with itself");

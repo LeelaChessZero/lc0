@@ -47,14 +47,20 @@ class DemuxingComputation : public NetworkComputation {
   int GetBatchSize() const override { return planes_.size(); }
 
   float GetQVal(int sample) const override {
-    int idx = sample / partial_size_;
-    int offset = sample % partial_size_;
+    const int idx = sample / partial_size_;
+    const int offset = sample % partial_size_;
     return parents_[idx]->GetQVal(offset);
   }
 
-  float GetPVal(int sample, int move_id) const override {
+  float GetDVal(int sample) const override {
     int idx = sample / partial_size_;
     int offset = sample % partial_size_;
+    return parents_[idx]->GetDVal(offset);
+  }
+
+  float GetPVal(int sample, int move_id) const override {
+    const int idx = sample / partial_size_;
+    const int offset = sample % partial_size_;
     return parents_[idx]->GetPVal(offset, move_id);
   }
 
@@ -69,7 +75,7 @@ class DemuxingComputation : public NetworkComputation {
   NetworkComputation* AddParentFromNetwork(Network* network) {
     std::unique_lock<std::mutex> lock(mutex_);
     parents_.emplace_back(network->NewComputation());
-    int cur_idx = (parents_.size() - 1) * partial_size_;
+    const int cur_idx = (parents_.size() - 1) * partial_size_;
     for (int i = cur_idx; i < std::min(GetBatchSize(), cur_idx + partial_size_);
          i++) {
       parents_.back()->AddInput(std::move(planes_[i]));
@@ -151,7 +157,6 @@ class DemuxingNetwork : public Network {
 
         // While there is a work in queue, process it.
         while (true) {
-          
           DemuxingComputation* to_notify;
           {
             std::unique_lock<std::mutex> lock(mutex_);
@@ -160,7 +165,8 @@ class DemuxingNetwork : public Network {
             queue_.pop();
           }
           long long net_idx = ++(counter_) % networks_.size();
-          NetworkComputation* to_compute = to_notify->AddParentFromNetwork(networks_[net_idx].get());
+          NetworkComputation* to_compute =
+              to_notify->AddParentFromNetwork(networks_[net_idx].get());
           to_compute->ComputeBlocking();
           to_notify->NotifyComplete();
         }
@@ -202,11 +208,11 @@ void DemuxingComputation::ComputeBlocking() {
   if (partial_size_ < network_->minimum_split_size_) {
     partial_size_ = std::min(GetBatchSize(), network_->minimum_split_size_);
   }
-  int splits = (GetBatchSize() + partial_size_ - 1) / partial_size_;
+  const int splits = (GetBatchSize() + partial_size_ - 1) / partial_size_;
 
   std::unique_lock<std::mutex> lock(mutex_);
   dataready_ = splits;
-  for (int j=0; j < splits; j++) {
+  for (int j = 0; j < splits; j++) {
     network_->Enqueue(this);
   }
   dataready_cv_.wait(lock, [this]() { return dataready_ == 0; });
