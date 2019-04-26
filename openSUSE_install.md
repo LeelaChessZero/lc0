@@ -68,11 +68,7 @@ cd ~/Downloads
 If you ran the script that builds from source, you can ignore this section and skip to the next section which describes installing a networks file. 
 
 Otherwise, if you skipped most of what is described above because you want to use pre-built packages, this is where you should start!
-1. Using an openSUSE provided Web browser (recommend Firefox), find the package for your version of openSUSE and download and/or install the package. The actual location of packages may change depending on project status, so you may also want to use the web package search at https://software.opensuse.org/search  As of this writing, the "One Click Install" that uses YaST to install is known to be broken, saying it requries root permissions(incorrectly). You will likely have to download the RPM package (not the YMP file)
-
-https://build.opensuse.org/package/binaries/home:malcolmlewis:TESTING/lc0/openSUSE_Leap_15.0
-https://build.opensuse.org/package/binaries/home:malcolmlewis:TESTING/lc0/openSUSE_Tumbleweed
-
+1. Using an openSUSE provided Web browser (recommend Firefox), find the package for your version of openSUSE and download and/or install the package. The actual location of packages may change depending on project status, so you may also want to use the web package search at https://software.opensuse.org/package/lc0 and click on the "One-click install for your version of openSUSE.
 2. Once the RPM file has been downloaded, you can install using YaST, zypper or RPM by simply pointing the install command to the file.
 3. If successfully installed, you will find the lc0 binary at the following location and you can now proceed to the next section.
 ```
@@ -174,6 +170,15 @@ You should now be able to play!
 
 
 ## Removal / Uninstall
+
+If RPMs were used to install lc0, you can remove using ordinary package management commands, eg the YaST Software Manager or the following command line
+...
+
+
+zypper rm lc0
+...
+
+The following describes removing files manually, either to verify total removal or if installed from source
 
 The following commands remove parts of the install, the User can decide which to implement
 
