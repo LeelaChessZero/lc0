@@ -205,11 +205,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
   options->Add<FloatOption>(kTradePenaltyId, -1.0f, 1.0f) = 0.0025f;
   options->Add<FloatOption>(kTradePenalty2Id, -1000.0f, 1000.0f) = 27.0f;
-  options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 4.0f;
+  options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 2.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 2;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
-  options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 0.45f;
+  options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 0.42f;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -1000.0f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
