@@ -149,7 +149,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
         uci_info.mate = edge.GetEQ() * ((uci_info.pv.size() + 1) / 2 +
                                         (edge.IsPropagatedTBHit() ? 1000 : 0));
       } else if (root_syzygy_rank_ == 1) {
-        uci_info.score = 0;
+        // uci_info.score = 0;
       }
     }
   }
