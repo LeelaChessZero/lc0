@@ -17,11 +17,11 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 Download using git:
 
 ```
-git clone -b release/0.19 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+git clone -b release/0.21 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
 ```
 
-If downloading an archive, you need to also download and place the submodule:
- * Download https://github.com/LeelaChessZero/lc0/archive/release/0.19.zip ([.tar.gz](https://github.com/LeelaChessZero/lc0/archive/release/0.19.tar.gz) archive is also available)
+If you prefer to download an archive, you need to also download and place the submodule:
+ * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.21) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.21) archive is also available)
  * Extract
  * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
  * Move the second archive into the first archive's `libs/lczero-common/` folder and extract
