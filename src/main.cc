@@ -35,9 +35,9 @@
 
 int main(int argc, const char** argv) {
   LOGFILE << "Lc0 started.";
-  CERR << "       _";
+  CERR << "\033[1;31m       _";
   CERR << "|   _ | |";
-  CERR << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__;
+  CERR << "|_ |_ |_|\033[0m v" << GetVersionStr() << " built " << __DATE__;
   using namespace lczero;
 
   InitializeMagicBitboards();
