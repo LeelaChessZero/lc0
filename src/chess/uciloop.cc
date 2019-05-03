@@ -56,7 +56,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"start"}, {}},
         {{"stop"}, {}},
         {{"ponderhit"}, {}},
-		{{"getfen"}, {}},
+		{{"get"}, { "fen" }},
 		{{"quit"}, {}},
         {{"xyzzy"}, {}},
 };
@@ -160,8 +160,10 @@ bool UciLoop::DispatchCommand(
 	  const std::vector<std::string> moves =
 		  StrSplitAtWhitespace(GetOrEmpty(params, "moves"));
 	  CmdPosition(GetOrEmpty(params, "fen"), moves);
-  } else if (command == "getfen") {
-	  CmdGetFen();
+  } else if (command == "get") {
+	  if (ContainsKey(params, "fen")) {
+		  CmdGetFen();
+	  }
   }
   else if (command == "go") {
     GoParams go_params;
