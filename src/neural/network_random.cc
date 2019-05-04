@@ -47,7 +47,7 @@ class RandomNetworkComputation : public NetworkComputation {
       hash = HashCat({hash, plane.mask});
       std::uint32_t tmp;
       std::memcpy(&tmp, &plane.value, sizeof(float));
-      std::uint64_t value_hash = tmp;
+      const std::uint64_t value_hash = tmp;
       hash = HashCat({hash, value_hash});
     }
     inputs_.push_back(hash);

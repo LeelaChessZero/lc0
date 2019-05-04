@@ -173,7 +173,7 @@ std::string Edge::DebugString() const {
 EdgeList::EdgeList(MoveList moves)
     : edges_(std::make_unique<Edge[]>(moves.size())), size_(moves.size()) {
   auto* edge = edges_.get();
-  for (auto move : moves) edge++->SetMove(move);
+  for (const auto move : moves) edge++->SetMove(move);
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -227,6 +227,29 @@ void Node::MakeTerminal(GameResult result) {
   } else if (result == GameResult::BLACK_WON) {
     q_ = -1.0f;
     d_ = 0.0f;
+  }
+}
+
+void Node::MakeNotTerminal() {
+  is_terminal_ = false;
+  n_ = 0;
+
+  // If we have edges, we've been extended (1 visit), so include children too.
+  if (edges_) {
+    n_++;
+    for (const auto& child : Edges()) {
+      const auto n = child.GetN();
+      if (n > 0) {
+        n_ += n;
+        // Flip Q for opponent.
+        q_ += -child.GetQ(0.0f) * n;
+        d_ += child.GetD() * n;
+      }
+    }
+
+    // Recompute with current eval (instead of network's) and children's eval.
+    q_ /= n_;
+    d_ /= n_;
   }
 }
 
@@ -312,7 +335,7 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
   result.version = 4;
 
   // Populate probabilities.
-  float total_n = static_cast<float>(GetChildrenVisits());
+  const float total_n = static_cast<float>(GetChildrenVisits());
   // Prevent garbage/invalid training data from being uploaded to server.
   if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
   // Set illegal moves to have -1 probability.
@@ -382,6 +405,9 @@ void NodeTree::MakeMove(Move move) {
   for (auto& n : current_head_->Edges()) {
     if (n.GetMove() == move) {
       new_head = n.GetOrSpawnNode(current_head_);
+      // Ensure head is not terminal, so search can extend or visit children of
+      // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
+      if (new_head->IsTerminal()) new_head->MakeNotTerminal();
       break;
     }
   }
@@ -430,10 +456,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  // Also, if the current_head_ is terminal, reset that as well to allow forced
-  // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
-
+  if (!seen_old_head) TrimTreeAtHead();
   return seen_old_head;
 }
 

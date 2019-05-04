@@ -60,7 +60,7 @@ std::string ConfigFile::ProcessConfigFlag(
 
     if (param.substr(0, 2) == "--") {
       param = param.substr(2);
-      auto pos = param.find('=');
+      const auto pos = param.find('=');
       if (pos != std::string::npos) {
         if (param.substr(0, pos) == kConfigFileId.long_flag) {
           filename = param.substr(pos + 1);
@@ -101,7 +101,7 @@ bool ConfigFile::ParseFile(const std::string& filename,
 
   // Check to see if we are using the default config file or not.
   OptionsDict dict = options->GetOptionsDict();
-  bool using_default_config =
+  const bool using_default_config =
       dict.IsDefault<std::string>(kConfigFileId.GetId());
 
   if (!input.is_open()) {
