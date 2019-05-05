@@ -179,7 +179,8 @@ const OptionId SearchParams::kHistoryFillId{
     "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SearchParams::kMinimumKLDGainPerNode{
     "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
-    "If greater than 0 search will abort unless the last KLDGainAverageInterval "
+    "If greater than 0 search will abort unless the last "
+    "KLDGainAverageInterval "
     "nodes have an average gain per node of at least this much."};
 const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
@@ -216,7 +217,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
-  options->Add<BoolOption>(kStickyEndgamesId) = false;
+  options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   std::vector<std::string> score_type = {"centipawn", "centipawn_2018",
@@ -257,7 +258,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {
-}
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {}
 
 }  // namespace lczero
