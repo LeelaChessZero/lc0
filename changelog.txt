@@ -1,4 +1,15 @@
-﻿v0.21.0-rc2 (2019-03-06)
+﻿v0.21.2-rc1 (2019-05-05)
+~~~~~~~~~~~
+
+* Make --sticky-endgames on by default (still off in training) (#844)
+* update download links in README (#842)
+* Recalibrate centipawn formula (#841)
+* Also make parents Terminal if any move is a win or all moves are loss or draw. (#822)
+* Use parent Q as a default score instead of 0 for unvisited pv. (#828)
+* Add stop command to selfplay interactive mode to allow for graceful exit. (#810)
+* Increased hard limit on batch size in opencl backend to 32 (#807)
+
+v0.21.0-rc2 (2019-03-06)
 ~~~~~~~~~~~
 
 * Add support for cudnn7.0 (#717)

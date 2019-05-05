@@ -349,7 +349,7 @@ class OpenCLNetwork : public Network {
   }
 
  private:
-  static constexpr auto kHardMaxBatchSize = 16;
+  static constexpr auto kHardMaxBatchSize = 32;
   static constexpr auto kPolicyUsedPlanes = 73;
   static constexpr auto kPolicyOutputs = 1858;
 

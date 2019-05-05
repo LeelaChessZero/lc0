@@ -152,6 +152,13 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "in the cache or is terminal, evaluate it right away without sending the "
     "batch to the NN. When off, this may only happen with the very first node "
     "of a batch; when on, this can happen with any node."};
+const OptionId SearchParams::kStickyEndgamesId{
+    "sticky-endgames", "StickyEndgames",
+    "When an end of game position is found during search, allow the eval of "
+    "the previous move's position to stick to something more accurate. For "
+    "example, if at least one move results in checkmate, then the position "
+    "should stick as checkmated. Similarly, if all moves are drawn or "
+    "checkmated, the position should stick as drawn or checkmate."};
 const OptionId SearchParams::kSyzygyFastPlayId{
     "syzygy-fast-play", "SyzygyFastPlay",
     "With DTZ tablebase files, only allow the network pick from winning moves "
@@ -172,8 +179,9 @@ const OptionId SearchParams::kHistoryFillId{
     "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SearchParams::kMinimumKLDGainPerNode{
     "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
-    "If greater than 0 search will abort unless the last KLDGainAverageInterval "
-    "nodes have an average gain per node of at least this much."};
+    "If greater than 0 search will abort unless the last "
+    "KLDGainAverageInterval nodes have an average gain per node of at least "
+    "this much."};
 const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
@@ -209,9 +217,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
+  options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
-  std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
+  std::vector<std::string> score_type = {"centipawn", "centipawn_2018",
+                                         "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
@@ -244,10 +254,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
+      kStickyEndgames(options.Get<bool>(kStickyEndgamesId.GetId())),
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {
-}
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {}
 
 }  // namespace lczero

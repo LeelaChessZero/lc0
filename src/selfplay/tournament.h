@@ -59,6 +59,9 @@ class SelfPlayTournament {
   // Tells worker threads to finish ASAP. Does not block.
   void Abort();
 
+  // Stops any more games from starting, in progress games will complete.
+  void Stop();
+
   // If there are ongoing games, aborts and waits.
   ~SelfPlayTournament();
 
