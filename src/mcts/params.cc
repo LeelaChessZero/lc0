@@ -180,8 +180,8 @@ const OptionId SearchParams::kHistoryFillId{
 const OptionId SearchParams::kMinimumKLDGainPerNode{
     "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
     "If greater than 0 search will abort unless the last "
-    "KLDGainAverageInterval "
-    "nodes have an average gain per node of at least this much."};
+    "KLDGainAverageInterval nodes have an average gain per node of at least "
+    "this much."};
 const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
