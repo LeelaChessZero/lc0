@@ -1097,8 +1097,7 @@ CertaintyResult SearchWorker::EvalPosition(const Node* node,
       return certaintyresult = {GameResult::DRAW, CertaintyTrigger::TERMINAL};
     }
 
-    if ((history_.Last().GetRepetitions() >= 1) &&
-        params_.GetTwoFoldDrawScoring()) {
+    if ((history_.Last().GetRepetitions() >= 1) && history_.Last().GetGamePly() >= 40) {
       return certaintyresult = {GameResult::DRAW, CertaintyTrigger::TWO_FOLD};
     }
 
