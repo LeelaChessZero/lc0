@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -205,6 +205,7 @@ class TFNetworkComputation : public NetworkComputation {
   float GetQVal(int sample) const override {
     return output_[0].template matrix<float>()(sample, 0);
   }
+  float GetDVal(int sample) const override { return 0.0f; }
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
@@ -313,12 +314,27 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 template <bool CPU>
 std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
                                        const OptionsDict& options) {
+  // Tensorflow backend needs to be updated to use folded batch norms.
+  throw Exception("Tensorflow backend is not supported.");
+
   if (weights.format().network_format().network() !=
       pblczero::NetworkFormat::NETWORK_CLASSICAL) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
         " is not supported by Tensorflow backend.");
+  }
+  if (weights.format().network_format().policy() !=
+      pblczero::NetworkFormat::POLICY_CLASSICAL) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by Tensorflow backend.");
+  }
+  if (weights.format().network_format().value() !=
+      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by Tensorflow backend.");
   }
   return std::make_unique<TFNetwork<CPU>>(weights, options);
 }

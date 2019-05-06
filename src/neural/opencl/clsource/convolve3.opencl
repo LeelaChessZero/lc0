@@ -129,8 +129,7 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
                                      const int Kpad, const int Ppad,
                                      const int relu,
                                      __global const net_t * restrict residual,
-                                     __constant const net_t * restrict means,
-                                     __constant const net_t * restrict stddivs) {
+                                     __constant const net_t * restrict biases) {
   const int W = 8;
   const int H = 8;
   const int WTILES = (W + 1) / 2;
@@ -147,12 +146,11 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
   int y = 2*block_y;
   int a_ind = y * W + x;
   if (k < K && block < P) {
-    const int kHW = batch * Kpad * BOARD_SQUARES + k * BOARD_SQUARES;
+    const int kHW = batch * K * BOARD_SQUARES + k * BOARD_SQUARES;
     float o[4];
     __out_transform_eq(M, o, Kpad, Ppad, block, batch);
     
-    const float mean = vload_net_t(k, means);
-    const float scale_stddiv = vload_net_t(k, stddivs);
+    const float bias = vload_net_t(k, biases);
     
     const bool pred[4] = { 1, x+1 < W, y+1 < H, x+1 < W & y+1 < H};
     
@@ -160,7 +158,7 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
     
     for (int i = 0; i < 4; i++) {
       if (pred[i]) {
-        o[i] = scale_stddiv * (o[i] - mean);
+        o[i] = o[i] + bias;
         if (residual) {
           o[i] += vload_net_t(kHW + a[i], residual);
         }
@@ -180,8 +178,7 @@ __kernel void out_transform_fused_bn_in(
                                         const int K,
                                         const int Kpad, const int Ppad, const int Cpad,
                                         __global const net_t * restrict residual,
-                                        __constant const net_t * restrict means,
-                                        __constant const net_t * restrict stddivs,
+                                        __constant const net_t * restrict biases,
                                         __local float * ybuf) {
   const int W = 8;
   const int H = 8;
@@ -213,12 +210,11 @@ __kernel void out_transform_fused_bn_in(
     float o[4];
     __out_transform_eq(M, o, Kpad, Ppad, block, batch);
     
-    const float mean = vload_net_t(k, means);
-    const float scale_stddiv = vload_net_t(k, stddivs);
+    const float bias = vload_net_t(k, biases);
     
     for (int i = 0; i < 4; i++) {
       if (pred[i]) {
-        o[i] = scale_stddiv * (o[i] - mean);
+        o[i] = o[i] + bias;
         if (residual) {
           o[i] += vload_net_t(kHW + a[i], residual);
         }

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -48,13 +48,13 @@ const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 void Benchmark::Run() {
   OptionsParser options;
   NetworkFactory::PopulateOptions(&options);
+  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   SearchParams::Populate(&options);
 
-  options.Add<IntOption>(kNodesId, -1, 999999999) = 30000;
-  options.Add<IntOption>(kMovetimeId, -1, 999999999) = -1;
+  options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
+  options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
-  options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
-  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -69,13 +69,16 @@ void Benchmark::Run() {
     NNCache cache;
     cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId.GetId()));
 
-    auto start = std::chrono::steady_clock::now();
+    const auto start = std::chrono::steady_clock::now();
 
     SearchLimits limits;
-    limits.visits = option_dict.Get<int>(kNodesId.GetId());
-    int movetime = option_dict.Get<int>(kMovetimeId.GetId());
+    int visits = option_dict.Get<int>(kNodesId.GetId());
+    const int movetime = option_dict.Get<int>(kMovetimeId.GetId());
     if (movetime > -1) {
       limits.search_deadline = start + std::chrono::milliseconds(movetime);
+    }
+    if (visits > -1) {
+        limits.visits = visits;
     }
 
     auto search = std::make_unique<Search>(
@@ -88,7 +91,7 @@ void Benchmark::Run() {
 
     search->Wait();
 
-    auto end = std::chrono::steady_clock::now();
+    const auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> time = end - start;
     std::cout << "Benchmark final time " << time.count() << "s calculating "
               << search->GetTotalPlayouts() / time.count()

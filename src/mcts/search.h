@@ -89,7 +89,8 @@ class Search {
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  float GetBestEval() const;
+  // Returns pair {Q, D}.
+  std::pair<float, float> GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
@@ -111,6 +112,7 @@ class Search {
   int64_t GetTimeSinceStart() const;
   int64_t GetTimeToDeadline() const;
   void UpdateRemainingMoves();
+  void UpdateKLDGain();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
@@ -174,6 +176,13 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int64_t>::max();
+  // If kldgain minimum checks enabled, this was the visit distribution at the
+  // last kldgain interval triggering.
+  std::vector<uint32_t> prev_dist_ GUARDED_BY(counters_mutex_);
+  // Total visits at the last time prev_dist_ was cached.
+  uint32_t prev_dist_visits_total_ GUARDED_BY(counters_mutex_) = 0;
+  // If true, search should exit as kldgain evaluation showed too little change.
+  bool kldgain_too_small_ GUARDED_BY(counters_mutex_) = false;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
@@ -250,6 +259,8 @@ class SearchWorker {
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
+    // Draw probability for NN's with WDL value head
+    float d;
     int multivisit = 0;
     uint16_t depth;
     bool nn_queried = false;
@@ -260,12 +271,8 @@ class SearchWorker {
                                    int collision_count) {
       return NodeToProcess(node, depth, true, collision_count);
     }
-    static NodeToProcess Extension(Node* node, uint16_t depth) {
+    static NodeToProcess Visit(Node* node, uint16_t depth) {
       return NodeToProcess(node, depth, false, 1);
-    }
-    static NodeToProcess TerminalHit(Node* node, uint16_t depth,
-                                     int visit_count) {
-      return NodeToProcess(node, depth, false, visit_count);
     }
 
    private:

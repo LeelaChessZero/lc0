@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,8 +26,8 @@
 */
 
 #include "neural/encoder.h"
-#include "utils/optional.h"
 #include <algorithm>
+#include "utils/optional.h"
 
 namespace lczero {
 
@@ -72,18 +72,18 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
     }
 
     const int base = i * kPlanesPerBoard;
-    result[base + 0].mask = (board.ours() * board.pawns()).as_int();
+    result[base + 0].mask = (board.ours() & board.pawns()).as_int();
     result[base + 1].mask = (board.our_knights()).as_int();
-    result[base + 2].mask = (board.ours() * board.bishops()).as_int();
-    result[base + 3].mask = (board.ours() * board.rooks()).as_int();
-    result[base + 4].mask = (board.ours() * board.queens()).as_int();
+    result[base + 2].mask = (board.ours() & board.bishops()).as_int();
+    result[base + 3].mask = (board.ours() & board.rooks()).as_int();
+    result[base + 4].mask = (board.ours() & board.queens()).as_int();
     result[base + 5].mask = (board.our_king()).as_int();
 
-    result[base + 6].mask = (board.theirs() * board.pawns()).as_int();
+    result[base + 6].mask = (board.theirs() & board.pawns()).as_int();
     result[base + 7].mask = (board.their_knights()).as_int();
-    result[base + 8].mask = (board.theirs() * board.bishops()).as_int();
-    result[base + 9].mask = (board.theirs() * board.rooks()).as_int();
-    result[base + 10].mask = (board.theirs() * board.queens()).as_int();
+    result[base + 8].mask = (board.theirs() & board.bishops()).as_int();
+    result[base + 9].mask = (board.theirs() & board.rooks()).as_int();
+    result[base + 10].mask = (board.theirs() & board.queens()).as_int();
     result[base + 11].mask = (board.their_king()).as_int();
 
     const int repetitions = position.GetRepetitions();

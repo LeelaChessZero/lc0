@@ -130,11 +130,19 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   }
 }
 
-void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
+bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
                   const half* w2, const half* b2, const half* bPrev) {
   // TODO: Think of more elegant way to avoid this hardcoding :-/
-  if (numFc1Out == 32) {
+  if (numFc1Out == 16) {
+    if (C == 64) {
+      SE_Layer_NHWC<64, 16>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+    } else {
+      // TODO: support other channel counts.
+      throw Exception("channel count unsupported by SE layer");
+    }
+  } else if (numFc1Out == 32) {
     if (C == 64) {
       SE_Layer_NHWC<64, 32>
           <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
@@ -149,7 +157,7 @@ void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
           <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else {
       // TODO: support other channel counts.
-      throw Exception("channel count unsupported by SE layer");
+      return false;
     }
   } else if (numFc1Out == 64) {
     if (C == 64) {
@@ -166,13 +174,14 @@ void Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
           <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else {
       // TODO: support other channel counts.
-      throw Exception("channel count unsupported by SE layer");
+      return false;
     }
   } else {
     // TODO: support other sizes.
-    throw Exception("numOutputs unsupported by SE layer");
+    return false;
   }
   ReportCUDAErrors(cudaGetLastError());
+  return true;
 }
 
 }   // namespace cudnn_backend

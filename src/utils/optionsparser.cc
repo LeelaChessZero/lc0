@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -69,7 +69,7 @@ void OptionsParser::SetUciOption(const std::string& name,
 }
 
 void OptionsParser::HideOption(const OptionId& id) {
-  auto option = FindOptionById(id.GetId());
+  const auto option = FindOptionById(id.GetId());
   if (option) option->hidden_ = true;
 }
 
@@ -118,6 +118,10 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
     std::string param = *iter;
     if (param == "-h" || param == "--help") {
       ShowHelp();
+      return false;
+    }
+    if (param == "--help-md") {
+      ShowHelpMd();
       return false;
     }
     if (param == "--show-hidden") {
@@ -239,28 +243,110 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }  // namespace
 
 void OptionsParser::ShowHelp() const {
-  std::cerr << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
+  std::cout << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
             << std::endl;
 
-  std::cerr << "\nAvailable modes. A help for a mode: "
+  std::cout << "\nAvailable modes. A help for a mode: "
             << CommandLine::BinaryName() << " <mode> --help\n";
   for (const auto& mode : CommandLine::GetModes()) {
-    std::cerr << "  " << std::setw(10) << std::left << mode.first << " "
+    std::cout << "  " << std::setw(10) << std::left << mode.first << " "
               << mode.second << std::endl;
   }
 
-  std::cerr << "\nAllowed command line flags for current mode:\n";
-  std::cerr << FormatFlag('h', "help", "Show help and exit.");
+  std::cout << "\nAllowed command line flags for current mode:\n";
+  std::cout << FormatFlag('h', "help", "Show help and exit.");
   for (const auto& option : options_) {
-    if (!option->hidden_) std::cerr << option->GetHelp(defaults_);
+    if (!option->hidden_) std::cout << option->GetHelp(defaults_);
   }
 
   auto contexts = values_.ListSubdicts();
   if (!contexts.empty()) {
-    std::cerr << "\nFlags can be defined per context (one of: "
+    std::cout << "\nFlags can be defined per context (one of: "
               << StrJoin(contexts, ", ") << "), for example:\n";
-    std::cerr << "       --" << contexts[0] << '.'
+    std::cout << "       --" << contexts[0] << '.'
               << options_.back()->GetLongFlag() << "=(value)\n";
+  }
+}
+
+namespace {
+std::string EscapeMd(const std::string& input) {
+  const std::string kSpecial = "~#<>&*_\\[]+-`|:\n\r";
+  std::string s = input;
+  size_t pos = 0;
+  while ((pos = s.find_first_of(kSpecial, pos)) != std::string::npos) {
+    switch (s[pos]) {
+      case '<':
+        s.replace(pos, 1, "&lt;");
+        pos += 4;
+        break;
+      case '>':
+        s.replace(pos, 1, "&gt;");
+        pos += 4;
+        break;
+      case '&':
+        s.replace(pos, 1, "&amp;");
+        pos += 5;
+        break;
+      case '\n':
+        s.replace(pos, 1, "<br/>");
+        pos += 5;
+        break;
+      case '\r':
+        s.erase(pos, 1);
+        break;
+      default:
+        s.insert(pos, "\\");
+        pos += 2;
+    }
+  }
+  return s;
+}
+}  // namespace
+
+void OptionsParser::ShowHelpMd() const {
+  std::cout << "\n# Lc0 options\n";
+  std::cout << "\n*Flag*|*UCI option*|Description\n---|---|------\n";
+  std::cout << "**--help**, **-h**||Show help and exit.\n";
+  for (const auto& option : options_) {
+    if (option->hidden_) continue;
+    if (!option->GetLongFlag().empty()) {
+      std::cout << "**--" << option->GetLongFlag() << "**";
+    }
+    if (option->GetShortFlag()) {
+      std::cout << ", **-" << option->GetShortFlag() << "**";
+    }
+    std::cout << '|';
+    if (!option->GetUciOption().empty()) {
+      std::cout << "**" << option->GetUciOption() << "**";
+    }
+    std::cout << '|' << EscapeMd(option->GetHelpText());
+    std::string help = option->GetHelp(defaults_);
+    size_t idx = help.rfind("DEFAULT:");
+    if (idx != std::string::npos) {
+      help.replace(idx, 8, "*Default value:* `");
+      size_t idx2 = help.rfind("MIN:");
+      if (idx2 != std::string::npos) {
+        help.replace(idx2, 4, "`<br/>*Minimum value:* `");
+      }
+      idx2 = help.rfind("MAX:");
+      if (idx2 != std::string::npos) {
+        help.replace(idx2, 4, "`<br/>*Maximum value:* `");
+      }
+      idx2 = help.rfind("VALUES:");
+      if (idx2 != std::string::npos) {
+        help.replace(idx2, 7, "`<br/>*Allowed values:* `");
+        while ((idx2 = help.find(",", idx2)) != std::string::npos) {
+          help.replace(idx2, 1, "`, `");
+          idx2 += 4;
+        }
+      }
+      idx2 = help.rfind("]");
+      if (idx2 != std::string::npos) {
+        help.erase(idx2);
+      }
+      std::cout << "<br/>" << help.substr(idx) << "`";
+    }
+    std::cout << "\n";
   }
 }
 
