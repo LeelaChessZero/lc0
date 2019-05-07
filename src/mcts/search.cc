@@ -518,17 +518,18 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   float temperature = params_.GetTemperature();
   const int cutoff_move = params_.GetTemperatureCutoffMove();
   const int moves = played_history_.Last().GetGamePly() / 2;
-  if (params_.GetTempDecayMoves()) < 0 {
-	  temperature *= static_cast<float>(pow10(moves / params_.GetTempDecayMoves()));
+  const int temp_decay_moves = params_.GetTempDecayMoves();
+  if (temp_decay_moves < 0) {
+	  temperature *= pow(10.0, static_cast<float>(moves / temp_decay_moves));
   } else {
 	  if (cutoff_move && (moves + 1) >= cutoff_move) {
 		temperature = params_.GetTemperatureEndgame();
-	  } else if (temperature && params_.GetTempDecayMoves()) {
-		if (moves >= params_.GetTempDecayMoves()) {
+	  } else if (temperature && temp_decay_moves) {
+		if (moves >= temp_decay_moves) {
 		  temperature = 0.0;
 		} else {
-		  temperature *= static_cast<float>(params_.GetTempDecayMoves() - moves) /
-						 params_.GetTempDecayMoves();
+		  temperature *= static_cast<float>(temp_decay_moves - moves) /
+						 temp_decay_moves;
 		}
 	  }
   }
