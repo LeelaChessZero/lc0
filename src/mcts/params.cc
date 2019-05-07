@@ -70,8 +70,8 @@ const OptionId SearchParams::kTempDecayMovesId{
     "For positive values, reduce temperature for every move from the game "
     "start to this number of moves, decreasing linearly from initial "
     "temperature to 0. A value of 0 disables tempdecay. For negative values, "
-	"reduce temperature exponentially such that the values after this number "
-	"of moves is 1/10th of the initial temperature."};
+    "reduce temperature exponentially such that the values after this number "
+    "of moves is 1/10th of the initial temperature."};
 const OptionId SearchParams::kTemperatureCutoffMoveId{
     "temp-cutoff-move", "TempCutoffMove",
     "Move number, starting from which endgame temperature is used rather "
