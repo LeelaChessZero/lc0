@@ -118,6 +118,11 @@ option('pext',
        value: false,
        description: 'Use the pext instruction')
 
+option('android',
+       type: 'boolean',
+       value: false,
+       description: 'Enable Android support')
+
 option('gtest',
        type: 'boolean',
        value: true,

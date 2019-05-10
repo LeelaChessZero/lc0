@@ -27,7 +27,7 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   add_project_arguments('-Wextra', language : 'cpp')
   add_project_arguments('-pedantic', language : 'cpp')
 
-  if get_option('buildtype') == 'release'
+  if get_option('buildtype') == 'release' and cc.has_argument('-march=native')
     add_project_arguments('-march=native', language : 'cpp')
   endif
 endif
@@ -40,6 +40,14 @@ has_backends = false
 
 # Third party files.
 includes += include_directories('third_party', is_system: true)
+
+# Android support
+if get_option('android')
+  add_global_link_arguments('-llog', language:'cpp')
+  if get_option('opencl')
+    add_project_link_arguments('/system/lib64/liblzma.so', language:'cpp')
+  endif
+endif
 
 # Both protobuf and protoc must be the same version, so couple them together.
 protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
