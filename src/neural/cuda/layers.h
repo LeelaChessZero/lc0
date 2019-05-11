@@ -44,6 +44,7 @@ class BaseLayer {
   int GetW() const { return W; }
 
   BaseLayer(int c, int h, int w, BaseLayer* ip);
+  BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc);
   virtual ~BaseLayer() = default;
   size_t GetOutputSize(int N) const { return sizeof(DataType) * N * C * H * W; }
 
@@ -58,6 +59,8 @@ class BaseLayer {
   int C;  // Output tensor dimensions.
   int H;
   int W;
+
+  bool nhwc_;   // tensor layout
 };
 
 template <typename DataType>
@@ -72,6 +75,10 @@ class ConvLayer : public BaseLayer<DataType> {
  public:
   ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
             bool relu = false, bool bias = false);
+  
+  ConvLayer(bool nhwc, int C, int H, int W, int size, int Cin,
+            bool relu = false, bool bias = false);
+
   ~ConvLayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
   void Eval(int N, DataType* output, const DataType* input,
@@ -95,6 +102,8 @@ class ConvLayer : public BaseLayer<DataType> {
   cudnnTensorDescriptor_t in_tensor_desc_;
   cudnnTensorDescriptor_t out_tensor_desc_;
   cudnnActivationDescriptor_t activation_;
+
+  void init();
 };
 
 template <typename DataType>
@@ -112,28 +121,6 @@ class SoftMaxLayer : public BaseLayer<DataType> {
 
  private:
   cudnnTensorDescriptor_t out_tensor_desc_;
-};
-
-template <typename DataType>
-class BNLayer : public BaseLayer<DataType> {
-  using BaseLayer<DataType>::C;
-
- public:
-  BNLayer(BaseLayer<DataType>* ip, bool relu);
-  ~BNLayer();
-
-  void LoadWeights(float* cpuMeans, float* cpuVar);
-  void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
-
- private:
-  const bool use_relu_;
-
-  // Weights for BN layer are always in float irrespective of DataType
-  // as there is not much point in converting these to fp16.
-  float* means_ = nullptr;
-  float* variances_ = nullptr;
 };
 
 template <typename DataType>
