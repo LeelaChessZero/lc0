@@ -112,6 +112,7 @@ class SoftMaxLayer : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetC;
   using BaseLayer<DataType>::GetH;
   using BaseLayer<DataType>::GetW;
+  using BaseLayer<DataType>::nhwc_;
 
  public:
   SoftMaxLayer(BaseLayer<DataType>* ip);
