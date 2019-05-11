@@ -220,11 +220,16 @@ class CudnnNetwork : public Network {
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support fp16 (Volta+).
       if (deviceProp.major >= 7) {
-        // Enable Tensor cores!
-        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
 
         // nhwc layout is faster with Tensor Cores.
+        // TODO: figure out a way to check for Tensor Core support 
+        // (otherwise nhwc with tensor core setting enabled runs really slow on GTX 16xx gpus)
         nhwc_ = true;
+
+        // Enable Tensor cores!
+        if (nhwc_)
+          ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+
       } else {
         throw Exception("Your GPU doesn't support FP16");
       }

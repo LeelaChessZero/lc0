@@ -122,7 +122,7 @@ void ConvLayer<DataType>::init()
       crossCorr ? CUDNN_CROSS_CORRELATION : CUDNN_CONVOLUTION,
       dataType));
 
-  if (fp16)
+  if (fp16 && nhwc_)
     ReportCUDNNErrors(
         cudnnSetConvolutionMathType(conv_desc_, CUDNN_TENSOR_OP_MATH));
 

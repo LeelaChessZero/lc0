@@ -71,6 +71,7 @@ class ConvLayer : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetC;
   using BaseLayer<DataType>::GetH;
   using BaseLayer<DataType>::GetW;
+  using BaseLayer<DataType>::nhwc_;
 
  public:
   ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
@@ -125,6 +126,8 @@ class SoftMaxLayer : public BaseLayer<DataType> {
 
 template <typename DataType>
 class FCLayer : public BaseLayer<DataType> {
+ using BaseLayer<DataType>::nhwc_;
+
  public:
   FCLayer(BaseLayer<DataType>* ip, int C, int H, int W, bool relu, bool bias,
           bool tanh = false, bool sigmoid = false);
@@ -146,6 +149,8 @@ class FCLayer : public BaseLayer<DataType> {
 
 template <typename DataType>
 class PolicyMapLayer: public BaseLayer<DataType> {
+ using BaseLayer<DataType>::nhwc_;
+
  public:
   PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize);
   ~PolicyMapLayer();
@@ -168,6 +173,7 @@ class PolicyMapLayer: public BaseLayer<DataType> {
 template <typename DataType>
 class SELayer : public BaseLayer<DataType> {
  using BaseLayer<DataType>::C;
+ using BaseLayer<DataType>::nhwc_;
 
  public:
   SELayer(BaseLayer<DataType>* ip, int numFc1Out,
