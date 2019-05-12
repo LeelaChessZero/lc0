@@ -237,13 +237,9 @@ class CudnnNetwork : public Network {
         throw Exception("Your GPU doesn't support FP16");
       }
 
-      // Override if forced from backend option (default: -1 means auto-select).
-      int force_nhwc = options.GetOrDefault<int>("force_nhwc", -1);
-      if (force_nhwc == 0) {
-        nhwc_ = false;
-      } else if (force_nhwc == 1) {
-        nhwc_ = true;
-      }
+      // Override if forced from backend option
+      if (!options.IsDefault<bool>("nhwc")) 
+          nhwc_ = options.Get<bool>("nhwc");
 
       if (nhwc_)
         ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
