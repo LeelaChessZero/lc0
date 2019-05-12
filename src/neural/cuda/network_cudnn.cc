@@ -218,25 +218,35 @@ class CudnnNetwork : public Network {
     nhwc_ = false;
 
     if (std::is_same<half, DataType>::value) {
-      // Check if the GPU support fp16
+      // Check if the GPU support FP16.
 
       if (deviceProp.major == 6 && deviceProp.minor == 0) {
-        // fp16 without tensor cores supported on GP100 (SM 6.0)
-        // nhwc_ remains false
+        // FP16 without tensor cores supported on GP100 (SM 6.0)
+        // nhwc_ remains false.
       } else if (deviceProp.major >= 7) {
-        // nhwc layout is faster with Tensor Cores.
-        // Supported on Volta and Turing (and hopefully future GPUs too)
+        // NHWC layout is faster with Tensor Cores.
+        // Supported on Volta and Turing (and hopefully future GPUs too).
 
         // Some GPUs (GTX 16xx) are SM 7.5 but don't have tensor cores
         // enabling TENSOR_OP_MATH or nhwc_ layout for them works but is
-        // very very slow (likely because the system emulates it)
+        // very very slow (likely because the system emulates it).
         if (!strstr(deviceProp.name, "GTX 16")) {
           nhwc_ = true;
-          ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
         }
       } else {
         throw Exception("Your GPU doesn't support FP16");
       }
+
+      // Override if forced from backend option (default: -1 means auto-select).
+      int force_nhwc = options.GetOrDefault<int>("force_nhwc", -1);
+      if (force_nhwc == 0) {
+        nhwc_ = false;
+      } else if (force_nhwc == 1) {
+        nhwc_ = true;
+      }
+
+      if (nhwc_)
+        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
     }
 
     const int kNumInputPlanes = kInputPlanes;
