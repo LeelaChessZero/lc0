@@ -220,15 +220,15 @@ class CudnnNetwork : public Network {
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support fp16
 
-      if (deviceProp.major == 6 && deviceProp.minor == 0) { 
-        // fp16 without tensor cores supported on GP100 (SM 6.0) 
+      if (deviceProp.major == 6 && deviceProp.minor == 0) {
+        // fp16 without tensor cores supported on GP100 (SM 6.0)
         // nhwc_ remains false
       } else if (deviceProp.major >= 7) {
         // nhwc layout is faster with Tensor Cores.
         // Supported on Volta and Turing (and hopefully future GPUs too)
 
         // Some GPUs (GTX 16xx) are SM 7.5 but don't have tensor cores
-        // enabling TENSOR_OP_MATH or nhwc_ layout for them works but is 
+        // enabling TENSOR_OP_MATH or nhwc_ layout for them works but is
         // very very slow (likely because the system emulates it)
         if (!strstr(deviceProp.name, "GTX 16")) {
           nhwc_ = true;
@@ -263,22 +263,20 @@ class CudnnNetwork : public Network {
 
     const int maxChannels = std::max(kInputPlanes, kNumFilters);
 
-    const cudnnDataType_t datatype = std::is_same<half, DataType>::value ? 
-        CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
-    const cudnnTensorFormat_t layout = nhwc_ ? 
-        CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
+    const cudnnDataType_t datatype = std::is_same<half, DataType>::value
+                                         ? CUDNN_DATA_HALF
+                                         : CUDNN_DATA_FLOAT;
+    const cudnnTensorFormat_t layout =
+        nhwc_ ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
 
     ReportCUDNNErrors(cudnnSetFilter4dDescriptor(
-        wDesc, datatype, layout, maxChannels, maxChannels,
-        3, 3));
+        wDesc, datatype, layout, maxChannels, maxChannels, 3, 3));
 
     ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
-        xDesc, layout, datatype, max_batch_size_, maxChannels,
-        8, 8));
+        xDesc, layout, datatype, max_batch_size_, maxChannels, 8, 8));
 
     ReportCUDNNErrors(cudnnSetConvolution2dDescriptor(
-        convDesc, 1, 1, 1, 1, 1, 1, CUDNN_CROSS_CORRELATION,
-        datatype));
+        convDesc, 1, 1, 1, 1, 1, 1, CUDNN_CROSS_CORRELATION, datatype));
 
     // It will fall back to non-tensor math if not supported.
     ReportCUDNNErrors(
@@ -463,11 +461,11 @@ class CudnnNetwork : public Network {
     bool fp16 = std::is_same<half, DataType>::value;
     if (fp16) {
       if (nhwc_)
-        expandPlanes_Fp16_NHWC((half*)(tensor_mem_[0]), ipDataMasks, ipDataValues,
-                               batchSize * kInputPlanes);
+        expandPlanes_Fp16_NHWC((half*)(tensor_mem_[0]), ipDataMasks,
+                               ipDataValues, batchSize * kInputPlanes);
       else
-        expandPlanes_Fp16_NCHW((half*)(tensor_mem_[0]), ipDataMasks, ipDataValues,
-                               batchSize * kInputPlanes);
+        expandPlanes_Fp16_NCHW((half*)(tensor_mem_[0]), ipDataMasks,
+                               ipDataValues, batchSize * kInputPlanes);
     } else {
       expandPlanes_Fp32_NCHW((float*)(tensor_mem_[0]), ipDataMasks,
                              ipDataValues, batchSize * kInputPlanes);
@@ -674,7 +672,8 @@ class CudnnNetwork : public Network {
   int max_batch_size_;
   bool wdl_;
 
-  bool nhwc_;   // do we want to use nhwc layout (fastest with fp16 with tensor cores)
+  bool nhwc_;  // do we want to use nhwc layout (fastest with fp16 with tensor
+               // cores)
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).

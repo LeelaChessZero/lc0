@@ -25,9 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <cassert>
 #include "cuda_common.h"
 #include "neural/network.h"
-#include <cassert>
 
 namespace lczero {
 namespace cudnn_backend {
@@ -282,9 +282,9 @@ void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-__global__ void expandPlanes_kernel_Fp16_NCHW(half *output, 
-                                              const uint64_t *masks,
-                                              const float *values, int n) {
+__global__ void expandPlanes_kernel_Fp16_NCHW(half* output,
+                                              const uint64_t* masks,
+                                              const float* values, int n) {
   // block size of 256, same mask/val for 64 consecutive threads
   constexpr int kNumShmemElments = 256 / 64;
 
@@ -316,20 +316,20 @@ __global__ void expandPlanes_kernel_Fp16_NCHW(half *output,
   output[index] = op;
 }
 
-void expandPlanes_Fp16_NCHW(half *output, const uint64_t *masks,
-                            const float *values, int n) {
+void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
+                            const float* values, int n) {
   int threads = n * 8 * 8;  // each thread writes a single element
   const int blockSize = 256;
   int blocks = DivUp(threads, blockSize);
-  expandPlanes_kernel_Fp16_NCHW <<<blocks, blockSize>>>(output, masks, values, n);
+  expandPlanes_kernel_Fp16_NCHW<<<blocks, blockSize>>>(output, masks, values,
+                                                       n);
   ReportCUDAErrors(cudaGetLastError());
 }
 
 template <typename T>
 __global__ void globalScale_kernel(T* output, const T* input,
-                                   const T* scaleBias,
-                                   const T* prevLayerBias, int inputSize,
-                                   int C) {
+                                   const T* scaleBias, const T* prevLayerBias,
+                                   int inputSize, int C) {
   const int kPlaneSize = 64;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -344,7 +344,7 @@ __global__ void globalScale_kernel(T* output, const T* input,
   float val2 = output[tid];  // Skip connection to be added directly.
 
   if (prevLayerBias) {
-    val1 += (float) (prevLayerBias[c]);
+    val1 += (float)(prevLayerBias[c]);
   }
 
   int startIdx = n * 2 * C;  // Scale and bias interleaved.
@@ -356,7 +356,7 @@ __global__ void globalScale_kernel(T* output, const T* input,
 
   float op = val1 * s + val2 + b;
   if (op < 0) op = 0;
-  output[tid] = (T) op;
+  output[tid] = (T)op;
 }
 
 __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
@@ -437,7 +437,7 @@ __global__ void globalAvgPool_kernel(T* output, const T* input,
 #pragma unroll
   for (int i = 0; i < elementsPerWarp; i += 32) {
     int index = laneStartIndex + laneId + i;
-    if (index < inputSize) S += (float) (input[index]);
+    if (index < inputSize) S += (float)(input[index]);
   }
 
 // Compute warp wide sum (for entire plane - elementsPerWarp elements).
@@ -452,8 +452,8 @@ __global__ void globalAvgPool_kernel(T* output, const T* input,
   // First thread in warp has the sum, write it in output.
   if (laneId == 0) {
     if (opIndex < outputSize) {
-      if (prevLayerBias) avg += (float) prevLayerBias[opIndex % C];
-      output[opIndex] = (T) avg;
+      if (prevLayerBias) avg += (float)prevLayerBias[opIndex % C];
+      output[opIndex] = (T)avg;
     }
   }
 }
@@ -480,8 +480,7 @@ void globalAvgPool(int N, int C, T* output, const T* input,
     const int kBlockSize = kWarpsPerBlock * 32;
 
     int blocks = DivUp(kTotalWarps, kWarpsPerBlock);
-    globalAvgPool_kernel<<<blocks, kBlockSize>>>(output, input,
-                                                 prevLayerBias,
+    globalAvgPool_kernel<<<blocks, kBlockSize>>>(output, input, prevLayerBias,
                                                  N * C * kPlaneSize, N * C, C);
   }
   ReportCUDAErrors(cudaGetLastError());
@@ -503,8 +502,7 @@ void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
         N * C * 8 * 8, C, 8 * 8 * C);
   } else {
     globalScale_kernel<<<kBlocks, kBlockSize>>>(
-        output, input, scaleBias, prevLayerBias,
-        N * C * 8 * 8, C);
+        output, input, scaleBias, prevLayerBias, N * C * 8 * 8, C);
   }
   ReportCUDAErrors(cudaGetLastError());
 }

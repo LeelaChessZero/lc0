@@ -24,12 +24,12 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#include "layers.h"
 #include <cassert>
 #include <cstring>
 #include <vector>
 #include "cuda_common.h"
 #include "kernels.h"
-#include "layers.h"
 namespace lczero {
 namespace cudnn_backend {
 
@@ -46,7 +46,6 @@ template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
     : input_(ip), C(c), H(h), W(w), nhwc_(ip->nhwc_) {}
 
-
 template <typename DataType>
 SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType>* ip)
     : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip) {
@@ -54,8 +53,7 @@ SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType>* ip)
 }
 
 template <typename DataType>
-SoftMaxLayer<DataType>::~SoftMaxLayer()
-{
+SoftMaxLayer<DataType>::~SoftMaxLayer() {
   cudnnDestroyTensorDescriptor(out_tensor_desc_);
 }
 
@@ -67,15 +65,15 @@ void SoftMaxLayer<DataType>::Eval(int N, DataType* output,
                                   cublasHandle_t /*cublas*/) {
   float alpha = 1.0f, beta = 0.0f;
 
-  const cudnnDataType_t dataType = std::is_same<half, DataType>::value ? 
-      CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
+  const cudnnDataType_t dataType =
+      std::is_same<half, DataType>::value ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
 
-  const cudnnTensorFormat_t layout = nhwc_ ? CUDNN_TENSOR_NHWC : 
-      CUDNN_TENSOR_NCHW;
+  const cudnnTensorFormat_t layout =
+      nhwc_ ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
 
   // Need to call this at Eval as 'N' changes :-/
-  cudnnSetTensor4dDescriptor(out_tensor_desc_, layout,
-      dataType, N, GetC(), GetH(), GetW());
+  cudnnSetTensor4dDescriptor(out_tensor_desc_, layout, dataType, N, GetC(),
+                             GetH(), GetW());
 
   cudnnSoftmaxForward(cudnn, CUDNN_SOFTMAX_ACCURATE,
                       CUDNN_SOFTMAX_MODE_INSTANCE, &alpha, out_tensor_desc_,
@@ -83,21 +81,21 @@ void SoftMaxLayer<DataType>::Eval(int N, DataType* output,
 }
 
 template <typename DataType>
-void ConvLayer<DataType>::init()
-{
+void ConvLayer<DataType>::init() {
   // Allocate memory for weights (filter tensor) and biases.
-  const size_t weight_size = sizeof(DataType) * c_input_ * C * filter_size_ * filter_size_;
+  const size_t weight_size =
+      sizeof(DataType) * c_input_ * C * filter_size_ * filter_size_;
   ReportCUDAErrors(cudaMalloc(&weights, weight_size));
 
   const size_t blas_size = sizeof(DataType) * C;
   ReportCUDAErrors(cudaMalloc(&biases, blas_size));
 
   const bool fp16 = std::is_same<half, DataType>::value;
-  const cudnnDataType_t dataType = std::is_same<half, DataType>::value ?
-      CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
+  const cudnnDataType_t dataType =
+      std::is_same<half, DataType>::value ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
 
-  const cudnnTensorFormat_t layout = nhwc_ ? CUDNN_TENSOR_NHWC : 
-      CUDNN_TENSOR_NCHW;
+  const cudnnTensorFormat_t layout =
+      nhwc_ ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
 
   // Create cudnn objects for various tensors, algorithms, etc.
   cudnnCreateFilterDescriptor(&filter_desc_);
@@ -107,20 +105,18 @@ void ConvLayer<DataType>::init()
   cudnnCreateTensorDescriptor(&bias_desc_);
   cudnnCreateActivationDescriptor(&activation_);
 
-  cudnnSetFilter4dDescriptor(filter_desc_,
-                             dataType, layout,
-                             GetC(), c_input_, filter_size_, filter_size_);
+  cudnnSetFilter4dDescriptor(filter_desc_, dataType, layout, GetC(), c_input_,
+                             filter_size_, filter_size_);
 
-  ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
-      bias_desc_, layout, dataType, 1, C, 1, 1));
+  ReportCUDNNErrors(
+      cudnnSetTensor4dDescriptor(bias_desc_, layout, dataType, 1, C, 1, 1));
 
   const int padding = filter_size_ / 2;
   const bool crossCorr = 1;
 
   ReportCUDNNErrors(cudnnSetConvolution2dDescriptor(
       conv_desc_, padding, padding, 1, 1, 1, 1,
-      crossCorr ? CUDNN_CROSS_CORRELATION : CUDNN_CONVOLUTION,
-      dataType));
+      crossCorr ? CUDNN_CROSS_CORRELATION : CUDNN_CONVOLUTION, dataType));
 
   if (fp16 && nhwc_)
     ReportCUDNNErrors(
@@ -153,20 +149,18 @@ ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
       filter_size_(filter),
       use_relu_(relu),
       use_bias_(bias) {
-
-    init();
+  init();
 }
 
 template <typename DataType>
-ConvLayer<DataType>::ConvLayer(bool nhwc, int C, int H, int W,
-    int filter, int Cin, bool relu, bool bias)
+ConvLayer<DataType>::ConvLayer(bool nhwc, int C, int H, int W, int filter,
+                               int Cin, bool relu, bool bias)
     : BaseLayer<DataType>(C, H, W, nullptr, nhwc),
-    c_input_(Cin),
-    filter_size_(filter),
-    use_relu_(relu),
-    use_bias_(bias) {
-
-    init();
+      c_input_(Cin),
+      filter_size_(filter),
+      use_relu_(relu),
+      use_bias_(bias) {
+  init();
 }
 
 template <>
@@ -181,15 +175,12 @@ void ConvLayer<half>::LoadWeights(float* pfilter, float* pBias, void* scratch) {
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
 
-  if (nhwc_)
-  {
-    fp32NCHWtofp16NHWC((half*)weights, (float*)scratch, C, c_input_, C, c_input_,
-                       filter_size_, filter_size_);
-  }
-  else
-  {
-      copyTypeConverted((half*)weights, (float*)scratch, 
-          C*c_input_*filter_size_*filter_size_);
+  if (nhwc_) {
+    fp32NCHWtofp16NHWC((half*)weights, (float*)scratch, C, c_input_, C,
+                       c_input_, filter_size_, filter_size_);
+  } else {
+    copyTypeConverted((half*)weights, (float*)scratch,
+                      C * c_input_ * filter_size_ * filter_size_);
   }
 
   if (pBias) {
@@ -222,18 +213,17 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                const DataType* input2, void* scratch,
                                size_t scratch_size, cudnnHandle_t cudnn,
                                cublasHandle_t /*cublas*/) {
+  const cudnnDataType_t dataType =
+      std::is_same<half, DataType>::value ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
 
-  const cudnnDataType_t dataType = std::is_same<half, DataType>::value ?
-      CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
+  const cudnnTensorFormat_t layout =
+      nhwc_ ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
 
-  const cudnnTensorFormat_t layout = nhwc_ ? CUDNN_TENSOR_NHWC :
-      CUDNN_TENSOR_NCHW;
+  ReportCUDNNErrors(cudnnSetTensor4dDescriptor(out_tensor_desc_, layout,
+                                               dataType, N, C, H, W));
 
-  ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
-      out_tensor_desc_, layout, dataType, N, C, H, W));
-
-  ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
-      in_tensor_desc_, layout, dataType, N, c_input_, H, W));
+  ReportCUDNNErrors(cudnnSetTensor4dDescriptor(in_tensor_desc_, layout,
+                                               dataType, N, c_input_, H, W));
 
   float alpha = 1.0f, beta = 0.0f;
 
@@ -455,7 +445,7 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
   if (kUseFusedSELayer && nhwc_) {
     se_done = Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_, b1_,
                            w2_, b2_, bPrev_);
-  } 
+  }
   if (!se_done) {
     assert(output == input2);
     // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
@@ -497,9 +487,9 @@ FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
       use_relu_(relu),
       use_tanh_(tanh),
       use_sigmoid_(sigmoid) {
-    const size_t weight_size =
+  const size_t weight_size =
       sizeof(DataType) * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
-    const size_t blas_size = sizeof(DataType) * C * H * W;
+  const size_t blas_size = sizeof(DataType) * C * H * W;
   ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
   if (use_bias_) {
     ReportCUDAErrors(cudaMalloc(&biases_, blas_size));
@@ -522,14 +512,11 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
   ReportCUDAErrors(
       cudaMemcpy(scratch, cpuWeight, weight_size, cudaMemcpyHostToDevice));
 
-  if (nhwc_)
-  {
+  if (nhwc_) {
     fp32NCHWtofp16NHWC((half*)weights_, (float*)scratch, num_biases,
-                       input_->GetC(), num_biases, input_->GetC(), input_->GetH(),
-                       input_->GetW());
-  }
-  else
-  {
+                       input_->GetC(), num_biases, input_->GetC(),
+                       input_->GetH(), input_->GetW());
+  } else {
     copyTypeConverted((half*)weights_, (float*)scratch, num_weights);
   }
 

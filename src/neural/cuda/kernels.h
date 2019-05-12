@@ -59,8 +59,8 @@ void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
 void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
                             const float* values, int n);
 
-void expandPlanes_Fp16_NCHW(half *output, const uint64_t *masks,
-                            const float *values, int n);
+void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
+                            const float* values, int n);
 
 // Perform global avg pool.
 template <typename T>
