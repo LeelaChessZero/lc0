@@ -218,18 +218,22 @@ class CudnnNetwork : public Network {
     nhwc_ = false;
 
     if (std::is_same<half, DataType>::value) {
-      // Check if the GPU support fp16 (Volta+).
-      if (deviceProp.major >= 7) {
+      // Check if the GPU support fp16
 
+      if (deviceProp.major == 6 && deviceProp.minor == 0) { 
+        // fp16 without tensor cores supported on GP100 (SM 6.0) 
+        // nhwc_ remains false
+      } else if (deviceProp.major >= 7) {
         // nhwc layout is faster with Tensor Cores.
-        // TODO: figure out a way to check for Tensor Core support 
-        // (otherwise nhwc with tensor core setting enabled runs really slow on GTX 16xx gpus)
-        nhwc_ = true;
+        // Supported on Volta and Turing (and hopefully future GPUs too)
 
-        // Enable Tensor cores!
-        if (nhwc_)
+        // Some GPUs (GTX 16xx) are SM 7.5 but don't have tensor cores
+        // enabling TENSOR_OP_MATH or nhwc_ layout for them works but is 
+        // very very slow (likely because the system emulates it)
+        if (!strstr(deviceProp.name, "GTX 16")) {
+          nhwc_ = true;
           ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
-
+        }
       } else {
         throw Exception("Your GPU doesn't support FP16");
       }
