@@ -210,10 +210,10 @@ __global__ void expandPlanes_kernel_Fp32_NCHW(float* output,
                                               const uint64_t* masks,
                                               const float* values, int n) {
   // Block size of 256, same mask/val for 64 consecutive threads.
-  constexpr int kNumShmemElments = 256 / 64;
+  constexpr int kNumShmemElements = 256 / 64;
 
-  __shared__ uint64_t shMasks[kNumShmemElments];
-  __shared__ float shVals[kNumShmemElments];
+  __shared__ uint64_t shMasks[kNumShmemElements];
+  __shared__ float shVals[kNumShmemElements];
 
   int index = threadIdx.x + blockDim.x * blockIdx.x;
 
@@ -222,7 +222,7 @@ __global__ void expandPlanes_kernel_Fp32_NCHW(float* output,
   if (planeIndex >= n) return;
 
   // Load inputs to shared memory.
-  if (threadIdx.x < kNumShmemElments) {
+  if (threadIdx.x < kNumShmemElements) {
     shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
     shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
   }
@@ -286,10 +286,10 @@ __global__ void expandPlanes_kernel_Fp16_NCHW(half* output,
                                               const uint64_t* masks,
                                               const float* values, int n) {
   // block size of 256, same mask/val for 64 consecutive threads
-  constexpr int kNumShmemElments = 256 / 64;
+  constexpr int kNumShmemElements = 256 / 64;
 
-  __shared__ uint64_t shMasks[kNumShmemElments];
-  __shared__ half shVals[kNumShmemElments];
+  __shared__ uint64_t shMasks[kNumShmemElements];
+  __shared__ half shVals[kNumShmemElements];
 
   int index = threadIdx.x + blockDim.x * blockIdx.x;
 
@@ -298,7 +298,7 @@ __global__ void expandPlanes_kernel_Fp16_NCHW(half* output,
   if (planeIndex >= n) return;
 
   // load inputs to shared memory
-  if (threadIdx.x < kNumShmemElments) {
+  if (threadIdx.x < kNumShmemElements) {
     shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
     shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
   }
