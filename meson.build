@@ -44,9 +44,6 @@ includes += include_directories('third_party', is_system: true)
 # Android support
 if get_option('android')
   add_global_link_arguments('-llog', language:'cpp')
-  if get_option('opencl')
-    add_project_link_arguments('/system/lib64/liblzma.so', language:'cpp')
-  endif
 endif
 
 # Both protobuf and protoc must be the same version, so couple them together.
@@ -338,6 +335,10 @@ if get_option('build_backends')
     includes += include_directories(get_option('opencl_include'))
     files += opencl_files
     has_backends = true
+
+    if get_option('android') and run_command('test', '-f', '/system/lib64/liblzma.so').returncode() == 0
+      add_project_link_arguments('/system/lib64/liblzma.so', language:'cpp')
+    endif
 
   endif
 
