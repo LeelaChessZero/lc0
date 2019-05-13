@@ -322,4 +322,14 @@ void OptionsDict::AddSubdictFromString(const std::string& str) {
   parser.ParseMain(this);
 }
 
+std::string OptionsDict::FindNotUsed() const {
+  for (auto const& option : used_) {
+    if (!option.second) {
+      return option.first;
+    }
+  }
+  return "";
+}
+
+
 }  // namespace lczero

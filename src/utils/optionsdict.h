@@ -95,18 +95,26 @@ class OptionsDict : TypeDict<bool>,
   // is still in scope, when the parent pointer is used
   void AddSubdictFromString(const std::string& str);
 
+  // Returns the first option in the dict that has not been read to
+  // find syntax errors in options added using AddSubdictFromString
+  std::string FindNotUsed() const;
+
   bool HasSubdict(const std::string& name) const;
 
  private:
   const OptionsDict* parent_ = nullptr;
   std::map<std::string, OptionsDict> subdicts_;
+  mutable std::map<std::string, bool> used_;
 };
 
 template <typename T>
 T OptionsDict::Get(const std::string& key) const {
   const auto& dict = TypeDict<T>::dict_;
   auto iter = dict.find(key);
-  if (iter != dict.end()) return iter->second;
+  if (iter != dict.end()) {
+    used_[key] = true;
+    return iter->second;
+  }
   if (parent_) return parent_->Get<T>(key);
   throw Exception("Key [" + key + "] was not set in options.");
 }
@@ -125,13 +133,17 @@ T OptionsDict::GetOrDefault(const std::string& key,
                             const T& default_val) const {
   const auto& dict = TypeDict<T>::dict_;
   auto iter = dict.find(key);
-  if (iter != dict.end()) return iter->second;
+  if (iter != dict.end()) {
+    used_[key] = true;
+    return iter->second;
+  }
   if (parent_) return parent_->GetOrDefault<T>(key, default_val);
   return default_val;
 }
 
 template <typename T>
 void OptionsDict::Set(const std::string& key, const T& value) {
+  used_[key] = false;
   TypeDict<T>::dict_[key] = value;
 }
 
