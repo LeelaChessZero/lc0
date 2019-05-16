@@ -879,7 +879,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
   // Fetch the current best root node visits for possible smart pruning.
   const int64_t best_node_n = search_->current_best_edge_.GetN();
-
+  
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   uint16_t depth = 0;
@@ -933,7 +933,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
-    for (auto child : node->Edges()) {
+	const int64_t best_node_q = search_->current_best_edge_.GetQ(fpu);
+
+	for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
         // remaining playouts, don't consider it.
@@ -941,7 +943,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // To ensure we have at least one node to expand, always include
         // current best node.
         if (child != search_->current_best_edge_ &&
-            search_->remaining_playouts_ < best_node_n - child.GetN()) {
+            (search_->remaining_playouts_ < best_node_n - child.GetN() ||
+				(search_->remaining_playouts_ / 2 < best_node_n - child.GetN() && //additional cutoff on big Q difference
+					best_node_q > (child.GetQ(fpu) + 0.1f)))) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
