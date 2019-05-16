@@ -190,8 +190,10 @@ class SELayer : public BaseLayer<DataType> {
 
  private:
   DataType* w1_ = nullptr;
+  DataType* w1_t_ = nullptr;    // transposed copy used by fused SE kernel
   DataType* b1_ = nullptr;
   DataType* w2_ = nullptr;
+  DataType* w2_t_ = nullptr;
   DataType* b2_ = nullptr;
   DataType* bPrev_ = nullptr;
   int numFc1Out_;
