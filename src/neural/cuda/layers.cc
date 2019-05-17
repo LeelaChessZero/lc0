@@ -304,6 +304,11 @@ SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
   ReportCUDAErrors(cudaMalloc(&w1_, C * numFc1Out_ * sizeof(DataType)));
   ReportCUDAErrors(cudaMalloc(&w2_, 2 * C * numFc1Out_ * sizeof(DataType)));
 
+  if (kUseFusedSELayer && nhwc_) {
+    ReportCUDAErrors(cudaMalloc(&w1_t_, C * numFc1Out_ * sizeof(DataType)));
+    ReportCUDAErrors(cudaMalloc(&w2_t_, 2 * C * numFc1Out_ * sizeof(DataType)));
+  }
+
   ReportCUDAErrors(cudaMalloc(&b1_, numFc1Out_ * sizeof(DataType)));
   ReportCUDAErrors(cudaMalloc(&b2_, 2 * C * sizeof(DataType)));
 
@@ -366,26 +371,27 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   std::vector<float> temp(weight_size2);
 
   // Weight for the first FC layer.
+  ReportCUDAErrors(
+      cudaMemcpy(scratch, w1, weight_size1, cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)w1_, (float*)scratch, num_weights1);
   if (kUseFusedSELayer && nhwc_) {
+    // transposed copy for fused SE kernel
     cpuTranspose(temp.data(), w1, numFc1Out_, C);
     ReportCUDAErrors(
         cudaMemcpy(scratch, temp.data(), weight_size1, cudaMemcpyHostToDevice));
-  } else {
-    ReportCUDAErrors(
-        cudaMemcpy(scratch, w1, weight_size1, cudaMemcpyHostToDevice));
+    copyTypeConverted((half*)w1_t_, (float*)scratch, num_weights1);
   }
-  copyTypeConverted((half*)w1_, (float*)scratch, num_weights1);
 
   // Weight for the second FC layer.
+  ReportCUDAErrors(
+      cudaMemcpy(scratch, w2, weight_size2, cudaMemcpyHostToDevice));
+  copyTypeConverted((half*)w2_, (float*)scratch, num_weights2);
   if (kUseFusedSELayer && nhwc_) {
     cpuTranspose(temp.data(), w2, 2 * C, numFc1Out_);
     ReportCUDAErrors(
         cudaMemcpy(scratch, temp.data(), weight_size2, cudaMemcpyHostToDevice));
-  } else {
-    ReportCUDAErrors(
-        cudaMemcpy(scratch, w2, weight_size2, cudaMemcpyHostToDevice));
+    copyTypeConverted((half*)w2_t_, (float*)scratch, num_weights2);
   }
-  copyTypeConverted((half*)w2_, (float*)scratch, num_weights2);
 
   // Bias for the first FC layer.
   ReportCUDAErrors(cudaMemcpy(scratch, b1, numFc1Out_ * sizeof(float),
@@ -443,8 +449,8 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
                          cudnnHandle_t /*cudnn*/, cublasHandle_t cublas) {
   bool se_done = false;
   if (kUseFusedSELayer && nhwc_) {
-    se_done = Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_, b1_,
-                           w2_, b2_, bPrev_);
+    se_done = Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_t_, b1_,
+                           w2_t_, b2_, bPrev_);
   }
   if (!se_done) {
     assert(output == input2);
