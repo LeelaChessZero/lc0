@@ -112,7 +112,7 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
   const float move = ply / 2.0f;
   return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
                              1 / steepness) -
-         move;
+         2 * std::pow(2, 1 / steepness) * move + 35;
 }
 
 }  // namespace
