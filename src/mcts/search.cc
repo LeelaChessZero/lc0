@@ -944,7 +944,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // current best node.
         if (child != search_->current_best_edge_ &&
             (search_->remaining_playouts_ < best_node_n - child.GetN() ||
-				(search_->remaining_playouts_ / 3 < best_node_n - child.GetN() && //additional cutoff on big Q difference
+				(search_->remaining_playouts_ / 3 < best_node_n - child.GetN() && //additional cutoff on some Q difference
 					best_node_q > (child.GetQ(fpu) + 0.1f)))) {
           continue;
         }
