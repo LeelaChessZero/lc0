@@ -46,6 +46,36 @@ using namespace cudnn_backend;
 
 static constexpr int kNumOutputPolicy = 1858;
 
+#if 0
+// debug code to dump allocation in GPU memory
+void dumpTensor(void *memory, int elements, char *message, bool fp16 = false)
+{
+    printf("\n%s\n", message);
+    int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
+    int bytes = elements * elementSize;
+    void *temp = malloc(bytes);
+    cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < elements; i++)
+    {
+        float val;
+        if (fp16) 
+        {
+            half *arr = (half*)temp;
+            val = (float)arr[i];
+        }
+        else
+        {
+            float *arr = (float *)temp;
+            val = arr[i];
+        }
+        printf("%10.4f ", val);
+    }
+    free(temp);
+    printf("\n");
+}
+#endif
+
 struct InputsOutputs {
   InputsOutputs(int maxBatchSize) {
     ReportCUDAErrors(cudaHostAlloc(
@@ -105,9 +135,9 @@ class CudnnNetworkComputation : public NetworkComputation {
   ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
-    auto iter_mask =
+    const auto iter_mask =
         &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
-    auto iter_val =
+    const auto iter_val =
         &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
 
     int i = 0;
@@ -174,24 +204,45 @@ class CudnnNetwork : public Network {
     if (gpu_id_ >= total_gpus)
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
 
+    cudaDeviceProp deviceProp = {};
+    cudaGetDeviceProperties(&deviceProp, gpu_id_);
+    showInfo(deviceProp);
+
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
 
     ReportCUDNNErrors(cudnnCreate(&cudnn_));
     ReportCUBLASErrors(cublasCreate(&cublas_));
 
-    cudaDeviceProp deviceProp = {};
-    cudaGetDeviceProperties(&deviceProp, gpu_id_);
-    showInfo(deviceProp);
+    // Default layout is nchw.
+    nhwc_ = false;
 
     if (std::is_same<half, DataType>::value) {
-      // Check if the GPU support fp16 (Volta+).
-      if (deviceProp.major >= 7) {
-        // Enable Tensor cores!
-        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+      // Check if the GPU support FP16.
+
+      if (deviceProp.major == 6 && deviceProp.minor == 0) {
+        // FP16 without tensor cores supported on GP100 (SM 6.0)
+        // nhwc_ remains false.
+      } else if (deviceProp.major >= 7) {
+        // NHWC layout is faster with Tensor Cores.
+        // Supported on Volta and Turing (and hopefully future GPUs too).
+
+        // Some GPUs (GTX 16xx) are SM 7.5 but don't have tensor cores
+        // enabling TENSOR_OP_MATH or nhwc_ layout for them works but is
+        // very very slow (likely because the system emulates it).
+        if (!strstr(deviceProp.name, "GTX 16")) {
+          nhwc_ = true;
+        }
       } else {
         throw Exception("Your GPU doesn't support FP16");
       }
+
+      // Override if forced from backend option
+      if (!options.IsDefault<bool>("nhwc")) 
+          nhwc_ = options.Get<bool>("nhwc");
+
+      if (nhwc_)
+        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
     }
 
     const int kNumInputPlanes = kInputPlanes;
@@ -201,28 +252,10 @@ class CudnnNetwork : public Network {
 
     has_se_ = false;
 
-    // 0. Process weights.
-
-    // TODO: Get filter sizes from proto file?
-    // Hardcoded right now:
-    //  3 for input and residual block convolutions.
-    //  1 for policy and value head convolutions.
-    processConvBlock(weights.input, true, 3);
-    for (int i = 0; i < numBlocks_; i++) {
-      if (weights.residual[i].has_se) {
-        has_se_ = true;
-      }
-      processConvBlock(weights.residual[i].conv1, true, 3);
-      processConvBlock(weights.residual[i].conv2, true, 3);
+    // 0. Check for SE.
+    if (weights.residual[0].has_se) {
+      has_se_ = true;
     }
-    if (conv_policy_) {
-      processConvBlock(weights.policy1, true, 1);
-      // weights.policy doesn't have batch norm with convolutional policy
-      // so no need to call processConvBlock for it.
-    } else {
-      processConvBlock(weights.policy, true, 1);
-    }
-    processConvBlock(weights.value, true, 1);
 
     // 1. Allocate scratch space (used internally by cudnn to run convolutions,
     //     and also for format/layout conversion for weights).
@@ -236,24 +269,26 @@ class CudnnNetwork : public Network {
 
     const int maxChannels = std::max(kInputPlanes, kNumFilters);
 
-    const bool fp16 = std::is_same<half, DataType>::value;
+    const cudnnDataType_t datatype = std::is_same<half, DataType>::value
+                                         ? CUDNN_DATA_HALF
+                                         : CUDNN_DATA_FLOAT;
+    const cudnnTensorFormat_t layout =
+        nhwc_ ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
+
     ReportCUDNNErrors(cudnnSetFilter4dDescriptor(
-        wDesc, fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT,
-        fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW, maxChannels, maxChannels,
-        3, 3));
+        wDesc, datatype, layout, maxChannels, maxChannels, 3, 3));
 
     ReportCUDNNErrors(cudnnSetTensor4dDescriptor(
-        xDesc, fp16 ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW,
-        fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT, max_batch_size_, maxChannels,
-        8, 8));
+        xDesc, layout, datatype, max_batch_size_, maxChannels, 8, 8));
 
     ReportCUDNNErrors(cudnnSetConvolution2dDescriptor(
-        convDesc, 1, 1, 1, 1, 1, 1, CUDNN_CROSS_CORRELATION,
-        fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT));
+        convDesc, 1, 1, 1, 1, 1, 1, CUDNN_CROSS_CORRELATION, datatype));
 
-    if (fp16) {
-      ReportCUDNNErrors(
-          cudnnSetConvolutionMathType(convDesc, CUDNN_TENSOR_OP_MATH));
+    // It will fall back to non-tensor math if not supported.
+    ReportCUDNNErrors(
+        cudnnSetConvolutionMathType(convDesc, CUDNN_TENSOR_OP_MATH));
+
+    if (nhwc_) {
       conv_algo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
     } else {
       conv_algo = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
@@ -277,7 +312,7 @@ class CudnnNetwork : public Network {
     // Input.
     {
       auto inputConv = std::make_unique<ConvLayer<DataType>>(
-          nullptr, kNumFilters, 8, 8, 3, kNumInputPlanes, true, true);
+          nhwc_, kNumFilters, 8, 8, 3, kNumInputPlanes, true, true);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));
@@ -347,8 +382,8 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(softmaxPol));
     } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.policy.bn_means.size(), 8, 8, 1, kNumFilters,
-          true, true);
+          resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters, true,
+          true);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convPol));
@@ -408,6 +443,10 @@ class CudnnNetwork : public Network {
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
     }
 
+    cudnnDestroyFilterDescriptor(wDesc);
+    cudnnDestroyConvolutionDescriptor(convDesc);
+    cudnnDestroyTensorDescriptor(xDesc);
+
 #ifdef DEBUG_RAW_NPS
     CERR << "allocated " << 3 * maxSize
          << " bytes of GPU memory to run the network";
@@ -425,13 +464,21 @@ class CudnnNetwork : public Network {
     uint64_t* ipDataMasks = io->input_masks_mem_gpu_;
     float* ipDataValues = io->input_val_mem_gpu_;
 
-    if (std::is_same<half, DataType>::value) {
-      expandPlanes_Fp16_NHWC((half*)(tensor_mem_[0]), ipDataMasks, ipDataValues,
-                             batchSize * kInputPlanes);
+    bool fp16 = std::is_same<half, DataType>::value;
+    if (fp16) {
+      if (nhwc_)
+        expandPlanes_Fp16_NHWC((half*)(tensor_mem_[0]), ipDataMasks,
+                               ipDataValues, batchSize * kInputPlanes);
+      else
+        expandPlanes_Fp16_NCHW((half*)(tensor_mem_[0]), ipDataMasks,
+                               ipDataValues, batchSize * kInputPlanes);
     } else {
       expandPlanes_Fp32_NCHW((float*)(tensor_mem_[0]), ipDataMasks,
                              ipDataValues, batchSize * kInputPlanes);
     }
+
+    // debug code example
+    // dumpTensor(tensor_mem_[0], 512, "After expand Planes", fp16);
 
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;
@@ -480,7 +527,7 @@ class CudnnNetwork : public Network {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // pol FC
-      if (std::is_same<half, DataType>::value) {
+      if (fp16) {
         // TODO: consider softmax layer that writes directly to fp32
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
@@ -499,7 +546,7 @@ class CudnnNetwork : public Network {
       network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // pol FC
-      if (std::is_same<half, DataType>::value) {
+      if (fp16) {
         // TODO: consider softmax layer that writes directly to fp32.
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
@@ -533,7 +580,7 @@ class CudnnNetwork : public Network {
                           cublas_);  // value FC2    // VALUE
 
       // Value softmax
-      if (std::is_same<half, DataType>::value) {
+      if (fp16) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
@@ -546,7 +593,7 @@ class CudnnNetwork : public Network {
                             cublas_);  // value FC2    // VALUE
       }
     } else {
-      if (std::is_same<half, DataType>::value) {
+      if (fp16) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
         network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
@@ -631,6 +678,9 @@ class CudnnNetwork : public Network {
   int max_batch_size_;
   bool wdl_;
 
+  bool nhwc_;  // do we want to use nhwc layout (fastest with fp16 with tensor
+               // cores)
+
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
   mutable std::mutex lock_;
@@ -651,51 +701,6 @@ class CudnnNetwork : public Network {
 
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
-
-  void processConvBlock(LegacyWeights::ConvBlock& block, bool foldBNLayer,
-                        int filterSize) {
-    const float epsilon = 1e-5f;
-
-    // Compute reciprocal of std-dev from the variances (so that it can be
-    // just multiplied).
-    std::vector<float>& stddev = block.bn_stddivs;
-    for (auto&& w : stddev) {
-      w = 1.0f / std::sqrt(w + epsilon);
-    }
-
-    // Biases are not calculated and are typically zero but some networks
-    // might still have non-zero biases. Move biases to batchnorm means to
-    // make the output match without having to separately add the biases.
-    for (auto j = size_t{0}; j < block.bn_means.size(); j++) {
-      block.bn_means[j] -= block.biases[j];
-      block.biases[j] = 0.0f;
-    }
-
-    // Get rid of the BN layer by adjusting weights and biases of the
-    // convolution idea proposed by Henrik Forstén and first implemented in
-    // leela go zero.
-    if (foldBNLayer) {
-      const int spatialSize = filterSize * filterSize;
-      const int outputs = block.biases.size();
-      const int channels = block.weights.size() / (outputs * spatialSize);
-
-      for (auto o = 0; o < outputs; o++) {
-        for (auto c = 0; c < channels; c++) {
-          for (auto i = 0; i < spatialSize; i++) {
-            block.weights[o * channels * spatialSize + c * spatialSize + i] *=
-                block.bn_stddivs[o];
-          }
-        }
-
-        block.bn_means[o] *= block.bn_stddivs[o];
-        block.bn_stddivs[o] = 1.0f;
-
-        // Move means to convolution biases.
-        block.biases[o] = -block.bn_means[o];
-        block.bn_means[o] = 0.0f;
-      }
-    }
-  }
 
   void showInfo(const cudaDeviceProp& deviceProp) const {
     CERR << "GPU: " << deviceProp.name;
@@ -724,9 +729,13 @@ class CudnnNetwork : public Network {
     pl = version - major * 1000 - minor * 100;
     CERR << "Cudnn version: " << major << "." << minor << "." << pl;
     if (version != CUDNN_VERSION) {
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+      CERR << "WARNING: CUDNN Runtime version mismatch, was compiled with "
               "version "
            << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
+    }
+    if (version < 7301 && (deviceProp.major > 7 ||
+                           (deviceProp.major == 7 && deviceProp.minor >= 5))) {
+      CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
     }
     cudaDriverGetVersion(&version);
     major = version / 1000;
@@ -738,7 +747,7 @@ class CudnnNetwork : public Network {
       CERR << "WARNING: code was compiled with unsupported CUDA version.";
     }
     if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
-       CERR << "WARNING: you will probably get better performance from the "
+      CERR << "WARNING: you will probably get better performance from the "
               "cudnn-fp16 backend.";
     }
   }
