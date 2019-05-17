@@ -937,15 +937,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
 	for (auto child : node->Edges()) {
       if (is_root_node) {
-        // If there's no chance to catch up to the current best node with
-        // remaining playouts, don't consider it.
-        // best_move_node_ could have changed since best_node_n was retrieved.
-        // To ensure we have at least one node to expand, always include
-        // current best node.
-        if (child != search_->current_best_edge_ &&
-            (search_->remaining_playouts_ < best_node_n - child.GetN() ||
-				(search_->remaining_playouts_ / 3 < best_node_n - child.GetN() && //additional cutoff on some Q difference
-					best_node_q > (child.GetQ(fpu) + 0.1f)))) {
+        if (SmartPrune(child, fpu, best_node_n, best_node_q)) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
@@ -993,6 +985,20 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   }
 }
 
+// If there's no chance to catch up to the current best node with
+// remaining playouts, don't consider it.
+// best_move_node_ could have changed since best_node_n was retrieved.
+// To ensure we have at least one node to expand, always include
+// current best node.
+bool SearchWorker::SmartPrune(EdgeAndNode child, float fpu, int64_t best_node_n, int64_t best_node_q) {
+	if (child != search_->current_best_edge_ &&
+		(search_->remaining_playouts_ < best_node_n - child.GetN() || // this child can never catch up best_node
+		(search_->remaining_playouts_ / 3 < best_node_n - child.GetN() && //additional cutoff on some Q difference
+			best_node_q > (child.GetQ(fpu) + params_.GetEdgeDiscardFactor())))) {
+		return true;
+	}
+	return false;
+}
 void SearchWorker::ExtendNode(Node* node) {
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());

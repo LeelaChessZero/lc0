@@ -284,6 +284,7 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
+  bool SmartPrune(EdgeAndNode child, float fpu, int64_t best_node_n, int64_t best_node_q);
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);
