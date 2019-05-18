@@ -993,8 +993,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 bool SearchWorker::SmartPrune(EdgeAndNode child, float fpu, int64_t best_node_n, int64_t best_node_q) {
 	if (child != search_->current_best_edge_ &&
 		(search_->remaining_playouts_ < best_node_n - child.GetN() || // this child can never catch up best_node
-		(search_->remaining_playouts_ / 3 < best_node_n - child.GetN() && //additional cutoff on some Q difference
-			best_node_q > (child.GetQ(fpu) + params_.GetEdgeDiscardFactor())))) {
+		(search_->remaining_playouts_ / 3 < best_node_n - child.GetN() && //additional cutoff on a third of the budgeted time on some Q difference
+			// higher factor means earlier cutoff:
+			// if factor is default 0.00 the best_node_q will not be higher then the calculated
+			// child.GetQ, therefore no additional cutoff.
+			// if factor is 1, the cutoff will immediately occur whenever
+			// best_node_q is higher then this childs Q.
+			best_node_q > (child.GetQ(fpu) + (1 - params_.GetEdgeDiscardFactor()))))) { 
 		return true;
 	}
 	return false;
