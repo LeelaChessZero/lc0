@@ -1,0 +1,25 @@
+
+[host_machine]
+system = 'linux'
+cpu_family = 'arm'
+cpu = 'armv7'
+endian = 'little'
+
+[properties]
+needs_exe_wrapper = true
+cpp_args = []
+cpp_link_args = ['-ldl', '-latomic']
+c_link_args = ['-ldl', '-lpthread']
+
+[paths]
+
+[binaries]
+c = 'arm-linux-gnueabi-gcc'
+cpp = 'arm-linux-gnueabi-g++'
+ar = 'arm-linux-gnueabi-ar'
+strip = 'arm-linux-gnueabi-strip'
+ld = 'arm-linux-gnueabi-ld'
+ranlib = 'arm-linux-gnueabi-ranlib'
+as = 'arm-linux-gnueabi-as'
+pkgconfig = 'arm-linux-gnueabi-pkg-config'
+

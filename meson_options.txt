@@ -15,7 +15,7 @@ option('openblas_include',
 
 option('opencl_include',
        type: 'array',
-       value: ['/usr/include/'],
+#       value: ['/usr/include/'],
        description: 'Paths to OpenCL include directories')
 
 option('tensorflow_libdir',
@@ -117,11 +117,6 @@ option('pext',
        type: 'boolean',
        value: false,
        description: 'Use the pext instruction')
-
-option('android',
-       type: 'boolean',
-       value: false,
-       description: 'Enable Android support')
 
 option('gtest',
        type: 'boolean',

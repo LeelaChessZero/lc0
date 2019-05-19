@@ -1,0 +1,4 @@
+[wrap-git]
+directory = opencl
+url = https://github.com/borg323/OpenCL-ICD-Loader.git
+revision = meson

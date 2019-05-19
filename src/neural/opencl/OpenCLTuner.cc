@@ -35,7 +35,13 @@
 
 #include "utils/logging.h"
 
+// Use the temporary directory on Android as the engine may run with restricted file access
+#ifdef android
+const auto TUNER_FILE_LOCAL = std::string("/data/local/tmp/leelaz_opencl_tuning");
+#else
 const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
+#endif
+
 constexpr auto MAX_ERROR = 1e-4f;
 
 static void sgemmBatched_ref(const std::vector<float>& a,

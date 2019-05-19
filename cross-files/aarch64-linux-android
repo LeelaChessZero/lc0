@@ -1,0 +1,24 @@
+
+[host_machine]
+system = 'android'
+cpu_family = 'arm'
+cpu = 'aarch64'
+endian = 'little'
+
+[properties]
+needs_exe_wrapper = true
+cpp_args = ['-Dandroid']
+cpp_link_args = ['-ldl', '-llog', '-static-libstdc++']
+
+[paths]
+
+[binaries]
+c = 'aarch64-linux-android28-clang'
+cpp = 'aarch64-linux-android28-clang++'
+ar = 'aarch64-linux-android-ar'
+strip = 'aarch64-linux-android-strip'
+ld = 'aarch64-linux-android-ld'
+ranlib = 'aarch64-linux-android-ranlib'
+as = 'aarch64-linux-android-as'
+
+

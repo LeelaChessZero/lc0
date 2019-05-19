@@ -1,0 +1,23 @@
+
+[host_machine]
+system = 'android'
+cpu_family = 'arm'
+cpu = 'armv7a'
+endian = 'little'
+
+[properties]
+needs_exe_wrapper = true
+cpp_args = ['-Dandroid']
+cpp_link_args = ['-ldl', '-llog', '-static-libstdc++']
+
+[paths]
+
+[binaries]
+c = 'armv7a-linux-androideabi28-clang'
+cpp = 'armv7a-linux-androideabi28-clang++'
+ar = 'arm-linux-androideabi-ar'
+strip = 'arm-linux-androideabi-strip'
+ld = 'arm-linux-androideabi-ld'
+ranlib = 'arm-linux-androideabi-ranlib'
+as = 'arm-linux-androideabi-as'
+

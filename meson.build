@@ -41,11 +41,6 @@ has_backends = false
 # Third party files.
 includes += include_directories('third_party', is_system: true)
 
-# Android support
-if get_option('android')
-  add_global_link_arguments('-llog', language:'cpp')
-endif
-
 # Both protobuf and protoc must be the same version, so couple them together.
 protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
 if not protobuf_lib.found()
@@ -137,9 +132,11 @@ if host_machine.system() == 'windows'
   files += 'src/utils/filesystem.win32.cc'
 else
   files += 'src/utils/filesystem.posix.cc'
-  deps += [
-    cc.find_library('pthread'),
+  if host_machine.system() != 'android'
+    deps += [
+      cc.find_library('pthread'),
     ]
+  endif
 endif
 
 
@@ -301,24 +298,24 @@ if get_option('build_backends')
   ## OpenCL
   ## ~~~~~
 
-  has_opencl = false
+  opencl_dep = []
 
   opencl_libdirs = get_option('opencl_libdirs')
   opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: false)
 
   opencl_framework=dependency('OpenCL', required: false)
   if opencl_framework.found()
-      deps += [ opencl_framework ]
-      has_opencl = true
+      opencl_dep += [ opencl_framework ]
 
   elif opencl_lib.found()
 
-      deps += [ opencl_lib ]
-      has_opencl = true
+      opencl_dep += [ opencl_lib ]
+  else
+      opencl_dep += [ subproject('opencl').get_variable('opencl_dep') ]
 
   endif
 
-  if get_option('opencl') and has_opencl
+  if get_option('opencl')
 
     opencl_files = [
       'src/neural/opencl/network_opencl.cc',
@@ -334,11 +331,8 @@ if get_option('build_backends')
 
     includes += include_directories(get_option('opencl_include'))
     files += opencl_files
+    deps += opencl_dep
     has_backends = true
-
-    if get_option('android') and run_command('test', '-f', '/system/lib64/liblzma.so').returncode() == 0
-      add_project_link_arguments('/system/lib64/liblzma.so', language:'cpp')
-    endif
 
   endif
 
