@@ -13,7 +13,7 @@ You'll need a toolchain like NDK or GNU ARM. A set of cross-files is provided, y
 
 Once the toolchain is installed and a Meson cross file is chosen, to build simply run:
 
-`CC=clang CXX=clang++ ./build.sh --cross-file cross-files/arm-linux-androideabi`
+`CC=clang CXX=clang++ ./build.sh --cross-file cross-files/aarch64-linux-android`
 
 You might have to remove the build/ directory if it exists.
 
