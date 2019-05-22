@@ -1,4 +1,11 @@
-﻿v0.21.2-rc1 (2019-05-05)
+﻿v0.21.2-rc2 (2019-05-22)
+~~~~~~~~~~~
+
+* Add 320 and 352 channel support for fused SE layer (#855)
+* SE layer fix when not using fused kernel (#852)
+* Fp16 nchw for cudnn-fp16 backend (support GTX 16xx GPUs) (#849)
+
+v0.21.2-rc1 (2019-05-05)
 ~~~~~~~~~~~
 
 * Make --sticky-endgames on by default (still off in training) (#844)
