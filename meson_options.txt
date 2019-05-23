@@ -103,6 +103,11 @@ option('mkl',
        value: true,
        description: 'Enable MKL BLAS support')
 
+option('eigen',
+       type: 'boolean',
+       value: false,
+       description: 'Use EIGEN as a BLAS alternative')
+
 option('accelerate',
        type: 'boolean',
        value: true,
