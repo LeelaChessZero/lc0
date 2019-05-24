@@ -44,8 +44,9 @@ SelfPlayLoop::~SelfPlayLoop() {
 }
 
 void SelfPlayLoop::RunLoop() {
-  options_.Add<BoolOption>(kInteractiveId) = false;
   SelfPlayTournament::PopulateOptions(&options_);
+
+  options_.Add<BoolOption>(kInteractiveId) = false;
 
   if (!options_.ProcessAllFlags()) return;
   if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
@@ -82,6 +83,11 @@ void SelfPlayLoop::CmdStart() {
       std::bind(&SelfPlayLoop::SendTournament, this, std::placeholders::_1));
   thread_ =
       std::make_unique<std::thread>([this]() { tournament_->RunBlocking(); });
+}
+
+void SelfPlayLoop::CmdStop() {
+  tournament_->Stop();
+  tournament_->Wait();
 }
 
 void SelfPlayLoop::SendGameInfo(const GameInfo& info) {

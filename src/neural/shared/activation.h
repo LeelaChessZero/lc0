@@ -26,4 +26,8 @@ namespace lczero {
   // Softmax activation
 void SoftmaxActivation(const size_t size, const float* input, float* output);
 
+void BiasResidualRelu(const size_t batch_size, const size_t channels,
+                 float* data, const float* biases,
+                 const float* eltwise = nullptr,
+                 const bool relu = true);
 }  // namespace lczero

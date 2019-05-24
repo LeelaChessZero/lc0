@@ -1,3 +1,16 @@
+﻿v0.21.0-rc2 (2019-03-06)
+~~~~~~~~~~~
+
+* Add support for cudnn7.0 (#717)
+* Informative Tournament Stats (#698)
+* Memory leak fix cuda backend (#747)
+* cudnn-fp16 fallback path for unusual se-ratios. (#739)
+* Cudnn 7.4.2 in packaged binary and warning for using old cudnn with new gpu (#741)
+* Move mode specific options to end of help. (#745)
+* LogLiveStats hidden option (#754)
+* Optional markdown support for help output (#769)
+* Improved folding of batch norm into weights and biases - fixes negative gamma bug. (#779)
+
 v0.21.0-rc1 (2019-02-16)
 ~~~~~~~~~~~
 
