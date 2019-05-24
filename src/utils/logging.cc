@@ -30,6 +30,10 @@
 #include <iostream>
 #include <thread>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace lczero {
 
 namespace {
@@ -37,8 +41,6 @@ size_t kBufferSizeLines = 200;
 const char* kStderrFilename = "<stderr>";
 
 #ifdef _WIN32
-#include <windows.h>
-
 std::once_flag flag;
 CONSOLE_SCREEN_BUFFER_INFO info;
 
