@@ -1,0 +1,51 @@
+***WIP file***
+GNU v2 liscence and whatnot?
+
+For MacOS users:
+Download the source file
+
+Open up terminal
+0. Install xcode developer tools in terminal using the following code in the terminal box:
+xcode-select --install
+
+1. Execute the following code in terminal:
+git clone -b release/0.21 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+
+2. Install brew using the following command in terminal:
+/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+
+3. Install python 3 using the following command in terminal:
+brew install python3
+
+4. Install meson in terminal:
+brew install meson
+
+5. Install ninja in terminal:
+brew install ninja
+
+6. Install missing CommandLineTools headers:
+installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /
+
+7. Hopefully your lc0 folder is in your user directory (aka file path). 
+If your lc0 folder is not in your user directory, you will 
+need to find the file path of your folder and put it in place of the dot
+the following command:
+./build.sh
+
+If your lc0 is in your home directory, then running ./lc0
+
+--
+
+8. The resulting binary is in build/release as 'lc0'. You can run lc0 by going to that and/or folder.
+
+Troubleshooting for OS users:
+
+1. Double check to make sure you followed the above steps.
+2. Check your operating system. If your OS is later than 10.13, then your OS should be compatible running lc0.
+3. Some old GPUs and/or graphics drivers may not be compatible with lc0. Check to make sure your graphics drivers
+are up to doate depending on what graphics card you have.
+
+Common and commonish commands within lc0:
+go nodes 100 #runs lc0 at 100 nodes
+position fen <fen position here> #accepts a board representation in FEN format. 
+Check out lichess.org's analysis board and experiment with FENs, or use a wikipedia page on 'FEN format.'
