@@ -322,13 +322,16 @@ void OptionsDict::AddSubdictFromString(const std::string& str) {
   parser.ParseMain(this);
 }
 
-std::string OptionsDict::FindNotUsed() const {
+void OptionsDict::CheckAllOptionsRead(
+    const std::string& path_from_parent) const {
+  std::string s = path_from_parent.empty() ? "" : path_from_parent + '.';
   for (auto const& option : used_) {
     if (!option.second) {
-      return option.first;
+      throw Exception("Unknown option: " + s + option.first);
     }
   }
-  return "";
+  for (auto const& dict : subdicts_)
+    dict.second.CheckAllOptionsRead(s + dict.first);
 }
 
 

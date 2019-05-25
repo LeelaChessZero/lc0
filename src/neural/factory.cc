@@ -121,8 +121,7 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
 
   auto ptr = NetworkFactory::Get()->Create(backend, weights, network_options);
 
-  auto x = network_options.FindNotUsed();
-  if (x.size()) throw Exception("Unknown backend option \"" + x + "\"");
+  network_options.CheckAllOptionsRead(backend);
 
   return ptr;
 }

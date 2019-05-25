@@ -95,9 +95,9 @@ class OptionsDict : TypeDict<bool>,
   // is still in scope, when the parent pointer is used
   void AddSubdictFromString(const std::string& str);
 
-  // Returns the first option in the dict that has not been read to
-  // find syntax errors in options added using AddSubdictFromString
-  std::string FindNotUsed() const;
+  // Throws an exception for the first option in the dict that has not been read
+  // to find syntax errors in options added using AddSubdictFromString
+  void CheckAllOptionsRead(const std::string& path_from_parent) const;
 
   bool HasSubdict(const std::string& name) const;
 
