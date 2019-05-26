@@ -126,7 +126,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     if (score_type == "centipawn") {
-      uci_info.score = 111.714640912 * tan(1.5620688421 * edge.GetQ(default_q));
+      uci_info.score = 295 * edge.GetQ(default_q) /
+                       (1 - 0.976953125 * std::pow(edge.GetQ(default_q), 14));
     } else if (score_type == "centipawn_2018") {
       uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(default_q));
     } else if (score_type == "win_percentage") {
