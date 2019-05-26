@@ -98,8 +98,8 @@ class SearchParams {
   float GetMinimumKLDGainPerNode() const {
     return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
   }
-  float GetEdgeDiscardFactor() const {
-	  return options_.Get<float>(kEdgeDiscardFactor.GetId());
+  float GetDrawMoveRule() const {
+	  return options_.Get<int>(kDrawMoveRuleId.GetId());
   }
 
   
@@ -136,7 +136,7 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
-  static const OptionId kEdgeDiscardFactor;
+  static const OptionId kDrawMoveRuleId;
 
  private:
   const OptionsDict& options_;
@@ -164,6 +164,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const int kDrawMoveRule;
 };
 
 }  // namespace lczero

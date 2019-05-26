@@ -186,10 +186,11 @@ const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
-const OptionId SearchParams::kEdgeDiscardFactor{
-	"edge-discard-factor", "EdgeDiscardFactor",
-	"Factor used for discarding thinking time for moves that can not reach bestmoves nodes. Factor of 1.00 is default "
-	"higher factor will sooner discard other edges thereby saving time for future moves." };
+const OptionId SearchParams::kDrawMoveRuleId{
+	"draw-move-rule", "DrawMoveRule",
+	"Used to adjust the default 50 move rule for analysis purposes. Factor of 100 (ply) is default "
+	"game is considered draw in case no pieces captured and no pawns have moved. Lowering this number will result either in more draws "
+	"or in more decisive moves in case engine thinks more than a draw is possible." };
 
 
 void SearchParams::Populate(OptionsParser* options) {
@@ -232,13 +233,14 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kEdgeDiscardFactor, 1.0f, 5.0f) = 1.0f;
+  options->Add<IntOption>(kDrawMoveRuleId, 1, 200) = 100;
 
   options->HideOption(kLogLiveStatsId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
+	kDrawMoveRule(options.Get<int>(kDrawMoveRuleId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),

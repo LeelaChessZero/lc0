@@ -941,7 +941,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // To ensure we have at least one node to expand, always include
         // current best node.
         if (child != search_->current_best_edge_ &&
-            search_->remaining_playouts_ < ((best_node_n - child.GetN())* params_.GetEdgeDiscardFactor())) {
+            search_->remaining_playouts_ < (best_node_n - child.GetN())) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
@@ -1031,7 +1031,7 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
+    if (history_.Last().GetNoCaptureNoPawnPly() >= params_.GetDrawMoveRule()) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
