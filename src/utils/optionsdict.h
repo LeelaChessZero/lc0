@@ -38,7 +38,16 @@ namespace lczero {
 template <typename T>
 class TypeDict {
  protected:
-  std::unordered_map<std::string, T> dict_;
+  struct V {
+      const T& Get() const { is_used_ = true; return value_; }
+      T& Get() { is_used_ = true; return value_; }
+      void Set(const T& v) { is_used_ = false; value_ = v; }
+      bool IsSet() const { return is_used_; }
+    private:
+      mutable bool is_used_ = false;
+      T value_;
+  };
+  std::unordered_map<std::string, V> dict_;
 };
 
 class OptionsDict : TypeDict<bool>,
@@ -104,7 +113,6 @@ class OptionsDict : TypeDict<bool>,
  private:
   const OptionsDict* parent_ = nullptr;
   std::map<std::string, OptionsDict> subdicts_;
-  mutable std::map<std::string, bool> used_;
 };
 
 template <typename T>
@@ -112,8 +120,7 @@ T OptionsDict::Get(const std::string& key) const {
   const auto& dict = TypeDict<T>::dict_;
   auto iter = dict.find(key);
   if (iter != dict.end()) {
-    used_[key] = true;
-    return iter->second;
+    return iter->second.Get();
   }
   if (parent_) return parent_->Get<T>(key);
   throw Exception("Key [" + key + "] was not set in options.");
@@ -134,8 +141,7 @@ T OptionsDict::GetOrDefault(const std::string& key,
   const auto& dict = TypeDict<T>::dict_;
   auto iter = dict.find(key);
   if (iter != dict.end()) {
-    used_[key] = true;
-    return iter->second;
+    return iter->second.Get();
   }
   if (parent_) return parent_->GetOrDefault<T>(key, default_val);
   return default_val;
@@ -143,13 +149,12 @@ T OptionsDict::GetOrDefault(const std::string& key,
 
 template <typename T>
 void OptionsDict::Set(const std::string& key, const T& value) {
-  used_[key] = false;
-  TypeDict<T>::dict_[key] = value;
+  TypeDict<T>::dict_[key].Set(value);
 }
 
 template <typename T>
 T& OptionsDict::GetRef(const std::string& key) {
-  return TypeDict<T>::dict_[key];
+  return TypeDict<T>::dict_[key].Get();
 }
 
 template <typename T>
