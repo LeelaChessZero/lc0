@@ -395,38 +395,35 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   openblas_set_num_threads(blas_cores);
   const char* core_name = openblas_get_corename();
   const char* config = openblas_get_config();
-  std::cerr << "BLAS vendor: OpenBlas.\n";
-  std::cerr << "OpenBlas [" << config << "].\n";
-  std::cerr << "OpenBlas found " << num_procs << " " << core_name
-            << " core(s).\n";
-  std::cerr << "OpenBLAS using " << blas_cores
-            << " core(s) for this backend.\n";
+  CERR << "BLAS vendor: OpenBLAS.";
+  CERR << "OpenBLAS [" << config << "].";
+  CERR << "OpenBLAS found " << num_procs << " " << core_name << " core(s).";
+  CERR << "OpenBLAS using " << blas_cores << " core(s) for this backend.";
 #endif
 
 #ifdef USE_MKL
   int max_procs = mkl_get_max_threads();
   blas_cores = std::min(max_procs, blas_cores);
   mkl_set_num_threads(blas_cores);
-  std::cerr << "BLAS vendor: MKL.\n";
+  CERR << "BLAS vendor: MKL.";
   constexpr int len = 256;
   char versionbuf[len];
   mkl_get_version_string(versionbuf, len);
-  std::cerr << "MKL " << versionbuf << ".\n";
+  CERR << "MKL " << versionbuf << ".";
   MKLVersion version;
   mkl_get_version(&version);
-  std::cerr << "MKL platform: " << version.Platform
-            << ", processor: " << version.Processor << ".\n";
-  std::cerr << "MKL can use up to " << max_procs << " thread(s).\n";
-  std::cerr << "MKL using " << blas_cores << " thread(s) for this backend.\n";
+  CERR << "MKL platform: " << version.Platform << ", processor: "
+       << version.Processor << ".";
+  CERR << "MKL can use up to " << max_procs << " thread(s).";
+  CERR << "MKL using " << blas_cores << " thread(s) for this backend.";
 #endif
 
 #ifdef USE_ACCELERATE
-  std::cerr << "BLAS vendor: Apple vecLib.\n";
-  std::cerr << "Apple vecLib ignores blas_cores (" << blas_cores
-            << ") parameter.\n";
+  CERR << "BLAS vendor: Apple vecLib.";
+  CERR << "Apple vecLib ignores blas_cores (" << blas_cores << ") parameter.";
 #endif
 
-  std::cerr << "BLAS max batch size is " << max_batch_size_ << ".\n";
+  CERR << "BLAS max batch size is " << max_batch_size_ << ".";
 }
 
 std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,

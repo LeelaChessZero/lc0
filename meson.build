@@ -446,9 +446,9 @@ executable('lc0', 'src/main.cc',
 
 
 ### Tests
-gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
-if get_option('gtest') and gtest.found()
+if get_option('gtest')
+  gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
   lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
