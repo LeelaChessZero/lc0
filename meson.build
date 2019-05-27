@@ -195,7 +195,11 @@ if get_option('build_backends')
   endif
 
   if get_option('blas')
-    if get_option('mkl') and mkl_lib.found()
+    if get_option('eigen')
+      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
+      has_blas = true
+
+    elif get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]

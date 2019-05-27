@@ -33,6 +33,10 @@
 #include <cmath>
 #include <iostream>
 
+#ifdef USE_EIGEN
+#include <Eigen/Core>
+#endif
+
 namespace lczero {
 namespace {
 
@@ -339,7 +343,9 @@ void BlasComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
 
 BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     : weights_(file.weights()) {
+#ifndef USE_EIGEN
   int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
+#endif
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
@@ -377,6 +383,11 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     weights_.policy.weights = WinogradFilterTransformF(weights_.policy.weights,
                                                        pol_channels, channels);
   }
+
+#ifdef USE_EIGEN
+  CERR << "Using Eigen version " << EIGEN_WORLD_VERSION << "."
+       << EIGEN_MAJOR_VERSION << "." << EIGEN_MINOR_VERSION;
+#endif
 
 #ifdef USE_OPENBLAS
   int num_procs = openblas_get_num_procs();
