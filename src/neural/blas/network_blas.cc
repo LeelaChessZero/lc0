@@ -385,8 +385,8 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   }
 
 #ifdef USE_EIGEN
-  std::cerr << "Using Eigen version " << EIGEN_WORLD_VERSION << "."
-            << EIGEN_MAJOR_VERSION << "." << EIGEN_MINOR_VERSION << "\n";
+  CERR << "Using Eigen version " << EIGEN_WORLD_VERSION << "."
+       << EIGEN_MAJOR_VERSION << "." << EIGEN_MINOR_VERSION;
 #endif
 
 #ifdef USE_OPENBLAS
