@@ -39,9 +39,7 @@ class WinogradConvolution3 {
   // The instance will allocate memory resources for the
   // largest batch size, and the largest input and output
   // layers.
-  WinogradConvolution3(const size_t max_batch_size,
-                       const size_t max_input_layers,
-                       const size_t max_output_layers);
+  WinogradConvolution3(const size_t max_batch_size, const size_t max_channels);
 
   // Forward inference, batched.
   void Forward(const size_t batch_size, const size_t input_channels,
