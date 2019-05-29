@@ -170,7 +170,8 @@ void BlasComputation::ComputeBlocking() {
   std::vector<float> res_buffer3(largest_batch_size * output_channels *
                                  kSquares);
 
-  WinogradConvolution3 convolve3(largest_batch_size, max_channels);
+  WinogradConvolution3 convolve3(largest_batch_size, max_channels,
+                                 output_channels);
 
   std::vector<float> policy_buffer(largest_batch_size *
                                    num_policy_input_planes * kSquares);

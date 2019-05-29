@@ -44,9 +44,10 @@ using ConstEigenMatrixMap =
 #endif
 
 WinogradConvolution3::WinogradConvolution3(const size_t max_batch_size,
-                                           const size_t max_channels)
-    : V_(max_batch_size * kWinogradTile * max_channels * kTiles),
-      M_(max_batch_size * kWinogradTile * max_channels * kTiles) {}
+                                           const size_t max_input_layers,
+                                           const size_t max_output_layers)
+    : V_(max_batch_size * kWinogradTile * max_input_layers * kTiles),
+      M_(max_batch_size * kWinogradTile * max_output_layers * kTiles) {}
 
 void WinogradConvolution3::Forward(const size_t batch_size,
                                    const size_t input_channels,
