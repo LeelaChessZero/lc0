@@ -1,4 +1,13 @@
 
+# Tested with Android NDK r13b, standalone toolchain
+# Targeting API level 16
+#
+# ./make-standalone-toolchain.sh --arch=arm --platform=android-16 --stl=libc++ --install-dir=android-standalone-32
+# Had build issues targeting API level 16 on newer NDK's
+
+# Set the toolchain path on your environment
+# export PATH="$HOME/.local/share/android-sdk/ndk-bundle/android-standalone-32/bin:$HOME/.local/share/android-sdk/ndk-bundle/android-standalone-32/arm-linux-androideabi/bin/:$PATH"
+
 [host_machine]
 system = 'android'
 cpu_family = 'arm'
@@ -10,14 +19,12 @@ needs_exe_wrapper = true
 cpp_args = ['-Dandroid']
 cpp_link_args = ['-llog', '-static-libstdc++']
 
-[paths]
-
 [binaries]
-c = 'armv7a-linux-androideabi28-clang'
-cpp = 'armv7a-linux-androideabi28-clang++'
-ar = 'arm-linux-androideabi-ar'
-strip = 'arm-linux-androideabi-strip'
-ld = 'arm-linux-androideabi-ld'
-ranlib = 'arm-linux-androideabi-ranlib'
-as = 'arm-linux-androideabi-as'
+c = 'arm-linux-androideabi-clang'
+cpp = 'arm-linux-androideabi-clang++'
+ar = 'ar'
+strip = 'strip'
+ld = 'ld'
+ranlib = 'ranlib'
+as = 'as'
 

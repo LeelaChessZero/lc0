@@ -79,8 +79,10 @@ time_t GetFileTime(const std::string& filename) {
   }
 #ifdef __APPLE__
   return s.st_mtimespec.tv_sec;
-#else
+#elif defined(st_mtime) // A macro, so we're likely on modern POSIX.
   return s.st_mtim.tv_sec;
+#else
+  return s.st_mtime;
 #endif
 }
 
