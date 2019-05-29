@@ -146,6 +146,12 @@ void BlasComputation::ComputeBlocking() {
   const auto input_channels = static_cast<size_t>(kInputPlanes);
   const auto max_channels = std::max(output_channels, input_channels);
 
+  // The policy head may increase convolution max output size.
+  const auto max_output_channels =
+      (conv_policy_ && weights_.policy.biases.size() > output_channels)
+          ? weights_.policy.biases.size()
+          : output_channels;
+
   // Determine the largest batch for allocations.
   const auto plane_count = planes_.size();
   const auto largest_batch_size = std::min(max_batch_size_, plane_count);
@@ -170,7 +176,8 @@ void BlasComputation::ComputeBlocking() {
   std::vector<float> res_buffer3(largest_batch_size * output_channels *
                                  kSquares);
 
-  WinogradConvolution3 convolve3(largest_batch_size, max_channels);
+  WinogradConvolution3 convolve3(largest_batch_size, max_channels,
+                                 max_output_channels);
 
   std::vector<float> policy_buffer(largest_batch_size *
                                    num_policy_input_planes * kSquares);
