@@ -137,7 +137,23 @@ else
     ]
 endif
 
+# Embed binary files into the program
+# converting them to source as `const array` definitions
 
+embedder = find_program('embed/embedder.py', required: false)
+if get_option('embed') and embedder.found()
+  # Rule to convert binary files to source + header.
+  embedder_gen = generator(embedder,
+    output : ['@BASENAME@.cpp', '@BASENAME@.h'],
+    arguments : ['@INPUT@', '@OUTPUT0@', '@OUTPUT1@']
+  )
+  # Add network weights file if found
+  weights_file = 'embed/embedded_weights'
+  if run_command('test', '-f', weights_file).returncode() == 0
+    files += embedder_gen.process(weights_file)
+    add_project_arguments('-DEMBEDDED_WEIGHTS', language : 'cpp')
+  endif
+endif
 
 #############################################################################
 ## BACKENDS

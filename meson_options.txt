@@ -127,3 +127,8 @@ option('protobuf-3-6-0',
        type: 'boolean',
        value: false,
        description: 'Use the protobuf 3.6.0 subproject')
+
+option('embed',
+       type: 'boolean',
+       value: false,
+       description: 'Embed files into the executable')

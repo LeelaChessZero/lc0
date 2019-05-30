@@ -47,6 +47,9 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Exact parameters differ per backend.",
     'o'};
 const char* kAutoDiscover = "<autodiscover>";
+#ifdef EMBEDDED_WEIGHTS
+const char* kEmbedded = "<embedded>";
+#endif
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
@@ -59,7 +62,11 @@ NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
 }
 
 void NetworkFactory::PopulateOptions(OptionsParser* options) {
+#ifdef EMBEDDED_WEIGHTS
+  options->Add<StringOption>(NetworkFactory::kWeightsId) = kEmbedded;
+#else
   options->Add<StringOption>(NetworkFactory::kWeightsId) = kAutoDiscover;
+#endif
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
@@ -114,7 +121,11 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
+#ifdef EMBEDDED_WEIGHTS
+  const WeightsFile weights = (net_path == kEmbedded) ? LoadEmbeddedWeights() : LoadWeightsFromFile(net_path);
+#else
   const WeightsFile weights = LoadWeightsFromFile(net_path);
+#endif
 
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);

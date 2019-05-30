@@ -43,6 +43,11 @@ using WeightsFile = pblczero::Net;
 // Read weights file and fill the weights structure.
 WeightsFile LoadWeightsFromFile(const std::string& filename);
 
+#ifdef EMBEDDED_WEIGHTS
+// Read the embedded weights file and fill the weights structure.
+WeightsFile LoadEmbeddedWeights();
+#endif
+
 // Tries to find a file which looks like a weights file, and located in
 // directory of binary_name or one of subdirectories. If there are several such
 // files, returns one which has the latest modification date.
