@@ -1031,7 +1031,7 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetNoCaptureNoPawnPly() >= params_.GetDrawMoveRule()) {
+    if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }

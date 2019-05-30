@@ -57,6 +57,10 @@ class Position {
   // Number of ply with no captures and pawn moves.
   int GetNoCaptureNoPawnPly() const { return no_capture_ply_; }
 
+  // Draw move rule: number of plies it takes with no Pawn move or capture
+  // before game is a regarded a draw
+  static void SetDrawMoveRule(int drawmoverule) { drawmoverule_ = drawmoverule; };
+
   // Returns whether castle is still allowed in given direction.
   bool CanCastle(Castling) const;
 
@@ -67,6 +71,7 @@ class Position {
 
   std::string DebugString() const;
 
+  
  private:
   // The board from the point of view of the player to move.
   ChessBoard us_board_;
@@ -75,10 +80,13 @@ class Position {
 
   // How many half-moves without capture or pawn move was there.
   int no_capture_ply_ = 0;
+  // Number of moves till we call it a draw
+  static int drawmoverule_;
   // How many repetitions this position had before. For new positions it's 0.
   int repetitions_;
   // number of half-moves since beginning of the game.
   int ply_count_ = 0;
+
 };
 
 enum class GameResult { UNDECIDED, WHITE_WON, DRAW, BLACK_WON };

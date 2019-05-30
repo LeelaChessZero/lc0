@@ -98,7 +98,7 @@ class SearchParams {
   float GetMinimumKLDGainPerNode() const {
     return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
   }
-  float GetDrawMoveRule() const {
+  int GetDrawMoveRule() const {
 	  return options_.Get<int>(kDrawMoveRuleId.GetId());
   }
 

@@ -30,6 +30,16 @@
 
 namespace lczero {
 
+// by default DrawMoveRule is 100 ply
+// this can be overwritten from Params initialization
+// for example when set to 40 the no_capture_ply will
+// be positioned so that the position believes there are only
+// 40 ply left before draw kicks in instead of 100
+//int DrawMoveRule = 100;
+// Number of moves till we call it a draw
+ int Position::drawmoverule_;
+
+
 Position::Position(const Position& parent, Move m)
     : no_capture_ply_(parent.no_capture_ply_ + 1),
       ply_count_(parent.ply_count_ + 1) {
@@ -37,7 +47,7 @@ Position::Position(const Position& parent, Move m)
   const bool capture = them_board_.ApplyMove(m);
   us_board_ = them_board_;
   us_board_.Mirror();
-  if (capture) no_capture_ply_ = 0;
+  if (capture) no_capture_ply_ = 0 + (100 - drawmoverule_);
 }
 
 Position::Position(const ChessBoard& board, int no_capture_ply, int game_ply)

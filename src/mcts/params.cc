@@ -26,7 +26,7 @@
 */
 
 #include "mcts/params.h"
-
+#include "chess/position.h"
 namespace lczero {
 
 namespace {
@@ -266,6 +266,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {}
-
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {
+	//Position::drawmoverule_ = kDrawMoveRule;
+        Position::SetDrawMoveRule(kDrawMoveRule);
+      }
 }  // namespace lczero
