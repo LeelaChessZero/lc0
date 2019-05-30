@@ -37,7 +37,7 @@ namespace lczero {
 // 40 ply left before draw kicks in instead of 100
 //int DrawMoveRule = 100;
 // Number of moves till we call it a draw
- int Position::drawmoverule_;
+ int Position::drawmoverule_ = 100;
 
 
 Position::Position(const Position& parent, Move m)
