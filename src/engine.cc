@@ -53,11 +53,6 @@ const OptionId kSlowMoverId{
     "Budgeted time for a move is multiplied by this value, causing the engine "
     "to spend more time (if value is greater than 1) or less time (if the "
     "value is less than 1)."};
-const OptionId kMoveOverheadId{
-    "move-overhead", "MoveOverheadMs",
-    "Amount of time, in milliseconds, that the engine subtracts from it's "
-    "total available time (to compensate for slow connection, interprocess "
-    "communication, etc)."};
 const OptionId kTimeMidpointMoveId{
     "time-midpoint-move", "TimeMidpointMove",
     "The move where the time budgeting algorithm guesses half of all "
@@ -82,22 +77,8 @@ const OptionId kSpendSavedTimeId{
     "all future moves."};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
-// Warning! When changed, also change number 30 in the help below!
-const size_t kAvgMovesPerPosition = 30;
-const OptionId kRamLimitMbId{
-    "ramlimit-mb", "RamLimitMb",
-    "Maximum memory usage for the engine, in megabytes. The estimation is very "
-    "rough, and can be off by a lot. For example, multiple visits to a "
-    "terminal node counted several times, and the estimation assumes that all "
-    "positions have 30 possible moves. When set to 0, no RAM limit is "
-    "enforced."};
 
-const size_t kAvgNodeSize = sizeof(Node) + kAvgMovesPerPosition * sizeof(Edge);
-const size_t kAvgCacheItemSize =
-    NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
-    sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
-
-float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
+/* float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
   // An analysis of chess games shows that the distribution of game lengths
   // looks like a log-logistic distribution. The mean residual time function
   // calculates how many more moves are expected in the game given that we are
@@ -113,6 +94,14 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
   return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
                              1 / steepness) -
          move;
+} */
+
+MoveList StringsToMovelist(const std::vector<std::string>& moves,
+                           bool is_black) {
+  MoveList result;
+  result.reserve(moves.size());
+  for (const auto& move : moves) result.emplace_back(move, is_black);
+  return result;
 }
 
 }  // namespace
@@ -134,7 +123,6 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   SearchParams::Populate(options);
 
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
-  options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
   options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
   options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
@@ -142,53 +130,33 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
-  options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
   ConfigFile::PopulateOptions(options);
+  PopulateTimeManagementOptions(options);
 
   // Hide time curve options.
   options->HideOption(kTimeMidpointMoveId);
   options->HideOption(kTimeSteepnessId);
 }
 
+/*
 SearchLimits EngineController::PopulateSearchLimits(
     int ply, bool is_black, const GoParams& params,
     std::chrono::steady_clock::time_point start_time) {
-  SearchLimits limits;
-  const int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
-  const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
-  if (!params.searchmoves.empty()) {
-    limits.searchmoves.reserve(params.searchmoves.size());
-    for (const auto& move : params.searchmoves) {
-      limits.searchmoves.emplace_back(move, is_black);
-    }
-  }
-  limits.infinite = params.infinite || params.ponder;
-  if (params.movetime && !limits.infinite) {
-    limits.search_deadline = start_time + std::chrono::milliseconds(
-                                              *params.movetime - move_overhead);
-  }
-  if (params.nodes) limits.visits = *params.nodes;
-  const int ram_limit = options_.Get<int>(kRamLimitMbId.GetId());
-  if (ram_limit) {
-    const auto cache_size =
-        options_.Get<int>(kNNCacheSizeId.GetId()) * kAvgCacheItemSize;
-    int64_t limit = (ram_limit * 1000000LL - cache_size) / kAvgNodeSize;
-    LOGFILE << "RAM limit " << ram_limit << "MB. Cache takes "
-            << cache_size / 1000000 << "MB. Remaining memory is enough for "
-            << limit << " nodes.";
-    if (limit < 0) limit = 0;
-    if (limit < limits.visits) limits.visits = limit;
-  }
+
   if (params.depth) limits.depth = *params.depth;
+
+
   if (limits.infinite || !time) return limits;
   const optional<int64_t>& inc = is_black ? params.binc : params.winc;
   const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
   // How to scale moves time.
   const float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  const float time_curve_midpoint = options_.Get<float>(kTimeMidpointMoveId.GetId());
-  const float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
+  const float time_curve_midpoint =
+      options_.Get<float>(kTimeMidpointMoveId.GetId());
+  const float time_curve_steepness =
+      options_.Get<float>(kTimeSteepnessId.GetId());
 
   float movestogo =
       ComputeEstimatedMovesToGo(ply, time_curve_midpoint, time_curve_steepness);
@@ -247,6 +215,7 @@ SearchLimits EngineController::PopulateSearchLimits(
                                          *time - move_overhead));
   return limits;
 }
+*/
 
 // Updates values from Uci options.
 void EngineController::UpdateFromUciOptions() {
@@ -266,7 +235,8 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Network.
-  const auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+  const auto network_configuration =
+      NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
     network_ = NetworkFactory::LoadNetwork(options_);
     network_configuration_ = network_configuration;
@@ -367,7 +337,7 @@ void EngineController::Go(const GoParams& params) {
     SetupPosition(ChessBoard::kStartposFen, {});
   }
 
-  auto limits = PopulateSearchLimits(
+  /* auto limits = PopulateSearchLimits(
       tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
   LOGFILE << "Limits: " << limits.DebugString();
 
@@ -382,16 +352,18 @@ void EngineController::Go(const GoParams& params) {
                 .count();
       }
     };
-  }
+  } */
 
-  search_ = std::make_unique<Search>(*tree_, network_.get(), best_move_callback,
-                                     info_callback, limits, options_, &cache_,
-                                     syzygy_tb_.get());
+  auto stopper = MakeSearchStopper(options_, params, *time_manager_, start_time,
+                                   options_.Get<int>(kNNCacheSizeId.GetId()));
+  search_ = std::make_unique<Search>(
+      *tree_, network_.get(), best_move_callback, info_callback,
+      StringsToMovelist(params.searchmoves, tree_->IsBlackToMove()),
+      std::move(stopper), params.infinite || params.ponder, options_, &cache_,
+      syzygy_tb_.get());
 
-  if (limits.search_deadline) {
-    LOGFILE << "Timer started at "
-            << FormatTime(SteadyClockToSystemClock(move_start_time_));
-  }
+  LOGFILE << "Timer started at "
+          << FormatTime(SteadyClockToSystemClock(move_start_time_));
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 

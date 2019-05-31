@@ -34,6 +34,7 @@
 #include "chess/uciloop.h"
 #include "mcts/node.h"
 #include "mcts/params.h"
+#include "mcts/timemgr/timemgr.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
@@ -43,7 +44,7 @@
 
 namespace lczero {
 
-struct SearchLimits {
+/* struct SearchLimits {
   // Type for N in nodes is currently uint32_t, so set limit in order not to
   // overflow it.
   std::int64_t visits = 4000000000;
@@ -54,13 +55,14 @@ struct SearchLimits {
   MoveList searchmoves;
 
   std::string DebugString() const;
-};
+}; */  // DO NOT SUBMIT
 
 class Search {
  public:
   Search(const NodeTree& tree, Network* network,
          BestMoveInfo::Callback best_move_callback,
-         ThinkingInfo::Callback info_callback, const SearchLimits& limits,
+         ThinkingInfo::Callback info_callback, const MoveList& searchmoves,
+         std::unique_ptr<SearchStopper> stopper, bool infinite,
          const OptionsDict& options, NNCache* cache,
          SyzygyTablebase* syzygy_tb);
 
@@ -111,9 +113,11 @@ class Search {
 
   int64_t GetTimeSinceStart() const;
   int64_t GetTimeToDeadline() const;
+  /*
   void UpdateRemainingMoves();
   void UpdateKLDGain();
-  void MaybeTriggerStop();
+  */
+  void MaybeTriggerStop(const IterationStats& stats, TimeManagerHints* hints);
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
   // Sets stop to true and notifies watchdog thread.
@@ -153,6 +157,7 @@ class Search {
   // consistent results.
   EdgeAndNode final_bestmove_ GUARDED_BY(counters_mutex_);
   EdgeAndNode final_pondermove_ GUARDED_BY(counters_mutex_);
+  std::unique_ptr<SearchStopper> stopper_ GUARDED_BY(counters_mutex_);
 
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
@@ -164,7 +169,7 @@ class Search {
   const PositionHistory& played_history_;
 
   Network* const network_;
-  const SearchLimits limits_;
+  const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
   optional<std::chrono::steady_clock::time_point> nps_start_time_;
@@ -174,8 +179,6 @@ class Search {
   Edge* last_outputted_info_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
-  int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
-      std::numeric_limits<int64_t>::max();
   // If kldgain minimum checks enabled, this was the visit distribution at the
   // last kldgain interval triggering.
   std::vector<uint32_t> prev_dist_ GUARDED_BY(counters_mutex_);
@@ -302,6 +305,8 @@ class SearchWorker {
   int number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
+  IterationStats iteration_stats_;
+  TimeManagerHints latest_time_manager_hints_;
 };
 
 }  // namespace lczero

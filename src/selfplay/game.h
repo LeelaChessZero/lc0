@@ -36,10 +36,10 @@
 
 namespace lczero {
 
-struct SelfPlayLimits : SearchLimits {
+/* struct SelfPlayLimits : SearchLimits {
   // Movetime
   std::int64_t movetime;
-};
+}; */ // DO NOT SUBMIT
 
 struct PlayerOptions {
   // Network to use by the player.
@@ -52,8 +52,8 @@ struct PlayerOptions {
   NNCache* cache;
   // User options dictionary.
   const OptionsDict* uci_options;
-  // Limits to use for every move.
-  SelfPlayLimits search_limits;
+  /* // Limits to use for every move.
+  SelfPlayLimits search_limits; */  // DO NOT SUBMIT
 };
 
 // Plays a single game vs itself.

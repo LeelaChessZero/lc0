@@ -84,18 +84,20 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
       tree_[idx]->TrimTreeAtHead();
     }
-    if (options_[idx].search_limits.movetime > -1) {
+    /* if (options_[idx].search_limits.movetime > -1) {
       options_[idx].search_limits.search_deadline =
           std::chrono::steady_clock::now() +
           std::chrono::milliseconds(options_[idx].search_limits.movetime);
-    }
+    } */
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
-          options_[idx].info_callback, options_[idx].search_limits,
-          *options_[idx].uci_options, options_[idx].cache, nullptr);
+          options_[idx].info_callback, /* searchmoves */ MoveList(),
+          /* stopper, DO NOT SUBMIT */ std::unique_ptr<SearchStopper>(),
+          /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
+          nullptr);
       // TODO: add Syzygy option for selfplay.
     }
 

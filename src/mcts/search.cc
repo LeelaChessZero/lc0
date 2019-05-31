@@ -45,35 +45,27 @@
 namespace lczero {
 
 namespace {
-const int kSmartPruningToleranceNodes = 300;
-const int kSmartPruningToleranceMs = 200;
+/* const int kSmartPruningToleranceNodes = 300;
+const int kSmartPruningToleranceMs = 200; */
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
 
-std::string SearchLimits::DebugString() const {
-  std::ostringstream ss;
-  ss << "visits:" << visits << " playouts:" << playouts << " depth:" << depth
-     << " infinite:" << infinite;
-  if (search_deadline) {
-    ss << " search_deadline:"
-       << FormatTime(SteadyClockToSystemClock(*search_deadline));
-  }
-  return ss.str();
-}
-
 Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
-               ThinkingInfo::Callback info_callback, const SearchLimits& limits,
+               ThinkingInfo::Callback info_callback,
+               const MoveList& searchmoves,
+               std::unique_ptr<SearchStopper> stopper, bool infinite,
                const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb)
-    : ok_to_respond_bestmove_(!limits.infinite),
+    : ok_to_respond_bestmove_(!infinite),
+      stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       cache_(cache),
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
       network_(network),
-      limits_(limits),
+      searchmoves_(searchmoves),
       start_time_(std::chrono::steady_clock::now()),
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
@@ -184,12 +176,13 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
+/*
 int64_t Search::GetTimeToDeadline() const {
   if (!limits_.search_deadline) return 0;
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              *limits_.search_deadline - std::chrono::steady_clock::now())
       .count();
-}
+} */
 
 namespace {
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
@@ -317,7 +310,7 @@ NNCacheLock Search::GetCachedNNEval(Node* node) const {
   return nneval;
 }
 
-void Search::UpdateKLDGain() {
+/* void Search::UpdateKLDGain() {
   if (params_.GetMinimumKLDGainPerNode() <= 0) return;
 
   SharedMutex::Lock nodes_lock(nodes_mutex_);
@@ -351,8 +344,11 @@ void Search::UpdateKLDGain() {
     prev_dist_visits_total_ = total_playouts_ + initial_visits_;
   }
 }
+*/
 
-void Search::MaybeTriggerStop() {
+void Search::MaybeTriggerStop(const IterationStats& stats,
+                              TimeManagerHints* hints) {
+  hints->Reset();
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
   // Already responded bestmove, nothing to do here.
@@ -360,43 +356,50 @@ void Search::MaybeTriggerStop() {
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
 
-  // If not yet stopped, try to stop for different reasons.
-  if (!stop_.load(std::memory_order_acquire)) {
-    if (kldgain_too_small_) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: KLDGain per node too small.";
-    }
-    // If smart pruning tells to stop (best move found), stop.
-    if (only_one_possible_move_left_) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: Only one move candidate left.";
-    }
-    // Stop if reached playouts limit.
-    if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: Reached playouts limit: " << total_playouts_
-              << ">=" << limits_.playouts;
-    }
-    // Stop if reached visits limit.
-    if (limits_.visits >= 0 &&
-        total_playouts_ + initial_visits_ >= limits_.visits) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: Reached visits limit: "
-              << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
-    }
-    // Stop if reached time limit.
-    if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
-      LOGFILE << "Stopped search: Ran out of time.";
-      FireStopInternal();
-    }
-    // Stop if average depth reached requested depth.
-    if (limits_.depth >= 0 &&
-        cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
-            static_cast<unsigned int>(limits_.depth)) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: Reached depth.";
-    }
+  if (!stop_.load(std::memory_order_acquire) || !ok_to_respond_bestmove_) {
+    if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
   }
+
+  // DO NOT SUBMIT
+
+  /*
+    // If not yet stopped, try to stop for different reasons.
+    if (!stop_.load(std::memory_order_acquire)) {
+      if (kldgain_too_small_) {
+        FireStopInternal();
+        LOGFILE << "Stopped search: KLDGain per node too small.";
+      }
+      // If smart pruning tells to stop (best move found), stop.
+      if (only_one_possible_move_left_) {
+        FireStopInternal();
+        LOGFILE << "Stopped search: Only one move candidate left.";
+      }
+      // Stop if reached playouts limit.
+      if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
+        FireStopInternal();
+        LOGFILE << "Stopped search: Reached playouts limit: " << total_playouts_
+                << ">=" << limits_.playouts;
+      }
+      // Stop if reached visits limit.
+      if (limits_.visits >= 0 &&
+          total_playouts_ + initial_visits_ >= limits_.visits) {
+        FireStopInternal();
+        LOGFILE << "Stopped search: Reached visits limit: "
+                << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
+      }
+      // Stop if reached time limit.
+      if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
+        LOGFILE << "Stopped search: Ran out of time.";
+        FireStopInternal();
+      }
+      // Stop if average depth reached requested depth.
+      if (limits_.depth >= 0 &&
+          cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
+              static_cast<unsigned int>(limits_.depth)) {
+        FireStopInternal();
+        LOGFILE << "Stopped search: Reached depth.";
+      }
+    } */
   // If we are the first to see that stop is needed.
   if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
       !bestmove_is_sent_) {
@@ -410,7 +413,7 @@ void Search::MaybeTriggerStop() {
     current_best_edge_ = EdgeAndNode();
   }
 }
-
+/*
 void Search::UpdateRemainingMoves() {
   if (params_.GetSmartPruningFactor() <= 0.0f) return;
   SharedMutex::Lock lock(nodes_mutex_);
@@ -464,6 +467,7 @@ void Search::UpdateRemainingMoves() {
   // cached best edge.
   root_node_->CancelScoreUpdate(0);
 }
+*/
 
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
@@ -493,8 +497,8 @@ std::int64_t Search::GetTotalPlayouts() const {
 
 bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   // Search moves overrides tablebase.
-  if (!limits_.searchmoves.empty()) {
-    *root_moves = limits_.searchmoves;
+  if (!searchmoves_.empty()) {
+    *root_moves = searchmoves_;
     return false;
   }
   auto board = played_history_.Last().GetBoard();
@@ -667,8 +671,11 @@ bool Search::IsSearchActive() const {
 
 void Search::WatchdogThread() {
   LOGFILE << "Start a watchdog thread.";
+  TimeManagerHints hints;
+  IterationStats stats;
+  stats.is_watchdog = true;
   while (true) {
-    MaybeTriggerStop();
+    MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
 
     using namespace std::chrono_literals;
@@ -680,9 +687,7 @@ void Search::WatchdogThread() {
     // already all exited, and we need at least one thread that can do that.
     if (bestmove_is_sent_) break;
 
-    auto remaining_time = limits_.search_deadline
-                              ? std::chrono::milliseconds(GetTimeToDeadline())
-                              : kMaxWaitTime;
+    auto remaining_time = hints.GetEstimatedRemainingTime();
     if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
     if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
     // There is no real need to have max wait time, and sometimes it's fine
@@ -768,6 +773,7 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
   minibatch_.clear();
+  iteration_stats_.Reset();
 
   if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;
@@ -942,7 +948,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // To ensure we have at least one node to expand, always include
         // current best node.
         if (child != search_->current_best_edge_ &&
-            search_->remaining_playouts_ < best_node_n - child.GetN()) {
+            latest_time_manager_hints_.GetEstimatedRemainingPlayouts() <
+                best_node_n - child.GetN()) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
@@ -980,12 +987,15 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
-      // If there is only one move theoretically possible within remaining time,
-      // output it.
-      Mutex::Lock counters_lock(search_->counters_mutex_);
-      search_->only_one_possible_move_left_ = true;
-    }
+    /*    if (is_root_node && possible_moves <= 1)
+          // If there is only one move theoretically possible within remaining
+       time,
+          // output it.
+          Mutex::Lock counters_lock(search_->counters_mutex_);
+        if (search_->ok_to_respond_bestmove_) {
+          search_->only_one_possible_move_left_ = true;
+        }
+  }*/
     is_root_node = false;
   }
 }
@@ -1336,9 +1346,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
-  search_->UpdateRemainingMoves();  // Updates smart pruning counters.
-  search_->UpdateKLDGain();
-  search_->MaybeTriggerStop();
+  // search_->UpdateRemainingMoves();  // Updates smart pruning counters.
+  // search_->UpdateKLDGain();
+  search_->MaybeTriggerStop(iteration_stats_, &latest_time_manager_hints_);
   search_->MaybeOutputInfo();
 
   // If this thread had no work, not even out of order, then sleep for some

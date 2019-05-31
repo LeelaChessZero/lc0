@@ -78,10 +78,6 @@ class EngineController {
   // Must not block.
   void Stop();
 
-  SearchLimits PopulateSearchLimits(int ply, bool is_black,
-      const GoParams& params,
-      std::chrono::steady_clock::time_point start_time);
-
  private:
   void UpdateFromUciOptions();
 
@@ -101,6 +97,7 @@ class EngineController {
   std::unique_ptr<NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
+  std::unique_ptr<TimeManager> time_manager_;
   NNCache cache_;
 
   // Store current TB and network settings to track when they change so that
