@@ -36,20 +36,19 @@ source_footer= '''
 };
 '''
 
-assert(len(sys.argv) == 4)
+assert(len(sys.argv) == 5)
 
-_, datafile, srcfile, headerfile = sys.argv
+_, datafile, srcfile, headerfile, arrayname = sys.argv
 
 data = open(datafile, 'rb').read()
 datasize = len(data)
-basename = os.path.splitext(os.path.split(datafile)[-1])[0]
 
-open(headerfile, 'w').write(header_template % (basename, datasize))
+open(headerfile, 'w').write(header_template % (arrayname, datasize))
 ofile = open(srcfile, 'w')
-ofile.write(source_template_header % (os.path.split(headerfile)[-1], basename, datasize))
+ofile.write(source_template_header % (os.path.split(headerfile)[-1], arrayname, datasize))
 
 for i, c in enumerate(data):
     if i % 16 == 0:
-        ofile.write('\n    ');
+        ofile.write('\n    ')
     ofile.write("{:>3}, ".format(c))
 ofile.write(source_footer)

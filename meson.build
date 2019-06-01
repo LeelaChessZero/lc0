@@ -140,18 +140,30 @@ endif
 # Embed binary files into the program
 # converting them to source as `const array` definitions
 
-embedder = find_program('embed/embedder.py', required: false)
-if get_option('embed') and embedder.found()
-  # Rule to convert binary files to source + header.
-  embedder_gen = generator(embedder,
-    output : ['@BASENAME@.cpp', '@BASENAME@.h'],
-    arguments : ['@INPUT@', '@OUTPUT0@', '@OUTPUT1@']
-  )
-  # Add network weights file if found
-  weights_file = 'embed/embedded_weights'
-  if run_command('test', '-f', weights_file).returncode() == 0
-    files += embedder_gen.process(weights_file)
-    add_project_arguments('-DEMBEDDED_WEIGHTS', language : 'cpp')
+embedder = find_program('scripts/embedder.py', required: false)
+if embedder.found()
+  # check for user supplied weights file
+  weights_filename = get_option('embed_weights_file')
+  if weights_filename != ''
+    if run_command('test', '-f', weights_filename).returncode() == 0
+      # sources & data's names can be changed, they are independent from the weights filename
+      weights_basename = 'embedded_weights'
+      weights_source = weights_basename + '.cpp'
+      weights_header = weights_basename + '.h'
+      weights_data = 'embedded_weights_data'
+      # generate sources from the weights file & add them to the project
+      gen_weights = custom_target('gen-weights',
+        input : [weights_filename],
+        output : [weights_source, weights_header],
+        command : [embedder, '@INPUT@','@OUTPUT0@','@OUTPUT1@', weights_data]
+      )
+      files += gen_weights
+      # pass generated header & data names
+      add_project_arguments('-DEMBEDDED_WEIGHTS="' + weights_header + '"', language : 'cpp')
+      add_project_arguments('-DEMBEDDED_WEIGHTS_DATA=' + weights_data, language : 'cpp')
+    else
+      message('weights file not found: ' + weights_filename)
+    endif
   endif
 endif
 
