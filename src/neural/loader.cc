@@ -271,6 +271,12 @@ std::string DiscoverWeightsFile() {
     }
   }
 
+#ifdef EMBEDDED_WEIGHTS
+  // if discovery fails the we should try the embedded weights
+  CERR << "Found embedded network file";
+  return kEmbedded;
+#endif
+
   throw Exception("Network weights file not found.");
   return {};
 }

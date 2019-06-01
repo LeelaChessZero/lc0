@@ -46,6 +46,8 @@ WeightsFile LoadWeightsFromFile(const std::string& filename);
 #ifdef EMBEDDED_WEIGHTS
 // Read the embedded weights file and fill the weights structure.
 WeightsFile LoadEmbeddedWeights();
+// Value for specifying loading embedded weights in Options
+#define kEmbedded "<embedded>"
 #endif
 
 // Tries to find a file which looks like a weights file, and located in

@@ -47,9 +47,6 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Exact parameters differ per backend.",
     'o'};
 const char* kAutoDiscover = "<autodiscover>";
-#ifdef EMBEDDED_WEIGHTS
-const char* kEmbedded = "<embedded>";
-#endif
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
@@ -62,11 +59,7 @@ NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
 }
 
 void NetworkFactory::PopulateOptions(OptionsParser* options) {
-#ifdef EMBEDDED_WEIGHTS
-  options->Add<StringOption>(NetworkFactory::kWeightsId) = kEmbedded;
-#else
   options->Add<StringOption>(NetworkFactory::kWeightsId) = kAutoDiscover;
-#endif
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
