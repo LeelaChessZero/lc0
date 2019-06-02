@@ -48,53 +48,13 @@ const OptionId kNNCacheSizeId{
     "nncache", "NNCacheSize",
     "Number of positions to store in a memory cache. A large cache can speed "
     "up searching, but takes memory."};
-const OptionId kSlowMoverId{
-    "slowmover", "Slowmover",
-    "Budgeted time for a move is multiplied by this value, causing the engine "
-    "to spend more time (if value is greater than 1) or less time (if the "
-    "value is less than 1)."};
-const OptionId kTimeMidpointMoveId{
-    "time-midpoint-move", "TimeMidpointMove",
-    "The move where the time budgeting algorithm guesses half of all "
-    "games to be completed by. Half of the time allocated for the first move "
-    "is allocated at approximately this move."};
-const OptionId kTimeSteepnessId{
-    "time-steepness", "TimeSteepness",
-    "\"Steepness\" of the function the time budgeting algorithm uses to "
-    "consider when games are completed. Lower values leave more time for "
-    "the endgame, higher values use more time for each move before the "
-    "midpoint."};
 const OptionId kSyzygyTablebaseId{
     "syzygy-paths", "SyzygyPath",
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
-const OptionId kSpendSavedTimeId{
-    "immediate-time-use", "ImmediateTimeUse",
-    "Fraction of time saved by smart pruning, which is added to the budget to "
-    "the next move rather than to the entire game. When 1, all saved time is "
-    "added to the next move's budget; when 0, saved time is distributed among "
-    "all future moves."};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
-
-/* float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
-  // An analysis of chess games shows that the distribution of game lengths
-  // looks like a log-logistic distribution. The mean residual time function
-  // calculates how many more moves are expected in the game given that we are
-  // at the current ply. Given that this function can be expensive to compute,
-  // we calculate the median residual time function instead. This is derived and
-  // shown to be similar to the mean residual time in "Some Useful Properties of
-  // Log-Logistic Random Variables for Health Care Simulations" (Clark &
-  // El-Taha, 2015).
-  // midpoint: The median length of games.
-  // steepness: How quickly the function drops off from its maximum value,
-  // around the midpoint.
-  const float move = ply / 2.0f;
-  return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
-                             1 / steepness) -
-         move;
-} */
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            bool is_black) {
@@ -111,8 +71,7 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
                                    const OptionsDict& options)
     : options_(options),
       best_move_callback_(best_move_callback),
-      info_callback_(info_callback),
-      move_start_time_(std::chrono::steady_clock::now()) {}
+      info_callback_(info_callback) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -122,100 +81,14 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   SearchParams::Populate(options);
 
-  options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
-  options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
-  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
-  options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(options);
-
-  // Hide time curve options.
-  options->HideOption(kTimeMidpointMoveId);
-  options->HideOption(kTimeSteepnessId);
 }
-
-/*
-SearchLimits EngineController::PopulateSearchLimits(
-    int ply, bool is_black, const GoParams& params,
-    std::chrono::steady_clock::time_point start_time) {
-
-  if (params.depth) limits.depth = *params.depth;
-
-
-  if (limits.infinite || !time) return limits;
-  const optional<int64_t>& inc = is_black ? params.binc : params.winc;
-  const int increment = inc ? std::max(int64_t(0), *inc) : 0;
-
-  // How to scale moves time.
-  const float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  const float time_curve_midpoint =
-      options_.Get<float>(kTimeMidpointMoveId.GetId());
-  const float time_curve_steepness =
-      options_.Get<float>(kTimeSteepnessId.GetId());
-
-  float movestogo =
-      ComputeEstimatedMovesToGo(ply, time_curve_midpoint, time_curve_steepness);
-
-  // If the number of moves remaining until the time control are less than
-  // the estimated number of moves left in the game, then use the number of
-  // moves until the time control instead.
-  if (params.movestogo &&
-      *params.movestogo > 0 &&  // Ignore non-standard uci command.
-      *params.movestogo < movestogo) {
-    movestogo = *params.movestogo;
-  }
-
-  // Total time, including increments, until time control.
-  auto total_moves_time =
-      std::max(0.0f, *time + increment * (movestogo - 1) - move_overhead);
-
-  // If there is time spared from previous searches, the `time_to_squander` part
-  // of it will be used immediately, remove that from planning.
-  int time_to_squander = 0;
-  if (time_spared_ms_ > 0) {
-    time_to_squander =
-        time_spared_ms_ * options_.Get<float>(kSpendSavedTimeId.GetId());
-    time_spared_ms_ -= time_to_squander;
-    total_moves_time -= time_to_squander;
-  }
-
-  // Evenly split total time between all moves.
-  float this_move_time = total_moves_time / movestogo;
-
-  // Only extend thinking time with slowmover if smart pruning can potentially
-  // reduce it.
-  constexpr int kSmartPruningToleranceMs = 200;
-  if (slowmover < 1.0 ||
-      this_move_time * slowmover > kSmartPruningToleranceMs) {
-    this_move_time *= slowmover;
-    // If time is planned to be overused because of slowmover, remove excess
-    // of that time from spared time.
-    time_spared_ms_ -= this_move_time * (slowmover - 1);
-  }
-
-  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
-          << time_to_squander << "ms to squander -"
-          << std::chrono::duration_cast<std::chrono::milliseconds>(
-                 std::chrono::steady_clock::now() - start_time)
-                 .count()
-          << "ms already passed). Remaining time " << *time << "ms(-"
-          << move_overhead << "ms overhead)";
-  // Use `time_to_squander` time immediately.
-  this_move_time += time_to_squander;
-
-  // Make sure we don't exceed current time limit with what we calculated.
-  limits.search_deadline =
-      start_time +
-      std::chrono::milliseconds(std::min(static_cast<int64_t>(this_move_time),
-                                         *time - move_overhead));
-  return limits;
-}
-*/
 
 // Updates values from Uci options.
 void EngineController::UpdateFromUciOptions() {
@@ -250,18 +123,18 @@ void EngineController::EnsureReady() {
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
-  move_start_time_ = std::chrono::steady_clock::now();
+  time_manager_.ResetMoveTimer();
 }
 
 void EngineController::NewGame() {
   // In case anything relies upon defaulting to default position and just calls
   // newgame and goes straight into go.
-  move_start_time_ = std::chrono::steady_clock::now();
+  time_manager_.ResetMoveTimer();
   SharedLock lock(busy_mutex_);
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  time_spared_ms_ = 0;
+  time_manager_.ResetGame();
   current_position_.reset();
   UpdateFromUciOptions();
 }
@@ -270,7 +143,7 @@ void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
   // Some UCI hosts just call position then immediately call go, while starting
   // the clock on calling 'position'.
-  move_start_time_ = std::chrono::steady_clock::now();
+  time_manager_.ResetMoveTimer();
   SharedLock lock(busy_mutex_);
   current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
@@ -288,7 +161,7 @@ void EngineController::SetupPosition(
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   const bool is_same_game = tree_->ResetToPosition(fen, moves);
-  if (!is_same_game) time_spared_ms_ = 0;
+  if (!is_same_game) time_manager_.ResetGame();
 }
 
 void EngineController::Go(const GoParams& params) {
@@ -296,7 +169,6 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
-  const auto start_time = move_start_time_;
   go_params_ = params;
 
   ThinkingInfo::Callback info_callback(info_callback_);
@@ -337,25 +209,9 @@ void EngineController::Go(const GoParams& params) {
     SetupPosition(ChessBoard::kStartposFen, {});
   }
 
-  /* auto limits = PopulateSearchLimits(
-      tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
-  LOGFILE << "Limits: " << limits.DebugString();
-
-  // If there is a time limit, also store amount of time saved.
-  if (limits.search_deadline) {
-    best_move_callback = [this, limits](const BestMoveInfo& info) {
-      best_move_callback_(info);
-      if (limits.search_deadline) {
-        time_spared_ms_ +=
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                *limits.search_deadline - std::chrono::steady_clock::now())
-                .count();
-      }
-    };
-  } */
-
-  auto stopper = MakeSearchStopper(options_, params, *time_manager_, start_time,
-                                   options_.Get<int>(kNNCacheSizeId.GetId()));
+  auto stopper =
+      MakeSearchStopper(options_, params, tree_->HeadPosition(), &time_manager_,
+                        options_.Get<int>(kNNCacheSizeId.GetId()));
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), best_move_callback, info_callback,
       StringsToMovelist(params.searchmoves, tree_->IsBlackToMove()),
@@ -363,12 +219,13 @@ void EngineController::Go(const GoParams& params) {
       syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
-          << FormatTime(SteadyClockToSystemClock(move_start_time_));
+          << FormatTime(
+                 SteadyClockToSystemClock(time_manager_.GetMoveStartTime()));
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 
 void EngineController::PonderHit() {
-  move_start_time_ = std::chrono::steady_clock::now();
+  time_manager_.ResetMoveTimer();
   go_params_.ponder = false;
   Go(go_params_);
 }

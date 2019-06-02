@@ -37,10 +37,6 @@
 #include "utils/optional.h"
 #include "utils/optionsparser.h"
 
-// CUDNN eval
-// comment/disable this to enable tensor flow path
-#define CUDNN_EVAL 1
-
 namespace lczero {
 
 struct CurrentPosition {
@@ -93,11 +89,11 @@ class EngineController {
   RpSharedMutex busy_mutex_;
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
+  TimeManager time_manager_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
-  std::unique_ptr<TimeManager> time_manager_;
   NNCache cache_;
 
   // Store current TB and network settings to track when they change so that
@@ -110,10 +106,6 @@ class EngineController {
   // actually search the position one move earlier.
   optional<CurrentPosition> current_position_;
   GoParams go_params_;
-
-  // How much less time was used by search than what was allocated.
-  int64_t time_spared_ms_ = 0;
-  std::chrono::steady_clock::time_point move_start_time_;
 };
 
 class EngineLoop : public UciLoop {

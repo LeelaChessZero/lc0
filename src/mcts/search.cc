@@ -176,14 +176,6 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
-/*
-int64_t Search::GetTimeToDeadline() const {
-  if (!limits_.search_deadline) return 0;
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             *limits_.search_deadline - std::chrono::steady_clock::now())
-      .count();
-} */
-
 namespace {
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
   const auto value = params.GetFpuValue(is_root_node);
@@ -310,42 +302,6 @@ NNCacheLock Search::GetCachedNNEval(Node* node) const {
   return nneval;
 }
 
-/* void Search::UpdateKLDGain() {
-  if (params_.GetMinimumKLDGainPerNode() <= 0) return;
-
-  SharedMutex::Lock nodes_lock(nodes_mutex_);
-  Mutex::Lock lock(counters_mutex_);
-  if (total_playouts_ + initial_visits_ >=
-      prev_dist_visits_total_ + params_.GetKLDGainAverageInterval()) {
-    std::vector<uint32_t> new_visits;
-    for (auto edge : root_node_->Edges()) {
-      new_visits.push_back(edge.GetN());
-    }
-    if (prev_dist_.size() != 0) {
-      double sum1 = 0.0;
-      double sum2 = 0.0;
-      for (decltype(new_visits)::size_type i = 0; i < new_visits.size(); i++) {
-        sum1 += prev_dist_[i];
-        sum2 += new_visits[i];
-      }
-      double kldgain = 0.0;
-      for (decltype(new_visits)::size_type i = 0; i < new_visits.size(); i++) {
-        double o_p = prev_dist_[i] / sum1;
-        double n_p = new_visits[i] / sum2;
-        if (prev_dist_[i] != 0) {
-          kldgain += o_p * log(o_p / n_p);
-        }
-      }
-      if (kldgain / (sum2 - sum1) < params_.GetMinimumKLDGainPerNode()) {
-        kldgain_too_small_ = true;
-      }
-    }
-    prev_dist_.swap(new_visits);
-    prev_dist_visits_total_ = total_playouts_ + initial_visits_;
-  }
-}
-*/
-
 void Search::MaybeTriggerStop(const IterationStats& stats,
                               TimeManagerHints* hints) {
   hints->Reset();
@@ -360,46 +316,6 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
   }
 
-  // DO NOT SUBMIT
-
-  /*
-    // If not yet stopped, try to stop for different reasons.
-    if (!stop_.load(std::memory_order_acquire)) {
-      if (kldgain_too_small_) {
-        FireStopInternal();
-        LOGFILE << "Stopped search: KLDGain per node too small.";
-      }
-      // If smart pruning tells to stop (best move found), stop.
-      if (only_one_possible_move_left_) {
-        FireStopInternal();
-        LOGFILE << "Stopped search: Only one move candidate left.";
-      }
-      // Stop if reached playouts limit.
-      if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
-        FireStopInternal();
-        LOGFILE << "Stopped search: Reached playouts limit: " << total_playouts_
-                << ">=" << limits_.playouts;
-      }
-      // Stop if reached visits limit.
-      if (limits_.visits >= 0 &&
-          total_playouts_ + initial_visits_ >= limits_.visits) {
-        FireStopInternal();
-        LOGFILE << "Stopped search: Reached visits limit: "
-                << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
-      }
-      // Stop if reached time limit.
-      if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
-        LOGFILE << "Stopped search: Ran out of time.";
-        FireStopInternal();
-      }
-      // Stop if average depth reached requested depth.
-      if (limits_.depth >= 0 &&
-          cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
-              static_cast<unsigned int>(limits_.depth)) {
-        FireStopInternal();
-        LOGFILE << "Stopped search: Reached depth.";
-      }
-    } */
   // If we are the first to see that stop is needed.
   if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
       !bestmove_is_sent_) {
@@ -409,6 +325,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     best_move_callback_(
         {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
          final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
+    stopper_->OnSearchDone();
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
   }
@@ -938,7 +855,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
-    int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -958,7 +874,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
                       child.GetMove()) == root_move_filter_.end()) {
           continue;
         }
-        ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
       const float score = child.GetU(puct_mult) + Q;
@@ -987,15 +902,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    /*    if (is_root_node && possible_moves <= 1)
-          // If there is only one move theoretically possible within remaining
-       time,
-          // output it.
-          Mutex::Lock counters_lock(search_->counters_mutex_);
-        if (search_->ok_to_respond_bestmove_) {
-          search_->only_one_possible_move_left_ = true;
-        }
-  }*/
     is_root_node = false;
   }
 }

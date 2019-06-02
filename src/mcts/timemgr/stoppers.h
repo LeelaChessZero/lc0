@@ -40,6 +40,7 @@ class ChainedSearchStopper : public SearchStopper {
   bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
   // Can be nullptr.
   void AddStopper(std::unique_ptr<SearchStopper> stopper);
+  void OnSearchDone() override;
 
  private:
   std::vector<std::unique_ptr<SearchStopper>> stoppers_;
@@ -67,6 +68,9 @@ class DeadlineStopper : public SearchStopper {
   DeadlineStopper(std::chrono::steady_clock::time_point deadline);
   bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
 
+ protected:
+  std::chrono::steady_clock::time_point GetDeadline() const;
+
  private:
   const std::chrono::steady_clock::time_point deadline_;
 };
@@ -78,6 +82,27 @@ class DepthStopper : public SearchStopper {
 
  private:
   const int depth_;
+};
+
+class KldGainStopper : public SearchStopper {
+ public:
+  KldGainStopper(float min_gain, int average_interval);
+  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+
+ private:
+  const int min_gain_;
+  const int average_interval_;
+  Mutex mutex_;
+  std::vector<int64_t> prev_visits_ GUARDED_BY(mutex_);
+  int64_t prev_child_nodes_ GUARDED_BY(mutex_) = 0;
+};
+
+class SmartPruningStopper : public SearchStopper {
+ public:
+  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+
+ private:
+  optional<std::chrono::steady_clock::time_point> time_since_first_eval_;
 };
 
 }  // namespace lczero

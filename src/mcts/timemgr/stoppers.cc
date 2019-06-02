@@ -32,7 +32,7 @@
 namespace lczero {
 
 ///////////////////////////
-/// ChainedSearchStopper
+// ChainedSearchStopper
 ///////////////////////////
 
 bool ChainedSearchStopper::ShouldStop(const IterationStats& stats,
@@ -47,19 +47,28 @@ void ChainedSearchStopper::AddStopper(std::unique_ptr<SearchStopper> stopper) {
   if (stopper) stoppers_.push_back(std::move(stopper));
 }
 
+void ChainedSearchStopper::OnSearchDone() {
+  for (const auto& x : stoppers_) x->OnSearchDone();
+}
+
 ///////////////////////////
-/// VisitsStopper
+// VisitsStopper
 ///////////////////////////
 
 bool VisitsStopper::ShouldStop(const IterationStats& stats,
                                TimeManagerHints* hints) {
   hints->UpdateEstimatedRemainingRemainingPlayouts(stats.total_nodes -
                                                    nodes_limit_);
-  return stats.total_nodes >= nodes_limit_;
+  if (stats.total_nodes >= nodes_limit_) {
+    LOGFILE << "Stopped search: Reached visits limit: " << stats.total_nodes
+            << ">=" << nodes_limit_;
+    return true;
+  }
+  return false;
 }
 
 ///////////////////////////
-/// MemoryWatchingStopper
+// MemoryWatchingStopper
 ///////////////////////////
 
 namespace {
@@ -82,7 +91,7 @@ MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb)
 }
 
 ///////////////////////////
-/// MovetimeStopper
+// MovetimeStopper
 ///////////////////////////
 
 DeadlineStopper::DeadlineStopper(std::chrono::steady_clock::time_point deadline)
@@ -93,14 +102,81 @@ bool DeadlineStopper::ShouldStop(const IterationStats&,
   const auto now = std::chrono::steady_clock::now();
   hints->UpdateEstimatedRemainingTime(
       std::chrono::duration_cast<std::chrono::milliseconds>(deadline_ - now));
-  return now >= deadline_;
+  if (now >= deadline_) {
+    LOGFILE << "Stopping search: Ran out of time.";
+    return true;
+  }
+  return false;
+}
+
+std::chrono::steady_clock::time_point DeadlineStopper::GetDeadline() const {
+  return deadline_;
 }
 
 ///////////////////////////
-/// DepthStopper
+// DepthStopper
 ///////////////////////////
 bool DepthStopper::ShouldStop(const IterationStats& stats, TimeManagerHints*) {
-  return stats.average_depth >= depth_;
+  if (stats.average_depth >= depth_) {
+    LOGFILE << "Stopped search: Reached depth.";
+  }
+  return false;
+}
+
+///////////////////////////
+// KldGainStopper
+///////////////////////////
+
+KldGainStopper::KldGainStopper(float min_gain, int average_interval)
+    : min_gain_(min_gain), average_interval_(average_interval) {}
+
+bool KldGainStopper::ShouldStop(const IterationStats& stats,
+                                TimeManagerHints*) {
+  Mutex::Lock lock(mutex_);
+
+  const auto new_child_nodes = stats.total_nodes - 1;
+  if (new_child_nodes < prev_child_nodes_ + average_interval_) return false;
+
+  const auto new_visits = stats.edge_n;
+  if (!prev_visits_.empty()) {
+    float kldgain = 0.0f;
+    for (decltype(new_visits)::size_type i = 0; i < new_visits.size(); i++) {
+      float o_p = prev_visits_[i] / prev_child_nodes_;
+      float n_p = new_visits[i] / new_child_nodes;
+      if (prev_visits_[i] != 0) kldgain += o_p * log(o_p / n_p);
+    }
+    if (kldgain / (new_child_nodes - prev_child_nodes_) < min_gain_) {
+      LOGFILE << "Stopping search: KLDGain per node too small.";
+      return true;
+    }
+  }
+  prev_visits_ = new_visits;
+  prev_child_nodes_ = new_child_nodes;
+  return false;
+}
+
+///////////////////////////
+// SmartPruningStopper
+///////////////////////////
+
+namespace {
+const int kSmartPruningToleranceNodes = 300;
+const int kSmartPruningToleranceMs = 200;
+}  // namespace
+
+bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
+                                     TimeManagerHints* hints) {
+  auto now = std::chrono::steady_clock::now();
+  if (stats.total_playouts > 0 && !time_since_first_eval_) {
+    time_since_first_eval_ = now;
+    return false;
+  }
+  if (std::chrono::duration_cast<std::chrono::milliseconds>(
+          now - time_since_first_eval_) < kSmartPruningToleranceMs) {
+    return false;
+  }
+
+  // I"M WRITING HERE!
 }
 
 }  // namespace lczero

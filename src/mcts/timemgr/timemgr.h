@@ -29,6 +29,7 @@
 
 #include <chrono>
 #include <memory>
+#include <vector>
 #include "chess/uciloop.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
@@ -42,6 +43,7 @@ struct IterationStats {
   int64_t total_nodes = 0;
   int average_depth = 0;
   int maximum_depath = 0;
+  std::vector<int64_t> edge_n;
 };
 
 class TimeManagerHints {
@@ -59,7 +61,10 @@ class TimeManagerHints {
   void UpdateEstimatedRemainingRemainingPlayouts(int64_t v) {
     if (v < remaining_playouts_) remaining_playouts_ = v;
   }
-  int64_t GetEstimatedRemainingPlayouts() const { return remaining_playouts_; }
+  int64_t GetEstimatedRemainingPlayouts() const {
+    // Even if we exceeded limits, don't go crazy by not allowing any playouts.
+    return std::max(1LL, remaining_playouts_);
+  }
 
  private:
   std::chrono::milliseconds remaining_time_;
@@ -70,17 +75,30 @@ class SearchStopper {
  public:
   virtual ~SearchStopper() = default;
   virtual bool ShouldStop(const IterationStats&, TimeManagerHints*) = 0;
+  virtual void OnSearchDone() {}
 };
 
-class TimeManager {};
+class TimeManager {
+ public:
+  TimeManager();
+  void ResetGame();
+  // Make atomic?
+  void ResetMoveTimer();
+  std::unique_ptr<SearchStopper> GetStopper(const OptionsDict& options,
+                                            const GoParams& params,
+                                            const Position& position);
+  std::chrono::steady_clock::time_point GetMoveStartTime() const;
+
+ private:
+  int64_t time_spared_ms_ = 0;
+  std::chrono::steady_clock::time_point move_start_;
+};
 
 void PopulateTimeManagementOptions(OptionsParser* options);
-std::unique_ptr<SearchStopper> MakeSearchStopper(
-    const OptionsDict& dict, const GoParams& params,
-    const TimeManager& time_mgr,
-    std::chrono::steady_clock::time_point start_time, int cache_size_mb);
+std::unique_ptr<SearchStopper> MakeSearchStopper(const OptionsDict& dict,
+                                                 const GoParams& params,
+                                                 const Position& position,
+                                                 TimeManager* time_mgr,
+                                                 int cache_size_mb);
 
 }  // namespace lczero
-
-// DO NOT SUBMIT
-// - Only one possible move left (but not during infinte!)
