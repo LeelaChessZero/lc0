@@ -29,10 +29,14 @@
 #include <algorithm>
 
 #include "neural/writer.h"
+#include "utils/random.h"
 
 namespace lczero {
 
 namespace {
+const OptionId kRandomOpeningTemperatureId{
+    "random-opening-temperature", "RandomOpeningTemperature",
+    "Tau value for softmax applied to move priors of random opening moves."};
 const OptionId kReuseTreeId{"reuse-tree", "ReuseTree",
                             "Reuse the search tree between moves."};
 const OptionId kResignPercentageId{
@@ -48,6 +52,7 @@ const OptionId kResignEarliestMoveId{"resign-earliest-move",
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
+  options->Add<FloatOption>(kRandomOpeningTemperatureId, 0.0f, 100.0f) = 1.0f;
   options->Add<BoolOption>(kReuseTreeId) = false;
   options->Add<BoolOption>(kResignWDLStyleId) = false;
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
@@ -69,11 +74,12 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
-                        bool enable_resign) {
-  bool blacks_move = false;
+                        int random_opening_plies, bool enable_resign) {
+  SearchLimits random_opening_limits;
+  random_opening_limits.visits = 1;
 
   // Do moves while not end of the game. (And while not abort_)
-  while (!abort_) {
+  for (auto blacks_move = false; !abort_; blacks_move = !blacks_move) {
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
 
     // If endgame, stop.
@@ -94,7 +100,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       if (abort_) break;
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
-          options_[idx].info_callback, options_[idx].search_limits,
+          options_[idx].info_callback,
+          random_opening_plies ? random_opening_limits
+                               : options_[idx].search_limits,
           *options_[idx].uci_options, options_[idx].cache, nullptr);
       // TODO: add Syzygy option for selfplay.
     }
@@ -105,8 +113,37 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
+    // Maybe override the best move if we're still picking a random opening.
+    auto move = search_->GetBestMove().first;
+    if (random_opening_plies) {
+      const auto temperature = options_[idx].uci_options->Get<float>(
+          kRandomOpeningTemperatureId.GetId());
+      auto edges = tree_[idx]->GetCurrentHead()->Edges();
+      std::vector<float> cumulative_sums;
+      auto sum = 0.0f;
+      for (const auto& edge : edges) {
+        sum += std::pow(edge.GetP(), 1 / temperature);
+        cumulative_sums.push_back(sum);
+      }
+
+      // Pick a move proportionally to its softmax prior.
+      if (sum > 0.0f) {
+        const auto toss = Random::Get().GetFloat(cumulative_sums.back());
+        auto moveIdx = std::lower_bound(cumulative_sums.begin(),
+                                        cumulative_sums.end(), toss) -
+                       cumulative_sums.begin();
+        for (const auto& edge : edges) {
+          if (moveIdx-- == 0) {
+            move = edge.GetMove(blacks_move);
+            break;
+          }
+        }
+      }
+    }
+
+    // Get data from the head before cleaning up the children with the move.
     auto best_eval = search_->GetBestEval();
-    if (training) {
+    if (!random_opening_plies && training) {
       // Append training data. The GameResult is later overwritten.
       auto best_q = best_eval.first;
       auto best_d = best_eval.second;
@@ -115,10 +152,27 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           search_->GetParams().GetHistoryFill(), best_q, best_d));
     }
 
+    // Add move to the tree.
+    tree_[0]->MakeMove(move);
+    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
+
+    // Skip adjudication if random openings can still balance out.
+    if (random_opening_plies) {
+      random_opening_plies--;
+
+      // Randomly played into a decided result, so stop and treat as undecided.
+      if (tree_[0]->GetPositionHistory().ComputeGameResult() !=
+          GameResult::UNDECIDED) {
+        break;
+      }
+      continue;
+    }
+
+    // Adjudicate if evals exceed resignation thresholds.
     float eval = best_eval.first;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
-    const int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
+    auto move_number = (tree_[0]->GetPositionHistory().GetLength() + 1) / 2;
     auto best_w = (best_eval.first + 1.0f - best_eval.second) / 2.0f;
     auto best_d = best_eval.second;
     auto best_l = best_w - best_eval.first;
@@ -154,12 +208,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         }
       }
     }
-
-    // Add best move to the tree.
-    const Move move = search_->GetBestMove().first;
-    tree_[0]->MakeMove(move);
-    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
-    blacks_move = !blacks_move;
   }
 }
 
@@ -200,9 +248,8 @@ void SelfPlayGame::Abort() {
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   assert(!training_data_.empty());
-  bool black_to_move =
-      tree_[0]->GetPositionHistory().Starting().IsBlackToMove();
   for (auto chunk : training_data_) {
+    auto black_to_move = chunk.side_to_move;
     if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;
     } else if (game_result_ == GameResult::BLACK_WON) {
@@ -211,7 +258,6 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
       chunk.result = 0;
     }
     writer->WriteChunk(chunk);
-    black_to_move = !black_to_move;
   }
 }
 

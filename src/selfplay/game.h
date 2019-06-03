@@ -70,7 +70,7 @@ class SelfPlayGame {
 
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,
-            bool enable_resign = true);
+            int random_opening_plies, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();

@@ -102,6 +102,7 @@ class SelfPlayTournament {
   const size_t kParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
+  const int kRandomOpeningMaxPlies;
 };
 
 }  // namespace lczero

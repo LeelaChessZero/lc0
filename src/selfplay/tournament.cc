@@ -62,6 +62,10 @@ const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
 const OptionId kResignPlaythroughId{
     "resign-playthrough", "ResignPlaythrough",
     "The percentage of games which ignore resign."};
+const OptionId kRandomOpeningMaxPliesId{
+    "random-opening-max-plies", "RandomOpeningMaxPlies",
+    "Maximum number of opening plies to randomly play based on move priors. "
+    "The actual number of opening plies will be uniformly randomly picked."};
 
 }  // namespace
 
@@ -83,6 +87,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
+  options->Add<IntOption>(kRandomOpeningMaxPliesId, 0, 999) = 0;
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -124,7 +129,9 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kShareTree(options.Get<bool>(kShareTreesId.GetId())),
       kParallelism(options.Get<int>(kParallelGamesId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
-      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())) {
+      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
+      kRandomOpeningMaxPlies(
+          options.Get<int>(kRandomOpeningMaxPliesId.GetId())) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     next_game_black_ = Random::Get().GetBool();
@@ -243,7 +250,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
   // PLAY GAME!
   game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining,
-            enable_resign);
+            Random::Get().GetInt(0, kRandomOpeningMaxPlies), enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
