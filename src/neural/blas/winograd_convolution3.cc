@@ -29,68 +29,19 @@
 #include "winograd_transform_ispc.h"
 #endif
 
+#ifdef USE_EIGEN
+#include <Eigen/Dense>
+#endif
+
 namespace lczero {
-
-std::vector<float> WinogradConvolution3::ZeropadU(const std::vector<float>& U,
-                                                  const size_t outputs,
-                                                  const size_t channels,
-                                                  const size_t outputs_pad,
-                                                  const size_t channels_pad) {
-  // Fill with zeroes.
-  auto Upad = std::vector<float>(kWinogradTile * outputs_pad * channels_pad);
-
-  for (size_t o = 0; o < outputs; o++) {
-    for (size_t c = 0; c < channels; c++) {
-      for (size_t xi = 0; xi < kWinogradAlpha; xi++) {
-        for (size_t nu = 0; nu < kWinogradAlpha; nu++) {
-          Upad[xi * (kWinogradAlpha * outputs_pad * channels_pad) +
-               nu * (outputs_pad * channels_pad) + c * outputs_pad + o] =
-              U[xi * (kWinogradAlpha * outputs * channels) +
-                nu * (outputs * channels) + c * outputs + o];
-        }
-      }
-    }
-  }
-  return Upad;
-}
-
-std::vector<float> WinogradConvolution3::TransformF(const std::vector<float>& f,
-                                                    const size_t outputs,
-                                                    const size_t channels) {
-  // F(2x2, 3x3) Winograd filter transformation
-  // transpose(G.dot(f).dot(G.transpose()))
-  // U matrix is transposed for better memory layout in SGEMM
-  auto U = std::vector<float>(kWinogradTile * outputs * channels);
-  auto G = std::array<float, kWinogradTile>{1.0, 0.0,  0.0, 0.5, 0.5, 0.5,
-                                            0.5, -0.5, 0.5, 0.0, 0.0, 1.0};
-  auto temp = std::array<float, 12>{};
-
-  for (size_t o = 0; o < outputs; o++) {
-    for (size_t c = 0; c < channels; c++) {
-      for (size_t i = 0; i < 4; i++) {
-        for (size_t j = 0; j < 3; j++) {
-          auto acc = 0.0f;
-          for (size_t k = 0; k < 3; k++) {
-            acc += G[i * 3 + k] * f[o * channels * 9 + c * 9 + k * 3 + j];
-          }
-          temp[i * 3 + j] = acc;
-        }
-      }
-
-      for (size_t xi = 0; xi < 4; xi++) {
-        for (size_t nu = 0; nu < 4; nu++) {
-          auto acc = 0.0f;
-          for (size_t k = 0; k < 3; k++) {
-            acc += temp[xi * 3 + k] * G[nu * 3 + k];
-          }
-          U[xi * (4 * outputs * channels) + nu * (outputs * channels) +
-            c * outputs + o] = acc;
-        }
-      }
-    }
-  }
-  return U;
-}
+#ifdef USE_EIGEN
+template <typename T>
+using EigenMatrixMap =
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+template <typename T>
+using ConstEigenMatrixMap =
+    Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+#endif
 
 WinogradConvolution3::WinogradConvolution3(const size_t max_batch_size,
                                            const size_t max_input_layers,
@@ -267,7 +218,7 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
 
     auto offset_v = b * batch_size * input_channels * kTiles;
     auto offset_m = b * batch_size * output_channels * kTiles;
-
+#ifndef USE_EIGEN
     cblas_sgemm(CblasColMajor,               // Row major format
                 CblasNoTrans,                // A no trans
                 CblasNoTrans,                // B no trans
@@ -281,6 +232,14 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                 (int)input_channels, 0.0f,   // ldV
                 &M_[offset_m],               // M
                 (int)output_channels);       // ldM
+#else
+    auto C_mat = EigenMatrixMap<float>(&M_[offset_m], output_channels,
+                                       batch_size * kTiles);
+    C_mat.noalias() = ConstEigenMatrixMap<float>(
+                          &weights[offset_u], output_channels, input_channels) *
+                      ConstEigenMatrixMap<float>(&V_[offset_v], input_channels,
+                                                 batch_size * kTiles);
+#endif
   }
 
 #endif

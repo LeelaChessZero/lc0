@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,36 +26,28 @@
 */
 
 #include "neural/loader.h"
+
+#include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <zlib.h>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <string>
+
 #include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "utils/logging.h"
 #include "version.h"
 
 namespace lczero {
 
 namespace {
 const std::uint32_t kWeightMagic = 0x1c0;
-
-void PopulateLastIntoVector(FloatVectors* vecs, Weights::Vec* out) {
-  *out = std::move(vecs->back());
-  vecs->pop_back();
-}
-
-void PopulateConvBlockWeights(FloatVectors* vecs, Weights::ConvBlock* block) {
-  PopulateLastIntoVector(vecs, &block->bn_stddivs);
-  PopulateLastIntoVector(vecs, &block->bn_means);
-  PopulateLastIntoVector(vecs, &block->biases);
-  PopulateLastIntoVector(vecs, &block->weights);
-}
 
 std::string DecompressGzip(const std::string& filename) {
   const int kStartingSize = 8 * 1024 * 1024;  // 8M
@@ -64,10 +56,14 @@ std::string DecompressGzip(const std::string& filename) {
   int bytes_read = 0;
 
   // Read whole file into a buffer.
-  gzFile file = gzopen(filename.c_str(), "rb");
+  const gzFile file = gzopen(filename.c_str(), "rb");
   if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
-    int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
+    const int sz = gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
+    if (sz < 0) {
+      int errnum;
+      throw Exception(gzerror(file, &errnum));
+    }
     if (sz == static_cast<int>(buffer.size()) - bytes_read) {
       bytes_read = buffer.size();
       buffer.resize(buffer.size() * 2);
@@ -82,44 +78,27 @@ std::string DecompressGzip(const std::string& filename) {
   return buffer;
 }
 
-FloatVector DenormLayer(const pblczero::Weights_Layer& layer) {
-  FloatVector vec;
-  auto& buffer = layer.params();
-  auto data = reinterpret_cast<const std::uint16_t*>(buffer.data());
-  int n = buffer.length() / 2;
-  vec.resize(n);
-  for (int i = 0; i < n; i++) {
-    vec[i] = data[i] / float(0xffff);
-    vec[i] *= layer.max_val() - layer.min_val();
-    vec[i] += layer.min_val();
-  }
-  return vec;
-}
+WeightsFile ParseWeightsProto(const std::string& buffer) {
+  WeightsFile net;
+  using namespace google::protobuf::io;
+  using nf = pblczero::NetworkFormat;
 
-void DenormConvBlock(const pblczero::Weights_ConvBlock& conv,
-                     FloatVectors* vecs) {
-  vecs->emplace_back(DenormLayer(conv.weights()));
-  vecs->emplace_back(DenormLayer(conv.biases()));
-  vecs->emplace_back(DenormLayer(conv.bn_means()));
-  vecs->emplace_back(DenormLayer(conv.bn_stddivs()));
-}
+  ArrayInputStream raw_input_stream(buffer.data(), buffer.size());
+  CodedInputStream input_stream(&raw_input_stream);
+  // Set protobuf limit to 2GB, print warning at 500MB.
+  input_stream.SetTotalBytesLimit(2000 * 1000000, 500 * 1000000);
 
-}  // namespace
-
-FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
-  auto net = pblczero::Net();
-  FloatVectors vecs;
-  if (!net.ParseFromString(buffer))
+  if (!net.ParseFromCodedStream(&input_stream))
     throw Exception("Invalid weight file: parse error.");
 
   if (net.magic() != kWeightMagic)
     throw Exception("Invalid weight file: bad header.");
 
-  auto min_version =
+  const auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch(), "");
-  auto lc0_ver = GetVersionInt();
-  auto net_ver =
+  const auto lc0_ver = GetVersionInt();
+  const auto net_ver =
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch());
 
@@ -128,56 +107,42 @@ FloatVectors LoadFloatsFromPbFile(const std::string& buffer) {
                     " required.");
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
-    throw Exception("Invalid weight file: wrong encoding.");
+    throw Exception("Invalid weight file: unsupported encoding.");
 
-  const auto& w = net.weights();
-
-  DenormConvBlock(w.input(), &vecs);
-
-  for (int i = 0, n = w.residual_size(); i < n; i++) {
-    DenormConvBlock(w.residual(i).conv1(), &vecs);
-    DenormConvBlock(w.residual(i).conv2(), &vecs);
+  // Older protobufs don't have format definition.
+  // Populate format fields with legacy (or "classical") formats.
+  if (!net.format().has_network_format()) {
+    auto net_format = net.mutable_format()->mutable_network_format();
+    net_format->set_input(nf::INPUT_CLASSICAL_112_PLANE);
+    net_format->set_output(nf::OUTPUT_CLASSICAL);
+    net_format->set_network(nf::NETWORK_CLASSICAL);
   }
 
-  DenormConvBlock(w.policy(), &vecs);
-  vecs.emplace_back(DenormLayer(w.ip_pol_w()));
-  vecs.emplace_back(DenormLayer(w.ip_pol_b()));
-  DenormConvBlock(w.value(), &vecs);
-  vecs.emplace_back(DenormLayer(w.ip1_val_w()));
-  vecs.emplace_back(DenormLayer(w.ip1_val_b()));
-  vecs.emplace_back(DenormLayer(w.ip2_val_w()));
-  vecs.emplace_back(DenormLayer(w.ip2_val_b()));
+  // Populate policyFormat and valueFormat fields in old protobufs
+  // without these fields.
+  if (net.format().network_format().network() ==
+      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    auto net_format = net.mutable_format()->mutable_network_format();
 
-  return vecs;
-}
+    net_format->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
+    net_format->set_value(nf::VALUE_CLASSICAL);
+    net_format->set_policy(nf::POLICY_CLASSICAL);
 
-FloatVectors LoadFloatsFromFile(std::string* buffer) {
-  // Parse buffer.
-  FloatVectors result;
-  FloatVector line;
-  (*buffer) += "\n";
-  size_t start = 0;
-  for (size_t i = 0; i < buffer->size(); ++i) {
-    char& c = (*buffer)[i];
-    const bool is_newline = (c == '\n' || c == '\r');
-    if (!std::isspace(c)) continue;
-    if (start < i) {
-      // If previous character was not space too.
-      c = '\0';
-      line.push_back(std::atof(&(*buffer)[start]));
-    }
-    if (is_newline && !line.empty()) {
-      result.emplace_back();
-      result.back().swap(line);
-    }
-    start = i + 1;
+  } else if (net.format().network_format().network() ==
+             pblczero::NetworkFormat::NETWORK_SE) {
+    auto net_format = net.mutable_format()->mutable_network_format();
+
+    net_format->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
+    net_format->set_value(nf::VALUE_CLASSICAL);
+    net_format->set_policy(nf::POLICY_CLASSICAL);
   }
 
-  result.erase(result.begin());
-  return result;
+  return net;
 }
 
-Weights LoadWeightsFromFile(const std::string& filename) {
+}  // namespace
+
+WeightsFile LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
 
@@ -186,41 +151,17 @@ Weights LoadWeightsFromFile(const std::string& filename) {
   else if (buffer[0] == '1' && buffer[1] == '\n')
     throw Exception("Invalid weight file: no longer supported.");
   else if (buffer[0] == '2' && buffer[1] == '\n')
-    vecs = LoadFloatsFromFile(&buffer);
-  else
-    vecs = LoadFloatsFromPbFile(buffer);
+    throw Exception(
+        "Text format weights files are no longer supported. Use a command line "
+        "tool to convert it to the new format.");
 
-  Weights result;
-  // Populating backwards.
-  PopulateLastIntoVector(&vecs, &result.ip2_val_b);
-  PopulateLastIntoVector(&vecs, &result.ip2_val_w);
-  PopulateLastIntoVector(&vecs, &result.ip1_val_b);
-  PopulateLastIntoVector(&vecs, &result.ip1_val_w);
-  PopulateConvBlockWeights(&vecs, &result.value);
-
-  PopulateLastIntoVector(&vecs, &result.ip_pol_b);
-  PopulateLastIntoVector(&vecs, &result.ip_pol_w);
-  PopulateConvBlockWeights(&vecs, &result.policy);
-
-  // Input + all the residual should be left.
-  if ((vecs.size() - 4) % 8 != 0)
-    throw Exception("Invalid weight file: parse error.");
-
-  const int num_residual = (vecs.size() - 4) / 8;
-  result.residual.resize(num_residual);
-  for (int i = num_residual - 1; i >= 0; --i) {
-    PopulateConvBlockWeights(&vecs, &result.residual[i].conv2);
-    PopulateConvBlockWeights(&vecs, &result.residual[i].conv1);
-  }
-
-  PopulateConvBlockWeights(&vecs, &result.input);
-  return result;
+  return ParseWeightsProto(buffer);
 }
 
 std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
-  std::string root_path = CommandLine::BinaryDirectory();
+  const std::string root_path = CommandLine::BinaryDirectory();
 
   // Open all files in <binary dir> amd <binary dir>/networks,
   // ones which are >= kMinFileSize are candidates.
@@ -239,10 +180,10 @@ std::string DiscoverWeightsFile() {
   // read version for it. If version is 2 or if the file is our protobuf,
   // return it.
   for (const auto& candidate : time_and_filename) {
-    gzFile file = gzopen(candidate.second.c_str(), "rb");
+    const gzFile file = gzopen(candidate.second.c_str(), "rb");
 
     if (!file) continue;
-    char buf[256];
+    unsigned char buf[256];
     int sz = gzread(file, buf, 256);
     gzclose(file);
     if (sz < 0) continue;
@@ -252,15 +193,17 @@ std::string DiscoverWeightsFile() {
     int val = 0;
     data >> val;
     if (!data.fail() && val == 2) {
-      std::cerr << "Found txt network file: " << candidate.second << std::endl;
+      CERR << "Found txt network file: " << candidate.second;
       return candidate.second;
     }
 
     // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
     // our own magic should suffice.
-    auto magic = reinterpret_cast<std::uint32_t*>(buf + 1);
-    if (*magic == kWeightMagic) {
-      std::cerr << "Found pb network file: " << candidate.second << std::endl;
+    const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
+                 (static_cast<uint32_t>(buf[3]) << 16) |
+                 (static_cast<uint32_t>(buf[4]) << 24);
+    if (magic == kWeightMagic) {
+      CERR << "Found pb network file: " << candidate.second;
       return candidate.second;
     }
   }

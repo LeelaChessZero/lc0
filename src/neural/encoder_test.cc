@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,10 +27,11 @@ auto kAllSquaresMask = std::numeric_limits<std::uint64_t>::max();
 TEST(EncodePositionForNN, EncodeStartPosition) {
   ChessBoard board;
   PositionHistory history;
-  board.SetFromFen(ChessBoard::kStartingFen);
+  board.SetFromFen(ChessBoard::kStartposFen);
   history.Reset(board, 0, 1);
 
-  InputPlanes encoded_planes = EncodePositionForNN(history, 8);
+  InputPlanes encoded_planes =
+      EncodePositionForNN(history, 8, FillEmptyHistory::NO);
 
   InputPlane our_pawns_plane = encoded_planes[0];
   auto our_pawns_mask = 0ull;
@@ -66,30 +67,31 @@ TEST(EncodePositionForNN, EncodeStartPosition) {
   InputPlane their_king_plane = encoded_planes[11];
   auto their_king_row = 7;
   auto their_king_col = 4;
-  EXPECT_EQ(their_king_plane.mask, 1ull << (8*their_king_row + their_king_col));
+  EXPECT_EQ(their_king_plane.mask,
+            1ull << (8 * their_king_row + their_king_col));
   EXPECT_EQ(their_king_plane.value, 1.0f);
 
   // Auxiliary planes
 
   // It's the start of the game, so all castlings should be allowed.
   for (auto i = 0; i < 4; i++) {
-    InputPlane can_castle_plane = encoded_planes[13*8 + i];
+    InputPlane can_castle_plane = encoded_planes[13 * 8 + i];
     EXPECT_EQ(can_castle_plane.mask, kAllSquaresMask);
     EXPECT_EQ(can_castle_plane.value, 1.0f);
   }
 
-  InputPlane we_are_black_plane = encoded_planes[13*8 + 4];
+  InputPlane we_are_black_plane = encoded_planes[13 * 8 + 4];
   EXPECT_EQ(we_are_black_plane.mask, 0ull);
 
-  InputPlane fifty_move_counter_plane = encoded_planes[13*8 + 5];
+  InputPlane fifty_move_counter_plane = encoded_planes[13 * 8 + 5];
   EXPECT_EQ(fifty_move_counter_plane.mask, kAllSquaresMask);
   EXPECT_EQ(fifty_move_counter_plane.value, 0.0f);
 
   // We no longer encode the move count, so that plane should be all zeros
-  InputPlane zeroed_move_count_plane = encoded_planes[13*8 + 6];
+  InputPlane zeroed_move_count_plane = encoded_planes[13 * 8 + 6];
   EXPECT_EQ(zeroed_move_count_plane.mask, 0ull);
 
-  InputPlane all_ones_plane = encoded_planes[13*8 + 7];
+  InputPlane all_ones_plane = encoded_planes[13 * 8 + 7];
   EXPECT_EQ(all_ones_plane.mask, kAllSquaresMask);
   EXPECT_EQ(all_ones_plane.value, 1.0f);
 }
@@ -97,31 +99,32 @@ TEST(EncodePositionForNN, EncodeStartPosition) {
 TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
   ChessBoard board;
   PositionHistory history;
-  board.SetFromFen(ChessBoard::kStartingFen);
+  board.SetFromFen(ChessBoard::kStartposFen);
   history.Reset(board, 0, 1);
 
   // 1. Nf3
   history.Append(Move("g1f3", false));
 
-  InputPlanes encoded_planes = EncodePositionForNN(history, 8);
+  InputPlanes encoded_planes =
+      EncodePositionForNN(history, 8, FillEmptyHistory::NO);
 
-  InputPlane we_are_black_plane = encoded_planes[13*8 + 4];
+  InputPlane we_are_black_plane = encoded_planes[13 * 8 + 4];
   EXPECT_EQ(we_are_black_plane.mask, kAllSquaresMask);
   EXPECT_EQ(we_are_black_plane.value, 1.0f);
 
-  InputPlane fifty_move_counter_plane = encoded_planes[13*8 + 5];
+  InputPlane fifty_move_counter_plane = encoded_planes[13 * 8 + 5];
   EXPECT_EQ(fifty_move_counter_plane.mask, kAllSquaresMask);
   EXPECT_EQ(fifty_move_counter_plane.value, 1.0f);
 
   // 1. Nf3 Nf6
   history.Append(Move("g8f6", true));
 
-  encoded_planes = EncodePositionForNN(history, 8);
+  encoded_planes = EncodePositionForNN(history, 8, FillEmptyHistory::NO);
 
-  we_are_black_plane = encoded_planes[13*8 + 4];
+  we_are_black_plane = encoded_planes[13 * 8 + 4];
   EXPECT_EQ(we_are_black_plane.mask, 0ull);
 
-  fifty_move_counter_plane = encoded_planes[13*8 + 5];
+  fifty_move_counter_plane = encoded_planes[13 * 8 + 5];
   EXPECT_EQ(fifty_move_counter_plane.mask, kAllSquaresMask);
   EXPECT_EQ(fifty_move_counter_plane.value, 2.0f);
 }
@@ -130,5 +133,6 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
+  lczero::InitializeMagicBitboards();
   return RUN_ALL_TESTS();
 }

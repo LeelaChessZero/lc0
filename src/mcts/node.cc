@@ -64,13 +64,13 @@ class NodeGarbageCollector {
 
   ~NodeGarbageCollector() {
     // Flips stop flag and waits for a worker thread to stop.
-    stop_ = true;
+    stop_.store(true);
     gc_thread_.join();
   }
 
  private:
   void GarbageCollect() {
-    while (!stop_) {
+    while (!stop_.load()) {
       // Node will be released in destructor when mutex is not locked.
       std::unique_ptr<Node> node_to_gc;
       {
@@ -85,7 +85,7 @@ class NodeGarbageCollector {
   }
 
   void Worker() {
-    while (!stop_) {
+    while (!stop_.load()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
       GarbageCollect();
     };
@@ -95,7 +95,7 @@ class NodeGarbageCollector {
   std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
-  volatile bool stop_ = false;
+  std::atomic<bool> stop_{false};
   std::thread gc_thread_;
 };  // namespace
 
@@ -173,7 +173,7 @@ std::string Edge::DebugString() const {
 EdgeList::EdgeList(MoveList moves)
     : edges_(std::make_unique<Edge[]>(moves.size())), size_(moves.size()) {
   auto* edge = edges_.get();
-  for (auto move : moves) edge++->SetMove(move);
+  for (const auto move : moves) edge++->SetMove(move);
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -205,6 +205,8 @@ Edge* Node::GetEdgeToNode(const Node* node) const {
   return &edges_[node->index_];
 }
 
+Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
+
 std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
@@ -218,10 +220,36 @@ void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
     q_ = 0.0f;
+    d_ = 1.0f;
   } else if (result == GameResult::WHITE_WON) {
     q_ = 1.0f;
+    d_ = 0.0f;
   } else if (result == GameResult::BLACK_WON) {
     q_ = -1.0f;
+    d_ = 0.0f;
+  }
+}
+
+void Node::MakeNotTerminal() {
+  is_terminal_ = false;
+  n_ = 0;
+
+  // If we have edges, we've been extended (1 visit), so include children too.
+  if (edges_) {
+    n_++;
+    for (const auto& child : Edges()) {
+      const auto n = child.GetN();
+      if (n > 0) {
+        n_ += n;
+        // Flip Q for opponent.
+        q_ += -child.GetQ(0.0f) * n;
+        d_ += child.GetD() * n;
+      }
+    }
+
+    // Recompute with current eval (instead of network's) and children's eval.
+    q_ /= n_;
+    d_ /= n_;
   }
 }
 
@@ -231,19 +259,36 @@ bool Node::TryStartScoreUpdate() {
   return true;
 }
 
-void Node::CancelScoreUpdate() { --n_in_flight_; }
+void Node::CancelScoreUpdate(int multivisit) {
+  n_in_flight_ -= multivisit;
+  best_child_cached_ = nullptr;
+}
 
-void Node::FinalizeScoreUpdate(double v) {
+void Node::FinalizeScoreUpdate(double v, double d, int multivisit) {
   // Recompute Q.
-  q_ += (v - q_) / (n_ + 1);
+  q_ += multivisit * (v - q_) / (n_ + multivisit);
+  d_ += multivisit * (d - d_) / (n_ + multivisit);
+
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
   }
   // Increment N.
-  ++n_;
+  n_ += multivisit;
   // Decrement virtual loss.
-  --n_in_flight_;
+  n_in_flight_ -= multivisit;
+  // Best child is potentially no longer valid.
+  best_child_cached_ = nullptr;
+}
+
+void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
+  best_child_cached_ = best_edge.node();
+  // An edge can point to an unexpanded node with n==0. These nodes don't
+  // increment their n_in_flight_ the same way and thus are not safe to cache.
+  if (best_child_cached_ && best_child_cached_->GetN() == 0) {
+    best_child_cached_ = nullptr;
+  }
+  best_child_cache_in_flight_limit_ = visits_allowed + n_in_flight_;
 }
 
 Node::NodeRange Node::ChildNodes() const { return child_.get(); }
@@ -280,25 +325,28 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V3TrainingData Node::GetV3TrainingData(GameResult game_result,
-                                       const PositionHistory& history) const {
-  V3TrainingData result;
+V4TrainingData Node::GetV4TrainingData(GameResult game_result,
+                                       const PositionHistory& history,
+                                       FillEmptyHistory fill_empty_history,
+                                       float best_q, float best_d) const {
+  V4TrainingData result;
 
   // Set version.
-  result.version = 3;
+  result.version = 4;
 
   // Populate probabilities.
-  float total_n = static_cast<float>(GetChildrenVisits());
+  const float total_n = static_cast<float>(GetChildrenVisits());
   // Prevent garbage/invalid training data from being uploaded to server.
   if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
-  std::memset(result.probabilities, 0, sizeof(result.probabilities));
+  // Set illegal moves to have -1 probability.
+  std::memset(result.probabilities, -1, sizeof(result.probabilities));
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
         child.GetN() / total_n;
   }
 
   // Populate planes.
-  InputPlanes planes = EncodePositionForNN(history, 8);
+  InputPlanes planes = EncodePositionForNN(history, 8, fill_empty_history);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
@@ -325,6 +373,14 @@ V3TrainingData Node::GetV3TrainingData(GameResult game_result,
     result.result = 0;
   }
 
+  // Aggregate evaluation Q.
+  result.root_q = -GetQ();
+  result.best_q = best_q;
+
+  // Draw probability of WDL head.
+  result.root_d = GetD();
+  result.best_d = best_d;
+
   return result;
 }
 
@@ -349,6 +405,9 @@ void NodeTree::MakeMove(Move move) {
   for (auto& n : current_head_->Edges()) {
     if (n.GetMove() == move) {
       new_head = n.GetOrSpawnNode(current_head_);
+      // Ensure head is not terminal, so search can extend or visit children of
+      // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
+      if (new_head->IsTerminal()) new_head->MakeNotTerminal();
       break;
     }
   }
@@ -366,7 +425,7 @@ void NodeTree::TrimTreeAtHead() {
   current_head_->sibling_ = std::move(tmp);
 }
 
-void NodeTree::ResetToPosition(const std::string& starting_fen,
+bool NodeTree::ResetToPosition(const std::string& starting_fen,
                                const std::vector<Move>& moves) {
   ChessBoard starting_board;
   int no_capture_ply;
@@ -397,9 +456,8 @@ void NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  // Also, if the current_head_ is terminal, reset that as well to allow forced
-  // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
+  if (!seen_old_head) TrimTreeAtHead();
+  return seen_old_head;
 }
 
 void NodeTree::DeallocateTree() {

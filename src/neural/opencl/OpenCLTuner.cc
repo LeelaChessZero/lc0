@@ -1,27 +1,29 @@
 /*
- This file is part of Leela Zero.
- Copyright (C) 2017 Gian-Carlo Pascutto
+  Originally from the Leela Zero project.
+  Copyright (C) 2017 Gian-Carlo Pascutto
 
- Leela Zero is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2018 The LCZero Authors
 
- Leela Zero is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
- You should have received a copy of the GNU General Public License
- along with Leela Zero.  If not, see <http://www.gnu.org/licenses/>.
- */
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
-#include <iostream>
 #include <map>
 #include <random>
 #include <sstream>
@@ -31,7 +33,7 @@
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/opencl/OpenCLTuner.h"
 
-#include "neural/blas/blas.h"
+#include "utils/logging.h"
 
 const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
 constexpr auto MAX_ERROR = 1e-4f;
@@ -45,8 +47,17 @@ static void sgemmBatched_ref(const std::vector<float>& a,
     auto offset_v = batch * n * k;
     auto offset_m = batch * m * n;
 
-    cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, m, n, k, 1.0f,
-                &a[offset_u], m, &b[offset_v], n, 0.0f, &c[offset_m], n);
+    // Calculates C = transpose(tranpose(A) * B) in row major, or
+    // C = A * transpose(B) in column major.
+    for (auto i = 0; i < m; i++) {
+      for (auto j = 0; j < n; j++) {
+        auto acc = 0.0f;
+        for (auto l = 0; l < k; l++) {
+          acc += a[l * m + i + offset_u] * b[l * n + j + offset_v];
+        }
+        c[j * m + i + offset_m] = acc;
+      }
+    }
   }
 }
 
@@ -159,16 +170,16 @@ static float compare_ref(std::vector<float>& x, std::vector<float>& ref,
                          const int m_ceil, const int n_ceil) {
   auto sum = 0.0f;
   for (auto batch = 0; batch < batch_size; batch++) {
-    for (auto i = 0; i < n; i++) {
-      for (auto j = 0; j < m; j++) {
-        auto r = ref[batch * n * m + i * m + j];
+    for (auto j = 0; j < m; j++) {
+      for (auto i = 0; i < n; i++) {
+        auto r = ref[batch * n * m + j * n + i];
         auto y = x[batch * n_ceil * m_ceil + j * n_ceil + i];
 
         sum += (r - y) * (r - y);
       }
     }
   }
-  return sum / (m * n);
+  return sum / (m * n * batch_size);
 }
 
 std::string Tuner::tune_sgemm(const int m, const int n, const int k,
@@ -223,8 +234,8 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
   auto cBuffer = cl::Buffer(m_context, CL_MEM_READ_WRITE,
                             sizeof(float) * c_size, nullptr, nullptr);
 
-  std::cerr << "Started OpenCL SGEMM tuner with batch size " << batch_size
-            << "." << std::endl;
+  CERR << "Started OpenCL SGEMM tuner with batch size " << n / WINOGRAD_P
+       << ".";
 
   auto valid_params = std::vector<int>{};
   auto cfgs = 1;
@@ -244,8 +255,7 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
     }
   }
 
-  std::cerr << "Will try " << valid_params.size() << " valid configurations."
-            << std::endl;
+  CERR << "Will try " << valid_params.size() << " valid configurations.";
 
   std::string best_params;
   auto best_time = unsigned{0};
@@ -340,18 +350,17 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
       auto kernel_us = 1e-3f * (sum / runs);
       // Timing is in nanoseconds (10^-9), Giga = 10^9, so this works out.
       auto kernel_gflops = total_flops / (sum / runs);
-      std::cerr << std::fixed << std::setprecision(1) << "(" << param_counter
-                << "/" << valid_params.size() << ") " << param_str << " "
-                << kernel_us << " us (" << kernel_gflops << " GFLOPS)"
-                << std::endl;
+      CERR << std::fixed << std::setprecision(1) << "(" << param_counter << "/"
+           << valid_params.size() << ") " << param_str << " " << kernel_us
+           << " us (" << kernel_gflops << " GFLOPS)";
 
       best_time = sum;
       best_params = defines;
     }
   }
   if (best_time == 0) {
-    std::cerr << "Failed to find a working configuration." << std::endl
-              << "Check your OpenCL drivers." << std::endl;
+    CERR << "Failed to find a working configuration." << std::endl
+         << "Check your OpenCL drivers.";
     throw std::runtime_error("Tuner failed to find working configuration.");
   }
   return best_params;
@@ -393,9 +402,8 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
   file << tuning_line << std::endl;
 
   if (file.fail()) {
-    std::cerr << "Could not save the tuning result." << std::endl;
-    std::cerr << "Do I have write permissions on " << TUNER_FILE_LOCAL << "?"
-              << std::endl;
+    CERR << "Could not save the tuning result.";
+    CERR << "Do I have write permissions on " << TUNER_FILE_LOCAL << "?";
   }
 }
 
@@ -454,10 +462,12 @@ std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
       while (std::getline(file, line)) {
         auto tuners = sgemm_tuners_from_line(line, m, n, k, batch_size);
         if (tuners.size() != 0) {
-          if (m_params.verbose) {
-            std::cerr << "Loaded existing SGEMM tuning for batch_size "
-                      << batch_size << "." << std::endl;
-          }
+          // batch_size argument is the number of batched sgemm calls, which
+          // equals the number of elements in one tile.
+          // Convolution batch size affects the "n" dimension of
+          // the matrix multiplication (n = WINOGRAD_P * batch_size).
+          CERR << "Loaded existing SGEMM tuning for batch size "
+               << n / WINOGRAD_P << ".";
           return tuners;
         }
       }

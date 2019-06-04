@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ class BoardSquare {
  public:
   constexpr BoardSquare() {}
   // As a single number, 0 to 63, bottom to top, left to right.
-  // 0 is a1, 8 is b1, 63 is h8.
+  // 0 is a1, 8 is a2, 63 is h8.
   constexpr BoardSquare(std::uint8_t num) : square_(num) {}
   // From row(bottom to top), and col(left to right), 0-based.
   constexpr BoardSquare(int row, int col) : BoardSquare(row * 8 + col) {}
@@ -95,11 +95,38 @@ class BitBoard {
 
   std::uint64_t as_int() const { return board_; }
   void clear() { board_ = 0; }
+
+  // Counts the number of set bits in the BitBoard.
   int count() const {
-#ifdef _MSC_VER
+#if defined(NO_POPCNT)
+    std::uint64_t x = board_;
+    x -= (x >> 1) & 0x5555555555555555;
+    x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333);
+    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F;
+    return (x * 0x0101010101010101) >> 56;
+#elif defined(_MSC_VER) && defined(_WIN64)
     return _mm_popcnt_u64(board_);
+#elif defined(_MSC_VER)
+    return __popcnt(board_) + __popcnt(board_ >> 32);
 #else
     return __builtin_popcountll(board_);
+#endif
+  }
+
+  // Like count() but using algorithm faster on a very sparse BitBoard.
+  // May be slower for more than 4 set bits, but still correct.
+  // Useful when counting bits in a Q, R, N or B BitBoard.
+  int count_few() const {
+#if defined(NO_POPCNT)
+    std::uint64_t x = board_;
+    int count;
+    for (count = 0; x != 0; ++count) {
+      // Clear the rightmost set bit.
+      x &= x - 1;
+    }
+    return count;
+#else
+    return count();
 #endif
   }
 
@@ -150,6 +177,10 @@ class BitBoard {
     return board_ == other.board_;
   }
 
+  bool operator!=(const BitBoard& other) const {
+    return board_ != other.board_;
+  }
+
   BitIterator<BoardSquare> begin() const { return board_; }
   BitIterator<BoardSquare> end() const { return 0; }
 
@@ -168,7 +199,7 @@ class BitBoard {
   }
 
   // Applies a mask to the bitboard (intersects).
-  BitBoard& operator*=(const BitBoard& a) {
+  BitBoard& operator&=(const BitBoard& a) {
     board_ &= a.board_;
     return *this;
   }
@@ -179,8 +210,13 @@ class BitBoard {
   }
 
   // Returns union (bitwise OR) of two boards.
-  friend BitBoard operator+(const BitBoard& a, const BitBoard& b) {
+  friend BitBoard operator|(const BitBoard& a, const BitBoard& b) {
     return {a.board_ | b.board_};
+  }
+
+  // Returns intersection (bitwise AND) of two boards.
+  friend BitBoard operator&(const BitBoard& a, const BitBoard& b) {
+    return {a.board_ & b.board_};
   }
 
   // Returns bitboard with one bit reset.
@@ -191,11 +227,6 @@ class BitBoard {
   // Returns difference (bitwise AND-NOT) of two boards.
   friend BitBoard operator-(const BitBoard& a, const BitBoard& b) {
     return {a.board_ & ~b.board_};
-  }
-
-  // Returns intersection (bitwise AND) of two boards.
-  friend BitBoard operator*(const BitBoard& a, const BitBoard& b) {
-    return {a.board_ & b.board_};
   }
 
  private:

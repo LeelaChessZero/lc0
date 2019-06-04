@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 
 #include "neural/encoder.h"
 #include <algorithm>
+#include "utils/optional.h"
 
 namespace lczero {
 
@@ -37,7 +38,8 @@ const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 }  // namespace
 
 InputPlanes EncodePositionForNN(const PositionHistory& history,
-                                int history_planes) {
+                                int history_planes,
+                                FillEmptyHistory fill_empty_history) {
   InputPlanes result(kAuxPlaneBase + 8);
 
   {
@@ -57,29 +59,49 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
   bool flip = false;
   int history_idx = history.GetLength() - 1;
   for (int i = 0; i < std::min(history_planes, kMoveHistory);
-       ++i, flip = !flip, --history_idx) {
-    if (history_idx < 0) break;
-    const Position& position = history.GetPositionAt(history_idx);
+       ++i, --history_idx) {
+    const Position& position =
+        history.GetPositionAt(history_idx < 0 ? 0 : history_idx);
     const ChessBoard& board =
         flip ? position.GetThemBoard() : position.GetBoard();
+    if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
+    // Board may be flipped so compare with position.GetBoard().
+    if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
+        position.GetBoard() == ChessBoard::kStartposBoard) {
+      break;
+    }
 
     const int base = i * kPlanesPerBoard;
-    result[base + 0].mask = (board.ours() * board.pawns()).as_int();
+    result[base + 0].mask = (board.ours() & board.pawns()).as_int();
     result[base + 1].mask = (board.our_knights()).as_int();
-    result[base + 2].mask = (board.ours() * board.bishops()).as_int();
-    result[base + 3].mask = (board.ours() * board.rooks()).as_int();
-    result[base + 4].mask = (board.ours() * board.queens()).as_int();
+    result[base + 2].mask = (board.ours() & board.bishops()).as_int();
+    result[base + 3].mask = (board.ours() & board.rooks()).as_int();
+    result[base + 4].mask = (board.ours() & board.queens()).as_int();
     result[base + 5].mask = (board.our_king()).as_int();
 
-    result[base + 6].mask = (board.theirs() * board.pawns()).as_int();
+    result[base + 6].mask = (board.theirs() & board.pawns()).as_int();
     result[base + 7].mask = (board.their_knights()).as_int();
-    result[base + 8].mask = (board.theirs() * board.bishops()).as_int();
-    result[base + 9].mask = (board.theirs() * board.rooks()).as_int();
-    result[base + 10].mask = (board.theirs() * board.queens()).as_int();
+    result[base + 8].mask = (board.theirs() & board.bishops()).as_int();
+    result[base + 9].mask = (board.theirs() & board.rooks()).as_int();
+    result[base + 10].mask = (board.theirs() & board.queens()).as_int();
     result[base + 11].mask = (board.their_king()).as_int();
 
     const int repetitions = position.GetRepetitions();
     if (repetitions >= 1) result[base + 12].SetAll();
+
+    // If en passant flag is set, undo last pawn move by removing the pawn from
+    // the new square and putting into pre-move square.
+    if (history_idx < 0 && !board.en_passant().empty()) {
+      const auto idx = GetLowestBit(board.en_passant().as_int());
+      if (idx < 8) {  // "Us" board
+        result[base + 0].mask +=
+            ((0x0000000000000100ULL - 0x0000000001000000ULL) << idx);
+      } else {
+        result[base + 6].mask +=
+            ((0x0001000000000000ULL - 0x0000000100000000ULL) << (idx - 56));
+      }
+    }
+    if (history_idx > 0) flip = !flip;
   }
 
   return result;

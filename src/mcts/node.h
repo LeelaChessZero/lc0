@@ -28,12 +28,14 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
+#include "neural/encoder.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
 
@@ -152,6 +154,7 @@ class Node {
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   double GetQ() const { return q_; }
+  double GetD() const { return d_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -159,6 +162,8 @@ class Node {
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
+  // Makes the node not terminal and updates its visits.
+  void MakeNotTerminal();
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -166,23 +171,46 @@ class Node {
   // Otherwise return false.
   bool TryStartScoreUpdate();
   // Decrements n-in-flight back.
-  void CancelScoreUpdate();
+  void CancelScoreUpdate(int multivisit);
   // Updates the node with newly computed value v.
   // Updates:
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(double v);
+  void FinalizeScoreUpdate(double v, double d, int multivisit);
+  // When search decides to treat one visit as several (in case of collisions
+  // or visiting terminal nodes several times), it amplifies the visit by
+  // incrementing n_in_flight.
+  void IncrementNInFlight(int multivisit) { n_in_flight_ += multivisit; }
 
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
+
+  // Caches the best child if possible.
+  void UpdateBestChild(const Iterator& best_edge, int collisions_allowed);
+
+  // Gets a cached best child if it is still valid.
+  Node* GetCachedBestChild() {
+    if (n_in_flight_ < best_child_cache_in_flight_limit_) {
+      return best_child_cached_;
+    }
+    return nullptr;
+  }
+
+  // Gets how many more visits the cached value is valid for. Only valid if
+  // GetCachedBestChild returns a value.
+  int GetRemainingCacheVisits() {
+    return best_child_cache_in_flight_limit_ - n_in_flight_;
+  }
 
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
 
-  V3TrainingData GetV3TrainingData(GameResult result,
-                                   const PositionHistory& history) const;
+  V4TrainingData GetV4TrainingData(GameResult result,
+                                   const PositionHistory& history,
+                                   FillEmptyHistory fill_empty_history,
+                                   float best_q, float best_d) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -202,10 +230,20 @@ class Node {
   // For a child node, returns corresponding edge.
   Edge* GetEdgeToNode(const Node* node) const;
 
+  // Returns edge to the own node.
+  Edge* GetOwnEdge() const;
+
   // Debug information about the node.
   std::string DebugString() const;
 
  private:
+  // Performs construction time type initialization. For use only with a node
+  // that has not been used beyond its construction.
+  void Reinit(Node* parent, uint16_t index) {
+    parent_ = parent;
+    index_ = index;
+  }
+
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
@@ -221,25 +259,34 @@ class Node {
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
+  // Cached pointer to best child, valid while n_in_flight <
+  // best_child_cache_in_flight_limit_
+  Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored. This is from the perspective
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
-  double q_ = 0.0;
+  double q_ = 0.0f;
+  // Averaged draw probability. Works similarly to Q, except that D is not
+  // flipped depending on the side to move.
+  double d_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
+  // (AKA virtual loss.) How many threads currently process this node (started
+  // but not finished). This value is added to n during selection which node
+  // to pick in MCTS, and also when selecting the best move.
+  uint32_t n_in_flight_ = 0;
+  // If best_child_cached_ is non-null, and n_in_flight_ < this,
+  // best_child_cached_ is still the best child.
+  uint32_t best_child_cache_in_flight_limit_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
   uint16_t index_;
-  // (AKA virtual loss.) How many threads currently process this node (started
-  // but not finished). This value is added to n during selection which node
-  // to pick in MCTS, and also when selecting the best move.
-  uint16_t n_in_flight_ = 0;
 
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
@@ -253,8 +300,20 @@ class Node {
   friend class Edge;
 };
 
+// Define __i386__  or __arm__ also for 32 bit Windows.
+#if defined(_M_IX86)
+#define __i386__
+#endif
+#if defined(_M_ARM) && !defined(_M_AMD64)
+#define __arm__
+#endif
+
 // A basic sanity check. This must be adjusted when Node members are adjusted.
-static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+#if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
+static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
+#else
+static_assert(sizeof(Node) == 88, "Unexpected size of Node");
+#endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
 // to them.
@@ -262,6 +321,7 @@ class EdgeAndNode {
  public:
   EdgeAndNode() = default;
   EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
+  void Reset() { edge_ = nullptr; }
   explicit operator bool() const { return edge_ != nullptr; }
   bool operator==(const EdgeAndNode& other) const {
     return edge_ == other.edge_;
@@ -269,6 +329,8 @@ class EdgeAndNode {
   bool operator!=(const EdgeAndNode& other) const {
     return edge_ != other.edge_;
   }
+  // Arbitrary ordering just to make it possible to use in tuples.
+  bool operator<(const EdgeAndNode& other) const { return edge_ < other.edge_; }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }
@@ -276,6 +338,9 @@ class EdgeAndNode {
   // Proxy functions for easier access to node/edge.
   double GetQ(double default_q) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
+  }
+  float GetD() const {
+    return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
@@ -287,12 +352,25 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
-  Move GetMove(bool flip = false) const { return edge_->GetMove(flip); }
+  Move GetMove(bool flip = false) const {
+    return edge_ ? edge_->GetMove(flip) : Move();
+  }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   double GetU(double numerator) const {
     return numerator * GetP() / (1 + GetNStarted());
+  }
+
+  int GetVisitsToReachU(float target_score, float numerator,
+                        float default_q) const {
+    const auto q = GetQ(default_q);
+    if (q >= target_score) return std::numeric_limits<int>::max();
+    const auto n1 = GetNStarted() + 1;
+    return std::max(
+        1.0,
+        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
+                 1e9));
   }
 
   std::string DebugString() const;
@@ -354,7 +432,8 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator& operator*() { return *this; }
 
   // If there is node, return it. Otherwise spawn a new one and return it.
-  Node* GetOrSpawnNode(Node* parent) {
+  Node* GetOrSpawnNode(Node* parent,
+                       std::unique_ptr<Node>* node_source = nullptr) {
     if (node_) return node_;  // If there is already a node, return it.
     Actualize();              // But maybe other thread already did that.
     if (node_) return node_;  // If it did, return.
@@ -370,7 +449,12 @@ class Edge_Iterator : public EdgeAndNode {
     // 2. Create fresh Node(idx_.5):
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
-    *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+    if (node_source && *node_source) {
+      (*node_source)->Reinit(parent, current_idx_);
+      *node_ptr_ = std::move(*node_source);
+    } else {
+      *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+    }
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
     //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
@@ -443,7 +527,10 @@ class NodeTree {
   // Sets the position in a tree, trying to reuse the tree.
   // If @auto_garbage_collect, old tree is garbage collected immediately. (may
   // take some milliseconds)
-  void ResetToPosition(const std::string& starting_fen,
+  // Returns whether a new position the same game as old position (with some
+  // moves added). Returns false, if the position is completely different,
+  // or if it's shorter than before.
+  bool ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }

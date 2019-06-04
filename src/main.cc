@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,26 +25,36 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <iostream>
+#include "benchmark/benchmark.h"
+#include "chess/board.h"
 #include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
+#include "utils/logging.h"
 #include "version.h"
 
 int main(int argc, const char** argv) {
-  std::cerr << "       _" << std::endl;
-  std::cerr << "|   _ | |" << std::endl;
-  std::cerr << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__
-            << std::endl;
+  LOGFILE << "Lc0 started.";
+  CERR << "       _";
+  CERR << "|   _ | |";
+  CERR << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__;
   using namespace lczero;
+
+  InitializeMagicBitboards();
+
   CommandLine::Init(argc, argv);
   CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
   CommandLine::RegisterMode("selfplay", "Play games with itself");
+  CommandLine::RegisterMode("benchmark", "Quick benchmark");
 
   if (CommandLine::ConsumeCommand("selfplay")) {
     // Selfplay mode.
     SelfPlayLoop loop;
     loop.RunLoop();
+  } else if (CommandLine::ConsumeCommand("benchmark")) {
+    // Benchmark mode.
+    Benchmark benchmark;
+    benchmark.Run();
   } else {
     // Consuming optional "uci" mode.
     CommandLine::ConsumeCommand("uci");

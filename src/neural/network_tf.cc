@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@
 */
 
 #include "neural/factory.h"
+#include "neural/network_legacy.h"
 #include "utils/bititer.h"
 #include "utils/optionsdict.h"
 #include "utils/transpose.h"
@@ -74,7 +75,7 @@ Output Ones(const Scope& scope, TensorShape shape) {
 template <bool CPU>
 Output MakeConvBlock(const Scope& scope, Input input, int channels,
                      int input_channels, int output_channels,
-                     const Weights::ConvBlock& weights,
+                     const LegacyWeights::ConvBlock& weights,
                      Input* mixin = nullptr) {
   // CPU only supports "NHWC", while for GPU "NCHW" is better.
   const char* const kDataFormat = CPU ? "NHWC" : "NCHW";
@@ -108,7 +109,7 @@ Output MakeConvBlock(const Scope& scope, Input input, int channels,
 
 template <bool CPU>
 Output MakeResidualBlock(const Scope& scope, Input input, int channels,
-                         const Weights::Residual& weights) {
+                         const LegacyWeights::Residual& weights) {
   auto block1 =
       MakeConvBlock<CPU>(scope, input, 3, channels, channels, weights.conv1);
   auto block2 = MakeConvBlock<CPU>(scope, block1, 3, channels, channels,
@@ -118,7 +119,7 @@ Output MakeResidualBlock(const Scope& scope, Input input, int channels,
 
 template <bool CPU>
 std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
-                                      const Weights& weights) {
+                                      const LegacyWeights& weights) {
   const int filters = weights.input.weights.size() / kInputPlanes / 9;
 
   // Input convolution.
@@ -171,7 +172,7 @@ class TFNetworkComputation;
 template <bool CPU>
 class TFNetwork : public Network {
  public:
-  TFNetwork(const Weights& weights, const OptionsDict& options);
+  TFNetwork(const WeightsFile& file, const OptionsDict& options);
 
   std::unique_ptr<NetworkComputation> NewComputation() override;
 
@@ -204,6 +205,7 @@ class TFNetworkComputation : public NetworkComputation {
   float GetQVal(int sample) const override {
     return output_[0].template matrix<float>()(sample, 0);
   }
+  float GetDVal(int sample) const override { return 0.0f; }
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
@@ -265,9 +267,10 @@ void TFNetworkComputation<true>::PrepareInput() {
 }  // namespace
 
 template <bool CPU>
-TFNetwork<CPU>::TFNetwork(const Weights& weights,
+TFNetwork<CPU>::TFNetwork(const WeightsFile& file,
                           const OptionsDict& /*options*/)
     : scope_(Scope::NewRootScope()) {
+  const LegacyWeights weights(file.weights());
   tensorflow::SessionOptions session_options;
   if (CPU) (*session_options.config.mutable_device_count())["GPU"] = 0;
   session_ =
@@ -308,9 +311,36 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
   return std::make_unique<TFNetworkComputation<CPU>>(this);
 }
 
+template <bool CPU>
+std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
+                                       const OptionsDict& options) {
+  // Tensorflow backend needs to be updated to use folded batch norms.
+  throw Exception("Tensorflow backend is not supported.");
+
+  if (weights.format().network_format().network() !=
+      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    throw Exception(
+        "Network format " +
+        std::to_string(weights.format().network_format().network()) +
+        " is not supported by Tensorflow backend.");
+  }
+  if (weights.format().network_format().policy() !=
+      pblczero::NetworkFormat::POLICY_CLASSICAL) {
+    throw Exception("Policy format " +
+                    std::to_string(weights.format().network_format().policy()) +
+                    " is not supported by Tensorflow backend.");
+  }
+  if (weights.format().network_format().value() !=
+      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+    throw Exception("Value format " +
+                    std::to_string(weights.format().network_format().value()) +
+                    " is not supported by Tensorflow backend.");
+  }
+  return std::make_unique<TFNetwork<CPU>>(weights, options);
+}
+
+REGISTER_NETWORK("tensorflow-cpu", MakeTFNetwork<true>, 90)
+REGISTER_NETWORK("tensorflow", MakeTFNetwork<false>, 80)
+
 }  // namespace
-
-REGISTER_NETWORK("tensorflow-cpu", TFNetwork<true>, 90)
-REGISTER_NETWORK("tensorflow", TFNetwork<false>, 80)
-
 }  // namespace lczero

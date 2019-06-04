@@ -25,15 +25,15 @@
   Program grant you additional permission to convey the resulting work.
  */
 
-#include "neural/factory.h"
-#include "neural/network.h"
-#include "utils/histogram.h"
-#include "utils/random.h"
-
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
-#include <iostream>
+
+#include "neural/factory.h"
+#include "neural/network.h"
+#include "utils/histogram.h"
+#include "utils/logging.h"
+#include "utils/random.h"
 
 namespace lczero {
 
@@ -93,6 +93,10 @@ class CheckComputation : public NetworkComputation {
     return work_comp_->GetQVal(sample);
   }
 
+  float GetDVal(int sample) const override {
+    return work_comp_->GetDVal(sample);
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return work_comp_->GetPVal(sample, move_id);
   }
@@ -103,41 +107,41 @@ class CheckComputation : public NetworkComputation {
 
   void CheckOnly() const {
     bool valueAlmostEqual = true;
-    int size = GetBatchSize();
+    const int size = GetBatchSize();
     for (int i = 0; i < size && valueAlmostEqual; i++) {
-      float v1 = work_comp_->GetQVal(i);
-      float v2 = check_comp_->GetQVal(i);
+      const float v1 = work_comp_->GetQVal(i);
+      const float v2 = check_comp_->GetQVal(i);
       valueAlmostEqual &= IsAlmostEqual(v1, v2);
     }
 
     bool policyAlmostEqual = true;
     for (int i = 0; i < size && policyAlmostEqual; i++) {
       for (int j = 0; j < kNumOutputPolicies; j++) {
-        float v1 = work_comp_->GetPVal(i, j);
-        float v2 = check_comp_->GetPVal(i, j);
+        const float v1 = work_comp_->GetPVal(i, j);
+        const float v2 = check_comp_->GetPVal(i, j);
         policyAlmostEqual &= IsAlmostEqual(v1, v2);
       }
     }
 
     if (valueAlmostEqual && policyAlmostEqual) {
-      std::cerr << "Check passed for a batch of " << size << "." << std::endl;
+      CERR << "Check passed for a batch of " << size << ".";
       return;
     }
 
     if (!valueAlmostEqual && !policyAlmostEqual) {
-      std::cerr << "*** ERROR check failed for a batch of " << size
-                << " both value and policy incorrect." << std::endl;
+      CERR << "*** ERROR check failed for a batch of " << size
+           << " both value and policy incorrect.";
       return;
     }
 
     if (!valueAlmostEqual) {
-      std::cerr << "*** ERROR check failed for a batch of " << size
-                << " value incorrect (but policy ok)." << std::endl;
+      CERR << "*** ERROR check failed for a batch of " << size
+           << " value incorrect (but policy ok).";
       return;
     }
 
-    std::cerr << "*** ERROR check failed for a batch of " << size
-              << " policy incorrect (but value ok)." << std::endl;
+    CERR << "*** ERROR check failed for a batch of " << size
+         << " policy incorrect (but value ok).";
   }
 
   bool IsAlmostEqual(double a, double b) const {
@@ -149,19 +153,18 @@ class CheckComputation : public NetworkComputation {
   void DisplayHistogram() {
     Histogram histogram(-15, 1, 5);
 
-    int size = GetBatchSize();
+    const int size = GetBatchSize();
     for (int i = 0; i < size; i++) {
-      float qv1 = work_comp_->GetQVal(i);
-      float qv2 = check_comp_->GetQVal(i);
+      const float qv1 = work_comp_->GetQVal(i);
+      const float qv2 = check_comp_->GetQVal(i);
       histogram.Add(qv2 - qv1);
       for (int j = 0; j < kNumOutputPolicies; j++) {
-        float pv1 = work_comp_->GetPVal(i, j);
-        float pv2 = check_comp_->GetPVal(i, j);
+        const float pv1 = work_comp_->GetPVal(i, j);
+        const float pv2 = check_comp_->GetPVal(i, j);
         histogram.Add(pv2 - pv1);
       }
     }
-    std::cerr << "Absolute error histogram for a batch of " << size
-              << std::endl;
+    CERR << "Absolute error histogram for a batch of " << size;
     histogram.Dump();
   }
 
@@ -171,24 +174,24 @@ class CheckComputation : public NetworkComputation {
     double max_relative_error = 0;
 
     void Add(double a, double b) {
-      double absolute_error = GetAbsoluteError(a, b);
+      const double absolute_error = GetAbsoluteError(a, b);
       if (absolute_error > max_absolute_error) {
         max_absolute_error = absolute_error;
       }
-      double relative_error = GetRelativeError(a, b);
+      const double relative_error = GetRelativeError(a, b);
       if (relative_error > max_relative_error) {
         max_relative_error = relative_error;
       }
     }
 
     void Dump(const char* name) {
-      std::cerr << std::scientific << std::setprecision(1) << name
-                << ": absolute: " << max_absolute_error
-                << ", relative: " << max_relative_error << "." << std::endl;
+      CERR << std::scientific << std::setprecision(1) << name
+           << ": absolute: " << max_absolute_error
+           << ", relative: " << max_relative_error << ".";
     }
 
     static double GetRelativeError(double a, double b) {
-      double max = std::max(std::abs(a), std::abs(b));
+      const double max = std::max(std::abs(a), std::abs(b));
       return max == 0 ? 0 : std::abs(a - b) / max;
     }
 
@@ -199,23 +202,23 @@ class CheckComputation : public NetworkComputation {
 
   void DisplayError() {
     MaximumError value_error;
-    int size = GetBatchSize();
+    const int size = GetBatchSize();
     for (int i = 0; i < size; i++) {
-      float v1 = work_comp_->GetQVal(i);
-      float v2 = check_comp_->GetQVal(i);
+      const float v1 = work_comp_->GetQVal(i);
+      const float v2 = check_comp_->GetQVal(i);
       value_error.Add(v1, v2);
     }
 
     MaximumError policy_error;
     for (int i = 0; i < size; i++) {
       for (int j = 0; j < kNumOutputPolicies; j++) {
-        float v1 = work_comp_->GetPVal(i, j);
-        float v2 = check_comp_->GetPVal(i, j);
+        const float v1 = work_comp_->GetPVal(i, j);
+        const float v2 = check_comp_->GetPVal(i, j);
         policy_error.Add(v1, v2);
       }
     }
 
-    std::cerr << "maximum error for a batch of " << size << ":" << std::endl;
+    CERR << "maximum error for a batch of " << size << ":";
 
     value_error.Dump("  value");
     policy_error.Dump("  policy");
@@ -232,7 +235,7 @@ class CheckNetwork : public Network {
   static constexpr double kDefaultAbsoluteTolerance = 1e-5;
   static constexpr double kDefaultRelativeTolerance = 1e-4;
 
-  CheckNetwork(const Weights& weights, const OptionsDict& options) {
+  CheckNetwork(const WeightsFile& weights, const OptionsDict& options) {
     params_.mode = kDefaultMode;
     params_.absolute_tolerance = kDefaultAbsoluteTolerance;
     params_.relative_tolerance = kDefaultRelativeTolerance;
@@ -246,7 +249,7 @@ class CheckNetwork : public Network {
     std::string backendName2 = "blas";
     OptionsDict& backend2_dict = dict2;
 
-    std::string mode = options.GetOrDefault<std::string>("mode", "check");
+    const std::string mode = options.GetOrDefault<std::string>("mode", "check");
     if (mode == "check") {
       params_.mode = kCheckOnly;
     } else if (mode == "histo") {
@@ -274,12 +277,11 @@ class CheckNetwork : public Network {
           backend2_dict.GetOrDefault<std::string>("backend", backendName2);
     }
     if (parents.size() > 2) {
-      std::cerr << "Warning, cannot check more than two backends" << std::endl;
+      CERR << "Warning, cannot check more than two backends";
     }
 
-    std::cerr << "Working backend set to " << backendName1 << "." << std::endl;
-    std::cerr << "Reference backend set to " << backendName2 << "."
-              << std::endl;
+    CERR << "Working backend set to " << backendName1 << ".";
+    CERR << "Reference backend set to " << backendName2 << ".";
 
     work_net_ =
         NetworkFactory::Get()->Create(backendName1, weights, backend1_dict);
@@ -290,25 +292,25 @@ class CheckNetwork : public Network {
         options.GetOrDefault<float>("freq", kDefaultCheckFrequency);
     switch (params_.mode) {
       case kCheckOnly:
-        std::cerr << std::scientific << std::setprecision(1)
-                  << "Check mode: check only with relative tolerance "
-                  << params_.absolute_tolerance << ", absolute tolerance "
-                  << params_.relative_tolerance << "." << std::endl;
+        CERR << std::scientific << std::setprecision(1)
+             << "Check mode: check only with relative tolerance "
+             << params_.absolute_tolerance << ", absolute tolerance "
+             << params_.relative_tolerance << ".";
         break;
       case kErrorDisplay:
-        std::cerr << "Check mode: error display." << std::endl;
+        CERR << "Check mode: error display.";
         break;
       case kHistogram:
-        std::cerr << "Check mode: histogram." << std::endl;
+        CERR << "Check mode: histogram.";
         break;
     }
-    std::cerr << "Check rate: " << std::fixed << std::setprecision(0)
-              << 100 * check_frequency_ << "%." << std::endl;
+    CERR << "Check rate: " << std::fixed << std::setprecision(0)
+         << 100 * check_frequency_ << "%.";
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    double draw = Random::Get().GetDouble(1.0);
-    bool check = draw < check_frequency_;
+    const double draw = Random::Get().GetDouble(1.0);
+    const bool check = draw < check_frequency_;
     if (check) {
       std::unique_ptr<NetworkComputation> work_comp =
           work_net_->NewComputation();
@@ -329,8 +331,12 @@ class CheckNetwork : public Network {
   std::unique_ptr<Network> check_net_;
 };
 
+std::unique_ptr<Network> MakeCheckNetwork(const WeightsFile& weights,
+                                          const OptionsDict& options) {
+  return std::make_unique<CheckNetwork>(weights, options);
+}
+
+REGISTER_NETWORK("check", MakeCheckNetwork, -800)
+
 }  // namespace
-
-REGISTER_NETWORK("check", CheckNetwork, -800)
-
 }  // namespace lczero
