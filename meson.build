@@ -394,6 +394,25 @@ if get_option('build_backends')
     files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])
     has_backends = true
   endif
+  
+  ## ~~~~~~~~
+  ## DirectML
+  ## ~~~~~~~~
+  
+  # we should always be able to build DirectML backend on windows platform  
+  if host_machine.system() == 'windows'
+    dx_d3d12 = cc.find_library('d3d12')
+  
+    dx_files = [
+      'src/neural/dx/network_dx.cc',
+	  'src/neural/dx/shader_wrapper.cc',
+      'src/neural/dx/layers_dx.cc',
+      'src/neural/dx/fp16_utils.cc',
+    ]
+    files += dx_files
+    deps += [dx_d3d12]
+  endif  
+ 
 
 endif # if get_option('build_backends')
 
