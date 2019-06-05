@@ -390,7 +390,8 @@ std::string OpenCLTuner::tune_sgemm_systematic(const int m, const int n,
     cl::NDRange size_sgemm = {(m_ceil * p["MDIMC"]) / p["MWG"],
                               (n_ceil * p["NDIMC"]) / p["NWG"],
                               (size_t)batch_size};
-    float max_error = 0.0;
+    bool has_error = false;
+    double max_error = 0.0;
     cl_ulong min_elapsed = 0;
 
     for (auto r = size_t{0}; r < kMaxTuneIters; r++) {
@@ -404,7 +405,7 @@ std::string OpenCLTuner::tune_sgemm_systematic(const int m, const int n,
                                 c.data());
         queue.finish();
 
-        auto this_error =
+        double this_error =
             compare_ref(c, c_ref, n, m, batch_size, n_ceil, m_ceil);
         max_error = std::max(max_error, this_error);
 
@@ -422,16 +423,19 @@ std::string OpenCLTuner::tune_sgemm_systematic(const int m, const int n,
         }
 
       } catch (const cl::Error&) {
-        // Failed to enqueue kernel. Set error to max.
-        max_error = kMaxError;
+        // Failed to enqueue kernel.
+        has_error = true;
         break;
       }
     }
 
+    if (has_error || max_error > kMaxError) {
+      continue;
+    }
+
     bool log_progress = ++last_log_counter >= 500 && param_counter % 1000 == 0;
     double time_us = 1e-3 * min_elapsed;
-    if (max_error < kMaxError &&
-        (best_time_us == 0 || time_us < best_time_us)) {
+    if (best_time_us == 0 || time_us < best_time_us) {
       best_time_us = time_us;
       best_params = defines;
       best_params_str = parameters_to_string(p);
@@ -520,6 +524,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
   std::string best_string;
   double best_time_us = 0;
   double best_gflops = 0;
+  auto error_count = size_t{0};
 
   auto queue = cl::CommandQueue(m_context, m_device, CL_QUEUE_PROFILING_ENABLE);
   auto event = cl::Event();
@@ -623,7 +628,8 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
                                 (n_ceil * p["NDIMC"]) / p["NWG"],
                                 (size_t)batch_size};
 
-      float max_error = 0.0;
+      bool has_error = false;
+      double max_error = 0.0;
       cl_ulong min_elapsed = 0;
 
       for (auto r = size_t{0}; r < kMaxTuneIters; r++) {
@@ -637,7 +643,7 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
                                   c.data());
           queue.finish();
 
-          auto this_error =
+          double this_error =
               compare_ref(c, c_ref, n, m, batch_size, n_ceil, m_ceil);
           max_error = std::max(max_error, this_error);
 
@@ -658,12 +664,13 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
 
         } catch (const cl::Error&) {
           // Failed to enqueue kernel. Set error to max.
-          max_error = kMaxError;
+          has_error = true;
+          error_count++;
           break;
         }
       }
 
-      if (max_error >= kMaxError) {
+      if (has_error || max_error > kMaxError) {
         p = p_old;
         continue;
       }
@@ -693,6 +700,11 @@ std::string OpenCLTuner::tune_sgemm_stochastic(const int m, const int n,
          << best_gflops << " GFLOPS)";
 
   }  // seed
+
+  if (error_count > 0) {
+    CERR << error_count << " configuration(s) out of " << seeds
+         << " could not be launched";
+  }
 
   if (best_time_us == 0) {
     CERR << "Failed to find a working configuration." << std::endl
