@@ -168,7 +168,7 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
 #ifdef EMBEDDED_WEIGHTS
 #define MOD_GZIP_ZLIB_WINDOWSIZE 15
 
-std::string DecompressGzipString(const std::string& str)
+std::string DecompressGzipString(const unsigned char* str, const int size)
 {
     z_stream zs;
     memset(&zs, 0, sizeof(zs));
@@ -176,8 +176,8 @@ std::string DecompressGzipString(const std::string& str)
     if (inflateInit2(&zs, MOD_GZIP_ZLIB_WINDOWSIZE + 16) != Z_OK)
         throw Exception("inflateInit failed while decompressing.");
 
-    zs.next_in = (Bytef*)str.data();
-    zs.avail_in = str.size();
+    zs.next_in = (Bytef*)str;
+    zs.avail_in = size;
 
     int ret;
     char outbuffer[32768];
@@ -209,10 +209,7 @@ std::string DecompressGzipString(const std::string& str)
 }
 
 WeightsFile LoadEmbeddedWeights() {
-  std::string compressed(reinterpret_cast<const char *> (EMBEDDED_WEIGHTS_DATA),
-                     sizeof(EMBEDDED_WEIGHTS_DATA) / sizeof(EMBEDDED_WEIGHTS_DATA[0]));
-
-  auto buffer = DecompressGzipString(compressed);
+  auto buffer = DecompressGzipString(EMBEDDED_WEIGHTS_DATA, sizeof(EMBEDDED_WEIGHTS_DATA) / sizeof(EMBEDDED_WEIGHTS_DATA[0]));
 
   ValidateWeightsBuffer(buffer);
 
