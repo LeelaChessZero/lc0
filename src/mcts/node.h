@@ -153,7 +153,7 @@ class Node {
   int GetNStarted() const { return n_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ() const { return q_; }
+  double GetQ() const { return q_; }
   float GetD() const { return d_; }
 
   // Returns whether the node is known to be draw/lose/win.
@@ -268,7 +268,7 @@ class Node {
   // subtree. For terminal nodes, eval is stored. This is from the perspective
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
-  float q_ = 0.0f;
+  double q_ = 0.0f;
   // Averaged draw probability. Works similarly to Q, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -336,7 +336,7 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q) const {
+  double GetQ(double default_q) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
   }
   float GetD() const {
@@ -369,7 +369,7 @@ class EdgeAndNode {
     const auto n1 = GetNStarted() + 1;
     return std::max(
         1.0f,
-        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
+        std::min(std::floor(GetP() * numerator / (target_score - (float)q) - n1) + 1,
                  1e9f));
   }
 
