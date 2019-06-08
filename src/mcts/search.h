@@ -90,7 +90,7 @@ class Search {
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
   // Returns pair {Q, D}.
-  std::pair<float, float> GetBestEval() const;
+  std::pair<double, double> GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
@@ -258,9 +258,9 @@ class SearchWorker {
     // The node to extend.
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
-    float v;
+    double v;
     // Draw probability for NN's with WDL value head
-    float d;
+    double d;
     int multivisit = 0;
     uint16_t depth;
     bool nn_queried = false;

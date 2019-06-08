@@ -192,26 +192,26 @@ int64_t Search::GetTimeToDeadline() const {
 }
 
 namespace {
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
+inline double GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
              : -node->GetQ() - value * std::sqrt(node->GetVisitedPolicy());
 }
 
-inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
-  const float init = params.GetCpuct();
-  const float k = params.GetCpuctFactor();
-  const float base = params.GetCpuctBase();
+inline double ComputeCpuct(const SearchParams& params, uint32_t N) {
+  const double init = params.GetCpuct();
+  const double k = params.GetCpuctFactor();
+  const double base = params.GetCpuctBase();
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node,
                                                  bool is_black_to_move) const {
-  const float fpu = GetFpu(params_, node, node == root_node_);
-  const float cpuct = ComputeCpuct(params_, node->GetN());
-  const float U_coeff =
+  const double fpu = GetFpu(params_, node, node == root_node_);
+  const double cpuct = ComputeCpuct(params_, node->GetN());
+  const double U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
 
   std::vector<EdgeAndNode> edges;
@@ -253,7 +253,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << edge.GetQ(fpu) + edge.GetU(U_coeff) << ") ";
 
     oss << "(V: ";
-    optional<float> v;
+    optional<double> v;
     if (edge.IsTerminal()) {
       v = edge.node()->GetQ();
     } else {
@@ -468,11 +468,11 @@ void Search::UpdateRemainingMoves() {
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
 // settings. So, somethimes, they may return results of different moves.
-std::pair<float, float> Search::GetBestEval() const {
+std::pair<double, double> Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  float parent_q = -root_node_->GetQ();
-  float parent_d = root_node_->GetD();
+  double parent_q = -root_node_->GetQ();
+  double parent_d = root_node_->GetD();
   if (!root_node_->HasChildren()) return {parent_q, parent_d};
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
   return {best_edge.GetQ(parent_q), best_edge.GetD()};
@@ -551,7 +551,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<uint64_t, double, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -590,8 +590,8 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   float sum = 0.0;
   float max_n = 0.0;
   const float offset = params_.GetTemperatureVisitOffset();
-  float max_eval = -1.0f;
-  const float fpu = GetFpu(params_, parent, parent == root_node_);
+  double max_eval = -1.0f;
+  const double fpu = GetFpu(params_, parent, parent == root_node_);
 
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -607,7 +607,7 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   if (max_n <= 0.0f) return GetBestChildNoTemperature(parent);
 
   // TODO(crem) Simplify this code when samplers.h is merged.
-  const float min_eval =
+  const double min_eval =
       max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -927,13 +927,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    const float cpuct = ComputeCpuct(params_, node->GetN());
-    const float puct_mult =
+    const double cpuct = ComputeCpuct(params_, node->GetN());
+    const double puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-    float best = std::numeric_limits<float>::lowest();
-    float second_best = std::numeric_limits<float>::lowest();
+    double best = std::numeric_limits<double>::lowest();
+    double second_best = std::numeric_limits<double>::lowest();
     int possible_moves = 0;
-    const float fpu = GetFpu(params_, node, is_root_node);
+    const double fpu = GetFpu(params_, node, is_root_node);
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -953,8 +953,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q = child.GetQ(fpu);
-      const float score = child.GetU(puct_mult) + Q;
+      const double Q = child.GetQ(fpu);
+      const double score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1145,12 +1145,12 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   if (node->IsTerminal()) return 0;
 
   // Populate all subnodes and their scores.
-  typedef std::pair<float, EdgeAndNode> ScoredEdge;
+  typedef std::pair<double, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
-  const float cpuct = ComputeCpuct(params_, node->GetN());
-  const float puct_mult =
+  const double cpuct = ComputeCpuct(params_, node->GetN());
+  const double puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float fpu = GetFpu(params_, node, node == search_->root_node_);
+  const double fpu = GetFpu(params_, node, node == search_->root_node_);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
@@ -1183,8 +1183,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     // Last node gets the same budget as prev-to-last node.
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
-      const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-fpu);
+      const double next_score = -scores[i + 1].first;
+      const double q = edge.GetQ(-fpu);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
@@ -1286,8 +1286,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
 
   // Backup V value up to a root. After 1 visit, V = Q.
-  float v = node_to_process.v;
-  float d = node_to_process.d;
+  double v = node_to_process.v;
+  double d = node_to_process.d;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 

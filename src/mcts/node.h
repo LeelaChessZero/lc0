@@ -154,7 +154,7 @@ class Node {
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   double GetQ() const { return q_; }
-  float GetD() const { return d_; }
+  double GetD() const { return d_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -271,7 +271,7 @@ class Node {
   double q_ = 0.0f;
   // Averaged draw probability. Works similarly to Q, except that D is not
   // flipped depending on the side to move.
-  float d_ = 0.0f;
+  double d_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
@@ -312,7 +312,7 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+static_assert(sizeof(Node) == 88, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -358,7 +358,7 @@ class EdgeAndNode {
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator) const {
+  double GetU(double numerator) const {
     return numerator * GetP() / (1 + GetNStarted());
   }
 
@@ -368,9 +368,9 @@ class EdgeAndNode {
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
     return std::max(
-        1.0f,
-        std::min(std::floor(GetP() * numerator / (target_score - (float)q) - n1) + 1,
-                 1e9f));
+        1.0,
+        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
+                 1e9));
   }
 
   std::string DebugString() const;
