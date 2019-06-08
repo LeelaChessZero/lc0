@@ -1,4 +1,9 @@
-﻿v0.21.2-rc2 (2019-05-22)
+﻿v0.21.2-rc3 (2019-06-08)
+~~~~~~~~~~~
+
+* Centipawn conversion (#860)
+
+v0.21.2-rc2 (2019-05-22)
 ~~~~~~~~~~~
 
 * Add 320 and 352 channel support for fused SE layer (#855)
