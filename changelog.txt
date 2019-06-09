@@ -1,4 +1,9 @@
-﻿v0.21.2-rc3 (2019-06-08)
+﻿v0.21.2 (2019-06-09)
+~~~~~~~
+
+* Divide by a slightly smaller divisor to truncate to +/-12800. (#880)
+
+v0.21.2-rc3 (2019-06-08)
 ~~~~~~~~~~~
 
 * Centipawn conversion (#860)
