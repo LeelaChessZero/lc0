@@ -125,16 +125,20 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
+    auto score = edge.GetQ(default_q);
     if (score_type == "centipawn") {
-      uci_info.score = 295 * edge.GetQ(default_q) /
-                       (1 - 0.976953126 * std::pow(edge.GetQ(default_q), 14));
+      // Logit: log(p/(1-p)) == -log(1/p-1) and here probability p = (Q+1)/2.
+      score = 135 * -std::log(2 / (score + 1) - 1);
+    } else if (score_type == "centipawn_2019") {
+      score = 295 * score / (1 - 0.976953126 * std::pow(score, 14));
     } else if (score_type == "centipawn_2018") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(default_q));
+      score = 290.680623072 * tan(1.548090806 * score);
     } else if (score_type == "win_percentage") {
-      uci_info.score = edge.GetQ(default_q) * 5000 + 5000;
+      score = score * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = edge.GetQ(default_q) * 10000;
+      score *= 10000;
     }
+    uci_info.score = std::max(-12800.0f, std::min(12800.0f, std::round(score)));
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
     for (auto iter = edge; iter;
