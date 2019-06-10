@@ -111,6 +111,7 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   }
 }
 
+// Parameters needed for selfplay and uci, but not benchmark.
 void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
                                  const OptionsDict& options) {
   // KLD gain.
@@ -131,7 +132,7 @@ void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
 }
 
 namespace {
-
+// Stoppers for uci mode only.
 void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
                       const GoParams& params) {
   const bool infinite = params.infinite || params.ponder;
@@ -292,7 +293,9 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
     const Position& position) {
   auto result = std::make_unique<ChainedSearchStopper>();
 
+  // Time management stopper.
   result->AddStopper(CreateTimeManagementStopper(options, params, position));
+  // All the standard stoppers (go nodes, RAM limit, smart pruning, etc).
   PopulateStoppers(result.get(), options, params);
   return std::move(result);
 }
