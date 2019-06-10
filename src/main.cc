@@ -51,12 +51,12 @@ int main(int argc, const char** argv) {
       // Selfplay mode.
       SelfPlayLoop loop;
       loop.RunLoop();
-    } else if (CommandLine::ConsumeCommand("benchmark")) {
-      // Benchmark mode.
-      Benchmark benchmark;
-      benchmark.Run();
     } else */
-  {
+  if (CommandLine::ConsumeCommand("benchmark")) {
+    // Benchmark mode.
+    Benchmark benchmark;
+    benchmark.Run();
+  } else {
     // Consuming optional "uci" mode.
     CommandLine::ConsumeCommand("uci");
     // Ordinary UCI engine.
