@@ -55,6 +55,16 @@ class VisitsStopper : public SearchStopper {
   const int64_t nodes_limit_;
 };
 
+class PlayoutsStopper : public SearchStopper {
+ public:
+  PlayoutsStopper(int64_t limit) : nodes_limit_(limit) {}
+  int64_t GetVisitsLimit() const { return nodes_limit_; }
+  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+
+ private:
+  const int64_t nodes_limit_;
+};
+
 class MemoryWatchingStopper : public VisitsStopper {
  public:
   // Must be in sync with description at kRamLimitMbId.

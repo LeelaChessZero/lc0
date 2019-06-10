@@ -27,6 +27,7 @@
 
 #include "selfplay/tournament.h"
 #include "mcts/search.h"
+#include "mcts/timemgr/factory.h"
 #include "neural/factory.h"
 #include "selfplay/game.h"
 #include "utils/optionsparser.h"
@@ -67,7 +68,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(kNnCacheSizeId, 0, 999999999) = 200000;
+  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;
@@ -91,7 +92,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId.GetId(), 1);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId.GetId(), 7);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId.GetId(), false);
-  defaults->Set<float>(SearchParams::kSmartPruningFactorId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kTemperatureId.GetId(), 1.0f);
   defaults->Set<bool>(SearchParams::kNoiseId.GetId(), true);
   defaults->Set<float>(SearchParams::kFpuValueId.GetId(), 0.0f);
@@ -138,12 +138,12 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
 
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(
-      options.GetSubdict("player1").Get<int>(kNnCacheSizeId.GetId()));
+      options.GetSubdict("player1").Get<int>(kNNCacheSizeId.GetId()));
   if (kShareTree) {
     cache_[1] = cache_[0];
   } else {
     cache_[1] = std::make_shared<NNCache>(
-        options.GetSubdict("player2").Get<int>(kNnCacheSizeId.GetId()));
+        options.GetSubdict("player2").Get<int>(kNNCacheSizeId.GetId()));
   }
 
   // SearchLimits.

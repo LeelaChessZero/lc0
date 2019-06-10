@@ -68,6 +68,22 @@ bool VisitsStopper::ShouldStop(const IterationStats& stats,
 }
 
 ///////////////////////////
+// PlayoutsStopper
+///////////////////////////
+
+bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
+                                 TimeManagerHints* hints) {
+  hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
+                                                   stats.nodes_since_movestart);
+  if (stats.nodes_since_movestart >= nodes_limit_) {
+    LOGFILE << "Stopped search: Reached playouts limit: "
+            << stats.nodes_since_movestart << ">=" << nodes_limit_;
+    return true;
+  }
+  return false;
+}
+
+///////////////////////////
 // MemoryWatchingStopper
 ///////////////////////////
 

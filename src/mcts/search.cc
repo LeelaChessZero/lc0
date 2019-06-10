@@ -328,6 +328,11 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
   }
+
+  // Use a 0 visit cancel score update to clear out any cached best edge, as
+  // at the next iteration remaining playouts may be different.
+  // TODO(crem) Is it really needed?
+  root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature

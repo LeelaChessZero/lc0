@@ -26,8 +26,10 @@
 */
 
 #include "selfplay/game.h"
-#include <algorithm>
 
+#include <algorithm>
+#include "mcts/timemgr/factory.h"
+#include "mcts/timemgr/stoppers.h"
 #include "neural/writer.h"
 
 namespace lczero {
@@ -84,18 +86,15 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
       tree_[idx]->TrimTreeAtHead();
     }
-    if (options_[idx].search_limits.movetime > -1) {
-      options_[idx].search_limits.search_deadline =
-          std::chrono::steady_clock::now() +
-          std::chrono::milliseconds(options_[idx].search_limits.movetime);
-    }
+
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
           options_[idx].info_callback, /* searchmoves */ MoveList(),
-          /* stopper, DO NOT SUBMIT */ std::unique_ptr<SearchStopper>(),
+          std::chrono::steady_clock::now(),
+          options_[idx].search_limits.MakeSearchStopper(),
           /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
           nullptr);
       // TODO: add Syzygy option for selfplay.
@@ -199,6 +198,19 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
     writer->WriteChunk(chunk);
     black_to_move = !black_to_move;
   }
+}
+
+std::unique_ptr<SearchStopper> SelfPlayLimits::MakeSearchStopper() const {
+  auto result = std::make_unique<ChainedSearchStopper>();
+
+  if (visits >= 0) result->AddStopper(std::make_unique<VisitsStopper>(visits));
+  if (playouts >= 0) {
+    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts));
+  }
+  if (movetime >= 0) {
+    result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
+  }
+  return std::move(result);
 }
 
 }  // namespace lczero
