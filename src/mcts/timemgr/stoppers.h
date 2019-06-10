@@ -92,7 +92,7 @@ class KldGainStopper : public SearchStopper {
   const int min_gain_;
   const int average_interval_;
   Mutex mutex_;
-  std::vector<int64_t> prev_visits_ GUARDED_BY(mutex_);
+  std::vector<uint32_t> prev_visits_ GUARDED_BY(mutex_);
   int64_t prev_child_nodes_ GUARDED_BY(mutex_);
 };
 

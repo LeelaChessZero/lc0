@@ -57,8 +57,8 @@ void ChainedSearchStopper::OnSearchDone(const IterationStats& stats) {
 
 bool VisitsStopper::ShouldStop(const IterationStats& stats,
                                TimeManagerHints* hints) {
-  hints->UpdateEstimatedRemainingRemainingPlayouts(stats.total_nodes -
-                                                   nodes_limit_);
+  hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
+                                                   stats.total_nodes);
   if (stats.total_nodes >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached visits limit: " << stats.total_nodes
             << ">=" << nodes_limit_;
@@ -166,12 +166,17 @@ SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor)
 bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
                                      TimeManagerHints* hints) {
   Mutex::Lock lock(mutex_);
+  if (stats.edge_n.size() == 1) {
+    LOGFILE << "Only one possible move. Moving immediately.";
+    return true;
+  }
   if (stats.nodes_since_movestart > 0 && !first_eval_time_) {
     first_eval_time_ = stats.time_since_movestart;
     return false;
   }
-  if (*first_eval_time_ + kSmartPruningToleranceMs <
-      stats.time_since_movestart) {
+  if (stats.edge_n.size() == 0) return false;
+  if (stats.time_since_movestart <
+      *first_eval_time_ + kSmartPruningToleranceMs) {
     return false;
   }
 
@@ -188,7 +193,27 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   // very realistic.
   hints->UpdateEstimatedRemainingRemainingPlayouts(remaining_playouts);
 
-  return remaining_playouts <= 0;
+  uint32_t largest_n = 0;
+  uint32_t second_largest_n = 0;
+  for (auto n : stats.edge_n) {
+    if (n > largest_n) {
+      second_largest_n = largest_n;
+      largest_n = n;
+    } else if (n > second_largest_n) {
+      second_largest_n = n;
+    }
+  }
+
+  if (remaining_playouts < (largest_n - second_largest_n)) {
+    LOGFILE << remaining_playouts << " playouts remaining. Best move has "
+            << largest_n << " visits, second best -- " << second_largest_n
+            << ". Difference is " << (largest_n - second_largest_n)
+            << ", so stopping the search.";
+
+    return true;
+  }
+
+  return false;
 }
 
 }  // namespace lczero

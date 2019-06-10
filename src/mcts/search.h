@@ -135,8 +135,6 @@ class Search {
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
-  // Becomes true when smart pruning decides that no better move can be found.
-  bool only_one_possible_move_left_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
   EdgeAndNode final_bestmove_ GUARDED_BY(counters_mutex_);
@@ -162,13 +160,6 @@ class Search {
   Edge* last_outputted_info_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
-  // If kldgain minimum checks enabled, this was the visit distribution at the
-  // last kldgain interval triggering.
-  std::vector<uint32_t> prev_dist_ GUARDED_BY(counters_mutex_);
-  // Total visits at the last time prev_dist_ was cached.
-  uint32_t prev_dist_visits_total_ GUARDED_BY(counters_mutex_) = 0;
-  // If true, search should exit as kldgain evaluation showed too little change.
-  bool kldgain_too_small_ GUARDED_BY(counters_mutex_) = false;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
