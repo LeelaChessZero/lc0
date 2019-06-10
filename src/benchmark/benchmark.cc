@@ -34,10 +34,6 @@ const int kDefaultThreads = 2;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
-const OptionId kNNCacheSizeId{
-    "nncache", "NNCacheSize",
-    "Number of positions to store in a memory cache. A large cache can speed "
-    "up searching, but takes memory."};
 const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
 const OptionId kMovetimeId{"movetime", "",
                            "Benchmark time allocation, in milliseconds."};
@@ -78,7 +74,7 @@ void Benchmark::Run() {
       limits.search_deadline = start + std::chrono::milliseconds(movetime);
     }
     if (visits > -1) {
-        limits.visits = visits;
+      limits.visits = visits;
     }
 
     auto search = std::make_unique<Search>(

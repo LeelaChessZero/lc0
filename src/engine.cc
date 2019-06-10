@@ -31,6 +31,7 @@
 
 #include "engine.h"
 #include "mcts/search.h"
+#include "mcts/timemgr/factory.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
 
@@ -44,10 +45,6 @@ const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
                           "output the log to the console.",
                           'l'};
-const OptionId kNNCacheSizeId{
-    "nncache", "NNCacheSize",
-    "Number of positions to store in a memory cache. A large cache can speed "
-    "up searching, but takes memory."};
 const OptionId kSyzygyTablebaseId{
     "syzygy-paths", "SyzygyPath",
     "List of Syzygy tablebase directories, list entries separated by system "
@@ -71,7 +68,9 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
                                    const OptionsDict& options)
     : options_(options),
       best_move_callback_(best_move_callback),
-      info_callback_(info_callback) {}
+      info_callback_(info_callback),
+      time_manager_(MakeLegacyTimeManager()),
+      move_start_time_(std::chrono::steady_clock::now()) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -123,18 +122,18 @@ void EngineController::EnsureReady() {
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
-  time_manager_.ResetMoveTimer();
+  move_start_time_ = std::chrono::steady_clock::now();
 }
 
 void EngineController::NewGame() {
   // In case anything relies upon defaulting to default position and just calls
   // newgame and goes straight into go.
-  time_manager_.ResetMoveTimer();
+  move_start_time_ = std::chrono::steady_clock::now();
   SharedLock lock(busy_mutex_);
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  time_manager_.ResetGame();
+  time_manager_->ResetGame();
   current_position_.reset();
   UpdateFromUciOptions();
 }
@@ -143,7 +142,7 @@ void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
   // Some UCI hosts just call position then immediately call go, while starting
   // the clock on calling 'position'.
-  time_manager_.ResetMoveTimer();
+  move_start_time_ = std::chrono::steady_clock::now();
   SharedLock lock(busy_mutex_);
   current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
@@ -161,7 +160,7 @@ void EngineController::SetupPosition(
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   const bool is_same_game = tree_->ResetToPosition(fen, moves);
-  if (!is_same_game) time_manager_.ResetGame();
+  if (!is_same_game) time_manager_->ResetGame();
 }
 
 void EngineController::Go(const GoParams& params) {
@@ -210,22 +209,20 @@ void EngineController::Go(const GoParams& params) {
   }
 
   auto stopper =
-      MakeSearchStopper(options_, params, tree_->HeadPosition(), &time_manager_,
-                        options_.Get<int>(kNNCacheSizeId.GetId()));
+      time_manager_->GetStopper(options_, params, tree_->HeadPosition());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), best_move_callback, info_callback,
       StringsToMovelist(params.searchmoves, tree_->IsBlackToMove()),
-      std::move(stopper), params.infinite || params.ponder, options_, &cache_,
-      syzygy_tb_.get());
+      move_start_time_, std::move(stopper), params.infinite || params.ponder,
+      options_, &cache_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
-          << FormatTime(
-                 SteadyClockToSystemClock(time_manager_.GetMoveStartTime()));
+          << FormatTime(SteadyClockToSystemClock(move_start_time_));
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 
 void EngineController::PonderHit() {
-  time_manager_.ResetMoveTimer();
+  move_start_time_ = std::chrono::steady_clock::now();
   go_params_.ponder = false;
   Go(go_params_);
 }

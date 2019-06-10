@@ -53,6 +53,7 @@ Search::Search(const NodeTree& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback,
                const MoveList& searchmoves,
+               std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
                const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb)
@@ -64,7 +65,7 @@ Search::Search(const NodeTree& tree, Network* network,
       played_history_(tree.GetPositionHistory()),
       network_(network),
       searchmoves_(searchmoves),
-      start_time_(std::chrono::steady_clock::now()),
+      start_time_(start_time),
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
@@ -518,6 +519,11 @@ void Search::StartThreads(size_t how_many) {
       worker.RunBlocking();
     });
   }
+  LOGFILE << "Search started. "
+          << std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - start_time_)
+                 .count()
+          << "ms already passed.";
 }
 
 void Search::RunBlocking(size_t threads) {

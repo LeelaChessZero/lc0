@@ -49,6 +49,7 @@ class Search {
   Search(const NodeTree& tree, Network* network,
          BestMoveInfo::Callback best_move_callback,
          ThinkingInfo::Callback info_callback, const MoveList& searchmoves,
+         std::chrono::steady_clock::time_point start_time,
          std::unique_ptr<SearchStopper> stopper, bool infinite,
          const OptionsDict& options, NNCache* cache,
          SyzygyTablebase* syzygy_tb);

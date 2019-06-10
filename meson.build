@@ -95,6 +95,7 @@ files += [
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/timemgr/factory.cc',
   'src/mcts/timemgr/stoppers.cc',
   'src/mcts/timemgr/timemgr.cc',
   'src/neural/cache.cc',

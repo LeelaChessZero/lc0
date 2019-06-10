@@ -89,7 +89,7 @@ class EngineController {
   RpSharedMutex busy_mutex_;
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
-  TimeManager time_manager_;
+  std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
@@ -106,6 +106,8 @@ class EngineController {
   // actually search the position one move earlier.
   optional<CurrentPosition> current_position_;
   GoParams go_params_;
+
+  std::chrono::steady_clock::time_point move_start_time_;
 };
 
 class EngineLoop : public UciLoop {

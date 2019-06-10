@@ -43,10 +43,6 @@ const OptionId kParallelGamesId{"parallelism", "Parallelism",
 const OptionId kThreadsId{
     "threads", "Threads",
     "Number of (CPU) worker threads to use for every game,", 't'};
-const OptionId kNnCacheSizeId{
-    "nncache", "NNCache",
-    "Number of positions to store in a memory cache. A large cache can speed "
-    "up searching, but takes memory."};
 const OptionId kPlayoutsId{"playouts", "Playouts",
                            "Number of playouts per move to search."};
 const OptionId kVisitsId{"visits", "Visits",

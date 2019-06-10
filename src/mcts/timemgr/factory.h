@@ -27,51 +27,15 @@
 
 #pragma once
 
-#include <chrono>
-#include <memory>
-#include <vector>
-#include "chess/uciloop.h"
+#include "mcts/timemgr/timemgr.h"
 #include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
-struct IterationStats {
-  int64_t time_since_movestart;
-  int64_t total_nodes = 0;
-  int64_t nodes_since_movestart = 0;
-  int average_depth = 0;
-  std::vector<uint32_t> edge_n;
-};
+extern const OptionId kNNCacheSizeId;
 
-class TimeManagerHints {
- public:
-  TimeManagerHints();
-  void Reset();
-  void UpdateEstimatedRemainingTimeMs(int64_t v);
-  int64_t GetEstimatedRemainingTimeMs() const;
-  void UpdateEstimatedRemainingRemainingPlayouts(int64_t v);
-  int64_t GetEstimatedRemainingPlayouts() const;
-
- private:
-  int64_t remaining_time_ms_;
-  int64_t remaining_playouts_;
-};
-
-class SearchStopper {
- public:
-  virtual ~SearchStopper() = default;
-  virtual bool ShouldStop(const IterationStats&, TimeManagerHints*) = 0;
-  // Only one stopper will be called.
-  virtual void OnSearchDone(const IterationStats&) {}
-};
-
-class TimeManager {
- public:
-  virtual ~TimeManager() = default;
-  virtual void ResetGame() = 0;
-  virtual std::unique_ptr<SearchStopper> GetStopper(
-      const OptionsDict& options, const GoParams& params,
-      const Position& position) = 0;
-};
+void PopulateTimeManagementOptions(OptionsParser* options);
+std::unique_ptr<TimeManager> MakeLegacyTimeManager();
 
 }  // namespace lczero
