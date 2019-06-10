@@ -86,7 +86,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = true;
 
   ConfigFile::PopulateOptions(options);
-  PopulateTimeManagementOptions(options);
+  PopulateTimeManagementOptions(RunType::kUci, options);
 }
 
 // Updates values from Uci options.

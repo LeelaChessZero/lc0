@@ -54,6 +54,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kResignWDLStyleId) = false;
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
+  PopulateTimeManagementOptions(RunType::kSelfplay, options);
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
@@ -90,11 +91,13 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
+      auto stoppers = options_[idx].search_limits.MakeSearchStopper();
+      PopulateStoppersForSelfplay(stoppers.get(), options_[idx].uci_options);
+
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
           options_[idx].info_callback, /* searchmoves */ MoveList(),
-          std::chrono::steady_clock::now(),
-          options_[idx].search_limits.MakeSearchStopper(),
+          std::chrono::steady_clock::now(), std::move(stoppers),
           /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
           nullptr);
       // TODO: add Syzygy option for selfplay.
@@ -200,7 +203,8 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   }
 }
 
-std::unique_ptr<SearchStopper> SelfPlayLimits::MakeSearchStopper() const {
+std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
+    const {
   auto result = std::make_unique<ChainedSearchStopper>();
 
   if (visits >= 0) result->AddStopper(std::make_unique<VisitsStopper>(visits));
@@ -210,7 +214,7 @@ std::unique_ptr<SearchStopper> SelfPlayLimits::MakeSearchStopper() const {
   if (movetime >= 0) {
     result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
   }
-  return std::move(result);
+  return result;
 }
 
 }  // namespace lczero

@@ -30,6 +30,7 @@
 #include "chess/position.h"
 #include "chess/uciloop.h"
 #include "mcts/search.h"
+#include "mcts/timemgr/stoppers.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "utils/optionsparser.h"
@@ -41,7 +42,7 @@ struct SelfPlayLimits {
   std::int64_t playouts = -1;
   std::int64_t movetime = -1;
 
-  std::unique_ptr<SearchStopper> MakeSearchStopper() const;
+  std::unique_ptr<ChainedSearchStopper> MakeSearchStopper() const;
 };
 
 struct PlayerOptions {

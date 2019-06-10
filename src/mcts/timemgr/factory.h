@@ -27,15 +27,27 @@
 
 #pragma once
 
+#include "mcts/timemgr/stoppers.h"
 #include "mcts/timemgr/timemgr.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
 
+// Option ID for a cache size. It's used from multiple places and there's no
+// really nice place to declare, so let it be here.
 extern const OptionId kNNCacheSizeId;
 
-void PopulateTimeManagementOptions(OptionsParser* options);
+enum class RunType { kUci, kSelfplay };
+
+// Populates UCI/command line flags with time management options.
+void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
+
+// Creates a time management ("Legacy" because it's planned to be replaced).
 std::unique_ptr<TimeManager> MakeLegacyTimeManager();
+
+// Populates KLDGain and SmartPruning stoppers.
+void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
+                                 const OptionsDict& options);
 
 }  // namespace lczero

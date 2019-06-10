@@ -658,7 +658,6 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
   minibatch_.clear();
-  // iteration_stats_.Reset(); DO NOT SUBMIT
 
   if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;

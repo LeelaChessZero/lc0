@@ -91,21 +91,46 @@ const OptionId kSmartPruningFactorId{
 
 }  // namespace
 
-void PopulateTimeManagementOptions(OptionsParser* options) {
-  options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
-  options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-  options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
-  options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
-  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
-  options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
+void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   options->Add<IntOption>(kKLDGainAverageIntervalId, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNodeId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
+  options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) =
+      (for_what == RunType::kUci ? 1.33f : 0.00f);
 
-  // Hide time curve options.
-  options->HideOption(kTimeMidpointMoveId);
-  options->HideOption(kTimeSteepnessId);
+  if (for_what == RunType::kUci) {
+    options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
+    options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
+    options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
+    options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
+    options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
+    options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
+
+    // Hide time curve options.
+    options->HideOption(kTimeMidpointMoveId);
+    options->HideOption(kTimeSteepnessId);
+  }
 }
+
+void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
+                                 const OptionsDict& options) {
+  // KLD gain.
+  const auto min_kld_gain =
+      options.Get<float>(kMinimumKLDGainPerNodeId.GetId());
+  if (min_kld_gain >= 0.0f) {
+    stopper->AddStopper(std::make_unique<KldGainStopper>(
+        min_kld_gain, options.Get<int>(kKLDGainAverageIntervalId.GetId())));
+  }
+
+  // Should be last in the chain.
+  const auto smart_pruning_factor =
+      options.Get<float>(kSmartPruningFactorId.GetId());
+  if (smart_pruning_factor >= 0.0f) {
+    stopper->AddStopper(
+        std::make_unique<SmartPruningStopper>(smart_pruning_factor));
+  }
+}
+
+namespace {
 
 void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
                       const GoParams& params) {
@@ -136,24 +161,8 @@ void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
     stopper->AddStopper(std::make_unique<DepthStopper>(*params.depth));
   }
 
-  // KLD gain.
-  const auto min_kld_gain =
-      options.Get<float>(kMinimumKLDGainPerNodeId.GetId());
-  if (min_kld_gain >= 0.0f) {
-    stopper->AddStopper(std::make_unique<KldGainStopper>(
-        min_kld_gain, options.Get<int>(kKLDGainAverageIntervalId.GetId())));
-  }
-
-  // Should be last in the chain.
-  const auto smart_pruning_factor =
-      options.Get<float>(kSmartPruningFactorId.GetId());
-  if (smart_pruning_factor >= 0.0f) {
-    stopper->AddStopper(
-        std::make_unique<SmartPruningStopper>(smart_pruning_factor));
-  }
+  PopulateStoppersForSelfplay(stopper, options);
 }
-
-namespace {
 
 class LegacyStopper : public TimeLimitStopper {
  public:
