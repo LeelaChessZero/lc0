@@ -44,7 +44,7 @@ void TimeManagerHints::UpdateEstimatedRemainingRemainingPlayouts(int64_t v) {
 }
 int64_t TimeManagerHints::GetEstimatedRemainingPlayouts() const {
   // Even if we exceeded limits, don't go crazy by not allowing any playouts.
-  return std::max(1L, remaining_playouts_);
+  return std::max(decltype(remaining_playouts_){1}, remaining_playouts_);
 }
 
 void TimeManagerHints::Reset() {
