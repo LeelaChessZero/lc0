@@ -75,7 +75,6 @@ class SearchParams {
   bool GetLogLiveStats() const {
     return options_.Get<bool>(kLogLiveStatsId.GetId());
   }
-  float GetSmartPruningFactor() const { return kSmartPruningFactor; }
   bool GetFpuAbsolute(bool at_root) const {
     return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute;
   }
@@ -110,7 +109,6 @@ class SearchParams {
   static const OptionId kNoiseId;
   static const OptionId kVerboseStatsId;
   static const OptionId kLogLiveStatsId;
-  static const OptionId kSmartPruningFactorId;
   static const OptionId kFpuStrategyId;
   static const OptionId kFpuValueId;
   static const OptionId kFpuStrategyAtRootId;
@@ -138,7 +136,6 @@ class SearchParams {
   const float kCpuctBase;
   const float kCpuctFactor;
   const bool kNoise;
-  const float kSmartPruningFactor;
   const bool kFpuAbsolute;
   const float kFpuValue;
   const bool kFpuAbsoluteAtRoot;

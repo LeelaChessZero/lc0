@@ -36,13 +36,12 @@
 
 namespace lczero {
 
-// DO NOT SUBMIT actually fill all that!
 struct IterationStats {
-  void Reset() { *this = IterationStats(); }
-  bool is_watchdog = false;
+  // Filled for all threads.
+  int64_t time_since_movestart;
   int64_t total_nodes = 0;
+  int64_t nodes_since_movestart = 0;
   int average_depth = 0;
-  int maximum_depath = 0;
   std::vector<int64_t> edge_n;
 };
 
@@ -51,23 +50,21 @@ class TimeManagerHints {
   TimeManagerHints() { Reset(); }
   void Reset();
 
-  void UpdateEstimatedRemainingTime(std::chrono::milliseconds v) {
-    if (v < remaining_time_) remaining_time_ = v;
+  void UpdateEstimatedRemainingTimeMs(int64_t v) {
+    if (v < remaining_time_ms_) remaining_time_ms_ = v;
   }
-  std::chrono::milliseconds GetEstimatedRemainingTime() const {
-    return remaining_time_;
-  }
+  int64_t GetEstimatedRemainingTimeMs() const { return remaining_time_ms_; }
 
   void UpdateEstimatedRemainingRemainingPlayouts(int64_t v) {
     if (v < remaining_playouts_) remaining_playouts_ = v;
   }
   int64_t GetEstimatedRemainingPlayouts() const {
     // Even if we exceeded limits, don't go crazy by not allowing any playouts.
-    return std::max(1LL, remaining_playouts_);
+    return std::max(1L, remaining_playouts_);
   }
 
  private:
-  std::chrono::milliseconds remaining_time_;
+  int64_t remaining_time_ms_;
   int64_t remaining_playouts_;
 };
 
@@ -75,7 +72,8 @@ class SearchStopper {
  public:
   virtual ~SearchStopper() = default;
   virtual bool ShouldStop(const IterationStats&, TimeManagerHints*) = 0;
-  virtual void OnSearchDone() {}
+  // Only one stopper will be called.
+  virtual void OnSearchDone(const IterationStats&) {}
 };
 
 class TimeManager {

@@ -99,14 +99,6 @@ const OptionId SearchParams::kVerboseStatsId{
 const OptionId SearchParams::kLogLiveStatsId{
     "log-live-stats", "LogLiveStats",
     "Do VerboseMoveStats on every info update."};
-const OptionId SearchParams::kSmartPruningFactorId{
-    "smart-pruning-factor", "SmartPruningFactor",
-    "Do not spend time on the moves which cannot become bestmove given the "
-    "remaining time to search. When no other move can overtake the current "
-    "best, the search stops, saving the time. Values greater than 1 stop less "
-    "promising moves from being considered even earlier. Values less than 1 "
-    "causes hopeless moves to still have some attention. When set to 0, smart "
-    "pruning is deactivated."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
     "How is an eval of unvisited node determined. \"First Play Urgency\" "
@@ -196,7 +188,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kNoiseId) = false;
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<BoolOption>(kLogLiveStatsId) = false;
-  options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
@@ -226,7 +217,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
-      kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),

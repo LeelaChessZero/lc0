@@ -47,8 +47,8 @@ void ChainedSearchStopper::AddStopper(std::unique_ptr<SearchStopper> stopper) {
   if (stopper) stoppers_.push_back(std::move(stopper));
 }
 
-void ChainedSearchStopper::OnSearchDone() {
-  for (const auto& x : stoppers_) x->OnSearchDone();
+void ChainedSearchStopper::OnSearchDone(const IterationStats& stats) {
+  for (const auto& x : stoppers_) x->OnSearchDone(stats);
 }
 
 ///////////////////////////
@@ -91,27 +91,24 @@ MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb)
 }
 
 ///////////////////////////
-// MovetimeStopper
+// TimelimitStopper
 ///////////////////////////
 
-DeadlineStopper::DeadlineStopper(std::chrono::steady_clock::time_point deadline)
-    : deadline_(deadline) {}
+TimeLimitStopper::TimeLimitStopper(int64_t time_limit_ms)
+    : time_limit_ms_(time_limit_ms) {}
 
-bool DeadlineStopper::ShouldStop(const IterationStats&,
-                                 TimeManagerHints* hints) {
-  const auto now = std::chrono::steady_clock::now();
-  hints->UpdateEstimatedRemainingTime(
-      std::chrono::duration_cast<std::chrono::milliseconds>(deadline_ - now));
-  if (now >= deadline_) {
+bool TimeLimitStopper::ShouldStop(const IterationStats& stats,
+                                  TimeManagerHints* hints) {
+  hints->UpdateEstimatedRemainingTimeMs(time_limit_ms_ -
+                                        stats.time_since_movestart);
+  if (stats.time_since_movestart >= time_limit_ms_) {
     LOGFILE << "Stopping search: Ran out of time.";
     return true;
   }
   return false;
 }
 
-std::chrono::steady_clock::time_point DeadlineStopper::GetDeadline() const {
-  return deadline_;
-}
+int64_t TimeLimitStopper::GetTimeLimitMs() const { return time_limit_ms_; }
 
 ///////////////////////////
 // DepthStopper
@@ -133,7 +130,6 @@ KldGainStopper::KldGainStopper(float min_gain, int average_interval)
 bool KldGainStopper::ShouldStop(const IterationStats& stats,
                                 TimeManagerHints*) {
   Mutex::Lock lock(mutex_);
-
   const auto new_child_nodes = stats.total_nodes - 1;
   if (new_child_nodes < prev_child_nodes_ + average_interval_) return false;
 
@@ -160,23 +156,39 @@ bool KldGainStopper::ShouldStop(const IterationStats& stats,
 ///////////////////////////
 
 namespace {
-const int kSmartPruningToleranceNodes = 300;
 const int kSmartPruningToleranceMs = 200;
+const int kSmartPruningToleranceNodes = 300;
 }  // namespace
+
+SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor)
+    : smart_pruning_factor_(smart_pruning_factor) {}
 
 bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
                                      TimeManagerHints* hints) {
-  auto now = std::chrono::steady_clock::now();
-  if (stats.total_playouts > 0 && !time_since_first_eval_) {
-    time_since_first_eval_ = now;
+  Mutex::Lock lock(mutex_);
+  if (stats.nodes_since_movestart > 0 && !first_eval_time_) {
+    first_eval_time_ = stats.time_since_movestart;
     return false;
   }
-  if (std::chrono::duration_cast<std::chrono::milliseconds>(
-          now - time_since_first_eval_) < kSmartPruningToleranceMs) {
+  if (*first_eval_time_ + kSmartPruningToleranceMs <
+      stats.time_since_movestart) {
     return false;
   }
 
-  // I"M WRITING HERE!
+  const auto nodes = stats.nodes_since_movestart + kSmartPruningToleranceNodes;
+  const auto time = stats.time_since_movestart - *first_eval_time_;
+  const auto nps = 1000LL * nodes / time + 1;
+
+  const double remaining_time_s = hints->GetEstimatedRemainingTimeMs() / 1000.0;
+  const auto remaining_playouts =
+      std::min(remaining_time_s * nps / smart_pruning_factor_,
+               hints->GetEstimatedRemainingPlayouts() / smart_pruning_factor_);
+
+  // May overflow if (nps/smart_pruning_factor) > 180 000 000, but that's not
+  // very realistic.
+  hints->UpdateEstimatedRemainingRemainingPlayouts(remaining_playouts);
+
+  return remaining_playouts <= 0;
 }
 
 }  // namespace lczero

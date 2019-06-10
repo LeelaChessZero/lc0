@@ -27,7 +27,6 @@
 
 #pragma once
 
-#include <chrono>
 #include <vector>
 #include "mcts/node.h"
 #include "mcts/timemgr/timemgr.h"
@@ -40,7 +39,7 @@ class ChainedSearchStopper : public SearchStopper {
   bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
   // Can be nullptr.
   void AddStopper(std::unique_ptr<SearchStopper> stopper);
-  void OnSearchDone() override;
+  void OnSearchDone(const IterationStats&) override;
 
  private:
   std::vector<std::unique_ptr<SearchStopper>> stoppers_;
@@ -63,16 +62,16 @@ class MemoryWatchingStopper : public VisitsStopper {
   MemoryWatchingStopper(int cache_size, int ram_limit_mb);
 };
 
-class DeadlineStopper : public SearchStopper {
+class TimeLimitStopper : public SearchStopper {
  public:
-  DeadlineStopper(std::chrono::steady_clock::time_point deadline);
+  TimeLimitStopper(int64_t time_limit_ms);
   bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
 
  protected:
-  std::chrono::steady_clock::time_point GetDeadline() const;
+  int64_t GetTimeLimitMs() const;
 
  private:
-  const std::chrono::steady_clock::time_point deadline_;
+  const int64_t time_limit_ms_;
 };
 
 class DepthStopper : public SearchStopper {
@@ -94,15 +93,18 @@ class KldGainStopper : public SearchStopper {
   const int average_interval_;
   Mutex mutex_;
   std::vector<int64_t> prev_visits_ GUARDED_BY(mutex_);
-  int64_t prev_child_nodes_ GUARDED_BY(mutex_) = 0;
+  int64_t prev_child_nodes_ GUARDED_BY(mutex_);
 };
 
 class SmartPruningStopper : public SearchStopper {
  public:
+  SmartPruningStopper(float smart_pruning_factor);
   bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
 
  private:
-  optional<std::chrono::steady_clock::time_point> time_since_first_eval_;
+  const double smart_pruning_factor_;
+  Mutex mutex_;
+  optional<int64_t> first_eval_time_ GUARDED_BY(mutex_);
 };
 
 }  // namespace lczero

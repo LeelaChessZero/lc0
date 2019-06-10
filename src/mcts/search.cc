@@ -45,8 +45,6 @@
 namespace lczero {
 
 namespace {
-/* const int kSmartPruningToleranceNodes = 300;
-const int kSmartPruningToleranceMs = 200; */
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
@@ -325,66 +323,11 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     best_move_callback_(
         {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
          final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
-    stopper_->OnSearchDone();
+    stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
   }
 }
-/*
-void Search::UpdateRemainingMoves() {
-  if (params_.GetSmartPruningFactor() <= 0.0f) return;
-  SharedMutex::Lock lock(nodes_mutex_);
-  remaining_playouts_ = std::numeric_limits<int>::max();
-  // Check for how many playouts there is time remaining.
-  if (limits_.search_deadline && !nps_start_time_) {
-    nps_start_time_ = std::chrono::steady_clock::now();
-  } else if (limits_.search_deadline) {
-    const auto time_since_start =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - *nps_start_time_)
-            .count();
-    if (time_since_start > kSmartPruningToleranceMs) {
-      const auto nps = 1000LL *
-                           (total_playouts_ + kSmartPruningToleranceNodes) /
-                           time_since_start +
-                       1;
-      const int64_t remaining_time = GetTimeToDeadline();
-      // Put early_exit scaler here so calculation doesn't have to be done on
-      // every node.
-      const int64_t remaining_playouts =
-          remaining_time * nps / params_.GetSmartPruningFactor() / 1000;
-      // Don't assign directly to remaining_playouts_ as overflow is possible.
-      if (remaining_playouts < remaining_playouts_)
-        remaining_playouts_ = remaining_playouts;
-    }
-  }
-  // Check how many visits are left.
-  if (limits_.visits >= 0) {
-    // Add kMiniBatchSize, as it's possible to exceed visits limit by that
-    // number.
-    const auto remaining_visits = limits_.visits - total_playouts_ -
-                                  initial_visits_ + params_.GetMiniBatchSize() -
-                                  1;
-
-    if (remaining_visits < remaining_playouts_)
-      remaining_playouts_ = remaining_visits;
-  }
-  if (limits_.playouts >= 0) {
-    // Add kMiniBatchSize, as it's possible to exceed visits limit by that
-    // number.
-    const auto remaining_playouts =
-        limits_.visits - total_playouts_ + params_.GetMiniBatchSize() + 1;
-    if (remaining_playouts < remaining_playouts_)
-      remaining_playouts_ = remaining_playouts;
-  }
-  // Even if we exceeded limits, don't go crazy by not allowing any playouts.
-  if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
-  // Since remaining_playouts_ has changed, the logic for selecting visited root
-  // nodes may also change. Use a 0 visit cancel score update to clear out any
-  // cached best edge.
-  root_node_->CancelScoreUpdate(0);
-}
-*/
 
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
@@ -586,36 +529,50 @@ bool Search::IsSearchActive() const {
   return !stop_.load(std::memory_order_acquire);
 }
 
+void Search::PopulateCommonIterationStats(IterationStats* stats) {
+  stats->time_since_movestart = GetTimeSinceStart();
+
+  SharedMutex::SharedLock nodes_lock(nodes_mutex_);
+  stats->total_nodes = total_playouts_ + initial_visits_;
+  stats->nodes_since_movestart = total_playouts_;
+  stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
+  stats->edge_n.clear();
+  for (const auto& edge : root_node_->Edges()) {
+    stats->edge_n.push_back(edge.GetN());
+  }
+}
+
 void Search::WatchdogThread() {
   LOGFILE << "Start a watchdog thread.";
   TimeManagerHints hints;
   IterationStats stats;
-  stats.is_watchdog = true;
   while (true) {
+    hints.Reset();
+    PopulateCommonIterationStats(&stats);
     MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
 
     using namespace std::chrono_literals;
-    constexpr auto kMaxWaitTime = std::chrono::milliseconds(100);
-    constexpr auto kMinWaitTime = std::chrono::milliseconds(1);
+    constexpr auto kMaxWaitTimeMs = 100;
+    constexpr auto kMinWaitTimeMs = 1;
 
     Mutex::Lock lock(counters_mutex_);
     // Only exit when bestmove is responded. It may happen that search threads
     // already all exited, and we need at least one thread that can do that.
     if (bestmove_is_sent_) break;
 
-    auto remaining_time = hints.GetEstimatedRemainingTime();
-    if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
-    if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
+    auto remaining_time = hints.GetEstimatedRemainingTimeMs();
+    if (remaining_time > kMaxWaitTimeMs) remaining_time = kMaxWaitTimeMs;
+    if (remaining_time < kMinWaitTimeMs) remaining_time = kMinWaitTimeMs;
     // There is no real need to have max wait time, and sometimes it's fine
     // to wait without timeout at all (e.g. in `go nodes` mode), but we
     // still limit wait time for exotic cases like when pc goes to sleep
     // mode during thinking.
     // Minimum wait time is there to prevent busy wait and other threads
     // starvation.
-    watchdog_cv_.wait_for(lock.get_raw(), remaining_time, [this]() {
-      return stop_.load(std::memory_order_acquire);
-    });
+    watchdog_cv_.wait_for(
+        lock.get_raw(), std::chrono::milliseconds(remaining_time),
+        [this]() { return stop_.load(std::memory_order_acquire); });
   }
   LOGFILE << "End a watchdog thread.";
 }
@@ -690,7 +647,7 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
   minibatch_.clear();
-  iteration_stats_.Reset();
+  // iteration_stats_.Reset(); DO NOT SUBMIT
 
   if (!root_move_filter_populated_) {
     root_move_filter_populated_ = true;
@@ -1252,8 +1209,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
-  // search_->UpdateRemainingMoves();  // Updates smart pruning counters.
-  // search_->UpdateKLDGain();
+  search_->PopulateCommonIterationStats(&iteration_stats_);
   search_->MaybeTriggerStop(iteration_stats_, &latest_time_manager_hints_);
   search_->MaybeOutputInfo();
 

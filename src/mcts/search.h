@@ -44,19 +44,6 @@
 
 namespace lczero {
 
-/* struct SearchLimits {
-  // Type for N in nodes is currently uint32_t, so set limit in order not to
-  // overflow it.
-  std::int64_t visits = 4000000000;
-  std::int64_t playouts = -1;
-  int depth = -1;
-  optional<std::chrono::steady_clock::time_point> search_deadline;
-  bool infinite = false;
-  MoveList searchmoves;
-
-  std::string DebugString() const;
-}; */  // DO NOT SUBMIT
-
 class Search {
  public:
   Search(const NodeTree& tree, Network* network,
@@ -112,11 +99,6 @@ class Search {
                                           float temperature) const;
 
   int64_t GetTimeSinceStart() const;
-  int64_t GetTimeToDeadline() const;
-  /*
-  void UpdateRemainingMoves();
-  void UpdateKLDGain();
-  */
   void MaybeTriggerStop(const IterationStats& stats, TimeManagerHints* hints);
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
@@ -131,6 +113,8 @@ class Search {
   // Populates the given list with allowed root moves.
   // Returns true if the population came from tablebase.
   bool PopulateRootMoveLimit(MoveList* root_moves) const;
+
+  void PopulateCommonIterationStats(IterationStats* stats);
 
   // Returns verbose information about given node, as vector of strings.
   std::vector<std::string> GetVerboseStats(Node* node,

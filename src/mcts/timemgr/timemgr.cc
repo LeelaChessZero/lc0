@@ -74,16 +74,23 @@ const OptionId kKLDGainAverageIntervalId{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
+const OptionId kSmartPruningFactorId{
+    "smart-pruning-factor", "SmartPruningFactor",
+    "Do not spend time on the moves which cannot become bestmove given the "
+    "remaining time to search. When no other move can overtake the current "
+    "best, the search stops, saving the time. Values greater than 1 stop less "
+    "promising moves from being considered even earlier. Values less than 1 "
+    "causes hopeless moves to still have some attention. When set to 0, smart "
+    "pruning is deactivated."};
 
-template <class T>
-void Maximize(T* x) {
-  *x = std::numeric_limits<T>::max();
-}
 }  // namespace
 
 void TimeManagerHints::Reset() {
-  Maximize(&remaining_time_);
-  Maximize(&remaining_playouts_);
+  // Slightly more than 3 years.
+  remaining_time_ms_ = 100000000000;
+  // Type for N in nodes is currently uint32_t, so set limit in order not to
+  // overflow it.
+  remaining_playouts_ = 4000000000;
 }
 
 void PopulateTimeManagementOptions(OptionsParser* options) {
@@ -95,6 +102,7 @@ void PopulateTimeManagementOptions(OptionsParser* options) {
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kKLDGainAverageIntervalId, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNodeId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
 
   // Hide time curve options.
   options->HideOption(kTimeMidpointMoveId);
@@ -126,9 +134,8 @@ std::unique_ptr<SearchStopper> MakeSearchStopper(const OptionsDict& options,
 
   // "go movetime" stopper.
   if (params.movetime && !infinite) {
-    result->AddStopper(std::make_unique<DeadlineStopper>(
-        time_mgr->GetMoveStartTime() +
-        std::chrono::milliseconds(*params.movetime - move_overhead)));
+    result->AddStopper(
+        std::make_unique<TimeLimitStopper>(*params.movetime - move_overhead));
   }
 
   // "go depth" stopper.
@@ -145,6 +152,14 @@ std::unique_ptr<SearchStopper> MakeSearchStopper(const OptionsDict& options,
   if (min_kld_gain >= 0.0f) {
     result->AddStopper(std::make_unique<KldGainStopper>(
         min_kld_gain, options.Get<int>(kKLDGainAverageIntervalId.GetId())));
+  }
+
+  // Should be last in the chain.
+  const auto smart_pruning_factor =
+      options.Get<float>(kSmartPruningFactorId.GetId());
+  if (smart_pruning_factor >= 0.0f) {
+    result->AddStopper(
+        std::make_unique<SmartPruningStopper>(smart_pruning_factor));
   }
 
   return std::move(result);
@@ -167,15 +182,12 @@ std::chrono::steady_clock::time_point TimeManager::GetMoveStartTime() const {
 }
 
 namespace {
-class LegacyStopper : public DeadlineStopper {
+class LegacyStopper : public TimeLimitStopper {
  public:
-  LegacyStopper(std::chrono::steady_clock::time_point deadline,
-                int64_t* time_piggy_bank)
-      : DeadlineStopper(deadline), time_piggy_bank_(time_piggy_bank) {}
-  virtual void OnSearchDone() override {
-    *time_piggy_bank_ += std::chrono::duration_cast<std::chrono::milliseconds>(
-                             GetDeadline() - std::chrono::steady_clock::now())
-                             .count();
+  LegacyStopper(int64_t deadline_ms, int64_t* time_piggy_bank)
+      : TimeLimitStopper(deadline_ms), time_piggy_bank_(time_piggy_bank) {}
+  virtual void OnSearchDone(const IterationStats& stats) override {
+    *time_piggy_bank_ += GetTimeLimitMs() - stats.time_since_movestart;
   }
 
  private:
@@ -272,9 +284,8 @@ std::unique_ptr<SearchStopper> TimeManager::GetStopper(
   this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
-  auto deadline = move_start_ + std::chrono::milliseconds(std::min(
-                                    static_cast<int64_t>(this_move_time),
-                                    *time - move_overhead));
+  auto deadline =
+      std::min(static_cast<int64_t>(this_move_time), *time - move_overhead);
   return std::make_unique<LegacyStopper>(deadline, &time_spared_ms_);
 }
 
