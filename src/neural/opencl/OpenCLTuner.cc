@@ -28,16 +28,19 @@
 #include <random>
 #include <sstream>
 #include <string>
-#include <unistd.h>
 
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/opencl/OpenCLTuner.h"
 
 #include "utils/logging.h"
-#include "utils/commandline.h"
 
+// Use the temporary directory on Android as the engine may run with restricted file access
+#ifdef android
+const auto TUNER_FILE_LOCAL = std::string("/data/local/tmp/leelaz_opencl_tuning");
+#else
 const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
+#endif
 
 constexpr auto MAX_ERROR = 1e-4f;
 
@@ -369,33 +372,12 @@ std::string Tuner::tune_sgemm(const int m, const int n, const int k,
   return best_params;
 }
 
-const std::string leelaz_file(std::string file) {
-// On Android, the engine may run with restricted file access. The ideal place to store
-// the tuning file should be the Android Context.getFilesDir(). But such context is hard
-// to get from here. As an alternative, the current directory is tried if it's writeable.
-// Else the binary directory is used, hoping that the engine was installed to a writable
-// directory.
-#ifdef __ANDROID__
-  std::string path;
-  char buffer[PATH_MAX];
-  const char* current_directory = getcwd(buffer, sizeof(buffer));
-  if (access(current_directory, W_OK) == 0) {
-    path = current_directory;
-  } else {
-    path = lczero::CommandLine::BinaryDirectory();
-  }  
-  return path + "/" + file;
-#else
-  return file;
-#endif  
-}
-
 void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
                                const int batch_size, std::string tuners) {
   auto file_contents = std::vector<std::string>();
   {
     // Read the previous contents to string.
-    auto file = std::ifstream{leelaz_file(TUNER_FILE_LOCAL)};
+    auto file = std::ifstream{TUNER_FILE_LOCAL};
     if (file.good()) {
       auto line = std::string{};
       while (std::getline(file, line)) {
@@ -403,7 +385,7 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
       }
     }
   }
-  auto file = std::ofstream{leelaz_file(TUNER_FILE_LOCAL)};  
+  auto file = std::ofstream{TUNER_FILE_LOCAL};
 
   auto device_name = m_opencl.get_device_name();
   auto tuning_params = std::stringstream{};
@@ -427,7 +409,7 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
 
   if (file.fail()) {
     CERR << "Could not save the tuning result.";
-    CERR << "Do I have write permissions on " << leelaz_file(TUNER_FILE_LOCAL) << "?";
+    CERR << "Do I have write permissions on " << TUNER_FILE_LOCAL << "?";
   }
 }
 
@@ -480,7 +462,7 @@ std::string Tuner::sgemm_tuners_from_line(std::string line, const int m,
 std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
                                      const int batch_size) {
   if (!m_params.force_tune) {
-    auto file = std::ifstream{leelaz_file(TUNER_FILE_LOCAL)};
+    auto file = std::ifstream{TUNER_FILE_LOCAL};
     if (file.good()) {
       auto line = std::string{};
       while (std::getline(file, line)) {

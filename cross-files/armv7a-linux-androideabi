@@ -16,7 +16,7 @@ endian = 'little'
 
 [properties]
 needs_exe_wrapper = true
-cpp_args = []
+cpp_args = ['-Dandroid']
 cpp_link_args = ['-llog', '-static-libstdc++']
 
 [binaries]
