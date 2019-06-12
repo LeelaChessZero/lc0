@@ -33,6 +33,10 @@
 #include <cmath>
 #include <iostream>
 
+#ifdef USE_EIGEN
+#include <Eigen/Core>
+#endif
+
 namespace lczero {
 namespace {
 
@@ -142,6 +146,12 @@ void BlasComputation::ComputeBlocking() {
   const auto input_channels = static_cast<size_t>(kInputPlanes);
   const auto max_channels = std::max(output_channels, input_channels);
 
+  // The policy head may increase convolution max output size.
+  const auto max_output_channels =
+      (conv_policy_ && weights_.policy.biases.size() > output_channels)
+          ? weights_.policy.biases.size()
+          : output_channels;
+
   // Determine the largest batch for allocations.
   const auto plane_count = planes_.size();
   const auto largest_batch_size = std::min(max_batch_size_, plane_count);
@@ -167,7 +177,7 @@ void BlasComputation::ComputeBlocking() {
                                  kSquares);
 
   WinogradConvolution3 convolve3(largest_batch_size, max_channels,
-                                 output_channels);
+                                 max_output_channels);
 
   std::vector<float> policy_buffer(largest_batch_size *
                                    num_policy_input_planes * kSquares);
@@ -339,7 +349,9 @@ void BlasComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
 
 BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     : weights_(file.weights()) {
+#ifndef USE_EIGEN
   int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
+#endif
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
@@ -352,7 +364,6 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;
   }
-  std::cerr << "BLAS, maximum batch size set to " << max_batch_size_ << '\n';
 
   const auto inputChannels = kInputPlanes;
   const auto channels = static_cast<int>(weights_.input.biases.size());
@@ -379,44 +390,46 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
                                                        pol_channels, channels);
   }
 
+#ifdef USE_EIGEN
+  CERR << "Using Eigen version " << EIGEN_WORLD_VERSION << "."
+       << EIGEN_MAJOR_VERSION << "." << EIGEN_MINOR_VERSION;
+#endif
+
 #ifdef USE_OPENBLAS
   int num_procs = openblas_get_num_procs();
   blas_cores = std::min(num_procs, blas_cores);
   openblas_set_num_threads(blas_cores);
   const char* core_name = openblas_get_corename();
   const char* config = openblas_get_config();
-  std::cerr << "BLAS vendor: OpenBlas.\n";
-  std::cerr << "OpenBlas [" << config << "].\n";
-  std::cerr << "OpenBlas found " << num_procs << " " << core_name
-            << " core(s).\n";
-  std::cerr << "OpenBLAS using " << blas_cores
-            << " core(s) for this backend.\n";
+  CERR << "BLAS vendor: OpenBLAS.";
+  CERR << "OpenBLAS [" << config << "].";
+  CERR << "OpenBLAS found " << num_procs << " " << core_name << " core(s).";
+  CERR << "OpenBLAS using " << blas_cores << " core(s) for this backend.";
 #endif
 
 #ifdef USE_MKL
   int max_procs = mkl_get_max_threads();
   blas_cores = std::min(max_procs, blas_cores);
   mkl_set_num_threads(blas_cores);
-  std::cerr << "BLAS vendor: MKL.\n";
+  CERR << "BLAS vendor: MKL.";
   constexpr int len = 256;
   char versionbuf[len];
   mkl_get_version_string(versionbuf, len);
-  std::cerr << "MKL " << versionbuf << ".\n";
+  CERR << "MKL " << versionbuf << ".";
   MKLVersion version;
   mkl_get_version(&version);
-  std::cerr << "MKL platform: " << version.Platform
-            << ", processor: " << version.Processor << ".\n";
-  std::cerr << "MKL can use up to " << max_procs << " thread(s).\n";
-  std::cerr << "MKL using " << blas_cores << " thread(s) for this backend.\n";
+  CERR << "MKL platform: " << version.Platform << ", processor: "
+       << version.Processor << ".";
+  CERR << "MKL can use up to " << max_procs << " thread(s).";
+  CERR << "MKL using " << blas_cores << " thread(s) for this backend.";
 #endif
 
 #ifdef USE_ACCELERATE
-  std::cerr << "BLAS vendor: Apple vecLib.\n";
-  std::cerr << "Apple vecLib ignores blas_cores (" << blas_cores
-            << ") parameter.\n";
+  CERR << "BLAS vendor: Apple vecLib.";
+  CERR << "Apple vecLib ignores blas_cores (" << blas_cores << ") parameter.";
 #endif
 
-  std::cerr << "BLAS max batch size is " << max_batch_size_ << ".\n";
+  CERR << "BLAS max batch size is " << max_batch_size_ << ".";
 }
 
 std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
