@@ -97,6 +97,19 @@ class Search {
   const SearchParams& GetParams() const { return params_; }
 
  private:
+  struct EdgeScore {
+    EdgeAndNode edge;
+
+    EdgeScore(EdgeAndNode edge) : edge(edge) {
+      score_ = edge.IsTerminal() ? edge.GetQ(0.0f) : 0.0f;
+    }
+    bool operator<(const EdgeScore& other) const {
+      return score_ < other.score_;
+    }
+
+   private:
+    float score_;
+  };
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
 
@@ -104,8 +117,8 @@ class Search {
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
   EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
-  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
-                                                        int count) const;
+  std::vector<EdgeScore> GetBestChildrenNoTemperature(Node* parent,
+                                                      int count) const;
   EdgeAndNode GetBestChildWithTemperature(Node* parent,
                                           float temperature) const;
 

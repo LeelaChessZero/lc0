@@ -121,7 +121,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 
   int multipv = 0;
   const auto default_q = -root_node_->GetQ();
-  for (const auto& edge : edges) {
+  for (const auto& edge_score : edges) {
+    const auto& edge = edge_score.edge;
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
@@ -540,18 +541,19 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 }
 
 // Returns @count children with most visits.
-std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
-                                                              int count) const {
+std::vector<Search::EdgeScore> Search::GetBestChildrenNoTemperature(
+    Node* parent, int count) const {
   MoveList root_limit;
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
   }
   // Best child is selected using the following criteria:
+  // * Best terminal score (favor wins, avoid losses).
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<EdgeScore, uint64_t, float, float>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -559,23 +561,23 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+    edges.emplace_back(EdgeScore(edge), edge.GetN(), edge.GetQ(0), edge.GetP());
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
                           : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
 
-  std::vector<EdgeAndNode> res;
+  std::vector<EdgeScore> res;
   std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<3>(x); });
+                 [](const El& x) { return std::get<0>(x); });
   return res;
 }
 
 // Returns a child with most visits.
 EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   auto res = GetBestChildrenNoTemperature(parent, 1);
-  return res.empty() ? EdgeAndNode() : res.front();
+  return res.empty() ? EdgeAndNode() : res.front().edge;
 }
 
 // Returns a child chosen according to weighted-by-temperature visit count.
