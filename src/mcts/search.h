@@ -97,6 +97,23 @@ class Search {
   const SearchParams& GetParams() const { return params_; }
 
  private:
+  // Helper to score and sort terminals for preferred moves.
+  struct TerminalScore {
+    EdgeAndNode edge;
+
+    TerminalScore(EdgeAndNode edge) : edge(edge) {
+      if (edge.IsTerminal()) {
+        score_ = edge.GetQ(0.0f);
+      }
+    }
+    bool operator<(const TerminalScore& other) const {
+      return score_ < other.score_;
+    }
+
+   private:
+    float score_ = 0.0f;
+  };
+
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
 
@@ -104,8 +121,8 @@ class Search {
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
   EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
-  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
-                                                        int count) const;
+  std::vector<TerminalScore> GetBestChildrenNoTemperature(Node* parent,
+                                                          int count) const;
   EdgeAndNode GetBestChildWithTemperature(Node* parent,
                                           float temperature) const;
 
