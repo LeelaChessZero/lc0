@@ -376,11 +376,23 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
 
   // Aggregate evaluation Q.
   result.root_q = -GetQ();
+  if (result.root_q < -1 || result.root_q > 1) { 
+	throw Exception("Corrupt root q");
+  }
   result.best_q = best_q;
+  if (result.best_q < -1 || result.best_q > 1) {
+    throw Exception("Corrupt best q");
+  }
 
   // Draw probability of WDL head.
   result.root_d = GetD();
+  if (result.root_d < 0 || result.root_d > 1) {
+    throw Exception("Corrupt root d");
+  }
   result.best_d = best_d;
+  if (result.best_d < 0 || result.best_d > 1) {
+    throw Exception("Corrupt best d");
+  }
 
   return result;
 }
