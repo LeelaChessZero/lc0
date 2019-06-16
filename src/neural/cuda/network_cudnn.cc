@@ -671,7 +671,7 @@ class CudnnNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0); }
+  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false); }
 
  private:
   cudnnHandle_t cudnn_;
