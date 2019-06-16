@@ -2,11 +2,15 @@
 # Tested with Android NDK r14b, standalone toolchain
 # Targeting API level 16
 #
+# Used older NDK because zlib failed to build when targeting API level 16 on NDK's > r14b.
+# The situation is explained here:
+# https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md
+#
+# First create the standalone toolchain:
 # ./make-standalone-toolchain.sh --arch=arm --platform=android-16 --stl=libc++ --install-dir=android-standalone-32
-# Had build issues targeting API level 16 on newer NDK's
-
-# Set the toolchain path on your environment
-# export PATH="$HOME/.local/share/android-sdk/ndk-bundle/android-standalone-32/bin:$PATH"
+#
+# Then set the toolchain path on your environment:
+# export PATH="$HOME/.local/share/android-toolchains/android-standalone-32/bin:$PATH"
 
 [host_machine]
 system = 'android'
