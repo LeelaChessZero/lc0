@@ -28,7 +28,6 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   add_project_arguments('-pedantic', language : 'cpp')
 
   if get_option('buildtype') == 'release'
-    add_project_arguments('-march=native', language : 'cpp')
   endif
 endif
 
@@ -40,6 +39,8 @@ has_backends = false
 
 # Third party files.
 includes += include_directories('third_party', is_system: true)
+add_global_link_arguments('-llog', language:'cpp')
+add_global_link_arguments('-latomic', language:'cpp')
 
 # Both protobuf and protoc must be the same version, so couple them together.
 protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
