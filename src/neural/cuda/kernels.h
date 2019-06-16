@@ -59,15 +59,18 @@ void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
 void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
                             const float* values, int n);
 
+void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
+                            const float* values, int n);
+
 // Perform global avg pool.
 template <typename T>
 void globalAvgPool(int N, int C, T* output, const T* input,
-                   const T* prevLayerBias);
+                   const T* prevLayerBias, bool nhwc);
 
 // Perform global scale.
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
-                 const T* prevLayerBias);
+                 const T* prevLayerBias, bool nhwc);
 
 // Perform Squeeze-and-Excitation (SE) in a single fused kernel.
 // Returns false if the fused kernel can't handle the sizes.

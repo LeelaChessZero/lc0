@@ -85,6 +85,11 @@ void SelfPlayLoop::CmdStart() {
       std::make_unique<std::thread>([this]() { tournament_->RunBlocking(); });
 }
 
+void SelfPlayLoop::CmdStop() {
+  tournament_->Stop();
+  tournament_->Wait();
+}
+
 void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   std::vector<std::string> responses;
   // Send separate resign report before gameready as client gameready parsing

@@ -120,16 +120,20 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
+  const auto default_q = -root_node_->GetQ();
   for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     if (score_type == "centipawn") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+      uci_info.score = 295 * edge.GetQ(default_q) /
+                       (1 - 0.976953126 * std::pow(edge.GetQ(default_q), 14));
+    } else if (score_type == "centipawn_2018") {
+      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(default_q));
     } else if (score_type == "win_percentage") {
-      uci_info.score = edge.GetQ(0) * 5000 + 5000;
+      uci_info.score = edge.GetQ(default_q) * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = edge.GetQ(0) * 10000;
+      uci_info.score = edge.GetQ(default_q) * 10000;
     }
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
@@ -595,8 +599,10 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if (edge.GetN() + offset > max_n) max_n = edge.GetN() + offset;
-    if (edge.GetQ(fpu) > max_eval) max_eval = edge.GetQ(fpu);
+    if (edge.GetN() + offset > max_n) {
+      max_n = edge.GetN() + offset;
+      max_eval = edge.GetQ(fpu);
+    }
   }
 
   // No move had enough visits for temperature, so use default child criteria
@@ -905,12 +911,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) {
-      if (node->IsTerminal()) {
-        return NodeToProcess::TerminalHit(node, depth, 1);
-      } else {
-        return NodeToProcess::Extension(node, depth);
-      }
+    if (node->IsTerminal() || !node->HasChildren()) {
+      return NodeToProcess::Visit(node, depth);
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
     if (possible_shortcut_child) {
@@ -1281,18 +1283,48 @@ void SearchWorker::DoBackupUpdateSingleNode(
     return;
   }
 
+  // For the first visit to a terminal, maybe convert ancestors to terminal too.
+  auto can_convert =
+      params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
+
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
-  for (Node* n = node; n != search_->root_node_->GetParent();
-       n = n->GetParent()) {
+  for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
+    p = n->GetParent();
+
+    // Current node might have become terminal from some other descendant, so
+    // backup the rest of the way with more accurate values.
+    if (n->IsTerminal()) {
+      v = n->GetQ();
+      d = n->GetD();
+    }
     n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+
+    // Convert parents to terminals except the root or those already converted.
+    can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
+
+    // A non-winning terminal move needs all other moves to have the same value.
+    if (can_convert && v != 1.0f) {
+      for (const auto& edge : p->Edges()) {
+        can_convert = can_convert && edge.IsTerminal() && edge.GetQ(0.0f) == v;
+      }
+    }
+
+    // Convert the parent to a terminal loss if at least one move is winning or
+    // to a terminal win or draw if all moves are loss or draw respectively.
+    if (can_convert) {
+      p->MakeTerminal(v == 1.0f ? GameResult::BLACK_WON
+                                : v == -1.0f ? GameResult::WHITE_WON
+                                             : GameResult::DRAW);
+    }
+
     // Q will be flipped for opponent.
     v = -v;
 
     // Update the stats.
     // Best move.
-    if (n->GetParent() == search_->root_node_ &&
+    if (p == search_->root_node_ &&
         search_->current_best_edge_.GetN() <= n->GetN()) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
