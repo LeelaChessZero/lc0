@@ -438,8 +438,15 @@ class CudnnNetwork : public Network {
     // 3. Allocate GPU memory for running the network:
     //    - three buffers of max size are enough (one to hold input, second to
     //      hold output and third to hold skip connection's input).
-    size_t maxSize = max_batch_size_ * std::max(kNumInputPlanes, kNumFilters) *
-                     64 * sizeof(DataType);
+
+    // size of input to the network
+    size_t maxSize = max_batch_size_ * kNumInputPlanes * 64 * sizeof(DataType);
+
+    // take max size of all layers
+    for (auto& layer : network_) {
+      maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
+    }
+
     for (auto& mem : tensor_mem_) {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));

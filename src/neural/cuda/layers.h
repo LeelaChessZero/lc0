@@ -46,6 +46,7 @@ class BaseLayer {
   BaseLayer(int c, int h, int w, BaseLayer* ip);
   BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc);
   virtual ~BaseLayer() = default;
+  size_t GetOutputSize(int N) const { return sizeof(DataType) * N * C * H * W; }
 
   // Input2 is optional (skip connection).
   virtual void Eval(int N, DataType* output, const DataType* input,
