@@ -106,6 +106,8 @@ class DxContext {
   uint64_t fenceVal;
   ShaderWrapper shader_wrapper_;
 
+  IDMLDevice* dml_device_;
+
   std::atomic<unsigned int> next_slot_in_desc_heap_;
 
   // in system memory (used to copy to/from CPU data).
@@ -122,6 +124,7 @@ class DxContext {
 
   ID3D12Device5* getDevice() { return device_; }
   ID3D12GraphicsCommandList5* getCommandList() { return command_list_; }
+  IDMLDevice* getDMLDevice() { return dml_device_; }
   ShaderWrapper* getShaderWrapper() { return &shader_wrapper_; }
   DXAlloc* getDefaultScratch() { return &default_scratch_mem_; }
 

@@ -31,8 +31,8 @@
 #include "comdef.h"
 #include "utils/exception.h"
 
-#include "network_dx.h"
 #include "MetaCommand.h"
+#include "network_dx.h"
 
 namespace lczero {
 namespace dx_backend {
@@ -52,8 +52,8 @@ void convertFp32NCHWtoFp16NHWC(dx_half* out, const float* in, int N, int C,
         }
 }
 
-static void getTensorDesc(TensorDesc* outDesc, int n, int c,
-                          int h, int w, bool fp16 = true, bool nhwc = true) {
+static void getTensorDesc(TensorDesc* outDesc, int n, int c, int h, int w,
+                          bool fp16 = true, bool nhwc = true) {
   memset(outDesc, 0, sizeof(TensorDesc));
   outDesc->DimensionCount = 4;
   outDesc->DataType = fp16 ? 1 : 0;
@@ -75,11 +75,53 @@ static void getTensorDesc(TensorDesc* outDesc, int n, int c,
     outDesc->Stride[0] = c * w * h;
   }
 
-  for (int i = 0; i < 4; i++)
-    outDesc->StrideAlignment[i] = 1;
+  for (int i = 0; i < 4; i++) outDesc->StrideAlignment[i] = 1;
 
   outDesc->BaseAlignmentInBytes = 4096;
   outDesc->PhysicalSizeInElements = n * c * h * w;
+}
+
+static void getStrides(uint32_t strides[4], const uint32_t sizes[4],
+                       bool nhwc) {
+  if (nhwc) {
+    strides[1] = 1;
+    strides[3] = sizes[1];                        // c
+    strides[2] = sizes[1] * sizes[3];             // c * w
+    strides[0] = sizes[1] * sizes[3] * sizes[2];  // c * w * h
+  } else {
+    strides[3] = 1;
+    strides[2] = sizes[3];                        // w
+    strides[1] = sizes[3] * sizes[2];             // w * h
+    strides[0] = sizes[3] * sizes[2] * sizes[1];  // w * h * c
+  }
+}
+
+DML_BUFFER_TENSOR_DESC getDMLTensorDesc(int n, int c, int h, int w,
+                                        bool fp16 = true, bool nhwc = true) {
+  const UINT tensorSizes[4] = {n, c, h, w};  // this needs to be allocated!
+  UINT tensorStrides[4] = {};
+  if (nhwc) {
+    tensorStrides[1] = 1;
+    tensorStrides[3] = c;
+    tensorStrides[2] = c * w;
+    tensorStrides[0] = c * w * h;
+  } else {
+    tensorStrides[3] = 1;
+    tensorStrides[2] = w;
+    tensorStrides[1] = w * h;
+    tensorStrides[0] = c * w * h;
+  }
+
+  DML_BUFFER_TENSOR_DESC dmlBufferTensorDesc = {};
+  dmlBufferTensorDesc.DataType =
+      fp16 ? DML_TENSOR_DATA_TYPE_FLOAT16 : DML_TENSOR_DATA_TYPE_FLOAT32;
+  dmlBufferTensorDesc.Flags = DML_TENSOR_FLAG_NONE;
+  dmlBufferTensorDesc.DimensionCount = 4;
+  dmlBufferTensorDesc.Sizes = tensorSizes;
+  dmlBufferTensorDesc.Strides = tensorStrides;
+  dmlBufferTensorDesc.TotalTensorSizeInBytes =
+      n * c * h * w * (fp16 ? sizeof(dx_half) : sizeof(float));
+  return dmlBufferTensorDesc;
 }
 
 ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int Cin, int Cout, int H,
@@ -93,13 +135,13 @@ ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int Cin, int Cout, int H,
     ConvCreateDesc desc = {};
 
     getTensorDesc(&desc.InputDesc, n, Cin, H, W);
-    getTensorDesc(&desc.OutputDesc, n, Cout, H, W);    
-    getTensorDesc(&desc.FilterDesc, Cout, Cin, filterSize, filterSize);    
-    getTensorDesc(&desc.BiasDesc, Cout, 1, 1, 1);    
+    getTensorDesc(&desc.OutputDesc, n, Cout, H, W);
+    getTensorDesc(&desc.FilterDesc, Cout, Cin, filterSize, filterSize);
+    getTensorDesc(&desc.BiasDesc, Cout, 1, 1, 1);
     desc.BiasNull = hasBias ? 0 : 1;
     desc.Mode = 1;  // 1 is for cross-correlation (0 - conv)
 
-    desc.Direction = 0; // forward
+    desc.Direction = 0;       // forward
     desc.DimensionCount = 2;  // 2D conv
     desc.Stride[0] = 1;
     desc.Stride[1] = 1;
@@ -113,18 +155,116 @@ ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int Cin, int Cout, int H,
     desc.EndPadding[1] = pad;
     desc.GroupCount = 1;
     if (hasRelu) {
-      desc.ActivationFunction = 9;    // relu (guess?)
+      desc.ActivationFunction = 9;  // relu (guess?)
       desc.ActivationIsNull = 0;
     } else {
       desc.ActivationIsNull = 1;
     }
-    desc.Precision = 1; // fp16
+    desc.Precision = 1;  // fp16
+
+#if 0
+    // The API looks pretty crappy :-/
+    /*
+    IDMLOperator* pDMLConv;
+    DML_TENSOR_DESC dmlTensorDesc{};
+    dmlTensorDesc.Type = DML_TENSOR_TYPE_BUFFER;
+    dmlTensorDesc.Desc = &dmlBufferTensorDesc;
+
+    DML_CONVOLUTION_OPERATOR_DESC dmlConvDesc{};
+    dmlConvDesc.StartPadding
+    */
+    const uint32_t inputSizes[] = {n, Cin, H, W};
+    const uint32_t outputSizes[] = {n, Cout, H, W};
+    const uint32_t filterSizes[] = {Cout, Cin, filterSize, filterSize};
+    const uint32_t biasSizes[] = {1, Cout, 1, 1};
+
+    uint32_t inputStrides[4], outputStrides[4], filterStrides[4],
+        biasStrides[4];
+    getStrides(inputStrides, inputSizes, true);
+    getStrides(outputStrides, outputSizes, true);
+    getStrides(filterStrides, filterSizes, true);
+    getStrides(biasStrides, biasSizes, true);
+
+
+    DML_BUFFER_TENSOR_DESC inputBufferDesc = {DML_TENSOR_DATA_TYPE_FLOAT16,
+                                              DML_TENSOR_FLAG_NONE,
+                                              4,
+                                              inputSizes,
+                                              inputStrides,
+                                              inputStrides[0] * inputSizes[0] * sizeof(dx_half),
+                                              0};
+    DML_TENSOR_DESC inputDesc = {DML_TENSOR_TYPE_BUFFER, &inputBufferDesc};
+
+
+    DML_BUFFER_TENSOR_DESC outputBufferDesc = {DML_TENSOR_DATA_TYPE_FLOAT16,
+                                               DML_TENSOR_FLAG_NONE,
+                                               4,
+                                               outputSizes,
+                                               outputStrides,
+                                               outputStrides[0] * outputStrides[0] * sizeof(dx_half),
+                                               0};
+    DML_TENSOR_DESC outputDesc = {DML_TENSOR_TYPE_BUFFER, &outputBufferDesc};
+
+    DML_BUFFER_TENSOR_DESC filterBufferDesc = {DML_TENSOR_DATA_TYPE_FLOAT16,
+                                               DML_TENSOR_FLAG_NONE,
+                                               4,
+                                               filterSizes,
+                                               filterStrides,
+                                               filterStrides[0] * filterStrides[0] * sizeof(dx_half),
+                                               0};
+    DML_TENSOR_DESC filterDesc = {DML_TENSOR_TYPE_BUFFER, &filterBufferDesc};
+
+
+    DML_BUFFER_TENSOR_DESC biasBufferDesc = {DML_TENSOR_DATA_TYPE_FLOAT16,
+                                             DML_TENSOR_FLAG_NONE,
+                                             4,
+                                             biasSizes,
+                                             biasStrides,
+                                             Cout * sizeof(dx_half),
+                                             0};
+    DML_TENSOR_DESC biasDesc = {DML_TENSOR_TYPE_BUFFER, &biasBufferDesc};
+
+    uint32_t strides[] = {1, 1};
+    uint32_t dilations[] = {1, 1};
+    uint32_t startPadding[] = {filterSize / 2, filterSize / 2};
+    uint32_t endPadding[] = {filterSize / 2, filterSize / 2};
+    uint32_t outputPadding[] = {0, 0};
+
+    DML_ACTIVATION_RELU_OPERATOR_DESC fusedReluDesc = {0};
+    DML_OPERATOR_DESC activationDesc = {DML_OPERATOR_ACTIVATION_RELU,
+                                        &fusedReluDesc};
+
+
+    DML_CONVOLUTION_OPERATOR_DESC convDesc = {
+        &inputDesc,
+        &filterDesc,
+        hasBias ? &biasDesc : nullptr,
+        &outputDesc,
+        DML_CONVOLUTION_MODE_CROSS_CORRELATION,
+        DML_CONVOLUTION_DIRECTION_FORWARD,
+        2,
+        strides,
+        dilations,
+        startPadding,
+        endPadding,
+        outputPadding,
+        1,
+        hasRelu ? &activationDesc : nullptr};
+    DML_OPERATOR_DESC opDesc = {DML_OPERATOR_CONVOLUTION, &convDesc};
+
+    IDMLOperator *op;
+    IDMLCompiledOperator* compiledOpOut;
+    ReportDxErrors(pContext->getDMLDevice()->CreateOperator(&opDesc, IID_PPV_ARGS(&op)));
+
+    ReportDxErrors(pContext->getDMLDevice()->CompileOperator(
+        op, DML_EXECUTION_FLAG_ALLOW_HALF_PRECISION_COMPUTATION,
+        IID_PPV_ARGS(&compiledOpOut)));
+#endif
 
     int paramSize = sizeof(desc);
 
     HRESULT hr = pContext->getDevice()->CreateMetaCommand(
-        ConvGuid, 0, &desc, sizeof(desc),
-        IID_PPV_ARGS(&pMetaCommands[i]));
+        ConvGuid, 0, &desc, sizeof(desc), IID_PPV_ARGS(&pMetaCommands[i]));
 
     if (hr != S_OK) {
       throw Exception("Error creating convolution Metacommand\n");
@@ -133,8 +273,8 @@ ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int Cin, int Cout, int H,
     size_t sizeInBytes = 0;
 
     sizeInBytes = pMetaCommands[i]->GetRequiredParameterResourceSize(
-    D3D12_META_COMMAND_PARAMETER_STAGE_INITIALIZATION,
-    3 /*index of persistent resource in init desc*/);
+        D3D12_META_COMMAND_PARAMETER_STAGE_INITIALIZATION,
+        3 /*index of persistent resource in init desc*/);
 
     // TODO: Consider creating a single allocation with chunks suballocated for
     // each metacommand object
@@ -234,25 +374,25 @@ void ConvLayer::Eval(int N, dx_alloc_handle output, dx_alloc_handle input,
     desc.OutputResource = dx_context_->getDefaultScratch()->descHandle;
   }
 
-  cmdStream->ExecuteMetaCommand(meta_command_->getMetaCommand(N), &desc, sizeof(desc));
+  cmdStream->ExecuteMetaCommand(meta_command_->getMetaCommand(N), &desc,
+                                sizeof(desc));
 
   // Ankan - test!
-  //dx_context_->dumpTensor(*output, 1024);
-  //exit(0);
+  // dx_context_->dumpTensor(*output, 1024);
+  // exit(0);
 
   if (input2) {
     dx_context_->getCommandList()->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(
                dx_context_->getDefaultScratch()->pResource));
 
-    //dx_context_->dumpTensor(*output, 1024);
-    //dx_context_->dumpTensor(*dx_context_->getDefaultScratch(), 1024);
-    //exit(0);
+    // dx_context_->dumpTensor(*output, 1024);
+    // dx_context_->dumpTensor(*dx_context_->getDefaultScratch(), 1024);
+    // exit(0);
 
     dx_context_->getShaderWrapper()->skipAddRelu(
         cmdStream, *dx_context_->getDefaultScratch(), *input2, *output, true,
         N * C * 64);
-
   }
 }
 

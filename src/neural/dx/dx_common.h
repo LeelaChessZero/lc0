@@ -29,6 +29,7 @@
 #include <d3d12.h>
 #include <stdint.h>
 #include "d3dx12.h"
+#include <DirectML.h>
 
 namespace lczero {
 

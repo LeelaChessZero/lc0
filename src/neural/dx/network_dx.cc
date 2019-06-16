@@ -182,6 +182,14 @@ DxContext::DxContext(const OptionsDict& options) {
   CreateAlloc(scratchSize, D3D12_HEAP_TYPE_READBACK, &readback_scratch_mem_);
   CreateAlloc(scratchSize*2, D3D12_HEAP_TYPE_DEFAULT, &default_scratch_mem_);
 
+  // Create DirectML device
+  // need DirectML.lib
+  /*
+  ReportDxErrors(DMLCreateDevice(device_, DML_CREATE_DEVICE_FLAG_NONE,
+                                 IID_PPV_ARGS(&dml_device_)));
+                                 */
+
+
 }
 
 DxContext::~DxContext() {
@@ -198,6 +206,7 @@ DxContext::~DxContext() {
   command_queue_->Release();
   fence_->Release();
   desc_heap_->Release();
+  dml_device_->Release();
   device_->Release();
 }
 
