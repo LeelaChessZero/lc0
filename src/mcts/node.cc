@@ -1,4 +1,4 @@
-/*
+﻿/*
   This file is part of Leela Chess Zero.
   Copyright (C) 2018 The LCZero Authors
 
@@ -377,7 +377,7 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
   // Aggregate evaluation Q.
   result.root_q = -GetQ();
   if (result.root_q < -1 || result.root_q > 1) { 
-	throw Exception("Corrupt root q");
+    throw Exception("Corrupt root q");
   }
   result.best_q = best_q;
   if (result.best_q < -1 || result.best_q > 1) {
