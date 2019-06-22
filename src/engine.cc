@@ -38,12 +38,14 @@ namespace lczero {
 namespace {
 const int kDefaultThreads = 2;
 
-const OptionId kThreadsOptionId{"threads", "Threads",
-                                "Number of (CPU) worker threads to use.", 't'};
-const OptionId kLogFileId{"logfile", "LogFile",
-                          "Write log to that file. Special value <stderr> to "
-                          "output the log to the console.",
-                          'l'};
+const OptionId kThreadsOptionId{
+    "threads", "Threads",
+    "Number of (CPU) worker threads to use.", 't'};
+const OptionId kLogFileId{
+    "logfile", "LogFile",
+    "Write log to that file. Special value <stderr> to "
+    "output the log to the console.",
+    'l'};
 const OptionId kNNCacheSizeId{
     "nncache", "NNCacheSize",
     "Number of positions to store in a memory cache. A large cache can speed "
@@ -80,8 +82,9 @@ const OptionId kSpendSavedTimeId{
     "the next move rather than to the entire game. When 1, all saved time is "
     "added to the next move's budget; when 0, saved time is distributed among "
     "all future moves."};
-const OptionId kPonderId{"ponder", "Ponder",
-                         "This option is ignored. Here to please chess GUIs."};
+const OptionId kPonderId{
+    "ponder", "Ponder",
+    "This option is ignored. Here to please chess GUIs."};
 // Warning! When changed, also change number 30 in the help below!
 const size_t kAvgMovesPerPosition = 30;
 const OptionId kRamLimitMbId{
@@ -111,8 +114,7 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
   // around the midpoint.
   const float move = ply / 2.0f;
   return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
-                             1 / steepness) -
-         move;
+                             1 / steepness) - move;
 }
 
 }  // namespace
