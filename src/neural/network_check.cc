@@ -146,7 +146,7 @@ class CheckComputation : public NetworkComputation {
 
   bool IsAlmostEqual(double a, double b) const {
     return std::abs(a - b) <= std::max(params_.relative_tolerance *
-                                           std::max(std::abs(a), std::abs(b)),
+                                       std::max(std::abs(a), std::abs(b)),
                                        params_.absolute_tolerance);
   }
 

@@ -32,8 +32,9 @@ namespace lczero {
 namespace {
 const int kDefaultThreads = 2;
 
-const OptionId kThreadsOptionId{"threads", "Threads",
-                                "Number of (CPU) worker threads to use.", 't'};
+const OptionId kThreadsOptionId{
+    "threads", "Threads",
+    "Number of (CPU) worker threads to use.", 't'};
 const OptionId kNNCacheSizeId{
     "nncache", "NNCacheSize",
     "Number of positions to store in a memory cache. A large cache can speed "
