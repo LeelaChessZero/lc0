@@ -377,7 +377,7 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      cuda_arguments += ['-Xcompiler', '-MD']
+      cuda_arguments += ['-Xcompiler', '-MT']
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
