@@ -104,6 +104,12 @@ class Search {
     TerminalScore(EdgeAndNode edge) : edge(edge) {
       if (edge.IsTerminal()) {
         score_ = edge.GetQ(0.0f);
+
+        // Prefer shorter wins and longer losses.
+        if (score_ != 0.0f) {
+          plies_ = CalcPlies(edge.node());
+          score_ *= 1 - 0.5f * plies_ / TB_PLIES;
+        }
       }
     }
     bool operator<(const TerminalScore& other) const {
@@ -112,6 +118,37 @@ class Search {
 
    private:
     float score_ = 0.0f;
+    int plies_ = 0;
+
+    static const int TB_PLIES = 1000;
+    static int CalcPlies(Node* terminal) {
+      auto ret = 0;
+
+      // Follow "terminals" until a true terminal with no children.
+      if (terminal->HasChildren()) {
+        const auto follow_q = -terminal->GetQ();
+        std::vector<int> plies;
+        for (auto edge : terminal->Edges()) {
+          if (edge.IsTerminal() && edge.GetQ(0.0f) == follow_q) {
+            plies.push_back(CalcPlies(edge.node()));
+          }
+        }
+
+        // No terminal children, so we have a tablebase position.
+        if (plies.empty()) {
+          ret = TB_PLIES;
+        } else if (follow_q == 1.0f) {
+          // Minimize plies for winning moves.
+          ret = *std::min_element(std::begin(plies), std::end(plies));
+        } else if (follow_q == -1.0f) {
+          // Maximize plies for losing moves.
+          ret = *std::max_element(std::begin(plies), std::end(plies));
+        }
+      }
+
+      // Include the current move in the ply count.
+      return ret + 1;
+    }
   };
 
   // Computes the best move, maybe with temperature (according to the settings).

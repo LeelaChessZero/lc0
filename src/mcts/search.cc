@@ -914,7 +914,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (node->IsTerminal() || !node->HasChildren()) {
+    if (node->IsTerminal() || !node->GetN()) {
       return NodeToProcess::Visit(node, depth);
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
@@ -1067,7 +1067,6 @@ void SearchWorker::ExtendNode(Node* node) {
           node->MakeTerminal(GameResult::DRAW);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return;
       }
     }
   }

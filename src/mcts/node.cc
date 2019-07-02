@@ -235,7 +235,7 @@ void Node::MakeNotTerminal() {
   n_ = 0;
 
   // If we have edges, we've been extended (1 visit), so include children too.
-  if (edges_) {
+  if (child_) {
     n_++;
     for (const auto& child : Edges()) {
       const auto n = child.GetN();
