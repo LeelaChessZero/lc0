@@ -115,6 +115,7 @@ class Search {
     bool operator<(const TerminalScore& other) const {
       return score_ < other.score_;
     }
+    int GetMate() const { return std::copysign((plies_ + 1) / 2, score_); }
 
    private:
     float score_ = 0.0f;
