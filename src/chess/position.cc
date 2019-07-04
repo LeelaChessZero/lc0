@@ -27,13 +27,11 @@
 
 #include "chess/position.h"
 #include <cassert>
-#include <cstring>
-#include <cstdlib>
 #include <cctype>
+#include <cstdlib>
+#include <cstring>
 
 namespace lczero {
-
-using std::string;
 
 Position::Position(const Position& parent, Move m)
     : no_capture_ply_(parent.no_capture_ply_ + 1),
@@ -142,87 +140,72 @@ uint64_t PositionHistory::HashLast(int positions) const {
   return HashCat(hash, Last().GetNoCaptureNoPawnPly());
 }
 
-// PrintFen outputs a FEN notation of the board. 
-// based on https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation#Examples
-string Position::GetFen() const  {
-	string result;
-	string enpassant;
-	ChessBoard board = GetBoard();
-	bool fenflipped = false;
-	if (board.flipped()) {
-		board.Mirror();
-		fenflipped = true;
-	}
-	int emptycounter = 0;
-	for (int i = 7; i >= 0; --i) {
-		for (int j = 0; j < 8; ++j) {
-			if (emptycounter > 0 &&
-				(
-				    board.our_king().get(i,j) ||
-					board.their_king().get(i,j) ||
-					board.pawns().get(i,j) ||
-					board.ours().get(i, j) ||
-					board.theirs().get(i, j))) {
-				result += std::to_string(emptycounter);
-				emptycounter = 0;
-			}
-			if (board.our_king().get(i,j)) {
-				result += 'K';
-				continue;
-			}
-			if (board.their_king().get(i, j)) {
-				result += 'k';
-				continue;
-			}
-			if (board.ours().get(i, j) || board.theirs().get(i, j)) {
-				char c = '?';
-				if (board.pawns().get(i, j)) {
-					c = 'p';
-				}
-				else if (board.bishops().get(i, j)) {
-					c = 'b';
-				}
-				else if (board.queens().get(i, j)) {
-					c = 'q';
-				}
-				else if (board.rooks().get(i, j)) {
-					c = 'r';
-				}
-				else {
-					c = 'n';
-				}
-				if (board.ours().get(i, j)) c = std::toupper(c); // capitals are for Black
-				result += c;
-			}
-			else {
-				emptycounter++;
-			}			
-		}
-		if (emptycounter > 0) result += std::to_string(emptycounter);
-		if (i > 0) result += "/";
-		emptycounter = 0;
-	}
-	string castlings_no_fenflip = board.castlings().as_string();
-	if (fenflipped) {
-		board.Mirror();
-	}
-	enpassant = "-";
-	for (auto sq : board.en_passant()) {
-		// Our internal representation stores en_passant 2 rows away
-		// from the actual sq.
-		if (sq.row() == 0) {
-			enpassant = ((BoardSquare)(sq.as_int() + 16)).as_string();
-		}
-		else {
-			enpassant = ((BoardSquare)(sq.as_int() - 16)).as_string();
-		}
-	}
-	result += IsBlackToMove() ? " b" : " w";
-	result += " " + castlings_no_fenflip;
-	result += " " + enpassant;
-	result += " " + std::to_string(GetNoCaptureNoPawnPly());
-	result += " " + std::to_string(ply_count_); 
-	return result;
+// PrintFen outputs a FEN notation of the board.
+// based on
+// https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation#Examples
+std::string Position::GetFen() const {
+  std::string result;
+  std::string enpassant;
+  const ChessBoard& board = GetWhiteBoard();
+  int emptycounter = 0;
+  for (int i = 7; i >= 0; --i) {
+    for (int j = 0; j < 8; ++j) {
+      if (emptycounter > 0 &&
+          (board.our_king().get(i, j) || board.their_king().get(i, j) ||
+           board.pawns().get(i, j) || board.ours().get(i, j) ||
+           board.theirs().get(i, j))) {
+        result += std::to_string(emptycounter);
+        emptycounter = 0;
+      }
+      if (board.our_king().get(i, j)) {
+        result += 'K';
+        continue;
+      }
+      if (board.their_king().get(i, j)) {
+        result += 'k';
+        continue;
+      }
+      if (board.ours().get(i, j) || board.theirs().get(i, j)) {
+        char c = '?';
+        if (board.pawns().get(i, j)) {
+          c = 'p';
+        } else if (board.bishops().get(i, j)) {
+          c = 'b';
+        } else if (board.queens().get(i, j)) {
+          c = 'q';
+        } else if (board.rooks().get(i, j)) {
+          c = 'r';
+        } else {
+          c = 'n';
+        }
+        if (board.ours().get(i, j))
+          c = std::toupper(c);  // capitals are for Black
+        result += c;
+      } else {
+        emptycounter++;
+      }
+    }
+    if (emptycounter > 0) result += std::to_string(emptycounter);
+    if (i > 0) result += "/";
+    emptycounter = 0;
+  }
+  std::string castlings_no_fenflip = board.castlings().as_string();
+  enpassant = "-";
+  for (auto sq : board.en_passant()) {
+    // Our internal representation stores en_passant 2 rows away
+    // from the actual sq.
+    if (sq.row() == 0) {
+      enpassant = ((BoardSquare)(sq.as_int() + 16)).as_string();
+    } else {
+      enpassant = ((BoardSquare)(sq.as_int() - 16)).as_string();
+    }
+  }
+  result += IsBlackToMove() ? " b" : " w";
+  result += " " + castlings_no_fenflip;
+  result += " " + enpassant;
+  result += " " + std::to_string(GetNoCaptureNoPawnPly());
+  result += " " + std::to_string(ply_count_);
+  return result;
 }
 
 }  // namespace lczero

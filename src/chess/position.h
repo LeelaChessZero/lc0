@@ -65,6 +65,8 @@ class Position {
   const ChessBoard& GetBoard() const { return us_board_; }
   // Gets board from the point of view of opponent.
   const ChessBoard& GetThemBoard() const { return them_board_; }
+  // Gets board from the point of view of the white player.
+  const ChessBoard& GetWhiteBoard() const { return us_board_.flipped() ? them_board_ : us_board_; };
 
   std::string DebugString() const;
 
