@@ -187,8 +187,10 @@ SearchLimits EngineController::PopulateSearchLimits(
 
   // How to scale moves time.
   const float slowmover = options_.Get<float>(kSlowMoverId.GetId());
-  const float time_curve_midpoint = options_.Get<float>(kTimeMidpointMoveId.GetId());
-  const float time_curve_steepness = options_.Get<float>(kTimeSteepnessId.GetId());
+  const float time_curve_midpoint =
+      options_.Get<float>(kTimeMidpointMoveId.GetId());
+  const float time_curve_steepness =
+      options_.Get<float>(kTimeSteepnessId.GetId());
 
   float movestogo =
       ComputeEstimatedMovesToGo(ply, time_curve_midpoint, time_curve_steepness);
@@ -266,7 +268,8 @@ void EngineController::UpdateFromUciOptions() {
   }
 
   // Network.
-  const auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+  const auto network_configuration =
+      NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
     network_ = NetworkFactory::LoadNetwork(options_);
     network_configuration_ = network_configuration;
@@ -306,11 +309,11 @@ void EngineController::SetPosition(const std::string& fen,
   search_.reset();
 }
 
-std::string EngineController::GetPosition() {
-	if (tree_ != nullptr) {
-		return tree_->HeadPosition().GetFen();
-	}
-	return "need a 'go nodes..' before returning fen position.";
+std::string EngineController::GetCurrentPositionFen() {
+  if (tree_ != nullptr) {
+    return tree_->HeadPosition().GetFen();
+  }
+  throw Exception("Need a 'go nodes..' before returning fen position.");
 }
 void EngineController::SetupPosition(
     const std::string& fen, const std::vector<std::string>& moves_str) {
@@ -453,15 +456,14 @@ void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
   std::string fen = position;
   if (fen.empty()) {
-	  fen = ChessBoard::kStartposFen;
+    fen = ChessBoard::kStartposFen;
   }
   engine_.SetPosition(fen, moves);
 }
 
 void EngineLoop::CmdGetFen() {
- 	std::string fen = engine_.GetPosition();
-	return SendResponse(fen);
-
+  std::string fen = engine_.GetCurrentPositionFen();
+  return SendResponse(fen);
 }
 void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 

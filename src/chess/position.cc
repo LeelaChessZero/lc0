@@ -193,18 +193,18 @@ char Position::GetPieceAt(const ChessBoard& board, int row, int col) const {
   char c = '?';
   if (board.ours().get(row, col) || board.theirs().get(row, col)) {
     if (board.pawns().get(row, col)) {
-      c = 'p';
+      c = 'P';
     } else if (board.bishops().get(row, col)) {
-      c = 'b';
+      c = 'B';
     } else if (board.queens().get(row, col)) {
-      c = 'q';
+      c = 'Q';
     } else if (board.rooks().get(row, col)) {
-      c = 'r';
+      c = 'R';
     } else {
-      c = 'n';
+      c = 'N';
     }
-    if (board.ours().get(row, col)) {
-      c = std::toupper(c);  // capitals are for White
+    if (board.theirs().get(row, col)) {
+      c = std::tolower(c);  // capitals are for White
     }
   }
   return (c == '?' ? '.' : c);  // '?' means '.' no piece found

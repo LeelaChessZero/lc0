@@ -82,7 +82,7 @@ class EngineController {
       const GoParams& params,
       std::chrono::steady_clock::time_point start_time);
 
-  std::string  GetPosition();
+  std::string  GetCurrentPositionFen();
 
  private:
   void UpdateFromUciOptions();
