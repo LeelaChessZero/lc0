@@ -156,30 +156,9 @@ std::string Position::GetFen() const {
         result += std::to_string(emptycounter);
         emptycounter = 0;
       }
-      if (board.our_king().get(i, j)) {
-        result += 'K';
-        continue;
-      }
-      if (board.their_king().get(i, j)) {
-        result += 'k';
-        continue;
-      }
-      if (board.ours().get(i, j) || board.theirs().get(i, j)) {
-        char c = '?';
-        if (board.pawns().get(i, j)) {
-          c = 'p';
-        } else if (board.bishops().get(i, j)) {
-          c = 'b';
-        } else if (board.queens().get(i, j)) {
-          c = 'q';
-        } else if (board.rooks().get(i, j)) {
-          c = 'r';
-        } else {
-          c = 'n';
-        }
-        if (board.ours().get(i, j))
-          c = std::toupper(c);  // capitals are for White
-        result += c;
+      char piece = GetPieceAt(board, i, j);
+      if (piece != '.') {
+        result += piece;
       } else {
         emptycounter++;
       }
@@ -191,9 +170,9 @@ std::string Position::GetFen() const {
   std::string enpassant = "-";
   if (!board.en_passant().empty()) {
     auto sq = *board.en_passant().begin();
-	// Our internal representation stores en_passant 2 rows away
-	// from the actual sq.
-	enpassant = ((BoardSquare)(sq.as_int() + (IsBlackToMove() ? +16 : -16)))
+    // Our internal representation stores en_passant 2 rows away
+    // from the actual sq.
+    enpassant = ((BoardSquare)(sq.as_int() + (IsBlackToMove() ? +16 : -16)))
                     .as_string();
   }
   result += IsBlackToMove() ? " b" : " w";
@@ -204,4 +183,31 @@ std::string Position::GetFen() const {
   return result;
 }
 
+char Position::GetPieceAt(const ChessBoard & board, int row, int col) const
+{
+  if (board.our_king().get(row, col)) {
+    return 'K';
+  }
+  if (board.their_king().get(row, col)) {
+    return 'k';
+  }
+  char c = '?';
+  if (board.ours().get(row, col) || board.theirs().get(row, col)) {
+    if (board.pawns().get(row, col)) {
+      c = 'p';
+    } else if (board.bishops().get(row, col)) {
+      c = 'b';
+    } else if (board.queens().get(row, col)) {
+      c = 'q';
+    } else if (board.rooks().get(row, col)) {
+      c = 'r';
+    } else {
+      c = 'n';
+    }
+    if (board.ours().get(row, col)) {
+      c = std::toupper(c);  // capitals are for White
+    }
+  }
+  return (c == '?' ? '.' : c);  // '?' translates to '.' for nothing on that square
+}
 }  // namespace lczero
