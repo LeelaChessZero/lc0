@@ -76,9 +76,13 @@ class UciLoop {
                            const std::vector<std::string>& /*moves*/) {
     throw Exception("Not supported");
   }
-  virtual void CmdGetFen() {
-	  throw Exception("Not supported");
+    
+  // can be overridden in engine
+  virtual bool CmdNonStandardUciCommand(const std::string& command, const std::unordered_map<std::string, std::string>& params) {
+	  
+	  throw Exception("Unknown command: " + command);
   }
+
   virtual void CmdGo(const GoParams& /*params*/) {
     throw Exception("Not supported");
   }

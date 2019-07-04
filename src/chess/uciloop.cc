@@ -56,8 +56,8 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"start"}, {}},
         {{"stop"}, {}},
         {{"ponderhit"}, {}},
-		{{"get"}, { "fen" }},
-		{{"quit"}, {}},
+        {{"get"}, {"fen"}},
+        {{"quit"}, {}},
         {{"xyzzy"}, {}},
 };
 
@@ -154,18 +154,13 @@ bool UciLoop::DispatchCommand(
   } else if (command == "ucinewgame") {
     CmdUciNewGame();
   } else if (command == "position") {
-	  if (ContainsKey(params, "fen") == ContainsKey(params, "startpos")) {
-		  throw Exception("Position requires either fen or startpos");
-	  }
-	  const std::vector<std::string> moves =
-		  StrSplitAtWhitespace(GetOrEmpty(params, "moves"));
-	  CmdPosition(GetOrEmpty(params, "fen"), moves);
-  } else if (command == "get") {
-	  if (ContainsKey(params, "fen")) {
-		  CmdGetFen();
-	  }
-  }
-  else if (command == "go") {
+    if (ContainsKey(params, "fen") == ContainsKey(params, "startpos")) {
+      throw Exception("Position requires either fen or startpos");
+    }
+    const std::vector<std::string> moves =
+        StrSplitAtWhitespace(GetOrEmpty(params, "moves"));
+    CmdPosition(GetOrEmpty(params, "fen"), moves);
+  } else if (command == "go") {
     GoParams go_params;
     if (ContainsKey(params, "infinite")) {
       if (!GetOrEmpty(params, "infinite").empty()) {
@@ -208,7 +203,7 @@ bool UciLoop::DispatchCommand(
   } else if (command == "quit") {
     return false;
   } else {
-    throw Exception("Unknown command: " + command);
+    return CmdNonStandardUciCommand(command, params);
   }
   return true;
 }
