@@ -189,14 +189,12 @@ std::string Position::GetFen() const {
     emptycounter = 0;
   }
   std::string enpassant = "-";
-  for (auto sq : board.en_passant()) {
-    // Our internal representation stores en_passant 2 rows away
-    // from the actual sq.
-    if (sq.row() == 0) {
-      enpassant = ((BoardSquare)(sq.as_int() + 16)).as_string();
-    } else {
-      enpassant = ((BoardSquare)(sq.as_int() - 16)).as_string();
-    }
+  if (!board.en_passant().empty()) {
+    auto sq = *board.en_passant().begin();
+	// Our internal representation stores en_passant 2 rows away
+	// from the actual sq.
+	enpassant = ((BoardSquare)(sq.as_int() + (IsBlackToMove() ? +16 : -16)))
+                    .as_string();
   }
   result += IsBlackToMove() ? " b" : " w";
   result += " " + board.castlings().as_string();
