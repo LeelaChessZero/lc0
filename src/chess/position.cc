@@ -145,7 +145,6 @@ uint64_t PositionHistory::HashLast(int positions) const {
 // https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation#Examples
 std::string Position::GetFen() const {
   std::string result;
-  std::string enpassant;
   const ChessBoard& board = GetWhiteBoard();
   int emptycounter = 0;
   for (int i = 7; i >= 0; --i) {
@@ -179,7 +178,7 @@ std::string Position::GetFen() const {
           c = 'n';
         }
         if (board.ours().get(i, j))
-          c = std::toupper(c);  // capitals are for Black
+          c = std::toupper(c);  // capitals are for White
         result += c;
       } else {
         emptycounter++;
@@ -189,8 +188,7 @@ std::string Position::GetFen() const {
     if (i > 0) result += "/";
     emptycounter = 0;
   }
-  std::string castlings_no_fenflip = board.castlings().as_string();
-  enpassant = "-";
+  std::string enpassant = "-";
   for (auto sq : board.en_passant()) {
     // Our internal representation stores en_passant 2 rows away
     // from the actual sq.
@@ -201,7 +199,7 @@ std::string Position::GetFen() const {
     }
   }
   result += IsBlackToMove() ? " b" : " w";
-  result += " " + castlings_no_fenflip;
+  result += " " + board.castlings().as_string();
   result += " " + enpassant;
   result += " " + std::to_string(GetNoCaptureNoPawnPly());
   result += " " + std::to_string(ply_count_);
