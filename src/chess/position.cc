@@ -183,8 +183,7 @@ std::string Position::GetFen() const {
   return result;
 }
 
-char Position::GetPieceAt(const ChessBoard & board, int row, int col) const
-{
+char Position::GetPieceAt(const ChessBoard& board, int row, int col) const {
   if (board.our_king().get(row, col)) {
     return 'K';
   }
@@ -208,6 +207,6 @@ char Position::GetPieceAt(const ChessBoard & board, int row, int col) const
       c = std::toupper(c);  // capitals are for White
     }
   }
-  return (c == '?' ? '.' : c);  // '?' translates to '.' for nothing on that square
+  return (c == '?' ? '.' : c);  // '?' means '.' no piece found
 }
 }  // namespace lczero
