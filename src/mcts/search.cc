@@ -743,6 +743,57 @@ Search::~Search() {
 }
 
 //////////////////////////////////////////////////////////////////////////////
+// TerminalScore
+//////////////////////////////////////////////////////////////////////////////
+
+Search::TerminalScore::TerminalScore(EdgeAndNode edge) : edge(edge) {
+  if (edge.IsTerminal()) {
+    score_ = edge.GetQ(0.0f);
+    if (score_) {
+      plies_ = CalcPlies(edge.node());
+    }
+  }
+}
+
+bool Search::TerminalScore::operator<(const TerminalScore& other) const {
+  // Prefer the better outcome.
+  if (score_ != other.score_) {
+    return score_ < other.score_;
+  }
+  // Prefer shorter wins and longer losses.
+  return score_ * (other.plies_ - plies_) < 0;
+}
+
+int Search::TerminalScore::CalcPlies(Node* terminal) {
+  auto ret = 0;
+
+  // Follow "terminals" until a true terminal with no children.
+  if (terminal->HasChildren()) {
+    const auto follow_q = -terminal->GetQ();
+    std::vector<int> plies;
+    for (auto edge : terminal->Edges()) {
+      if (edge.IsTerminal() && edge.GetQ(0.0f) == follow_q) {
+        plies.push_back(CalcPlies(edge.node()));
+      }
+    }
+
+    // No terminal children, so we have a tablebase position.
+    if (plies.empty()) {
+      ret = 999;
+    } else if (follow_q == 1.0f) {
+      // Minimize plies for winning moves.
+      ret = *std::min_element(std::begin(plies), std::end(plies));
+    } else if (follow_q == -1.0f) {
+      // Maximize plies for losing moves.
+      ret = *std::max_element(std::begin(plies), std::end(plies));
+    }
+  }
+
+  // Include the current move in the ply count.
+  return ret + 1;
+}
+
+//////////////////////////////////////////////////////////////////////////////
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 

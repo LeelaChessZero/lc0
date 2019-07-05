@@ -97,64 +97,10 @@ class Search {
   const SearchParams& GetParams() const { return params_; }
 
  private:
-  // Helper to score and sort terminals for preferred moves.
-  struct TerminalScore {
-    EdgeAndNode edge;
-
-    TerminalScore(EdgeAndNode edge) : edge(edge) {
-      if (edge.IsTerminal()) {
-        score_ = edge.GetQ(0.0f);
-
-        // Prefer shorter wins and longer losses.
-        if (score_ != 0.0f) {
-          plies_ = CalcPlies(edge.node());
-          score_ *= 1 - 0.5f * plies_ / TB_PLIES;
-        }
-      }
-    }
-    bool operator<(const TerminalScore& other) const {
-      return score_ < other.score_;
-    }
-    int GetMate() const { return std::copysign((plies_ + 1) / 2, score_); }
-
-   private:
-    float score_ = 0.0f;
-    int plies_ = 0;
-
-    static const int TB_PLIES = 1000;
-    static int CalcPlies(Node* terminal) {
-      auto ret = 0;
-
-      // Follow "terminals" until a true terminal with no children.
-      if (terminal->HasChildren()) {
-        const auto follow_q = -terminal->GetQ();
-        std::vector<int> plies;
-        for (auto edge : terminal->Edges()) {
-          if (edge.IsTerminal() && edge.GetQ(0.0f) == follow_q) {
-            plies.push_back(CalcPlies(edge.node()));
-          }
-        }
-
-        // No terminal children, so we have a tablebase position.
-        if (plies.empty()) {
-          ret = TB_PLIES;
-        } else if (follow_q == 1.0f) {
-          // Minimize plies for winning moves.
-          ret = *std::min_element(std::begin(plies), std::end(plies));
-        } else if (follow_q == -1.0f) {
-          // Maximize plies for losing moves.
-          ret = *std::max_element(std::begin(plies), std::end(plies));
-        }
-      }
-
-      // Include the current move in the ply count.
-      return ret + 1;
-    }
-  };
-
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
 
+  class TerminalScore;
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
@@ -249,6 +195,22 @@ class Search {
   const SearchParams params_;
 
   friend class SearchWorker;
+};
+
+// Helper to score and sort terminals for preferred moves.
+class Search::TerminalScore {
+ public:
+  EdgeAndNode edge;
+
+  TerminalScore(EdgeAndNode edge);
+  bool operator<(const TerminalScore& other) const;
+  int GetMate() const { return std::copysign((plies_ + 1) / 2, score_); }
+
+ private:
+  float score_ = 0.0f;
+  int plies_ = 0;
+
+  static int CalcPlies(Node* terminal);
 };
 
 // Single thread worker of the search engine.
