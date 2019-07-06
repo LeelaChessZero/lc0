@@ -45,8 +45,7 @@ class Position {
   bool IsBlackToMove() const { return us_board_.flipped(); }
   
   std::string GetFen() const;
-  char GetPieceAt(const ChessBoard& board, int row, int col) const;
-
+  
   // Number of half-moves since beginning of the game.
   int GetGamePly() const { return ply_count_; }
 

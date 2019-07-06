@@ -33,6 +33,31 @@
 
 namespace lczero {
 
+// GetPieceAt returns the piece found at row, col on board or the null-char '\0'
+// in case no piece there.
+char GetPieceAt(const ChessBoard& board, int row, int col) {
+  if (board.our_king().get(row, col)) return 'K';
+  if (board.their_king().get(row, col)) return 'k';
+  char c = '\0';
+  if (board.ours().get(row, col) || board.theirs().get(row, col)) {
+    if (board.pawns().get(row, col)) {
+      c = 'P';
+    } else if (board.bishops().get(row, col)) {
+      c = 'B';
+    } else if (board.queens().get(row, col)) {
+      c = 'Q';
+    } else if (board.rooks().get(row, col)) {
+      c = 'R';
+    } else {
+      c = 'N';
+    }
+    if (board.theirs().get(row, col)) {
+      c = std::tolower(c);  // Capitals are for white.
+    }
+  }
+  return c;
+}
+
 Position::Position(const Position& parent, Move m)
     : no_capture_ply_(parent.no_capture_ply_ + 1),
       ply_count_(parent.ply_count_ + 1) {
@@ -146,34 +171,27 @@ uint64_t PositionHistory::HashLast(int positions) const {
 std::string Position::GetFen() const {
   std::string result;
   const ChessBoard& board = GetWhiteBoard();
-  int emptycounter = 0;
-  for (int i = 7; i >= 0; --i) {
-    for (int j = 0; j < 8; ++j) {
-      if (emptycounter > 0 &&
-          (board.our_king().get(i, j) || board.their_king().get(i, j) ||
-           board.pawns().get(i, j) || board.ours().get(i, j) ||
-           board.theirs().get(i, j))) {
+  for (int row = 7; row >= 0; --row) {
+    int emptycounter = 0;
+    for (int col = 0; col < 8; ++col) {
+      char piece = GetPieceAt(board, row, col);
+      if (emptycounter > 0 && piece) {
         result += std::to_string(emptycounter);
         emptycounter = 0;
       }
-      char piece = GetPieceAt(board, i, j);
-      if (piece != '.') {
+      if (piece) {
         result += piece;
       } else {
         emptycounter++;
       }
     }
     if (emptycounter > 0) result += std::to_string(emptycounter);
-    if (i > 0) result += "/";
-    emptycounter = 0;
+    if (row > 0) result += "/";
   }
   std::string enpassant = "-";
   if (!board.en_passant().empty()) {
     auto sq = *board.en_passant().begin();
-    // Our internal representation stores en_passant 2 rows away
-    // from the actual sq.
-    enpassant = ((BoardSquare)(sq.as_int() + (IsBlackToMove() ? +16 : -16)))
-                    .as_string();
+    enpassant = BoardSquare(IsBlackToMove() ? 2 : 5, sq.col()).as_string();
   }
   result += IsBlackToMove() ? " b" : " w";
   result += " " + board.castlings().as_string();
@@ -181,32 +199,5 @@ std::string Position::GetFen() const {
   result += " " + std::to_string(GetNoCaptureNoPawnPly());
   result += " " + std::to_string(ply_count_);
   return result;
-}
-
-char Position::GetPieceAt(const ChessBoard& board, int row, int col) const {
-  if (board.our_king().get(row, col)) {
-    return 'K';
-  }
-  if (board.their_king().get(row, col)) {
-    return 'k';
-  }
-  char c = '?';
-  if (board.ours().get(row, col) || board.theirs().get(row, col)) {
-    if (board.pawns().get(row, col)) {
-      c = 'P';
-    } else if (board.bishops().get(row, col)) {
-      c = 'B';
-    } else if (board.queens().get(row, col)) {
-      c = 'Q';
-    } else if (board.rooks().get(row, col)) {
-      c = 'R';
-    } else {
-      c = 'N';
-    }
-    if (board.theirs().get(row, col)) {
-      c = std::tolower(c);  // capitals are for White
-    }
-  }
-  return (c == '?' ? '.' : c);  // '?' means '.' no piece found
 }
 }  // namespace lczero
