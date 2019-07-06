@@ -138,7 +138,7 @@ class EngineLoop : public UciLoop {
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
-  bool CmdNonStandardUciCommand(const std::string& command, const std::unordered_map<std::string, std::string>& params) override;
+  bool CmdNonStandardUciCommand(const std::string& command) override;
 	  
  private:
   OptionsParser options_;

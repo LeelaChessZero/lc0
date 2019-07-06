@@ -76,10 +76,8 @@ class UciLoop {
                            const std::vector<std::string>& /*moves*/) {
     throw Exception("Not supported");
   }
-    
-  // can be overridden in engine
-  virtual bool CmdNonStandardUciCommand(const std::string& command, const std::unordered_map<std::string, std::string>& params) {
-	  
+  // To support non-UCI commands this can be overridden in the engine class.
+  virtual bool CmdNonStandardUciCommand(const std::string& command) {
 	  throw Exception("Unknown command: " + command);
   }
 

@@ -472,26 +472,16 @@ void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 void EngineLoop::CmdStop() { engine_.Stop(); }
 
 bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
-	const std::string& key) {
-	return params.find(key) != params.end();
+                 const std::string& key) {
+  return params.find(key) != params.end();
 }
 
-bool EngineLoop::CmdNonStandardUciCommand(const std::string & command, const std::unordered_map<std::string, std::string>& params)
-{
-	if (command == "get") {
-		if (ContainsKey(params, "fen")) {
-			CmdGetFen();
-			return true;
-		}
-		std::string keys_values;
-		for (auto kv : params) {
-			keys_values += kv.first + ":";
-			keys_values += kv.second + " ";
-		}
-		throw Exception("Unknown params for command get: " + keys_values);
-	}
-	throw Exception("Unknown command: " + command);
-	return false;
+bool EngineLoop::CmdNonStandardUciCommand(const std::string& command) {
+  if (command == "get fen") {
+    CmdGetFen();
+    return true;
+  }
+  return false;
 }
 
 }  // namespace lczero
