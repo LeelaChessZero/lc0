@@ -199,7 +199,7 @@ if get_option('build_backends')
       deps += [ mkl_lib ]
       has_blas = true
 
-    elif get_option('accelerate') and accelerate_lib.found()
+    if get_option('accelerate') and accelerate_lib.found()
       includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
       deps += [ accelerate_lib ]
       has_blas = true
