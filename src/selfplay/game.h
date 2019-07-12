@@ -76,10 +76,10 @@ class SelfPlayGame {
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
-
+  
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,
-            bool enable_resign = true);
+	  SyzygyTablebase* syzygy_tb, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
@@ -119,6 +119,9 @@ class SelfPlayGame {
 
   // Training data to send.
   std::vector<V5TrainingData> training_data_;
+
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
+
 };
 
 }  // namespace lczero

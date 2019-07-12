@@ -57,6 +57,11 @@ const OptionId kMinimumAllowedVistsId{
 const OptionId kUciChess960{
     "chess960", "UCI_Chess960",
     "Castling moves are encoded as \"king takes rook\"."};
+const OptionId kSyzygyTablebaseId{
+    "syzygy-paths", "SyzygyPath",
+    "List of Syzygy tablebase directories, list entries separated by system "
+    "separator (\";\" for Windows, \":\" for Linux).",
+    's'};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -67,6 +72,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
   options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
+  options->Add<StringOption>(kSyzygyTablebaseId);
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
@@ -91,9 +97,20 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
-                        bool enable_resign) {
+                        SyzygyTablebase* syzygy_tb, bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
+  // Take syzygy tablebases from player1 options.
+  std::string tb_paths =
+      options_[0].uci_options->Get<std::string>(kSyzygyTablebaseId);
+  if (!tb_paths.empty()) {  // && tb_paths != tb_paths_) {
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
+    if (!syzygy_tb_->init(tb_paths)) {
+      CERR << "Failed to load Syzygy tablebases!";
+      syzygy_tb_ = nullptr;
+    }
+  }
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
@@ -106,7 +123,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId)) {
       tree_[idx]->TrimTreeAtHead();
     }
-
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
@@ -123,13 +139,12 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
             std::move(responder), tree_[idx]->HeadPosition().GetBoard());
       }
 
-      search_ = std::make_unique<Search>(
+     search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers),
           /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
-          nullptr);
-      // TODO: add Syzygy option for selfplay.
+          syzygy_tb);
     }
 
     // Do search.
