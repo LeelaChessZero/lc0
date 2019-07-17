@@ -198,6 +198,7 @@ if get_option('build_backends')
     if get_option('eigen')
       add_project_arguments('-DUSE_EIGEN', language : 'cpp')
       has_blas = true
+      deps += subproject('eigen').get_variable('eigen_dep')
 
     elif get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
