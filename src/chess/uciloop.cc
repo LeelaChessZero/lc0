@@ -76,7 +76,6 @@ ParseCommand(const std::string& line) {
   if (command == kKnownCommands.end()) {
     // There could be a non-uci command entered.
     return {};
-    // throw Exception("Unknown command: " + line);
   }
 
   std::string whitespace;
