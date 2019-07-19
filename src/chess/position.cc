@@ -31,11 +31,10 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace lczero {
-
+namespace {
 // GetPieceAt returns the piece found at row, col on board or the null-char '\0'
 // in case no piece there.
-char GetPieceAt(const ChessBoard& board, int row, int col) {
+char GetPieceAt(const lczero::ChessBoard& board, int row, int col) {
   if (board.our_king().get(row, col)) return 'K';
   if (board.their_king().get(row, col)) return 'k';
   char c = '\0';
@@ -57,6 +56,9 @@ char GetPieceAt(const ChessBoard& board, int row, int col) {
   }
   return c;
 }
+
+}  // namespace
+namespace lczero {
 
 Position::Position(const Position& parent, Move m)
     : no_capture_ply_(parent.no_capture_ply_ + 1),
