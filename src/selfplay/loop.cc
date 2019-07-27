@@ -173,7 +173,7 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
       << info.results[1][0];
   oss << " P1-B: +" << info.results[0][1] << " -" << info.results[2][1] << " ="
       << info.results[1][1];
-  oss << " npm " + std::to_string((double)info.nodes_total_ / info.move_count_);
+  oss << " npm " + std::to_string((static_cast<double>(info.nodes_total_) / info.move_count_);
   oss << " nodes " + std::to_string(info.nodes_total_);
   oss << " moves " + std::to_string(info.move_count_);
   SendResponse(oss.str());
