@@ -176,14 +176,14 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
 }
 
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
-  if (game_result_ == GameResult::WHITE_WON) {
-    std::cerr << "WDLStyleFPReport: " << std::max(max_eval_[1], max_eval_[2]) << std::endl;
-  } else if (game_result_ == GameResult::BLACK_WON) {
-    std::cerr << "WDLStyleFPReport: " << std::max(max_eval_[1], max_eval_[0])
-              << std::endl;  
-  } else {
-    std::cerr << "WDLStyleFPReport: " << std::max(max_eval_[2], max_eval_[0])
-              << std::endl;
+  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+    if (game_result_ == GameResult::WHITE_WON) {
+      return std::max(max_eval_[1], max_eval_[2]);
+    } else if (game_result_ == GameResult::BLACK_WON) {
+      return std::max(max_eval_[1], max_eval_[0]);
+    } else {
+      return std::max(max_eval_[2], max_eval_[0]);
+    }
   }
   if (game_result_ == GameResult::WHITE_WON) return min_eval_[0];
   if (game_result_ == GameResult::BLACK_WON) return min_eval_[1];
