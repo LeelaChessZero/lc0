@@ -273,6 +273,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
                        : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
       if (player1_black) result = 2 - result;
       ++tournament_info_.results[result][player1_black ? 1 : 0];
+      tournament_info_.move_count_ += game.move_count_;
+      tournament_info_.nodes_total_ += game.nodes_total_;
       tournament_callback_(tournament_info_);
     }
   }
