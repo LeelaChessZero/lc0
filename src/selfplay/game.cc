@@ -176,6 +176,8 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
 }
 
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
+  // TODO: This assumes both players have the same resign style.
+  // Supporting otherwise involves mixing the meaning of worst.
   if (options_[0].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
     if (game_result_ == GameResult::WHITE_WON) {
       return std::max(max_eval_[1], max_eval_[2]);
