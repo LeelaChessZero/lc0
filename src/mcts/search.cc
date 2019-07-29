@@ -599,8 +599,10 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if (edge.GetN() + offset > max_n) max_n = edge.GetN() + offset;
-    if (edge.GetQ(fpu) > max_eval) max_eval = edge.GetQ(fpu);
+    if (edge.GetN() + offset > max_n) {
+      max_n = edge.GetN() + offset;
+      max_eval = edge.GetQ(fpu);
+    }
   }
 
   // No move had enough visits for temperature, so use default child criteria
@@ -1298,6 +1300,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
     }
     n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+
+    // Nothing left to do without ancestors to update.
+    if (!p) break;
 
     // Convert parents to terminals except the root or those already converted.
     can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
