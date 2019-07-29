@@ -115,7 +115,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           search_->GetParams().GetHistoryFill(), best_q, best_d));
     }
 
-    float eval = best_eval.first;
+    double eval = best_eval.first;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
     const int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;

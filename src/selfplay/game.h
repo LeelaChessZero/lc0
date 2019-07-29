@@ -100,9 +100,9 @@ class SelfPlayGame {
   GameResult game_result_ = GameResult::UNDECIDED;
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
-  float min_eval_[2] = {1.0f, 1.0f};
+  double min_eval_[2] = {1.0f, 1.0f};
   // Track the maximum eval for white win, draw, black win for comparison to actual outcome.
-  float max_eval_[3] = {0.0f, 0.0f, 0.0f};
+  double max_eval_[3] = {0.0f, 0.0f, 0.0f};
   std::mutex mutex_;
 
   // Training data to send.
