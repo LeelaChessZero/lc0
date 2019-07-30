@@ -77,7 +77,7 @@ void dumpTensor(void *memory, int elements, char *message, bool fp16 = false)
 #endif
 
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize) {
+  InputsOutputs(int maxBatchSize, bool wdl) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -99,7 +99,8 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaMalloc(
         &op_policy_mem_gpu_, maxBatchSize * kNumOutputPolicy * sizeof(float)));
 
-    ReportCUDAErrors(cudaHostAlloc(&op_value_mem_, maxBatchSize * sizeof(float),
+    ReportCUDAErrors(
+        cudaHostAlloc(&op_value_mem_, maxBatchSize * (wdl ? 3 : 1) * sizeof(float),
                                    cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
@@ -437,7 +438,15 @@ class CudnnNetwork : public Network {
     // 3. Allocate GPU memory for running the network:
     //    - three buffers of max size are enough (one to hold input, second to
     //      hold output and third to hold skip connection's input).
-    size_t maxSize = resi_last_->GetOutputSize(max_batch_size_);
+
+    // size of input to the network
+    size_t maxSize = max_batch_size_ * kNumInputPlanes * 64 * sizeof(DataType);
+
+    // take max size of all layers
+    for (auto& layer : network_) {
+      maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
+    }
+
     for (auto& mem : tensor_mem_) {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
@@ -652,7 +661,7 @@ class CudnnNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_);
+      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -669,7 +678,7 @@ class CudnnNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0); }
+  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false); }
 
  private:
   cudnnHandle_t cudnn_;
