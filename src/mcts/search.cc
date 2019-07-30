@@ -1235,10 +1235,20 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   node_to_process->v = -computation_->GetQVal(idx_in_computation);
   node_to_process->d = computation_->GetDVal(idx_in_computation);
   // ...and secondly, the policy data.
+  // Calculate maximum first.
+  float max_p = -std::numeric_limits<float>::infinity();
+  for (auto edge : node->Edges()) {
+    max_p =
+        std::max(max_p, computation_->GetPVal(idx_in_computation,
+                                              edge.GetMove().as_nn_index()));
+  }
   float total = 0.0;
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
+    // Perform softmax.
+    p = std::exp(p - max_p);
+
     if (params_.GetPolicySoftmaxTemp() != 1.0f) {
       // Flush denormals to zero.
       p = p < 1.17549435E-38
