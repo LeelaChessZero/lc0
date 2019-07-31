@@ -1,5 +1,5 @@
 # This file is part of Leela Chess Zero.
-# Copyright (C) 2018 The LCZero Authors
+# Copyright (C) 2018-2019 The LCZero Authors
 #
 # Leela Chess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -195,7 +195,12 @@ if get_option('build_backends')
   endif
 
   if get_option('blas')
-    if get_option('mkl') and mkl_lib.found()
+    if get_option('eigen')
+      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
+      has_blas = true
+      deps += subproject('eigen').get_variable('eigen_dep')
+
+    elif get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
@@ -278,7 +283,6 @@ if get_option('build_backends')
 
     shared_files = [
     'src/neural/shared/activation.cc',
-    'src/neural/shared/batchnorm.cc',
     'src/neural/shared/winograd_filter.cc',
     ]
 
@@ -325,7 +329,6 @@ if get_option('build_backends')
 
     shared_files = [
     'src/neural/shared/activation.cc',
-    'src/neural/shared/batchnorm.cc',
     'src/neural/shared/winograd_filter.cc',
     ]
 
@@ -344,8 +347,8 @@ if get_option('build_backends')
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-  nvcc = find_program('/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
-                      'nvcc', required: false)
+  nvcc = find_program('nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
+                      required: false)
 
   #.cc files
   cuda_files = [
@@ -375,7 +378,12 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      cuda_arguments += ['-Xcompiler', '-MD']
+      # meson bug fixed in v0.51
+      if meson.version().version_compare('<0.51') or get_option('default_library') != 'static'
+        cuda_arguments += ['-Xcompiler', '-MD']
+      else
+        cuda_arguments += ['-Xcompiler', '-MT']
+      endif
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
@@ -444,9 +452,9 @@ executable('lc0', 'src/main.cc',
 
 
 ### Tests
-gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
-if get_option('gtest') and gtest.found()
+if get_option('gtest')
+  gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
   lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 
 #include "chess/board.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -897,10 +898,10 @@ bool ChessBoard::IsLegalMove(Move move,
 
   // The piece is pinned. Now check that it stays on the same line w.r.t. the
   // king.
-  int dx_from = from.col() - our_king_.col();
-  int dy_from = from.row() - our_king_.row();
-  int dx_to = to.col() - our_king_.col();
-  int dy_to = to.row() - our_king_.row();
+  const int dx_from = from.col() - our_king_.col();
+  const int dy_from = from.row() - our_king_.row();
+  const int dx_to = to.col() - our_king_.col();
+  const int dy_to = to.row() - our_king_.row();
 
   if (dx_from == 0 || dx_to == 0) {
     return (dx_from == dx_to);
@@ -911,14 +912,11 @@ bool ChessBoard::IsLegalMove(Move move,
 
 MoveList ChessBoard::GenerateLegalMoves() const {
   const KingAttackInfo king_attack_info = GenerateKingAttackInfo();
-  MoveList move_list = GeneratePseudolegalMoves();
-  MoveList result;
-  result.reserve(move_list.size());
-
-  for (Move m : move_list) {
-    if (IsLegalMove(m, king_attack_info)) result.emplace_back(m);
-  }
-
+  MoveList result = GeneratePseudolegalMoves();
+  result.erase(
+      std::remove_if(result.begin(), result.end(),
+                     [&](Move m) { return !IsLegalMove(m, king_attack_info); }),
+      result.end());
   return result;
 }
 
@@ -1033,8 +1031,8 @@ bool ChessBoard::HasMatingMaterial() const {
   constexpr BitBoard kLightSquares(0x55AA55AA55AA55AAULL);
   constexpr BitBoard kDarkSquares(0xAA55AA55AA55AA55ULL);
 
-  bool light_bishop = bishops_.intersects(kLightSquares);
-  bool dark_bishop = bishops_.intersects(kDarkSquares);
+  const bool light_bishop = bishops_.intersects(kLightSquares);
+  const bool dark_bishop = bishops_.intersects(kDarkSquares);
   return light_bishop && dark_bishop;
 }
 

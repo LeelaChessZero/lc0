@@ -26,9 +26,10 @@
 */
 
 #include <chrono>
+#include <cmath>
+#include <cstring>
 #include <functional>
 #include <thread>
-#include <cstring>
 #include "neural/factory.h"
 #include "utils/hashcat.h"
 
@@ -37,19 +38,21 @@ namespace {
 
 class RandomNetworkComputation : public NetworkComputation {
  public:
-  RandomNetworkComputation(int delay, int seed)
-      : delay_ms_(delay), seed_(seed) {}
+  RandomNetworkComputation(int delay, int seed, bool uniform_mode)
+      : delay_ms_(delay), seed_(seed), uniform_mode_(uniform_mode) {}
+
   void AddInput(InputPlanes&& input) override {
     std::uint64_t hash = seed_;
     for (const auto& plane : input) {
       hash = HashCat({hash, plane.mask});
       std::uint32_t tmp;
       std::memcpy(&tmp, &plane.value, sizeof(float));
-      std::uint64_t value_hash = tmp;
+      const std::uint64_t value_hash = tmp;
       hash = HashCat({hash, value_hash});
     }
     inputs_.push_back(hash);
   }
+
   void ComputeBlocking() override {
     if (delay_ms_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
@@ -57,10 +60,24 @@ class RandomNetworkComputation : public NetworkComputation {
   }
 
   int GetBatchSize() const override { return inputs_.size(); }
+
   float GetQVal(int sample) const override {
+    if (uniform_mode_) return 0.0f;
     return (int(inputs_[sample] % 200000) - 100000) / 100000.0;
   }
+
+  float GetDVal(int sample) const override {
+    if (uniform_mode_) return 0.0f;
+    // Maximum D value is 1 - abs(Q) for W, D, L to be in range [0.0, 1.0].
+    float q = GetQVal(sample);
+    float max_d = 1.0f - std::fabs(q);
+    // Hash in arbitrary constant to make D return different value from Q.
+    float d = max_d * (HashCat({inputs_[sample], 1234}) % 10000) / 10000.0;
+    return d;
+  }
+
   float GetPVal(int sample, int move_id) const override {
+    if (uniform_mode_) return 1.0f;
     return (HashCat({inputs_[sample], static_cast<unsigned long>(move_id)}) %
             10000) /
            10000.0;
@@ -70,20 +87,23 @@ class RandomNetworkComputation : public NetworkComputation {
   std::vector<std::uint64_t> inputs_;
   int delay_ms_ = 0;
   int seed_ = 0;
+  bool uniform_mode_ = false;
 };
 
 class RandomNetwork : public Network {
  public:
   RandomNetwork(const OptionsDict& options)
       : delay_ms_(options.GetOrDefault<int>("delay", 0)),
-        seed_(options.GetOrDefault<int>("seed", 0)) {}
+        seed_(options.GetOrDefault<int>("seed", 0)),
+        uniform_mode_(options.GetOrDefault<bool>("uniform", false)) {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_);
+    return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_, uniform_mode_);
   }
 
  private:
   int delay_ms_ = 0;
   int seed_ = 0;
+  bool uniform_mode_ = false;
 };
 }  // namespace
 

@@ -38,6 +38,10 @@ const OptionId kReuseTreeId{"reuse-tree", "ReuseTree",
 const OptionId kResignPercentageId{
     "resign-percentage", "ResignPercentage",
     "Resign when win percentage drops below specified value."};
+const OptionId kResignWDLStyleId{
+    "resign-wdlstyle", "ResignWDLStyle",
+    "If set, resign percentage applies to any output state being above "
+    "100% minus the percentage instead of winrate being below."};
 const OptionId kResignEarliestMoveId{"resign-earliest-move",
                                      "ResignEarliestMove",
                                      "Earliest move that resign is allowed."};
@@ -45,6 +49,7 @@ const OptionId kResignEarliestMoveId{"resign-earliest-move",
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeId) = false;
+  options->Add<BoolOption>(kResignWDLStyleId) = false;
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
 }
@@ -96,33 +101,62 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // Do search.
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
+    move_count_++;
+    nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
+    auto best_eval = search_->GetBestEval();
     if (training) {
       // Append training data. The GameResult is later overwritten.
-      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV3TrainingData(
+      auto best_q = best_eval.first;
+      auto best_d = best_eval.second;
+      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV4TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill()));
+          search_->GetParams().GetHistoryFill(), best_q, best_d));
     }
 
-    float eval = search_->GetBestEval();
+    float eval = best_eval.first;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
-    int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
+    const int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
+    auto best_w = (best_eval.first + 1.0f - best_eval.second) / 2.0f;
+    auto best_d = best_eval.second;
+    auto best_l = best_w - best_eval.first;
+    max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
+    max_eval_[1] = std::max(max_eval_[1], best_d);
+    max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
     if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
                                             kResignEarliestMoveId.GetId())) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
           100;
-      if (eval < resignpct) {  // always false when resignpct == 0
-        game_result_ =
-            blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
-        break;
+      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+        auto threshold = 1.0f - resignpct;
+        if (best_w > threshold) {
+          game_result_ =
+              blacks_move ? GameResult::BLACK_WON : GameResult::WHITE_WON;
+          break;
+        }
+        if (best_l > threshold) {
+          game_result_ =
+              blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          break;
+        }
+        if (best_d > threshold) {
+          game_result_ = GameResult::DRAW;
+          break;
+        }
+      } else {
+        if (eval < resignpct) {  // always false when resignpct == 0
+          game_result_ =
+              blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          break;
+        }
       }
     }
 
     // Add best move to the tree.
-    Move move = search_->GetBestMove().first;
+    const Move move = search_->GetBestMove().first;
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
@@ -142,6 +176,17 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
 }
 
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
+  // TODO: This assumes both players have the same resign style.
+  // Supporting otherwise involves mixing the meaning of worst.
+  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+    if (game_result_ == GameResult::WHITE_WON) {
+      return std::max(max_eval_[1], max_eval_[2]);
+    } else if (game_result_ == GameResult::BLACK_WON) {
+      return std::max(max_eval_[1], max_eval_[0]);
+    } else {
+      return std::max(max_eval_[2], max_eval_[0]);
+    }
+  }
   if (game_result_ == GameResult::WHITE_WON) return min_eval_[0];
   if (game_result_ == GameResult::BLACK_WON) return min_eval_[1];
   return std::min(min_eval_[0], min_eval_[1]);

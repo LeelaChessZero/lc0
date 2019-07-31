@@ -8,6 +8,7 @@ environment:
   - NAME: cuda
   - NAME: opencl
   - NAME: blas
+clone_folder: c:\projects\lc0
 install:
 - cmd: set CUDA=false
 - cmd: set OPENCL=false
@@ -28,8 +29,8 @@ install:
 - cmd: IF DEFINED CUDA_INSTALL appveyor DownloadFile https://developer.nvidia.com/compute/cuda/10.0/Prod/network_installers/cuda_10.0.130_win10_network
 - cmd: IF DEFINED CUDA_INSTALL cuda_10.0.130_win10_network -s nvcc_10.0 cublas_dev_10.0 cublas_10.0 cudart_10.0
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
-- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.3.1/cudnn-10.0-windows10-x64-v7.3.1.20.zip
-- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-10.0-windows10-x64-v7.3.1.20.zip -oC:\cache
+- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.4.2/cudnn-10.0-windows10-x64-v7.4.2.24.zip
+- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-10.0-windows10-x64-v7.4.2.24.zip -oC:\cache
 - cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
 - cmd: pip3 install --upgrade meson
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
@@ -37,18 +38,18 @@ install:
 - cmd: IF NOT EXIST c:\cache\protobuf\ git clone -b v3.5.1 --single-branch --depth 1 https://github.com/google/protobuf.git
 - cmd: IF NOT EXIST c:\cache\protobuf\ mkdir protobuf\build_msvc
 - cmd: IF NOT EXIST c:\cache\protobuf\ cd protobuf\build_msvc
-- cmd: IF NOT EXIST c:\cache\protobuf\ cmake -G "Visual Studio 15 2017 Win64" -Dprotobuf_BUILD_SHARED_LIBS=NO -Dprotobuf_MSVC_STATIC_RUNTIME=NO -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=c:/cache/protobuf ../cmake
+- cmd: IF NOT EXIST c:\cache\protobuf\ cmake -G "Visual Studio 15 2017 Win64" -Dprotobuf_BUILD_SHARED_LIBS=NO -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=c:/cache/protobuf ../cmake
 - cmd: IF NOT EXIST c:\cache\protobuf\ msbuild INSTALL.vcxproj /p:Configuration=Release /p:Platform=x64 /m
 - cmd: set PATH=c:\cache\protobuf\bin;%PATH%
 - cmd: IF NOT EXIST c:\cache\testnet appveyor DownloadFile http://lczero.org/get_network?sha=7170f639ba1cdc407283b8e52377283e36845b954788c6ada8897937637ef032 -Filename c:\cache\testnet
-- cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy 
+- cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
 - cmd: IF %GTEST%==true cd C:\cache\syzygy
 - cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
 - cmd: IF %GTEST%==true IF NOT EXIST KQQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}{P,N,R,B,Q}vK.rtb{w,z}
 - cmd: IF %GTEST%==true IF NOT EXIST KQvKQ.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK{P,N,R,B,Q}.rtb{w,z}
 - cmd: cd C:\projects\lc0
 cache:
-  - C:\cache
+  - C:\cache -> appveyor.yml
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0'
   - C:\projects\lc0\subprojects\packagecache
 before_build:
