@@ -1246,15 +1246,10 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
-    // Perform softmax.
-    p = FastExp(p - max_p);
+    // Perform softmax and take into account policy softmax temperature T.
+    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
+    p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
-    if (params_.GetPolicySoftmaxTemp() != 1.0f) {
-      // Flush denormals to zero.
-      p = p < 1.17549435E-38
-              ? 0.0
-              : FastPow2(FastLog2(p) / params_.GetPolicySoftmaxTemp());
-    }
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
     total += edge.edge()->GetP();
