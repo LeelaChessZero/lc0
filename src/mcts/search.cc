@@ -1247,7 +1247,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
     // Perform softmax.
-    p = std::exp(p - max_p);
+    p = FastExp(p - max_p);
 
     if (params_.GetPolicySoftmaxTemp() != 1.0f) {
       // Flush denormals to zero.
