@@ -1250,6 +1250,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
+    // Note that p now lies in [0, 1], so it is safe to store it in compressed
+    // format. Normalization happens later.
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
     total += edge.edge()->GetP();

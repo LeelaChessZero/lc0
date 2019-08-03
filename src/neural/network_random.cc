@@ -80,9 +80,10 @@ class RandomNetworkComputation : public NetworkComputation {
     if (uniform_mode_) return 1.0f;
 
     // Note that this function returns the policy value *before* softmax.
-    // We choose a uniform distribution over [0; a], implying that the
+    // We choose a uniform distribution over [0, a], implying that the
     // proportion between the smallest and largest policy value *after* softmax
-    // is equal to S = exp(-a). Choosing a = 3.0 leads to S = 0.05.
+    // exponentiation (but before normalization) is equal to S = exp(-a).
+    // Choosing a = 3.0 leads to S = 0.05.
     const float a = 3.0f;
     return (HashCat({inputs_[sample], static_cast<unsigned long>(move_id)}) %
             10000) *
