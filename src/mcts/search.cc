@@ -1235,16 +1235,23 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   node_to_process->v = -computation_->GetQVal(idx_in_computation);
   node_to_process->d = computation_->GetDVal(idx_in_computation);
   // ...and secondly, the policy data.
+  // Calculate maximum first.
+  float max_p = -std::numeric_limits<float>::infinity();
+  for (auto edge : node->Edges()) {
+    max_p =
+        std::max(max_p, computation_->GetPVal(idx_in_computation,
+                                              edge.GetMove().as_nn_index()));
+  }
   float total = 0.0;
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
-    if (params_.GetPolicySoftmaxTemp() != 1.0f) {
-      // Flush denormals to zero.
-      p = p < 1.17549435E-38
-              ? 0.0
-              : FastPow2(FastLog2(p) / params_.GetPolicySoftmaxTemp());
-    }
+    // Perform softmax and take into account policy softmax temperature T.
+    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
+    p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
+
+    // Note that p now lies in [0, 1], so it is safe to store it in compressed
+    // format. Normalization happens later.
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
     total += edge.edge()->GetP();

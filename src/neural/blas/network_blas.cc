@@ -303,9 +303,8 @@ void BlasComputation::ComputeBlocking() {
       std::vector<float> policy(num_output_policy);
 
       // Get the moves
-      SoftmaxActivation(num_output_policy, &output_pol[j * num_output_policy],
-                        policy.data());
-
+      policy.assign(output_pol.begin() + j * num_output_policy,
+                    output_pol.begin() + (j + 1) * num_output_policy);
       policies_.emplace_back(std::move(policy));
     }
 
@@ -418,8 +417,8 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   CERR << "MKL " << versionbuf << ".";
   MKLVersion version;
   mkl_get_version(&version);
-  CERR << "MKL platform: " << version.Platform << ", processor: "
-       << version.Processor << ".";
+  CERR << "MKL platform: " << version.Platform
+       << ", processor: " << version.Processor << ".";
   CERR << "MKL can use up to " << max_procs << " thread(s).";
   CERR << "MKL using " << blas_cores << " thread(s) for this backend.";
 #endif
