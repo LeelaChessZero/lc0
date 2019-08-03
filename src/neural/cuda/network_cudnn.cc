@@ -99,8 +99,8 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaMalloc(
         &op_policy_mem_gpu_, maxBatchSize * kNumOutputPolicy * sizeof(float)));
 
-    ReportCUDAErrors(
-        cudaHostAlloc(&op_value_mem_, maxBatchSize * (wdl ? 3 : 1) * sizeof(float),
+    ReportCUDAErrors(cudaHostAlloc(&op_value_mem_,
+                                   maxBatchSize * (wdl ? 3 : 1) * sizeof(float),
                                    cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
@@ -239,8 +239,7 @@ class CudnnNetwork : public Network {
       }
 
       // Override if forced from backend option
-      if (!options.IsDefault<bool>("nhwc")) 
-          nhwc_ = options.Get<bool>("nhwc");
+      if (!options.IsDefault<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
 
       if (nhwc_)
         ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
@@ -377,10 +376,6 @@ class CudnnNetwork : public Network {
       policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
 
       network_.emplace_back(std::move(policymap));
-
-      auto softmaxPol =
-          std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
-      network_.emplace_back(std::move(softmaxPol));
     } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters, true,
@@ -394,10 +389,6 @@ class CudnnNetwork : public Network {
       FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0],
                          scratch_mem_);
       network_.emplace_back(std::move(FCPol));
-
-      auto softmaxPol =
-          std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
-      network_.emplace_back(std::move(softmaxPol));
     }
     policy_out_ = getLastLayer();
 
@@ -533,39 +524,32 @@ class CudnnNetwork : public Network {
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // conv1
 
-      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // pol FC
       if (fp16) {
-        // TODO: consider softmax layer that writes directly to fp32
-        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol softmax
-        copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
-                          batchSize * kNumOutputPolicy);  // POLICY
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol softmax  // POLICY
-      }
-    } else {
-      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // pol conv
-      network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // pol FC
-      if (fp16) {
-        // TODO: consider softmax layer that writes directly to fp32.
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol softmax
+                            cublas_);  // pol FC
         copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
                           batchSize * kNumOutputPolicy);  // POLICY
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol softmax  // POLICY
+                            cublas_);  // pol FC  // POLICY
+      }
+    } else {
+      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_,
+                          cublas_);  // pol conv
+
+      if (fp16) {
+        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol FC
+        copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
+                          batchSize * kNumOutputPolicy);  // POLICY
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0],
+                            nullptr, scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // pol FC  // POLICY
       }
     }
 

@@ -293,9 +293,8 @@ void BlasComputation::ComputeBlocking() {
       std::vector<float> policy(num_output_policy);
 
       // Get the moves
-      SoftmaxActivation(num_output_policy, &output_pol[j * num_output_policy],
-                        policy.data());
-
+      policy.assign(output_pol.begin() + j * num_output_policy,
+                    output_pol.begin() + (j + 1) * num_output_policy);
       policies_.emplace_back(std::move(policy));
     }
 
