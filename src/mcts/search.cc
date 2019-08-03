@@ -929,7 +929,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     const float cpuct = ComputeCpuct(params_, node->GetN());
-    const float puct_mult = cpuct * std::sqrt(node->GetN());
+    const float puct_mult = 
+        cpuct * std::sqrt(
+            params_.GetNewUEnabled() ? 
+            node->GetN() :
+            std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
@@ -1148,7 +1152,11 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
   const float cpuct = ComputeCpuct(params_, node->GetN());
-  const float puct_mult = cpuct * std::sqrt(node->GetN());
+    const float puct_mult = 
+        cpuct * std::sqrt(
+            params_.GetNewUEnabled() ? 
+            node->GetN() :
+            std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
