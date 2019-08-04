@@ -5,6 +5,9 @@
   illegal moves to ensure spurious outputs on illegal moves don't reduce (or
   entirely remove) the quality of the policy values on the legal moves.
 * Other small tweaks piled up in master branch.
+* Fix for blas backend allocation bug with small network sizes.
+* The blas backend can be built with eigen - the result is reasonably optimized
+  for the build machine.
 
 
 v0.21.4 (2019-07-28)
