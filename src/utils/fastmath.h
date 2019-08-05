@@ -37,10 +37,8 @@ namespace lczero {
 // Fast approximate log2(x). Does no range checking.
 // The approximation used here is log2(2^N*(1+f)) ~ N+f*(1+k-k*f) where N is the
 // exponent and f the fraction (mantissa), f>=0. The constant k is used to tune
-// the approximation accuracy. Note that the formula used here is transformed to
-// use 1+f for speed reasons: log2(2^N*(1+f)) ~ N+(1+f)*(1+3*k-k*(1+f))-2*k-1.
-// In the final version some constants were slightly modified for better
-// accuracy with 32 bit floating point math.
+// the approximation accuracy. In the final version some constants were slightly
+// modified for better accuracy with 32 bit floating point math.
 inline float FastLog2(const float a) {
   uint32_t tmp;
   std::memcpy(&tmp, &a, sizeof(float));
@@ -48,8 +46,9 @@ inline float FastLog2(const float a) {
   tmp = (tmp & 0x7fffff) | (0x7f << 23);
   float out;
   std::memcpy(&out, &tmp, sizeof(float));
+  out -= 1.0f;
   // Minimize max relative error.
-  return out * (2.0672753f - 0.35575843f * out) - 128.71152f + expb;
+  return out * (1.3557554f - 0.35575548f * out) - 127 + expb;
 }
 
 // Fast approximate 2^x. Does only limited range checking.
