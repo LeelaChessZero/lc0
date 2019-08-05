@@ -362,6 +362,10 @@ class EdgeAndNode {
     return numerator * GetP() / (1 + GetNStarted());
   }
 
+  float GetNewU(float numerator) const {
+    return numerator * GetP() / std::pow(1.0 + GetNStarted(), 1.5);
+  }
+
   int GetVisitsToReachU(float target_score, float numerator,
                         float default_q) const {
     const auto q = GetQ(default_q);
