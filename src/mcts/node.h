@@ -367,6 +367,11 @@ class EdgeAndNode {
     return numerator * GetP() / (1 + GetNStarted());
   }
 
+  float GetNewU(float numerator) const {
+    const float x = 1 + GetNStarted();
+    return numerator * GetP() * FastInvSqrt(x) / x;
+  }
+
   int GetVisitsToReachU(float target_score, float numerator, float default_q,
                         bool logit_q) const {
     const auto q = GetQ(default_q, logit_q);
@@ -375,6 +380,18 @@ class EdgeAndNode {
     return std::max(
         1.0f,
         std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
+                 1e9f));
+  }
+
+  int GetVisitsToReachNewU(float target_score, float numerator,
+                           float default_q, bool logit_q) const {
+    const auto q = GetQ(default_q, logit_q);
+    if (q >= target_score) return std::numeric_limits<int>::max();
+    const auto n1 = GetNStarted() + 1;
+    const float inner = std::pow((GetP() * numerator) / (target_score - q), 2. / 3.);
+    return std::max(
+        1.0f,
+        std::min(std::floor(inner - n1) + 1,
                  1e9f));
   }
 

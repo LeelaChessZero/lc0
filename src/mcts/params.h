@@ -52,6 +52,7 @@ class SearchParams {
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
+  bool GetNewUEnabled() const { return kNewUEnabled; }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -108,6 +109,7 @@ class SearchParams {
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
+  static const OptionId kNewUEnabledId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
@@ -149,6 +151,7 @@ class SearchParams {
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
+  const bool kNewUEnabled;
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
   const float kSmartPruningFactor;
