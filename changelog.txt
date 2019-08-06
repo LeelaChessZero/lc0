@@ -1,4 +1,58 @@
-﻿v0.21.0-rc2 (2019-03-06)
+﻿v0.22.0-rc1 (2019-08-03)
+~~~~~~~~~~~
+
+* Remove softmax calculation from backends and apply it after filtering for
+  illegal moves to ensure spurious outputs on illegal moves don't reduce (or
+  entirely remove) the quality of the policy values on the legal moves.
+* Fix for blas backend allocation bug with small network sizes.
+* The blas backend can be built with eigen - the result is reasonably optimized
+  for the build machine.
+* Other small tweaks piled up in master branch.
+
+
+v0.21.4 (2019-07-28)
+~~~~~~~~~~~~~~~~~~~~
+
+* A fix for crashes that can occur during use of sticky-endgames.
+* Change the false positive value reported when in wdl style resign and display
+  average nodes per move as part of tournament stats in selfplay mode.
+
+v0.21.3 (2019-07-21)
+~~~~~~~
+
+* Fix for potential memory corruption/crash in using small networks or using the
+  wdl head with cuda backends. (#892)
+* Fix for building with newer versions of meson. (#904)
+
+v0.21.2 (2019-06-09)
+~~~~~~~
+
+* Divide by a slightly smaller divisor to truncate to +/-12800. (#880)
+
+v0.21.2-rc3 (2019-06-08)
+~~~~~~~~~~~
+
+* Centipawn conversion (#860)
+
+v0.21.2-rc2 (2019-05-22)
+~~~~~~~~~~~
+
+* Add 320 and 352 channel support for fused SE layer (#855)
+* SE layer fix when not using fused kernel (#852)
+* Fp16 nchw for cudnn-fp16 backend (support GTX 16xx GPUs) (#849)
+
+v0.21.2-rc1 (2019-05-05)
+~~~~~~~~~~~
+
+* Make --sticky-endgames on by default (still off in training) (#844)
+* update download links in README (#842)
+* Recalibrate centipawn formula (#841)
+* Also make parents Terminal if any move is a win or all moves are loss or draw. (#822)
+* Use parent Q as a default score instead of 0 for unvisited pv. (#828)
+* Add stop command to selfplay interactive mode to allow for graceful exit. (#810)
+* Increased hard limit on batch size in opencl backend to 32 (#807)
+
+v0.21.0-rc2 (2019-03-06)
 ~~~~~~~~~~~
 
 * Add support for cudnn7.0 (#717)

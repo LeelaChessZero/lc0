@@ -201,6 +201,7 @@ if get_option('build_backends')
     if get_option('eigen')
       add_project_arguments('-DUSE_EIGEN', language : 'cpp')
       has_blas = true
+      deps += subproject('eigen').get_variable('eigen_dep')
 
     elif get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
@@ -380,7 +381,12 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      cuda_arguments += ['-Xcompiler', '-MD']
+      # meson bug fixed in v0.51
+      if meson.version().version_compare('<0.51') or get_option('default_library') != 'static'
+        cuda_arguments += ['-Xcompiler', '-MD']
+      else
+        cuda_arguments += ['-Xcompiler', '-MT']
+      endif
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
