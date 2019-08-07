@@ -47,8 +47,8 @@ inline float FastLog2(const float a) {
   float out;
   std::memcpy(&out, &tmp, sizeof(float));
   out -= 1.0f;
-  // Minimize max relative error.
-  return out * (1.3557554f - 0.35575548f * out) - 127 + expb;
+  // Minimize max absolute error.
+  return out * (1.3465552f - 0.34655523f * out) - 127 + expb;
 }
 
 // Fast approximate 2^x. Does only limited range checking.
