@@ -41,6 +41,8 @@ if git.found()
     message('found git short revision ' + short_rev)
     add_project_arguments('-DBUILD_IDENTIFIER="g' + short_rev + '"', language : 'cpp')
   endif
+else
+  warning('Please install git to add short revision to build identifier.')
 endif
 
 # Files to compile.
