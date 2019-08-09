@@ -35,5 +35,9 @@ std::string GetVersionStr(int major, int minor, int patch,
   auto v = std::to_string(major) + "." + std::to_string(minor) + "." +
            std::to_string(patch);
   if (postfix.empty()) return v;
+#ifdef GIT_SHORT_REVISION
+  if (postfix.compare("dev") == 0)
+    return v + "-" + postfix + "-g" + GIT_SHORT_REVISION;
+#endif
   return v + "-" + postfix;
 }
