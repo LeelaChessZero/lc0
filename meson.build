@@ -32,7 +32,7 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   endif
 endif
 
-# Extract git short revision.
+# Use git short revision as build identifier.
 r = run_command('git', 'rev-parse', '--short', 'HEAD')
 if r.returncode() == 0
   short_rev = r.stdout().strip()
