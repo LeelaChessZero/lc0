@@ -311,7 +311,7 @@ if get_option('build_backends')
       deps += [ opencl_framework ]
       has_opencl = true
 
-  elif opencl_lib.found() and cc.has_header('CL/opencl.h', args: '-I' + get_option('opencl_include')[0])
+  elif opencl_lib.found() and cc.has_header('CL/opencl.h', args: '-I' + get_option('opencl_include'))
 
       deps += [ opencl_lib ]
       has_opencl = true
