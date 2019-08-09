@@ -33,11 +33,14 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
 endif
 
 # Use git short revision as build identifier.
-r = run_command('git', 'rev-parse', '--short', 'HEAD')
-if r.returncode() == 0
-  short_rev = r.stdout().strip()
-  message('found git short revision ' + short_rev)
-  add_project_arguments('-DBUILD_IDENTIFIER="g' + short_rev + '"', language : 'cpp')
+git = find_program('git', required: false)
+if git.found()
+  r = run_command(git, 'rev-parse', '--short', 'HEAD')
+  if r.returncode() == 0
+    short_rev = r.stdout().strip()
+    message('found git short revision ' + short_rev)
+    add_project_arguments('-DBUILD_IDENTIFIER="g' + short_rev + '"', language : 'cpp')
+  endif
 endif
 
 # Files to compile.
