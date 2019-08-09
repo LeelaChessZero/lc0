@@ -34,16 +34,18 @@ endif
 
 # Use git short revision as build identifier.
 git = find_program('git', required: false)
+short_rev = 'unknown'
 if git.found()
   r = run_command(git, 'rev-parse', '--short', 'HEAD')
   if r.returncode() == 0
     short_rev = r.stdout().strip()
-    message('found git short revision ' + short_rev)
-    add_project_arguments('-DBUILD_IDENTIFIER="g' + short_rev + '"', language : 'cpp')
+  else
+    warning('Failed to parse short revision. Use git clone instead of downloading the archive from GitHub.')
   endif
-else
-  warning('Please install git to add short revision to build identifier in version string.')
 endif
+
+message('Using git short revision "' + short_rev + '" as build identifier.')
+add_project_arguments('-DBUILD_IDENTIFIER="g' + short_rev + '"', language : 'cpp')
 
 # Files to compile.
 deps = []

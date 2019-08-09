@@ -31,14 +31,10 @@ std::uint32_t GetVersionInt(int major, int minor, int patch) {
 }
 
 std::string GetVersionStr(int major, int minor, int patch,
-                          const std::string& postfix) {
+                          const std::string& postfix,
+                          const std::string& build_id) {
   auto v = std::to_string(major) + "." + std::to_string(minor) + "." +
            std::to_string(patch);
-#ifdef BUILD_IDENTIFIER
-  if (postfix.empty()) return v + "+" BUILD_IDENTIFIER;
-  return v + "-" + postfix + "+" BUILD_IDENTIFIER;
-#else
-  if (postfix.empty()) return v;
-  return v + "-" + postfix;
-#endif
+  if (postfix.empty()) return v + "+" + build_id;
+  return v + "-" + postfix + "+" + build_id;
 }
