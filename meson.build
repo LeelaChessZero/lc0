@@ -37,7 +37,7 @@ r = run_command('git', 'rev-parse', '--short', 'HEAD')
 if r.returncode() == 0
   short_rev = r.stdout().strip()
   message('found git short revision ' + short_rev)
-  add_project_arguments('-DGIT_SHORT_REVISION="' + short_rev + '"', language : 'cpp')
+  add_project_arguments('-DBUILD_IDENTIFIER="g' + short_rev + '"', language : 'cpp')
 endif
 
 # Files to compile.

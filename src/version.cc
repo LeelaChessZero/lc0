@@ -34,10 +34,11 @@ std::string GetVersionStr(int major, int minor, int patch,
                           const std::string& postfix) {
   auto v = std::to_string(major) + "." + std::to_string(minor) + "." +
            std::to_string(patch);
+#ifdef BUILD_IDENTIFIER
+  if (postfix.empty()) return v + "+" BUILD_IDENTIFIER;
+  return v + "-" + postfix + "+" BUILD_IDENTIFIER;
+#else
   if (postfix.empty()) return v;
-#ifdef GIT_SHORT_REVISION
-  if (postfix.compare("dev") == 0)
-    return v + "-" + postfix + "-g" + GIT_SHORT_REVISION;
-#endif
   return v + "-" + postfix;
+#endif
 }
