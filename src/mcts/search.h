@@ -100,13 +100,12 @@ class Search {
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
 
-  class TerminalScore;
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
   EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
-  std::vector<TerminalScore> GetBestChildrenNoTemperature(Node* parent,
-                                                          int count) const;
+  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
+                                                        int count) const;
   EdgeAndNode GetBestChildWithTemperature(Node* parent,
                                           float temperature) const;
 
@@ -195,22 +194,6 @@ class Search {
   const SearchParams params_;
 
   friend class SearchWorker;
-};
-
-// Helper to score and sort terminals for preferred moves.
-class Search::TerminalScore {
- public:
-  EdgeAndNode edge;
-
-  TerminalScore(EdgeAndNode edge);
-  bool operator<(const TerminalScore& other) const;
-  int GetMate() const { return std::copysign((plies_ + 1) / 2, score_); }
-
- private:
-  float score_ = 0.0f;
-  int plies_ = 0;
-
-  static int CalcPlies(Node* terminal);
 };
 
 // Single thread worker of the search engine.

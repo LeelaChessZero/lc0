@@ -121,12 +121,11 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 
   int multipv = 0;
   const auto default_q = -root_node_->GetQ();
-  for (const auto& scored : edges) {
-    const auto& edge = scored.edge;
+  for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto mate = scored.GetMate();
+    const auto mate = edge.GetMovesTillCheckmate();
     if (mate) {
       uci_info.mate = mate;
     } else if (score_type == "centipawn") {
@@ -544,8 +543,8 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 }
 
 // Returns @count children with most visits.
-std::vector<Search::TerminalScore> Search::GetBestChildrenNoTemperature(
-    Node* parent, int count) const {
+std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
+                                                              int count) const {
   MoveList root_limit;
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
@@ -556,7 +555,7 @@ std::vector<Search::TerminalScore> Search::GetBestChildrenNoTemperature(
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<TerminalScore, uint64_t, float, float>;
+  using El = std::tuple<int, uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -564,24 +563,24 @@ std::vector<Search::TerminalScore> Search::GetBestChildrenNoTemperature(
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(TerminalScore(edge), edge.GetN(), edge.GetQ(0),
-                       edge.GetP());
+    edges.emplace_back(edge.GetTerminalSortingKey(), edge.GetN(), edge.GetQ(0),
+                       edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
                           : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
 
-  std::vector<TerminalScore> res;
+  std::vector<EdgeAndNode> res;
   std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<0>(x); });
+                 [](const El& x) { return std::get<4>(x); });
   return res;
 }
 
 // Returns a child with most visits.
 EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   auto res = GetBestChildrenNoTemperature(parent, 1);
-  return res.empty() ? EdgeAndNode() : res.front().edge;
+  return res.empty() ? EdgeAndNode() : res.front();
 }
 
 // Returns a child chosen according to weighted-by-temperature visit count.
@@ -740,57 +739,6 @@ Search::~Search() {
   Abort();
   Wait();
   LOGFILE << "Search destroyed.";
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// TerminalScore
-//////////////////////////////////////////////////////////////////////////////
-
-Search::TerminalScore::TerminalScore(EdgeAndNode edge) : edge(edge) {
-  if (edge.IsTerminal()) {
-    score_ = edge.GetQ(0.0f);
-    if (score_) {
-      plies_ = CalcPlies(edge.node());
-    }
-  }
-}
-
-bool Search::TerminalScore::operator<(const TerminalScore& other) const {
-  // Prefer the better outcome.
-  if (score_ != other.score_) {
-    return score_ < other.score_;
-  }
-  // Prefer shorter wins and longer losses.
-  return score_ * (other.plies_ - plies_) < 0;
-}
-
-int Search::TerminalScore::CalcPlies(Node* terminal) {
-  auto ret = 0;
-
-  // Follow "terminals" until a true terminal with no children.
-  if (terminal->HasChildren()) {
-    const auto follow_q = -terminal->GetQ();
-    std::vector<int> plies;
-    for (auto edge : terminal->Edges()) {
-      if (edge.IsTerminal() && edge.GetQ(0.0f) == follow_q) {
-        plies.push_back(CalcPlies(edge.node()));
-      }
-    }
-
-    // No terminal children, so we have a tablebase position.
-    if (plies.empty()) {
-      ret = 999;
-    } else if (follow_q == 1.0f) {
-      // Minimize plies for winning moves.
-      ret = *std::min_element(std::begin(plies), std::end(plies));
-    } else if (follow_q == -1.0f) {
-      // Maximize plies for losing moves.
-      ret = *std::max_element(std::begin(plies), std::end(plies));
-    }
-  }
-
-  // Include the current move in the ply count.
-  return ret + 1;
 }
 
 //////////////////////////////////////////////////////////////////////////////

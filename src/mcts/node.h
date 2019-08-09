@@ -329,6 +329,8 @@ class EdgeAndNode {
   bool operator!=(const EdgeAndNode& other) const {
     return edge_ != other.edge_;
   }
+  // Arbitrary ordering just to make it possible to use in tuples.
+  bool operator<(const EdgeAndNode& other) const { return edge_ < other.edge_; }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }
@@ -370,6 +372,10 @@ class EdgeAndNode {
         std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
                  1e9f));
   }
+
+  // Helpers to determine which terminals to prefer.
+  int GetMovesTillCheckmate() const;
+  int GetTerminalSortingKey() const;
 
   std::string DebugString() const;
 
