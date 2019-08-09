@@ -82,14 +82,18 @@ gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
 if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
-  if run_command('git', 'status').returncode() == 0
-    message('updating git submodule libs/lczero-common')
-    run_command('git', 'submodule', 'update', '--init', '--recursive')
+  if git.found()
+    if run_command(git, 'status').returncode() == 0
+      message('updating git submodule libs/lczero-common')
+      run_command(git, 'submodule', 'update', '--init', '--recursive')
+    else
+      message('cloning lczero-common.git into libs/lczero-common')
+      run_command(git, 'clone', '--depth=1',
+                  'https://github.com/LeelaChessZero/lczero-common.git',
+                  'libs/lczero-common/')
+    endif
   else
-    message('cloning lczero-common.git into libs/lczero-common')
-    run_command('git', 'clone', '--depth=1',
-                'https://github.com/LeelaChessZero/lczero-common.git',
-                'libs/lczero-common/')
+    error('Please install git to automatically fetch submodules or download the archives manually from GitHub.')
   endif
 endif
 
