@@ -106,6 +106,7 @@ endif
 # Construct build identifier.
 build_identifier = 'git.' + short_rev
 add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
+message('Using build identifier "' + build_identifier + '".')
 
 #############################################################################
 ## Main files
