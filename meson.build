@@ -32,28 +32,6 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   endif
 endif
 
-# Extract git short revision.
-git = find_program('git', required: false)
-short_rev = 'unknown'
-if git.found()
-  r = run_command(git, 'rev-parse', '--short', 'HEAD')
-  if r.returncode() == 0
-    # Now let's check if the working directory is clean.
-    if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
-      short_rev = r.stdout().strip()
-    else
-      short_rev = 'dirty'
-      warning('Cannot extract valid git short revision from dirty working directory.')
-    endif
-  else
-    warning('Failed to parse short revision. Use git clone instead of downloading the archive from GitHub.')
-  endif
-endif
-
-# Construct build identifier.
-build_identifier = 'git.' + short_rev
-add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
-
 # Files to compile.
 deps = []
 files = []
@@ -106,6 +84,28 @@ endif
 
 files += gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+  
+# Extract git short revision.
+git = find_program('git', required: false)
+short_rev = 'unknown'
+if git.found()
+  r = run_command(git, 'rev-parse', '--short', 'HEAD')
+  if r.returncode() == 0
+    # Now let's check if the working directory is clean.
+    if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
+      short_rev = r.stdout().strip()
+    else
+      short_rev = 'dirty'
+      warning('Cannot extract valid git short revision from dirty working directory.')
+    endif
+  else
+    warning('Failed to parse short revision. Use git clone instead of downloading the archive from GitHub.')
+  endif
+endif
+
+# Construct build identifier.
+build_identifier = 'git.' + short_rev
+add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
 
 #############################################################################
 ## Main files
