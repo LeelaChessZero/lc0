@@ -66,7 +66,6 @@ endif
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
-git = find_program('git', required: false)
 if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
   if git.found()
     if run_command(git, 'status').returncode() == 0
@@ -87,6 +86,7 @@ files += gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
   
 # Extract git short revision.
+git = find_program('git', required: false)
 short_rev = 'unknown'
 if git.found()
   r = run_command(git, 'rev-parse', '--short', 'HEAD')
