@@ -212,17 +212,28 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      cpuct * (params_.GetNewUEnabled() ?
+          std::max(node->GetChildrenVisits(), 1u) :
+          std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
+  if (params_.GetNewUEnabled()) {
+  std::sort(
+      edges.begin(), edges.end(),
+      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
+        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetNewU(U_coeff)) <
+               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetNewU(U_coeff));
+      });  
+  } else {
   std::sort(
       edges.begin(), edges.end(),
       [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff)) <
                std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff));
       });
+  }
 
   std::vector<std::string> infos;
   for (const auto& edge : edges) {
@@ -246,11 +257,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
+    oss << "(U: " << std::setw(6) << std::setprecision(5)
+        << (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(fpu) + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) :edge.GetU(U_coeff))  << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -931,7 +943,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // playout remains incomplete; we must go deeper.
     const float cpuct = ComputeCpuct(params_, node->GetN());
     const float puct_mult =
-        cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+        cpuct * (params_.GetNewUEnabled() ?
+            std::max(node->GetChildrenVisits(), 1u) :
+            std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
+
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
@@ -956,7 +971,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
-      const float score = child.GetU(puct_mult) + Q;
+      const float score = Q +
+          (params_.GetNewUEnabled() ?
+           child.GetNewU(puct_mult):
+           child.GetU(puct_mult));
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1151,12 +1169,16 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   std::vector<ScoredEdge> scores;
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float puct_mult =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      cpuct * (params_.GetNewUEnabled() ?
+          std::max(node->GetChildrenVisits(), 1u) :
+          std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu), edge);
+    scores.emplace_back(-(params_.GetNewUEnabled() ? edge.GetNewU(puct_mult) :
+                                                     edge.GetU(puct_mult))
+                        - edge.GetQ(fpu), edge);
   }
 
   size_t first_unsorted_index = 0;
