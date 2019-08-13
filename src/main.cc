@@ -25,6 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <boost/asio.hpp>
 #include "benchmark/benchmark.h"
 #include "chess/board.h"
 #include "engine.h"
@@ -56,10 +57,20 @@ int main(int argc, const char** argv) {
     Benchmark benchmark;
     benchmark.Run();
   } else {
-    // Consuming optional "uci" mode.
-    CommandLine::ConsumeCommand("uci");
-    // Ordinary UCI engine.
-    EngineLoop loop;
-    loop.RunLoop();
+    // Consuming optional "server" mode.
+    CommandLine::ConsumeCommand("server");
+    boost::asio::io_service io_context;
+    boost::asio::ip::tcp::acceptor acceptor(
+        io_context,
+        boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 45312));
+    std::vector<std::thread> threads;
+    for (;;) {
+      boost::asio::ip::tcp::socket socket(io_context);
+      acceptor.accept(socket);
+      threads.emplace_back([socket{std::move(socket)}]() mutable {
+        EngineLoop loop(std::move(socket));
+        loop.RunLoop();
+      });
+    }
   }
 }

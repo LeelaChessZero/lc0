@@ -124,10 +124,14 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
 }
 }  // namespace
 
+bool UciLoop::ReadLine(std::string& line) {
+  return !!std::getline(std::cin, line);
+}
+
 void UciLoop::RunLoop() {
   std::cout.setf(std::ios::unitbuf);
   std::string line;
-  while (std::getline(std::cin, line)) {
+  while (ReadLine(line)) {
     LOGFILE << ">> " << line;
     try {
       auto command = ParseCommand(line);

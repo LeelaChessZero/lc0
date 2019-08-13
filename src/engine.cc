@@ -116,7 +116,12 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
 }
 
 }  // namespace
-
+Mutex EngineController::config_cache_mutex_;
+std::unordered_map<NetworkFactory::BackendConfiguration, std::weak_ptr<Network>,
+                   NetworkFactory::BackendConfigurationHash>
+    EngineController::networks_;
+std::unordered_map<std::string, std::weak_ptr<SyzygyTablebase>>
+    EngineController::syzygy_tbs_;
 EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
                                    ThinkingInfo::Callback info_callback,
                                    const OptionsDict& options)
@@ -251,24 +256,43 @@ SearchLimits EngineController::PopulateSearchLimits(
 // Updates values from Uci options.
 void EngineController::UpdateFromUciOptions() {
   SharedLock lock(busy_mutex_);
+  std::lock_guard<Mutex> guard(config_cache_mutex_);
 
   // Syzygy tablebases.
   std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId.GetId());
   if (!tb_paths.empty() && tb_paths != tb_paths_) {
-    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-    CERR << "Loading Syzygy tablebases from " << tb_paths;
-    if (!syzygy_tb_->init(tb_paths)) {
-      CERR << "Failed to load Syzygy tablebases!";
-      syzygy_tb_ = nullptr;
-    } else {
-      tb_paths_ = tb_paths;
+    syzygy_tb_ = nullptr;
+    if (syzygy_tbs_.count(tb_paths)) {
+      syzygy_tb_ = syzygy_tbs_[tb_paths].lock();
     }
+    if (!syzygy_tb_) {
+		syzygy_tb_ = std::make_shared<SyzygyTablebase>();
+		CERR << "Loading Syzygy tablebases from " << tb_paths;
+		if (!syzygy_tb_->init(tb_paths)) {
+		  CERR << "Failed to load Syzygy tablebases!";
+		  syzygy_tb_ = nullptr;
+		} else {
+		}
+                if (syzygy_tb_) {
+                  syzygy_tbs_[tb_paths_] = syzygy_tb_;
+                }
+    }
+    if (syzygy_tb_) {
+      tb_paths_ = tb_paths;
+	}
   }
 
   // Network.
   const auto network_configuration = NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
-    network_ = NetworkFactory::LoadNetwork(options_);
+    network_ = nullptr;
+    if (networks_.count(network_configuration)) {
+      network_ = networks_[network_configuration].lock();
+    }
+    if (!network_) {
+      network_ = NetworkFactory::LoadNetwork(options_);
+      networks_[network_configuration] = network_;
+	}
     network_configuration_ = network_configuration;
   }
 
@@ -405,10 +429,11 @@ void EngineController::Stop() {
   if (search_) search_->Stop();
 }
 
-EngineLoop::EngineLoop()
+EngineLoop::EngineLoop(boost::asio::ip::tcp::socket&& socket)
     : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
               options_.GetOptionsDict()) {
+  stream_.rdbuf()->assign(boost::asio::ip::tcp::v4(), socket.release());
   engine_.PopulateOptions(&options_);
   options_.Add<StringOption>(kLogFileId);
 }
@@ -418,6 +443,19 @@ void EngineLoop::RunLoop() {
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId.GetId()));
   UciLoop::RunLoop();
+}
+
+bool EngineLoop::ReadLine(std::string& line) {
+  return !!std::getline(stream_, line);
+}
+
+void EngineLoop::SendResponses(const std::vector<std::string>& responses) {
+  static std::mutex output_mutex;
+  std::lock_guard<std::mutex> lock(output_mutex);
+  for (auto& response : responses) {
+    LOGFILE << "<< " << response;
+    stream_ << response << std::endl;
+  }
 }
 
 void EngineLoop::CmdUci() {
