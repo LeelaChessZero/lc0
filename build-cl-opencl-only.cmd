@@ -6,7 +6,7 @@ set MSBuild="C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\MSBui
 rem call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" amd64
 call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 
-meson.py build --backend vs2017 --buildtype release -Dblas=false ^
+meson build --backend vs2017 --buildtype release -Dblas=false ^
 -Dmkl_include="C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl\include" ^
 -Dmkl_libdirs="C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl\lib\intel64" ^
 -Dopencl_libdirs="C:\Program Files (x86)\AMD APP SDK\3.0\lib\x86_64" ^
