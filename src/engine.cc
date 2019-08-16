@@ -59,16 +59,15 @@ const OptionId kMoveOverheadId{
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
 const OptionId kTimeMidpointMoveId{
-    "time-midpoint-move", "TimeMidpointMove",
-    "The move where the time budgeting algorithm guesses half of all "
-    "games to be completed by. Half of the time allocated for the first move "
-    "is allocated at approximately this move."};
+    "game-midpoint-move", "GameMidpointMove",
+    "The move where the game length estimation algorithm guesses half of all "
+    "games to be completed by. Formally this is the scale parameter of a log-"
+    "logistic distribution, which is also the median of the distribution."};
 const OptionId kTimeSteepnessId{
-    "time-steepness", "TimeSteepness",
-    "\"Steepness\" of the function the time budgeting algorithm uses to "
-    "consider when games are completed. Lower values leave more time for "
-    "the endgame, higher values use more time for each move before the "
-    "midpoint."};
+    "game-moves-steepness", "GameMovesSteepness",
+    "\"Steepness\" of the function the game length estimation algorithm uses "
+    "to consider when games are completed. Formally this is the shape "
+    "parameter of a log-logistic distribution."};
 const OptionId kSyzygyTablebaseId{
     "syzygy-paths", "SyzygyPath",
     "List of Syzygy tablebase directories, list entries separated by system "
@@ -135,8 +134,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-  options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
-  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
+  options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 72.75f;
+  options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 3.0f;
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
