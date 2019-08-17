@@ -956,7 +956,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
-      const float score = child.GetU(puct_mult) * (2*Q/log((1 + Q)/(1 - Q))) + Q;
+      const float score = child.GetU(puct_mult);
+      if (Q = 0) {
+        continue;
+      } else if (Q = 1 || Q = -1) {
+        score = Q;
+      } else {
+        score = score * ( 2 * Q / log( (1 + Q) / (1 - Q) ) ) + Q;
+      }
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
