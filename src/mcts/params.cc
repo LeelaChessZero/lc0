@@ -87,6 +87,12 @@ const OptionId SearchParams::kTemperatureVisitOffsetId{
     "Adjusts visits by this value when picking a move with a temperature. If a "
     "negative offset reduces visits for a particular move below zero, that "
     "move is not picked. If no moves can be picked, no temperature is used."};
+const OptionId SearchParams::kNoiseId{
+    "noise", "DirichletNoise",
+    "Add Dirichlet noise to root node prior probabilities. This allows the "
+    "engine to discover new ideas during training by exploring moves which are "
+    "known to be bad. Not normally used during play.",
+    'n'};
 const OptionId SearchParams::kNoiseEpsilonId{
     "noise-epsilon", "DirichletNoiseEpsilon",
     "Amount of Dirichlet noise to combine with root priors. This allows the "
@@ -205,6 +211,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -1000.0f, 1000.0f) =
       0.0f;
+  options->Add<BoolOption>(kNoiseId) = false;
   options->Add<FloatOption>(kNoiseEpsilonId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kNoiseAlphaId, 0.0f, 10000000.0f) = 0.3f;
   options->Add<BoolOption>(kVerboseStatsId) = false;
@@ -242,7 +249,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
-      kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId.GetId())),
+      kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
+                        ? 0.25f
+                        : options.Get<float>(kNoiseEpsilonId.GetId())),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==

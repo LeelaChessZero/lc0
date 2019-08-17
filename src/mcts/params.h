@@ -112,6 +112,7 @@ class SearchParams {
   static const OptionId kTemperatureEndgameId;
   static const OptionId kTemperatureWinpctCutoffId;
   static const OptionId kTemperatureVisitOffsetId;
+  static const OptionId kNoiseId;
   static const OptionId kNoiseEpsilonId;
   static const OptionId kNoiseAlphaId;
   static const OptionId kVerboseStatsId;
