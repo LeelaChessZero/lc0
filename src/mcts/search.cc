@@ -956,12 +956,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
+      const float score;
       if (Q == 0) {
-        const float score = child.GetU(puct_mult);
+        score = child.GetU(puct_mult);
       } else if (Q == 1 || Q == -1) {
-        const float score = Q;
+        score = Q;
       } else {
-        const float score = child.GetU(puct_mult) * (2*Q/log((1 + Q)/(1 - Q))) + Q;
+        score = child.GetU(puct_mult) * 2 * Q / log ( (1 + Q) / (1 - Q) ) + Q;
       }
       if (score > best) {
         second_best = best;
