@@ -1262,8 +1262,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (params_.GetNoise() && node == search_->root_node_) {
-    ApplyDirichletNoise(node, 0.25, 0.3);
+  if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
+    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
+                        params_.GetNoiseAlpha());
   }
 }
 
