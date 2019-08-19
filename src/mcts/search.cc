@@ -960,7 +960,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       if (Q == 1 || Q == -1) {
         score = Q;
       } else if (Q != 0) {
-        score = score * 2 * Q / log ( (1 + Q) / (1 - Q) ) + Q;
+        score = tanh ( score + 0.5 * log ( (1 + Q) / (1 - Q) ) );
       }
       if (score > best) {
         second_best = best;
