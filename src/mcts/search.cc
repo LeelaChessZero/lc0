@@ -957,11 +957,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       const float Q = child.GetQ(fpu);
       float score = child.GetU(puct_mult);
-      if (Q == 0) {
-        continue;
-      } else if (Q == 1 || Q == -1) {
+      if (Q == 1 || Q == -1) {
         score = Q;
-      } else {
+      } else if (Q != 0) {
         score = score * 2 * Q / log ( (1 + Q) / (1 - Q) ) + Q;
       }
       if (score > best) {
