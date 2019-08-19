@@ -102,7 +102,8 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
+  auto edges =
+      GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv(), true);
   const auto score_type = params_.GetScoreType();
 
   std::vector<ThinkingInfo> uci_infos;
@@ -535,7 +536,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 
   final_bestmove_ = temperature
                         ? GetBestChildWithTemperature(root_node_, temperature)
-                        : GetBestChildNoTemperature(root_node_);
+                        : GetBestChildNoTemperature(root_node_, true);
 
   if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node());
@@ -543,8 +544,8 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 }
 
 // Returns @count children with most visits.
-std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
-                                                              int count) const {
+std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(
+    Node* parent, int count, bool calcTerm) const {
   MoveList root_limit;
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
@@ -563,8 +564,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetTerminalSortingKey(), edge.GetN(), edge.GetQ(0),
-                       edge.GetP(), edge);
+    edges.emplace_back(calcTerm ? edge.GetTerminalSortingKey() : 0, edge.GetN(),
+                       edge.GetQ(0), edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
@@ -578,8 +579,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 }
 
 // Returns a child with most visits.
-EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
-  auto res = GetBestChildrenNoTemperature(parent, 1);
+EdgeAndNode Search::GetBestChildNoTemperature(Node* parent,
+                                              bool calcTerm) const {
+  auto res = GetBestChildrenNoTemperature(parent, 1, calcTerm);
   return res.empty() ? EdgeAndNode() : res.front();
 }
 
