@@ -955,8 +955,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q = child.GetQ(fpu);
-      const float tanhU = tanh(child.GetU(puct_mult));
+      const float Q = child.GetQ(0);
+      const float tanhU = tanh(child.GetU(puct_mult)) - fpu;
       float score = tanhU + Q;
       if (tanhU * Q != -1) {
         score = score / (tanhU * Q + 1);
