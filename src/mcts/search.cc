@@ -956,11 +956,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu);
-      float score = child.GetU(puct_mult);
-      if (Q == 1 || Q == -1) {
-        score = Q;
-      } else if (Q != 0) {
-        score = tanh ( score + 0.5 * log ( (1 + Q) / (1 - Q) ) );
+      const float tanhU = tanh(child.GetU(puct_mult));
+      float score = tanhU + Q;
+      if (tanhU * Q != -1) {
+        score = score / (tanhU * Q + 1);
       }
       if (score > best) {
         second_best = best;
