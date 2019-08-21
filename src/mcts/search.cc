@@ -956,7 +956,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(0);
-      const float tanhU = tanh(child.GetU(puct_mult)) - (child.GetQ(fpu) - Q);
+      const float tanhU = tanh(child.GetU(puct_mult) - (child.GetQ(fpu) - Q));
       const float score = (tanhU + Q) / (tanhU * Q + 1);
       if (score > best) {
         second_best = best;
