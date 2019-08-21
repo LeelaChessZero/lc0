@@ -362,7 +362,7 @@ class EdgeAndNode {
   //"To avoid over-exploration at nodes with a low visits count,
   // we reduce udivisor over time [exponentially]"
   float Udivisor(float minU, float initU, float baseU) const {
-    return minU + exp(-GetN() / baseU) * (initU - minU)
+    return minU + exp(-GetN() / baseU) * (initU - minU);
   }
 
   // Returns U = numerator * p / N.
