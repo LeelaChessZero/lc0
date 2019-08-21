@@ -266,6 +266,9 @@ void Node::CancelScoreUpdate(int multivisit) {
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   // Recompute Q.
+  // Need to divide by 4 to scale to 0..1 range probability.
+  q_squared_diff_ +=
+      0.25f * (v - q_) * (v - q_) * multivisit * n_ / (n_ + multivisit);
   q_ += multivisit * (v - q_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
 

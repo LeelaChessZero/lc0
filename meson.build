@@ -41,6 +41,9 @@ has_backends = false
 # Third party files.
 includes += include_directories('third_party', is_system: true)
 
+# Boost
+deps += dependency('boost')
+
 # Both protobuf and protoc must be the same version, so couple them together.
 protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
 if not protobuf_lib.found()
@@ -146,6 +149,7 @@ files += [
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
+  'src/utils/stats.cc',
   'src/utils/string.cc',
   'src/utils/transpose.cc',
   'src/utils/weights_adapter.cc',
