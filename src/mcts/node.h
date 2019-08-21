@@ -355,11 +355,20 @@ class EdgeAndNode {
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
+  
+  //U-Value exploration factor
+  //https://arxiv.org/pdf/1908.06660.pdf section 9.2.6
+  //"This increases the chance of exploring unvisited nodes at least once"
+  //"To avoid over-exploration at nodes with a low visits count,
+  // we reduce udivisor over time [exponentially]"
+  float Udivisor(float minU, float initU, float baseU) const {
+    return minU + exp(-GetN() / baseU) * (initU - minU)
+  }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+    return numerator * GetP() / (Udivisor(0.25,1,1965) + GetNStarted());
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
