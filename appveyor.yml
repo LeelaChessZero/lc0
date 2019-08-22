@@ -5,19 +5,19 @@ image:
 - Visual Studio 2017
 environment:
   matrix:
-  - NAME: cuda
-  - NAME: opencl
-  - NAME: blas
+  - NAME: gpu-nvidia-cuda
+  - NAME: gpu-opencl
+  - NAME: cpu-openblas
 clone_folder: c:\projects\lc0
 install:
 - cmd: set CUDA=false
 - cmd: set OPENCL=false
 - cmd: set BLAS=false
 - cmd: set GTEST=false
-- cmd: IF %NAME%==cuda set CUDA=true
-- cmd: IF %NAME%==opencl set OPENCL=true
-- cmd: IF %NAME%==blas set BLAS=true
-- cmd: IF %NAME%==blas set GTEST=true
+- cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
+- cmd: IF %NAME%==gpu-opencl set OPENCL=true
+- cmd: IF %NAME%==cpu-openblas set BLAS=true
+- cmd: IF %NAME%==cpu-openblas set GTEST=true
 - cmd: IF %BLAS%==true IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
 - cmd: IF %BLAS%==true IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
