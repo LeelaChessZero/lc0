@@ -861,18 +861,6 @@ void IncrementNInFlight(Node* node, Node* root, int amount) {
 }
 }  // namespace
 
-inline float FastTanh(const float a) {
-  float out = 2.886132f * a;
-  int exp = floor(out);
-  out -= exp;
-  out = 1.0f + out * (0.6602962f + 0.33970374f * out);
-  int32_t tmp;
-  std::memcpy(&tmp, &out, sizeof(float));
-  tmp += exp << 23;
-  std::memcpy(&out, &tmp, sizeof(float));
-  return (out - 1.0f) / (out + 1.0f);
-}
-  
 // Returns node and whether there's been a search collision on the node.
 SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     int collision_limit) {
