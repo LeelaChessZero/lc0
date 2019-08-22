@@ -955,8 +955,21 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
+      
+      inline float FastTanh(const float a) {
+        float out = 2.886132f * a;
+        int exp = floor(out);
+        out -= exp;
+        out = 1.0f + out * (0.6602962f + 0.33970374f * out);
+        int32_t tmp;
+        std::memcpy(&tmp, &out, sizeof(float));
+        tmp += exp << 23;
+        std::memcpy(&out, &tmp, sizeof(float));
+        return (out - 1.0f) / (out + 1.0f);
+      }
+      
       const float Q = child.GetQ(0);
-      const float tanhU = tanh(child.GetU(puct_mult) + (child.GetQ(fpu) - Q));
+      const float tanhU = FastTanh(child.GetU(puct_mult) + (child.GetQ(fpu) - Q));
       const float score = (tanhU + Q) / (tanhU * Q + 1);
       if (score > best) {
         second_best = best;
