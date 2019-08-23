@@ -144,7 +144,6 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
   ip_pol_w = Reshape(scope, ip_pol_w, Const(scope, {32 * 8 * 8, 1858}));
   auto ip_pol_b = MakeConst(scope, {1858}, weights.ip_pol_b);
   auto policy_fc = Add(scope, MatMul(scope, conv_pol, ip_pol_w), ip_pol_b);
-  auto policy_head = Softmax(scope, policy_fc);
 
   // Value head
   auto conv_val =
@@ -163,7 +162,7 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
   auto value_head =
       Tanh(scope, Add(scope, MatMul(scope, value_flow, ip2_val_w), ip2_val_b));
 
-  return {policy_head, value_head};
+  return {policy_fc, value_head};
 }
 
 template <bool CPU>
