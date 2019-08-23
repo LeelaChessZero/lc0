@@ -1248,7 +1248,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
     // Perform softmax and take into account policy softmax temperature T.
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    p = FastExp((p - max_p) / FastLog(edge.GetN() + 3));
+    p = FastExp((p - max_p) / FastLog(edge.GetN() + 8));
 
     // Note that p now lies in [0, 1], so it is safe to store it in compressed
     // format. Normalization happens later.
