@@ -955,8 +955,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q = child.GetQ(fpu);
-      const float score = child.GetU(puct_mult) + Q;
+      
+      const float Q = child.GetQ(0);
+      const float tanhU = FastTanh(child.GetU(puct_mult) + (child.GetQ(fpu) - Q));
+      const float score = (tanhU + Q) / (tanhU * Q + 1);
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
