@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fassmath>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -37,6 +38,7 @@
 #include "chess/position.h"
 #include "neural/encoder.h"
 #include "neural/writer.h"
+#include "utils/fastmath.h"
 #include "utils/mutex.h"
 
 namespace lczero {
