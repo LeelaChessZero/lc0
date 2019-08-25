@@ -367,10 +367,11 @@ class EdgeAndNode {
     const auto q = GetQ(default_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
+    const float denominator = FastLog((1 + target_score) / (1 - target_score))
+                              - FastLog((1 + q) / (1 - q));
     return std::max(
         1.0f,
-        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
-                 1e9f));
+        std::min(std::floor(GetP() * numerator / denominator - n1) + 1, 1e9f));
   }
 
   std::string DebugString() const;
