@@ -51,12 +51,17 @@ option('mkl_libdirs',
 option('mkl_include',
        type: 'array',
        value: ['/opt/intel/mkl/include'],
-       description: 'Paths to MKL libraries')
+       description: 'Paths to MKL include directory')
 
 option('cudnn_include', 
        type: 'array',
        value: ['/opt/cuda/include/', '/usr/local/cuda/include/'],
        description: 'Paths to cudnn include directory')
+
+option('mkldnn_dir',
+       type: 'string',
+       value: '',
+       description: 'Paths to mkldnn install directory')
 
 option('build_backends',
        type: 'boolean',
@@ -92,6 +97,11 @@ option('tensorflow',
        type: 'boolean',
        value: false,
        description: 'Enable TensorFlow backend')
+
+option('mkldnn',
+       type: 'boolean',
+       value: false,
+       description: 'Enable mkldnn backend')
 
 option('openblas',
        type: 'boolean',
