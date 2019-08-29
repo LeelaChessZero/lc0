@@ -83,6 +83,8 @@ class SelfPlayGame {
   // Gets the eval which required the biggest swing up to get the final outcome.
   // Eval is the expected outcome in the range 0<->1.
   float GetWorstEvalForWinnerOrDraw() const;
+  int move_count_ = 0;
+  uint64_t nodes_total_ = 0;
 
  private:
   // options_[0] is for white player, [1] for black.
@@ -99,6 +101,8 @@ class SelfPlayGame {
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
   float min_eval_[2] = {1.0f, 1.0f};
+  // Track the maximum eval for white win, draw, black win for comparison to actual outcome.
+  float max_eval_[3] = {0.0f, 0.0f, 0.0f};
   std::mutex mutex_;
 
   // Training data to send.
