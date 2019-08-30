@@ -364,12 +364,12 @@ class EdgeAndNode {
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
-                        float default_q) const {
+                        float default_q, bool logit_q) const {
     const auto q = GetQ(default_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
-    const float denominator = FastLog((1 + target_score) / (1 - target_score))
-                              - FastLog((1 + q) / (1 - q));
+    const float denominator = (logit_q ? FastLog((1 + target_score) / (1 - target_score))
+                              - FastLog((1 + q) / (1 - q)) : target_score - q);
     return std::max(
         1.0f,
         std::min(std::floor(GetP() * numerator / denominator - n1) + 1, 1e9f));
