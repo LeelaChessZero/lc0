@@ -958,7 +958,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       
       const float Q = child.GetQ(0);
       const float tanhU = FastTanh(child.GetU(puct_mult) + (child.GetQ(fpu) - Q));
-      const float score = (tanhU + Q) / (tanhU * Q + 1);
+      const float score = (params_.GetLogitQEnabled() ? (tanhU + Q) / (tanhU * Q + 1) :
+                           child.GetU(puct_mult) + child.GetQ(fpu));
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -972,7 +973,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     if (second_best_edge) {
       int estimated_visits_to_change_best =
-          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
+          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu,
+                                      params_.GetLogitQEnabled());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
