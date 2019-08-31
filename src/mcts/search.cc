@@ -212,7 +212,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      cpuct * std::max(node->GetChildrenVisits(), 1u);
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
@@ -931,7 +931,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // playout remains incomplete; we must go deeper.
     const float cpuct = ComputeCpuct(params_, node->GetN());
     const float puct_mult =
-        cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+        cpuct * std::max(node->GetChildrenVisits(), 1u);
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
@@ -1155,7 +1155,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   std::vector<ScoredEdge> scores;
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float puct_mult =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      cpuct * std::max(node->GetChildrenVisits(), 1u);
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
