@@ -235,7 +235,6 @@ if get_option('build_backends')
       has_blas = true
 
     elif get_option('accelerate') and accelerate_lib.found()
-      includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
       deps += [ accelerate_lib ]
       has_blas = true
 
@@ -360,7 +359,9 @@ if get_option('build_backends')
     'src/neural/shared/winograd_filter.cc',
     ]
 
-    includes += include_directories(get_option('opencl_include'))
+    if not opencl_framework.found()
+      includes += include_directories(get_option('opencl_include'))
+    endif
     files += opencl_files
     has_backends = true
 
