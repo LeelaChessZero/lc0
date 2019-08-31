@@ -360,7 +360,8 @@ class EdgeAndNode {
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+    const float x = 1 + GetNStarted();
+    return numerator * GetP() * FastInvSqrt(x) / x;
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
@@ -370,9 +371,10 @@ class EdgeAndNode {
     const auto n1 = GetNStarted() + 1;
     const float denominator = (logit_q ? FastLog((1 + target_score) / (1 - target_score))
                               - FastLog((1 + q) / (1 - q)) : target_score - q);
+    const float inner = std::pow((GetP() * numerator) / denominator, 2. / 3.);
     return std::max(
         1.0f,
-        std::min(std::floor(GetP() * numerator / denominator - n1) + 1, 1e9f));
+        std::min(std::floor(inner - n1) + 1, 1e9f));
   }
 
   std::string DebugString() const;
