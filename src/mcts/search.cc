@@ -956,7 +956,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       
-      const float Q = child.GetQ(0);
+      const float Q = 0.99999999 * child.GetQ(0);
       const float tanhU = FastTanh(child.GetU(puct_mult) + (child.GetQ(fpu) - Q));
       const float score = (params_.GetLogitQEnabled() ? (tanhU + Q) / (tanhU * Q + 1) :
                            child.GetU(puct_mult) + child.GetQ(fpu));
