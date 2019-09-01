@@ -77,17 +77,9 @@ inline float FastLog(const float a) {
 // Fast approximate exp(x). Does only limited range checking.
 inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
 
-// Fast approximate tanh(x). Constants tuned to minimize max absolute error
-inline float FastTanh(const float a) {
-  float out = 2.886132f * a;
-  int exp = floor(out);
-  out -= exp;
-  out = 1.0f + out * (0.6602962f + 0.33970374f * out);
-  int32_t tmp;
-  std::memcpy(&tmp, &out, sizeof(float));
-  tmp += exp << 23;
-  std::memcpy(&out, &tmp, sizeof(float));
-  return (out - 1.0f) / (out + 1.0f);
+// Fast logit for more readable code.
+inline float FastLogit(const float a) {
+  return 0.5 * FastLog((1.0f + a) / (1.0f - a));
 }
 
 }  // namespace lczero
