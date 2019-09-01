@@ -956,11 +956,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       
+      // Scale by 1-epsilon to avoid infinity
       const float Q = 0.99999999 * child.GetQ(0);
       const float U = child.GetU(puct_mult) + (child.GetQ(fpu) - Q);
-      const float score = (params_.GetLogitQEnabled() ?
-                           U + 0.5 * FastLog((1 + Q) / (1 - Q)) :
-                           child.GetU(puct_mult) + child.GetQ(fpu));
+      const float score = U + (params_.GetLogitQEnabled() ? FastLogit(Q) : Q);
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
