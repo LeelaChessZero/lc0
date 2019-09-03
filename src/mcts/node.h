@@ -377,6 +377,10 @@ class EdgeAndNode {
         std::min(std::floor(inner - n1) + 1, 1e9f));
   }
 
+  // Helpers to determine which terminals to prefer.
+  int GetMovesTillCheckmate() const;
+  int GetTerminalSortingKey() const;
+
   std::string DebugString() const;
 
  protected:
