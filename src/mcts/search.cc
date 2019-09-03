@@ -102,7 +102,8 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
+  auto edges =
+      GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv(), true);
   const auto score_type = params_.GetScoreType();
 
   std::vector<ThinkingInfo> uci_infos;
@@ -125,7 +126,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    if (score_type == "centipawn") {
+    const auto mate = edge.GetMovesTillCheckmate();
+    if (mate) {
+      uci_info.mate = mate;
+    } else if (score_type == "centipawn") {
       uci_info.score = 295 * edge.GetQ(default_q) /
                        (1 - 0.976953126 * std::pow(edge.GetQ(default_q), 14));
     } else if (score_type == "centipawn_2018") {
@@ -212,7 +216,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      cpuct * std::max(node->GetChildrenVisits(), 1u);
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
@@ -532,7 +536,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 
   final_bestmove_ = temperature
                         ? GetBestChildWithTemperature(root_node_, temperature)
-                        : GetBestChildNoTemperature(root_node_);
+                        : GetBestChildNoTemperature(root_node_, true);
 
   if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node());
@@ -540,18 +544,19 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 }
 
 // Returns @count children with most visits.
-std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
-                                                              int count) const {
+std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(
+    Node* parent, int count, bool calcTerm) const {
   MoveList root_limit;
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
   }
   // Best child is selected using the following criteria:
+  // * Best terminal score (favor wins, avoid losses).
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<int, uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -559,7 +564,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+    edges.emplace_back(calcTerm ? edge.GetTerminalSortingKey() : 0, edge.GetN(),
+                       edge.GetQ(0), edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
@@ -568,13 +574,14 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
   std::vector<EdgeAndNode> res;
   std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<3>(x); });
+                 [](const El& x) { return std::get<4>(x); });
   return res;
 }
 
 // Returns a child with most visits.
-EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
-  auto res = GetBestChildrenNoTemperature(parent, 1);
+EdgeAndNode Search::GetBestChildNoTemperature(Node* parent,
+                                              bool calcTerm) const {
+  auto res = GetBestChildrenNoTemperature(parent, 1, calcTerm);
   return res.empty() ? EdgeAndNode() : res.front();
 }
 
@@ -911,7 +918,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (node->IsTerminal() || !node->HasChildren()) {
+    if (node->IsTerminal() || !node->GetN()) {
       return NodeToProcess::Visit(node, depth);
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
@@ -931,7 +938,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // playout remains incomplete; we must go deeper.
     const float cpuct = ComputeCpuct(params_, node->GetN());
     const float puct_mult =
-        cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+        cpuct * std::max(node->GetChildrenVisits(), 1u);
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
@@ -1068,7 +1075,6 @@ void SearchWorker::ExtendNode(Node* node) {
           node->MakeTerminal(GameResult::DRAW);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return;
       }
     }
   }
@@ -1155,7 +1161,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   std::vector<ScoredEdge> scores;
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float puct_mult =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      cpuct * std::max(node->GetChildrenVisits(), 1u);
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
@@ -1266,8 +1272,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (params_.GetNoise() && node == search_->root_node_) {
-    ApplyDirichletNoise(node, 0.25, 0.3);
+  if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
+    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
+                        params_.GetNoiseAlpha());
   }
 }
 
