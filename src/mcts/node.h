@@ -360,8 +360,7 @@ class EdgeAndNode {
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    const float x = 1 + GetNStarted();
-    return numerator * GetP() * FastInvSqrt(x) / x;
+    return numerator * GetP() / (1 + GetNStarted());
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
@@ -369,15 +368,11 @@ class EdgeAndNode {
     const auto q = (logit_q ? FastLogit(GetQ(default_q)) : GetQ(default_q));
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
-    const float inner = std::pow((GetP() * numerator) / (target_score - q), 2. / 3.);
     return std::max(
         1.0f,
-        std::min(std::floor(inner - n1) + 1, 1e9f));
+        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
+                 1e9f));
   }
-
-  // Helpers to determine which terminals to prefer.
-  int GetMovesTillCheckmate() const;
-  int GetTerminalSortingKey() const;
 
   std::string DebugString() const;
 

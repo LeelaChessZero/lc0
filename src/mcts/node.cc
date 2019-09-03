@@ -234,10 +234,8 @@ void Node::MakeNotTerminal() {
   is_terminal_ = false;
   n_ = 0;
 
-  // If a child exists on a terminal, this node was previously extended (1
-  // visit), so include children for recalculation too. Otherwise, treat this
-  // node as unvisited to populate from NN computations (including policy data).
-  if (child_) {
+  // If we have edges, we've been extended (1 visit), so include children too.
+  if (edges_) {
     n_++;
     for (const auto& child : Edges()) {
       const auto n = child.GetN();
@@ -390,57 +388,6 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
 /////////////////////////////////////////////////////////////////////////
 // EdgeAndNode
 /////////////////////////////////////////////////////////////////////////
-
-namespace {
-// Placeholder plies to differentiate actual game end and tablebase.
-const int kTablebaseTerminalPlies = 999;
-
-// Recursively count terminal edges to reach true terminal.
-int CountPliesToTrueTerminal(Node* terminal) {
-  auto ret = 0;
-
-  // Follow "terminals" until a true terminal with no children.
-  if (terminal->HasChildren()) {
-    const auto follow_q = -terminal->GetQ();
-    std::vector<int> plies;
-    for (auto edge : terminal->Edges()) {
-      if (edge.IsTerminal() && edge.GetQ(0.0f) == follow_q) {
-        plies.push_back(CountPliesToTrueTerminal(edge.node()));
-      }
-    }
-
-    // No terminal children, so we have a tablebase position.
-    if (plies.empty()) {
-      ret = kTablebaseTerminalPlies;
-    } else if (follow_q == 1.0f) {
-      // Minimize plies for winning moves.
-      ret = *std::min_element(std::begin(plies), std::end(plies));
-    } else if (follow_q == -1.0f) {
-      // Maximize plies for losing moves.
-      ret = *std::max_element(std::begin(plies), std::end(plies));
-    }
-  }
-
-  // Include the current move in the ply count.
-  return ret + 1;
-}
-}  // namespace
-
-int EdgeAndNode::GetMovesTillCheckmate() const {
-  auto Q = GetQ(0.0f);
-  if (!IsTerminal() || !Q) return 0;
-  return std::copysign((CountPliesToTrueTerminal(node_) + 1) / 2, Q);
-}
-
-int EdgeAndNode::GetTerminalSortingKey() const {
-  auto moves = GetMovesTillCheckmate();
-  if (moves) {
-    // Give shortest winning moves the highest score then tablebase wins while
-    // also avoiding shortest losing moves.
-    moves = std::copysign(kTablebaseTerminalPlies * 2, moves) - moves;
-  }
-  return moves;
-}
 
 std::string EdgeAndNode::DebugString() const {
   if (!edge_) return "(no edge)";

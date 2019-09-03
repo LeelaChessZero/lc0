@@ -71,8 +71,7 @@ class SearchParams {
     return options_.Get<float>(kTemperatureWinpctCutoffId.GetId());
   }
 
-  float GetNoiseEpsilon() const { return kNoiseEpsilon; }
-  float GetNoiseAlpha() const { return kNoiseAlpha; }
+  bool GetNoise() const { return kNoise; }
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
@@ -115,8 +114,6 @@ class SearchParams {
   static const OptionId kTemperatureWinpctCutoffId;
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
-  static const OptionId kNoiseEpsilonId;
-  static const OptionId kNoiseAlphaId;
   static const OptionId kVerboseStatsId;
   static const OptionId kLogLiveStatsId;
   static const OptionId kSmartPruningFactorId;
@@ -149,8 +146,7 @@ class SearchParams {
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
-  const float kNoiseEpsilon;
-  const float kNoiseAlpha;
+  const bool kNoise;
   const float kSmartPruningFactor;
   const bool kFpuAbsolute;
   const float kFpuValue;

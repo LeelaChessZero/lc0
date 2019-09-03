@@ -67,8 +67,6 @@ struct ThinkingInfo {
   int nps = -1;
   // Hash fullness * 1000
   int hashfull = -1;
-  // Moves to mate.
-  optional<int> mate;
   // Win in centipawns.
   optional<int> score;
   // Number of successful TB probes (not the same as playouts ending in TB hit).
