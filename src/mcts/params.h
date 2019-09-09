@@ -52,8 +52,6 @@ class SearchParams {
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
-  float GetTradePenalty() const { return kTradePenalty; }
-  float GetTradePenalty2() const { return kTradePenalty2; }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -95,8 +93,6 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  bool GetCertaintyPropagation() const { return kCertaintyPropagation; }
-  bool GetTwoFoldDrawScoring() const { return kTwoFoldDrawScoring; }
   int GetKLDGainAverageInterval() const {
     return options_.Get<int>(kKLDGainAverageInterval.GetId());
   }
@@ -111,8 +107,6 @@ class SearchParams {
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
-  static const OptionId kTradePenaltyId;
-  static const OptionId kTradePenalty2Id;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
@@ -137,8 +131,6 @@ class SearchParams {
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
-  static const OptionId kCertaintyPropagationId;
-  static const OptionId kTwoFoldDrawScoringId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
 
@@ -154,8 +146,6 @@ class SearchParams {
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
-  const float kTradePenalty;
-  const float kTradePenalty2;
   const bool kNoise;
   const float kSmartPruningFactor;
   const bool kFpuAbsolute;
@@ -168,8 +158,6 @@ class SearchParams {
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
   const bool kStickyEndgames;
-  const bool kCertaintyPropagation;
-  const bool kTwoFoldDrawScoring;
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;

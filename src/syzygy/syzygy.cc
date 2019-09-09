@@ -1623,13 +1623,9 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 }
 
 // Use the DTZ tables to rank root moves.
-// A return value 0 indicates that not all probes were successful.
-// Otherwise best rank is returned:
-// 1 draw, 1000 win, -1000 loss.
-// If rep flag is set for wins: 1000 - (dtz + cnt50).
-// If 50 draw in sight for losses: -1000 + (-dtz + cnt50).
-
-int SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
+//
+// A return value false indicates that not all probes were successful.
+bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
                                  std::vector<Move>* safe_moves) {
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
@@ -1659,14 +1655,14 @@ int SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
         next_pos.GetBoard().GenerateLegalMoves().size() == 0) {
       dtz = 1;
     }
-    if (result == FAIL) return 0;
+    if (result == FAIL) return false;
     // Better moves are ranked higher. Certain wins are ranked equally.
     // Losing moves are ranked equally unless a 50-move draw is in sight.
     int r = dtz > 0
                 ? (dtz + cnt50 <= 99 && !rep ? 1000 : 1000 - (dtz + cnt50))
                 : dtz < 0 ? (-dtz * 2 + cnt50 < 100 ? -1000
                                                     : -1000 + (-dtz + cnt50))
-                          : 1;
+                          : 0;
     if (r > best_rank) best_rank = r;
     ranks.push_back(r);
   }
@@ -1678,18 +1674,16 @@ int SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
     }
     counter++;
   }
-  return best_rank;
+  return true;
 }
 
 // Use the WDL tables to rank root moves.
 // This is a fallback for the case that some or all DTZ tables are missing.
-// A return value 0 indicates that not all probes were successful.
-// Otherwise best rank is returned:
-// -1000 loss, -899 blessed loss, 1 draw, 899 cursed win and 1000 win.
-
-int SyzygyTablebase::root_probe_wdl(const Position& pos,
+//
+// A return value false indicates that not all probes were successful.
+bool SyzygyTablebase::root_probe_wdl(const Position& pos,
                                      std::vector<Move>* safe_moves) {
-  static const int WDL_to_rank[] = {-1000, -899, 1, 899, 1000};
+  static const int WDL_to_rank[] = {-1000, -899, 0, 899, 1000};
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   ProbeState result;
   std::vector<int> ranks;
@@ -1711,6 +1705,6 @@ int SyzygyTablebase::root_probe_wdl(const Position& pos,
     }
     counter++;
   }
-  return best_rank;
+  return true;
 }
 }  // namespace lczero

@@ -118,19 +118,15 @@ class Search {
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
   // Sets stop to true and notifies watchdog thread.
   void FireStopInternal();
+
   void SendMovesStats() const;
   // Function which runs in a separate thread and watches for time and
   // uci `stop` command;
   void WatchdogThread();
 
   // Populates the given list with allowed root moves.
-  // Returns best_rank != 0 if the population came from tablebase.
-  // WDL and DTZ ranks of +1000 are certain wins, -1000 certain losses,
-  // 1 is a certain draw. For more info on in-between ranks 
-  // (cursed wins, blessed losses, adjusted by dtz) see syzygy probe code.
-  // Currently only rank = 1 is used to correct score display when
-  // moves are root filtered, because kSyzygyFastPlayId sets the rep flag.
-  int PopulateRootMoveLimit(MoveList* root_moves) const;
+  // Returns true if the population came from tablebase.
+  bool PopulateRootMoveLimit(MoveList* root_moves) const;
 
   // Returns verbose information about given node, as vector of strings.
   std::vector<std::string> GetVerboseStats(Node* node,
@@ -192,7 +188,6 @@ class Search {
   // Cummulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
   std::atomic<int> tb_hits_{0};
-  std::atomic<int> root_syzygy_rank_{0};
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
@@ -253,11 +248,12 @@ class SearchWorker {
   void UpdateCounters();
 
  private:
- 
   struct NodeToProcess {
-    bool IsExtendable() const { return !is_collision && !node->IsCertain(); }
+    bool IsExtendable() const { return !is_collision && !node->IsTerminal(); }
     bool IsCollision() const { return is_collision; }
-    bool CanEvalOutOfOrder() const { return is_cache_hit || node->IsCertain(); }
+    bool CanEvalOutOfOrder() const {
+      return is_cache_hit || node->IsTerminal();
+    }
 
     // The node to extend.
     Node* node;
@@ -267,35 +263,27 @@ class SearchWorker {
     float d;
     int multivisit = 0;
     uint16_t depth;
-    uint16_t piececount;
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
 
-    static NodeToProcess Collision(Node* node, uint16_t depth, uint16_t piececount,
+    static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count) {
-      return NodeToProcess(node, depth, piececount, true, collision_count);
+      return NodeToProcess(node, depth, true, collision_count);
     }
-
-    static NodeToProcess Extension(Node* node, uint16_t depth, uint16_t piececount) {
-      return NodeToProcess(node, depth, piececount, false, 1);
-    }
-    static NodeToProcess TerminalHit(Node* node, uint16_t depth, uint16_t piececount,
-                                     int visit_count) {
-      return NodeToProcess(node, depth, piececount, false, visit_count);
+    static NodeToProcess Visit(Node* node, uint16_t depth) {
+      return NodeToProcess(node, depth, false, 1);
     }
 
    private:
-    NodeToProcess(Node* node, uint16_t depth, uint16_t piececount, bool is_collision, int multivisit)
+    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit)
         : node(node),
           multivisit(multivisit),
           depth(depth),
-          piececount(piececount),
           is_collision(is_collision) {}
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  CertaintyResult EvalPosition(const Node* node, const MoveList& legal_moves, const ChessBoard& board);
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget);

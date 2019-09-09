@@ -87,72 +87,6 @@ class Edge {
   float GetP() const;
   void SetP(float val);
 
-  void MakeTerminal(GameResult result);
-
-  // Sets flags for certainty, trigger of certainty and result by GameResult.
-  void MakeCertain(CertaintyResult certaintyresult);
-
-  // Sets flags for certainty, trigger of certainty and result (by Q).
-  void MakeCertain(int q, CertaintyTrigger trigger);
-
-  // Sets edge-Q: win = 1; draw = 0; loss = -1.
-  void SetEQ(int eq);
-  // Clears Certainty but keeps bounds.
-  void ClearCertaintyState() {
-    if (certainty_state_ & kCertainMask) {
-      certainty_state_ = 0;
-    } else {
-      certainty_state_ &= kClearKeepBounds;
-      }
-  };
-  // Sets (U)pper and (L)ower bounds.
-  void UBound(int eq) {
-    certainty_state_ |= kUpperBound;
-    SetEQ(eq);
-  };
-  void LBound(int eq) {
-    certainty_state_ |= kLowerBound;
-    SetEQ(eq);
-  };
-
-  // Returns true if only upper bounded.
-  bool IsOnlyUBounded() {
-    return (certainty_state_ & kUpperBound) &&
-           !(certainty_state_ & kLowerBound);
-  };
-
-  // Returns true if only lower bounded.
-  bool IsOnlyLBounded() {
-    return !(certainty_state_ & kUpperBound) &&
-           (certainty_state_ & kLowerBound);
-  };
-  bool IsTerminal() const { return certainty_state_ & kTerminalMask; };
-  bool IsCertain() const { return certainty_state_ & kCertainMask; };
-  bool IsCertainWin() const {
-    return ((certainty_state_ & kCertainMask) &&
-            (certainty_state_ & kGameResultWin));
-  };
-  bool IsCertainLoss() const {
-    return ((certainty_state_ & kCertainMask) &&
-            (certainty_state_ & kGameResultLoss));
-  };
-  bool IsCertainDraw() const {
-    return ((certainty_state_ & kCertainMask) &&
-            !(certainty_state_ & ~kGameResultClear));
-  };
-
-  // Returns true if certainty proof based on a TB hit.
-  bool IsPropagatedTBHit() const { return certainty_state_ & kTBHit; };
-
-  // Query bounds.
-  bool IsUBounded() const { return certainty_state_ & kUpperBound; };
-  bool IsLBounded() const { return certainty_state_ & kLowerBound; };
-
-  // Return all stats flags.
-  uint8_t GetCertaintyState() const { return certainty_state_; };
-  // Returns the edges Q
-  int GetEQ() const;
-
   // Debug information about the edge.
   std::string DebugString() const;
 
@@ -168,28 +102,6 @@ class Edge {
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
 
-  // Certainty Propagation attaches a number of flags to each edge.
-  // kTerminalMask    -> edge is terminal.
-  // kCertainMask     -> edge is certain.
-  // kUpperBound      -> edge is upper bounded.
-  // kLowerBound      -> edge is lower bounded.
-  // kTBHit           -> edge is certain because of a TB hit.
-  // kTwoFold         -> edge is certain because of a two-fold.
-  // kGameResultWin   -> edge is a proven win.
-  // kGameResultLoss  -> edge is a proven loss.
-  uint8_t certainty_state_ = 0;
-  enum Masks : uint8_t {
-    kTerminalMask = 0b00000001,
-    kCertainMask = 0b00000010,
-    kUpperBound = 0b00000100,
-    kLowerBound = 0b00001000,
-    kTBHit = 0b00010000,
-    kTwoFold = 0b00100000,
-    kGameResultWin = 0b01000000,
-    kGameResultLoss = 0b10000000,
-    kGameResultClear = 0b00111111,
-    kClearKeepBounds = 0b00001100,
-  };
   friend class EdgeList;
 };
 
@@ -233,11 +145,6 @@ class Node {
   // Returns whether a node has children.
   bool HasChildren() const { return edges_; }
 
-  // Recalculate n_ from real children visits.
-  // This is needed if a node was proved to be certain in a prior
-  // search and later gets to be root of search.
-  void RecomputeNfromChildren();
-
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
@@ -245,74 +152,19 @@ class Node {
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
-  // Returns node eval, i.e. average subtree V for non-certain node and -1/0/1
-  // for certain nodes.
-  float GetQ() const;
+  // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
+  // for terminal nodes.
+  float GetQ() const { return q_; }
   float GetD() const { return d_; }
 
   // Returns whether the node is known to be draw/lose/win.
-  bool IsTerminal() const {
-    return GetOwnEdge() ? GetOwnEdge()->IsTerminal() : false;
-  }
-  bool IsCertain() const {
-    return GetOwnEdge() ? GetOwnEdge()->IsCertain() : false;
-  }
-
-  // Sets bounds.
-  void UBound(int eq) const {
-    if (GetOwnEdge()) GetOwnEdge()->UBound(eq);
-  }
-  void LBound(int eq) const {
-    if (GetOwnEdge()) GetOwnEdge()->LBound(eq);
-  }
-  // Queries bounds.
-
-  bool IsBounded() const {
-    return GetOwnEdge()
-               ? GetOwnEdge()->IsLBounded() || GetOwnEdge()->IsUBounded()
-               : false;
-  }
-  bool IsOnlyUBounded() const {
-    return GetOwnEdge() ? GetOwnEdge()->IsOnlyUBounded() : false;
-  }
+  bool IsTerminal() const { return is_terminal_; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
-  // Makes the node terminal or certain and sets its score.
-  void MakeTerminal(GameResult result) {
-    if (GetOwnEdge()) GetOwnEdge()->MakeTerminal(result);
-    if (result == GameResult::DRAW) {
-      q_ = 0.0f;
-      d_ = 1.0f;
-    } else if (result == GameResult::WHITE_WON) {
-      q_ = 1.0f;
-      d_ = 0.0f;
-    } else {
-      q_ = -1.0f;
-      d_ = 0.0f;
-    }
-  }
-  void MakeCertain(CertaintyResult certaintyresult) {
-    if (GetOwnEdge()) GetOwnEdge()->MakeCertain(certaintyresult);
-    if (certaintyresult.gameresult == GameResult::DRAW) {
-      q_ = 0.0f;
-      d_ = 1.0f;
-    } else if (certaintyresult.gameresult == GameResult::WHITE_WON) {
-      q_ = 1.0f;
-      d_ = 0.0f;
-    } else {
-      q_ = -1.0f;
-      d_ = 0.0f;
-    }
-  }
-  void MakeCertain(int q, CertaintyTrigger trigger) {
-    if (GetOwnEdge()) GetOwnEdge()->MakeCertain(q, trigger);
-    q_ = q;
-    if (q == 0) {
-      d_ = 1.0f;
-    } else {
-      d_ = 0.0f;
-    }
-  }
+  // Makes the node terminal and sets it's score.
+  void MakeTerminal(GameResult result);
+  // Makes the node not terminal and updates its visits.
+  void MakeNotTerminal();
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -351,6 +203,10 @@ class Node {
   int GetRemainingCacheVisits() {
     return best_child_cache_in_flight_limit_ - n_in_flight_;
   }
+
+  // Calculates the full depth if new depth is larger, updates it, returns
+  // in depth parameter, and returns true if it was indeed updated.
+  bool UpdateFullDepth(uint16_t* depth);
 
   V4TrainingData GetV4TrainingData(GameResult result,
                                    const PositionHistory& history,
@@ -398,8 +254,7 @@ class Node {
   EdgeList edges_;
 
   // 8 byte fields.
-  // Pointer to a parent node. nullptr for the root of tree,
-  // Note: root of tree might not be search->root_node_.
+  // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
   std::unique_ptr<Node> child_;
@@ -431,8 +286,12 @@ class Node {
   uint32_t best_child_cache_in_flight_limit_ = 0;
 
   // 2 byte fields.
-  // Index of this node in parent's edge list.
+  // Index of this node is parent's edge list.
   uint16_t index_;
+
+  // 1 byte fields.
+  // Whether or not this node end game (with a winning of either sides or draw).
+  bool is_terminal_ = false;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -484,35 +343,19 @@ class EdgeAndNode {
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
-
-  // Gets the edge's Q, if edge is certain this
-  // is the proven game result (-1, 0, +1).
-  int GetEQ() const { return edge_->GetEQ(); }
-
-  // N-related getters, from node (if exists).
+  // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
+
+  // Whether the node is known to be terminal.
+  bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
-  bool IsTerminal() const { return edge_->IsTerminal(); }
-  bool IsCertain() const { return edge_->IsCertain(); }
-  bool IsCertainWin() const { return edge_->IsCertainWin(); }
-
-  // Queries bounds.
-  bool IsUBounded() const { return edge_->IsUBounded(); }
-  bool IsLBounded() const { return edge_->IsLBounded(); }
-
-  // Sets bounds.
-  void UBound(int eq) { edge_->UBound(eq); }
-  void LBound(int eq) { edge_->LBound(eq); }
-
-  // Queries if edge's certainty is based on a TB hit.
-  bool IsPropagatedTBHit() const { return edge_->IsPropagatedTBHit(); }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).

@@ -63,14 +63,6 @@ const OptionId SearchParams::kCpuctBaseId{
     "higher growth of Cpuct as number of node visits grows."};
 const OptionId SearchParams::kCpuctFactorId{
     "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
-const OptionId SearchParams::kTradePenaltyId{
-    "trade-penalty", "TradePenalty",
-    "Value is multiplied with number of pieces on the board and added to "
-    "current evaluation. Values -1.0 to 1.0"};
-const OptionId SearchParams::kTradePenalty2Id{
-    "trade-penalty2", "TradePenalty2",
-    "Fixed value offset, gets subtracted from current number of pieces. To use "
-    "in combination with \"trade-penalty\". Values from -1000.0 to 1000.0"};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -197,14 +189,6 @@ const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
-const OptionId SearchParams::kCertaintyPropagationId{
-    "certainty-propagation", "CertaintyPropagation", 
-    "Propagates certain scores more efficiently in the search tree, "
-    "proves and displays mates."};
-const OptionId SearchParams::kTwoFoldDrawScoringId{
-    "two-fold-draw-scoring", "TwoFoldDrawScoring",
-    "Scores two-folds as draws (0.00) in search to use visits more "
-    "efficiently. Recommended in conjunction with certainty propagation."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -212,16 +196,14 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQEnabledId) = true;
-  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.2f;
-  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 8000.0f;
-  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.5f;
-  options->Add<FloatOption>(kTradePenaltyId, -1.0f, 1.0f) = 0.0025f;
-  options->Add<FloatOption>(kTradePenalty2Id, -1000.0f, 1000.0f) = 27.0f;
-  options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 2.0f;
+  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
+  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
+  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
+  options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
-  options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 2;
+  options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
-  options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 0.42f;
+  options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -1000.0f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
@@ -232,7 +214,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
   fpu_strategy.push_back("same");
-  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "absolute";
+  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
@@ -249,8 +231,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
-  options->Add<BoolOption>(kCertaintyPropagationId) = true;
-  options->Add<BoolOption>(kTwoFoldDrawScoringId) = true;
 
   options->HideOption(kLogLiveStatsId);
 }
@@ -261,8 +241,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
-      kTradePenalty(options.Get<float>(kTradePenaltyId.GetId())),
-      kTradePenalty2(options.Get<float>(kTradePenalty2Id.GetId())),
       kNoise(options.Get<bool>(kNoiseId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
@@ -282,8 +260,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
       kStickyEndgames(options.Get<bool>(kStickyEndgamesId.GetId())),
-      kCertaintyPropagation(options.Get<bool>(kCertaintyPropagationId.GetId())),
-      kTwoFoldDrawScoring(options.Get<bool>(kTwoFoldDrawScoringId.GetId())),
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),

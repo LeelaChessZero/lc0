@@ -247,13 +247,7 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
     if (info.seldepth >= 0) res += " seldepth " + std::to_string(info.seldepth);
     if (info.time >= 0) res += " time " + std::to_string(info.time);
     if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
-
-    // If mate display mate, otherwise if score display score.
-    if (info.mate) {
-      res += " score mate " + std::to_string(*info.mate);
-    } else if (info.score) {
-      res += " score cp " + std::to_string(*info.score);
-    }
+    if (info.score) res += " score cp " + std::to_string(*info.score);
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
     if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
     if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
