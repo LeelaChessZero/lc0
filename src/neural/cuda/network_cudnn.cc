@@ -199,6 +199,8 @@ class CudnnNetwork : public Network {
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
+    showInfo();
+
     int total_gpus;
     ReportCUDAErrors(cudaGetDeviceCount(&total_gpus));
 
@@ -207,7 +209,7 @@ class CudnnNetwork : public Network {
 
     cudaDeviceProp deviceProp = {};
     cudaGetDeviceProperties(&deviceProp, gpu_id_);
-    showInfo(deviceProp);
+    showDeviceInfo(deviceProp);
 
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
@@ -695,13 +697,7 @@ class CudnnNetwork : public Network {
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void showInfo(const cudaDeviceProp& deviceProp) const {
-    CERR << "GPU: " << deviceProp.name;
-    CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
-         << " Gb";
-    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
-    CERR << "GPU compute capability: " << deviceProp.major << "."
-         << deviceProp.minor;
+  void showInfo() const {
     int version;
     cudaRuntimeGetVersion(&version);
     int major = version / 1000;
@@ -726,10 +722,6 @@ class CudnnNetwork : public Network {
               "version "
            << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
     }
-    if (version < 7301 && (deviceProp.major > 7 ||
-                           (deviceProp.major == 7 && deviceProp.minor >= 5))) {
-      CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
-    }
     cudaDriverGetVersion(&version);
     major = version / 1000;
     minor = (version - major * 1000) / 10;
@@ -738,6 +730,21 @@ class CudnnNetwork : public Network {
          << minor << "." << pl;
     if (version < CUDART_VERSION) {
       CERR << "WARNING: code was compiled with unsupported CUDA version.";
+    }
+  }
+
+  void showDeviceInfo(const cudaDeviceProp& deviceProp) const {
+    CERR << "GPU: " << deviceProp.name;
+    CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
+         << " Gb";
+    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+    CERR << "GPU compute capability: " << deviceProp.major << "."
+         << deviceProp.minor;
+
+    int version = cudnnGetVersion();
+    if (version < 7301 && (deviceProp.major > 7 ||
+                           (deviceProp.major == 7 && deviceProp.minor >= 5))) {
+      CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
     }
     if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
       CERR << "WARNING: you will probably get better performance from the "
