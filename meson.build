@@ -188,7 +188,6 @@ if get_option('build_backends')
       tensorflow_include[0] + '/bazel-genfiles',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
       tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
@@ -223,18 +222,12 @@ if get_option('build_backends')
   endif
 
   if get_option('blas')
-    if get_option('eigen')
-      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
-      has_blas = true
-      deps += subproject('eigen').get_variable('eigen_dep')
-
-    elif get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
       has_blas = true
 
-    elif get_option('accelerate') and accelerate_lib.found()
+    if get_option('accelerate') and accelerate_lib.found()
       includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
       deps += [ accelerate_lib ]
       has_blas = true
