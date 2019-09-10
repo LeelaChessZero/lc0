@@ -958,7 +958,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       
-      namespace {
       inline float ComputeLogitScore() const {
         // Scale by 1-epsilon to avoid infinity
         const float Q = 0.99999999 * child.GetQ(0);
@@ -966,15 +965,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const float U = child.GetU(puct_mult) + (Qfpu - Q);
         return U + FastLogit(Q);
       }
-      }  // namespace
       
-      namespace {
       inline float ComputeLinearScore() const {
         const float Q = child.GetQ(fpu);
         const float U = child.GetU(puct_mult);
         return U + Q;
       }
-      }  // namespace
       
       const float score = (params_.GetLogitQEnabled() ? ComputeLogitScore() :
                            ComputeLinearScore());
