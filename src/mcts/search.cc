@@ -958,22 +958,22 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       
-      auto ComputeLogitScore() = [&]{
+      inline float ComputeLogitScore(auto child) const {
         // Scale by 1-epsilon to avoid infinity
         const float Q = 0.99999999 * child.GetQ(0);
         const float Qfpu = 0.99999999 * child.GetQ(fpu);
         const float U = child.GetU(puct_mult) + (Qfpu - Q);
         return U + FastLogit(Q);
-      };
-      
-      auto ComputeLinearScore() = [&]{
+      }
+
+      inline float ComputeLinearScore(auto child) const {
         const float Q = child.GetQ(fpu);
         const float U = child.GetU(puct_mult);
         return U + Q;
-      };
-      
-      const float score = (params_.GetLogitQEnabled() ? ComputeLogitScore() :
-                           ComputeLinearScore());
+      }
+
+      const float score = (params_.GetLogitQEnabled() ? ComputeLogitScore(child) :
+                           ComputeLinearScore(child));
 
       if (score > best) {
         second_best = best;
