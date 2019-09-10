@@ -15,7 +15,7 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
+        default_options : ['cpp_std=c++14', 'b_ndebug=if-release', 'b_lto=true'],
         meson_version: '>=0.45')
 
 cc = meson.get_compiler('cpp')
@@ -27,9 +27,24 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   add_project_arguments('-Wextra', language : 'cpp')
   add_project_arguments('-pedantic', language : 'cpp')
 
+  if cc.get_id() == 'gcc'
+    add_project_arguments('-ffast-math', language : 'cpp')
+    add_project_arguments('-ftrapping-math', language : 'cpp')
+    add_project_arguments('-fno-associative-math', language : 'cpp')
+  else
+    add_project_arguments('-ffinite-math-only', language : 'cpp')
+    add_project_arguments('-fno-math-errno', language : 'cpp')
+    add_project_arguments('-fno-signed-zeros', language : 'cpp')
+    add_project_arguments('-fassociative-math', language : 'cpp')
+    add_project_arguments('-freciprocal-math', language : 'cpp')
+  endif
+
   if get_option('buildtype') == 'release'
     add_project_arguments('-march=native', language : 'cpp')
   endif
+endif
+if cc.get_id() == 'msvc'
+  add_project_arguments('/fp:fast', language : 'cpp')
 endif
 
 # Files to compile.
