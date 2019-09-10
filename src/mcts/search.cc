@@ -964,13 +964,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const float Qfpu = 0.99999999 * child.GetQ(fpu);
         const float U = child.GetU(puct_mult) + (Qfpu - Q);
         return U + FastLogit(Q);
-      }
+      };
       
       auto ComputeLinearScore() = [&]{
         const float Q = child.GetQ(fpu);
         const float U = child.GetU(puct_mult);
         return U + Q;
-      }
+      };
       
       const float score = (params_.GetLogitQEnabled() ? ComputeLogitScore() :
                            ComputeLinearScore());
