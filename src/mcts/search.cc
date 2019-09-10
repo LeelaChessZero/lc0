@@ -958,7 +958,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       
-      inline float ComputeLogitScore() const {
+      auto ComputeLogitScore() = [&]{
         // Scale by 1-epsilon to avoid infinity
         const float Q = 0.99999999 * child.GetQ(0);
         const float Qfpu = 0.99999999 * child.GetQ(fpu);
@@ -966,7 +966,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         return U + FastLogit(Q);
       }
       
-      inline float ComputeLinearScore() const {
+      auto ComputeLinearScore() = [&]{
         const float Q = child.GetQ(fpu);
         const float U = child.GetU(puct_mult);
         return U + Q;
