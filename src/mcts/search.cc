@@ -958,22 +958,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       
-      inline float ComputeLogitScore(auto child) const {
-        // Scale by 1-epsilon to avoid infinity
-        const float Q = 0.99999999 * child.GetQ(0);
-        const float Qfpu = 0.99999999 * child.GetQ(fpu);
-        const float U = child.GetU(puct_mult) + (Qfpu - Q);
-        return U + FastLogit(Q);
-      }
-
-      inline float ComputeLinearScore(auto child) const {
-        const float Q = child.GetQ(fpu);
-        const float U = child.GetU(puct_mult);
-        return U + Q;
-      }
-
-      const float score = (params_.GetLogitQEnabled() ? ComputeLogitScore(child) :
-                           ComputeLinearScore(child));
+      const float Q = child.GetQ(0); // Only used for logit score
+      const float Qfpu = child.GetQ(fpu);
+      const float U = child.GetU(puct_mult);
+      const float score = (params_.GetLogitQEnabled() ?
+                           // Scale by 1-epsilon to avoid infinity
+                           U + (Qfpu - Q) + FastLogit(0.99999999 * Q) :
+                           U + Qfpu);
 
       if (score > best) {
         second_best = best;
