@@ -250,7 +250,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << FastLogit(edge.GetQ(fpu)) + edge.GetU(U_coeff) << ") ";
+        << (params_.GetLogitQEnabled() ? FastLogit(edge.GetQ(0)) :
+            edge.GetQ(fpu)) + edge.GetU(U_coeff)
+        << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -956,10 +958,27 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       
-      // Scale by 1-epsilon to avoid infinity
-      const float Q = 0.99999999 * child.GetQ(0);
-      const float U = child.GetU(puct_mult) + (child.GetQ(fpu) - Q);
-      const float score = U + (params_.GetLogitQEnabled() ? FastLogit(Q) : Q);
+      namespace {
+      inline float ComputeLogitScore() const {
+        // Scale by 1-epsilon to avoid infinity
+        const float Q = 0.99999999 * child.GetQ(0);
+        const float Qfpu = 0.99999999 * child.GetQ(fpu);
+        const float U = child.GetU(puct_mult) + (Qfpu - Q);
+        return U + FastLogit(Q);
+      }
+      }  // namespace
+      
+      namespace {
+      inline float ComputeLinearScore() const {
+        const float Q = child.GetQ(fpu);
+        const float U = child.GetU(puct_mult);
+        return U + Q;
+      }
+      }  // namespace
+      
+      const float score = (params_.GetLogitQEnabled() ? ComputeLogitScore() :
+                           ComputeLinearScore());
+
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
