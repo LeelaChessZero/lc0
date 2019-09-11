@@ -79,7 +79,7 @@ inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
 
 // Fast logit for more readable code.
 inline float FastLogit(const float a) {
-  return 0.5 * FastLog((1.0f + a) / (1.0f - a));
+  return 0.5f * FastLog((1.0f + a) / (1.0f - a));
 }
 
 }  // namespace lczero
