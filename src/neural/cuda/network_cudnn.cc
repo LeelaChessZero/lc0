@@ -221,8 +221,9 @@ class CudnnNetwork : public Network {
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support FP16.
 
-      if (deviceProp.major == 6 && deviceProp.minor == 0) {
-        // FP16 without tensor cores supported on GP100 (SM 6.0)
+      if ((deviceProp.major == 6 && deviceProp.minor != 1) ||
+          (deviceProp.major == 5 && deviceProp.minor == 3)) {
+        // FP16 without tensor cores supported on GP100 (SM 6.0) and Jetson
         // nhwc_ remains false.
       } else if (deviceProp.major >= 7) {
         // NHWC layout is faster with Tensor Cores.
