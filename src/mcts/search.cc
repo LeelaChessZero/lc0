@@ -251,7 +251,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
         << (edge.GetN() == 0 ? fpu :
-            (params_.GetLogitQEnabled() ? FastLogit(0.99999999 * edge.GetQ(0)) :
+            (params_.GetLogitQEnabled() ? FastLogit(0.99999994f * edge.GetQ(0)) :
              edge.GetQ(0))) + edge.GetU(U_coeff)
         << ") ";
 
@@ -964,7 +964,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       const float score = (child.GetN() == 0 ? U + fpu :
                            (params_.GetLogitQEnabled() ?
                            // Scale by 1-epsilon to avoid infinity
-                           U + FastLogit(0.99999999 * Q) :
+                           U + FastLogit(0.99999994f * Q) :
                            U + Q)
                           );
 
