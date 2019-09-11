@@ -961,7 +961,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       
       const float Q = child.GetQ(0);
       const float U = child.GetU(puct_mult);
-      const float score = (child->GetN() == 0 ? U + fpu :
+      const float score = (child.GetN() == 0 ? U + fpu :
                            (params_.GetLogitQEnabled() ?
                            // Scale by 1-epsilon to avoid infinity
                            U + FastLogit(0.99999999 * Q) :
