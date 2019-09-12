@@ -103,6 +103,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<std::string>(NetworkFactory::kBackendId.GetId(),
                              "multiplexing");
   defaults->Set<bool>(SearchParams::kStickyEndgamesId.GetId(), false);
+  defaults->Set<bool>(SearchParams::kLogitQEnabledId.GetId(), false);
 }
 
 SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
