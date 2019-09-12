@@ -213,7 +213,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
     cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const bool logit_q = params_.GetLogitQEnabled()
+  const bool logit_q = params_.GetLogitQEnabled();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
