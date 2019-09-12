@@ -367,7 +367,7 @@ class EdgeAndNode {
 
   int GetVisitsToReachU(float target_score, float numerator,
                         float default_q, bool logit_q) const {
-    const auto q = GetQ(default_q, logit_q));
+    const auto q = GetQ(default_q, logit_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
     return std::max(
