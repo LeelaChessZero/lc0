@@ -224,6 +224,7 @@ class CudnnNetwork : public Network {
       if ((deviceProp.major == 6 && deviceProp.minor != 1) ||
           (deviceProp.major == 5 && deviceProp.minor == 3)) {
         // FP16 without tensor cores supported on GP100 (SM 6.0) and Jetson
+        // (SM 5.3 and 6.2). SM 6.1 GPUs also have FP16, but slower than FP32.
         // nhwc_ remains false.
       } else if (deviceProp.major >= 7) {
         // NHWC layout is faster with Tensor Cores.
