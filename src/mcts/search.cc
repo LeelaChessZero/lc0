@@ -212,18 +212,19 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+    cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const bool logit_q = params_.GetLogitQEnabled()
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
+      [&fpu, &U_coeff, &logit_q](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
-          a.GetN(), a.GetQ(fpu, params_.GetLogitQEnabled()) + a.GetU(U_coeff)) <
+          a.GetN(), a.GetQ(fpu, logit_q) + a.GetU(U_coeff)) <
           std::forward_as_tuple(
-          b.GetN(), b.GetQ(fpu, params_.GetLogitQEnabled()) + b.GetU(U_coeff));
+          b.GetN(), b.GetQ(fpu, logit_q) + b.GetU(U_coeff));
       });
 
   std::vector<std::string> infos;
