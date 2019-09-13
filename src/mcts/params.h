@@ -103,7 +103,7 @@ class SearchParams {
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
-  static const OptionId kLogitQEnabledId;
+  static const OptionId kLogitQId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
