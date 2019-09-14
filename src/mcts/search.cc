@@ -212,16 +212,19 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+    cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const bool logit_q = params_.GetLogitQ();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
-        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff)) <
-               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff));
+      [&fpu, &U_coeff, &logit_q](EdgeAndNode a, EdgeAndNode b) {
+        return std::forward_as_tuple(
+          a.GetN(), a.GetQ(fpu, logit_q) + a.GetU(U_coeff)) <
+          std::forward_as_tuple(
+          b.GetN(), b.GetQ(fpu, logit_q) + b.GetU(U_coeff));
       });
 
   std::vector<std::string> infos;
@@ -250,7 +253,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(fpu, logit_q) + edge.GetU(U_coeff)
+        << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -955,7 +959,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q = child.GetQ(fpu);
+      const float Q = child.GetQ(fpu, params_.GetLogitQ());
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
@@ -970,7 +974,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     if (second_best_edge) {
       int estimated_visits_to_change_best =
-          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
+          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu,
+                                      params_.GetLogitQ());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
