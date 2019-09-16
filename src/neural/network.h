@@ -63,6 +63,7 @@ class NetworkComputation {
   virtual float GetDVal(int sample) const = 0;
   // Returns P value @move_id of @sample.
   virtual float GetPVal(int sample, int move_id) const = 0;
+  virtual float GetMVal(int sample) const = 0;
   virtual ~NetworkComputation() {}
 };
 

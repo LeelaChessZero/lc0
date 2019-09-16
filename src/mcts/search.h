@@ -259,8 +259,10 @@ class SearchWorker {
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
-    // Draw probability for NN's with WDL value head
+    // Draw probability for NN's with WDL value head.
     float d;
+    // Estimated remaining moves left.
+    float m;
     int multivisit = 0;
     uint16_t depth;
     bool nn_queried = false;

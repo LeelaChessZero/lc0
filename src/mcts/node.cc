@@ -216,8 +216,11 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
-void Node::MakeTerminal(GameResult result) {
+void Node::MakeTerminal(GameResult result, bool zero_depth) {
   is_terminal_ = true;
+  if (zero_depth) {
+    m_ = 0.0f;
+  }
   if (result == GameResult::DRAW) {
     q_ = 0.0f;
     d_ = 1.0f;
@@ -264,10 +267,11 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.
   q_ += multivisit * (v - q_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
+  m_ += multivisit * (m - m_) / (n_ + multivisit);
 
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {

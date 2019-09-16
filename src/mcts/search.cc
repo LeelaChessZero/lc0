@@ -249,6 +249,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
+    oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM()
+        << ") ";
+
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
 
@@ -959,7 +962,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q = child.GetQ(fpu, params_.GetLogitQ());
+      const float Q_node = child.GetQ(fpu, params_.GetLogitQ());
+      const float max_moves_left = 70.0f;
+      const float M = std::min(child.GetM(), max_moves_left) / max_moves_left;
+      const float m_factor = params_.GetMovesLeftFactor();
+      const float Q = (1.0f - std::abs(m_factor)) * Q_node + m_factor * M;
+
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
@@ -1234,12 +1242,14 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // they require any further processing after value retrieval.
     node_to_process->v = node->GetQ();
     node_to_process->d = node->GetD();
+    node_to_process->m = node->GetM();
     return;
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
   node_to_process->v = -computation_->GetQVal(idx_in_computation);
   node_to_process->d = computation_->GetDVal(idx_in_computation);
+  node_to_process->m = computation_->GetMVal(idx_in_computation);
   // ...and secondly, the policy data.
   // Calculate maximum first.
   float max_p = -std::numeric_limits<float>::infinity();
@@ -1297,6 +1307,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     return;
   }
 
+  int depth_parity = history_.IsBlackToMove();
+
   // For the first visit to a terminal, maybe convert ancestors to terminal too.
   auto can_convert =
       params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
@@ -1304,6 +1316,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
+  float m = node_to_process.m;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1312,8 +1325,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (n->IsTerminal()) {
       v = n->GetQ();
       d = n->GetD();
+      m = n->GetM();
     }
-    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
@@ -1333,11 +1347,16 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (can_convert) {
       p->MakeTerminal(v == 1.0f ? GameResult::BLACK_WON
                                 : v == -1.0f ? GameResult::WHITE_WON
-                                             : GameResult::DRAW);
+                                             : GameResult::DRAW, false);
     }
 
     // Q will be flipped for opponent.
     v = -v;
+
+    if (depth_parity) {
+        m = m + 1.00f;
+    }
+    depth_parity = !depth_parity;
 
     // Update the stats.
     // Best move.

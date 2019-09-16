@@ -102,6 +102,7 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch());
 
+  auto net_format = net.mutable_format()->mutable_network_format();
   if (net_ver > lc0_ver)
     throw Exception("Invalid weight file: lc0 version >= " + min_version +
                     " required.");
@@ -112,7 +113,6 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   // Older protobufs don't have format definition.
   // Populate format fields with legacy (or "classical") formats.
   if (!net.format().has_network_format()) {
-    auto net_format = net.mutable_format()->mutable_network_format();
     net_format->set_input(nf::INPUT_CLASSICAL_112_PLANE);
     net_format->set_output(nf::OUTPUT_CLASSICAL);
     net_format->set_network(nf::NETWORK_CLASSICAL);
@@ -122,19 +122,21 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   // without these fields.
   if (net.format().network_format().network() ==
       pblczero::NetworkFormat::NETWORK_CLASSICAL) {
-    auto net_format = net.mutable_format()->mutable_network_format();
-
     net_format->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
     net_format->set_value(nf::VALUE_CLASSICAL);
     net_format->set_policy(nf::POLICY_CLASSICAL);
+    net_format->set_moves_left(nf::MOVES_LEFT_NONE);
 
   } else if (net.format().network_format().network() ==
              pblczero::NetworkFormat::NETWORK_SE) {
-    auto net_format = net.mutable_format()->mutable_network_format();
-
     net_format->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
     net_format->set_value(nf::VALUE_CLASSICAL);
     net_format->set_policy(nf::POLICY_CLASSICAL);
+    net_format->set_moves_left(nf::MOVES_LEFT_NONE);
+  }
+
+  if (net.format().network_format().moves_left() == pblczero::NetworkFormat::MOVES_LEFT_UNKNOWN) {
+    net_format->set_moves_left(nf::MOVES_LEFT_NONE);
   }
 
   return net;

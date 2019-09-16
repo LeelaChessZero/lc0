@@ -76,6 +76,10 @@ class RandomNetworkComputation : public NetworkComputation {
     return d;
   }
 
+  float GetMVal(int sample) const override {
+    return 0.0f;
+  }
+
   float GetPVal(int sample, int move_id) const override {
     if (uniform_mode_) return 1.0f;
 
