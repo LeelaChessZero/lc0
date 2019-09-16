@@ -82,6 +82,9 @@ const OptionId kSpendSavedTimeId{
     "all future moves."};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
+const OptionId kUCIOpponentId{"", "UCI_Opponent",
+                              "Option used by the GUI to pass the name and "
+                              "other information about the current opponent."};
 // Warning! When changed, also change number 30 in the help below!
 const size_t kAvgMovesPerPosition = 30;
 const OptionId kRamLimitMbId{
@@ -141,6 +144,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
+  options->Add<StringOption>(kUCIOpponentId);
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
