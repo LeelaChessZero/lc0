@@ -699,7 +699,15 @@ class CudnnNetwork : public Network {
 
   void showInfo() const {
     int version;
-    cudaRuntimeGetVersion(&version);
+    int ret = cudaRuntimeGetVersion(&version);
+    switch (ret) {
+      case cudaErrorInitializationError:
+        throw Exception("CUDA driver and/or runtime could not be initialized");
+      case cudaErrorInsufficientDriver:
+        throw Exception("CUDA driver is older than the CUDA runtime library");
+      case cudaErrorNoDevice:
+        throw Exception("No CUDA-capable devices detected");
+    }
     int major = version / 1000;
     int minor = (version - major * 1000) / 10;
     int pl = version - major * 1000 - minor * 10;
