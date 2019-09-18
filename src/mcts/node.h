@@ -321,6 +321,7 @@ static_assert(sizeof(Node) == 80, "Unexpected size of Node");
 class EdgeAndNode {
  public:
   EdgeAndNode() = default;
+  float z = params_.GetLogitZ
   EdgeAndNode(Edge* edge, Node* node) : edge_(edge), node_(node) {}
   void Reset() { edge_ = nullptr; }
   explicit operator bool() const { return edge_ != nullptr; }
@@ -337,11 +338,11 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, bool logit_q = false) const {
+  float GetQ(float default_q, bool logit_q = false, float z) const {
     return (node_ && node_->GetN() > 0)
                ?
                // Scale Q slightly to avoid logit(1) = infinity.
-               (logit_q ? FastLogit(0.9999999f * node_->GetQ()) : node_->GetQ())
+               (logit_q ? FastLogit(z * node_->GetQ()) : node_->GetQ())
                : default_q;
   }
   float GetD() const {
