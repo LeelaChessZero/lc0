@@ -28,8 +28,8 @@
 #include "selfplay/game.h"
 
 #include <algorithm>
-#include "mcts/timemgr/factory.h"
-#include "mcts/timemgr/stoppers.h"
+#include "mcts/stoppers/factory.h"
+#include "mcts/stoppers/stoppers.h"
 #include "neural/writer.h"
 
 namespace lczero {

@@ -30,7 +30,7 @@
 #include "chess/position.h"
 #include "chess/uciloop.h"
 #include "mcts/search.h"
-#include "mcts/timemgr/stoppers.h"
+#include "mcts/stoppers/stoppers.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "utils/optionsparser.h"
@@ -105,7 +105,8 @@ class SelfPlayGame {
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
   float min_eval_[2] = {1.0f, 1.0f};
-  // Track the maximum eval for white win, draw, black win for comparison to actual outcome.
+  // Track the maximum eval for white win, draw, black win for comparison to
+  // actual outcome.
   float max_eval_[3] = {0.0f, 0.0f, 0.0f};
   std::mutex mutex_;
 

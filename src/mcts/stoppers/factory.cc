@@ -25,8 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/timemgr/factory.h"
-#include "mcts/timemgr/stoppers.h"
+#include "mcts/stoppers/factory.h"
+#include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
 

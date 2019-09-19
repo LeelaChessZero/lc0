@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/timemgr/stoppers.h"
+#include "mcts/stoppers/stoppers.h"
 #include "mcts/node.h"
 #include "neural/cache.h"
 
@@ -36,7 +36,7 @@ namespace lczero {
 ///////////////////////////
 
 bool ChainedSearchStopper::ShouldStop(const IterationStats& stats,
-                                      TimeManagerHints* hints) {
+                                      StoppersHints* hints) {
   for (const auto& x : stoppers_) {
     if (x->ShouldStop(stats, hints)) return true;
   }
@@ -56,7 +56,7 @@ void ChainedSearchStopper::OnSearchDone(const IterationStats& stats) {
 ///////////////////////////
 
 bool VisitsStopper::ShouldStop(const IterationStats& stats,
-                               TimeManagerHints* hints) {
+                               StoppersHints* hints) {
   hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
                                                    stats.total_nodes);
   if (stats.total_nodes >= nodes_limit_) {
@@ -72,7 +72,7 @@ bool VisitsStopper::ShouldStop(const IterationStats& stats,
 ///////////////////////////
 
 bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
-                                 TimeManagerHints* hints) {
+                                 StoppersHints* hints) {
   hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
                                                    stats.nodes_since_movestart);
   if (stats.nodes_since_movestart >= nodes_limit_) {
@@ -114,7 +114,7 @@ TimeLimitStopper::TimeLimitStopper(int64_t time_limit_ms)
     : time_limit_ms_(time_limit_ms) {}
 
 bool TimeLimitStopper::ShouldStop(const IterationStats& stats,
-                                  TimeManagerHints* hints) {
+                                  StoppersHints* hints) {
   hints->UpdateEstimatedRemainingTimeMs(time_limit_ms_ -
                                         stats.time_since_movestart);
   if (stats.time_since_movestart >= time_limit_ms_) {
@@ -129,7 +129,7 @@ int64_t TimeLimitStopper::GetTimeLimitMs() const { return time_limit_ms_; }
 ///////////////////////////
 // DepthStopper
 ///////////////////////////
-bool DepthStopper::ShouldStop(const IterationStats& stats, TimeManagerHints*) {
+bool DepthStopper::ShouldStop(const IterationStats& stats, StoppersHints*) {
   if (stats.average_depth >= depth_) {
     LOGFILE << "Stopped search: Reached depth.";
     return true;
@@ -144,8 +144,7 @@ bool DepthStopper::ShouldStop(const IterationStats& stats, TimeManagerHints*) {
 KldGainStopper::KldGainStopper(float min_gain, int average_interval)
     : min_gain_(min_gain), average_interval_(average_interval) {}
 
-bool KldGainStopper::ShouldStop(const IterationStats& stats,
-                                TimeManagerHints*) {
+bool KldGainStopper::ShouldStop(const IterationStats& stats, StoppersHints*) {
   Mutex::Lock lock(mutex_);
   const auto new_child_nodes = stats.total_nodes - 1;
   if (new_child_nodes < prev_child_nodes_ + average_interval_) return false;
@@ -181,7 +180,7 @@ SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor)
     : smart_pruning_factor_(smart_pruning_factor) {}
 
 bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
-                                     TimeManagerHints* hints) {
+                                     StoppersHints* hints) {
   Mutex::Lock lock(mutex_);
   if (stats.edge_n.size() == 1) {
     LOGFILE << "Only one possible move. Moving immediately.";

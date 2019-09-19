@@ -31,7 +31,7 @@
 
 #include "engine.h"
 #include "mcts/search.h"
-#include "mcts/timemgr/factory.h"
+#include "mcts/stoppers/factory.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
 

@@ -34,7 +34,7 @@
 #include "chess/uciloop.h"
 #include "mcts/node.h"
 #include "mcts/params.h"
-#include "mcts/timemgr/timemgr.h"
+#include "mcts/stoppers/timemgr.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
@@ -100,7 +100,7 @@ class Search {
                                           float temperature) const;
 
   int64_t GetTimeSinceStart() const;
-  void MaybeTriggerStop(const IterationStats& stats, TimeManagerHints* hints);
+  void MaybeTriggerStop(const IterationStats& stats, StoppersHints* hints);
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
   // Sets stop to true and notifies watchdog thread.
@@ -284,7 +284,7 @@ class SearchWorker {
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
   IterationStats iteration_stats_;
-  TimeManagerHints latest_time_manager_hints_;
+  StoppersHints latest_time_manager_hints_;
 };
 
 }  // namespace lczero

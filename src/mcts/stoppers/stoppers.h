@@ -29,7 +29,7 @@
 
 #include <vector>
 #include "mcts/node.h"
-#include "mcts/timemgr/timemgr.h"
+#include "mcts/stoppers/timemgr.h"
 
 namespace lczero {
 
@@ -39,7 +39,7 @@ class ChainedSearchStopper : public SearchStopper {
   ChainedSearchStopper() = default;
   // Calls stoppers one by one until one of them returns true. If one of
   // stoppers modifies hints, next stoppers in the chain see that.
-  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
   // Can be nullptr, in that canse stopper is not added.
   void AddStopper(std::unique_ptr<SearchStopper> stopper);
   void OnSearchDone(const IterationStats&) override;
@@ -53,7 +53,7 @@ class VisitsStopper : public SearchStopper {
  public:
   VisitsStopper(int64_t limit) : nodes_limit_(limit) {}
   int64_t GetVisitsLimit() const { return nodes_limit_; }
-  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const int64_t nodes_limit_;
@@ -64,7 +64,7 @@ class PlayoutsStopper : public SearchStopper {
  public:
   PlayoutsStopper(int64_t limit) : nodes_limit_(limit) {}
   int64_t GetVisitsLimit() const { return nodes_limit_; }
-  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const int64_t nodes_limit_;
@@ -83,7 +83,7 @@ class MemoryWatchingStopper : public VisitsStopper {
 class TimeLimitStopper : public SearchStopper {
  public:
   TimeLimitStopper(int64_t time_limit_ms);
-  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  protected:
   int64_t GetTimeLimitMs() const;
@@ -96,7 +96,7 @@ class TimeLimitStopper : public SearchStopper {
 class DepthStopper : public SearchStopper {
  public:
   DepthStopper(int depth) : depth_(depth) {}
-  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const int depth_;
@@ -106,7 +106,7 @@ class DepthStopper : public SearchStopper {
 class KldGainStopper : public SearchStopper {
  public:
   KldGainStopper(float min_gain, int average_interval);
-  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const int min_gain_;
@@ -123,7 +123,7 @@ class KldGainStopper : public SearchStopper {
 class SmartPruningStopper : public SearchStopper {
  public:
   SmartPruningStopper(float smart_pruning_factor);
-  bool ShouldStop(const IterationStats&, TimeManagerHints*) override;
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const double smart_pruning_factor_;

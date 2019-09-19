@@ -25,29 +25,34 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
-
-#include "mcts/timemgr/stoppers.h"
-#include "mcts/timemgr/timemgr.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include "mcts/stoppers/timemgr.h"
+#include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
 
-// Option ID for a cache size. It's used from multiple places and there's no
-// really nice place to declare, so let it be here.
-extern const OptionId kNNCacheSizeId;
+StoppersHints::StoppersHints() { Reset(); }
 
-enum class RunType { kUci, kSelfplay };
+void StoppersHints::UpdateEstimatedRemainingTimeMs(int64_t v) {
+  if (v < remaining_time_ms_) remaining_time_ms_ = v;
+}
+int64_t StoppersHints::GetEstimatedRemainingTimeMs() const {
+  return remaining_time_ms_;
+}
 
-// Populates UCI/command line flags with time management options.
-void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
+void StoppersHints::UpdateEstimatedRemainingRemainingPlayouts(int64_t v) {
+  if (v < remaining_playouts_) remaining_playouts_ = v;
+}
+int64_t StoppersHints::GetEstimatedRemainingPlayouts() const {
+  // Even if we exceeded limits, don't go crazy by not allowing any playouts.
+  return std::max(decltype(remaining_playouts_){1}, remaining_playouts_);
+}
 
-// Creates a time management ("Legacy" because it's planned to be replaced).
-std::unique_ptr<TimeManager> MakeLegacyTimeManager();
-
-// Populates KLDGain and SmartPruning stoppers.
-void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
-                                 const OptionsDict& options);
+void StoppersHints::Reset() {
+  // Slightly more than 3 years.
+  remaining_time_ms_ = 100000000000;
+  // Type for N in nodes is currently uint32_t, so set limit in order not to
+  // overflow it.
+  remaining_playouts_ = 4000000000;
+}
 
 }  // namespace lczero

@@ -27,8 +27,8 @@
 
 #include "benchmark/benchmark.h"
 #include "mcts/search.h"
-#include "mcts/timemgr/factory.h"
-#include "mcts/timemgr/stoppers.h"
+#include "mcts/stoppers/factory.h"
+#include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
 namespace {

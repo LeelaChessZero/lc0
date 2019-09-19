@@ -50,9 +50,9 @@ struct IterationStats {
 // expect running out of time.
 // 2. EstimatedPlayouts -- for smart pruning at root (not pick root nodes that
 // cannot potentially become good).
-class TimeManagerHints {
+class StoppersHints {
  public:
-  TimeManagerHints();
+  StoppersHints();
   void Reset();
   void UpdateEstimatedRemainingTimeMs(int64_t v);
   int64_t GetEstimatedRemainingTimeMs() const;
@@ -69,7 +69,7 @@ class TimeManagerHints {
 // 1. Stoppers are shared between all search threads, so if stopper has mutable
 // varibles, it has to think about concurrency (mutex/atomics)
 // (maybe in future it will be changed).
-// 2. IterationStats and TimeManagerHints are per search thread, so access to
+// 2. IterationStats and StoppersHints are per search thread, so access to
 // them is fine without synchronization.
 // 3. OnSearchDone is guaranteed to be called once (i.e. from only one thread).
 class SearchStopper {
@@ -77,8 +77,8 @@ class SearchStopper {
   virtual ~SearchStopper() = default;
   // Question to a stopper whether search should stop.
   // Search statistics is sent via IterationStats, the stopper can optionally
-  // send hints to the search through TimeManagerHints.
-  virtual bool ShouldStop(const IterationStats&, TimeManagerHints*) = 0;
+  // send hints to the search through StoppersHints.
+  virtual bool ShouldStop(const IterationStats&, StoppersHints*) = 0;
   // Is called when search is done.
   virtual void OnSearchDone(const IterationStats&) {}
 };

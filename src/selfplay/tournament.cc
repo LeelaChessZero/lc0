@@ -27,7 +27,7 @@
 
 #include "selfplay/tournament.h"
 #include "mcts/search.h"
-#include "mcts/timemgr/factory.h"
+#include "mcts/stoppers/factory.h"
 #include "neural/factory.h"
 #include "selfplay/game.h"
 #include "utils/optionsparser.h"
