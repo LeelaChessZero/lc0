@@ -1304,6 +1304,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
+  int depth = 0;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1313,7 +1314,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = n->GetQ();
       d = n->GetD();
     }
-    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(
+		v * std::max(0.0f, 1.0f - params_.GetShortSightedness() * depth),
+		d, 
+		node_to_process.multivisit);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
@@ -1338,6 +1342,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Q will be flipped for opponent.
     v = -v;
+    depth++;
 
     // Update the stats.
     // Best move.
