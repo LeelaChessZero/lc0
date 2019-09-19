@@ -141,8 +141,16 @@ class SearchParams {
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
+<<<<<<< HEAD
+  const bool kNoise;
+||||||| merged common ancestors
+  const bool kNoise;
+  const float kSmartPruningFactor;
+=======
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
+  const float kSmartPruningFactor;
+>>>>>>> upstream/master
   const bool kFpuAbsolute;
   const float kFpuValue;
   const bool kFpuAbsoluteAtRoot;

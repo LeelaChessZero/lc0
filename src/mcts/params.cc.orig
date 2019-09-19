@@ -235,10 +235,18 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
+<<<<<<< HEAD
+      kNoise(options.Get<bool>(kNoiseId.GetId())),
+||||||| merged common ancestors
+      kNoise(options.Get<bool>(kNoiseId.GetId())),
+      kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
+=======
       kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
                         ? 0.25f
                         : options.Get<float>(kNoiseEpsilonId.GetId())),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
+      kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
+>>>>>>> upstream/master
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),

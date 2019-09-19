@@ -876,6 +876,23 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
+<<<<<<< HEAD
+||||||| merged common ancestors
+    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
+      // If there is only one move theoretically possible within remaining time,
+      // output it.
+      Mutex::Lock counters_lock(search_->counters_mutex_);
+      search_->only_one_possible_move_left_ = true;
+    }
+=======
+    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite &&
+        params_.GetSmartPruningFactor()) {
+      // If there is only one move theoretically possible within remaining time,
+      // output it.
+      Mutex::Lock counters_lock(search_->counters_mutex_);
+      search_->only_one_possible_move_left_ = true;
+    }
+>>>>>>> upstream/master
     is_root_node = false;
   }
 }
