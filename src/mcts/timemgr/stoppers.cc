@@ -132,6 +132,7 @@ int64_t TimeLimitStopper::GetTimeLimitMs() const { return time_limit_ms_; }
 bool DepthStopper::ShouldStop(const IterationStats& stats, TimeManagerHints*) {
   if (stats.average_depth >= depth_) {
     LOGFILE << "Stopped search: Reached depth.";
+    return true;
   }
   return false;
 }
