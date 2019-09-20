@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+pushd "$(dirname "$0")"
+
 set -e
 
 case $1 in
@@ -21,7 +23,7 @@ else
   meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
 fi
 
-pushd ${BUILDDIR}
+cd ${BUILDDIR}
 
 NINJA=$(awk '/ninja/ {ninja=$4} END {print ninja}' meson-logs/meson-log.txt)
 

@@ -29,7 +29,19 @@
 #include "winograd_transform_ispc.h"
 #endif
 
+#ifdef USE_EIGEN
+#include <Eigen/Dense>
+#endif
+
 namespace lczero {
+#ifdef USE_EIGEN
+template <typename T>
+using EigenMatrixMap =
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+template <typename T>
+using ConstEigenMatrixMap =
+    Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+#endif
 
 WinogradConvolution3::WinogradConvolution3(const size_t max_batch_size,
                                            const size_t max_input_layers,
@@ -206,7 +218,7 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
 
     auto offset_v = b * batch_size * input_channels * kTiles;
     auto offset_m = b * batch_size * output_channels * kTiles;
-
+#ifndef USE_EIGEN
     cblas_sgemm(CblasColMajor,               // Row major format
                 CblasNoTrans,                // A no trans
                 CblasNoTrans,                // B no trans
@@ -220,6 +232,14 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                 (int)input_channels, 0.0f,   // ldV
                 &M_[offset_m],               // M
                 (int)output_channels);       // ldM
+#else
+    auto C_mat = EigenMatrixMap<float>(&M_[offset_m], output_channels,
+                                       batch_size * kTiles);
+    C_mat.noalias() = ConstEigenMatrixMap<float>(
+                          &weights[offset_u], output_channels, input_channels) *
+                      ConstEigenMatrixMap<float>(&V_[offset_v], input_channels,
+                                                 batch_size * kTiles);
+#endif
   }
 
 #endif
