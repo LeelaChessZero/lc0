@@ -962,11 +962,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q_node = child.GetQ(fpu, params_.GetLogitQ());
-      const float max_moves_left = 70.0f;
-      const float M = std::min(child.GetM(), max_moves_left) / max_moves_left;
-      const float m_factor = params_.GetMovesLeftFactor();
-      const float Q = (1.0f - std::abs(m_factor)) * Q_node + m_factor * M;
+      float Q = child.GetQ(fpu, params_.GetLogitQ());
+      if (moves_left_ != 0) {
+          const float max_moves_left = 50.0f;
+          const float M = std::min(child.GetM(), max_moves_left) / max_moves_left;
+          const float m_factor = params_.GetMovesLeftFactor();
+          Q += moves_left_ * m_factor * M;
+      }
 
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
@@ -977,6 +979,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       } else if (score > second_best) {
         second_best = score;
         second_best_edge = child;
+      }
+    }
+
+    if (is_root_node) {
+      if (best > 0.90f) {
+        moves_left_ = -1;
+      } else if (best < -0.90f) {
+        moves_left_ = 1;
+      } else {
+        moves_left_ = 0;
       }
     }
 
