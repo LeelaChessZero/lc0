@@ -78,8 +78,11 @@ inline float FastLog(const float a) {
 inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
 
 // Fast logit for more readable code.
+// This is actually 0.5 * logit((a+1)/2) = atanh(a).
 inline float FastLogit(const float a) {
-  return 0.5f * FastLog((1.0f + a) / (1.0f - a));
+  // Scale Q slightly to avoid logit(1) = infinity.
+  float b = 0.9999999f * a;
+  return 0.5f * FastLog((1.0f + b) / (1.0f - b));
 }
 
 }  // namespace lczero
