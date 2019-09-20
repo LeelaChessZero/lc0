@@ -88,6 +88,11 @@ option('opencl',
        value: true,
        description: 'Enable OpenCL backend')
 
+option('directml',
+       type: 'boolean',
+       value: true,
+       description: 'Enable DirectML backend')
+
 option('tensorflow',
        type: 'boolean',
        value: false,

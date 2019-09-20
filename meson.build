@@ -400,7 +400,7 @@ if get_option('build_backends')
   ## ~~~~~~~~
   
   # we should always be able to build DirectML backend on windows platform  
-  if host_machine.system() == 'windows'
+  if host_machine.system() == 'windows' and get_option('directml')
     dx_d3d12 = cc.find_library('d3d12')
   
     dx_files = [
@@ -411,6 +411,7 @@ if get_option('build_backends')
     ]
     files += dx_files
     deps += [dx_d3d12]
+    has_backends = true
   endif  
  
 
