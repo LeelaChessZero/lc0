@@ -1160,11 +1160,13 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float fpu = GetFpu(params_, node, node == search_->root_node_);
+  const float fpu = GetFpu(params_, node,
+                           node == search_->root_node_, params_.GetLogitQ());
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu), edge);
+    scores.emplace_back(
+      -edge.GetU(puct_mult) - edge.GetQ(fpu, params_.GetLogitQ()), edge);
   }
 
   size_t first_unsorted_index = 0;
@@ -1194,7 +1196,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-fpu);
+      const float q = edge.GetQ(-fpu, params_.GetLogitQ());
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
