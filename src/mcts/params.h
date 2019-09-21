@@ -101,6 +101,7 @@ class SearchParams {
     return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
   }
   float GetMovesLeftFactor() const { return kMovesLeftFactor; }
+  float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -138,6 +139,7 @@ class SearchParams {
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
   static const OptionId kMovesLeftFactorId;
+  static const OptionId kMovesLeftThresholdId;
 
  private:
   const OptionsDict& options_;
@@ -168,6 +170,7 @@ class SearchParams {
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
   const float kMovesLeftFactor;
+  const float kMovesLeftThreshold;
 };
 
 }  // namespace lczero

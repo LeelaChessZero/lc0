@@ -981,11 +981,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         second_best_edge = child;
       }
     }
-
     if (is_root_node) {
-      if (best > 0.90f) {
+      float moves_threshold = params_.GetMovesLeftThreshold();
+      if (best > moves_threshold ) {
         moves_left_ = -1;
-      } else if (best < -0.90f) {
+      } else if (best < -moves_threshold ) {
         moves_left_ = 1;
       } else {
         moves_left_ = 0;
