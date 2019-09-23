@@ -214,7 +214,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
-    cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      cpuct * (params_.GetNewUEnabled() ?
+          std::max(node->GetChildrenVisits(), 1u) :
+          std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
   const bool logit_q = params_.GetLogitQ();
 
   std::vector<EdgeAndNode> edges;
@@ -224,10 +226,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
       edges.begin(), edges.end(),
       [&fpu, &U_coeff, &logit_q](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
-          a.GetN(), a.GetQ(fpu, logit_q) + a.GetU(U_coeff)) <
+          a.GetN(), a.GetQ(fpu, logit_q) + (params_.GetNewUEnabled() ? a.GetNewU(U_coeff) : a.GetU(U_coeff))) <
           std::forward_as_tuple(
-          b.GetN(), b.GetQ(fpu, logit_q) + b.GetU(U_coeff));
+          b.GetN(), b.GetQ(fpu, logit_q) + (params_.GetNewUEnabled() ? b.GetNewU(U_coeff) : b.GetU(U_coeff)));
       });
+
 
   std::vector<std::string> infos;
   for (const auto& edge : edges) {
@@ -251,11 +254,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
+    oss << "(U: " << std::setw(6) << std::setprecision(5)
+        << (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, logit_q) + edge.GetU(U_coeff)
+        << edge.GetQ(fpu) + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))  << ") ";
         << ") ";
 
     oss << "(V: ";
@@ -937,7 +941,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // playout remains incomplete; we must go deeper.
     const float cpuct = ComputeCpuct(params_, node->GetN());
     const float puct_mult =
-        cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+        cpuct * (params_.GetNewUEnabled() ?
+            std::max(node->GetChildrenVisits(), 1u) :
+            std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
@@ -962,7 +968,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       const float Q = child.GetQ(fpu, params_.GetLogitQ());
-      const float score = child.GetU(puct_mult) + Q;
+      const float score = Q +
+          (params_.GetNewUEnabled() ?
+           child.GetNewU(puct_mult):
+           child.GetU(puct_mult));
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -975,7 +984,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
-      int estimated_visits_to_change_best =
+      int estimated_visits_to_change_best = params_.GetNewUEnabled() ?
+          best_edge.GetVisitsToReachNewU(second_best, puct_mult, fpu,
+                                      params_.GetLogitQ()) :
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu,
                                       params_.GetLogitQ());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
@@ -1159,14 +1170,17 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   std::vector<ScoredEdge> scores;
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float puct_mult =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      cpuct * (params_.GetNewUEnabled() ?
+          std::max(node->GetChildrenVisits(), 1u) :
+          std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
   const float fpu = GetFpu(params_, node,
                            node == search_->root_node_, params_.GetLogitQ());
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(
-      -edge.GetU(puct_mult) - edge.GetQ(fpu, params_.GetLogitQ()), edge);
+    scores.emplace_back(-(params_.GetNewUEnabled() ? edge.GetNewU(puct_mult) :
+                                                     edge.GetU(puct_mult))
+                        - edge.GetQ(fpu, params_.GetLogitQ()), edge);
   }
 
   size_t first_unsorted_index = 0;
