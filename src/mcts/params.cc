@@ -64,6 +64,10 @@ const OptionId SearchParams::kCpuctBaseId{
     "higher growth of Cpuct as number of node visits grows."};
 const OptionId SearchParams::kCpuctFactorId{
     "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
+const OptionId SearchParams::kNewUEnabledId{
+    "new-u-enabled", "NewUEnabled",
+    "Whether the formula for U is the old AlphaZero or the new equilibrium"
+    "based one."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -206,6 +210,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
+  options->Add<BoolOption>(kNewUEnabledId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
@@ -255,6 +260,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
+      kNewUEnabled(options.Get<bool>(kNewUEnabledId.GetId())),
       kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
                         ? 0.25f
                         : options.Get<float>(kNoiseEpsilonId.GetId())),
