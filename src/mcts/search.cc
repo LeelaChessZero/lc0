@@ -889,6 +889,19 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
   // Fetch the current best root node visits for possible smart pruning.
   const int64_t best_node_n = search_->current_best_edge_.GetN();
+  // and Q for moves_left logic.
+  const float best_node_q = search_->current_best_edge_.GetQ(0);
+  float best_node_m = 0.0f;
+
+  int moves_left = 0;
+  float moves_threshold = params_.GetMovesLeftThreshold();
+  if (best_node_q > moves_threshold ) {
+    moves_left = -1;
+    best_node_m = search_->current_best_edge_.GetM();
+  } else if (best_node_q < -moves_threshold ) {
+    moves_left = 1;
+    best_node_m = search_->current_best_edge_.GetM();
+  }
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
@@ -963,11 +976,15 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       float Q = child.GetQ(fpu, params_.GetLogitQ());
-      if (moves_left_ != 0) {
-          const float max_moves_left = 50.0f;
-          const float M = std::min(child.GetM(), max_moves_left) / max_moves_left;
-          const float m_factor = params_.GetMovesLeftFactor();
-          Q += moves_left_ * m_factor * M;
+      if (moves_left != 0) {
+          const float max_moves_scale = 10.0f;
+          const float M = std::max(std::min(child.GetM() - best_node_m, max_moves_scale), -max_moves_scale) / max_moves_scale;
+          float m_factor = params_.GetMovesLeftFactor();
+          // Inverted for opponent.
+          if (depth % 2 == 0) {
+            m_factor = -m_factor;
+          }
+          Q += moves_left * m_factor * M;
       }
 
       const float score = child.GetU(puct_mult) + Q;
@@ -981,16 +998,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         second_best_edge = child;
       }
     }
-    if (is_root_node) {
-      float moves_threshold = params_.GetMovesLeftThreshold();
-      if (best > moves_threshold ) {
-        moves_left_ = -1;
-      } else if (best < -moves_threshold ) {
-        moves_left_ = 1;
-      } else {
-        moves_left_ = 0;
-      }
-    }
+
 
     if (second_best_edge) {
       int estimated_visits_to_change_best =

@@ -304,7 +304,6 @@ class SearchWorker {
   int number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
-  int8_t moves_left_ = 0;
 };
 
 }  // namespace lczero
