@@ -61,6 +61,8 @@ const OptionId kTrainingId{
     "temporary subdirectory that the engine creates."};
 const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
                                   "Show verbose thinking messages."};
+const OptionId kQuietThinkingId{"quiet-thinking", "QuietThinking",
+                                "Hide all the per-move thinking."};
 const OptionId kResignPlaythroughId{
     "resign-playthrough", "ResignPlaythrough",
     "The percentage of games which ignore resign."};
@@ -219,7 +221,7 @@ std::vector<std::vector<Move>> ReadBook(std::string path) {
         result.push_back(cur);
         cur.clear();
         board.SetFromFen(ChessBoard::kStartposFen);
-        //std::cerr << "" << std::endl;
+        // std::cerr << "" << std::endl;
       }
       continue;
     }
@@ -263,14 +265,14 @@ std::vector<std::vector<Move>> ReadBook(std::string path) {
         }
         if (all_nums) {
           word = word.substr(idx + 1);
-		}
+        }
       }
-	  // Pure move numbers can be skipped.
+      // Pure move numbers can be skipped.
       if (word.size() < 2) continue;
       // Ignore score line.
       if (word == "1/2-1/2" || word == "1-0" || word == "0-1" || word == "*")
         continue;
-      //std::cerr << word << std::endl;
+      // std::cerr << word << std::endl;
       cur.push_back(SanToMove(word, board));
       board.ApplyMove(cur.back());
       board.Mirror();
@@ -302,6 +304,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kTimeMsId, -1, 999999999) = -1;
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
+  options->Add<BoolOption>(kQuietThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
   options->Add<StringOption>(kBookFileId) = "";
 
@@ -414,6 +417,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   for (int pl_idx : {0, 1}) {
     const bool verbose_thinking =
         player_options_[pl_idx].Get<bool>(kVerboseThinkingId.GetId());
+    const bool quiet_thinking =
+        player_options_[pl_idx].Get<bool>(kQuietThinkingId.GetId());
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
     opt.network = networks_[pl_idx].get();
@@ -423,18 +428,22 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
     // "bestmove" callback.
     opt.best_move_callback = [this, game_number, pl_idx, player1_black,
-                              verbose_thinking,
+                              verbose_thinking, quiet_thinking,
                               &last_thinking_info](const BestMoveInfo& info) {
+      if (quiet_thinking) {
+        last_thinking_info.clear();
+        return;
+      }
       // In non-verbose mode, output the last "info" message.
       if (!verbose_thinking && !last_thinking_info.empty()) {
-        //info_callback_(last_thinking_info);
+        info_callback_(last_thinking_info);
         last_thinking_info.clear();
       }
       BestMoveInfo rich_info = info;
       rich_info.player = pl_idx + 1;
       rich_info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
       rich_info.game_id = game_number;
-      //best_move_callback_(rich_info);
+      best_move_callback_(rich_info);
     };
 
     opt.info_callback =
