@@ -32,6 +32,8 @@
 #include "utils/optionsparser.h"
 #include "utils/random.h"
 
+#include <fstream>
+
 namespace lczero {
 namespace {
 const OptionId kShareTreesId{"share-trees", "ShareTrees",
@@ -62,6 +64,224 @@ const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
 const OptionId kResignPlaythroughId{
     "resign-playthrough", "ResignPlaythrough",
     "The percentage of games which ignore resign."};
+const OptionId kBookFileId{
+    "pgn-book", "PGNBook",
+    "A path name to a pgn file containing openings to use."};
+
+Move MoveFor(int r1, int c1, int r2, int c2, int p2) {
+  Move m;
+  if (p2 != -1) {
+    if (p2 == 2)
+      m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2),
+               Move::Promotion::Queen);
+    else if (p2 == 3)
+      m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2),
+               Move::Promotion::Bishop);
+    else if (p2 == 4)
+      m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2),
+               Move::Promotion::Knight);
+    else if (p2 == 5)
+      m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2), Move::Promotion::Rook);
+  } else {
+    m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2));
+  }
+  return m;
+}
+
+Move SanToMove(const std::string& san, const ChessBoard& board) {
+  int p = 0;
+  int idx = 0;
+  if (san[0] == 'K') {
+    p = 1;
+  } else if (san[0] == 'Q') {
+    p = 2;
+  } else if (san[0] == 'B') {
+    p = 3;
+  } else if (san[0] == 'N') {
+    p = 4;
+  } else if (san[0] == 'R') {
+    p = 5;
+  } else if (san[0] == 'O' && san.size() > 2 && san[1] == '-' &&
+             san[2] == 'O') {
+    Move m;
+    if (san.size() > 4 && san[3] == '-' && san[4] == 'O') {
+      m = Move(BoardSquare(0, 4), BoardSquare(0, 2));
+    } else {
+      m = Move(BoardSquare(0, 4), BoardSquare(0, 6));
+    }
+    m.SetCastling();
+    // std::cerr << m.as_string() << std::endl;
+    return m;
+  }
+  if (p != 0) idx++;
+  // Formats e4 1e5 de5 d1e5 - with optional x's - followed by =Q for
+  // promotions, and even more characters after that also optional.
+  int r1 = -1;
+  int c1 = -1;
+  int r2 = -1;
+  int c2 = -1;
+  int p2 = -1;
+  bool pPending = false;
+  for (; idx < san.size(); idx++) {
+    if (san[idx] == 'x') continue;
+    if (san[idx] == '=') {
+      pPending = true;
+      continue;
+    }
+    if (san[idx] >= '1' && san[idx] <= '9') {
+      r1 = r2;
+      r2 = san[idx] - '1';
+      continue;
+    }
+    if (san[idx] >= 'a' && san[idx] <= 'h') {
+      c1 = c2;
+      c2 = san[idx] - 'a';
+      continue;
+    }
+    if (pPending) {
+      if (san[idx] == 'Q') {
+        p2 = 2;
+      } else if (san[idx] == 'B') {
+        p2 = 3;
+      } else if (san[idx] == 'N') {
+        p2 = 4;
+      } else if (san[idx] == 'R') {
+        p2 = 5;
+      }
+      pPending = false;
+      break;
+    }
+    break;
+  }
+  if (r1 == -1 || c1 == -1) {
+    // Need to find the from cell based on piece.
+    int sr1 = r1;
+    int sr2 = r2;
+    if (board.flipped()) {
+      if (sr1 != -1) sr1 = 7 - sr1;
+      sr2 = 7 - sr2;
+    }
+    BitBoard searchBits;
+    if (p == 0) {
+      searchBits = (board.pawns() & board.ours());
+    } else if (p == 1) {
+      searchBits = board.our_king();
+    } else if (p == 2) {
+      searchBits = (board.queens() & board.ours());
+    } else if (p == 3) {
+      searchBits = (board.bishops() & board.ours());
+    } else if (p == 4) {
+      searchBits = board.our_knights();
+    } else if (p == 5) {
+      searchBits = (board.rooks() & board.ours());
+    }
+    auto plm = board.GenerateLegalMoves();
+    int pr1 = -1;
+    int pc1 = -1;
+    for (BoardSquare sq : searchBits) {
+      if (sr1 != -1 && sq.row() != sr1) continue;
+      if (c1 != -1 && sq.col() != c1) continue;
+      if (std::find(plm.begin(), plm.end(),
+                    MoveFor(sq.row(), sq.col(), sr2, c2, p2)) == plm.end())
+        continue;
+      if (pc1 != -1) {
+        std::cerr << "Ambiguous!!" << std::endl;
+      }
+      pr1 = sq.row();
+      pc1 = sq.col();
+    }
+    if (pc1 == -1) {
+      std::cerr << "No Match!!" << std::endl;
+    }
+    r1 = pr1;
+    c1 = pc1;
+    if (board.flipped()) {
+      r1 = 7 - r1;
+    }
+  }
+  Move m = MoveFor(r1, c1, r2, c2, p2);
+  if (board.flipped()) m.Mirror();
+  // std::cerr << m.as_string() << std::endl;
+  return m;
+}
+
+std::vector<std::vector<Move>> ReadBook(std::string path) {
+  std::vector<std::vector<Move>> result;
+  std::vector<Move> cur;
+  ChessBoard board;
+  board.SetFromFen(ChessBoard::kStartposFen);
+  std::ifstream file(path);
+  std::string line;
+  bool in_comment = false;
+  while (std::getline(file, line)) {
+    if (line.size() == 0 || line[0] == '[') {
+      if (cur.size() > 0) {
+        result.push_back(cur);
+        cur.clear();
+        board.SetFromFen(ChessBoard::kStartposFen);
+        //std::cerr << "" << std::endl;
+      }
+      continue;
+    }
+    // Handle braced comments.
+    int cur_offset = 0;
+    while (in_comment && line.find('}', cur_offset) != std::string::npos ||
+           !in_comment && line.find('{', cur_offset) != std::string::npos) {
+      if (in_comment && line.find('}', cur_offset) != std::string::npos) {
+        line = line.substr(0, cur_offset) +
+               line.substr(line.find('}', cur_offset) + 1);
+        in_comment = false;
+      } else {
+        cur_offset = line.find('{', cur_offset);
+        in_comment = true;
+      }
+    }
+    if (in_comment) {
+      line = line.substr(0, cur_offset);
+    }
+    // Trim trailing comment.
+    if (line.find(';') != std::string::npos) {
+      line = line.substr(0, line.find(';'));
+    }
+    if (line.size() == 0) continue;
+    std::istringstream iss(line);
+    // std::cerr << line << std::endl;
+    std::string word;
+    while (!iss.eof()) {
+      word.clear();
+      iss >> word;
+      if (word.size() < 2) continue;
+      // Trim move numbers from front.
+      int idx = word.find('.');
+      if (idx != std::string::npos) {
+        bool all_nums = true;
+        for (int i = 0; i < idx; i++) {
+          if (word[i] < '0' || word[i] > '9') {
+            all_nums = false;
+            break;
+          }
+        }
+        if (all_nums) {
+          word = word.substr(idx + 1);
+		}
+      }
+	  // Pure move numbers can be skipped.
+      if (word.size() < 2) continue;
+      // Ignore score line.
+      if (word == "1/2-1/2" || word == "1-0" || word == "0-1" || word == "*")
+        continue;
+      //std::cerr << word << std::endl;
+      cur.push_back(SanToMove(word, board));
+      board.ApplyMove(cur.back());
+      board.Mirror();
+    }
+  }
+  if (cur.size() > 0) {
+    result.push_back(cur);
+    cur.clear();
+  }
+  return result;
+}
 
 }  // namespace
 
@@ -83,6 +303,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
+  options->Add<StringOption>(kBookFileId) = "";
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -126,9 +347,14 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kParallelism(options.Get<int>(kParallelGamesId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())) {
+  std::string book = options.Get<std::string>(kBookFileId.GetId());
+  if (book.size() != 0) {
+    openings_ = ReadBook(book);
+  }
   // If playing just one game, the player1 is white, otherwise randomize.
-  if (kTotalGames != 1) {
-    next_game_black_ = Random::Get().GetBool();
+  // If opening book, also not randomized since we play mirrored.
+  if (kTotalGames != 1 && openings_.size() == 0) {
+    first_game_black_ = Random::Get().GetBool();
   }
 
   static const char* kPlayerNames[2] = {"player1", "player2"};
@@ -172,10 +398,13 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
 
 void SelfPlayTournament::PlayOneGame(int game_number) {
   bool player1_black;  // Whether player1 will player as black in this game.
+  MoveList opening;
   {
     Mutex::Lock lock(mutex_);
-    player1_black = next_game_black_;
-    next_game_black_ = !next_game_black_;
+    player1_black = ((game_number % 2) == 1) ^ first_game_black_;
+    if (openings_.size() > game_number / 2) {
+      opening = openings_[game_number / 2];
+    }
   }
   const int color_idx[2] = {player1_black ? 1 : 0, player1_black ? 0 : 1};
 
@@ -198,14 +427,14 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
                               &last_thinking_info](const BestMoveInfo& info) {
       // In non-verbose mode, output the last "info" message.
       if (!verbose_thinking && !last_thinking_info.empty()) {
-        info_callback_(last_thinking_info);
+        //info_callback_(last_thinking_info);
         last_thinking_info.clear();
       }
       BestMoveInfo rich_info = info;
       rich_info.player = pl_idx + 1;
       rich_info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
       rich_info.game_id = game_number;
-      best_move_callback_(rich_info);
+      //best_move_callback_(rich_info);
     };
 
     opt.info_callback =
@@ -232,8 +461,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   std::list<std::unique_ptr<SelfPlayGame>>::iterator game_iter;
   {
     Mutex::Lock lock(mutex_);
-    games_.emplace_front(
-        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
+    games_.emplace_front(std::make_unique<SelfPlayGame>(options[0], options[1],
+                                                        kShareTree, opening));
     game_iter = games_.begin();
   }
   auto& game = **game_iter;
@@ -293,7 +522,10 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      if (kTotalGames != -1 && games_count_ >= kTotalGames) break;
+      if (kTotalGames != -1 && games_count_ >= kTotalGames ||
+          kTotalGames == -1 && openings_.size() > 0 &&
+              games_count_ >= openings_.size() * 2)
+        break;
       game_id = games_count_++;
     }
     PlayOneGame(game_id);

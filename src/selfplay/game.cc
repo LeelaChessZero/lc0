@@ -55,7 +55,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree)
+                           bool shared_tree, const MoveList& opening)
     : options_{player1, player2} {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
@@ -66,11 +66,15 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
     tree_[1] = std::make_shared<NodeTree>();
     tree_[1]->ResetToPosition(ChessBoard::kStartposFen, {});
   }
+  for (Move m : opening) {
+    tree_[0]->MakeMove(m);
+    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
+  }
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         bool enable_resign) {
-  bool blacks_move = false;
+  bool blacks_move = (tree_[0]->GetPlyCount() % 2) == 1;
 
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
