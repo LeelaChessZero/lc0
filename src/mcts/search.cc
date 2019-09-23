@@ -222,15 +222,25 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
+  if (params_.GetNewUEnabled()) {
   std::sort(
       edges.begin(), edges.end(),
       [&fpu, &U_coeff, &logit_q](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
-          a.GetN(), a.GetQ(fpu, logit_q) + (params_.GetNewUEnabled() ? a.GetNewU(U_coeff) : a.GetU(U_coeff))) <
+          a.GetN(), a.GetQ(fpu, logit_q) + a.GetNewU(U_coeff)) <
           std::forward_as_tuple(
-          b.GetN(), b.GetQ(fpu, logit_q) + (params_.GetNewUEnabled() ? b.GetNewU(U_coeff) : b.GetU(U_coeff)));
+          b.GetN(), b.GetQ(fpu, logit_q) + b.GetNewU(U_coeff));
       });
-
+  } else {
+  std::sort(
+      edges.begin(), edges.end(),
+      [&fpu, &U_coeff, &logit_q](EdgeAndNode a, EdgeAndNode b) {
+        return std::forward_as_tuple(
+          a.GetN(), a.GetQ(fpu, logit_q) + a.GetU(U_coeff)) <
+          std::forward_as_tuple(
+          b.GetN(), b.GetQ(fpu, logit_q) + b.GetU(U_coeff));
+      });
+  }
 
   std::vector<std::string> infos;
   for (const auto& edge : edges) {
@@ -259,7 +269,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))  << ") ";
+        << edge.GetQ(fpu) + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))
         << ") ";
 
     oss << "(V: ";
