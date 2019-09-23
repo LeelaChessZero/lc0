@@ -1,17 +1,17 @@
 rd /s build
 
-rem set MSBuild="C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\MSBuild\15.0\Bin\MSBuild.exe"
+rem set MSBuild="C:\Program Files (x86)\MSBuild\14.0\Bin\MSBuild.exe"
 set MSBuild="C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\MSBuild\15.0\Bin\MSBuild.exe"
 
-rem call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
+rem call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" amd64
 call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 
 rem change to '-Dblas=true' to also build the blas backend with mkl
 meson build --backend vs2017 --buildtype release -Dblas=false ^
--Dmkl_include="C:\Users\Georg\Downloads\mklml_win_2019.0.5.20190502\include" ^
--Dmkl_libdirs="C:\Users\Georg\Downloads\mklml_win_2019.0.5.20190502\lib" ^
--Dopencl_libdirs="C:\Program Files (x86)\OCL_SDK_Light\lib\x86_64" ^
--Dopencl_include="C:\Program Files (x86)\OCL_SDK_Light\include" ^
+-Dmkl_include="C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl\include" ^
+-Dmkl_libdirs="C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl\lib\intel64" ^
+-Dopencl_libdirs="C:\Program Files (x86)\AMD APP SDK\3.0\lib\x86_64" ^
+-Dopencl_include="C:\Program Files (x86)\AMD APP SDK\3.0\include" ^
 -Ddefault_library=static
 
 pause
