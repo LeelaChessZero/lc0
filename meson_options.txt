@@ -14,9 +14,9 @@ option('openblas_include',
        description: 'Paths to openblas include directories')
 
 option('opencl_include',
-       type: 'array',
-       value: ['/usr/include/'],
-       description: 'Paths to OpenCL include directories')
+       type: 'string',
+       value: '/usr/include/',
+       description: 'Path to OpenCL include directory')
 
 option('tensorflow_libdir',
        type: 'array',

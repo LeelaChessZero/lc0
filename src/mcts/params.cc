@@ -49,6 +49,10 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "When the engine cannot gather a large enough batch for immediate use, try "
     "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
+const OptionId SearchParams::kLogitQId{
+    "logit-q", "LogitQ",
+    "Apply logit to Q when determining Q+U best child. This makes the U term "
+    "less dominant when Q is near -1 or +1."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -93,6 +97,15 @@ const OptionId SearchParams::kNoiseId{
     "engine to discover new ideas during training by exploring moves which are "
     "known to be bad. Not normally used during play.",
     'n'};
+const OptionId SearchParams::kNoiseEpsilonId{
+    "noise-epsilon", "DirichletNoiseEpsilon",
+    "Amount of Dirichlet noise to combine with root priors. This allows the "
+    "engine to discover new ideas during training by exploring moves which are "
+    "known to be bad. Not normally used during play."};
+const OptionId SearchParams::kNoiseAlphaId{
+    "noise-alpha", "DirichletNoiseAlpha",
+    "Alpha of Dirichlet noise to control the sharpness of move probabilities. "
+    "Larger values result in flatter / more evenly distributed values."};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move."};
@@ -192,6 +205,7 @@ void SearchParams::Populate(OptionsParser* options) {
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
+  options->Add<BoolOption>(kLogitQId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
@@ -203,6 +217,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kTemperatureVisitOffsetId, -1000.0f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
+  options->Add<FloatOption>(kNoiseEpsilonId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kNoiseAlphaId, 0.0f, 10000000.0f) = 0.3f;
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<BoolOption>(kLogLiveStatsId) = false;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
@@ -228,15 +244,21 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
 
+  options->HideOption(kNoiseEpsilonId);
+  options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
+      kLogitQ(options.Get<bool>(kLogitQId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
-      kNoise(options.Get<bool>(kNoiseId.GetId())),
+      kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
+                        ? 0.25f
+                        : options.Get<float>(kNoiseEpsilonId.GetId())),
+      kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
