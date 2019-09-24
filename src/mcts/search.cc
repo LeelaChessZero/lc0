@@ -886,7 +886,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
   // Fetch the current best root node visits for possible smart pruning.
   const int64_t best_node_n = search_->current_best_edge_.GetN();
-
+  
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
   uint16_t depth = 0;
@@ -940,15 +940,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node);
-    for (auto child : node->Edges()) {
+	const int64_t best_node_q = search_->current_best_edge_.GetQ(fpu);
+
+	for (auto child : node->Edges()) {
       if (is_root_node) {
-        // If there's no chance to catch up to the current best node with
-        // remaining playouts, don't consider it.
-        // best_move_node_ could have changed since best_node_n was retrieved.
-        // To ensure we have at least one node to expand, always include
-        // current best node.
-        if (child != search_->current_best_edge_ &&
-            search_->remaining_playouts_ < best_node_n - child.GetN()) {
+        if (SmartPrune(child, fpu, best_node_n, best_node_q)) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
@@ -998,6 +994,30 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   }
 }
 
+// If there's no chance to catch up to the current best node with
+// remaining playouts, don't consider it.
+// best_move_node_ could have changed since best_node_n was retrieved.
+// To ensure we have at least one node to expand, always include
+// current best node.
+bool SearchWorker::SmartPrune(EdgeAndNode child, float fpu, int64_t best_node_n, int64_t best_node_q) {
+	if (child == search_->current_best_edge_) {
+		return false;
+	}
+	if (search_->remaining_playouts_ < best_node_n - child.GetN()) {
+		return true; // this child can never catch up best_node
+	}
+	//additional cutoff on a third of the budgeted time on some Q difference
+	if (search_->remaining_playouts_ / 3 < best_node_n - child.GetN() && 
+			// higher factor means earlier cutoff:
+			// if factor is default 0.00 the best_node_q will not be higher then the calculated
+			// child.GetQ, therefore no additional cutoff.
+			// if factor is 1, the cutoff will immediately occur whenever
+			// best_node_q is higher then this childs Q.
+			best_node_q > (child.GetQ(fpu) + (1 - params_.GetEdgeDiscardFactor()))) { 
+		return true;
+	}
+	return false;
+}
 void SearchWorker::ExtendNode(Node* node) {
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
