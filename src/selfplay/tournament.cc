@@ -275,6 +275,12 @@ std::vector<std::vector<Move>> ReadBook(std::string path) {
       // std::cerr << word << std::endl;
       cur.push_back(SanToMove(word, board));
       board.ApplyMove(cur.back());
+      // Board ApplyMove wants mirrored for black, but outside code wants
+      // normal, so mirror it back again.
+      // Check equal to 0 since we've already added the position.
+      if ((cur.size() % 2) == 0) {
+        cur.back().Mirror();
+      }
       board.Mirror();
     }
   }
