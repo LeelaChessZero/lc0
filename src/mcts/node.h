@@ -340,7 +340,8 @@ class EdgeAndNode {
   float GetQ(float default_q, bool logit_q = false) const {
     return (node_ && node_->GetN() > 0)
                ?
-               (logit_q ? FastLogit(node_->GetQ()) : node_->GetQ())
+               // Scale Q slightly to avoid logit(1) = infinity.
+               (logit_q ? FastLogit(0.9999999f * node_->GetQ()) : node_->GetQ())
                : default_q;
   }
   float GetD() const {
