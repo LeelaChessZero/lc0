@@ -54,6 +54,81 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
 }
 
+PolicySelfPlayGames::PolicySelfPlayGames(PlayerOptions player1,
+                                         PlayerOptions player2,
+                                         const std::vector<MoveList>& openings)
+    : options_{player1, player2} {
+  trees_.reserve(openings.size());
+  for (auto opening : openings) {
+    trees_.push_back(std::make_shared<NodeTree>());
+    trees_.back()->ResetToPosition(ChessBoard::kStartposFen, {});
+
+    for (Move m : opening) {
+      trees_.back()->MakeMove(m);
+    }
+  }
+}
+
+void PolicySelfPlayGames::Abort() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  abort_ = true;
+}
+
+void PolicySelfPlayGames::Play() {
+  while (true) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (abort_) break;
+    }
+    bool all_done = true;
+    bool blacks_move = false;
+    for (const auto& tree : trees_) {
+      if (tree->GetPositionHistory().ComputeGameResult() ==
+          GameResult::UNDECIDED) {
+        all_done = false;
+        blacks_move = (tree->GetPlyCount() % 2) == 1;
+        break;
+      }
+    }
+    if (all_done) break;
+    const int idx = blacks_move ? 1 : 0;
+    auto comp = options_[idx].network->NewComputation();
+    for (const auto& tree : trees_) {
+      if (tree->GetPositionHistory().ComputeGameResult() !=
+          GameResult::UNDECIDED) {
+        continue;
+      }
+      if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
+      const auto& board = tree->GetPositionHistory().Last().GetBoard();
+      auto legal_moves = board.GenerateLegalMoves();
+      tree->GetCurrentHead()->CreateEdges(legal_moves);
+      auto planes = EncodePositionForNN(tree->GetPositionHistory(), 8,
+                                        FillEmptyHistory::FEN_ONLY);
+      comp->AddInput(std::move(planes));
+    }
+    comp->ComputeBlocking();
+    int comp_idx = 0;
+    for (const auto& tree : trees_) {
+      if (tree->GetPositionHistory().ComputeGameResult() !=
+          GameResult::UNDECIDED) {
+        continue;
+      }
+      if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
+      Move best;
+      float max_p = std::numeric_limits<float>::lowest();
+      for (auto edge : tree->GetCurrentHead()->Edges()) {
+        float p = comp->GetPVal(comp_idx, edge.GetMove().as_nn_index());
+        if (p >= max_p) {
+          max_p = p;
+          best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
+        }
+      }
+      tree->MakeMove(best);
+      comp_idx++;
+    }
+  }
+}
+
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree, const MoveList& opening)
     : options_{player1, player2} {

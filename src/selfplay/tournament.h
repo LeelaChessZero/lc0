@@ -68,6 +68,7 @@ class SelfPlayTournament {
  private:
   void Worker();
   void PlayOneGame(int game_id);
+  void PlayMultiPolicyGames(int game_id, int game_count);
 
   Mutex mutex_;
   // Whether first game will be black for player1.
@@ -103,6 +104,7 @@ class SelfPlayTournament {
   const size_t kParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
+  const int kPolicyGamesSize;
 };
 
 }  // namespace lczero

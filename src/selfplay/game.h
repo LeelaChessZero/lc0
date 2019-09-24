@@ -109,4 +109,41 @@ class SelfPlayGame {
   std::vector<V4TrainingData> training_data_;
 };
 
+// Plays a bunch of games vs itself using only policy.
+class PolicySelfPlayGames {
+ public:
+  // Player options may point to the same network/cache/etc.
+  PolicySelfPlayGames(PlayerOptions player1, PlayerOptions player2,
+               const std::vector<MoveList>& openings);
+
+  // Starts the games and blocks until all games are finished.
+  void Play();
+  // Aborts the game currently played, doesn't matter if it's synchronous or
+  // not.
+  void Abort();
+
+  GameResult GetGameResult(int index) const { return trees_[index]->GetPositionHistory().ComputeGameResult(); }
+
+  std::vector<Move> GetMoves(int index) const {
+    std::vector<Move> moves;
+    bool flip = !trees_[index]->IsBlackToMove();
+    for (Node* node = trees_[index]->GetCurrentHead();
+         node != trees_[index]->GetGameBeginNode(); node = node->GetParent()) {
+      moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove(flip));
+      flip = !flip;
+    }
+    std::reverse(moves.begin(), moves.end());
+    return moves;
+  }
+
+ private:
+  // options_[0] is for white player, [1] for black.
+  PlayerOptions options_[2];
+  // Node tree for player1 and player2. If the tree is shared between players,
+  // tree_[0] == tree_[1].
+  std::vector<std::shared_ptr<NodeTree>> trees_;
+  bool abort_ = false;
+  std::mutex mutex_;
+};
+
 }  // namespace lczero

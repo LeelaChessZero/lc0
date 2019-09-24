@@ -69,6 +69,9 @@ const OptionId kResignPlaythroughId{
 const OptionId kBookFileId{
     "pgn-book", "PGNBook",
     "A path name to a pgn file containing openings to use."};
+const OptionId kPolicyModeSizeId{"policy-mode-size", "PolicyModeSize",
+                                 "Number of games per thread in policy only "
+                                 "mode. Set to 0 to not use policy only mode."};
 
 Move MoveFor(int r1, int c1, int r2, int c2, int p2) {
   Move m;
@@ -307,6 +310,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kQuietThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
   options->Add<StringOption>(kBookFileId) = "";
+  options->Add<IntOption>(kPolicyModeSizeId, 0, 512) = 0;
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -349,10 +353,16 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kShareTree(options.Get<bool>(kShareTreesId.GetId())),
       kParallelism(options.Get<int>(kParallelGamesId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
-      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())) {
+      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
+      kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId.GetId())) {
   std::string book = options.Get<std::string>(kBookFileId.GetId());
   if (book.size() != 0) {
     openings_ = ReadBook(book);
+  }
+  if (kPolicyGamesSize > 0 && openings_.size() == 0) {
+    std::cerr
+        << "Policy games are deterministic, needs opening book to be useful."
+        << std::endl;
   }
   // If playing just one game, the player1 is white, otherwise randomize.
   // If opening book, also not randomized since we play mirrored.
@@ -524,20 +534,112 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
 }
 
+void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
+  std::vector<MoveList> openings;
+  openings.reserve(game_count / 2);
+  int opening_basis = game_id / 2;
+  for (int i = 0; i < game_count / 2; i++) {
+    if (opening_basis + i < openings_.size()) {
+      openings.push_back(openings_[opening_basis + i]);
+    } else {
+      openings.emplace_back();
+    }
+  }
+
+  PlayerOptions options[2];
+  options[0].network = networks_[0].get();
+  options[1].network = networks_[1].get();
+
+  // TODO - add game to the abortable queue.
+  auto game1 =
+      std::make_unique<PolicySelfPlayGames>(options[0], options[1], openings);
+
+  // PLAY GAMEs!
+  game1->Play();
+
+  auto game2 =
+      std::make_unique<PolicySelfPlayGames>(options[1], options[0], openings);
+
+  // PLAY reverse GAMEs!
+  game2->Play();
+
+  for (int i = 0; i < openings.size(); i++) {
+    auto game1_res = game1->GetGameResult(i);
+    if (game1_res != GameResult::UNDECIDED) {
+      // Game callback.
+      GameInfo game_info;
+      game_info.game_result = game1_res;
+      game_info.is_black = false;
+      game_info.game_id = game_id + 2 * i;
+      game_info.moves = game1->GetMoves(i);
+      game_callback_(game_info);
+
+      // Update tournament stats.
+      {
+        Mutex::Lock lock(mutex_);
+        int result = game1_res == GameResult::DRAW
+                         ? 1
+                         : game1_res == GameResult::WHITE_WON ? 0 : 2;
+        ++tournament_info_.results[result][0];
+        tournament_callback_(tournament_info_);
+      }
+    }
+    auto game2_res = game2->GetGameResult(i);
+    if (game2_res != GameResult::UNDECIDED) {
+      // Game callback.
+      GameInfo game_info;
+      game_info.game_result = game2_res;
+      game_info.is_black = true;
+      game_info.game_id = game_id + 2 * i + 1;
+      game_info.moves = game2->GetMoves(i);
+      game_callback_(game_info);
+
+      // Update tournament stats.
+      {
+        Mutex::Lock lock(mutex_);
+        int result = game2_res == GameResult::DRAW
+                         ? 1
+                         : game2_res == GameResult::WHITE_WON ? 2 : 0;
+        ++tournament_info_.results[result][1];
+        tournament_callback_(tournament_info_);
+      }
+    }
+  }
+}
+
 void SelfPlayTournament::Worker() {
   // Play games while game limit is not reached (or while not aborted).
   while (true) {
     int game_id;
+    int count = 0;
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      if (kTotalGames != -1 && games_count_ >= kTotalGames ||
-          kTotalGames == -1 && openings_.size() > 0 &&
-              games_count_ >= openings_.size() * 2)
+
+      int to_take = 1;
+      int max_take = 1;
+      if (kPolicyGamesSize > 0) {
+        to_take = 2 * kPolicyGamesSize;
+        max_take = 2 * kPolicyGamesSize;
+      }
+      if (kTotalGames != -1) {
+        to_take = std::min(max_take, kTotalGames - games_count_);
+      } else if (openings_.size() > 0) {
+        to_take = std::min(
+            max_take, static_cast<int>(openings_.size()) * 2 - games_count_);
+      }
+      if (to_take <= 0) {
         break;
-      game_id = games_count_++;
+      }
+      game_id = games_count_;
+      count = to_take;
+      games_count_ += to_take;
     }
-    PlayOneGame(game_id);
+    if (kPolicyGamesSize) {
+      PlayMultiPolicyGames(game_id, count);
+    } else {
+      PlayOneGame(game_id);
+    }
   }
 }
 
