@@ -895,10 +895,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
   int moves_left = 0;
   float moves_threshold = params_.GetMovesLeftThreshold();
-  if (best_node_q > moves_threshold ) {
+  if (best_node_q > moves_threshold) {
     moves_left = -1;
     best_node_m = search_->current_best_edge_.GetM();
-  } else if (best_node_q < -moves_threshold ) {
+  } else if (best_node_q < -moves_threshold) {
     moves_left = 1;
     best_node_m = search_->current_best_edge_.GetM();
   }
@@ -977,7 +977,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       float Q = child.GetQ(fpu, params_.GetLogitQ());
       if (moves_left != 0) {
-          const float max_moves_scale = 10.0f;
+          const float max_moves_scale = params_.GetMovesLeftScale();
           const float M = std::max(std::min(child.GetM() - best_node_m, max_moves_scale), -max_moves_scale) / max_moves_scale;
           float m_factor = params_.GetMovesLeftFactor();
           // Inverted for opponent.

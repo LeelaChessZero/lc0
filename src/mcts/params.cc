@@ -205,6 +205,9 @@ const OptionId SearchParams::kMovesLeftFactorId{
 const OptionId SearchParams::kMovesLeftThresholdId{
     "moves-left-threshold", "MovesLeftThreshold",
     "Score threshold to use moves left in picking the node."};
+const OptionId SearchParams::kMovesLeftScaleId{
+    "moves-left-scale", "MovesLeftScale",
+    "Controls how strongly to prefer shorter moves."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -251,6 +254,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftFactorId, 0.0f, 1.0f) = 0.05f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.95f;
+  options->Add<FloatOption>(kMovesLeftScaleId, 1.0f, 100.0f) = 10.0f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -290,6 +294,7 @@ SearchParams::SearchParams(const OptionsDict& options)
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
       kMovesLeftFactor(options.Get<float>(kMovesLeftFactorId.GetId())),
-      kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId.GetId())) {}
+      kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId.GetId())),
+      kMovesLeftScale(options.Get<float>(kMovesLeftScaleId.GetId())) {}
 
 }  // namespace lczero
