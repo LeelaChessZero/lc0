@@ -53,6 +53,9 @@ const OptionId SearchParams::kLogitQId{
     "logit-q", "LogitQ",
     "Apply logit to Q when determining Q+U best child. This makes the U term "
     "less dominant when Q is near -1 or +1."};
+const OptionId SearchParams::kOneMinusEps{
+    "one-minus-eps", "OneMinusEps",
+    "Scaling factor to apply before computing logit.";
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -206,6 +209,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
+  options->Add<FloatOption>(kOneMinusEps, 0.0f, 1.0f) = 0.99999994f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
@@ -247,11 +251,13 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
+  options->HideOption(kOneMinusEps);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kLogitQ(options.Get<bool>(kLogitQId.GetId())),
+      kOneMinusEps(options.Get<float>(kOneMinusEps.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
