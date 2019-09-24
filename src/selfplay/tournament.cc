@@ -72,6 +72,9 @@ const OptionId kBookFileId{
 const OptionId kPolicyModeSizeId{"policy-mode-size", "PolicyModeSize",
                                  "Number of games per thread in policy only "
                                  "mode. Set to 0 to not use policy only mode."};
+const OptionId kTournamentResultsFileId{
+    "tournament-results-file", "TournamentResultsFile",
+    "Name of file to append the tournament results in fake pgn format."};
 
 Move MoveFor(int r1, int c1, int r2, int c2, int p2) {
   Move m;
@@ -311,6 +314,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
   options->Add<StringOption>(kBookFileId) = "";
   options->Add<IntOption>(kPolicyModeSizeId, 0, 512) = 0;
+  options->Add<StringOption>(kTournamentResultsFileId) = "";
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -354,7 +358,9 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kParallelism(options.Get<int>(kParallelGamesId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
-      kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId.GetId())) {
+      kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId.GetId())),
+      kTournamentResultsFile(
+          options.Get<std::string>(kTournamentResultsFileId.GetId())) {
   std::string book = options.Get<std::string>(kBookFileId.GetId());
   if (book.size() != 0) {
     openings_ = ReadBook(book);
@@ -656,6 +662,7 @@ void SelfPlayTournament::RunBlocking() {
     Worker();
     Mutex::Lock lock(mutex_);
     if (!abort_) {
+      SaveResults();
       tournament_info_.finished = true;
       tournament_callback_(tournament_info_);
     }
@@ -676,6 +683,7 @@ void SelfPlayTournament::Wait() {
   {
     Mutex::Lock lock(mutex_);
     if (!abort_) {
+      SaveResults();
       tournament_info_.finished = true;
       tournament_callback_(tournament_info_);
     }
@@ -697,6 +705,29 @@ void SelfPlayTournament::Stop() {
 SelfPlayTournament::~SelfPlayTournament() {
   Abort();
   Wait();
+}
+
+void SelfPlayTournament::SaveResults() {
+  if (kTournamentResultsFile.empty()) return;
+  std::ofstream output(kTournamentResultsFile, std::ios_base::app);
+  auto p1name =
+      player_options_[0].Get<std::string>(NetworkFactory::kWeightsId.GetId());
+  auto p2name =
+      player_options_[1].Get<std::string>(NetworkFactory::kWeightsId.GetId());
+
+  output << std::endl;
+  output << "[White \"" << p1name << "\"]" << std::endl;
+  output << "[Black \"" << p2name << "\"]" << std::endl;
+  output << "[Results \"" << tournament_info_.results[0][0] << " "
+         << tournament_info_.results[2][0] << " "
+         << tournament_info_.results[1][0]
+         << "\"]" << std::endl;
+  output << std::endl;
+  output << "[White \"" << p2name << "\"]" << std::endl;
+  output << "[Black \"" << p1name << "\"]" << std::endl;
+  output << "[Results \"" << tournament_info_.results[2][1] << " "
+         << tournament_info_.results[0][1] << " "
+         << tournament_info_.results[1][1] << "\"]" << std::endl;
 }
 
 }  // namespace lczero

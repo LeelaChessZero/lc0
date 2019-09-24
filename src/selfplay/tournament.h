@@ -69,6 +69,7 @@ class SelfPlayTournament {
   void Worker();
   void PlayOneGame(int game_id);
   void PlayMultiPolicyGames(int game_id, int game_count);
+  void SaveResults();
 
   Mutex mutex_;
   // Whether first game will be black for player1.
@@ -105,6 +106,7 @@ class SelfPlayTournament {
   const bool kTraining;
   const float kResignPlaythrough;
   const int kPolicyGamesSize;
+  const std::string kTournamentResultsFile;
 };
 
 }  // namespace lczero
