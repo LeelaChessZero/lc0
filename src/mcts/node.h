@@ -337,8 +337,7 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, bool logit_q = false) const {
-    const auto scale = params.GetOneMinusEps();
+  float GetQ(float default_q, bool logit_q = false, float scale = 1.0f) const {
     return (node_ && node_->GetN() > 0)
                ? (logit_q ? FastLogit(scale * node_->GetQ()) : node_->GetQ())
                : default_q;
