@@ -217,7 +217,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float U_coeff =
     cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
-  const auto scale = params.GetOneMinusEps();
+  const float scale = params_.GetOneMinusEps();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
@@ -945,7 +945,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     int possible_moves = 0;
     const bool logit_q = params_.GetLogitQ();
     const float fpu = GetFpu(params_, node, is_root_node, logit_q);
-    const float scale = params.GetOneMinusEps();
+    const float scale = params_.GetOneMinusEps();
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -1167,7 +1167,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   const bool logit_q = params_.GetLogitQ();
   const float fpu = GetFpu(params_, node,
                            node == search_->root_node_, logit_q);
-  const float scale = params.GetOneMinusEps();
+  const float scale = params_.GetOneMinusEps();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
