@@ -53,7 +53,7 @@ const OptionId SearchParams::kLogitQId{
     "logit-q", "LogitQ",
     "Apply logit to Q when determining Q+U best child. This makes the U term "
     "less dominant when Q is near -1 or +1."};
-const OptionId SearchParams::kOneMinusEps{
+const OptionId SearchParams::kOneMinusEpsId{
     "one-minus-eps", "OneMinusEps",
     "Scaling factor to apply before computing logit."};
 const OptionId SearchParams::kCpuctId{
@@ -251,7 +251,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
-  options->HideOption(kOneMinusEps);
+  options->HideOption(kOneMinusEpsId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
