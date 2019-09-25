@@ -198,7 +198,10 @@ inline float GetFpu(const SearchParams& params, Node* node,
   const auto scale = params.GetOneMinusEps();
   const auto Q = logit_q ? FastLogit(scale * node->GetQ()) : node->GetQ();
   return params.GetFpuAbsolute(is_root_node)
-             ? (logit_q ? FastLogit(scale * value) : value)
+             ? (logit_q
+                // Restrict absolute FpuValue to [-1,1] before scaling.
+                ? FastLogit(scale * std::min(1.0f, std::max(-1.0f, value)))
+                : value)
              : -Q - value * std::sqrt(node->GetVisitedPolicy());
 }
 
