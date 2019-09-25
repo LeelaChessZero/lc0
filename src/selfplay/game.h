@@ -114,7 +114,8 @@ class PolicySelfPlayGames {
  public:
   // Player options may point to the same network/cache/etc.
   PolicySelfPlayGames(PlayerOptions player1, PlayerOptions player2,
-               const std::vector<MoveList>& openings);
+                      const std::vector<MoveList>& openings,
+                      SyzygyTablebase* syzygy_tb);
 
   // Starts the games and blocks until all games are finished.
   void Play();
@@ -122,7 +123,7 @@ class PolicySelfPlayGames {
   // not.
   void Abort();
 
-  GameResult GetGameResult(int index) const { return trees_[index]->GetPositionHistory().ComputeGameResult(); }
+  GameResult GetGameResult(int index) const { return results_[index]; }
 
   std::vector<Move> GetMoves(int index) const {
     std::vector<Move> moves;
@@ -142,8 +143,10 @@ class PolicySelfPlayGames {
   // Node tree for player1 and player2. If the tree is shared between players,
   // tree_[0] == tree_[1].
   std::vector<std::shared_ptr<NodeTree>> trees_;
+  std::vector<GameResult> results_;
   bool abort_ = false;
   std::mutex mutex_;
+  SyzygyTablebase* syzygy_tb_;
 };
 
 }  // namespace lczero

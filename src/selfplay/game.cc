@@ -56,12 +56,14 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 
 PolicySelfPlayGames::PolicySelfPlayGames(PlayerOptions player1,
                                          PlayerOptions player2,
-                                         const std::vector<MoveList>& openings)
-    : options_{player1, player2} {
+                                         const std::vector<MoveList>& openings,
+                                         SyzygyTablebase* syzygy_tb)
+    : options_{player1, player2}, syzygy_tb_(syzygy_tb) {
   trees_.reserve(openings.size());
   for (auto opening : openings) {
     trees_.push_back(std::make_shared<NodeTree>());
     trees_.back()->ResetToPosition(ChessBoard::kStartposFen, {});
+    results_.push_back(GameResult::UNDECIDED);
 
     for (Move m : opening) {
       trees_.back()->MakeMove(m);
@@ -82,20 +84,52 @@ void PolicySelfPlayGames::Play() {
     }
     bool all_done = true;
     bool blacks_move = false;
-    for (const auto& tree : trees_) {
-      if (tree->GetPositionHistory().ComputeGameResult() ==
-          GameResult::UNDECIDED) {
-        all_done = false;
-        blacks_move = (tree->GetPlyCount() % 2) == 1;
-        break;
+    for (int i = 0; i < trees_.size(); i++) {
+      const auto& tree = trees_[i];
+      if (results_[i] == GameResult::UNDECIDED) {
+        if (tree->GetPositionHistory().ComputeGameResult() !=
+            GameResult::UNDECIDED) {
+          results_[i] = tree->GetPositionHistory().ComputeGameResult();
+          continue;
+        }
+        if (syzygy_tb_ != nullptr) {
+          auto board = tree->GetPositionHistory().Last().GetBoard();
+          if (board.castlings().no_legal_castle() &&
+              (board.ours() | board.theirs()).count() <=
+                  syzygy_tb_->max_cardinality()) {
+            auto tb_side_black = (tree->GetPlyCount() % 2) == 1;
+            ProbeState state;
+            const WDLScore wdl = syzygy_tb_->probe_wdl(
+                tree->GetPositionHistory().Last(), &state);
+            // Only fail state means the WDL is wrong, probe_wdl may produce
+            // correct result with a stat other than OK.
+            if (state != FAIL) {
+              if (wdl == WDL_WIN) {
+                results_[i] =
+                    tb_side_black ? GameResult::BLACK_WON : GameResult::WHITE_WON;
+              } else if (wdl == WDL_LOSS) {
+                results_[i] = tb_side_black ? GameResult::WHITE_WON
+                                            : GameResult::BLACK_WON;
+              } else {  // Cursed wins and blessed losses count as draws.
+                results_[i] = GameResult::DRAW;
+              }
+              continue;
+            }
+          }
+        }
+        if (all_done) {
+          all_done = false;
+          blacks_move = (tree->GetPlyCount() % 2) == 1;
+          // Don't break as we need to update result state for everything.
+        }
       }
     }
     if (all_done) break;
     const int idx = blacks_move ? 1 : 0;
     auto comp = options_[idx].network->NewComputation();
-    for (const auto& tree : trees_) {
-      if (tree->GetPositionHistory().ComputeGameResult() !=
-          GameResult::UNDECIDED) {
+    for (int i = 0; i < trees_.size(); i++) {
+      const auto& tree = trees_[i];
+      if (results_[i] != GameResult::UNDECIDED) {
         continue;
       }
       if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
@@ -108,9 +142,9 @@ void PolicySelfPlayGames::Play() {
     }
     comp->ComputeBlocking();
     int comp_idx = 0;
-    for (const auto& tree : trees_) {
-      if (tree->GetPositionHistory().ComputeGameResult() !=
-          GameResult::UNDECIDED) {
+    for (int i = 0; i < trees_.size(); i++) {
+      const auto& tree = trees_[i];
+      if (results_[i] != GameResult::UNDECIDED) {
         continue;
       }
       if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;

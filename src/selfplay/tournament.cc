@@ -75,6 +75,11 @@ const OptionId kPolicyModeSizeId{"policy-mode-size", "PolicyModeSize",
 const OptionId kTournamentResultsFileId{
     "tournament-results-file", "TournamentResultsFile",
     "Name of file to append the tournament results in fake pgn format."};
+const OptionId kSyzygyTablebaseId{
+    "syzygy-paths", "SyzygyPath",
+    "List of Syzygy tablebase directories, list entries separated by system "
+    "separator (\";\" for Windows, \":\" for Linux).",
+    's'};
 
 Move MoveFor(int r1, int c1, int r2, int c2, int p2) {
   Move m;
@@ -321,6 +326,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(kBookFileId) = "";
   options->Add<IntOption>(kPolicyModeSizeId, 0, 512) = 0;
   options->Add<StringOption>(kTournamentResultsFileId) = "";
+  options->Add<StringOption>(kSyzygyTablebaseId) = "";
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -380,6 +386,16 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
   // If opening book, also not randomized since we play mirrored.
   if (kTotalGames != 1 && openings_.size() == 0) {
     first_game_black_ = Random::Get().GetBool();
+  }
+
+  std::string tb_paths = options.Get<std::string>(kSyzygyTablebaseId.GetId());
+  if (!tb_paths.empty()) {
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
+    if (!syzygy_tb_->init(tb_paths)) {
+      CERR << "Failed to load Syzygy tablebases!";
+      syzygy_tb_ = nullptr;
+    }
   }
 
   static const char* kPlayerNames[2] = {"player1", "player2"};
@@ -563,14 +579,14 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
   options[1].network = networks_[1].get();
 
   // TODO - add game to the abortable queue.
-  auto game1 =
-      std::make_unique<PolicySelfPlayGames>(options[0], options[1], openings);
+  auto game1 = std::make_unique<PolicySelfPlayGames>(
+      options[0], options[1], openings, syzygy_tb_.get());
 
   // PLAY GAMEs!
   game1->Play();
 
-  auto game2 =
-      std::make_unique<PolicySelfPlayGames>(options[1], options[0], openings);
+  auto game2 = std::make_unique<PolicySelfPlayGames>(
+      options[1], options[0], openings, syzygy_tb_.get());
 
   // PLAY reverse GAMEs!
   game2->Play();
@@ -726,8 +742,7 @@ void SelfPlayTournament::SaveResults() {
   output << "[Black \"" << p2name << "\"]" << std::endl;
   output << "[Results \"" << tournament_info_.results[0][0] << " "
          << tournament_info_.results[2][0] << " "
-         << tournament_info_.results[1][0]
-         << "\"]" << std::endl;
+         << tournament_info_.results[1][0] << "\"]" << std::endl;
   output << std::endl;
   output << "[White \"" << p2name << "\"]" << std::endl;
   output << "[Black \"" << p1name << "\"]" << std::endl;
