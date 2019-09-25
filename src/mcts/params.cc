@@ -55,7 +55,7 @@ const OptionId SearchParams::kLogitQId{
     "less dominant when Q is near -1 or +1."};
 const OptionId SearchParams::kOneMinusEps{
     "one-minus-eps", "OneMinusEps",
-    "Scaling factor to apply before computing logit.";
+    "Scaling factor to apply before computing logit."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
