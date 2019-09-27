@@ -69,9 +69,9 @@ const OptionId kResignPlaythroughId{
 const OptionId kBookFileId{
     "pgn-book", "PGNBook",
     "A path name to a pgn file containing openings to use."};
-const OptionId kPolicyModeSizeId{"policy-mode-size", "PolicyModeSize",
-                                 "Number of games per thread in policy only "
-                                 "mode. Set to 0 to not use policy only mode."};
+const OptionId kValueModeSizeId{"value-mode-size", "ValueModeSize",
+                                 "Number of games per thread in value only "
+                                 "mode. Set to 0 to not use value only mode."};
 const OptionId kTournamentResultsFileId{
     "tournament-results-file", "TournamentResultsFile",
     "Name of file to append the tournament results in fake pgn format."};
@@ -324,7 +324,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kQuietThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
   options->Add<StringOption>(kBookFileId) = "";
-  options->Add<IntOption>(kPolicyModeSizeId, 0, 512) = 0;
+  options->Add<IntOption>(kValueModeSizeId, 0, 512) = 0;
   options->Add<StringOption>(kTournamentResultsFileId) = "";
   options->Add<StringOption>(kSyzygyTablebaseId) = "";
 
@@ -370,16 +370,16 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kParallelism(options.Get<int>(kParallelGamesId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
-      kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId.GetId())),
+      kValueGamesSize(options.Get<int>(kValueModeSizeId.GetId())),
       kTournamentResultsFile(
           options.Get<std::string>(kTournamentResultsFileId.GetId())) {
   std::string book = options.Get<std::string>(kBookFileId.GetId());
   if (book.size() != 0) {
     openings_ = ReadBook(book);
   }
-  if (kPolicyGamesSize > 0 && openings_.size() == 0) {
+  if (kValueGamesSize > 0 && openings_.size() == 0) {
     std::cerr
-        << "Policy games are deterministic, needs opening book to be useful."
+        << "Value games are deterministic, needs opening book to be useful."
         << std::endl;
   }
   // If playing just one game, the player1 is white, otherwise randomize.
@@ -579,13 +579,13 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
   options[1].network = networks_[1].get();
 
   // TODO - add game to the abortable queue.
-  auto game1 = std::make_unique<PolicySelfPlayGames>(
+  auto game1 = std::make_unique<ValueSelfPlayGames>(
       options[0], options[1], openings, syzygy_tb_.get());
 
   // PLAY GAMEs!
   game1->Play();
 
-  auto game2 = std::make_unique<PolicySelfPlayGames>(
+  auto game2 = std::make_unique<ValueSelfPlayGames>(
       options[1], options[0], openings, syzygy_tb_.get());
 
   // PLAY reverse GAMEs!
@@ -646,9 +646,9 @@ void SelfPlayTournament::Worker() {
 
       int to_take = 1;
       int max_take = 1;
-      if (kPolicyGamesSize > 0) {
-        to_take = 2 * kPolicyGamesSize;
-        max_take = 2 * kPolicyGamesSize;
+      if (kValueGamesSize > 0) {
+        to_take = 2 * kValueGamesSize;
+        max_take = 2 * kValueGamesSize;
       }
       if (kTotalGames != -1) {
         to_take = std::min(max_take, kTotalGames - games_count_);
@@ -663,7 +663,7 @@ void SelfPlayTournament::Worker() {
       count = to_take;
       games_count_ += to_take;
     }
-    if (kPolicyGamesSize) {
+    if (kValueGamesSize) {
       PlayMultiPolicyGames(game_id, count);
     } else {
       PlayOneGame(game_id);

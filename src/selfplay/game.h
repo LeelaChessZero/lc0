@@ -109,11 +109,11 @@ class SelfPlayGame {
   std::vector<V4TrainingData> training_data_;
 };
 
-// Plays a bunch of games vs itself using only policy.
-class PolicySelfPlayGames {
+// Plays a bunch of games vs itself using only value.
+class ValueSelfPlayGames {
  public:
   // Player options may point to the same network/cache/etc.
-  PolicySelfPlayGames(PlayerOptions player1, PlayerOptions player2,
+  ValueSelfPlayGames(PlayerOptions player1, PlayerOptions player2,
                       const std::vector<MoveList>& openings,
                       SyzygyTablebase* syzygy_tb);
 

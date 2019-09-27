@@ -54,7 +54,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
 }
 
-PolicySelfPlayGames::PolicySelfPlayGames(PlayerOptions player1,
+ValueSelfPlayGames::ValueSelfPlayGames(PlayerOptions player1,
                                          PlayerOptions player2,
                                          const std::vector<MoveList>& openings,
                                          SyzygyTablebase* syzygy_tb)
@@ -71,12 +71,12 @@ PolicySelfPlayGames::PolicySelfPlayGames(PlayerOptions player1,
   }
 }
 
-void PolicySelfPlayGames::Abort() {
+void ValueSelfPlayGames::Abort() {
   std::lock_guard<std::mutex> lock(mutex_);
   abort_ = true;
 }
 
-void PolicySelfPlayGames::Play() {
+void ValueSelfPlayGames::Play() {
   while (true) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -136,9 +136,16 @@ void PolicySelfPlayGames::Play() {
       const auto& board = tree->GetPositionHistory().Last().GetBoard();
       auto legal_moves = board.GenerateLegalMoves();
       tree->GetCurrentHead()->CreateEdges(legal_moves);
-      auto planes = EncodePositionForNN(tree->GetPositionHistory(), 8,
-                                        FillEmptyHistory::FEN_ONLY);
-      comp->AddInput(std::move(planes));
+      PositionHistory history = tree->GetPositionHistory();
+      for (auto edge : tree->GetCurrentHead()->Edges()) {
+        history.Append(edge.GetMove());
+        if (history.ComputeGameResult() == GameResult::UNDECIDED) {
+          auto planes = EncodePositionForNN(history, 8,
+                                            FillEmptyHistory::FEN_ONLY);
+          comp->AddInput(std::move(planes));
+        }
+        history.Pop();
+      }
     }
     comp->ComputeBlocking();
     int comp_idx = 0;
@@ -149,16 +156,29 @@ void PolicySelfPlayGames::Play() {
       }
       if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
       Move best;
-      float max_p = std::numeric_limits<float>::lowest();
+      float max_q = std::numeric_limits<float>::lowest();
+      PositionHistory history = tree->GetPositionHistory();
       for (auto edge : tree->GetCurrentHead()->Edges()) {
-        float p = comp->GetPVal(comp_idx, edge.GetMove().as_nn_index());
-        if (p >= max_p) {
-          max_p = p;
+        history.Append(edge.GetMove());
+        auto result = history.ComputeGameResult();
+        float q = -1;
+        if (result == GameResult::UNDECIDED) {
+          // NN eval is for side to move perspective - so if its good, its bad for us.
+          q = -comp->GetQVal(comp_idx);
+          comp_idx++;
+        } else if (result == GameResult::DRAW) {
+          q = 0;
+        } else {
+          // A legal move to a non-drawn terminal without tablebases must be a win.
+          q = 1;
+        }
+        if (q >= max_q) {
+          max_q = q;
           best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
         }
+        history.Pop();
       }
       tree->MakeMove(best);
-      comp_idx++;
     }
   }
 }

@@ -106,7 +106,7 @@ class SelfPlayTournament {
   const size_t kParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
-  const int kPolicyGamesSize;
+  const int kValueGamesSize;
   const std::string kTournamentResultsFile;
 };
 
