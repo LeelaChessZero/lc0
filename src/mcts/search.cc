@@ -251,7 +251,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     if (moves_left_support_) {
-      oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM()
+      oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM(0.0f)
           << ") ";
     }
 
@@ -898,7 +898,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   bool use_moves_left = moves_left_support_ && params_.GetUseMovesLeft();
   int moves_left = 0;
   float moves_threshold = params_.GetMovesLeftThreshold();
-  float best_node_m = search_->current_best_edge_.GetM();
+  float best_node_m = search_->current_best_edge_.GetM(0.0f);
 
   if (best_node_q > moves_threshold) {
     moves_left = -1;
@@ -981,7 +981,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       float Q = child.GetQ(fpu, params_.GetLogitQ());
       if (use_moves_left && moves_left != 0) {
           const float max_moves_scale = params_.GetMovesLeftScale();
-          const float M = std::max(std::min(child.GetM() - best_node_m, max_moves_scale), -max_moves_scale) / max_moves_scale;
+          const float M = std::max(std::min(child.GetM(best_node_m) - best_node_m, max_moves_scale), -max_moves_scale) / max_moves_scale;
           float m_factor = params_.GetMovesLeftFactor();
           // Inverted for opponent.
           if (depth % 2 == 0) {

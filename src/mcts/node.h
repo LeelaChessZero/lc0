@@ -350,8 +350,8 @@ class EdgeAndNode {
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
-  float GetM() const {
-    return (node_ && node_->GetN() > 0) ? node_->GetM() : 0.0f;
+  float GetM(float default_m) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
