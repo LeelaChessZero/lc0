@@ -125,6 +125,15 @@ class MuxingNetwork : public Network {
     return std::make_unique<MuxingComputation>(this);
   }
 
+  bool MovesLeftSupported() const override {
+    for (auto &network : networks_) {
+      if (!network->MovesLeftSupported()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void Enqueue(MuxingComputation* computation) {
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.push(computation);

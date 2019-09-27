@@ -134,6 +134,15 @@ class DemuxingNetwork : public Network {
     return std::make_unique<DemuxingComputation>(this);
   }
 
+  bool MovesLeftSupported() const override {
+    for (auto &network : networks_) {
+      if (!network->MovesLeftSupported()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void Enqueue(DemuxingComputation* computation) {
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.push(computation);

@@ -41,6 +41,10 @@ SingleThreadBatchingNetwork::NewComputation() {
   return std::make_unique<SingleThreadBatchingNetworkComputation>(this);
 }
 
+bool SingleThreadBatchingNetwork::MovesLeftSupported() const {
+  return parent_->MovesLeftSupported();
+}
+
 void SingleThreadBatchingNetwork::Reset() {
   assert(computations_pending_ == 0);
   parent_computation_ = parent_->NewComputation();

@@ -70,6 +70,7 @@ class NetworkComputation {
 class Network {
  public:
   virtual std::unique_ptr<NetworkComputation> NewComputation() = 0;
+  virtual bool MovesLeftSupported() const = 0;
   virtual ~Network(){};
 };
 

@@ -192,6 +192,7 @@ class Search {
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;
   const SearchParams params_;
+  bool moves_left_support_;
 
   friend class SearchWorker;
 };
@@ -202,7 +203,7 @@ class Search {
 class SearchWorker {
  public:
   SearchWorker(Search* search, const SearchParams& params)
-      : search_(search), history_(search_->played_history_), params_(params) {}
+      : search_(search), history_(search_->played_history_), params_(params), moves_left_support_(search->moves_left_support_) {}
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -304,6 +305,7 @@ class SearchWorker {
   int number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
+  bool moves_left_support_;
 };
 
 }  // namespace lczero

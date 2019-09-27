@@ -174,6 +174,7 @@ class TFNetwork : public Network {
   TFNetwork(const WeightsFile& file, const OptionsDict& options);
 
   std::unique_ptr<NetworkComputation> NewComputation() override;
+  bool MovesLeftSupported() const override;
 
   tensorflow::Status Compute(tensorflow::Tensor& input,
                              std::vector<tensorflow::Tensor>* outputs) const;
@@ -308,6 +309,11 @@ tensorflow::Status TFNetwork<CPU>::Compute(tensorflow::Tensor& input,
 template <bool CPU>
 std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
   return std::make_unique<TFNetworkComputation<CPU>>(this);
+}
+
+template <bool CPU>
+bool TFNetwork<CPU>::MovesLeftSupported() const {
+  return false;
 }
 
 template <bool CPU>

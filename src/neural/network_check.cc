@@ -326,6 +326,10 @@ class CheckNetwork : public Network {
     return work_net_->NewComputation();
   }
 
+  bool MovesLeftSupported() const override {
+    return work_net_->MovesLeftSupported() && check_net_->MovesLeftSupported();
+  }
+
  private:
   CheckParams params_;
 

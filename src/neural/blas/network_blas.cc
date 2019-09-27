@@ -114,6 +114,7 @@ class BlasNetwork : public Network {
     return std::make_unique<BlasComputation>(weights_, max_batch_size_, wdl_,
                                              conv_policy_);
   }
+  bool MovesLeftSupported() const override {return false;}
 
  private:
   // A cap on the max batch size since it consumes a lot of memory

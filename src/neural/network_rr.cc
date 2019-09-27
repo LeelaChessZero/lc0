@@ -64,6 +64,15 @@ class RoundRobinNetwork : public Network {
     return networks_[val % networks_.size()]->NewComputation();
   }
 
+  bool MovesLeftSupported() const override {
+    for (auto &network : networks_) {
+      if (!network->MovesLeftSupported()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   ~RoundRobinNetwork() {}
 
  private:

@@ -111,6 +111,7 @@ class RandomNetwork : public Network {
     return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_,
                                                       uniform_mode_);
   }
+  bool MovesLeftSupported() const override {return false;}
 
  private:
   int delay_ms_ = 0;

@@ -78,7 +78,8 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
-      params_(options) {}
+      params_(options),
+      moves_left_support_(network->MovesLeftSupported()) {}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -249,8 +250,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
-    oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM()
-        << ") ";
+    if (moves_left_support_) {
+      oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM()
+          << ") ";
+    }
 
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
@@ -891,16 +894,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   const int64_t best_node_n = search_->current_best_edge_.GetN();
   // and Q for moves_left logic.
   const float best_node_q = search_->current_best_edge_.GetQ(0);
-  float best_node_m = 0.0f;
 
+  bool use_moves_left = moves_left_support_ && params_.GetUseMovesLeft();
   int moves_left = 0;
   float moves_threshold = params_.GetMovesLeftThreshold();
+  float best_node_m = search_->current_best_edge_.GetM();
+
   if (best_node_q > moves_threshold) {
     moves_left = -1;
-    best_node_m = search_->current_best_edge_.GetM();
   } else if (best_node_q < -moves_threshold) {
     moves_left = 1;
-    best_node_m = search_->current_best_edge_.GetM();
   }
 
   // True on first iteration, false as we dive deeper.
@@ -976,7 +979,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ++possible_moves;
       }
       float Q = child.GetQ(fpu, params_.GetLogitQ());
-      if (moves_left != 0) {
+      if (use_moves_left && moves_left != 0) {
           const float max_moves_scale = params_.GetMovesLeftScale();
           const float M = std::max(std::min(child.GetM() - best_node_m, max_moves_scale), -max_moves_scale) / max_moves_scale;
           float m_factor = params_.GetMovesLeftFactor();

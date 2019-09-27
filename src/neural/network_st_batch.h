@@ -52,6 +52,7 @@ class SingleThreadBatchingNetwork : public Network {
  public:
   SingleThreadBatchingNetwork(std::unique_ptr<Network> parent);
   std::unique_ptr<NetworkComputation> NewComputation() override;
+  bool MovesLeftSupported() const override;
 
   // Start a fresh batch.
   void Reset();

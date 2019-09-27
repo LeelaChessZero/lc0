@@ -103,6 +103,7 @@ class SearchParams {
   float GetMovesLeftFactor() const { return kMovesLeftFactor; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
   float GetMovesLeftScale() const { return kMovesLeftScale; }
+  bool GetUseMovesLeft() const { return kUseMovesLeft; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -142,6 +143,7 @@ class SearchParams {
   static const OptionId kMovesLeftFactorId;
   static const OptionId kMovesLeftThresholdId;
   static const OptionId kMovesLeftScaleId;
+  static const OptionId kUseMovesLeftId;
 
  private:
   const OptionsDict& options_;
@@ -174,6 +176,7 @@ class SearchParams {
   const float kMovesLeftFactor;
   const float kMovesLeftThreshold;
   const float kMovesLeftScale;
+  const bool kUseMovesLeft;
 };
 
 }  // namespace lczero

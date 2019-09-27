@@ -208,6 +208,10 @@ const OptionId SearchParams::kMovesLeftThresholdId{
 const OptionId SearchParams::kMovesLeftScaleId{
     "moves-left-scale", "MovesLeftScale",
     "Controls how strongly to prefer shorter moves."};
+const OptionId SearchParams::kUseMovesLeftId{
+    "use-moves-left", "UseMovesLeft",
+    "When winning or losing use estimated moves left "
+    "to prefer moves that make the game shorter or longer respectively."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -255,6 +259,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMovesLeftFactorId, 0.0f, 1.0f) = 0.05f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.95f;
   options->Add<FloatOption>(kMovesLeftScaleId, 1.0f, 100.0f) = 10.0f;
+  options->Add<BoolOption>(kUseMovesLeftId) = true;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -295,6 +300,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
       kMovesLeftFactor(options.Get<float>(kMovesLeftFactorId.GetId())),
       kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId.GetId())),
-      kMovesLeftScale(options.Get<float>(kMovesLeftScaleId.GetId())) {}
+      kMovesLeftScale(options.Get<float>(kMovesLeftScaleId.GetId())),
+      kUseMovesLeft(options.Get<bool>(kUseMovesLeftId.GetId())) {}
 
 }  // namespace lczero

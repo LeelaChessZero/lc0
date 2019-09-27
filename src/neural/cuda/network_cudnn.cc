@@ -194,6 +194,10 @@ class CudnnNetworkComputation : public NetworkComputation {
     return 0.0f;
   }
 
+  bool MovesLeftSupported() const {
+    return moves_left_;
+  }
+
  private:
   // Memory holding inputs, outputs.
   std::unique_ptr<InputsOutputs> inputs_outputs_;
@@ -733,6 +737,10 @@ class CudnnNetwork : public Network {
     // from a different thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
     return std::make_unique<CudnnNetworkComputation<DataType>>(this, wdl_, moves_left_);
+  }
+
+  bool MovesLeftSupported() const override {
+    return moves_left_;
   }
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {

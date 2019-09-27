@@ -351,6 +351,8 @@ class OpenCLNetwork : public Network {
     return std::make_unique<OpenCLComputation>(opencl_net_, weights_, wdl_);
   }
 
+  bool MovesLeftSupported() const override {return false;}
+
  private:
   static constexpr auto kHardMaxBatchSize = 32;
   static constexpr auto kPolicyUsedPlanes = 73;
