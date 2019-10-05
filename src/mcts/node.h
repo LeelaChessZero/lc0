@@ -87,6 +87,11 @@ class Edge {
   float GetP() const;
   void SetP(float val);
 
+  float GetRbetamcts() const { return r_betamcts_; } /* betamcts::relevance is edge property */
+  void SetRbetamcts(float val) {
+    assert(0.0f < val);
+    r_betamcts_ = val;
+  }
   // Debug information about the edge.
   std::string DebugString() const;
 
@@ -101,6 +106,8 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
+
+  float r_betamcts_ = 1.0f;
 
   friend class EdgeList;
 };
@@ -148,6 +155,7 @@ class Node {
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
+  float GetNbetamcts() const { return n_betamcts_; } /* betamcts::return effective N */
   uint32_t GetNInFlight() const { return n_in_flight_; }
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
   // Returns n = n_if_flight.
@@ -155,7 +163,11 @@ class Node {
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetQ() const { return q_; }
+  float GetQbetamcts() const { return q_betamcts_; } /* betamcts::return q_betamcts */
   float GetD() const { return d_; }
+
+  // betamcts::update relevances of children
+  void CalculateRelevancebetamcts();
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -270,6 +282,11 @@ class Node {
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
   float q_ = 0.0f;
+  // store original q
+  float q_orig_ = 0.0f;
+  // betamcts needs own Q and N
+  float q_betamcts_ = 0.0f;
+  float n_betamcts_ = 0.0f;
   // Averaged draw probability. Works similarly to Q, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -313,7 +330,8 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+//static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+static_assert(sizeof(Node) == 88, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -343,11 +361,18 @@ class EdgeAndNode {
                (logit_q ? FastLogit(node_->GetQ()) : node_->GetQ())
                : default_q;
   }
+  float GetQbetamcts(float default_q, bool logit_q = false) const {
+    return (node_ && node_->GetN() > 0)
+               ?
+               (logit_q ? FastLogit(node_->GetQbetamcts()) : node_->GetQbetamcts())
+               : default_q;
+  }
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
+  float GetNbetamcts() const { return node_ ? node_->GetNbetamcts() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
 
@@ -359,6 +384,7 @@ class EdgeAndNode {
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
+  float GetRbetamcts() const { return edge_->GetRbetamcts(); }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).

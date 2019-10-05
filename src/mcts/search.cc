@@ -272,6 +272,15 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << edge.GetQ(fpu) + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))
         << ") ";
 
+    oss << "(Qbeta: " << std::setw(8) << std::setprecision(5) << edge.GetQbetamcts(fpu)
+        << ") ";
+
+    oss << "(Nbeta: " << std::setw(8) << std::setprecision(5) << edge.GetNbetamcts()
+        << ") ";
+
+    oss << "(Rbeta: " << std::setw(8) << std::setprecision(5) << edge.GetRbetamcts()
+        << ") ";
+
     oss << "(V: ";
     optional<float> v;
     if (edge.IsTerminal()) {
@@ -1009,6 +1018,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       assert(collision_limit >= 1);
       second_best_edge.Reset();
     }
+
+    node->CalculateRelevancebetamcts(); // betamcts::calculate relevances
 
     if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite &&
         params_.GetSmartPruningFactor()) {

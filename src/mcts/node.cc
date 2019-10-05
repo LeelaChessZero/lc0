@@ -34,6 +34,7 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include "myasa109.h"
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
@@ -220,14 +221,44 @@ void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
     q_ = 0.0f;
+    q_betamcts_ = 0.0f;
     d_ = 1.0f;
   } else if (result == GameResult::WHITE_WON) {
     q_ = 1.0f;
+    q_betamcts_ = 1.0f;
     d_ = 0.0f;
   } else if (result == GameResult::BLACK_WON) {
     q_ = -1.0f;
+    q_betamcts_ = -1.0f;
     d_ = 0.0f;
   }
+  n_betamcts_ = 1000.0f; /* betamcts::terminal nodes get high n */
+}
+
+void Node::CalculateRelevancebetamcts() {
+  const float trust = 1.0f;
+  const float percentile = 0.3f;
+  const auto winrate = (1.0f - GetQbetamcts())/2.0f;
+  const auto visits = GetNbetamcts();
+  auto alpha = 1.0f + winrate * visits * trust;
+  auto beta = 1.0f + (1.0f - winrate) * visits * trust;
+  auto beta_log = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
+  int ifault;
+  const auto eval_cutoff = xinbta(alpha, beta, beta_log, percentile, &ifault);
+
+  for (const auto& child : Edges()) {
+      // betamcts::child Q values are flipped
+      if (child.GetN() == 0) {continue;}
+      const auto winrate_child = (1.0f + child.node()->GetQbetamcts())/2.0f;
+      const auto visits_child = child.GetNbetamcts();
+      alpha = 1.0f + winrate_child * visits_child * trust;
+      beta = 1.0f + (1.0f - winrate_child) * visits_child * trust;
+      beta_log = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
+      int ifault = 0;
+      auto child_relevance = (1.0f - betain(eval_cutoff, alpha, beta, beta_log, &ifault)) / (1.0f - percentile);
+      child.edge()->SetRbetamcts(std::max(0.03,std::min(1.2,child_relevance)));
+    }
+
 }
 
 void Node::MakeNotTerminal() {
@@ -235,7 +266,7 @@ void Node::MakeNotTerminal() {
   n_ = 0;
 
   // If we have edges, we've been extended (1 visit), so include children too.
-  if (edges_) {
+  if (edges_) { /* TODO betamcts::update q_betamcts_ here ? */
     n_++;
     for (const auto& child : Edges()) {
       const auto n = child.GetN();
@@ -265,6 +296,28 @@ void Node::CancelScoreUpdate(int multivisit) {
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
+
+  if (edges_) { /* betamcts::update q_betamcts_ here */
+    float q_temp = q_orig_;
+    float n_temp = 1.0f;
+    for (const auto& child : Edges()) {
+      const auto n = child.GetNbetamcts();
+      const auto r = child.edge()->GetRbetamcts();
+      if (n > 0) {
+        n_temp += r * n;
+        // Flip Q for opponent.
+        q_temp += -child.node()->GetQ() * r * n;
+      }
+    }
+    if (n_temp > 0) {
+        q_betamcts_ = q_temp / n_temp;
+        n_betamcts_ = n_temp; }
+    else {
+        q_betamcts_ = q_;
+        n_betamcts_ = multivisit;
+    }
+  }
+
   // Recompute Q.
   q_ += multivisit * (v - q_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
@@ -272,6 +325,7 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
+    q_orig_ = v;
   }
   // Increment N.
   n_ += multivisit;
