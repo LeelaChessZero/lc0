@@ -278,7 +278,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, params_.GetBetamctsLevel()>=2) + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))
+        << edge.GetQ(fpu, params_.GetBetamctsLevel()>=2, params_.GetLogitQ())
+            + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))
         << ") ";
 
     oss << "(Qbeta: " << std::setw(8) << std::setprecision(5) << edge.GetQBetamcts(fpu)
@@ -948,6 +949,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
+
+    // betamcts::calculate relevances
+    node->CalculateRelevancebetamcts(params_.GetBetamctsTrust(),
+                                     params_.GetBetamctsPercentile());
+
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (node->IsTerminal() || !node->HasChildren()) {
       return NodeToProcess::Visit(node, depth);
@@ -1027,10 +1033,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       assert(collision_limit >= 1);
       second_best_edge.Reset();
     }
-
-    // betamcts::calculate relevances
-    node->CalculateRelevancebetamcts(params_.GetBetamctsTrust(),
-                                     params_.GetBetamctsPercentile());
 
     if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite &&
         params_.GetSmartPruningFactor()) {

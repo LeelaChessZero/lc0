@@ -233,7 +233,7 @@ void Node::MakeTerminal(GameResult result) {
     d_ = 0.0f;
   }
   n_betamcts_ = 1000.0f; /* betamcts::terminal nodes get high n */
-  GetOwnEdge()->SetP(1.0);
+  GetOwnEdge()->SetP(0.01);
 }
 
 void Node::CalculateRelevancebetamcts(const float trust, const float percentile) {
