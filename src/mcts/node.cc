@@ -256,8 +256,17 @@ void Node::CalculateRelevancebetamcts(const float trust, const float percentile)
       int ifault = 0;
       auto child_relevance = std::min(1.1,(1.0f - betain(eval_cutoff, alpha, beta,
                                           beta_log, &ifault)) / (1.0f - percentile));
-      if (!child.IsTerminal()) { child_relevance = std::max(0.03,child_relevance); }
-      child.edge()->SetRbetamcts(child_relevance);
+      if (!child.IsTerminal())
+      {
+        child_relevance = std::max(0.03,child_relevance);
+        child.edge()->SetRbetamcts(child_relevance);
+      } else if (trust > 0 && percentile > 0) {
+        /* if one of the factors is 0, relevance is always 1
+        which doesn't work well with the terminal logic */
+        child.edge()->SetRbetamcts(child_relevance);
+      } else {
+        child.edge()->SetRbetamcts(0.01); //standard relevance for terminal nodes
+      }
     }
 
 }
@@ -298,7 +307,7 @@ void Node::CancelScoreUpdate(int multivisit) {
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   if (IsTerminal()) {
-    n_betamcts_ += multivisit * 10;
+    n_betamcts_ += multivisit * 100;
   } else {
     if (edges_) { /* betamcts::update q_betamcts_ here */
         float q_temp = q_orig_;
