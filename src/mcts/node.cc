@@ -297,22 +297,25 @@ void Node::CancelScoreUpdate(int multivisit) {
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
-
-  if (edges_) { /* betamcts::update q_betamcts_ here */
-    float q_temp = q_orig_;
-    float n_temp = 1.0f;
-    for (const auto& child : Edges()) {
-      const auto n = child.GetNBetamcts();
-      const auto r = child.edge()->GetRBetamcts();
-      if (n > 0) {
-        n_temp += r * n;
-        // Flip Q for opponent.
-        q_temp += -child.node()->GetQBetamcts() * r * n;
+  if (IsTerminal()) {
+    n_betamcts_ += multivisit * 10;
+  } else {
+    if (edges_) { /* betamcts::update q_betamcts_ here */
+        float q_temp = q_orig_;
+        float n_temp = 1.0f;
+        for (const auto& child : Edges()) {
+          const auto n = child.GetNBetamcts();
+          const auto r = child.edge()->GetRBetamcts();
+          if (n > 0) {
+            n_temp += r * n;
+            // Flip Q for opponent.
+            q_temp += -child.node()->GetQBetamcts() * r * n;
+          }
+        }
+        if (n_temp > 0) {
+            q_betamcts_ = q_temp / n_temp;
+            n_betamcts_ = n_temp; }
       }
-    }
-    if (n_temp > 0) {
-        q_betamcts_ = q_temp / n_temp;
-        n_betamcts_ = n_temp; }
   }
 
   // Recompute Q.
