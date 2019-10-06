@@ -53,6 +53,18 @@ const OptionId SearchParams::kLogitQId{
     "logit-q", "LogitQ",
     "Apply logit to Q when determining Q+U best child. This makes the U term "
     "less dominant when Q is near -1 or +1."};
+const OptionId SearchParams::kBetamctsLevelId{
+    "betamcts-level", "BetamctsLevel",
+    "Level of betamcts use in search. 0 only displays values in --verbose-move-stats, "
+    "1 reports values in UCI, 2 uses Q in search, 3 uses effective N in search"};
+const OptionId SearchParams::kBetamctsTrustId{
+    "betamcts-trust", "BetamctsTrust",
+    "Trust factor for betamcts Q calculation. 0.0 will result in plain MCTS "
+    "behaviour, high values in minimax."};
+const OptionId SearchParams::kBetamctsPercentileId{
+    "betamcts-percentile", "BetamctsPercentile",
+    "Percentile for betamcts Q calculation. 0.0 will result in plain MCTS "
+    "behaviour. For maximal minimax similarity use 0.5"};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -210,6 +222,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
+  options->Add<IntOption>(kBetamctsLevelId, 0, 3) = 2;
+  options->Add<FloatOption>(kBetamctsTrustId, 0.0f, 1000.0f) = 0.1f;
+  options->Add<FloatOption>(kBetamctsPercentileId, 0.0f, 0.5f) = 0.05f;
   options->Add<BoolOption>(kNewUEnabledId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
@@ -257,6 +272,9 @@ void SearchParams::Populate(OptionsParser* options) {
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kLogitQ(options.Get<bool>(kLogitQId.GetId())),
+      kBetamctsLevel(options.Get<int>(kBetamctsLevelId.GetId())),
+      kBetamctsTrust(options.Get<float>(kBetamctsTrustId.GetId())),
+      kBetamctsPercentile(options.Get<float>(kBetamctsPercentileId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),

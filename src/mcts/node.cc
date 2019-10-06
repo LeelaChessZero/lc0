@@ -233,13 +233,12 @@ void Node::MakeTerminal(GameResult result) {
     d_ = 0.0f;
   }
   n_betamcts_ = 1000.0f; /* betamcts::terminal nodes get high n */
+  GetOwnEdge()->SetP(1.0);
 }
 
-void Node::CalculateRelevancebetamcts() {
-  const float trust = 1.0f;
-  const float percentile = 0.3f;
-  const auto winrate = (1.0f - GetQbetamcts())/2.0f;
-  const auto visits = GetNbetamcts();
+void Node::CalculateRelevancebetamcts(const float trust, const float percentile) {
+  const auto winrate = (1.0f - GetQBetamcts())/2.0f;
+  const auto visits = GetNBetamcts();
   auto alpha = 1.0f + winrate * visits * trust;
   auto beta = 1.0f + (1.0f - winrate) * visits * trust;
   auto beta_log = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
@@ -249,14 +248,16 @@ void Node::CalculateRelevancebetamcts() {
   for (const auto& child : Edges()) {
       // betamcts::child Q values are flipped
       if (child.GetN() == 0) {continue;}
-      const auto winrate_child = (1.0f + child.node()->GetQbetamcts())/2.0f;
-      const auto visits_child = child.GetNbetamcts();
+      const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
+      const auto visits_child = child.GetNBetamcts();
       alpha = 1.0f + winrate_child * visits_child * trust;
       beta = 1.0f + (1.0f - winrate_child) * visits_child * trust;
       beta_log = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
       int ifault = 0;
-      auto child_relevance = (1.0f - betain(eval_cutoff, alpha, beta, beta_log, &ifault)) / (1.0f - percentile);
-      child.edge()->SetRbetamcts(std::max(0.03,std::min(1.2,child_relevance)));
+      auto child_relevance = std::min(1.1,(1.0f - betain(eval_cutoff, alpha, beta,
+                                          beta_log, &ifault)) / (1.0f - percentile));
+      if (!child.IsTerminal()) { child_relevance = std::max(0.03,child_relevance); }
+      child.edge()->SetRbetamcts(child_relevance);
     }
 
 }
@@ -301,21 +302,17 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
     float q_temp = q_orig_;
     float n_temp = 1.0f;
     for (const auto& child : Edges()) {
-      const auto n = child.GetNbetamcts();
-      const auto r = child.edge()->GetRbetamcts();
+      const auto n = child.GetNBetamcts();
+      const auto r = child.edge()->GetRBetamcts();
       if (n > 0) {
         n_temp += r * n;
         // Flip Q for opponent.
-        q_temp += -child.node()->GetQ() * r * n;
+        q_temp += -child.node()->GetQBetamcts() * r * n;
       }
     }
     if (n_temp > 0) {
         q_betamcts_ = q_temp / n_temp;
         n_betamcts_ = n_temp; }
-    else {
-        q_betamcts_ = q_;
-        n_betamcts_ = multivisit;
-    }
   }
 
   // Recompute Q.
@@ -326,6 +323,8 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
     q_orig_ = v;
+    q_betamcts_ = v;
+    n_betamcts_ = multivisit;
   }
   // Increment N.
   n_ += multivisit;

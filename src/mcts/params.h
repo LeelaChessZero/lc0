@@ -49,6 +49,9 @@ class SearchParams {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   bool GetLogitQ() const { return kLogitQ; }
+  int GetBetamctsLevel() const { return kBetamctsLevel; }
+  float GetBetamctsTrust() const { return kBetamctsTrust; }
+  float GetBetamctsPercentile() const { return kBetamctsPercentile; }
   bool GetNewUEnabled() const { return kNewUEnabled; }
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
@@ -106,6 +109,9 @@ class SearchParams {
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kLogitQId;
+  static const OptionId kBetamctsLevelId;
+  static const OptionId kBetamctsTrustId;
+  static const OptionId kBetamctsPercentileId;
   static const OptionId kNewUEnabledId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
@@ -148,6 +154,9 @@ class SearchParams {
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimiations.
   const bool kLogitQ;
+  const int kBetamctsLevel;
+  const float kBetamctsTrust;
+  const float kBetamctsPercentile;
   const bool kNewUEnabled;
   const float kCpuct;
   const float kCpuctBase;
