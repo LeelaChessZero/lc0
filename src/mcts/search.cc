@@ -267,7 +267,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
         << "%) ";
 
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
+    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu,
+                           params_.GetBetamctsLevel()>=1)
         << ") ";
 
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
@@ -282,7 +283,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
             + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))
         << ") ";
 
-    oss << "(Qbeta: " << std::setw(8) << std::setprecision(5) << edge.GetQBetamcts(fpu)
+    oss << "(Qraw: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu, false)
         << ") ";
 
     oss << "(Nbeta: " << std::setw(8) << std::setprecision(5) << edge.GetNBetamcts()
@@ -598,7 +599,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+    edges.emplace_back( (params_.GetBetamctsLevel()>=3 ?
+                 (int)(edge.GetNBetamcts()*edge.GetRBetamcts()) : edge.GetN()),
+                        edge.GetQ(0,params_.GetBetamctsLevel()>=2), edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
@@ -973,11 +976,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    const float cpuct = ComputeCpuct(params_, node->GetN());
+    const float cpuct = ComputeCpuct(params_, (params_.GetBetamctsLevel() >= 3
+                               ? (int)node->GetNBetamcts() : node->GetN()));
     const float puct_mult =
-        cpuct * (params_.GetNewUEnabled() ?
-            std::max(node->GetChildrenVisits(), 1u) :
-            std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
+        cpuct * ( params_.GetNewUEnabled() ?
+            std::max((params_.GetBetamctsLevel() >= 3 ?
+                (int)node->GetNBetamcts() : node->GetChildrenVisits()), 1u) :
+            std::sqrt(std::max((params_.GetBetamctsLevel() >= 3 ?
+                (int)node->GetNBetamcts() : node->GetChildrenVisits()), 1u)) );
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
@@ -1020,9 +1026,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (second_best_edge) {
       int estimated_visits_to_change_best = params_.GetNewUEnabled() ?
           best_edge.GetVisitsToReachNewU(second_best, puct_mult, fpu,
-                              (params_.GetBetamctsLevel()>=2), params_.GetLogitQ()) :
+                              params_.GetBetamctsLevel(), params_.GetLogitQ()) :
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu,
-                              (params_.GetBetamctsLevel()>=2), params_.GetLogitQ()) ;
+                              params_.GetBetamctsLevel(), params_.GetLogitQ()) ;
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
