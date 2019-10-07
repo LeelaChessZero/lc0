@@ -232,7 +232,7 @@ void Node::MakeTerminal(GameResult result) {
     q_betamcts_ = -1.0f;
     d_ = 0.0f;
   }
-  n_betamcts_ = 1000.0f; /* betamcts::terminal nodes get high n */
+  n_betamcts_ = 100.0f; /* betamcts::terminal nodes get high n */
   GetOwnEdge()->SetP(0.01);
 }
 
@@ -258,7 +258,8 @@ void Node::CalculateRelevancebetamcts(const float trust, const float percentile)
                                           beta_log, &ifault)) / (1.0f - percentile));
       if (!child.IsTerminal())
       {
-        child_relevance = std::max(0.03,child_relevance);
+        // child_relevance = std::max(0.03,child_relevance);
+        // minimum relevance deactivated, issues with terminal nodes
         child.edge()->SetRbetamcts(child_relevance);
       } else if (trust > 0 && percentile > 0) {
         /* if one of the factors is 0, relevance is always 1
@@ -311,6 +312,7 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   } else {
     if (edges_) { /* betamcts::update q_betamcts_ here */
         float q_temp = q_orig_;
+        // float q_temp = q_betamcts_; // evals of expanded nodes not kept
         float n_temp = 1.0f;
         for (const auto& child : Edges()) {
           const auto n = child.GetNBetamcts();

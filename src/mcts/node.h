@@ -89,7 +89,7 @@ class Edge {
 
   float GetRBetamcts() const { return r_betamcts_; } /* betamcts::relevance is edge property */
   void SetRbetamcts(float val) {
-    assert(0.0f < val); // theoretically, relevance=0.0 should never happen?
+    assert(0.0f <= val); // theoretically, relevance=0.0 should never happen?
     r_betamcts_ = val;
   }
   // Debug information about the edge.
@@ -160,6 +160,7 @@ class Node {
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
+  float GetNStartedBetamcts() const { return n_betamcts_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetQ(bool betamcts_q = false) const { return (betamcts_q ? q_betamcts_ : q_); }
@@ -380,6 +381,7 @@ class EdgeAndNode {
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
   float GetNBetamcts() const { return node_ ? node_->GetNBetamcts() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
+  float GetNStartedBetamcts() const { return node_ ? node_->GetNStartedBetamcts() : 0; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
 
   // Whether the node is known to be terminal.
@@ -394,20 +396,20 @@ class EdgeAndNode {
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+  float GetU(float numerator, bool betamcts_q = false) const {
+    return numerator * GetP() / (1 + (betamcts_q ? GetNStartedBetamcts() : GetNStarted()));
   }
 
-  float GetNewU(float numerator) const {
-    const float x = 1 + GetNStarted();
+  float GetNewU(float numerator, bool betamcts_q = false) const {
+    const float x = 1 + (betamcts_q ? GetNStartedBetamcts() : GetNStarted());
     return numerator * GetP() * FastInvSqrt(x) / x;
   }
 
   int GetVisitsToReachU(float target_score, float numerator, float default_q,
-                        bool betamcts_q, bool logit_q) const {
-    const auto q = GetQ(default_q, betamcts_q, logit_q);
+                        int betamcts_level, bool logit_q) const {
+    const auto q = GetQ(default_q, betamcts_level >= 2, logit_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
-    const auto n1 = GetNStarted() + 1;
+    const auto n1 = (betamcts_level >= 3 ? (int)GetNStartedBetamcts() : GetNStarted()) + 1;
     return std::max(
         1.0f,
         std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
@@ -415,10 +417,10 @@ class EdgeAndNode {
   }
 
   int GetVisitsToReachNewU(float target_score, float numerator,
-                           float default_q, bool betamcts_q, bool logit_q) const {
-    const auto q = GetQ(default_q, betamcts_q, logit_q);
+                           float default_q, int betamcts_level, bool logit_q) const {
+    const auto q = GetQ(default_q, betamcts_level >= 2, logit_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
-    const auto n1 = GetNStarted() + 1;
+    const auto n1 = (betamcts_level >= 3 ? (int)GetNStartedBetamcts() : GetNStarted()) + 1;
     const float inner = std::pow((GetP() * numerator) / (target_score - q), 2. / 3.);
     return std::max(
         1.0f,
