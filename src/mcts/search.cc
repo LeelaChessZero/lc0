@@ -192,8 +192,8 @@ int64_t Search::GetTimeToDeadline() const {
 }
 
 namespace {
-inline float GetFpu(const SearchParams& params, Node* node,
-                    bool is_root_node, bool logit_q = false) {
+inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
+  const auto logit_q = params.GetLogitQ();
   const auto value = params.GetFpuValue(is_root_node);
   const auto scale = params.GetOneMinusEps();
   const auto Q = logit_q ? FastLogit(scale * node->GetQ()) : node->GetQ();
@@ -947,7 +947,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     float second_best = std::numeric_limits<float>::lowest();
     int possible_moves = 0;
     const bool logit_q = params_.GetLogitQ();
-    const float fpu = GetFpu(params_, node, is_root_node, logit_q);
+    const float fpu = GetFpu(params_, node, is_root_node);
     const float scale = params_.GetOneMinusEps();
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -1168,8 +1168,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
-  const float fpu = GetFpu(params_, node,
-                           node == search_->root_node_, logit_q);
+  const float fpu = GetFpu(params_, node, node == search_->root_node_);
   const float scale = params_.GetOneMinusEps();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
