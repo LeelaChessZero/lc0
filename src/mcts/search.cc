@@ -599,8 +599,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back( (params_.GetBetamctsLevel()>=3 ?
-                 (int)(edge.GetNBetamcts()*edge.GetRBetamcts()) : edge.GetN()),
+    edges.emplace_back( (params_.GetBetamctsLevel()>=2 ?
+                 (int)(edge.GetNBetamcts()*(0.01+edge.GetRBetamcts())) : edge.GetN()),
                         edge.GetQ(0,params_.GetBetamctsLevel()>=2), edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
