@@ -237,7 +237,7 @@ void Node::MakeTerminal(GameResult result) {
   }
 }
 
-void Node::CalculateRelevancebetamcts(const float trust, const float percentile) {
+void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
   const auto winrate = (1.0f - GetQBetamcts())/2.0f;
   const auto visits = GetNBetamcts();
   auto alpha = 1.0f + winrate * visits * trust;

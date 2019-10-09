@@ -168,7 +168,7 @@ class Node {
   float GetD() const { return d_; }
 
   // betamcts::update relevances of children
-  void CalculateRelevancebetamcts(const float trust, const float percentile);
+  void CalculateRelevanceBetamcts(const float trust, const float percentile);
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }

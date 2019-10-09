@@ -954,7 +954,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     // betamcts::calculate relevances
-    node->CalculateRelevancebetamcts(params_.GetBetamctsTrust(),
+    node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
                                      params_.GetBetamctsPercentile());
 
     // Either terminal or unexamined leaf node -- the end of this playout.
