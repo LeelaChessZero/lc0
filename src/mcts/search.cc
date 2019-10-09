@@ -955,7 +955,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // betamcts::calculate relevances
     node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
-                                     params_.GetBetamctsPercentile());
+                                        params_.GetBetamctsPercentile());
 
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (node->IsTerminal() || !node->HasChildren()) {
@@ -976,7 +976,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    const float cpuct = ComputeCpuct(params_, (params_.GetBetamctsLevel() >= 3
+    const float cpuct = ComputeCpuct(params_, (params_.GetBetamctsLevel() >= 4
                                ? (int)node->GetNBetamcts() : node->GetN()));
     const float puct_mult =
         cpuct * ( params_.GetNewUEnabled() ?
