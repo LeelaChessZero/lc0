@@ -223,6 +223,9 @@ void Node::MakeTerminal(GameResult result) {
     q_ = 0.0f;
     q_betamcts_ = 0.0f;
     d_ = 1.0f;
+  // special treatment for terminal nodes, only for draws now
+    n_betamcts_ = 100.0f; // betamcts::terminal nodes get high n
+    GetOwnEdge()->SetP(0.01);
   } else if (result == GameResult::WHITE_WON) {
     q_ = 1.0f;
     q_betamcts_ = 1.0f;
@@ -232,9 +235,6 @@ void Node::MakeTerminal(GameResult result) {
     q_betamcts_ = -1.0f;
     d_ = 0.0f;
   }
-  // special treatment for terminal nodes, temporarily deactivated
-  /* n_betamcts_ = 100.0f; // betamcts::terminal nodes get high n
-  GetOwnEdge()->SetP(0.01); */
 }
 
 void Node::CalculateRelevancebetamcts(const float trust, const float percentile) {
@@ -267,9 +267,12 @@ void Node::CalculateRelevancebetamcts(const float trust, const float percentile)
         which doesn't work well with the terminal logic */
         child.edge()->SetRbetamcts(child_relevance);
       } else {
-        child.edge()->SetRbetamcts(child_relevance);
-        /* terminal nodes special treatment temporarily deactivated
-        child.edge()->SetRbetamcts(0.01); //standard relevance for terminal nodes */
+        /* terminal nodes special treatment temporarily deactivated */
+        if (child.GetQBetamcts(0.0) == 0.0) {
+          child.edge()->SetRbetamcts(0.01); //standard relevance for terminal nodes
+        } else {
+          child.edge()->SetRbetamcts(child_relevance);
+        }
       }
     }
 
@@ -311,9 +314,12 @@ void Node::CancelScoreUpdate(int multivisit) {
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   if (IsTerminal()) {
-    /* terminal node special treatment temporarily deactivated
-    n_betamcts_ += multivisit * 100; */
-    n_betamcts_ += multivisit;
+    /* terminal node special treatment only for draws */
+    if (q_betamcts_ == 0.0) {
+      n_betamcts_ += multivisit * 100;
+    } else {
+      n_betamcts_ += multivisit;
+    }
   } else {
     if (edges_) { /* betamcts::update q_betamcts_ here */
         float q_temp = q_orig_;
