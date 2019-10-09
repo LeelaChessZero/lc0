@@ -232,8 +232,9 @@ void Node::MakeTerminal(GameResult result) {
     q_betamcts_ = -1.0f;
     d_ = 0.0f;
   }
-  n_betamcts_ = 100.0f; /* betamcts::terminal nodes get high n */
-  GetOwnEdge()->SetP(0.01);
+  // special treatment for terminal nodes, temporarily deactivated
+  /* n_betamcts_ = 100.0f; // betamcts::terminal nodes get high n
+  GetOwnEdge()->SetP(0.01); */
 }
 
 void Node::CalculateRelevancebetamcts(const float trust, const float percentile) {
@@ -266,7 +267,9 @@ void Node::CalculateRelevancebetamcts(const float trust, const float percentile)
         which doesn't work well with the terminal logic */
         child.edge()->SetRbetamcts(child_relevance);
       } else {
-        child.edge()->SetRbetamcts(0.01); //standard relevance for terminal nodes
+        child.edge()->SetRbetamcts(child_relevance);
+        /* terminal nodes special treatment temporarily deactivated
+        child.edge()->SetRbetamcts(0.01); //standard relevance for terminal nodes */
       }
     }
 
@@ -308,7 +311,9 @@ void Node::CancelScoreUpdate(int multivisit) {
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   if (IsTerminal()) {
-    n_betamcts_ += multivisit * 100;
+    /* terminal node special treatment temporarily deactivated
+    n_betamcts_ += multivisit * 100; */
+    n_betamcts_ += multivisit;
   } else {
     if (edges_) { /* betamcts::update q_betamcts_ here */
         float q_temp = q_orig_;
