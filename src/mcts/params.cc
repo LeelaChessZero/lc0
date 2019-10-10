@@ -65,6 +65,10 @@ const OptionId SearchParams::kBetamctsPercentileId{
     "betamcts-percentile", "BetamctsPercentile",
     "Percentile for betamcts Q calculation. 0.0 will result in plain MCTS "
     "behaviour. For maximal minimax similarity use 0.5"};
+const OptionId SearchParams::kBetamctsUpdateIntervalId{
+    "betamcts-update-interval", "BetamctsUpdateInterval",
+    "Update interval for betamcts R calculation. Relevance is only updated "
+    "every n visits to a node."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -225,6 +229,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kBetamctsLevelId, 0, 3) = 2;
   options->Add<FloatOption>(kBetamctsTrustId, 0.0f, 1000.0f) = 0.1f;
   options->Add<FloatOption>(kBetamctsPercentileId, 0.0f, 0.5f) = 0.05f;
+  options->Add<IntOption>(kBetamctsUpdateIntervalId, 1, 100) = 10;
   options->Add<BoolOption>(kNewUEnabledId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
@@ -275,6 +280,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kBetamctsLevel(options.Get<int>(kBetamctsLevelId.GetId())),
       kBetamctsTrust(options.Get<float>(kBetamctsTrustId.GetId())),
       kBetamctsPercentile(options.Get<float>(kBetamctsPercentileId.GetId())),
+      kBetamctsUpdateInterval(options.Get<int>(kBetamctsUpdateIntervalId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),

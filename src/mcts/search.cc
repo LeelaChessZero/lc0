@@ -953,9 +953,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
 
-    // betamcts::calculate relevances
-    node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
+    // betamcts::calculate relevances every X visits
+    if (node->GetNStarted() % params_.GetBetamctsUpdateInterval() == 0) {
+      node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
                                         params_.GetBetamctsPercentile());
+    }
 
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (node->IsTerminal() || !node->HasChildren()) {

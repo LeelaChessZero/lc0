@@ -52,6 +52,7 @@ class SearchParams {
   int GetBetamctsLevel() const { return kBetamctsLevel; }
   float GetBetamctsTrust() const { return kBetamctsTrust; }
   float GetBetamctsPercentile() const { return kBetamctsPercentile; }
+  int GetBetamctsUpdateInterval() const { return kBetamctsUpdateInterval; }
   bool GetNewUEnabled() const { return kNewUEnabled; }
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
@@ -112,6 +113,7 @@ class SearchParams {
   static const OptionId kBetamctsLevelId;
   static const OptionId kBetamctsTrustId;
   static const OptionId kBetamctsPercentileId;
+  static const OptionId kBetamctsUpdateIntervalId;
   static const OptionId kNewUEnabledId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
@@ -157,6 +159,7 @@ class SearchParams {
   const int kBetamctsLevel;
   const float kBetamctsTrust;
   const float kBetamctsPercentile;
+  const int kBetamctsUpdateInterval;
   const bool kNewUEnabled;
   const float kCpuct;
   const float kCpuctBase;
