@@ -89,8 +89,8 @@ class Edge {
 
   float GetRBetamcts() const { return r_betamcts_; } /* betamcts::relevance is edge property */
   void SetRbetamcts(float val) {
-    assert(0.0f <= val); // theoretically, relevance=0.0 should never happen?
-    r_betamcts_ = val;
+    // assert(0.0f <= val); // theoretically, relevance<0.0 should never happen
+    r_betamcts_ = std::max(0.0f,val);
   }
   // Debug information about the edge.
   std::string DebugString() const;
