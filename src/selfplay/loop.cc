@@ -193,6 +193,13 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             int steps = history.Last().GetNoCaptureNoPawnPly();
             bool no_reps = true;
             for (int i = 0; i < steps; i++) {
+              // If game started from non-zero 50 move rule, this could
+              // underflow. Only safe option is to assume there were repetitions
+              // before this point.
+              if (history.GetLength() - i - 1 < 0) {
+                no_reps = false;
+                break;
+              }
               if (history.GetPositionAt(history.GetLength() - i - 1)
                       .GetRepetitions() != 0) {
                 no_reps = false;
@@ -455,6 +462,13 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           int steps = history.Last().GetNoCaptureNoPawnPly();
           bool no_reps = true;
           for (int i = 0; i < steps; i++) {
+            // If game started from non-zero 50 move rule, this could
+            // underflow. Only safe option is to assume there were repetitions
+            // before this point.
+            if (history.GetLength() - i - 1 < 0) {
+              no_reps = false;
+              break;
+            }
             if (history.GetPositionAt(history.GetLength() - i - 1)
                     .GetRepetitions() != 0) {
               no_reps = false;
