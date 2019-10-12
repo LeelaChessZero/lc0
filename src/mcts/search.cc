@@ -514,6 +514,15 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
+void Search::ResetBestMove() {
+  SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
+  bool old_sent = bestmove_is_sent_;
+  bestmove_is_sent_ = false;
+  EnsureBestMoveKnown();
+  bestmove_is_sent_ = old_sent;
+}
+
 // Computes the best move, maybe with temperature (according to the settings).
 void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     REQUIRES(counters_mutex_) {
