@@ -232,8 +232,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   std::list<std::unique_ptr<SelfPlayGame>>::iterator game_iter;
   {
     Mutex::Lock lock(mutex_);
-    games_.emplace_front(
-        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
+    games_.emplace_front(std::make_unique<SelfPlayGame>(
+        options[0], options[1], kShareTree, MoveList()));
     game_iter = games_.begin();
   }
   auto& game = **game_iter;
