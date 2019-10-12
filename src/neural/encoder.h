@@ -32,7 +32,7 @@
 
 namespace lczero {
 
-enum class FillEmptyHistory {NO, FEN_ONLY, ALWAYS};
+enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
 
 // Encodes the last position in history for the neural network request.
 InputPlanes EncodePositionForNN(const PositionHistory& history,
@@ -43,4 +43,7 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
 // player, so will need flipping if it is to be applied to the prior position.
 Move DecodeMoveFromInput(const InputPlanes& planes);
 
+// Decodes the current position into a board, rule50 and gameply.
+void PopulateBoard(InputPlanes planes, ChessBoard* board, int* rule50,
+                   int* gameply);
 }  // namespace lczero

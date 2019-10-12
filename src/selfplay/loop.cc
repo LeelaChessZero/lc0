@@ -100,7 +100,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     int rule50ply;
     int gameply;
     ChessBoard board;
-    board.SetFromFen(ChessBoard::kStartposFen, &rule50ply, &gameply);
+    PopulateBoard(PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                  &gameply);
     history.Reset(board, rule50ply, gameply);
     int last_rescore = -1;
     orig_counts[fileContents[0].result + 1]++;
@@ -152,7 +153,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
     }
-    board.SetFromFen(ChessBoard::kStartposFen, &rule50ply, &gameply);
+    PopulateBoard(PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                  &gameply);
     history.Reset(board, rule50ply, gameply);
     for (int i = 0; i < moves.size(); i++) {
       history.Append(moves[i]);
@@ -242,7 +244,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       }
     }
     if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
-      board.SetFromFen(ChessBoard::kStartposFen, &rule50ply, &gameply);
+      PopulateBoard(PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                    &gameply);
       history.Reset(board, rule50ply, gameply);
       int move_index = 0;
       for (auto& chunk : fileContents) {
@@ -425,7 +428,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     }
     // Correct move_count using DTM. Since we don't actually have DTM, use DTZ
     // for 3 piece no-pawn positions only.
-    board.SetFromFen(ChessBoard::kStartposFen, &rule50ply, &gameply);
+    PopulateBoard(PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                  &gameply);
     history.Reset(board, rule50ply, gameply);
     for (int i = 0; i < moves.size(); i++) {
       history.Append(moves[i]);
@@ -767,7 +771,8 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
       << info.results[1][0];
   oss << " P1-B: +" << info.results[0][1] << " -" << info.results[2][1] << " ="
       << info.results[1][1];
-  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) / info.move_count_);
+  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) /
+                                  info.move_count_);
   oss << " nodes " + std::to_string(info.nodes_total_);
   oss << " moves " + std::to_string(info.move_count_);
   SendResponse(oss.str());

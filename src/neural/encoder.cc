@@ -37,6 +37,139 @@ const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 }  // namespace
 
+namespace {
+BoardSquare SingleSquare(BitBoard input) {
+  for (auto sq : input) {
+    return sq;
+  }
+  assert(false);
+  return BoardSquare();
+}
+}  // namespace
+
+void PopulateBoard(InputPlanes planes, ChessBoard* board, int* rule50,
+                   int* gameply) {
+  auto pawnsOurs = BitBoard(planes[0].mask);
+  auto knightsOurs = BitBoard(planes[1].mask);
+  auto bishopOurs = BitBoard(planes[2].mask);
+  auto rookOurs = BitBoard(planes[3].mask);
+  auto queenOurs = BitBoard(planes[4].mask);
+  auto kingOurs = BitBoard(planes[5].mask);
+  auto pawnsTheirs = BitBoard(planes[6].mask);
+  auto knightsTheirs = BitBoard(planes[7].mask);
+  auto bishopTheirs = BitBoard(planes[8].mask);
+  auto rookTheirs = BitBoard(planes[9].mask);
+  auto queenTheirs = BitBoard(planes[10].mask);
+  auto kingTheirs = BitBoard(planes[11].mask);
+  ChessBoard::Castlings castlings;
+  if (planes[kAuxPlaneBase + 0].mask != 0) {
+    castlings.set_we_can_000();
+  }
+  if (planes[kAuxPlaneBase + 1].mask != 0) {
+    castlings.set_we_can_00();
+  }
+  if (planes[kAuxPlaneBase + 2].mask != 0) {
+    castlings.set_they_can_000();
+  }
+  if (planes[kAuxPlaneBase + 3].mask != 0) {
+    castlings.set_they_can_00();
+  }
+  std::string fen;
+  if (planes[kAuxPlaneBase + 4].mask != 0) {
+    // Flip to white perspective rather than side to move perspective.
+    std::swap(pawnsOurs, pawnsTheirs);
+    std::swap(knightsOurs, knightsTheirs);
+    std::swap(bishopOurs, bishopTheirs);
+    std::swap(rookOurs, rookTheirs);
+    std::swap(queenOurs, queenTheirs);
+    std::swap(kingOurs, kingTheirs);
+    pawnsOurs.Mirror();
+    pawnsTheirs.Mirror();
+    knightsOurs.Mirror();
+    knightsTheirs.Mirror();
+    bishopOurs.Mirror();
+    bishopTheirs.Mirror();
+    rookOurs.Mirror();
+    rookTheirs.Mirror();
+    queenOurs.Mirror();
+    queenTheirs.Mirror();
+    kingOurs.Mirror();
+    kingTheirs.Mirror();
+    castlings.Mirror();
+  }
+  for (int row = 7; row >= 0; --row) {
+    int emptycounter = 0;
+    for (int col = 0; col < 8; ++col) {
+      char piece = '\0';
+      if (pawnsOurs.get(row, col)) {
+        piece = 'P';
+      } else if (pawnsTheirs.get(row, col)) {
+        piece = 'p';
+      } else if (knightsOurs.get(row, col)) {
+        piece = 'N';
+      } else if (knightsTheirs.get(row, col)) {
+        piece = 'n';
+      } else if (bishopOurs.get(row, col)) {
+        piece = 'B';
+      } else if (bishopTheirs.get(row, col)) {
+        piece = 'b';
+      } else if (rookOurs.get(row, col)) {
+        piece = 'R';
+      } else if (rookTheirs.get(row, col)) {
+        piece = 'r';
+      } else if (queenOurs.get(row, col)) {
+        piece = 'Q';
+      } else if (queenTheirs.get(row, col)) {
+        piece = 'q';
+      } else if (kingOurs.get(row, col)) {
+        piece = 'K';
+      } else if (kingTheirs.get(row, col)) {
+        piece = 'k';
+      }
+      if (emptycounter > 0 && piece) {
+        fen += std::to_string(emptycounter);
+        emptycounter = 0;
+      }
+      if (piece) {
+        fen += piece;
+      } else {
+        emptycounter++;
+      }
+    }
+    if (emptycounter > 0) fen += std::to_string(emptycounter);
+    if (row > 0) fen += "/";
+  }
+  fen += " ";
+  fen += (planes[kAuxPlaneBase + 4].mask != 0) ? "b" : "w";
+  fen += " ";
+  fen += castlings.as_string();
+  fen += " ";
+  auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
+  if (pawndiff.count() == 2) {
+    auto from =
+        SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
+    auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
+    if (from.col != to.col || std::abs(from.row - to.row) != 2) {
+      fen += "-";
+    } else {
+      // TODO: Ensure enpassant is legal rather than setting it blindly?
+      // Doesn't matter for rescoring use case as only legal moves will be
+      // performed afterwards.
+      fen +=
+          BoardSquare((planes[kAuxPlaneBase + 4].mask != 0) ? 2 : 5, to.col())
+              .as_string();
+    }
+  } else {
+    fen += "-";
+  }
+  fen += " ";
+  fen += std::to_string((int)planes[kAuxPlaneBase + 5].value);
+  // Reuse the 50 move rule as gameply since we don't know better.
+  fen += " ";
+  fen += std::to_string((int)planes[kAuxPlaneBase + 5].value);
+  board->SetFromFen(fen, rule50, gameply);
+}
+
 InputPlanes EncodePositionForNN(const PositionHistory& history,
                                 int history_planes,
                                 FillEmptyHistory fill_empty_history) {
@@ -107,23 +240,13 @@ InputPlanes EncodePositionForNN(const PositionHistory& history,
   return result;
 }
 
-namespace {
-BoardSquare SingleSquare(BitBoard input) { 
-  for (auto sq : input) {
-    return sq;
-  }
-  assert(false);
-  return BoardSquare();
-}
-}
-
 Move DecodeMoveFromInput(const InputPlanes& planes) {
   auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
   auto knightdiff = BitBoard(planes[7].mask ^ planes[kPlanesPerBoard + 7].mask);
   auto bishopdiff = BitBoard(planes[8].mask ^ planes[kPlanesPerBoard + 8].mask);
   auto rookdiff = BitBoard(planes[9].mask ^ planes[kPlanesPerBoard + 9].mask);
-  auto queendiff = 
-    BitBoard(planes[10].mask ^ planes[kPlanesPerBoard + 10].mask);
+  auto queendiff =
+      BitBoard(planes[10].mask ^ planes[kPlanesPerBoard + 10].mask);
   // Handle Promotion.
   if (pawndiff.count() == 1) {
     auto from = SingleSquare(pawndiff);
