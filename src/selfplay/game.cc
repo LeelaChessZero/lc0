@@ -45,6 +45,11 @@ const OptionId kResignWDLStyleId{
 const OptionId kResignEarliestMoveId{"resign-earliest-move",
                                      "ResignEarliestMove",
                                      "Earliest move that resign is allowed."};
+const OptionId kMinimumAllowedVistsId{
+    "minimum-allowed-visits", "MinimumAllowedVisits",
+    "Unless the selected move is the best move, temperature based selection "
+    "will be retried until visits of selected move is greater than this "
+    "threshold."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -52,6 +57,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kResignWDLStyleId) = false;
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
+  options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
@@ -160,7 +166,25 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     }
 
     // Add best move to the tree.
-    const Move move = search_->GetBestMove().first;
+    Move move;
+    while (true) {
+      move = search_->GetBestMove().first;
+      uint32_t max_n = 0;
+      uint32_t cur_n = 0;
+      for (auto edge : tree_[idx]->GetCurrentHead()->Edges()) {
+        if (edge.GetN() > max_n) {
+          max_n = edge.GetN();
+        }
+        if (edge.GetMove() == move) {
+          cur_n = edge.GetN();
+        }
+      }
+      if (cur_n == max_n || cur_n > options_[idx].uci_options->Get<int>(
+                                        kMinimumAllowedVistsId.GetId())) {
+        break;
+      }
+      search_->ResetBestMove();
+    }
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
