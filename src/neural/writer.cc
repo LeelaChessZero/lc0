@@ -51,7 +51,23 @@ InputPlanes PlanesFromTrainingData(const V4TrainingData& data) { InputPlanes res
     result.emplace_back();
     result.back().mask = ReverseBitsInBytes(data.planes[i]);
   }
-  // TODO: set up the special input planes.
+  result.emplace_back();
+  result.back().mask = data.castling_us_ooo != 0 ? ~0LL : 0LL;
+  result.emplace_back();
+  result.back().mask = data.castling_us_oo != 0 ? ~0LL : 0LL;
+  result.emplace_back();
+  result.back().mask = data.castling_them_ooo != 0 ? ~0LL : 0LL;
+  result.emplace_back();
+  result.back().mask = data.castling_them_oo != 0 ? ~0LL : 0LL;
+  result.emplace_back();
+  result.back().mask = data.side_to_move != 0 ? ~0LL : 0LL;
+  result.emplace_back();
+  result.back().Fill(data.rule50_count);
+  result.emplace_back();
+  // Empty plane.
+  result.emplace_back();
+  // All ones plane.
+  result.back().SetAll();
   return result;
 }
 

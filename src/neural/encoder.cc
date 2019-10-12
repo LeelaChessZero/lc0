@@ -145,7 +145,8 @@ void PopulateBoard(InputPlanes planes, ChessBoard* board, int* rule50,
   fen += castlings.as_string();
   fen += " ";
   auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
-  if (pawndiff.count() == 2) {
+  // If no pawns then 2 pawns, history isn't filled properly and we shouldn't try and infer enpassant.
+  if (pawndiff.count() == 2 && planes[kPlanesPerBoard + 6].mask != 0) {
     auto from =
         SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
     auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
