@@ -48,8 +48,8 @@ const OptionId kResignEarliestMoveId{"resign-earliest-move",
 const OptionId kMinimumAllowedVistsId{
     "minimum-allowed-visits", "MinimumAllowedVisits",
     "Unless the selected move is the best move, temperature based selection "
-    "will be retried until visits of selected move is greater than this "
-    "threshold."};
+    "will be retried until visits of selected move is greater than or equal to "
+    "this threshold."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -165,7 +165,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
     }
 
-    // Add best move to the tree.
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
@@ -179,7 +178,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           cur_n = edge.GetN();
         }
       }
-      if (cur_n == max_n || cur_n > options_[idx].uci_options->Get<int>(
+      // If 'best move' is less than allowed visits and not max visits,
+      // discard it and try again.
+      if (cur_n == max_n || cur_n >= options_[idx].uci_options->Get<int>(
                                         kMinimumAllowedVistsId.GetId())) {
         break;
       }
@@ -188,6 +189,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       options_[idx].discarded_callback(move_list_to_discard);
       search_->ResetBestMove();
     }
+    // Add best move to the tree.
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
