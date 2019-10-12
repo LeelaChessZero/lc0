@@ -244,6 +244,15 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     opt.discarded_callback = [this](const MoveList& moves) {
       Mutex::Lock lock(mutex_);
       discard_pile_.push_back(moves);
+      // 10k seems it should be enough to keep a good mix and avoid running out of ram.
+      if (discard_pile_.size() > 10000) {
+        // Swap a random element to end and pop it to avoid growing.
+        int idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
+        if (idx != discard_pile_.size() - 1) {
+          std::swap(discard_pile_[idx], discard_pile_.back());
+        }
+        discard_pile_.pop_back();
+      }
     };
   }
 
