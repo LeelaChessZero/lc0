@@ -175,7 +175,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
         }
-        if (edge.GetMove() == move) {
+        if (edge.GetMove(tree_[idx]->IsBlackToMove()) == move) {
           cur_n = edge.GetN();
         }
       }
