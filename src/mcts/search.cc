@@ -954,8 +954,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     // betamcts::calculate relevances every X visits
-    if ( ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0)
-        && !node->IsTerminal() ) {
+    if ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
       node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
                                         params_.GetBetamctsPercentile());
     }
