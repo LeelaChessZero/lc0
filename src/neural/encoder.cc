@@ -149,7 +149,7 @@ void PopulateBoard(InputPlanes planes, ChessBoard* board, int* rule50,
     auto from =
         SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
     auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
-    if (from.col != to.col || std::abs(from.row - to.row) != 2) {
+    if (from.col() != to.col() || std::abs(from.row() - to.row()) != 2) {
       fen += "-";
     } else {
       // TODO: Ensure enpassant is legal rather than setting it blindly?
