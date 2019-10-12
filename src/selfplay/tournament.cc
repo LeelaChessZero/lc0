@@ -242,6 +242,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
           }
         };
     opt.discarded_callback = [this](const MoveList& moves) {
+      // Only track discards if discard start chance is non-zero.
+      if (kDiscardedStartChance == 0.0f) return;
       Mutex::Lock lock(mutex_);
       discard_pile_.push_back(moves);
       // 10k seems it should be enough to keep a good mix and avoid running out
