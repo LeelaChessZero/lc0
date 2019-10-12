@@ -185,7 +185,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     player1_black = next_game_black_;
     next_game_black_ = !next_game_black_;
     if (discard_pile_.size() > 0 &&
-        Random ::Get().GetFloat(100.0f) < kDiscardedStartChance) {
+        Random::Get().GetFloat(100.0f) < kDiscardedStartChance) {
       int idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
       if (idx != discard_pile_.size() - 1) {
         std::swap(discard_pile_[idx], discard_pile_.back());
@@ -244,7 +244,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     opt.discarded_callback = [this](const MoveList& moves) {
       Mutex::Lock lock(mutex_);
       discard_pile_.push_back(moves);
-      // 10k seems it should be enough to keep a good mix and avoid running out of ram.
+      // 10k seems it should be enough to keep a good mix and avoid running out
+      // of ram.
       if (discard_pile_.size() > 10000) {
         // Swap a random element to end and pop it to avoid growing.
         int idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
