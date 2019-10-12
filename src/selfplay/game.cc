@@ -101,6 +101,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // Do search.
     search_->RunBlocking(blacks_move ? black_threads : white_threads);
+    move_count_++;
+    nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
     auto best_eval = search_->GetBestEval();
@@ -117,15 +119,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
     const int move_number = tree_[0]->GetPositionHistory().GetLength() / 2 + 1;
+    auto best_w = (best_eval.first + 1.0f - best_eval.second) / 2.0f;
+    auto best_d = best_eval.second;
+    auto best_l = best_w - best_eval.first;
+    max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
+    max_eval_[1] = std::max(max_eval_[1], best_d);
+    max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
     if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
                                             kResignEarliestMoveId.GetId())) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
           100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
-        auto best_w = (best_eval.first + 1.0f - best_eval.second) / 2.0f;
-        auto best_d = best_eval.second;
-        auto best_l = best_w - best_eval.first;
         auto threshold = 1.0f - resignpct;
         if (best_w > threshold) {
           game_result_ =
@@ -171,6 +176,17 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
 }
 
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
+  // TODO: This assumes both players have the same resign style.
+  // Supporting otherwise involves mixing the meaning of worst.
+  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+    if (game_result_ == GameResult::WHITE_WON) {
+      return std::max(max_eval_[1], max_eval_[2]);
+    } else if (game_result_ == GameResult::BLACK_WON) {
+      return std::max(max_eval_[1], max_eval_[0]);
+    } else {
+      return std::max(max_eval_[2], max_eval_[0]);
+    }
+  }
   if (game_result_ == GameResult::WHITE_WON) return min_eval_[0];
   if (game_result_ == GameResult::BLACK_WON) return min_eval_[1];
   return std::min(min_eval_[0], min_eval_[1]);

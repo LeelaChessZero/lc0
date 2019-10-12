@@ -78,9 +78,16 @@ class RandomNetworkComputation : public NetworkComputation {
 
   float GetPVal(int sample, int move_id) const override {
     if (uniform_mode_) return 1.0f;
+
+    // Note that this function returns the policy value *before* softmax.
+    // We choose a uniform distribution over [0, a], implying that the
+    // proportion between the smallest and largest policy value *after* softmax
+    // exponentiation (but before normalization) is equal to S = exp(-a).
+    // Choosing a = 3.0 leads to S = 0.05.
+    const float a = 3.0f;
     return (HashCat({inputs_[sample], static_cast<unsigned long>(move_id)}) %
-            10000) /
-           10000.0;
+            10000) *
+           (a / 10000.0f);
   }
 
  private:
@@ -97,7 +104,8 @@ class RandomNetwork : public Network {
         seed_(options.GetOrDefault<int>("seed", 0)),
         uniform_mode_(options.GetOrDefault<bool>("uniform", false)) {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_, uniform_mode_);
+    return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_,
+                                                      uniform_mode_);
   }
 
  private:

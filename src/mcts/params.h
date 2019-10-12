@@ -48,6 +48,7 @@ class SearchParams {
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
+  bool GetLogitQ() const { return kLogitQ; }
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
@@ -70,7 +71,8 @@ class SearchParams {
     return options_.Get<float>(kTemperatureWinpctCutoffId.GetId());
   }
 
-  bool GetNoise() const { return kNoise; }
+  float GetNoiseEpsilon() const { return kNoiseEpsilon; }
+  float GetNoiseAlpha() const { return kNoiseAlpha; }
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
@@ -85,6 +87,7 @@ class SearchParams {
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
+  bool GetStickyEndgames() const { return kStickyEndgames; }
   bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
   std::string GetScoreType() const {
@@ -101,6 +104,7 @@ class SearchParams {
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
+  static const OptionId kLogitQId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
@@ -111,6 +115,8 @@ class SearchParams {
   static const OptionId kTemperatureWinpctCutoffId;
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
+  static const OptionId kNoiseEpsilonId;
+  static const OptionId kNoiseAlphaId;
   static const OptionId kVerboseStatsId;
   static const OptionId kLogLiveStatsId;
   static const OptionId kSmartPruningFactorId;
@@ -123,6 +129,7 @@ class SearchParams {
   static const OptionId kMaxCollisionEventsId;
   static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
+  static const OptionId kStickyEndgamesId;
   static const OptionId kSyzygyFastPlayId;
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
@@ -138,10 +145,12 @@ class SearchParams {
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimiations.
+  const bool kLogitQ;
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
-  const bool kNoise;
+  const float kNoiseEpsilon;
+  const float kNoiseAlpha;
   const float kSmartPruningFactor;
   const bool kFpuAbsolute;
   const float kFpuValue;
@@ -152,6 +161,7 @@ class SearchParams {
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
+  const bool kStickyEndgames;
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;

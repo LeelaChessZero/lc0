@@ -66,20 +66,48 @@ endif
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
+# Handle submodules.
+git = find_program('git', required: false)
 if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
-  if run_command('git', 'status').returncode() == 0
-    message('updating git submodule libs/lczero-common')
-    run_command('git', 'submodule', 'update', '--init', '--recursive')
+  if git.found()
+    if run_command(git, 'status').returncode() == 0
+      message('updating git submodule libs/lczero-common')
+      run_command(git, 'submodule', 'update', '--init', '--recursive')
+    else
+      message('cloning lczero-common.git into libs/lczero-common')
+      run_command(git, 'clone', '--depth=1',
+                  'https://github.com/LeelaChessZero/lczero-common.git',
+                  'libs/lczero-common/')
+    endif
   else
-    message('cloning lczero-common.git into libs/lczero-common')
-    run_command('git', 'clone', '--depth=1',
-                'https://github.com/LeelaChessZero/lczero-common.git',
-                'libs/lczero-common/')
+    error('Please install git to automatically fetch submodules or download the archives manually from GitHub.')
   endif
 endif
 
 files += gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+  
+# Extract git short revision.
+short_rev = 'unknown'
+if git.found()
+  r = run_command(git, 'rev-parse', '--short', 'HEAD')
+  if r.returncode() == 0
+    # Now let's check if the working directory is clean.
+    if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
+      short_rev = r.stdout().strip()
+    else
+      short_rev = 'dirty'
+      warning('Cannot extract valid git short revision from dirty working directory.')
+    endif
+  else
+    warning('Failed to parse short revision. Use git clone instead of downloading the archive from GitHub.')
+  endif
+endif
+
+# Construct build identifier.
+build_identifier = 'git.' + short_rev
+add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
+message('Using build identifier "' + build_identifier + '".')
 
 #############################################################################
 ## Main files
@@ -215,14 +243,18 @@ if get_option('build_backends')
   endif
 
   if get_option('blas')
-    if get_option('mkl') and mkl_lib.found()
+    if get_option('eigen')
+      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
+      has_blas = true
+      deps += subproject('eigen').get_variable('eigen_dep')
+
+    elif get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
       has_blas = true
 
     elif get_option('accelerate') and accelerate_lib.found()
-      includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
       deps += [ accelerate_lib ]
       has_blas = true
 
@@ -326,7 +358,7 @@ if get_option('build_backends')
       deps += [ opencl_framework ]
       has_opencl = true
 
-  elif opencl_lib.found()
+  elif opencl_lib.found() and cc.has_header('CL/opencl.h', args: '-I' + get_option('opencl_include'))
 
       deps += [ opencl_lib ]
       has_opencl = true
@@ -347,7 +379,9 @@ if get_option('build_backends')
     'src/neural/shared/winograd_filter.cc',
     ]
 
-    includes += include_directories(get_option('opencl_include'))
+    if not opencl_framework.found()
+      includes += include_directories(get_option('opencl_include'))
+    endif
     files += opencl_files
     has_backends = true
 
@@ -393,7 +427,12 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      cuda_arguments += ['-Xcompiler', '-MD']
+      # meson bug fixed in v0.51
+      if meson.version().version_compare('<0.51') or get_option('default_library') != 'static'
+        cuda_arguments += ['-Xcompiler', '-MD']
+      else
+        cuda_arguments += ['-Xcompiler', '-MT']
+      endif
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
@@ -462,9 +501,9 @@ executable('rescorer', 'src/main.cc',
 
 
 ### Tests
-gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'], required: false)
 
-if get_option('gtest') and gtest.found()
+if get_option('gtest')
+  gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
   lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
