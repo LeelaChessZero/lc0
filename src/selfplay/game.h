@@ -42,12 +42,15 @@ struct SelfPlayLimits : SearchLimits {
 };
 
 struct PlayerOptions {
+  using MoveListCallback = std::function<void(const MoveList&)>;
   // Network to use by the player.
   Network* network;
   // Callback when player moves.
   BestMoveInfo::Callback best_move_callback;
   // Callback when player outputs info.
   ThinkingInfo::Callback info_callback;
+  // Callback when player discards a selected move due to low visits.
+  MoveListCallback discarded_callback;
   // NNcache to use.
   NNCache* cache;
   // User options dictionary.

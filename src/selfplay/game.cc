@@ -183,6 +183,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                                         kMinimumAllowedVistsId.GetId())) {
         break;
       }
+      auto move_list_to_discard = GetMoves();
+      move_list_to_discard.push_back(move);
+      options_[idx].discarded_callback(move_list_to_discard);
       search_->ResetBestMove();
     }
     tree_[0]->MakeMove(move);
