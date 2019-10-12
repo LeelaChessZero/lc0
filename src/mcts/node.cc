@@ -240,8 +240,10 @@ void Node::MakeTerminal(GameResult result) {
 void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
   const auto winrate = (1.0f - GetQBetamcts())/2.0f;
   const auto visits = GetNBetamcts();
-  auto alpha = 1.0f + winrate * visits * trust;
-  auto beta = 1.0f + (1.0f - winrate) * visits * trust;
+  const auto visits_eff = std::min(1000000.0f,visits * trust);
+  // beteain() doesn't like to be called with values >2000000
+  auto alpha = 1.0f + winrate * visits_eff;
+  auto beta = 1.0f + (1.0f - winrate) * visits_eff;
   auto beta_log = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
   int ifault;
   const auto eval_cutoff = xinbta(alpha, beta, beta_log, percentile, &ifault);
@@ -251,8 +253,9 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float percentile)
       if (child.GetN() == 0) {continue;}
       const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
       const auto visits_child = child.GetNBetamcts();
-      alpha = 1.0f + winrate_child * visits_child * trust;
-      beta = 1.0f + (1.0f - winrate_child) * visits_child * trust;
+      const auto visits_child_eff = std::min(1000000.0f,visits * trust);
+      alpha = 1.0f + winrate_child * visits_child_eff;
+      beta = 1.0f + (1.0f - winrate_child) * visits_child_eff;
       beta_log = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
       int ifault = 0;
       auto child_relevance = std::min(1.1,(1.0f - betain(eval_cutoff, alpha, beta,

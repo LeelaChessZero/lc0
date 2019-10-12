@@ -954,7 +954,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     // betamcts::calculate relevances every X visits
-    if ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
+    if ( ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0)
+        && !node->IsTerminal() ) {
       node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
                                         params_.GetBetamctsPercentile());
     }
@@ -979,7 +980,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
     const float cpuct = ComputeCpuct(params_, (params_.GetBetamctsLevel() >= 4
-                               ? (int)node->GetNBetamcts() : node->GetN()));
+        ? static_cast<unsigned int>(node->GetNBetamcts() + 0.5) : node->GetN()));
     const float puct_mult =
         cpuct * ( params_.GetNewUEnabled() ?
             std::max((params_.GetBetamctsLevel() >= 3 ?
