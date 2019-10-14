@@ -97,6 +97,8 @@ struct GameInfo {
   std::string training_filename;
   // Game moves.
   std::vector<Move> moves;
+  // Ply within moves that the game actually started.
+  int play_start_ply;
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player1, if known.
