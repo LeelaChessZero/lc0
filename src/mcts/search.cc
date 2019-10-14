@@ -600,8 +600,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
       continue;
     }
     edges.emplace_back( (params_.GetBetamctsLevel()>=2 ?
-                 (int)(edge.GetNBetamcts()*(0.01+edge.GetRBetamcts())) : edge.GetN()),
-                        edge.GetQ(0,params_.GetBetamctsLevel()>=2), edge.GetP(), edge);
+         (int)( (params_.GetBetamctsLevel()>=3 ? edge.GetNBetamcts() : edge.GetN())
+         *(0.01+edge.GetRBetamcts()))
+             : edge.GetN()),
+                    edge.GetQ(0,params_.GetBetamctsLevel()>=2), edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
@@ -1009,7 +1011,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q = child.GetQ(fpu, params_.GetBetamctsLevel() >= 2, params_.GetLogitQ());
+      // For levels 2 and 3, use max(Q,Qbetamcts) for optimistic exploration
+      const float Q = child.GetQ(fpu, params_.GetBetamctsLevel() >= 2,
+                                 params_.GetLogitQ());
       const float score = Q +
           (params_.GetNewUEnabled() ?
            child.GetNewU(puct_mult):
