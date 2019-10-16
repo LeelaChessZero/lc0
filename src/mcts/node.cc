@@ -332,9 +332,10 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
           const auto n = child.GetNBetamcts();
           const auto r = child.edge()->GetRBetamcts();
           if (n > 0) {
-            n_temp += r * n;
+            const auto visits_eff = r * n;
+            n_temp += visits_eff;
             // Flip Q for opponent.
-            q_temp += -child.node()->GetQBetamcts() * r * n;
+            q_temp += -child.node()->GetQBetamcts() * visits_eff;
           }
         }
         if (n_temp > 0) {
