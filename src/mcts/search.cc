@@ -195,12 +195,12 @@ namespace {
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
   const auto logit_q = params.GetLogitQ();
   const auto value = params.GetFpuValue(is_root_node);
-  const auto scale = params.GetOneMinusEps();
-  const auto Q = logit_q ? FastLogit(scale * node->GetQ()) : node->GetQ();
+  const auto scale = params.GetLogitScale();
+  const auto Q = logit_q ? FastLogit(scale * node->GetQ())/scale : node->GetQ();
   return params.GetFpuAbsolute(is_root_node)
              ? (logit_q
                 // Restrict absolute FpuValue to [-1,1] before scaling.
-                ? FastLogit(scale * std::min(1.0f, std::max(-1.0f, value)))
+                ? FastLogit(scale * std::min(1.0f, std::max(-1.0f, value)))/scale
                 : value)
              : -Q - value * std::sqrt(node->GetVisitedPolicy());
 }
@@ -220,7 +220,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float U_coeff =
     cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
-  const float scale = params_.GetOneMinusEps();
+  const float scale = params_.GetLogitScale();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
@@ -948,7 +948,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     int possible_moves = 0;
     const bool logit_q = params_.GetLogitQ();
     const float fpu = GetFpu(params_, node, is_root_node);
-    const float scale = params_.GetOneMinusEps();
+    const float scale = params_.GetLogitScale();
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -1169,7 +1169,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
-  const float scale = params_.GetOneMinusEps();
+  const float scale = params_.GetLogitScale();
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
