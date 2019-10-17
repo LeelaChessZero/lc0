@@ -7,7 +7,7 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 
 ## Downloading source
 
-Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
+Lc0 can be acquired either via a ```git clone``` or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
 
 For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.19`), which is equivalent to using the latest version tag.
 
