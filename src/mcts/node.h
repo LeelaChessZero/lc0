@@ -283,8 +283,6 @@ class Node {
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
   float q_ = 0.0f;
-  // store original q
-  float q_orig_ = 0.0f;
   // betamcts needs own Q and N
   float q_betamcts_ = 0.0f;
   float n_betamcts_ = 0.0f;

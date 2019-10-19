@@ -325,7 +325,7 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
     }
   } else {
     if (edges_) { /* betamcts::update q_betamcts_ here */
-        float q_temp = q_orig_;
+        float q_temp = q_betamcts_;
         // float q_temp = q_betamcts_; // evals of expanded nodes not kept
         float n_temp = 1.0f;
         for (const auto& child : Edges()) {
@@ -351,7 +351,6 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
-    q_orig_ = v;
     q_betamcts_ = v;
     n_betamcts_ = multivisit;
   }
