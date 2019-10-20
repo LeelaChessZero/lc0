@@ -87,11 +87,12 @@ class Edge {
   float GetP() const;
   void SetP(float val);
 
-  float GetRBetamcts() const { return r_betamcts_; } /* betamcts::relevance is edge property */
-  void SetRbetamcts(float val) {
-    // assert(0.0f <= val); // theoretically, relevance<0.0 should never happen
+  /* float GetRBetamcts() const { return r_betamcts_; } */
+  /* betamcts::relevance should be edge property.
+  Moved to Node for memory reasons. Revert if transpositions are included */
+  /* void SetRbetamcts(float val) {
     r_betamcts_ = std::max(0.0f,val);
-  }
+  } */
   // Debug information about the edge.
   std::string DebugString() const;
 
@@ -107,7 +108,8 @@ class Edge {
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
 
-  float r_betamcts_ = 1.0f;
+  // float r_betamcts_ = 1.0f;
+  /* Moved to Node for memory reasons. */
 
   friend class EdgeList;
 };
@@ -170,6 +172,12 @@ class Node {
   // betamcts::update relevances of children
   void CalculateRelevanceBetamcts(const float trust, const float percentile);
 
+  float GetRBetamcts() const { return r_betamcts_; }
+  /* betamcts::relevance should be edge property.
+  Moved to Node for memory reasons. Revert if transpositions are included */
+  void SetRBetamcts(float val) {
+    r_betamcts_ = std::max(0.0f,val);
+  }
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
   uint16_t GetNumEdges() const { return edges_.size(); }
@@ -286,6 +294,8 @@ class Node {
   // betamcts needs own Q and N
   float q_betamcts_ = 0.0f;
   float n_betamcts_ = 0.0f;
+  float r_betamcts_ = 1.0f; /* Moved from Edge for memory reasons */
+
   // Averaged draw probability. Works similarly to Q, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -390,7 +400,8 @@ class EdgeAndNode {
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
-  float GetRBetamcts() const { return edge_->GetRBetamcts(); }
+  float GetRBetamcts() const { return node_ ? node_->GetRBetamcts() : 0; }
+  void SetRBetamcts(float value) const { if (node_) { node_->SetRBetamcts(value); } }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).

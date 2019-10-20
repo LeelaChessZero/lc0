@@ -264,17 +264,17 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float percentile)
       {
         // child_relevance = std::max(0.03,child_relevance);
         // minimum relevance deactivated, issues with terminal nodes
-        child.edge()->SetRbetamcts(child_relevance);
+        child.SetRBetamcts(child_relevance);
       } else if (trust > 0 && percentile > 0) {
         // if one of the factors is 0, relevance is always 1
         // which doesn't work well with the terminal logic
-        child.edge()->SetRbetamcts(child_relevance);
+        child.SetRBetamcts(child_relevance);
       } else {
         // terminal nodes special treatment temporarily deactivated
         if (child.GetQBetamcts(0.0) == 0.0) {
-          child.edge()->SetRbetamcts(0.01); //standard relevance for terminal nodes
+          child.SetRBetamcts(0.01); //standard relevance for terminal nodes
         } else {
-          child.edge()->SetRbetamcts(child_relevance);
+          child.SetRBetamcts(child_relevance);
         }
       }
     }
@@ -330,7 +330,7 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
         float n_temp = 1.0f;
         for (const auto& child : Edges()) {
           const auto n = child.GetNBetamcts();
-          const auto r = child.edge()->GetRBetamcts();
+          const auto r = child.GetRBetamcts();
           if (n > 0) {
             const auto visits_eff = r * n;
             n_temp += visits_eff;
