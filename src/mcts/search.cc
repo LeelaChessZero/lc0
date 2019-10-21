@@ -1323,10 +1323,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = n->GetQ();
       d = n->GetD();
     }
-    n->FinalizeScoreUpdate(
-		v * std::max(0.0f, 1.0f - params_.GetShortSightedness() * depth),
-		d, 
-		node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
+                           d, node_to_process.multivisit);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
