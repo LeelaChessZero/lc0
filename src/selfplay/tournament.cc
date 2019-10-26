@@ -59,6 +59,10 @@ const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
 const OptionId kResignPlaythroughId{
     "resign-playthrough", "ResignPlaythrough",
     "The percentage of games which ignore resign."};
+const OptionId kDiscardedStartChanceId{
+    "discarded-start-chance", "DiscardedStartChance",
+    "The percentage chance each game will attempt to start from a position "
+    "discarded due to not getting enough visits."};
 
 }  // namespace
 
@@ -80,6 +84,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
+  options->Add<FloatOption>(kDiscardedStartChanceId, 0.0f, 100.0f) = 0.0f;
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -121,7 +126,9 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kShareTree(options.Get<bool>(kShareTreesId.GetId())),
       kParallelism(options.Get<int>(kParallelGamesId.GetId())),
       kTraining(options.Get<bool>(kTrainingId.GetId())),
-      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())) {
+      kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
+      kDiscardedStartChance(
+          options.Get<float>(kDiscardedStartChanceId.GetId())) {
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     next_game_black_ = Random::Get().GetBool();
@@ -168,10 +175,20 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
 
 void SelfPlayTournament::PlayOneGame(int game_number) {
   bool player1_black;  // Whether player1 will player as black in this game.
+  MoveList opening;
   {
     Mutex::Lock lock(mutex_);
     player1_black = next_game_black_;
     next_game_black_ = !next_game_black_;
+    if (discard_pile_.size() > 0 &&
+        Random::Get().GetFloat(100.0f) < kDiscardedStartChance) {
+      int idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
+      if (idx != discard_pile_.size() - 1) {
+        std::swap(discard_pile_[idx], discard_pile_.back());
+      }
+      opening = discard_pile_.back();
+      discard_pile_.pop_back();
+    }
   }
   const int color_idx[2] = {player1_black ? 1 : 0, player1_black ? 0 : 1};
 
@@ -220,6 +237,22 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
             last_thinking_info = std::move(rich_info);
           }
         };
+    opt.discarded_callback = [this](const MoveList& moves) {
+      // Only track discards if discard start chance is non-zero.
+      if (kDiscardedStartChance == 0.0f) return;
+      Mutex::Lock lock(mutex_);
+      discard_pile_.push_back(moves);
+      // 10k seems it should be enough to keep a good mix and avoid running out
+      // of ram.
+      if (discard_pile_.size() > 10000) {
+        // Swap a random element to end and pop it to avoid growing.
+        int idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
+        if (idx != discard_pile_.size() - 1) {
+          std::swap(discard_pile_[idx], discard_pile_.back());
+        }
+        discard_pile_.pop_back();
+      }
+    };
   }
 
   // Iterator to store the game in. Have to keep it so that later we can
@@ -228,8 +261,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   std::list<std::unique_ptr<SelfPlayGame>>::iterator game_iter;
   {
     Mutex::Lock lock(mutex_);
-    games_.emplace_front(
-        std::make_unique<SelfPlayGame>(options[0], options[1], kShareTree));
+    games_.emplace_front(std::make_unique<SelfPlayGame>(options[0], options[1],
+                                                        kShareTree, opening));
     game_iter = games_.begin();
   }
   auto& game = **game_iter;
@@ -250,6 +283,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
     game_info.moves = game.GetMoves();
+    game_info.play_start_ply = opening.size();
     if (!enable_resign) {
       game_info.min_false_positive_threshold =
           game.GetWorstEvalForWinnerOrDraw();

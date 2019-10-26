@@ -382,6 +382,15 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
+void Search::ResetBestMove() {
+  SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
+  bool old_sent = bestmove_is_sent_;
+  bestmove_is_sent_ = false;
+  EnsureBestMoveKnown();
+  bestmove_is_sent_ = old_sent;
+}
+
 // Computes the best move, maybe with temperature (according to the settings).
 void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     REQUIRES(counters_mutex_) {
@@ -1183,6 +1192,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
+  int depth = 0;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1192,7 +1202,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = n->GetQ();
       d = n->GetD();
     }
-    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
+                           d, node_to_process.multivisit);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
@@ -1217,6 +1228,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Q will be flipped for opponent.
     v = -v;
+    depth++;
 
     // Update the stats.
     // Best move.

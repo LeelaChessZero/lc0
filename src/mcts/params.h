@@ -85,6 +85,7 @@ class SearchParams {
   }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
+  float GetShortSightedness() const { return kShortSightedness; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
@@ -128,6 +129,7 @@ class SearchParams {
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
+  static const OptionId kShortSightednessId;
 
  private:
   const OptionsDict& options_;
@@ -156,6 +158,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const float kShortSightedness;
 };
 
 }  // namespace lczero
