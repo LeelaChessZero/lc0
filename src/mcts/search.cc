@@ -1084,9 +1084,9 @@ void SearchWorker::ExtendNode(Node* node) {
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
+      node->MakeTerminal(GameResult::WHITE_WON, params_.GetBetamctsLevel()>=4);
     } else {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
     }
     return;
   }
@@ -1095,17 +1095,17 @@ void SearchWorker::ExtendNode(Node* node) {
   // if they are root, then thinking about them is the point.
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
       return;
     }
 
     if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
       return;
     }
 
     if (history_.Last().GetRepetitions() >= 2) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
       return;
     }
 
@@ -1122,11 +1122,11 @@ void SearchWorker::ExtendNode(Node* node) {
       if (state != FAIL) {
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON);
+          node->MakeTerminal(GameResult::BLACK_WON, params_.GetBetamctsLevel()>=4);
         } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON);
+          node->MakeTerminal(GameResult::WHITE_WON, params_.GetBetamctsLevel()>=4);
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW);
+          node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
@@ -1379,7 +1379,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = n->GetQ();
       d = n->GetD();
     }
-    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit,
+                           params_.GetBetamctsLevel()>=3);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
@@ -1399,7 +1400,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (can_convert) {
       p->MakeTerminal(v == 1.0f ? GameResult::BLACK_WON
                                 : v == -1.0f ? GameResult::WHITE_WON
-                                             : GameResult::DRAW);
+                                             : GameResult::DRAW,
+                    v == 0.0f ? params_.GetBetamctsLevel()>=3 :
+                      params_.GetBetamctsLevel()>=4);
     }
 
     // Q will be flipped for opponent.

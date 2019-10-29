@@ -183,7 +183,7 @@ class Node {
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result);
+  void MakeTerminal(GameResult result, const bool inflate_terminals);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
 
@@ -199,7 +199,8 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, float d, int multivisit);
+  void FinalizeScoreUpdate(float v, float d, int multivisit,
+                    const bool inflate_terminals);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.

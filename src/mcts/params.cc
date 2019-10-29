@@ -226,7 +226,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
-  options->Add<IntOption>(kBetamctsLevelId, 0, 3) = 2;
+  options->Add<IntOption>(kBetamctsLevelId, 0, 4) = 2;
   options->Add<FloatOption>(kBetamctsTrustId, 0.0f, 1000.0f) = 0.1f;
   options->Add<FloatOption>(kBetamctsPercentileId, 0.0f, 0.5f) = 0.35f;
   options->Add<IntOption>(kBetamctsUpdateIntervalId, 1, 100) = 10;

@@ -217,7 +217,7 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
-void Node::MakeTerminal(GameResult result) {
+void Node::MakeTerminal(GameResult result, const bool inflate_terminals=false) {
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
     q_ = 0.0f;
@@ -235,6 +235,11 @@ void Node::MakeTerminal(GameResult result) {
     q_betamcts_ = -1.0f;
     d_ = 0.0f;
   }
+  // special treatment for terminal nodes, only for draws now
+    if (inflate_terminals) {
+      n_betamcts_ = 100.0f; // betamcts::terminal nodes get high n
+      GetOwnEdge()->SetP(0.01);
+    }
 }
 
 void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
@@ -315,11 +320,14 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, int multivisit,
+                    const bool inflate_terminals=false) {
   if (IsTerminal()) {
     /* terminal node special treatment only for draws */
-    if (q_betamcts_ == 0.0) {
+    if ((q_betamcts_ == 0.0) && (inflate_terminals)) {
       n_betamcts_ += multivisit * 100;
+    } else if (q_betamcts_ == 0.0) {
+      n_betamcts_ += multivisit * 10;
     } else {
       n_betamcts_ += multivisit;
     }
