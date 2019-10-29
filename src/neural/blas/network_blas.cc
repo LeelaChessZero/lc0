@@ -37,13 +37,17 @@
 #include <Eigen/Core>
 #endif
 
+#ifdef USE_DNNL
+#include <omp.h>
+#endif
+
 namespace lczero {
 namespace {
 
 class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
-                  const bool wdl, const bool conv_policy);
+                  const bool wdl, const bool conv_policy, const int blas_cores);
 
   virtual ~BlasComputation() {}
 
@@ -108,7 +112,7 @@ class BlasNetwork : public Network {
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation>(weights_, max_batch_size_, wdl_,
-                                             conv_policy_);
+                                             conv_policy_, blas_cores_);
   }
 
  private:
@@ -119,17 +123,25 @@ class BlasNetwork : public Network {
   size_t max_batch_size_;
   bool wdl_;
   bool conv_policy_;
+  int blas_cores_;
 };
 
 BlasComputation::BlasComputation(const LegacyWeights& weights,
                                  const size_t max_batch_size, const bool wdl,
-                                 const bool conv_policy)
+                                 const bool conv_policy, const int blas_cores)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
       q_values_(0),
       wdl_(wdl),
-      conv_policy_(conv_policy) {}
+      conv_policy_(conv_policy) {
+#ifdef USE_DNNL
+  omp_set_num_threads(blas_cores);
+#else
+  // Silence unused parameter warning.
+  (void)blas_cores;
+#endif
+}
 
 void BlasComputation::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
@@ -349,7 +361,7 @@ void BlasComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
 BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
     : weights_(file.weights()) {
 #ifndef USE_EIGEN
-  int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
+  blas_cores_ = options.GetOrDefault<int>("blas_cores", 1);
 #endif
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
@@ -396,20 +408,20 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
 
 #ifdef USE_OPENBLAS
   int num_procs = openblas_get_num_procs();
-  blas_cores = std::min(num_procs, blas_cores);
-  openblas_set_num_threads(blas_cores);
+  blas_cores_ = std::min(num_procs, blas_cores_);
+  openblas_set_num_threads(blas_cores_);
   const char* core_name = openblas_get_corename();
   const char* config = openblas_get_config();
   CERR << "BLAS vendor: OpenBLAS.";
   CERR << "OpenBLAS [" << config << "].";
   CERR << "OpenBLAS found " << num_procs << " " << core_name << " core(s).";
-  CERR << "OpenBLAS using " << blas_cores << " core(s) for this backend.";
+  CERR << "OpenBLAS using " << blas_cores_ << " core(s) for this backend.";
 #endif
 
 #ifdef USE_MKL
   int max_procs = mkl_get_max_threads();
-  blas_cores = std::min(max_procs, blas_cores);
-  mkl_set_num_threads(blas_cores);
+  blas_cores_ = std::min(max_procs, blas_cores_);
+  mkl_set_num_threads(blas_cores_);
   CERR << "BLAS vendor: MKL.";
   constexpr int len = 256;
   char versionbuf[len];
@@ -420,12 +432,21 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
   CERR << "MKL platform: " << version.Platform
        << ", processor: " << version.Processor << ".";
   CERR << "MKL can use up to " << max_procs << " thread(s).";
-  CERR << "MKL using " << blas_cores << " thread(s) for this backend.";
+  CERR << "MKL using " << blas_cores_ << " thread(s) for this backend.";
+#endif
+
+#ifdef USE_DNNL
+  int max_procs = omp_get_max_threads();
+  blas_cores_ = std::min(max_procs, blas_cores_);
+  const dnnl_version_t* ver = dnnl_version();
+  CERR << "BLAS functions from DNNL version " << ver->major << "." << ver->minor
+       << "." << ver->patch;
+  CERR << "DNNL using up to " << blas_cores_ << " core(s) per search thread";
 #endif
 
 #ifdef USE_ACCELERATE
   CERR << "BLAS vendor: Apple vecLib.";
-  CERR << "Apple vecLib ignores blas_cores (" << blas_cores << ") parameter.";
+  CERR << "Apple vecLib ignores blas_cores (" << blas_cores_ << ") parameter.";
 #endif
 
   CERR << "BLAS max batch size is " << max_batch_size_ << ".";
