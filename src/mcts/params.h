@@ -89,6 +89,7 @@ class SearchParams {
   float GetFpuValue(bool at_root) const { return at_root ? kFpuValueAtRoot : kFpuValue; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
+  float GetShortSightedness() const { return kShortSightedness; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
@@ -146,6 +147,7 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
+  static const OptionId kShortSightednessId;
 
  private:
   const OptionsDict& options_;
@@ -180,6 +182,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const float kShortSightedness;
 };
 
 }  // namespace lczero

@@ -26,6 +26,7 @@
 */
 
 #include "selfplay/game.h"
+
 #include <algorithm>
 
 #include "neural/writer.h"
@@ -45,6 +46,11 @@ const OptionId kResignWDLStyleId{
 const OptionId kResignEarliestMoveId{"resign-earliest-move",
                                      "ResignEarliestMove",
                                      "Earliest move that resign is allowed."};
+const OptionId kMinimumAllowedVistsId{
+    "minimum-allowed-visits", "MinimumAllowedVisits",
+    "Unless the selected move is the best move, temperature based selection "
+    "will be retried until visits of selected move is greater than or equal to "
+    "this threshold."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -52,10 +58,11 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kResignWDLStyleId) = false;
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
+  options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree)
+                           bool shared_tree, const MoveList& opening)
     : options_{player1, player2} {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
@@ -66,11 +73,15 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
     tree_[1] = std::make_shared<NodeTree>();
     tree_[1]->ResetToPosition(ChessBoard::kStartposFen, {});
   }
+  for (Move m : opening) {
+    tree_[0]->MakeMove(m);
+    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
+  }
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         bool enable_resign) {
-  bool blacks_move = false;
+  bool blacks_move = (tree_[0]->GetPlyCount() % 2) == 1;
 
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
@@ -155,8 +166,32 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
     }
 
+    Move move;
+    while (true) {
+      move = search_->GetBestMove().first;
+      uint32_t max_n = 0;
+      uint32_t cur_n = 0;
+      for (auto edge : tree_[idx]->GetCurrentHead()->Edges()) {
+        if (edge.GetN() > max_n) {
+          max_n = edge.GetN();
+        }
+        if (edge.GetMove(tree_[idx]->IsBlackToMove()) == move) {
+          cur_n = edge.GetN();
+        }
+      }
+      // If 'best move' is less than allowed visits and not max visits,
+      // discard it and try again.
+      if (cur_n == max_n ||
+          static_cast<int>(cur_n) >= options_[idx].uci_options->Get<int>(
+                                         kMinimumAllowedVistsId.GetId())) {
+        break;
+      }
+      auto move_list_to_discard = GetMoves();
+      move_list_to_discard.push_back(move);
+      options_[idx].discarded_callback(move_list_to_discard);
+      search_->ResetBestMove();
+    }
     // Add best move to the tree.
-    const Move move = search_->GetBestMove().first;
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
