@@ -16,13 +16,13 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "src/chess/board.h"
+#include "chess/board.h"
 
 #include <gtest/gtest.h>
 
 #include <iostream>
 
-#include "src/chess/bitboard.h"
+#include "chess/bitboard.h"
 
 namespace lczero {
 
