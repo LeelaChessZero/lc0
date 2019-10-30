@@ -37,6 +37,7 @@
 #include "chess/position.h"
 #include "neural/encoder.h"
 #include "neural/writer.h"
+#include "utils/fastmath.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -336,8 +337,12 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
+  float GetQ(float default_q, bool logit_q = false) const {
+    return (node_ && node_->GetN() > 0)
+               ?
+               // Scale Q slightly to avoid logit(1) = infinity.
+               (logit_q ? FastLogit(0.9999999f * node_->GetQ()) : node_->GetQ())
+               : default_q;
   }
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
@@ -362,9 +367,9 @@ class EdgeAndNode {
     return numerator * GetP() / (1 + GetNStarted());
   }
 
-  int GetVisitsToReachU(float target_score, float numerator,
-                        float default_q) const {
-    const auto q = GetQ(default_q);
+  int GetVisitsToReachU(float target_score, float numerator, float default_q,
+                        bool logit_q) const {
+    const auto q = GetQ(default_q, logit_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
     return std::max(
