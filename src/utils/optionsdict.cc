@@ -325,26 +325,10 @@ void OptionsDict::AddSubdictFromString(const std::string& str) {
 void OptionsDict::CheckAllOptionsRead(
     const std::string& path_from_parent) const {
   std::string s = path_from_parent.empty() ? "" : path_from_parent + '.';
-  for (auto const& option : TypeDict<bool>::dict_) {
-    if (!option.second.IsSet()) {
-      throw Exception("Unknown boolean option: " + s + option.first);
-    }
-  }
-  for (auto const& option : TypeDict<int>::dict_) {
-    if (!option.second.IsSet()) {
-      throw Exception("Unknown integer option: " + s + option.first);
-    }
-  }
-  for (auto const& option : TypeDict<float>::dict_) {
-    if (!option.second.IsSet()) {
-      throw Exception("Unknown floating point option: " + s + option.first);
-    }
-  }
-  for (auto const& option : TypeDict<std::string>::dict_) {
-    if (!option.second.IsSet()) {
-      throw Exception("Unknown string option: " + s + option.first);
-    }
-  }
+  TypeDict<bool>::EnsureNoUnusedOptions("boolean", s);
+  TypeDict<int>::EnsureNoUnusedOptions("integer", s);
+  TypeDict<float>::EnsureNoUnusedOptions("floating point", s);
+  TypeDict<std::string>::EnsureNoUnusedOptions("string", s);
   for (auto const& dict : subdicts_) {
     dict.second.CheckAllOptionsRead(s + dict.first);
   }

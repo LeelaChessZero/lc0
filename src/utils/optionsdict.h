@@ -39,15 +39,34 @@ template <typename T>
 class TypeDict {
  protected:
   struct V {
-      const T& Get() const { is_used_ = true; return value_; }
-      T& Get() { is_used_ = true; return value_; }
-      void Set(const T& v) { is_used_ = false; value_ = v; }
-      bool IsSet() const { return is_used_; }
-    private:
-      mutable bool is_used_ = false;
-      T value_;
+    const T& Get() const {
+      is_used_ = true;
+      return value_;
+    }
+    T& Get() {
+      is_used_ = true;
+      return value_;
+    }
+    void Set(const T& v) {
+      is_used_ = false;
+      value_ = v;
+    }
+    bool IsSet() const { return is_used_; }
+
+   private:
+    mutable bool is_used_ = false;
+    T value_;
   };
   std::unordered_map<std::string, V> dict_;
+  void EnsureNoUnusedOptions(const std::string& type_name,
+                             const std::string& prefix) const {
+    for (auto const& option : dict_) {
+      if (!option.second.IsSet()) {
+        throw Exception("Unknown " + type_name + " option: " + prefix +
+                        option.first);
+      }
+    }
+  }
 };
 
 class OptionsDict : TypeDict<bool>,
@@ -105,7 +124,7 @@ class OptionsDict : TypeDict<bool>,
   void AddSubdictFromString(const std::string& str);
 
   // Throws an exception for the first option in the dict that has not been read
-  // to find syntax errors in options added using AddSubdictFromString
+  // to find syntax errors in options added using AddSubdictFromString.
   void CheckAllOptionsRead(const std::string& path_from_parent) const;
 
   bool HasSubdict(const std::string& name) const;
