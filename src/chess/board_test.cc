@@ -79,7 +79,8 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
     new_board.Mirror();
 
     EXPECT_EQ(iter->as_packed_int(), move.as_packed_int())
-        << board.DebugString() << iter->as_string() << move.as_string();
+        << board.DebugString() << "[" << iter->as_string() << "]("
+        << move.as_string() << ")" << new_board.DebugString();
     ++iter;
 
     int count = Perft(new_board, max_depth, dump, depth + 1);

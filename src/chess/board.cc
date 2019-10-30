@@ -465,7 +465,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         const int qrook = castlings_.queenside_rook();
         if (walk_free(std::min(2 /* c1 */, qrook), std::max(3 /* d1 */, king),
                       qrook, king) &&
-            !range_attacked(3 /* d1 */, king)) {
+            !range_attacked(2 /* c1 */, king)) {
           result.emplace_back(source,
                               BoardSquare(0, castlings_.queenside_rook()));
         }
@@ -611,7 +611,9 @@ bool ChessBoard::ApplyMove(Move move) {
     castlings_.reset_we_can_000();
     our_king_ = to;
     auto do_castling = [this](int king_dst, int rook_src, int rook_dst) {
+      our_pieces_.reset(our_king_);
       our_king_ = king_dst;
+      our_pieces_.set(king_dst);
       our_pieces_.reset(rook_src);
       rooks_.reset(rook_src);
       our_pieces_.set(rook_dst);
@@ -998,7 +1000,11 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
         if (right_rook == king_col) {
           throw Exception("Bad fen string (no kingside rook): " + fen);
         }
-        castlings_.set_we_can_00();
+        if (is_black) {
+          castlings_.set_they_can_00();
+        } else {
+          castlings_.set_we_can_00();
+        }
       } else if (c == 'q') {
         // Finding leftmost rook.
         for (left_rook = 0; left_rook < king_col; ++left_rook) {
@@ -1007,15 +1013,27 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
         if (left_rook == king_col) {
           throw Exception("Bad fen string (no queenside rook): " + fen);
         }
-        castlings_.set_we_can_000();
+        if (is_black) {
+          castlings_.set_they_can_000();
+        } else {
+          castlings_.set_we_can_000();
+        }
       } else if (c >= 'a' && c <= 'h') {
         int rook_col = c - ('a' + king_col);
         if (rook_col < king_col) {
           left_rook = rook_col;
-          castlings_.set_we_can_000();
+          if (is_black) {
+            castlings_.set_they_can_000();
+          } else {
+            castlings_.set_we_can_000();
+          }
         } else {
           right_rook = rook_col;
-          castlings_.set_we_can_00();
+          if (is_black) {
+            castlings_.set_they_can_00();
+          } else {
+            castlings_.set_we_can_00();
+          }
         }
       } else {
         throw Exception("Bad fen string (unexpected casting symbol): " + fen);
