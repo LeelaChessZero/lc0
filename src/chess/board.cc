@@ -454,25 +454,30 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         }
         return true;
       };
-      auto king_attacked = [this](int from, int to) {
+      auto range_attacked = [this](int from, int to) {
         for (int i = from; i <= to; ++i) {
-          if (IsUnderAttack(i)) return false;
+          if (IsUnderAttack(i)) return true;
         }
-        return true;
+        return false;
       };
       const int king = source.col();
       if (castlings_.we_can_000()) {
         const int qrook = castlings_.queenside_rook();
         if (walk_free(std::min(2 /* c1 */, qrook), std::max(3 /* d1 */, king),
-                      qrook, king)) {
+                      qrook, king) &&
+            !range_attacked(3 /* d1 */, king)) {
           result.emplace_back(source,
                               BoardSquare(0, castlings_.queenside_rook()));
         }
       }
-      const int krook = castlings_.queenside_rook();
-      if (castlings_.we_can_00() &&
-          king_walk_free(source.col() + 1, castlings_.kingside_rook() - 1)) {
-        result.emplace_back(source, BoardSquare(0, castlings_.kingside_rook()));
+      if (castlings_.we_can_00()) {
+        const int krook = castlings_.kingside_rook();
+        if (walk_free(std::min(5 /* f1 */, king), std::max(6 /* g1 */, krook),
+                      krook, king) &&
+            !range_attacked(king, 6 /* g1 */)) {
+          result.emplace_back(source,
+                              BoardSquare(0, castlings_.kingside_rook()));
+        }
       }
       continue;
     }
@@ -560,7 +565,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     }
   }
   return result;
-}
+}  // namespace lczero
 
 bool ChessBoard::ApplyMove(Move move) {
   const auto& from = move.from();
