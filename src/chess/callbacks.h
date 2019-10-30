@@ -97,6 +97,8 @@ struct GameInfo {
   std::string training_filename;
   // Game moves.
   std::vector<Move> moves;
+  // Ply within moves that the game actually started.
+  int play_start_ply;
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player1, if known.
@@ -118,6 +120,8 @@ struct TournamentInfo {
   // e.g. results[2][1] is how many times player 1 lost as black.
   int results[3][2] = {{0, 0}, {0, 0}, {0, 0}};
   using Callback = std::function<void(const TournamentInfo&)>;
+  int move_count_ = 0;
+  uint64_t nodes_total_ = 0;
 };
 
 }  // namespace lczero

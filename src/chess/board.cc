@@ -982,16 +982,28 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
     for (char c : castlings) {
       switch (c) {
         case 'K':
-          castlings_.set_we_can_00();
+          if (our_king_.as_string() == "e1" && our_pieces_.get(0, 7) &&
+              rooks_.get(0, 7)) {
+            castlings_.set_we_can_00();
+          }
           break;
         case 'k':
-          castlings_.set_they_can_00();
+          if (their_king_.as_string() == "e8" && their_pieces_.get(7, 7) &&
+              rooks_.get(7, 7)) {
+            castlings_.set_they_can_00();
+          }
           break;
         case 'Q':
-          castlings_.set_we_can_000();
+          if (our_king_.as_string() == "e1" && our_pieces_.get(0, 0) &&
+              rooks_.get(0, 0)) {
+            castlings_.set_we_can_000();
+          }
           break;
         case 'q':
-          castlings_.set_they_can_000();
+          if (their_king_.as_string() == "e8" && their_pieces_.get(7, 0) &&
+              rooks_.get(7, 0)) {
+            castlings_.set_they_can_000();
+          }
           break;
         default:
           throw Exception("Bad fen string: " + fen);

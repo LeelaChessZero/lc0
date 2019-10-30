@@ -105,6 +105,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   if (!info.training_filename.empty())
     res += " trainingfile " + info.training_filename;
   if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
+  res += " play_start_ply " + std::to_string(info.play_start_ply);
   if (info.is_black)
     res += " player1 " + std::string(*info.is_black ? "black" : "white");
   if (info.game_result != GameResult::UNDECIDED) {
@@ -173,6 +174,9 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
       << info.results[1][0];
   oss << " P1-B: +" << info.results[0][1] << " -" << info.results[2][1] << " ="
       << info.results[1][1];
+  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) / info.move_count_);
+  oss << " nodes " + std::to_string(info.nodes_total_);
+  oss << " moves " + std::to_string(info.move_count_);
   SendResponse(oss.str());
 }
 

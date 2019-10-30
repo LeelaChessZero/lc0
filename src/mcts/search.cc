@@ -126,7 +126,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     if (score_type == "centipawn") {
-      uci_info.score = 111.714640912 * tan(1.5620688421 * edge.GetQ(default_q));
+      uci_info.score = 295 * edge.GetQ(default_q) /
+                       (1 - 0.976953126 * std::pow(edge.GetQ(default_q), 14));
     } else if (score_type == "centipawn_2018") {
       uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(default_q));
     } else if (score_type == "win_percentage") {
@@ -211,16 +212,19 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+    cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const bool logit_q = params_.GetLogitQ();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
-        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff)) <
-               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff));
+      [&fpu, &U_coeff, &logit_q](EdgeAndNode a, EdgeAndNode b) {
+        return std::forward_as_tuple(
+          a.GetN(), a.GetQ(fpu, logit_q) + a.GetU(U_coeff)) <
+          std::forward_as_tuple(
+          b.GetN(), b.GetQ(fpu, logit_q) + b.GetU(U_coeff));
       });
 
   std::vector<std::string> infos;
@@ -249,7 +253,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(fpu, logit_q) + edge.GetU(U_coeff)
+        << ") ";
 
     oss << "(V: ";
     optional<float> v;
@@ -509,6 +514,15 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
 }
 
+void Search::ResetBestMove() {
+  SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
+  bool old_sent = bestmove_is_sent_;
+  bestmove_is_sent_ = false;
+  EnsureBestMoveKnown();
+  bestmove_is_sent_ = old_sent;
+}
+
 // Computes the best move, maybe with temperature (according to the settings).
 void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     REQUIRES(counters_mutex_) {
@@ -598,8 +612,10 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    if (edge.GetN() + offset > max_n) max_n = edge.GetN() + offset;
-    if (edge.GetQ(fpu) > max_eval) max_eval = edge.GetQ(fpu);
+    if (edge.GetN() + offset > max_n) {
+      max_n = edge.GetN() + offset;
+      max_eval = edge.GetQ(fpu);
+    }
   }
 
   // No move had enough visits for temperature, so use default child criteria
@@ -952,7 +968,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
         ++possible_moves;
       }
-      const float Q = child.GetQ(fpu);
+      const float Q = child.GetQ(fpu, params_.GetLogitQ());
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
@@ -967,7 +983,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     if (second_best_edge) {
       int estimated_visits_to_change_best =
-          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
+          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu,
+                                      params_.GetLogitQ());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
@@ -979,7 +996,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
+    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite &&
+        params_.GetSmartPruningFactor()) {
       // If there is only one move theoretically possible within remaining time,
       // output it.
       Mutex::Lock counters_lock(search_->counters_mutex_);
@@ -1232,16 +1250,23 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   node_to_process->v = -computation_->GetQVal(idx_in_computation);
   node_to_process->d = computation_->GetDVal(idx_in_computation);
   // ...and secondly, the policy data.
+  // Calculate maximum first.
+  float max_p = -std::numeric_limits<float>::infinity();
+  for (auto edge : node->Edges()) {
+    max_p =
+        std::max(max_p, computation_->GetPVal(idx_in_computation,
+                                              edge.GetMove().as_nn_index()));
+  }
   float total = 0.0;
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
-    if (params_.GetPolicySoftmaxTemp() != 1.0f) {
-      // Flush denormals to zero.
-      p = p < 1.17549435E-38
-              ? 0.0
-              : FastPow2(FastLog2(p) / params_.GetPolicySoftmaxTemp());
-    }
+    // Perform softmax and take into account policy softmax temperature T.
+    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
+    p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
+
+    // Note that p now lies in [0, 1], so it is safe to store it in compressed
+    // format. Normalization happens later.
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
     total += edge.edge()->GetP();
@@ -1252,8 +1277,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (params_.GetNoise() && node == search_->root_node_) {
-    ApplyDirichletNoise(node, 0.25, 0.3);
+  if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
+    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
+                        params_.GetNoiseAlpha());
   }
 }
 
@@ -1287,6 +1313,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
+  int depth = 0;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1296,7 +1323,11 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = n->GetQ();
       d = n->GetD();
     }
-    n->FinalizeScoreUpdate(v, d, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
+                           d, node_to_process.multivisit);
+
+    // Nothing left to do without ancestors to update.
+    if (!p) break;
 
     // Convert parents to terminals except the root or those already converted.
     can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
@@ -1318,6 +1349,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Q will be flipped for opponent.
     v = -v;
+    depth++;
 
     // Update the stats.
     // Best move.
