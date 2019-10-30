@@ -63,8 +63,8 @@ int main(int argc, const char** argv) {
       EngineLoop loop;
       loop.RunLoop();
     }
-  } catch (Exception& e) {
-    std::cerr << e.what() << std::endl;
-    exit(1);
+  } catch (std::exception& e) {
+    std::cerr << "Unhandled exception: " << e.what() << std::endl;
+    abort();
   }
 }

@@ -212,14 +212,15 @@ class SearchWorker {
   void RunBlocking() {
     LOGFILE << "Started search thread.";
     try {
-      // A very early stop may arrive before this point, so the test is at the end
-      // to ensure at least one iteration runs before exiting.
+      // A very early stop may arrive before this point, so the test is at the
+      // end to ensure at least one iteration runs before exiting.
       do {
         ExecuteOneIteration();
       } while (search_->IsSearchActive());
-    } catch (Exception& e) {
-      std::cerr << e.what() << std::endl;
-      exit(1);
+    } catch (std::exception& e) {
+      std::cerr << "Unhandled exception in worker thread: " << e.what()
+                << std::endl;
+      abort();
     }
   }
 
