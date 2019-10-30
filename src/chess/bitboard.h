@@ -248,8 +248,6 @@ class Move {
   BoardSquare to() const { return BoardSquare(data_ & kToMask); }
   BoardSquare from() const { return BoardSquare((data_ & kFromMask) >> 6); }
   Promotion promotion() const { return Promotion((data_ & kPromoMask) >> 12); }
-  bool castling() const { return (data_ & kCastleMask) != 0; }
-  void SetCastling() { data_ |= kCastleMask; }
 
   void SetTo(BoardSquare to) { data_ = (data_ & ~kToMask) | to.as_int(); }
   void SetFrom(BoardSquare from) {
@@ -267,9 +265,7 @@ class Move {
   // We ignore the castling bit, because UCI's `position moves ...` commands
   // specify squares and promotions, but NOT whether or not a move is castling.
   // NodeTree::MakeMove and all Move::Move constructors are thus so ignorant.
-  bool operator==(const Move& other) const {
-    return (data_ | kCastleMask) == (other.data_ | kCastleMask);
-  }
+  bool operator==(const Move& other) const { return data_ == other.data_; }
 
   bool operator!=(const Move& other) const { return !operator==(other); }
   operator bool() const { return data_ != 0; }
@@ -300,13 +296,11 @@ class Move {
   // bits 0..5 "to"-square
   // bits 6..11 "from"-square
   // bits 12..14 promotion value
-  // bit 15 whether move is a castling
 
   enum Masks : uint16_t {
     kToMask = 0b0000000000111111,
     kFromMask = 0b0000111111000000,
     kPromoMask = 0b0111000000000000,
-    kCastleMask = 0b1000000000000000,
   };
 };
 

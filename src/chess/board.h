@@ -27,7 +27,9 @@
 
 #pragma once
 
+#include <cassert>
 #include <string>
+
 #include "chess/bitboard.h"
 #include "utils/hashcat.h"
 
@@ -138,10 +140,25 @@ class ChessBoard {
     uint8_t as_int() const { return data_; }
 
     bool operator==(const Castlings& other) const {
+      assert(rook_positions_ == other.rook_positions_);
       return data_ == other.data_;
     }
 
+    uint8_t queenside_rook() const { return GetLowestBit32(rook_positions_); }
+    uint8_t kingside_rook() const { return GetHighestBit32(rook_positions_); }
+    void SetRookPositions(std::uint8_t left, std::uint8_t right) {
+      rook_positions_ = (1 << left) | (1 << right);
+    }
+
    private:
+    // Bitmask of initial rook positions. Bit 0 means file A, and bit 7 means
+    // file H.
+    std::uint8_t rook_positions_ = 0b10000001;
+
+    // - Bit 0 -- "our" side's kingside castle.
+    // - Bit 1 -- "our" side's queenside castle.
+    // - Bit 2 -- opponent's side's kingside castle.
+    // - Bit 3 -- opponent's side's queenside castle.
     std::uint8_t data_ = 0;
   };
 
