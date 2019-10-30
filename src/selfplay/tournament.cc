@@ -26,6 +26,7 @@
 */
 
 #include "selfplay/tournament.h"
+
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
 #include "neural/factory.h"
@@ -182,7 +183,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     next_game_black_ = !next_game_black_;
     if (discard_pile_.size() > 0 &&
         Random::Get().GetFloat(100.0f) < kDiscardedStartChance) {
-      int idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
+      const size_t idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
       if (idx != discard_pile_.size() - 1) {
         std::swap(discard_pile_[idx], discard_pile_.back());
       }
@@ -246,7 +247,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       // of ram.
       if (discard_pile_.size() > 10000) {
         // Swap a random element to end and pop it to avoid growing.
-        int idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
+        const size_t idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
         if (idx != discard_pile_.size() - 1) {
           std::swap(discard_pile_[idx], discard_pile_.back());
         }

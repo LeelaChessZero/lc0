@@ -56,7 +56,7 @@ before_build:
 - cmd: git submodule update --init --recursive
 - cmd: meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
 build_script:
-- cmd: IF %APPVEYOR_REPO_TAG%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: IF %APPVEYOR_REPO_TAG%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 - cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGInstrument /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 - cmd: cd build
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %BLAS%==true copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
@@ -65,7 +65,7 @@ build_script:
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy %PKG_FOLDER%\cuda\bin\cudnn64_7.dll
 - cmd: IF %APPVEYOR_REPO_TAG%==true lc0 benchmark --weights=c:\cache\testnet --backend=random --movetime=10000
 - cmd: cd ..
-- cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
 - cmd: IF %APPVEYOR_REPO_TAG%==true appveyor DownloadFile "https://ci.appveyor.com/api/projects/LeelaChessZero/lczero-client/artifacts/client.exe?branch=release&pr=false&job=Environment%%3A%%20NAME%%3D.exe%%2C%%20GOOS%%3Dwindows"
@@ -84,6 +84,8 @@ artifacts:
     name: lc0-$(NAME)
   - path: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
+  - path: build/*.pdb
+    name: lc0-debug-symbols
 deploy:
   - provider: GitHub
     artifact: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip

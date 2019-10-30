@@ -185,7 +185,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
       // If 'best move' is less than allowed visits and not max visits,
       // discard it and try again.
-      if (cur_n == max_n || cur_n >= options_[idx].uci_options->Get<int>(
+      if (cur_n == max_n ||
+          static_cast<int>(cur_n) >= options_[idx].uci_options->Get<int>(
                                          kMinimumAllowedVistsId.GetId())) {
         break;
       }
