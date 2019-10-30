@@ -59,6 +59,9 @@ class SelfPlayTournament {
   // Tells worker threads to finish ASAP. Does not block.
   void Abort();
 
+  // Stops any more games from starting, in progress games will complete.
+  void Stop();
+
   // If there are ongoing games, aborts and waits.
   ~SelfPlayTournament();
 
@@ -69,6 +72,7 @@ class SelfPlayTournament {
   Mutex mutex_;
   // Whether next game will be black for player1.
   bool next_game_black_ GUARDED_BY(mutex_) = false;
+  std::vector<MoveList> discard_pile_ GUARDED_BY(mutex_);
   // Number of games which already started.
   int games_count_ GUARDED_BY(mutex_) = 0;
   bool abort_ GUARDED_BY(mutex_) = false;
@@ -99,6 +103,7 @@ class SelfPlayTournament {
   const size_t kParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
+  const float kDiscardedStartChance;
 };
 
 }  // namespace lczero

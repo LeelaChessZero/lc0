@@ -49,6 +49,10 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "When the engine cannot gather a large enough batch for immediate use, try "
     "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
+const OptionId SearchParams::kLogitQId{
+    "logit-q", "LogitQ",
+    "Apply logit to Q when determining Q+U best child. This makes the U term "
+    "less dominant when Q is near -1 or +1."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -84,15 +88,24 @@ const OptionId SearchParams::kTemperatureWinpctCutoffId{
     "probability less than X than the best move) are not considered at all."};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset",
-    "Reduces visits by this value when picking a move with a temperature. When "
-    "the offset is less than number of visits for a particular move, that move "
-    "is not picked at all."};
+    "Adjusts visits by this value when picking a move with a temperature. If a "
+    "negative offset reduces visits for a particular move below zero, that "
+    "move is not picked. If no moves can be picked, no temperature is used."};
 const OptionId SearchParams::kNoiseId{
     "noise", "DirichletNoise",
     "Add Dirichlet noise to root node prior probabilities. This allows the "
     "engine to discover new ideas during training by exploring moves which are "
     "known to be bad. Not normally used during play.",
     'n'};
+const OptionId SearchParams::kNoiseEpsilonId{
+    "noise-epsilon", "DirichletNoiseEpsilon",
+    "Amount of Dirichlet noise to combine with root priors. This allows the "
+    "engine to discover new ideas during training by exploring moves which are "
+    "known to be bad. Not normally used during play."};
+const OptionId SearchParams::kNoiseAlphaId{
+    "noise-alpha", "DirichletNoiseAlpha",
+    "Alpha of Dirichlet noise to control the sharpness of move probabilities. "
+    "Larger values result in flatter / more evenly distributed values."};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move."};
@@ -109,24 +122,27 @@ const OptionId SearchParams::kSmartPruningFactorId{
     "pruning is deactivated."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
-    "How is an eval of unvisited node determined. \"reduction\" subtracts "
-    "--fpu-reduction value from the parent eval. \"absolute\" sets eval of "
-    "unvisited nodes to the value specified in --fpu-value."};
-// TODO(crem) Make FPU in "reduction" mode use fpu-value too. For now it's kept
-// for backwards compatibility.
-const OptionId SearchParams::kFpuReductionId{
-    "fpu-reduction", "FpuReduction",
-    "\"First Play Urgency\" reduction (used when FPU strategy is "
-    "\"reduction\"). Normally when a move has no visits, "
-    "it's eval is assumed to be equal to parent's eval. With non-zero FPU "
-    "reduction, eval of unvisited move is decreased by that value, "
-    "discouraging visits of unvisited moves, and saving those visits for "
-    "(hopefully) more promising moves."};
+    "How is an eval of unvisited node determined. \"First Play Urgency\" "
+    "changes search behavior to visit unvisited nodes earlier or later by "
+    "using a placeholder eval before checking the network. The value specified "
+    "with --fpu-value results in \"reduction\" subtracting that value from the "
+    "parent eval while \"absolute\" directly uses that value."};
 const OptionId SearchParams::kFpuValueId{
     "fpu-value", "FpuValue",
-    "\"First Play Urgency\" value. When FPU strategy is \"absolute\", value of "
-    "unvisited node is assumed to be equal to this value, and does not depend "
-    "on parent eval."};
+    "\"First Play Urgency\" value used to adjust unvisited node eval based on "
+    "--fpu-strategy."};
+const OptionId SearchParams::kFpuStrategyAtRootId{
+    "fpu-strategy-at-root", "FpuStrategyAtRoot",
+    "How is an eval of unvisited root children determined. Just like "
+    "--fpu-strategy except only at the root level and adjusts unvisited root "
+    "children eval with --fpu-value-at-root. In addition to matching the "
+    "strategies from --fpu-strategy, this can be \"same\" to disable the "
+    "special root behavior."};
+const OptionId SearchParams::kFpuValueAtRootId{
+    "fpu-value-at-root", "FpuValueAtRoot",
+    "\"First Play Urgency\" value used to adjust unvisited root children eval "
+    "based on --fpu-strategy-at-root. Has no effect if --fpu-strategy-at-root "
+    "is \"same\"."};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
     "Length of history, in half-moves, to include into the cache key. When "
@@ -149,6 +165,13 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "in the cache or is terminal, evaluate it right away without sending the "
     "batch to the NN. When off, this may only happen with the very first node "
     "of a batch; when on, this can happen with any node."};
+const OptionId SearchParams::kStickyEndgamesId{
+    "sticky-endgames", "StickyEndgames",
+    "When an end of game position is found during search, allow the eval of "
+    "the previous move's position to stick to something more accurate. For "
+    "example, if at least one move results in checkmate, then the position "
+    "should stick as checkmated. Similarly, if all moves are drawn or "
+    "checkmated, the position should stick as drawn or checkmate."};
 const OptionId SearchParams::kSyzygyFastPlayId{
     "syzygy-fast-play", "SyzygyFastPlay",
     "With DTZ tablebase files, only allow the network pick from winning moves "
@@ -169,18 +192,23 @@ const OptionId SearchParams::kHistoryFillId{
     "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SearchParams::kMinimumKLDGainPerNode{
     "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
-    "If greater than 0 search will abort unless the last KLDGainAverageInterval "
-    "nodes have an average gain per node of at least this much."};
+    "If greater than 0 search will abort unless the last "
+    "KLDGainAverageInterval nodes have an average gain per node of at least "
+    "this much."};
 const OptionId SearchParams::kKLDGainAverageInterval{
     "kldgain-average-interval", "KLDGainAverageInterval",
     "Used to decide how frequently to evaluate the average KLDGainPerNode to "
     "check the MinimumKLDGainPerNode, if specified."};
+const OptionId SearchParams::kShortSightednessId{
+    "short-sightedness", "ShortSightedness",
+    "Used to focus more on short term gains over long term."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
+  options->Add<BoolOption>(kLogitQId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
@@ -189,53 +217,74 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
-  options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
+  options->Add<FloatOption>(kTemperatureVisitOffsetId, -1000.0f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
+  options->Add<FloatOption>(kNoiseEpsilonId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kNoiseAlphaId, 0.0f, 10000000.0f) = 0.3f;
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<BoolOption>(kLogLiveStatsId) = false;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
-  options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 1.2f;
-  options->Add<FloatOption>(kFpuValueId, -1.0f, 1.0f) = -1.0f;
+  options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
+  fpu_strategy.push_back("same");
+  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
+  options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
+  options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
-  std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
+  std::vector<std::string> score_type = {"centipawn", "centipawn_2018",
+                                         "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
 
+  options->HideOption(kNoiseEpsilonId);
+  options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
+      kLogitQ(options.Get<bool>(kLogitQId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
-      kNoise(options.Get<bool>(kNoiseId.GetId())),
+      kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
+                        ? 0.25f
+                        : options.Get<float>(kNoiseEpsilonId.GetId())),
+      kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
       kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
-      kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),
+      kFpuAbsoluteAtRoot(
+          (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
+           kFpuAbsolute) ||
+          options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "absolute"),
+      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId.GetId()) ==
+                              "same"
+                          ? kFpuValue
+                          : options.Get<float>(kFpuValueAtRootId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
+      kStickyEndgames(options.Get<bool>(kStickyEndgamesId.GetId())),
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {
-}
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
+      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())) {}
 
 }  // namespace lczero

@@ -48,6 +48,7 @@ class SearchParams {
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
+  bool GetLogitQ() const { return kLogitQ; }
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
@@ -70,7 +71,8 @@ class SearchParams {
     return options_.Get<float>(kTemperatureWinpctCutoffId.GetId());
   }
 
-  bool GetNoise() const { return kNoise; }
+  float GetNoiseEpsilon() const { return kNoiseEpsilon; }
+  float GetNoiseAlpha() const { return kNoiseAlpha; }
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
@@ -78,14 +80,15 @@ class SearchParams {
     return options_.Get<bool>(kLogLiveStatsId.GetId());
   }
   float GetSmartPruningFactor() const { return kSmartPruningFactor; }
-  bool GetFpuAbsolute() const { return kFpuAbsolute; }
-  float GetFpuReduction() const { return kFpuReduction; }
-  float GetFpuValue() const { return kFpuValue; }
+  bool GetFpuAbsolute(bool at_root) const { return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute; }
+  float GetFpuValue(bool at_root) const { return at_root ? kFpuValueAtRoot : kFpuValue; }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
+  float GetShortSightedness() const { return kShortSightedness; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
+  bool GetStickyEndgames() const { return kStickyEndgames; }
   bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
   std::string GetScoreType() const {
@@ -102,6 +105,7 @@ class SearchParams {
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
+  static const OptionId kLogitQId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
@@ -112,23 +116,28 @@ class SearchParams {
   static const OptionId kTemperatureWinpctCutoffId;
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
+  static const OptionId kNoiseEpsilonId;
+  static const OptionId kNoiseAlphaId;
   static const OptionId kVerboseStatsId;
   static const OptionId kLogLiveStatsId;
   static const OptionId kSmartPruningFactorId;
   static const OptionId kFpuStrategyId;
-  static const OptionId kFpuReductionId;
   static const OptionId kFpuValueId;
+  static const OptionId kFpuStrategyAtRootId;
+  static const OptionId kFpuValueAtRootId;
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
   static const OptionId kMaxCollisionEventsId;
   static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
+  static const OptionId kStickyEndgamesId;
   static const OptionId kSyzygyFastPlayId;
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
   static const OptionId kMinimumKLDGainPerNode;
   static const OptionId kKLDGainAverageInterval;
+  static const OptionId kShortSightednessId;
 
  private:
   const OptionsDict& options_;
@@ -138,22 +147,27 @@ class SearchParams {
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimiations.
+  const bool kLogitQ;
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
-  const bool kNoise;
+  const float kNoiseEpsilon;
+  const float kNoiseAlpha;
   const float kSmartPruningFactor;
   const bool kFpuAbsolute;
-  const float kFpuReduction;
   const float kFpuValue;
+  const bool kFpuAbsoluteAtRoot;
+  const float kFpuValueAtRoot;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
+  const bool kStickyEndgames;
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const float kShortSightedness;
 };
 
 }  // namespace lczero

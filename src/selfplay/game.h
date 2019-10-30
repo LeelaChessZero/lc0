@@ -42,12 +42,15 @@ struct SelfPlayLimits : SearchLimits {
 };
 
 struct PlayerOptions {
+  using MoveListCallback = std::function<void(const MoveList&)>;
   // Network to use by the player.
   Network* network;
   // Callback when player moves.
   BestMoveInfo::Callback best_move_callback;
   // Callback when player outputs info.
   ThinkingInfo::Callback info_callback;
+  // Callback when player discards a selected move due to low visits.
+  MoveListCallback discarded_callback;
   // NNcache to use.
   NNCache* cache;
   // User options dictionary.
@@ -63,7 +66,8 @@ class SelfPlayGame {
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
-  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree);
+  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree,
+               const MoveList& opening);
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
@@ -83,6 +87,8 @@ class SelfPlayGame {
   // Gets the eval which required the biggest swing up to get the final outcome.
   // Eval is the expected outcome in the range 0<->1.
   float GetWorstEvalForWinnerOrDraw() const;
+  int move_count_ = 0;
+  uint64_t nodes_total_ = 0;
 
  private:
   // options_[0] is for white player, [1] for black.
@@ -99,6 +105,9 @@ class SelfPlayGame {
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
   float min_eval_[2] = {1.0f, 1.0f};
+  // Track the maximum eval for white win, draw, black win for comparison to
+  // actual outcome.
+  float max_eval_[3] = {0.0f, 0.0f, 0.0f};
   std::mutex mutex_;
 
   // Training data to send.

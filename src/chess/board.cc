@@ -27,6 +27,7 @@
 
 #include "chess/board.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -911,14 +912,11 @@ bool ChessBoard::IsLegalMove(Move move,
 
 MoveList ChessBoard::GenerateLegalMoves() const {
   const KingAttackInfo king_attack_info = GenerateKingAttackInfo();
-  MoveList move_list = GeneratePseudolegalMoves();
-  MoveList result;
-  result.reserve(move_list.size());
-
-  for (Move m : move_list) {
-    if (IsLegalMove(m, king_attack_info)) result.emplace_back(m);
-  }
-
+  MoveList result = GeneratePseudolegalMoves();
+  result.erase(
+      std::remove_if(result.begin(), result.end(),
+                     [&](Move m) { return !IsLegalMove(m, king_attack_info); }),
+      result.end());
   return result;
 }
 
@@ -984,16 +982,28 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
     for (char c : castlings) {
       switch (c) {
         case 'K':
-          castlings_.set_we_can_00();
+          if (our_king_.as_string() == "e1" && our_pieces_.get(0, 7) &&
+              rooks_.get(0, 7)) {
+            castlings_.set_we_can_00();
+          }
           break;
         case 'k':
-          castlings_.set_they_can_00();
+          if (their_king_.as_string() == "e8" && their_pieces_.get(7, 7) &&
+              rooks_.get(7, 7)) {
+            castlings_.set_they_can_00();
+          }
           break;
         case 'Q':
-          castlings_.set_we_can_000();
+          if (our_king_.as_string() == "e1" && our_pieces_.get(0, 0) &&
+              rooks_.get(0, 0)) {
+            castlings_.set_we_can_000();
+          }
           break;
         case 'q':
-          castlings_.set_they_can_000();
+          if (their_king_.as_string() == "e8" && their_pieces_.get(7, 0) &&
+              rooks_.get(7, 0)) {
+            castlings_.set_they_can_000();
+          }
           break;
         default:
           throw Exception("Bad fen string: " + fen);
