@@ -112,14 +112,6 @@ const OptionId SearchParams::kVerboseStatsId{
 const OptionId SearchParams::kLogLiveStatsId{
     "log-live-stats", "LogLiveStats",
     "Do VerboseMoveStats on every info update."};
-const OptionId SearchParams::kSmartPruningFactorId{
-    "smart-pruning-factor", "SmartPruningFactor",
-    "Do not spend time on the moves which cannot become bestmove given the "
-    "remaining time to search. When no other move can overtake the current "
-    "best, the search stops, saving the time. Values greater than 1 stop less "
-    "promising moves from being considered even earlier. Values less than 1 "
-    "causes hopeless moves to still have some attention. When set to 0, smart "
-    "pruning is deactivated."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
     "How is an eval of unvisited node determined. \"First Play Urgency\" "
@@ -190,15 +182,6 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
-const OptionId SearchParams::kMinimumKLDGainPerNode{
-    "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
-    "If greater than 0 search will abort unless the last "
-    "KLDGainAverageInterval nodes have an average gain per node of at least "
-    "this much."};
-const OptionId SearchParams::kKLDGainAverageInterval{
-    "kldgain-average-interval", "KLDGainAverageInterval",
-    "Used to decide how frequently to evaluate the average KLDGainPerNode to "
-    "check the MinimumKLDGainPerNode, if specified."};
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
@@ -224,7 +207,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kNoiseAlphaId, 0.0f, 10000000.0f) = 0.3f;
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<BoolOption>(kLogLiveStatsId) = false;
-  options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
@@ -244,8 +226,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
-  options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
 
   options->HideOption(kNoiseEpsilonId);
@@ -263,7 +243,6 @@ SearchParams::SearchParams(const OptionsDict& options)
                         ? 0.25f
                         : options.Get<float>(kNoiseEpsilonId.GetId())),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
-      kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),
