@@ -84,7 +84,7 @@ artifacts:
     name: lc0-$(NAME)
   - path: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
-  - path: build/*.pdb
+  - path: build/lc0.pdb
     name: lc0-debug-symbols
 deploy:
   - provider: GitHub
