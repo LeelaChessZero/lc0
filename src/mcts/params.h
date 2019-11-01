@@ -42,12 +42,11 @@ class SearchParams {
   static void Populate(OptionsParser* options);
 
   // Parameter getters.
-  int GetMiniBatchSize() const {
-    return kMiniBatchSize;
-  }
+  int GetMiniBatchSize() const { return kMiniBatchSize; }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
+  bool GetLogitQ() const { return kLogitQ; }
   float GetCpuct() const { return kCpuct; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
@@ -70,18 +69,23 @@ class SearchParams {
     return options_.Get<float>(kTemperatureWinpctCutoffId.GetId());
   }
 
-  bool GetNoise() const { return kNoise; }
+  float GetNoiseEpsilon() const { return kNoiseEpsilon; }
+  float GetNoiseAlpha() const { return kNoiseAlpha; }
   bool GetVerboseStats() const {
     return options_.Get<bool>(kVerboseStatsId.GetId());
   }
   bool GetLogLiveStats() const {
     return options_.Get<bool>(kLogLiveStatsId.GetId());
   }
-  float GetSmartPruningFactor() const { return kSmartPruningFactor; }
-  bool GetFpuAbsolute(bool at_root) const { return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute; }
-  float GetFpuValue(bool at_root) const { return at_root ? kFpuValueAtRoot : kFpuValue; }
+  bool GetFpuAbsolute(bool at_root) const {
+    return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute;
+  }
+  float GetFpuValue(bool at_root) const {
+    return at_root ? kFpuValueAtRoot : kFpuValue;
+  }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
+  float GetShortSightedness() const { return kShortSightedness; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
@@ -92,16 +96,11 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  int GetKLDGainAverageInterval() const {
-    return options_.Get<int>(kKLDGainAverageInterval.GetId());
-  }
-  float GetMinimumKLDGainPerNode() const {
-    return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
-  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
+  static const OptionId kLogitQId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
@@ -112,9 +111,10 @@ class SearchParams {
   static const OptionId kTemperatureWinpctCutoffId;
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseId;
+  static const OptionId kNoiseEpsilonId;
+  static const OptionId kNoiseAlphaId;
   static const OptionId kVerboseStatsId;
   static const OptionId kLogLiveStatsId;
-  static const OptionId kSmartPruningFactorId;
   static const OptionId kFpuStrategyId;
   static const OptionId kFpuValueId;
   static const OptionId kFpuStrategyAtRootId;
@@ -129,8 +129,7 @@ class SearchParams {
   static const OptionId kMultiPvId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
-  static const OptionId kMinimumKLDGainPerNode;
-  static const OptionId kKLDGainAverageInterval;
+  static const OptionId kShortSightednessId;
 
  private:
   const OptionsDict& options_;
@@ -140,11 +139,12 @@ class SearchParams {
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimiations.
+  const bool kLogitQ;
   const float kCpuct;
   const float kCpuctBase;
   const float kCpuctFactor;
-  const bool kNoise;
-  const float kSmartPruningFactor;
+  const float kNoiseEpsilon;
+  const float kNoiseAlpha;
   const bool kFpuAbsolute;
   const float kFpuValue;
   const bool kFpuAbsoluteAtRoot;
@@ -158,6 +158,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const float kShortSightedness;
 };
 
 }  // namespace lczero

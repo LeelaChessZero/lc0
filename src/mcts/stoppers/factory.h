@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,17 +24,30 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-#include "version.h"
 
-std::uint32_t GetVersionInt(int major, int minor, int patch) {
-  return major * 1000000 + minor * 1000 + patch;
-}
+#pragma once
 
-std::string GetVersionStr(int major, int minor, int patch,
-                          const std::string& postfix,
-                          const std::string& build_id) {
-  auto v = std::to_string(major) + "." + std::to_string(minor) + "." +
-           std::to_string(patch);
-  if (postfix.empty()) return v + "+" + build_id;
-  return v + "-" + postfix + "+" + build_id;
-}
+#include "mcts/stoppers/stoppers.h"
+#include "mcts/stoppers/timemgr.h"
+#include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
+
+namespace lczero {
+
+// Option ID for a cache size. It's used from multiple places and there's no
+// really nice place to declare, so let it be here.
+extern const OptionId kNNCacheSizeId;
+
+enum class RunType { kUci, kSelfplay };
+
+// Populates UCI/command line flags with time management options.
+void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
+
+// Creates a time management ("Legacy" because it's planned to be replaced).
+std::unique_ptr<TimeManager> MakeLegacyTimeManager();
+
+// Populates KLDGain and SmartPruning stoppers.
+void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
+                                 const OptionsDict& options);
+
+}  // namespace lczero

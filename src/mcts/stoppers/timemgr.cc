@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,17 +24,35 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-#include "version.h"
 
-std::uint32_t GetVersionInt(int major, int minor, int patch) {
-  return major * 1000000 + minor * 1000 + patch;
+#include "mcts/stoppers/timemgr.h"
+#include "mcts/stoppers/stoppers.h"
+
+namespace lczero {
+
+StoppersHints::StoppersHints() { Reset(); }
+
+void StoppersHints::UpdateEstimatedRemainingTimeMs(int64_t v) {
+  if (v < remaining_time_ms_) remaining_time_ms_ = v;
+}
+int64_t StoppersHints::GetEstimatedRemainingTimeMs() const {
+  return remaining_time_ms_;
 }
 
-std::string GetVersionStr(int major, int minor, int patch,
-                          const std::string& postfix,
-                          const std::string& build_id) {
-  auto v = std::to_string(major) + "." + std::to_string(minor) + "." +
-           std::to_string(patch);
-  if (postfix.empty()) return v + "+" + build_id;
-  return v + "-" + postfix + "+" + build_id;
+void StoppersHints::UpdateEstimatedRemainingRemainingPlayouts(int64_t v) {
+  if (v < remaining_playouts_) remaining_playouts_ = v;
 }
+int64_t StoppersHints::GetEstimatedRemainingPlayouts() const {
+  // Even if we exceeded limits, don't go crazy by not allowing any playouts.
+  return std::max(decltype(remaining_playouts_){1}, remaining_playouts_);
+}
+
+void StoppersHints::Reset() {
+  // Slightly more than 3 years.
+  remaining_time_ms_ = 100000000000;
+  // Type for N in nodes is currently uint32_t, so set limit in order not to
+  // overflow it.
+  remaining_playouts_ = 4000000000;
+}
+
+}  // namespace lczero
