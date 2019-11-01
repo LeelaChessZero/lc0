@@ -1117,7 +1117,7 @@ string ChessBoard::DebugString() const {
       result += c;
     }
     if (i == 0) {
-      result += " " + castlings_.as_string();
+      result += " " + castlings_.DebugString();
       result += flipped_ ? " (from black's eyes)" : " (from white's eyes)";
       result += " Hash: " + std::to_string(Hash());
     }

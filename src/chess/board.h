@@ -127,13 +127,17 @@ class ChessBoard {
 
     void Mirror() { data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2); }
 
-    std::string as_string() const {
-      if (data_ == 0) return "-";
+    std::string DebugString() const {
       std::string result;
+      if (data_ == 0) result = "-";
       if (we_can_00()) result += 'K';
       if (we_can_000()) result += 'Q';
       if (they_can_00()) result += 'k';
       if (they_can_000()) result += 'q';
+      result += '[';
+      result += 'a' + queenside_rook();
+      result += 'a' + kingside_rook();
+      result += ']';
       return result;
     }
 
