@@ -755,6 +755,19 @@ bool ChessBoard::IsSameMove(Move move1, Move move2) const {
   return move2.to().col() < move2.from().col();
 }
 
+Move ChessBoard::GetLegacyMove(Move move) const {
+  if (our_king_ != move.from() || !our_pieces_.get(move.to())) {
+    return move;
+  }
+  static const Move kChess960oo = Move("e1h1");
+  static const Move kLegacyOo = Move("e1g1");
+  static const Move kChess960ooo = Move("e1a1");
+  static const Move kLegacyOoo = Move("e1c1");
+  if (move == kChess960oo) return kLegacyOo;
+  if (move == kChess960ooo) return kLegacyOoo;
+  return move;
+}
+
 KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   KingAttackInfo king_attack_info;
 

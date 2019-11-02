@@ -30,6 +30,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+
 #include "chess/bitboard.h"
 #include "chess/position.h"
 #include "utils/optional.h"
