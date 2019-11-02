@@ -30,55 +30,11 @@
 #include <iostream>
 #include <thread>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 namespace lczero {
 
 namespace {
 size_t kBufferSizeLines = 200;
 const char* kStderrFilename = "<stderr>";
-
-#ifdef _WIN32
-std::once_flag flag;
-CONSOLE_SCREEN_BUFFER_INFO info;
-
-std::string HandleCSI(std::string in) {
-  std::string s = in.substr(2);
-  size_t pos;
-  int i;
-  WORD attrib = info.wAttributes;
-
-  std::call_once(flag, []() {
-    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info);
-  });
-  if (s.back() == 'm') {
-    do {
-      i = std::stoi(s, &pos);
-      switch (i) {
-        case 0:
-          attrib = info.wAttributes;
-          break;
-        case 1:
-          attrib |= FOREGROUND_INTENSITY;
-          break;
-        case 31:
-          attrib &= ~(FOREGROUND_BLUE | FOREGROUND_GREEN);
-          attrib |= FOREGROUND_RED;
-          break;
-      }
-      s = s.substr(pos + 1);
-    } while (s.size());
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), attrib);
-  }
-  return "";
-}
-
-#else
-std::string HandleCSI(std::string in) { return in; }
-
-#endif
 }  // namespace
 
 Logging& Logging::Get() {
@@ -124,23 +80,8 @@ StderrLogMessage::StderrLogMessage(const char* file, int line)
     : log_(file, line) {}
 
 StderrLogMessage::~StderrLogMessage() {
-  std::string s = str();
-  std::string s2 = "";
-  size_t len;
-  for (;;) {
-    len = s.find("\033[");
-    std::cerr << s.substr(0, len);
-    s2 += s.substr(0, len);
-    if (len == std::string::npos) break;
-    s = s.substr(len);
-    len = 2;
-    while (s[len] && !(s[len] >= 0x40 && s[len] <= 0x7E)) len++;
-    std::cerr.flush();
-    std::cerr << HandleCSI(s.substr(0, ++len));
-    s = s.substr(len);
-  };
-  std::cerr << std::endl;
-  log_ << s2;
+  std::cerr << str() << std::endl;
+  log_ << str();
 }
 
 std::chrono::time_point<std::chrono::system_clock> SteadyClockToSystemClock(
