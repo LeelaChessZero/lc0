@@ -192,11 +192,17 @@ class SearchWorker {
   // Runs iterations while needed.
   void RunBlocking() {
     LOGFILE << "Started search thread.";
-    // A very early stop may arrive before this point, so the test is at the end
-    // to ensure at least one iteration runs before exiting.
-    do {
-      ExecuteOneIteration();
-    } while (search_->IsSearchActive());
+    try {
+      // A very early stop may arrive before this point, so the test is at the
+      // end to ensure at least one iteration runs before exiting.
+      do {
+        ExecuteOneIteration();
+      } while (search_->IsSearchActive());
+    } catch (std::exception& e) {
+      std::cerr << "Unhandled exception in worker thread: " << e.what()
+                << std::endl;
+      abort();
+    }
   }
 
   // Does one full iteration of MCTS search:
