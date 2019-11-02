@@ -454,18 +454,24 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         }
         return true;
       };
+      // @From may be less or greater than @to. @To is not included in check.
       auto range_attacked = [this](int from, int to) {
-        for (int i = from; i <= to; ++i) {
-          if (IsUnderAttack(i)) return true;
+        const int increment = from < to ? 1 : -1;
+        while (true) {
+          if (IsUnderAttack(from)) return true;
+          if (from == to) break;
+          from += increment;
         }
         return false;
       };
       const int king = source.col();
+      // For castlings we don't check destination king square for checks, it
+      // will be done in legal move check phase.
       if (castlings_.we_can_000()) {
         const int qrook = castlings_.queenside_rook();
         if (walk_free(std::min(2 /* c1 */, qrook), std::max(3 /* d1 */, king),
                       qrook, king) &&
-            !range_attacked(2 /* c1 */, king)) {
+            !range_attacked(king, 2 /* c1 */)) {
           result.emplace_back(source,
                               BoardSquare(0, castlings_.queenside_rook()));
         }
@@ -575,6 +581,45 @@ bool ChessBoard::ApplyMove(Move move) {
   const auto to_row = to.row();
   const auto to_col = to.col();
 
+  // Castlings.
+  if (from == our_king_) {
+    castlings_.reset_we_can_00();
+    castlings_.reset_we_can_000();
+    auto do_castling = [this](int king_dst, int rook_src, int rook_dst) {
+      // Remove en passant flags.
+      pawns_ &= kPawnMask;
+      our_pieces_.reset(our_king_);
+      our_pieces_.reset(rook_src);
+      rooks_.reset(rook_src);
+      our_pieces_.set(king_dst);
+      our_pieces_.set(rook_dst);
+      rooks_.set(rook_dst);
+      our_king_ = king_dst;
+    };
+    if (from_row == 0 && to_row == 0) {
+      const auto our_rooks = rooks() & our_pieces_;
+      if (our_rooks.get(to)) {
+        // Castling.
+        if (to_col > from_col) {
+          // Kingside.
+          do_castling(6 /* g1 */, to.as_int(), 5 /* f1 */);
+        } else {
+          // Queenside.
+          do_castling(2 /* c1 */, to.as_int(), 3 /* d1 */);
+        }
+        return false;
+      } else if (to_col - from_col > 1) {
+        // Non FRC-style e1g1 castling (as opposed to e1h1).
+        do_castling(6 /* g1 */, 7 /* h1 */, 5 /* f1 */);
+        return false;
+      } else if (from_col - to_col > 1) {
+        // Non FRC-style e1c1 castling (as opposed to e1a1).
+        do_castling(2 /* c1 */, 0 /* a1 */, 3 /* d1 */);
+        return false;
+      }
+    }
+  }
+
   // Move in our pieces.
   our_pieces_.reset(from);
   our_pieces_.set(to);
@@ -605,46 +650,9 @@ bool ChessBoard::ApplyMove(Move move) {
   // If pawn was moved, reset 50 move draw counter.
   reset_50_moves |= pawns_.get(from);
 
-  // King.
+  // King, non-castling move
   if (from == our_king_) {
-    castlings_.reset_we_can_00();
-    castlings_.reset_we_can_000();
     our_king_ = to;
-    auto do_castling = [this](int king_dst, int rook_src, int rook_dst) {
-      our_pieces_.reset(our_king_);
-      our_king_ = king_dst;
-      our_pieces_.set(king_dst);
-      our_pieces_.reset(rook_src);
-      rooks_.reset(rook_src);
-      our_pieces_.set(rook_dst);
-      rooks_.set(rook_dst);
-    };
-    if (from_row == 0 && to_row == 0) {
-      const auto our_rooks = rooks() & our_pieces_;
-      if (our_rooks.get(to)) {
-        // Castling.
-        if (to_col > from_col) {
-          // Kingside.
-          do_castling(6 /* g1 */, to.as_int(), 5 /* f1 */);
-        } else {
-          // Queenside.
-          do_castling(2 /* c1 */, to.as_int(), 3 /* d1 */);
-        }
-      } else {
-        if (to_col - from_col > 1) {
-          // Non FRC-style e1g1 castling (as opposed to e1h1).
-          do_castling(6 /* g1 */, 7 /* h1 */, 5 /* f1 */);
-        } else if (from_col - to_col > 1) {
-          // Non FRC-style e1c1 castling (as opposed to e1a1).
-          do_castling(2 /* c1 */, 0 /* a1 */, 3 /* d1 */);
-        } else {
-          // Ordinary king move.
-          our_king_ = to;
-        }
-      }
-    } else {
-      our_king_ = to;
-    }
     return reset_50_moves;
   }
 
@@ -891,11 +899,17 @@ bool ChessBoard::IsLegalMove(Move move,
     }
   }
 
-  // Castlings were checked earlier.
-  // Moreover, no pseudolegal king moves to an attacked square are generated.
-  // If it's king's move at this moment, its certainly legal.
+  // King moves.
   if (from == our_king_) {
-    return true;
+    if (from.row() != 0 || to.row() != 0 ||
+        (abs(from.col() - to.col()) == 1 && !our_pieces_.get(to))) {
+      // Non-castling move. Already checked during movegen.
+      return true;
+    }
+    // Checking whether king is under check after castling.
+    ChessBoard board(*this);
+    board.ApplyMove(move);
+    return !board.IsUnderCheck();
   }
 
   // If we get here, we are not under check.
@@ -1019,7 +1033,7 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
           castlings_.set_we_can_000();
         }
       } else if (c >= 'a' && c <= 'h') {
-        int rook_col = c - ('a' + king_col);
+        int rook_col = c - 'a';
         if (rook_col < king_col) {
           left_rook = rook_col;
           if (is_black) {
