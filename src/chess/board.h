@@ -97,6 +97,8 @@ class ChessBoard {
   MoveList GenerateLegalMoves() const;
   // Check whether pseudolegal move is legal.
   bool IsLegalMove(Move move, const KingAttackInfo& king_attack_info) const;
+  // Returns whether two moves are actually the same move in the position.
+  bool IsSameMove(Move move1, Move move2) const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),

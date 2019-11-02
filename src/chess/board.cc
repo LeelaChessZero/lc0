@@ -733,6 +733,28 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   return false;
 }
 
+bool ChessBoard::IsSameMove(Move move1, Move move2) const {
+  // If moves are equal, it's the same move.
+  if (move1 == move2) return true;
+  // If move cannot be a castling, not the same move.
+  if (move1.from() != move2.from() || our_king_ != move1.from() ||
+      move1.from().row() != 0 || move1.to().row() != 0 ||
+      move2.to().row() != 0) {
+    return false;
+  }
+  const bool move1_is_castling = our_pieces_.get(move1.to()) ||
+                                 abs(move1.to().col() - move1.from().col()) > 1;
+  const bool move2_is_castling = our_pieces_.get(move2.to()) ||
+                                 abs(move2.to().col() - move2.from().col()) > 1;
+  // If both moves are not castlings, still can be king move.
+  if (!move1_is_castling || !move2_is_castling) return move1 == move2;
+  // It's two castlings, checking that they are castlings in the same direction.
+  if (move1.to().col() > move1.from().col()) {
+    return move2.to().col() > move2.from().col();
+  }
+  return move2.to().col() < move2.from().col();
+}
+
 KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   KingAttackInfo king_attack_info;
 

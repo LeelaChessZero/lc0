@@ -404,10 +404,11 @@ std::string EdgeAndNode::DebugString() const {
 
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
+  const auto& board = HeadPosition().GetBoard();
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
-    if (n.GetMove() == move) {
+    if (board.IsSameMove(n.GetMove(), move)) {
       new_head = n.GetOrSpawnNode(current_head_);
       // Ensure head is not terminal, so search can extend or visit children of
       // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
