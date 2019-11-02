@@ -724,8 +724,8 @@ template class PolicyMapLayer<float>;
 void CudnnError(cudnnStatus_t status, const char* file, const int& line) {
   if (status != CUDNN_STATUS_SUCCESS) {
     char message[128];
-    sprintf(message, "CUDNN error (%0x%x): %s (%s:%d) ", status,
-            cudnnGetErrorString(status), file, line);
+    sprintf(message, "CUDNN error: %s (%s:%d) ", cudnnGetErrorString(status),
+            file, line);
     throw Exception(message);
   }
 }
@@ -759,8 +759,8 @@ const char* CublasGetErrorString(cublasStatus_t status) {
 void CublasError(cublasStatus_t status, const char* file, const int& line) {
   if (status != CUBLAS_STATUS_SUCCESS) {
     char message[128];
-    sprintf(message, "CUBLAS error (%0x%x): %s (%s:%d) ", status,
-            CublasGetErrorString(status), file, line);
+    sprintf(message, "CUBLAS error: %s (%s:%d) ", CublasGetErrorString(status),
+            file, line);
     throw Exception(message);
   }
 }
@@ -768,8 +768,8 @@ void CublasError(cublasStatus_t status, const char* file, const int& line) {
 void CudaError(cudaError_t status, const char* file, const int& line) {
   if (status != cudaSuccess) {
     char message[128];
-    sprintf(message, "CUDA error (%0x%x): %s (%s:%d) ", status,
-            cudaGetErrorString(status), file, line);
+    sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
+            file, line);
     throw Exception(message);
   }
 }
