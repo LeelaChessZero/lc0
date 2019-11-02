@@ -706,7 +706,7 @@ class CudnnNetwork : public Network {
       case cudaErrorInitializationError:
         throw Exception("CUDA driver and/or runtime could not be initialized");
       case cudaErrorInsufficientDriver:
-        throw Exception("CUDA driver is older than the CUDA runtime library");
+        throw Exception("No CUDA driver, or one older than the CUDA library");
       case cudaErrorNoDevice:
         throw Exception("No CUDA-capable devices detected");
     }
