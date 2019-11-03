@@ -33,16 +33,16 @@
 
 namespace lczero {
 
-bool EscCodes::flag_;
+bool EscCodes::enabled_;
 
 void EscCodes::Init() {
 #ifdef _WIN32
   HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
   DWORD mode;
   GetConsoleMode(h, &mode);
-  flag_ = SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+  enabled_ = SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 #else
-  flag_ = true;
+  enabled_ = true;
 #endif
 }
 

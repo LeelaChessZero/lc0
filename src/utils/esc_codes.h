@@ -37,32 +37,32 @@ class EscCodes {
   static void Init();
 
   // Supported ANSI escape sequences.
-  static const char* Reset() { return flag_ ? "\033[0m" : ""; }
-  static const char* Bold() { return flag_ ? "\033[1m" : ""; }
-  static const char* Underline() { return flag_ ? "\033[4m" : ""; }
-  static const char* Reverse() { return flag_ ? "\033[7m" : ""; }
-  static const char* Normal() { return flag_ ? "\033[22m" : ""; }
-  static const char* NoUnderline() { return flag_ ? "\033[24m" : ""; }
-  static const char* NoReverse() { return flag_ ? "\033[27m" : ""; }
-  static const char* Black() { return flag_ ? "\033[30m" : ""; }
-  static const char* Red() { return flag_ ? "\033[31m" : ""; }
-  static const char* Green() { return flag_ ? "\033[32m" : ""; }
-  static const char* Yellow() { return flag_ ? "\033[33m" : ""; }
-  static const char* Blue() { return flag_ ? "\033[34m" : ""; }
-  static const char* Magenda() { return flag_ ? "\033[35m" : ""; }
-  static const char* Cyan() { return flag_ ? "\033[36m" : ""; }
-  static const char* White() { return flag_ ? "\033[37m" : ""; }
-  static const char* BlackBg() { return flag_ ? "\033[40m" : ""; }
-  static const char* RedBg() { return flag_ ? "\033[41m" : ""; }
-  static const char* GreenBg() { return flag_ ? "\033[42m" : ""; }
-  static const char* YellowBg() { return flag_ ? "\033[43m" : ""; }
-  static const char* BlueBg() { return flag_ ? "\033[44m" : ""; }
-  static const char* MagendaBg() { return flag_ ? "\033[45m" : ""; }
-  static const char* CyanBg() { return flag_ ? "\033[46m" : ""; }
-  static const char* WhiteBg() { return flag_ ? "\033[47m" : ""; }
+  static const char* Reset() { return enabled_ ? "\033[0m" : ""; }
+  static const char* Bold() { return enabled_ ? "\033[1m" : ""; }
+  static const char* Underline() { return enabled_ ? "\033[4m" : ""; }
+  static const char* Reverse() { return enabled_ ? "\033[7m" : ""; }
+  static const char* Normal() { return enabled_ ? "\033[22m" : ""; }
+  static const char* NoUnderline() { return enabled_ ? "\033[24m" : ""; }
+  static const char* NoReverse() { return enabled_ ? "\033[27m" : ""; }
+  static const char* Black() { return enabled_ ? "\033[30m" : ""; }
+  static const char* Red() { return enabled_ ? "\033[31m" : ""; }
+  static const char* Green() { return enabled_ ? "\033[32m" : ""; }
+  static const char* Yellow() { return enabled_ ? "\033[33m" : ""; }
+  static const char* Blue() { return enabled_ ? "\033[34m" : ""; }
+  static const char* Magenda() { return enabled_ ? "\033[35m" : ""; }
+  static const char* Cyan() { return enabled_ ? "\033[36m" : ""; }
+  static const char* White() { return enabled_ ? "\033[37m" : ""; }
+  static const char* BlackBg() { return enabled_ ? "\033[40m" : ""; }
+  static const char* RedBg() { return enabled_ ? "\033[41m" : ""; }
+  static const char* GreenBg() { return enabled_ ? "\033[42m" : ""; }
+  static const char* YellowBg() { return enabled_ ? "\033[43m" : ""; }
+  static const char* BlueBg() { return enabled_ ? "\033[44m" : ""; }
+  static const char* MagendaBg() { return enabled_ ? "\033[45m" : ""; }
+  static const char* CyanBg() { return enabled_ ? "\033[46m" : ""; }
+  static const char* WhiteBg() { return enabled_ ? "\033[47m" : ""; }
 
  private:
-  static bool flag_;
+  static bool enabled_;
 };
 
 }  // namespace lczero
