@@ -128,7 +128,7 @@ class Lexer {
     }
 
     // Identifier
-    if (std::isalnum(str_[idx_])) {
+    if (std::isalnum(str_[idx_]) || str_[idx_]=='/') {
       ReadIdentifier();
       return;
     }
