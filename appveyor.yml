@@ -100,6 +100,6 @@ test_script:
 - cmd: IF %GTEST%==true meson test --print-errorlogs
 - cmd: cd ..
 on_finish:
-- cmd: cd build
+- cmd: cd C:\projects\lc0\build
 - cmd: IF %GTEST%==true for %%a in (*.xml) do curl -F file=@%%a https://ci.appveyor.com/api/testresults/junit/%APPVEYOR_JOB_ID%
 - cmd: cd ..
