@@ -113,6 +113,8 @@ class ChessBoard {
 
   class Castlings {
    public:
+    Castlings() : queenside_rook_(0), kingside_rook_(7) {}
+
     void set_we_can_00() { data_ |= 1; }
     void set_we_can_000() { data_ |= 2; }
     void set_they_can_00() { data_ |= 4; }
@@ -148,20 +150,24 @@ class ChessBoard {
     uint8_t as_int() const { return data_; }
 
     bool operator==(const Castlings& other) const {
-      assert(rook_positions_ == other.rook_positions_);
+      assert(queenside_rook_ == other.queenside_rook_ &&
+             kingside_rook_ == other.kingside_rook_);
       return data_ == other.data_;
     }
 
-    uint8_t queenside_rook() const { return GetLowestBit32(rook_positions_); }
-    uint8_t kingside_rook() const { return GetHighestBit32(rook_positions_); }
+    uint8_t queenside_rook() const { return queenside_rook_; }
+    uint8_t kingside_rook() const { return kingside_rook_; }
     void SetRookPositions(std::uint8_t left, std::uint8_t right) {
-      rook_positions_ = (1 << left) | (1 << right);
+      queenside_rook_ = left;
+      kingside_rook_ = right;
     }
 
    private:
-    // Bitmask of initial rook positions. Bit 0 means file A, and bit 7 means
-    // file H.
-    std::uint8_t rook_positions_ = 0b10000001;
+    // Bitmask of initial rook positions.
+    // "Left" rook.
+    std::uint8_t queenside_rook_ : 3;
+    // "Right" rook.
+    std::uint8_t kingside_rook_ : 3;
 
     // - Bit 0 -- "our" side's kingside castle.
     // - Bit 1 -- "our" side's queenside castle.

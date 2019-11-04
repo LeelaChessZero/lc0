@@ -52,26 +52,6 @@ inline unsigned long GetLowestBit(std::uint64_t value) {
 #endif
 }
 
-inline unsigned long GetLowestBit32(std::uint32_t value) {
-#if defined(_MSC_VER)
-  unsigned long result;
-  return _BitScanForward(&result, value);
-  return result;
-#else
-  return __builtin_ctz(value);
-#endif
-}
-
-inline unsigned long GetHighestBit32(std::uint32_t value) {
-#if defined(_MSC_VER)
-  unsigned long result;
-  return _BitScanReverse(&result, value);
-  return result;
-#else
-  return 31 - __builtin_clz(value);
-#endif
-}
-
 // Iterates over all set bits of the value, lower to upper. The value of
 // dereferenced iterator is bit number (lower to upper, 0 bazed)
 template <typename T>
