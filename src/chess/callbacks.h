@@ -50,8 +50,6 @@ struct BestMoveInfo {
   int game_id = -1;
   // The color of the player, if known.
   optional<bool> is_black;
-
-  using Callback = std::function<void(const BestMoveInfo&)>;
 };
 
 // Is sent during the search.
@@ -86,8 +84,6 @@ struct ThinkingInfo {
   int game_id = -1;
   // The color of the player, if known.
   optional<bool> is_black;
-
-  using Callback = std::function<void(const std::vector<ThinkingInfo>&)>;
 };
 
 // Is sent when a single game is finished.
@@ -120,9 +116,39 @@ struct TournamentInfo {
   // Player1's [win/draw/lose] as [white/black].
   // e.g. results[2][1] is how many times player 1 lost as black.
   int results[3][2] = {{0, 0}, {0, 0}, {0, 0}};
-  using Callback = std::function<void(const TournamentInfo&)>;
   int move_count_ = 0;
   uint64_t nodes_total_ = 0;
+
+  using Callback = std::function<void(const TournamentInfo&)>;
+};
+
+// A class which knows how to output UCI responses.
+class UciResponder {
+ public:
+  virtual ~UciResponder() = default;
+  virtual void OutputBestMove(BestMoveInfo* info) = 0;
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) = 0;
+};
+
+// The responder which calls callbacks. Used for easier transition from old
+// code.
+class CallbackUciResponder : public UciResponder {
+ public:
+  using ThinkingCallback =
+      std::function<void(const std::vector<ThinkingInfo>&)>;
+  using BestMoveCallback = std::function<void(const BestMoveInfo&)>;
+
+  CallbackUciResponder(BestMoveCallback bestmove, ThinkingCallback info)
+      : bestmove_callback_(bestmove), info_callback_(info) {}
+
+  void OutputBestMove(BestMoveInfo* info) { bestmove_callback_(*info); }
+  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+    info_callback_(*infos);
+  }
+
+ private:
+  const BestMoveCallback bestmove_callback_;
+  const ThinkingCallback info_callback_;
 };
 
 }  // namespace lczero

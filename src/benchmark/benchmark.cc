@@ -26,6 +26,7 @@
 */
 
 #include "benchmark/benchmark.h"
+
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
 #include "mcts/stoppers/stoppers.h"
@@ -80,9 +81,11 @@ void Benchmark::Run() {
     const auto start = std::chrono::steady_clock::now();
     auto search = std::make_unique<Search>(
         tree, network.get(),
-        std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
-        std::bind(&Benchmark::OnInfo, this, std::placeholders::_1), MoveList(),
-        start, std::move(stopper), false, option_dict, &cache, nullptr);
+        std::make_unique<CallbackUciResponder>(
+            std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
+            std::bind(&Benchmark::OnInfo, this, std::placeholders::_1)),
+        MoveList(), start, std::move(stopper), false, option_dict, &cache,
+        nullptr);
 
     search->StartThreads(option_dict.Get<int>(kThreadsOptionId.GetId()));
 
