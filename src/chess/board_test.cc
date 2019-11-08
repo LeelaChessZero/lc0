@@ -28,7 +28,7 @@ namespace lczero {
 
 TEST(BoardSquare, BoardSquare) {
   {
-    auto x = BoardSquare(10);  // Should be c2
+    auto x = BoardSquare(ChessBoard::C2);
     EXPECT_EQ(x.row(), 1);
     EXPECT_EQ(x.col(), 2);
   }

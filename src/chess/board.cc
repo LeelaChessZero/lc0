@@ -464,25 +464,25 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         }
         return false;
       };
-      const int king = source.col();
+      const uint8_t king = source.col();
       // For castlings we don't check destination king square for checks, it
       // will be done in legal move check phase.
       if (castlings_.we_can_000()) {
-        const int qrook = castlings_.queenside_rook();
-        if (walk_free(std::min(2 /* c1 */, qrook), std::max(3 /* d1 */, king),
-                      qrook, king) &&
-            !range_attacked(king, 2 /* c1 */)) {
+        const uint8_t qrook = castlings_.queenside_rook();
+        if (walk_free(std::min(static_cast<uint8_t>(C1), qrook),
+                      std::max(static_cast<uint8_t>(D1), king), qrook, king) &&
+            !range_attacked(king, C1)) {
           result.emplace_back(source,
-                              BoardSquare(0, castlings_.queenside_rook()));
+                              BoardSquare(RANK_1, castlings_.queenside_rook()));
         }
       }
       if (castlings_.we_can_00()) {
-        const int krook = castlings_.kingside_rook();
-        if (walk_free(std::min(5 /* f1 */, king), std::max(6 /* g1 */, krook),
-                      krook, king) &&
-            !range_attacked(king, 6 /* g1 */)) {
+        const uint8_t krook = castlings_.kingside_rook();
+        if (walk_free(std::min(static_cast<uint8_t>(F1), king),
+                      std::max(static_cast<uint8_t>(G1), krook), krook, king) &&
+            !range_attacked(king, G1)) {
           result.emplace_back(source,
-                              BoardSquare(0, castlings_.kingside_rook()));
+                              BoardSquare(RANK_1, castlings_.kingside_rook()));
         }
       }
       continue;
@@ -518,13 +518,13 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         const BoardSquare destination(dst_row, dst_col);
 
         if (!our_pieces_.get(destination) && !their_pieces_.get(destination)) {
-          if (dst_row != 7) {
+          if (dst_row != RANK_8) {
             result.emplace_back(source, destination);
-            if (dst_row == 2) {
+            if (dst_row == RANK_3) {
               // Maybe it'll be possible to move two squares.
-              if (!our_pieces_.get(3, dst_col) &&
-                  !their_pieces_.get(3, dst_col)) {
-                result.emplace_back(source, BoardSquare(3, dst_col));
+              if (!our_pieces_.get(RANK_4, dst_col) &&
+                  !their_pieces_.get(RANK_4, dst_col)) {
+                result.emplace_back(source, BoardSquare(RANK_4, dst_col));
               }
             }
           } else {
@@ -543,7 +543,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
           if (dst_col < 0 || dst_col >= 8) continue;
           const BoardSquare destination(dst_row, dst_col);
           if (their_pieces_.get(destination)) {
-            if (dst_row == 7) {
+            if (dst_row == RANK_8) {
               // Promotion.
               for (auto promotion : kPromotions) {
                 result.emplace_back(source, destination, promotion);
@@ -552,7 +552,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
               // Ordinary capture.
               result.emplace_back(source, destination);
             }
-          } else if (dst_row == 5 && pawns_.get(7, dst_col)) {
+          } else if (dst_row == RANK_6 && pawns_.get(RANK_8, dst_col)) {
             // En passant.
             // "Pawn" on opponent's file 8 means that en passant is possible.
             // Those fake pawns are reset in ApplyMove.
@@ -602,19 +602,19 @@ bool ChessBoard::ApplyMove(Move move) {
         // Castling.
         if (to_col > from_col) {
           // Kingside.
-          do_castling(6 /* g1 */, to.as_int(), 5 /* f1 */);
+          do_castling(G1, to.as_int(), F1);
         } else {
           // Queenside.
-          do_castling(2 /* c1 */, to.as_int(), 3 /* d1 */);
+          do_castling(C1, to.as_int(), D1);
         }
         return false;
       } else if (to_col - from_col > 1) {
         // Non FRC-style e1g1 castling (as opposed to e1h1).
-        do_castling(6 /* g1 */, 7 /* h1 */, 5 /* f1 */);
+        do_castling(G1, H1, F1);
         return false;
       } else if (from_col - to_col > 1) {
         // Non FRC-style e1c1 castling (as opposed to e1a1).
-        do_castling(2 /* c1 */, 0 /* a1 */, 3 /* d1 */);
+        do_castling(C1, A1, D1);
         return false;
       }
     }
@@ -639,9 +639,9 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // En passant.
   if (from_row == 4 && pawns_.get(from) && from_col != to_col &&
-      pawns_.get(7, to_col)) {
-    pawns_.reset(4, to_col);
-    their_pieces_.reset(4, to_col);
+      pawns_.get(RANK_8, to_col)) {
+    pawns_.reset(RANK_5, to_col);
+    their_pieces_.reset(RANK_5, to_col);
   }
 
   // Remove en passant flags.
@@ -759,12 +759,8 @@ Move ChessBoard::GetLegacyMove(Move move) const {
   if (our_king_ != move.from() || !our_pieces_.get(move.to())) {
     return move;
   }
-  static const Move kChess960oo = Move("e1h1");
-  static const Move kLegacyOo = Move("e1g1");
-  static const Move kChess960ooo = Move("e1a1");
-  static const Move kLegacyOoo = Move("e1c1");
-  if (move == kChess960oo) return kLegacyOo;
-  if (move == kChess960ooo) return kLegacyOoo;
+  if (move == Move(E1, H1)) return Move(E1, H1);
+  if (move == Move(E1, A1)) return Move(E1, C1);
   return move;
 }
 
@@ -1093,9 +1089,9 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
 
   if (en_passant != "-") {
     auto square = BoardSquare(en_passant);
-    if (square.row() != 2 && square.row() != 5)
+    if (square.row() != RANK_3 && square.row() != RANK_6)
       throw Exception("Bad fen string: " + fen + " wrong en passant rank");
-    pawns_.set((square.row() == 2) ? 0 : 7, square.col());
+    pawns_.set((square.row() == RANK_3) ? 0 : 7, square.col());
   }
 
   if (who_to_move == "b" || who_to_move == "B") {
