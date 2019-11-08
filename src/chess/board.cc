@@ -454,12 +454,13 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         }
         return true;
       };
-      // @From may be less or greater than @to. @To is not included in check.
+      // @From may be less or greater than @to. @To is not included in check
+      // unless it is the same with @from.
       auto range_attacked = [this](int from, int to) {
+        if (from == to) return IsUnderAttack(from);
         const int increment = from < to ? 1 : -1;
-        while (true) {
+        while (from != to) {
           if (IsUnderAttack(from)) return true;
-          if (from == to) break;
           from += increment;
         }
         return false;

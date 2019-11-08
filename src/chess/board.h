@@ -163,10 +163,9 @@ class ChessBoard {
     }
 
    private:
-    // Bitmask of initial rook positions.
-    // "Left" rook.
+    // Position of "left" (queenside) rook in starting game position.
     std::uint8_t queenside_rook_ : 3;
-    // "Right" rook.
+    // Position of "right" (kingside) rook in starting position.
     std::uint8_t kingside_rook_ : 3;
 
     // - Bit 0 -- "our" side's kingside castle.
