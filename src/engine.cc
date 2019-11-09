@@ -69,6 +69,8 @@ EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
     : options_(options),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback),
+      // How can I inject the MakeAlphaZeroLikeTimeManager
+	  // here based on Option kAlphaZeroTimeUseId defined in factory.cc?
       time_manager_(MakeLegacyTimeManager()),
       move_start_time_(std::chrono::steady_clock::now()) {}
 

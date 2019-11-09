@@ -88,7 +88,19 @@ const OptionId kSmartPruningFactorId{
     "promising moves from being considered even earlier. Values less than 1 "
     "causes hopeless moves to still have some attention. When set to 0, smart "
     "pruning is deactivated."};
-
+const OptionId kAlphaZeroTimeUseId{
+    "alphazero-time-use", "AlphaZeroTimeUse",
+    "Makes the engine use AlphaZero time. The alphazero engine always "
+    "budgeted 5 percent of total time left for the first upcoming move, "
+    "thereby "
+    "gradually taking less time for each consecutive move in the game."};
+const OptionId kAlphaZeroTimeValueId{
+    "alphazero-time-value", "AlphaZeroTimeValue",
+    "Remaining time is divided by this value. Default value of 20 uses "
+    "alphazero time."
+    "Lower values will spend more time in beginning of game, higher values "
+    "will save more time"
+    "for later in the game"};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
@@ -104,7 +116,8 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
     options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
     options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
     options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
-
+    options->Add<BoolOption>(kAlphaZeroTimeUseId) = false;
+    options->Add<FloatOption>(kAlphaZeroTimeValueId, 2.0f, 100.0f) = 20.0f;
     // Hide time curve options.
     options->HideOption(kTimeMidpointMoveId);
     options->HideOption(kTimeSteepnessId);
@@ -195,6 +208,21 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
          move;
 }
 
+class AlphaZeroLikeTimeManager : public TimeManager {
+ public:
+  void ResetGame() override;
+  std::unique_ptr<SearchStopper> GetStopper(const OptionsDict& options,
+                                            const GoParams& params,
+                                            const Position& position) override;
+
+ private:
+  std::unique_ptr<SearchStopper> CreateTimeManagementStopper(
+      const OptionsDict& options, const GoParams& params,
+      const Position& position);
+  // No need to be atomic as only one thread will update it.
+  int64_t time_spared_ms_ = 0;
+};
+
 class LegacyTimeManager : public TimeManager {
  public:
   void ResetGame() override;
@@ -209,13 +237,19 @@ class LegacyTimeManager : public TimeManager {
   // No need to be atomic as only one thread will update it.
   int64_t time_spared_ms_ = 0;
 };
+
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeLegacyTimeManager() {
   return std::make_unique<LegacyTimeManager>();
 }
 
+std::unique_ptr<TimeManager> MakeAlphaZeroLikeTimeManager() {
+  return std::make_unique<AlphaZeroLikeTimeManager>();
+}
+
 void LegacyTimeManager::ResetGame() { time_spared_ms_ = 0; }
+void AlphaZeroLikeTimeManager::ResetGame() { time_spared_ms_ = 0; }
 
 std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
     const OptionsDict& options, const GoParams& params,
@@ -288,7 +322,52 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
   return std::make_unique<LegacyStopper>(deadline, &time_spared_ms_);
 }
 
+std::unique_ptr<SearchStopper> AlphaZeroLikeTimeManager::CreateTimeManagementStopper(
+    const OptionsDict& options, const GoParams& params,
+    const Position& position) {
+  const bool is_black = position.IsBlackToMove();
+  const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
+  // If no time limit is given, don't stop on this condition.
+  if (params.infinite || params.ponder || !time) return nullptr;
+
+  const int64_t move_overhead = options.Get<int>(kMoveOverheadId.GetId());
+  const optional<int64_t>& inc = is_black ? params.binc : params.winc;
+  const int increment = inc ? std::max(int64_t(0), *inc) : 0;
+
+  // How to scale moves time.
+  float this_move_time = 1.0f;
+  int time_to_squander = 0;
+  
+    auto total_moves_time = *time  - move_overhead;
+    this_move_time = increment + (total_moves_time /
+                     options.Get<float>(kAlphaZeroTimeValueId.GetId()));
+  
+  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
+          << time_to_squander << "ms to squander). Remaining time " << *time
+          << "ms(-" << move_overhead << "ms overhead)";
+  // Use `time_to_squander` time immediately.
+  this_move_time += time_to_squander;
+
+  // Make sure we don't exceed current time limit with what we calculated.
+  auto deadline =
+      std::min(static_cast<int64_t>(this_move_time), *time - move_overhead);
+  return std::make_unique<LegacyStopper>(deadline, &time_spared_ms_);
+}
+
+
 std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
+    const OptionsDict& options, const GoParams& params,
+    const Position& position) {
+  auto result = std::make_unique<ChainedSearchStopper>();
+
+  // Time management stopper.
+  result->AddStopper(CreateTimeManagementStopper(options, params, position));
+  // All the standard stoppers (go nodes, RAM limit, smart pruning, etc).
+  PopulateStoppers(result.get(), options, params);
+  return std::move(result);
+}
+
+std::unique_ptr<SearchStopper> AlphaZeroLikeTimeManager::GetStopper(
     const OptionsDict& options, const GoParams& params,
     const Position& position) {
   auto result = std::make_unique<ChainedSearchStopper>();
