@@ -743,18 +743,21 @@ bool ChessBoard::IsSameMove(Move move1, Move move2) const {
       move2.to().row() != RANK_1) {
     return false;
   }
-  const bool move1_is_castling = our_pieces_.get(move1.to()) ||
-                                 abs(move1.to().col() - move1.from().col()) > 1;
-  const bool move2_is_castling = our_pieces_.get(move2.to()) ||
-                                 abs(move2.to().col() - move2.from().col()) > 1;
-  // If both moves are not castlings, then it's surely not the same move (we
-  // already checked for equality).
-  if (!move1_is_castling || !move2_is_castling) return false;
-  // It's two castlings, checking that they are castlings in the same direction.
-  if (move1.to().col() > move1.from().col()) {
-    return move2.to().col() > move2.from().col();
-  }
-  return move2.to().col() < move2.from().col();
+  // Explicitly check all legacy castling moves
+  if (move1.from() != FILE_E) return false;
+  if (move1.to().col() == FILE_A && move2.to().col() == FILE_C &&
+      rooks().get(move1.to()))
+    return true;
+  if (move1.to().col() == FILE_C && move2.to().col() == FILE_A &&
+      rooks().get(move2.to()))
+    return true;
+  if (move1.to().col() == FILE_H && move2.to().col() == FILE_G &&
+      rooks().get(move1.to()))
+    return true;
+  if (move1.to().col() == FILE_G && move2.to().col() == FILE_A &&
+      rooks().get(move2.to()))
+    return true;
+  return false;
 }
 
 Move ChessBoard::GetLegacyMove(Move move) const {
