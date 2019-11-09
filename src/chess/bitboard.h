@@ -237,9 +237,9 @@ class Move {
  public:
   enum class Promotion : std::uint8_t { None, Queen, Rook, Bishop, Knight };
   Move() = default;
-  Move(BoardSquare from, BoardSquare to)
+  constexpr Move(BoardSquare from, BoardSquare to)
       : data_(to.as_int() + (from.as_int() << 6)) {}
-  Move(BoardSquare from, BoardSquare to, Promotion promotion)
+  constexpr Move(BoardSquare from, BoardSquare to, Promotion promotion)
       : data_(to.as_int() + (from.as_int() << 6) +
               (static_cast<uint8_t>(promotion) << 12)) {}
   Move(const std::string& str, bool black = false);
