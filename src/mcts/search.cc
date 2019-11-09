@@ -321,9 +321,10 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     SendUciInfo();
     EnsureBestMoveKnown();
     SendMovesStats();
-    best_move_callback_(
-        {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
-         final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
+    BestMoveInfo info(
+        final_bestmove_.GetMove(played_history_.IsBlackToMove()),
+        final_pondermove_.GetMove(!played_history_.IsBlackToMove()));
+    uci_responder_->OutputBestMove(&info);
     stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
