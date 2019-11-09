@@ -28,6 +28,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -149,6 +150,43 @@ class CallbackUciResponder : public UciResponder {
  private:
   const BestMoveCallback bestmove_callback_;
   const ThinkingCallback info_callback_;
+};
+
+// The responnder which doesn't own the parent. Used to transition from old code
+// where we need to create a copy.
+class NonOwningUciRespondForwarder : public UciResponder {
+ public:
+  NonOwningUciRespondForwarder(UciResponder* parent) : parent_(parent) {}
+  virtual void OutputBestMove(BestMoveInfo* info) {
+    parent_->OutputBestMove(info);
+  }
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+    parent_->OutputThinkingInfo(infos);
+  }
+
+ private:
+  UciResponder* const parent_;
+};
+
+// Base class for uci response transformations.
+class TransformingUciResponder : public UciResponder {
+ public:
+  TransformingUciResponder(std::unique_ptr<UciResponder> parent)
+      : parent_(std::move(parent)) {}
+
+  virtual void TransformBestMove(BestMoveInfo*) {}
+  virtual void TransformThinkingInfo(std::vector<ThinkingInfo>*) {}
+
+ private:
+  virtual void OutputBestMove(BestMoveInfo* info) {
+    TransformBestMove(info);
+    parent_->OutputBestMove(info);
+  }
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+    TransformThinkingInfo(infos);
+    parent_->OutputThinkingInfo(infos);
+  }
+  std::unique_ptr<UciResponder> parent_;
 };
 
 }  // namespace lczero
