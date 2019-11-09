@@ -739,8 +739,8 @@ bool ChessBoard::IsSameMove(Move move1, Move move2) const {
   if (move1 == move2) return true;
   // If move cannot be a castling, not the same move.
   if (move1.from() != move2.from() || our_king_ != move1.from() ||
-      move1.from().row() != 0 || move1.to().row() != 0 ||
-      move2.to().row() != 0) {
+      move1.from().row() != RANK_1 || move1.to().row() != RANK_1 ||
+      move2.to().row() != RANK_1) {
     return false;
   }
   const bool move1_is_castling = our_pieces_.get(move1.to()) ||

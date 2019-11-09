@@ -2189,6 +2189,24 @@ TEST(ChessBoard, HasMatingMaterialMultipleBishopsNotSameColor) {
   EXPECT_TRUE(board.HasMatingMaterial());
 }
 
+TEST(ChessBoard, CastlingIsSameMove) {
+  ChessBoard board;
+  board.SetFromFen(
+      "r3k2r/ppp1bppp/2np1n2/4p1B1/4P1b1/2NP1N2/PPP1BPPP/R3K2R w KQkq - 0 1");
+  EXPECT_TRUE(board.IsSameMove("e1c1", "e1c1"));
+  EXPECT_TRUE(board.IsSameMove("e1a1", "e1a1"));
+  EXPECT_TRUE(board.IsSameMove("e1c1", "e1a1"));
+  EXPECT_FALSE(board.IsSameMove("e1c1", "e1g1"));
+  EXPECT_FALSE(board.IsSameMove("e1a1", "e1h1"));
+  EXPECT_FALSE(board.IsSameMove("e1c1", "e1h1"));
+  EXPECT_FALSE(board.IsSameMove("e1a1", "e1g1"));
+  EXPECT_FALSE(board.IsSameMove("e1f1", "e1g1"));
+  EXPECT_FALSE(board.IsSameMove("e1f1", "e1h1"));
+  EXPECT_TRUE(board.IsSameMove("e2c2", "e2c2"));
+  EXPECT_TRUE(board.IsSameMove("e2a2", "e2a2"));
+  EXPECT_FALSE(board.IsSameMove("e2c2", "e2a2"));
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
