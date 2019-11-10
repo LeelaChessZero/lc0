@@ -737,26 +737,12 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
 bool ChessBoard::IsSameMove(Move move1, Move move2) const {
   // If moves are equal, it's the same move.
   if (move1 == move2) return true;
-  // If move cannot be a castling, not the same move.
-  if (move1.from() != move2.from() || our_king_ != move1.from() ||
-      move1.from().row() != RANK_1 || move1.to().row() != RANK_1 ||
-      move2.to().row() != RANK_1) {
-    return false;
-  }
-  // Explicitly check all legacy castling moves
-  if (move1.from() != FILE_E) return false;
-  if (move1.to().col() == FILE_A && move2.to().col() == FILE_C &&
-      rooks().get(move1.to()))
-    return true;
-  if (move1.to().col() == FILE_C && move2.to().col() == FILE_A &&
-      rooks().get(move2.to()))
-    return true;
-  if (move1.to().col() == FILE_H && move2.to().col() == FILE_G &&
-      rooks().get(move1.to()))
-    return true;
-  if (move1.to().col() == FILE_G && move2.to().col() == FILE_A &&
-      rooks().get(move2.to()))
-    return true;
+  // Explicitly check all legacy castling moves.
+  if (move1.from() != move2.from() || move1.from() != E1) return false;
+  if (move1.to() == A1 && move2.to() == C1) return true;
+  if (move1.to() == C1 && move2.to() == A1) return true;
+  if (move1.to() == G1 && move2.to() == H1) return true;
+  if (move1.to() == H1 && move2.to() == G1) return true;
   return false;
 }
 
