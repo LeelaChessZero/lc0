@@ -83,8 +83,6 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   SearchParams::Populate(options);
 
   options->Add<StringOption>(kSyzygyTablebaseId);
-  // Add "Ponder" option to signal to GUIs that we support pondering.
-  // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
 
   ConfigFile::PopulateOptions(options);

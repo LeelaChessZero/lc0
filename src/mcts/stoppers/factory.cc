@@ -208,7 +208,6 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
          move;
 }
 
-
 class LegacyTimeManager : public TimeManager {
  public:
   void ResetGame() override;
@@ -226,13 +225,11 @@ class LegacyTimeManager : public TimeManager {
   // No need to be atomic as only one thread will update it.
   int64_t time_spared_ms_ = 0;
 };
-
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeLegacyTimeManager() {
   return std::make_unique<LegacyTimeManager>();
 }
-
 
 void LegacyTimeManager::ResetGame() { time_spared_ms_ = 0; }
 
