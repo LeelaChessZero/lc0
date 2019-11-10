@@ -208,20 +208,6 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
          move;
 }
 
-class AlphaZeroLikeTimeManager : public TimeManager {
- public:
-  void ResetGame() override;
-  std::unique_ptr<SearchStopper> GetStopper(const OptionsDict& options,
-                                            const GoParams& params,
-                                            const Position& position) override;
-
- private:
-  std::unique_ptr<SearchStopper> CreateTimeManagementStopper(
-      const OptionsDict& options, const GoParams& params,
-      const Position& position);
-  // No need to be atomic as only one thread will update it.
-  int64_t time_spared_ms_ = 0;
-};
 
 class LegacyTimeManager : public TimeManager {
  public:
@@ -234,6 +220,9 @@ class LegacyTimeManager : public TimeManager {
   std::unique_ptr<SearchStopper> CreateTimeManagementStopper(
       const OptionsDict& options, const GoParams& params,
       const Position& position);
+  std::unique_ptr<SearchStopper> CreateAlphaZeroTimeManagementStopper(
+      const OptionsDict& options, const GoParams& params,
+      const Position& position);
   // No need to be atomic as only one thread will update it.
   int64_t time_spared_ms_ = 0;
 };
@@ -244,12 +233,8 @@ std::unique_ptr<TimeManager> MakeLegacyTimeManager() {
   return std::make_unique<LegacyTimeManager>();
 }
 
-std::unique_ptr<TimeManager> MakeAlphaZeroLikeTimeManager() {
-  return std::make_unique<AlphaZeroLikeTimeManager>();
-}
 
 void LegacyTimeManager::ResetGame() { time_spared_ms_ = 0; }
-void AlphaZeroLikeTimeManager::ResetGame() { time_spared_ms_ = 0; }
 
 std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
     const OptionsDict& options, const GoParams& params,
@@ -322,7 +307,8 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
   return std::make_unique<LegacyStopper>(deadline, &time_spared_ms_);
 }
 
-std::unique_ptr<SearchStopper> AlphaZeroLikeTimeManager::CreateTimeManagementStopper(
+std::unique_ptr<SearchStopper>
+LegacyTimeManager::CreateAlphaZeroTimeManagementStopper(
     const OptionsDict& options, const GoParams& params,
     const Position& position) {
   const bool is_black = position.IsBlackToMove();
@@ -360,20 +346,13 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
     const Position& position) {
   auto result = std::make_unique<ChainedSearchStopper>();
 
-  // Time management stopper.
-  result->AddStopper(CreateTimeManagementStopper(options, params, position));
-  // All the standard stoppers (go nodes, RAM limit, smart pruning, etc).
-  PopulateStoppers(result.get(), options, params);
-  return std::move(result);
-}
-
-std::unique_ptr<SearchStopper> AlphaZeroLikeTimeManager::GetStopper(
-    const OptionsDict& options, const GoParams& params,
-    const Position& position) {
-  auto result = std::make_unique<ChainedSearchStopper>();
-
-  // Time management stopper.
-  result->AddStopper(CreateTimeManagementStopper(options, params, position));
+  if (options.Get<bool>(kAlphaZeroTimeUseId.GetId())) {
+    result->AddStopper(CreateAlphaZeroTimeManagementStopper(
+        options, params, position));
+  } else {
+    // LcZero Time management stopper.
+    result->AddStopper(CreateTimeManagementStopper(options, params, position));
+  }
   // All the standard stoppers (go nodes, RAM limit, smart pruning, etc).
   PopulateStoppers(result.get(), options, params);
   return std::move(result);
