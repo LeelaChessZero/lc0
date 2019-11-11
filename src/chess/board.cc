@@ -737,8 +737,12 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
 bool ChessBoard::IsSameMove(Move move1, Move move2) const {
   // If moves are equal, it's the same move.
   if (move1 == move2) return true;
-  // Explicitly check all legacy castling moves.
-  if (move1.from() != move2.from() || move1.from() != E1) return false;
+  // Explicitly check all legacy castling moves. Need to check for king, for
+  // e.g. rook e1a1 and e1c1 are different moves.
+  if (move1.from() != move2.from() || move1.from() != E1 ||
+      our_king_ != move1.from()) {
+    return false;
+  }
   if (move1.to() == A1 && move2.to() == C1) return true;
   if (move1.to() == C1 && move2.to() == A1) return true;
   if (move1.to() == G1 && move2.to() == H1) return true;
