@@ -2196,6 +2196,8 @@ TEST(ChessBoard, CastlingIsSameMove) {
   EXPECT_TRUE(board.IsSameMove("e1c1", "e1c1"));
   EXPECT_TRUE(board.IsSameMove("e1a1", "e1a1"));
   EXPECT_TRUE(board.IsSameMove("e1c1", "e1a1"));
+  EXPECT_FALSE(board.IsSameMove("e1c1", "e1b1"));
+  EXPECT_FALSE(board.IsSameMove("e1b1", "e1a1"));
   EXPECT_FALSE(board.IsSameMove("e1c1", "e1g1"));
   EXPECT_FALSE(board.IsSameMove("e1a1", "e1h1"));
   EXPECT_FALSE(board.IsSameMove("e1c1", "e1h1"));

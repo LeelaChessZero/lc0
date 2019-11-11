@@ -737,31 +737,24 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
 bool ChessBoard::IsSameMove(Move move1, Move move2) const {
   // If moves are equal, it's the same move.
   if (move1 == move2) return true;
-  // If move cannot be a castling, not the same move.
-  if (move1.from() != move2.from() || our_king_ != move1.from() ||
-      move1.from().row() != RANK_1 || move1.to().row() != RANK_1 ||
-      move2.to().row() != RANK_1) {
+  // Explicitly check all legacy castling moves. Need to check for king, for
+  // e.g. rook e1a1 and e1c1 are different moves.
+  if (move1.from() != move2.from() || move1.from() != E1 ||
+      our_king_ != move1.from()) {
     return false;
   }
-  const bool move1_is_castling = our_pieces_.get(move1.to()) ||
-                                 abs(move1.to().col() - move1.from().col()) > 1;
-  const bool move2_is_castling = our_pieces_.get(move2.to()) ||
-                                 abs(move2.to().col() - move2.from().col()) > 1;
-  // If both moves are not castlings, then it's surely not the same move (we
-  // already checked for equality).
-  if (!move1_is_castling || !move2_is_castling) return false;
-  // It's two castlings, checking that they are castlings in the same direction.
-  if (move1.to().col() > move1.from().col()) {
-    return move2.to().col() > move2.from().col();
-  }
-  return move2.to().col() < move2.from().col();
+  if (move1.to() == A1 && move2.to() == C1) return true;
+  if (move1.to() == C1 && move2.to() == A1) return true;
+  if (move1.to() == G1 && move2.to() == H1) return true;
+  if (move1.to() == H1 && move2.to() == G1) return true;
+  return false;
 }
 
 Move ChessBoard::GetLegacyMove(Move move) const {
   if (our_king_ != move.from() || !our_pieces_.get(move.to())) {
     return move;
   }
-  if (move == Move(E1, H1)) return Move(E1, H1);
+  if (move == Move(E1, H1)) return Move(E1, G1);
   if (move == Move(E1, A1)) return Move(E1, C1);
   return move;
 }
