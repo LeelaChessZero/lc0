@@ -754,7 +754,7 @@ Move ChessBoard::GetLegacyMove(Move move) const {
   if (our_king_ != move.from() || !our_pieces_.get(move.to())) {
     return move;
   }
-  if (move == Move(E1, H1)) return Move(E1, H1);
+  if (move == Move(E1, H1)) return Move(E1, G1);
   if (move == Move(E1, A1)) return Move(E1, C1);
   return move;
 }
