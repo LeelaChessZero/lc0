@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -69,6 +69,18 @@ time_t GetFileTime(const std::string& filename) {
   }
   return (static_cast<uint64_t>(s.ftLastWriteTime.dwHighDateTime) << 32) +
          s.ftLastWriteTime.dwLowDateTime;
+}
+
+std::string GetUserCacheDirectory() {
+  return std::string();
+}
+
+std::string GetUserConfigDirectory() {
+  return std::string();
+}
+
+std::string GetUserDataDirectory() {
+  return std::string();
 }
 
 }  // namespace lczero

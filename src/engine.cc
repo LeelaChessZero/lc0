@@ -25,11 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "engine.h"
+
 #include <algorithm>
 #include <cmath>
 #include <functional>
 
-#include "engine.h"
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
 #include "utils/configfile.h"
@@ -52,6 +53,9 @@ const OptionId kSyzygyTablebaseId{
     's'};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
+const OptionId kUciChess960{
+    "chess960", "UCI_Chess960",
+    "Castling moves are encoded as \"king takes rook\"."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            bool is_black) {
@@ -84,6 +88,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
+  options->Add<BoolOption>(kUciChess960) = false;
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
@@ -163,6 +168,18 @@ void EngineController::SetupPosition(
   if (!is_same_game) time_manager_->ResetGame();
 }
 
+namespace {
+void ConvertToLegacyCastling(ChessBoard pos, std::vector<Move>* moves) {
+  for (auto& move : *moves) {
+    if (pos.flipped()) move.Mirror();
+    move = pos.GetLegacyMove(move);
+    pos.ApplyMove(move);
+    if (pos.flipped()) move.Mirror();
+    pos.Mirror();
+  }
+}
+}  // namespace
+
 void EngineController::Go(const GoParams& params) {
   // TODO: should consecutive calls to go be considered to be a continuation and
   // hence have the same start time like this behaves, or should we check start
@@ -206,6 +223,24 @@ void EngineController::Go(const GoParams& params) {
     }
   } else if (!tree_) {
     SetupPosition(ChessBoard::kStartposFen, {});
+  }
+
+  if (!options_.Get<bool>(kUciChess960.GetId())) {
+    // Remap FRC castling to legacy castling.
+    const auto head_board = tree_->HeadPosition().GetBoard();
+    best_move_callback = [best_move_callback,
+                          head_board](BestMoveInfo best_move) {
+      std::vector<Move> moves({best_move.bestmove, best_move.ponder});
+      ConvertToLegacyCastling(head_board, &moves);
+      best_move.bestmove = moves[0];
+      best_move.ponder = moves[1];
+      best_move_callback(best_move);
+    };
+    info_callback = [info_callback,
+                     head_board](std::vector<ThinkingInfo> info) {
+      for (auto& x : info) ConvertToLegacyCastling(head_board, &x.pv);
+      info_callback(info);
+    };
   }
 
   auto stopper =
