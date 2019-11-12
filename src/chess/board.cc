@@ -597,7 +597,7 @@ bool ChessBoard::ApplyMove(Move move) {
       rooks_.set(rook_dst);
       our_king_ = king_dst;
     };
-    if (from_row == 0 && to_row == 0) {
+    if (from_row == RANK_1 && to_row == RANK_1) {
       const auto our_rooks = rooks() & our_pieces_;
       if (our_rooks.get(to)) {
         // Castling.
@@ -609,11 +609,11 @@ bool ChessBoard::ApplyMove(Move move) {
           do_castling(C1, to.as_int(), D1);
         }
         return false;
-      } else if (to_col - from_col > 1) {
+      } else if (from_col == FILE_E && to_col == FILE_G) {
         // Non FRC-style e1g1 castling (as opposed to e1h1).
         do_castling(G1, H1, F1);
         return false;
-      } else if (from_col - to_col > 1) {
+      } else if (from_col == FILE_E && to_col == FILE_C) {
         // Non FRC-style e1c1 castling (as opposed to e1a1).
         do_castling(C1, A1, D1);
         return false;
@@ -639,7 +639,7 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // En passant.
-  if (from_row == 4 && pawns_.get(from) && from_col != to_col &&
+  if (from_row == RANK_5 && pawns_.get(from) && from_col != to_col &&
       pawns_.get(RANK_8, to_col)) {
     pawns_.reset(RANK_5, to_col);
     their_pieces_.reset(RANK_5, to_col);
@@ -677,7 +677,7 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // Reset castling rights.
-  if (from_row == 0 && rooks_.get(from)) {
+  if (from_row == RANK_1 && rooks_.get(from)) {
     if (from_col == castlings_.queenside_rook()) castlings_.reset_we_can_000();
     if (from_col == castlings_.kingside_rook()) castlings_.reset_we_can_00();
   }
@@ -1025,8 +1025,8 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
   }
 
   if (castlings != "-") {
-    uint8_t left_rook = 0;   // File A by default.
-    uint8_t right_rook = 7;  // File H by default.
+    uint8_t left_rook = FILE_A;
+    uint8_t right_rook = FILE_H;
     for (char c : castlings) {
       const bool is_black = std::islower(c);
       const int king_col = (is_black ? their_king_ : our_king_).col();
@@ -1034,8 +1034,8 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
       const auto rooks = (is_black ? their_pieces_ : our_pieces_) & rooks_;
       if (c == 'k') {
         // Finding rightmost rook.
-        for (right_rook = 7; right_rook > king_col; --right_rook) {
-          if (rooks.get(is_black ? 7 : 0, right_rook)) break;
+        for (right_rook = FILE_H; right_rook > king_col; --right_rook) {
+          if (rooks.get(is_black ? RANK_8 : RANK_1, right_rook)) break;
         }
         if (right_rook == king_col) {
           throw Exception("Bad fen string (no kingside rook): " + fen);
@@ -1047,8 +1047,8 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
         }
       } else if (c == 'q') {
         // Finding leftmost rook.
-        for (left_rook = 0; left_rook < king_col; ++left_rook) {
-          if (rooks.get(is_black ? 7 : 0, left_rook)) break;
+        for (left_rook = FILE_A; left_rook < king_col; ++left_rook) {
+          if (rooks.get(is_black ? RANK_8 : RANK_1, left_rook)) break;
         }
         if (left_rook == king_col) {
           throw Exception("Bad fen string (no queenside rook): " + fen);
@@ -1086,7 +1086,7 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
     auto square = BoardSquare(en_passant);
     if (square.row() != RANK_3 && square.row() != RANK_6)
       throw Exception("Bad fen string: " + fen + " wrong en passant rank");
-    pawns_.set((square.row() == RANK_3) ? 0 : 7, square.col());
+    pawns_.set((square.row() == RANK_3) ? RANK_1 : RANK_8, square.col());
   }
 
   if (who_to_move == "b" || who_to_move == "B") {
