@@ -108,7 +108,8 @@ const OptionId SearchParams::kNoiseAlphaId{
     "Larger values result in flatter / more evenly distributed values."};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
-    "Display Q, V, N, U and P values of every move candidate after each move."};
+    "Display Q, V, N, U and P values of every move candidate after each move.",
+    'v'};
 const OptionId SearchParams::kLogLiveStatsId{
     "log-live-stats", "LogLiveStats",
     "Do VerboseMoveStats on every info update."};
