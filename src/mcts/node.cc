@@ -34,11 +34,8 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
-<<<<<<< HEAD
-#include "myasa109.h"
-=======
 
->>>>>>> upstream/master
+#include "myasa109.h"
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"

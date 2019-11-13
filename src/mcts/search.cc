@@ -203,13 +203,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   const float fpu = GetFpu(params_, node, node == root_node_);
   const float cpuct = ComputeCpuct(params_, node->GetN());
   const float U_coeff =
-<<<<<<< HEAD
+
       cpuct * (params_.GetNewUEnabled() ?
           std::max(node->GetChildrenVisits(), 1u) :
           std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
-=======
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
->>>>>>> upstream/master
+
   const bool logit_q = params_.GetLogitQ();
   const bool betamcts_q = (params_.GetBetamctsLevel() >= 2);
 
@@ -217,7 +215,6 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
-<<<<<<< HEAD
   if (params_.GetNewUEnabled()) {
   std::sort(
       edges.begin(), edges.end(),
@@ -239,15 +236,6 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
           b.GetN(), b.GetQ(fpu, betamcts_q, logit_q) + b.GetU(U_coeff));
       });
   }
-=======
-  std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &logit_q](EdgeAndNode a, EdgeAndNode b) {
-              return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, logit_q) + a.GetU(U_coeff)) <
-                     std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, logit_q) + b.GetU(U_coeff));
-            });
->>>>>>> upstream/master
 
   std::vector<std::string> infos;
   for (const auto& edge : edges) {
@@ -277,7 +265,6 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-<<<<<<< HEAD
         << edge.GetQ(fpu, params_.GetBetamctsLevel()>=2, params_.GetLogitQ())
             + (params_.GetNewUEnabled() ? edge.GetNewU(U_coeff) : edge.GetU(U_coeff))
         << ") ";
@@ -290,9 +277,6 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
 
     oss << "(Rbeta: " << std::setw(8) << std::setprecision(5) << edge.GetRBetamcts()
         << ") ";
-=======
-        << edge.GetQ(fpu, logit_q) + edge.GetU(U_coeff) << ") ";
->>>>>>> upstream/master
 
     oss << "(V: ";
     optional<float> v;
@@ -907,12 +891,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
                 (int)node->GetNBetamcts() : node->GetChildrenVisits()), 1u)) );
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
-<<<<<<< HEAD
     int possible_moves = 0;
     const float fpu = GetFpu(params_, node, is_root_node, params_.GetLogitQ());
-=======
-    const float fpu = GetFpu(params_, node, is_root_node);
->>>>>>> upstream/master
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -951,16 +931,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
-<<<<<<< HEAD
       int estimated_visits_to_change_best = params_.GetNewUEnabled() ?
           best_edge.GetVisitsToReachNewU(second_best, puct_mult, fpu,
                               params_.GetBetamctsLevel(), params_.GetLogitQ()) :
           best_edge.GetVisitsToReachU(second_best, puct_mult, fpu,
                               params_.GetBetamctsLevel(), params_.GetLogitQ()) ;
-=======
-      int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
-          second_best, puct_mult, fpu, params_.GetLogitQ());
->>>>>>> upstream/master
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
