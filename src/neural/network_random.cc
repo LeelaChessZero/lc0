@@ -120,6 +120,6 @@ std::unique_ptr<Network> MakeRandomNetwork(const WeightsFile& /*weights*/,
   return std::make_unique<RandomNetwork>(options);
 }
 
-REGISTER_NETWORK("random", MakeRandomNetwork, -900)
+REGISTER_NETWORK("random", MakeRandomNetwork, 0)
 
 }  // namespace lczero

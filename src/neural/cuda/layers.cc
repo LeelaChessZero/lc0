@@ -759,7 +759,7 @@ const char* CublasGetErrorString(cublasStatus_t status) {
 void CublasError(cublasStatus_t status, const char* file, const int& line) {
   if (status != CUBLAS_STATUS_SUCCESS) {
     char message[128];
-    sprintf(message, "CUDNN error: %s (%s:%d) ", CublasGetErrorString(status),
+    sprintf(message, "CUBLAS error: %s (%s:%d) ", CublasGetErrorString(status),
             file, line);
     throw Exception(message);
   }

@@ -35,20 +35,20 @@ namespace lczero {
 
 inline unsigned long GetLowestBit(std::uint64_t value) {
 #if defined(_MSC_VER) && defined(_WIN64)
-    unsigned long result;
-    _BitScanForward64(&result, value);
-    return result;
+  unsigned long result;
+  _BitScanForward64(&result, value);
+  return result;
 #elif defined(_MSC_VER)
-    unsigned long result;
-    if (value & 0xFFFFFFFF) {
-      _BitScanForward(&result, value);
-    } else {
-      _BitScanForward(&result, value >> 32);
-      result += 32;
-    }
-    return result;
+  unsigned long result;
+  if (value & 0xFFFFFFFF) {
+    _BitScanForward(&result, value);
+  } else {
+    _BitScanForward(&result, value >> 32);
+    result += 32;
+  }
+  return result;
 #else
-    return __builtin_ctzll(value);
+  return __builtin_ctzll(value);
 #endif
 }
 
