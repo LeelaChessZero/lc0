@@ -144,6 +144,7 @@ files += [
   'src/syzygy/syzygy.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
+  'src/utils/esc_codes.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
   'src/utils/optionsdict.cc',
