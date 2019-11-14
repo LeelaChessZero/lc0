@@ -2102,7 +2102,9 @@ const struct {
     {"rkrnnqbb/p1ppp2p/Qp6/4Pp2/5p2/8/PPPP2PP/RKRNN1BB w CAca - 0 9",
      {35, 929, 32020, 896130, 31272517, 915268405}},  // 959
     {"bbq1nr1r/pppppk1p/2n2p2/6p1/P4P2/4P1P1/1PPP3P/BBQNNRKR w HF - 1 9",
-     {23, 589, 14744, 387556, 10316716, 280056112}}  // 960
+     {23, 589, 14744, 387556, 10316716, 280056112}},  // 960
+    {"bqrkrbnn/ppp1pppp/8/8/8/8/PPP1PPPP/BQRKRBNN w CKeq - 0 1",
+     {19, 342, 6987, 142308, 3294156, 75460468}},  // 961 castling
 };
 }  // namespace
 
