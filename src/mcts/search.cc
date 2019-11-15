@@ -428,11 +428,12 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
     PopulateRootMoveLimit(&root_limit);
   }
   // Best child is selected using the following criteria:
+  // * Is terminal win, e.g., checkmate.
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<bool, uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -440,7 +441,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+    const auto Q = edge.GetQ(0.0f);
+    edges.emplace_back(edge.IsTerminal() && Q == 1.0f, edge.GetN(), Q,
+                       edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
@@ -449,7 +452,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
   std::vector<EdgeAndNode> res;
   std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<3>(x); });
+                 [](const El& x) { return std::get<4>(x); });
   return res;
 }
 
