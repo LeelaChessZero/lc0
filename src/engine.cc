@@ -67,12 +67,10 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 }  // namespace
 
-EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
-                                   ThinkingInfo::Callback info_callback,
+EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
     : options_(options),
-      best_move_callback_(best_move_callback),
-      info_callback_(info_callback),
+      uci_responder_(std::move(uci_responder)),
       time_manager_(MakeLegacyTimeManager()),
       move_start_time_(std::chrono::steady_clock::now()) {}
 
@@ -178,6 +176,58 @@ void ConvertToLegacyCastling(ChessBoard pos, std::vector<Move>* moves) {
     pos.Mirror();
   }
 }
+
+class PonderResponseTransformer : public TransformingUciResponder {
+ public:
+  PonderResponseTransformer(std::unique_ptr<UciResponder> parent,
+                            std::string ponder_move)
+      : TransformingUciResponder(std::move(parent)),
+        ponder_move_(std::move(ponder_move)) {}
+
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    // Output all stats from main variation (not necessary the ponder move)
+    // but PV only from ponder move.
+    ThinkingInfo ponder_info;
+    for (const auto& info : *infos) {
+      if (info.multipv <= 1) {
+        ponder_info = info;
+        if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+        if (ponder_info.depth > 1) ponder_info.depth--;
+        if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+        ponder_info.pv.clear();
+      }
+      if (!info.pv.empty() && info.pv[0].as_string() == ponder_move_) {
+        ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
+      }
+    }
+    infos->clear();
+    infos->push_back(ponder_info);
+  }
+
+ private:
+  std::string ponder_move_;
+};
+
+// Remaps FRC castling to legacy castling.
+class Chess960Transformer : public TransformingUciResponder {
+ public:
+  Chess960Transformer(std::unique_ptr<UciResponder> parent,
+                      ChessBoard head_board)
+      : TransformingUciResponder(std::move(parent)), head_board_(head_board) {}
+
+ private:
+  void TransformBestMove(BestMoveInfo* best_move) override {
+    std::vector<Move> moves({best_move->bestmove, best_move->ponder});
+    ConvertToLegacyCastling(head_board_, &moves);
+    best_move->bestmove = moves[0];
+    best_move->ponder = moves[1];
+  }
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    for (auto& x : *infos) ConvertToLegacyCastling(head_board_, &x.pv);
+  }
+  const ChessBoard head_board_;
+};
+
 }  // namespace
 
 void EngineController::Go(const GoParams& params) {
@@ -187,8 +237,8 @@ void EngineController::Go(const GoParams& params) {
   // now?
   go_params_ = params;
 
-  ThinkingInfo::Callback info_callback(info_callback_);
-  BestMoveInfo::Callback best_move_callback(best_move_callback_);
+  std::unique_ptr<UciResponder> responder =
+      std::make_unique<NonOwningUciRespondForwarder>(uci_responder_.get());
 
   // Setting up current position, now that it's known whether it's ponder or
   // not.
@@ -198,26 +248,8 @@ void EngineController::Go(const GoParams& params) {
       std::string ponder_move = moves.back();
       moves.pop_back();
       SetupPosition(current_position_->fen, moves);
-
-      info_callback = [this,
-                       ponder_move](const std::vector<ThinkingInfo>& infos) {
-        ThinkingInfo ponder_info;
-        // Output all stats from main variation (not necessary the ponder move)
-        // but PV only from ponder move.
-        for (const auto& info : infos) {
-          if (info.multipv <= 1) {
-            ponder_info = info;
-            if (ponder_info.score) ponder_info.score = -*ponder_info.score;
-            if (ponder_info.depth > 1) ponder_info.depth--;
-            if (ponder_info.seldepth > 1) ponder_info.seldepth--;
-            ponder_info.pv.clear();
-          }
-          if (!info.pv.empty() && info.pv[0].as_string() == ponder_move) {
-            ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
-          }
-        }
-        info_callback_({ponder_info});
-      };
+      responder = std::make_unique<PonderResponseTransformer>(
+          std::move(responder), ponder_move);
     } else {
       SetupPosition(current_position_->fen, current_position_->moves);
     }
@@ -227,26 +259,14 @@ void EngineController::Go(const GoParams& params) {
 
   if (!options_.Get<bool>(kUciChess960.GetId())) {
     // Remap FRC castling to legacy castling.
-    const auto head_board = tree_->HeadPosition().GetBoard();
-    best_move_callback = [best_move_callback,
-                          head_board](BestMoveInfo best_move) {
-      std::vector<Move> moves({best_move.bestmove, best_move.ponder});
-      ConvertToLegacyCastling(head_board, &moves);
-      best_move.bestmove = moves[0];
-      best_move.ponder = moves[1];
-      best_move_callback(best_move);
-    };
-    info_callback = [info_callback,
-                     head_board](std::vector<ThinkingInfo> info) {
-      for (auto& x : info) ConvertToLegacyCastling(head_board, &x.pv);
-      info_callback(info);
-    };
+    responder = std::make_unique<Chess960Transformer>(
+        std::move(responder), tree_->HeadPosition().GetBoard());
   }
 
   auto stopper =
       time_manager_->GetStopper(options_, params, tree_->HeadPosition());
   search_ = std::make_unique<Search>(
-      *tree_, network_.get(), best_move_callback, info_callback,
+      *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->IsBlackToMove()),
       move_start_time_, std::move(stopper), params.infinite || params.ponder,
       options_, &cache_, syzygy_tb_.get());
@@ -267,9 +287,11 @@ void EngineController::Stop() {
 }
 
 EngineLoop::EngineLoop()
-    : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
-              std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
-              options_.GetOptionsDict()) {
+    : engine_(
+          std::make_unique<CallbackUciResponder>(
+              std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
+              std::bind(&UciLoop::SendInfo, this, std::placeholders::_1)),
+          options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
   options_.Add<StringOption>(kLogFileId);
 }

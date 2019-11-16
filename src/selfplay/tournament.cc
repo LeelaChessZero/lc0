@@ -108,11 +108,11 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<bool>(SearchParams::kLogitQId.GetId(), false);
 }
 
-SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
-                                       BestMoveInfo::Callback best_move_info,
-                                       ThinkingInfo::Callback thinking_info,
-                                       GameInfo::Callback game_info,
-                                       TournamentInfo::Callback tournament_info)
+SelfPlayTournament::SelfPlayTournament(
+    const OptionsDict& options,
+    CallbackUciResponder::BestMoveCallback best_move_info,
+    CallbackUciResponder::ThinkingCallback thinking_info,
+    GameInfo::Callback game_info, TournamentInfo::Callback tournament_info)
     : player_options_{options.GetSubdict("player1"),
                       options.GetSubdict("player2")},
       best_move_callback_(best_move_info),

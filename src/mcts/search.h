@@ -30,6 +30,7 @@
 #include <functional>
 #include <shared_mutex>
 #include <thread>
+
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
@@ -47,8 +48,8 @@ namespace lczero {
 class Search {
  public:
   Search(const NodeTree& tree, Network* network,
-         BestMoveInfo::Callback best_move_callback,
-         ThinkingInfo::Callback info_callback, const MoveList& searchmoves,
+         std::unique_ptr<UciResponder> uci_responder,
+         const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
          std::unique_ptr<SearchStopper> stopper, bool infinite,
          const OptionsDict& options, NNCache* cache,
@@ -174,8 +175,7 @@ class Search {
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
   std::atomic<int> tb_hits_{0};
 
-  BestMoveInfo::Callback best_move_callback_;
-  ThinkingInfo::Callback info_callback_;
+  std::unique_ptr<UciResponder> uci_responder_;
   const SearchParams params_;
 
   friend class SearchWorker;

@@ -50,8 +50,7 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
 
 Search::Search(const NodeTree& tree, Network* network,
-               BestMoveInfo::Callback best_move_callback,
-               ThinkingInfo::Callback info_callback,
+               std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
@@ -67,8 +66,7 @@ Search::Search(const NodeTree& tree, Network* network,
       searchmoves_(searchmoves),
       start_time_(start_time),
       initial_visits_(root_node_->GetN()),
-      best_move_callback_(best_move_callback),
-      info_callback_(info_callback),
+      uci_responder_(std::move(uci_responder)),
       params_(options) {}
 
 namespace {
@@ -140,7 +138,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     last_outputted_info_edge_ = current_best_edge_.edge();
   }
 
-  info_callback_(uci_infos);
+  uci_responder_->OutputThinkingInfo(&uci_infos);
 }
 
 // Decides whether anything important changed in stats and new info should be
@@ -161,10 +159,10 @@ void Search::MaybeOutputInfo() {
       SendMovesStats();
     }
     if (stop_.load(std::memory_order_acquire) && !ok_to_respond_bestmove_) {
-      ThinkingInfo info;
-      info.comment =
+      std::vector<ThinkingInfo> info(1);
+      info.back().comment =
           "WARNING: Search has reached limit and does not make any progress.";
-      info_callback_({info});
+      uci_responder_->OutputThinkingInfo(&info);
     }
   }
 }
@@ -271,7 +269,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
                      info.comment = line;
                      return info;
                    });
-    info_callback_(infos);
+    uci_responder_->OutputThinkingInfo(&infos);
   } else {
     LOGFILE << "=== Move stats:";
     for (const auto& line : move_stats) LOGFILE << line;
@@ -323,9 +321,10 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     SendUciInfo();
     EnsureBestMoveKnown();
     SendMovesStats();
-    best_move_callback_(
-        {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
-         final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
+    BestMoveInfo info(
+        final_bestmove_.GetMove(played_history_.IsBlackToMove()),
+        final_pondermove_.GetMove(!played_history_.IsBlackToMove()));
+    uci_responder_->OutputBestMove(&info);
     stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
