@@ -106,9 +106,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       PopulateStoppersForSelfplay(stoppers.get(), options_[idx].uci_options);
 
       search_ = std::make_unique<Search>(
-          *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
-          options_[idx].info_callback, /* searchmoves */ MoveList(),
-          std::chrono::steady_clock::now(), std::move(stoppers),
+          *tree_[idx], options_[idx].network,
+          std::make_unique<CallbackUciResponder>(
+              options_[idx].best_move_callback, options_[idx].info_callback),
+          /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
+          std::move(stoppers),
           /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
           nullptr);
       // TODO: add Syzygy option for selfplay.

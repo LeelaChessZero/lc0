@@ -117,7 +117,7 @@ void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
   // KLD gain.
   const auto min_kld_gain =
       options.Get<float>(kMinimumKLDGainPerNodeId.GetId());
-  if (min_kld_gain >= 0.0f) {
+  if (min_kld_gain > 0.0f) {
     stopper->AddStopper(std::make_unique<KldGainStopper>(
         min_kld_gain, options.Get<int>(kKLDGainAverageIntervalId.GetId())));
   }

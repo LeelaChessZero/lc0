@@ -2102,7 +2102,21 @@ const struct {
     {"rkrnnqbb/p1ppp2p/Qp6/4Pp2/5p2/8/PPPP2PP/RKRNN1BB w CAca - 0 9",
      {35, 929, 32020, 896130, 31272517, 915268405}},  // 959
     {"bbq1nr1r/pppppk1p/2n2p2/6p1/P4P2/4P1P1/1PPP3P/BBQNNRKR w HF - 1 9",
-     {23, 589, 14744, 387556, 10316716, 280056112}}  // 960
+     {23, 589, 14744, 387556, 10316716, 280056112}},  // 960
+    {"bqrkrbnn/ppp1pppp/8/8/8/8/PPP1PPPP/BQRKRBNN w CKeq - 0 1",
+     {19, 342, 6987, 142308, 3294156, 75460468}},  // 961 castling
+    {"r1bkrn1q/ppbppppp/5n2/2p5/3P4/P6N/1PP1PPPP/RBBKRNQ1 w KQkq - 3 9",
+     {27, 822, 22551, 678880, 19115128, 578210135}},  // 962
+    {"qn1rkrbb/pp1p1ppp/2p1p3/3n4/4P2P/2NP4/PPP2PP1/Q1NRKRBB w KQkq - 1 9",
+     {24, 585, 14769, 356950, 9482310, 233468620}},  // 963
+    {"qnr1bkrb/pppp2pp/3np3/5p2/8/P2P2P1/NPP1PP1P/QN1RBKRB w KQk - 3 9",
+     {33, 823, 26895, 713420, 23114629, 646390782}},  // 964
+    {"bnrbk1qn/1pppprpp/8/p4p1P/6P1/3P4/PPP1PP2/BNRBKRQN w KQq - 0 9",
+     {22, 459, 11447, 268157, 7371098, 190583454}},  // 965
+    {"1rbnkbrq/pppppp2/n5pp/2P5/P7/4N3/1P1PPPPP/RNB1KBRQ w KQk - 2 9",
+     {23, 574, 14146, 391413, 10203438, 301874034}},  // 966
+    {"rbbk1rnq/pppp1pp1/4p2p/8/3P2n1/4BN1P/PPP1PPP1/RB1K1RNQ w KQkq - 3 9",
+     {26, 628, 16151, 411995, 11237919, 300314373}},  // 967
 };
 }  // namespace
 
