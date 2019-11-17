@@ -69,6 +69,13 @@ struct ThinkingInfo {
   int hashfull = -1;
   // Win in centipawns.
   optional<int> score;
+  // Win/Draw/Lose probability * 1000.
+  struct WDL {
+    int w;
+    int d;
+    int l;
+  };
+  optional<WDL> wdl;
   // Number of successful TB probes (not the same as playouts ending in TB hit).
   int tb_hits = -1;
   // Best line found. Moves are from perspective of white player.

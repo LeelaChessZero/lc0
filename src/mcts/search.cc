@@ -118,16 +118,22 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
+    const auto& q = edge.GetQ(default_q);
     if (score_type == "centipawn") {
-      uci_info.score = 295 * edge.GetQ(default_q) /
-                       (1 - 0.976953126 * std::pow(edge.GetQ(default_q), 14));
+      uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
     } else if (score_type == "centipawn_2018") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(default_q));
+      uci_info.score = 290.680623072 * tan(1.548090806 * q);
     } else if (score_type == "win_percentage") {
-      uci_info.score = edge.GetQ(default_q) * 5000 + 5000;
+      uci_info.score = q * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = edge.GetQ(default_q) * 10000;
+      uci_info.score = q * 10000;
     }
+    const auto& d = edge.GetD();
+    const int w = static_cast<int>(std::round(500.0 * (1.0 + q - d)));
+    const int l = static_cast<int>(std::round(500.0 * (1.0 - q - d)));
+    // Using 1000-w-l instead of 1000*d for D score so that W+D+L add up to
+    // 1000.0.
+    uci_info.wdl = ThinkingInfo::WDL{w, 1000 - w - l, l};
     if (max_pv > 1) uci_info.multipv = multipv;
     if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
