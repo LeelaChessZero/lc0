@@ -51,17 +51,15 @@ endif
 protoc = find_program('protoc', required : false)
 # For tensorflow skip system protobuf, chances are it will not work.
 if get_option('protobuf-3-6-0')
-  deps += subproject('protobuf-3.6.0').get_variable('protobuf_dep')
+  protobuf_dep = subproject('protobuf-3.6.0').get_variable('protobuf_dep')
   protoc = subproject('protobuf-3.6.0').get_variable('protoc')
 elif not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
-  deps += subproject('protobuf').get_variable('protobuf_dep')
+  protobuf_dep = subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
-else
-  deps += protobuf_dep
-  if protobuf_lib.found()
-    includes += include_directories(get_option('protobuf_include'))
-  endif
+elif protobuf_lib.found()
+  includes += include_directories(get_option('protobuf_include'))
 endif
+deps += protobuf_dep
 
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
