@@ -57,6 +57,9 @@ const OptionId kUciChess960{
     "chess960", "UCI_Chess960",
     "Castling moves are encoded as \"king takes rook\"."};
 
+const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
+                        "Show win, draw and lose probability."};
+
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            bool is_black) {
   MoveList result;
@@ -87,6 +90,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<BoolOption>(kUciChess960) = false;
+  options->Add<BoolOption>(kShowWDL) = false;
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
@@ -208,6 +212,13 @@ class PonderResponseTransformer : public TransformingUciResponder {
   std::string ponder_move_;
 };
 
+class WDLResponseFilter : public TransformingUciResponder {
+  using TransformingUciResponder::TransformingUciResponder;
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    for (auto& info : *infos) info.wdl.reset();
+  }
+};
+
 // Remaps FRC castling to legacy castling.
 class Chess960Transformer : public TransformingUciResponder {
  public:
@@ -261,6 +272,11 @@ void EngineController::Go(const GoParams& params) {
     // Remap FRC castling to legacy castling.
     responder = std::make_unique<Chess960Transformer>(
         std::move(responder), tree_->HeadPosition().GetBoard());
+  }
+
+  if (!options_.Get<bool>(kShowWDL.GetId())) {
+    // Strip WDL information from the response.
+    responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
   auto stopper =
