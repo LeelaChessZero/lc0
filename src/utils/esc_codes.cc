@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2019 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,38 +25,25 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include "utils/esc_codes.h"
 
-#include <time.h>
-#include <string>
-#include <vector>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace lczero {
 
-// Creates directory at a given path. Throws exception if cannot.
-// Returns silently if already exists.
-void CreateDirectory(const std::string& path);
+bool EscCodes::enabled_;
 
-// Returns list of full paths of regular files in this directory.
-// Silently returns empty vector on error.
-std::vector<std::string> GetFileList(const std::string& directory);
-
-// Returns size of a file. Throws exception if file doesn't exist.
-uint64_t GetFileSize(const std::string& filename);
-
-// Returns modification time of a file. Throws exception if file doesn't exist.
-time_t GetFileTime(const std::string& filename);
-
-// Returns the base directory relative to which user specific non-essential data
-// files are stored or an empty string if unspecified.
-std::string GetUserCacheDirectory();
-
-// Returns the base directory relative to which user specific configuration
-// files are stored or an empty string if unspecified.
-std::string GetUserConfigDirectory();
-
-// Returns the base directory relative to which user specific data files are
-// stored or an empty string if unspecified.
-std::string GetUserDataDirectory();
+void EscCodes::Init() {
+#ifdef _WIN32
+  HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD mode;
+  GetConsoleMode(h, &mode);
+  enabled_ = SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#else
+  enabled_ = true;
+#endif
+}
 
 }  // namespace lczero

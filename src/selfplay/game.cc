@@ -26,8 +26,11 @@
 */
 
 #include "selfplay/game.h"
+
 #include <algorithm>
 
+#include "mcts/stoppers/factory.h"
+#include "mcts/stoppers/stoppers.h"
 #include "neural/writer.h"
 
 namespace lczero {
@@ -58,6 +61,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
   options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
+  PopulateTimeManagementOptions(RunType::kSelfplay, options);
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
@@ -94,18 +98,21 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
       tree_[idx]->TrimTreeAtHead();
     }
-    if (options_[idx].search_limits.movetime > -1) {
-      options_[idx].search_limits.search_deadline =
-          std::chrono::steady_clock::now() +
-          std::chrono::milliseconds(options_[idx].search_limits.movetime);
-    }
+
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
+      auto stoppers = options_[idx].search_limits.MakeSearchStopper();
+      PopulateStoppersForSelfplay(stoppers.get(), options_[idx].uci_options);
+
       search_ = std::make_unique<Search>(
-          *tree_[idx], options_[idx].network, options_[idx].best_move_callback,
-          options_[idx].info_callback, options_[idx].search_limits,
-          *options_[idx].uci_options, options_[idx].cache, nullptr);
+          *tree_[idx], options_[idx].network,
+          std::make_unique<CallbackUciResponder>(
+              options_[idx].best_move_callback, options_[idx].info_callback),
+          /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
+          std::move(stoppers),
+          /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
+          nullptr);
       // TODO: add Syzygy option for selfplay.
     }
 
@@ -180,8 +187,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
       // If 'best move' is less than allowed visits and not max visits,
       // discard it and try again.
-      if (cur_n == max_n || cur_n >= options_[idx].uci_options->Get<int>(
-                                        kMinimumAllowedVistsId.GetId())) {
+      if (cur_n == max_n ||
+          static_cast<int>(cur_n) >= options_[idx].uci_options->Get<int>(
+                                         kMinimumAllowedVistsId.GetId())) {
         break;
       }
       auto move_list_to_discard = GetMoves();
@@ -246,6 +254,20 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
     writer->WriteChunk(chunk);
     black_to_move = !black_to_move;
   }
+}
+
+std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
+    const {
+  auto result = std::make_unique<ChainedSearchStopper>();
+
+  if (visits >= 0) result->AddStopper(std::make_unique<VisitsStopper>(visits));
+  if (playouts >= 0) {
+    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts));
+  }
+  if (movetime >= 0) {
+    result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
+  }
+  return result;
 }
 
 }  // namespace lczero

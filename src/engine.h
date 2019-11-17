@@ -37,10 +37,6 @@
 #include "utils/optional.h"
 #include "utils/optionsparser.h"
 
-// CUDNN eval
-// comment/disable this to enable tensor flow path
-#define CUDNN_EVAL 1
-
 namespace lczero {
 
 struct CurrentPosition {
@@ -50,8 +46,7 @@ struct CurrentPosition {
 
 class EngineController {
  public:
-  EngineController(BestMoveInfo::Callback best_move_callback,
-                   ThinkingInfo::Callback info_callback,
+  EngineController(std::unique_ptr<UciResponder> uci_responder,
                    const OptionsDict& options);
 
   ~EngineController() {
@@ -78,10 +73,6 @@ class EngineController {
   // Must not block.
   void Stop();
 
-  SearchLimits PopulateSearchLimits(int ply, bool is_black,
-      const GoParams& params,
-      std::chrono::steady_clock::time_point start_time);
-
  private:
   void UpdateFromUciOptions();
 
@@ -90,13 +81,13 @@ class EngineController {
 
   const OptionsDict& options_;
 
-  BestMoveInfo::Callback best_move_callback_;
-  ThinkingInfo::Callback info_callback_;
+  std::unique_ptr<UciResponder> uci_responder_;
 
   // Locked means that there is some work to wait before responding readyok.
   RpSharedMutex busy_mutex_;
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
+  std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
@@ -114,8 +105,6 @@ class EngineController {
   optional<CurrentPosition> current_position_;
   GoParams go_params_;
 
-  // How much less time was used by search than what was allocated.
-  int64_t time_spared_ms_ = 0;
   std::chrono::steady_clock::time_point move_start_time_;
 };
 

@@ -30,15 +30,19 @@
 #include "chess/position.h"
 #include "chess/uciloop.h"
 #include "mcts/search.h"
+#include "mcts/stoppers/stoppers.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
 
-struct SelfPlayLimits : SearchLimits {
-  // Movetime
-  std::int64_t movetime;
+struct SelfPlayLimits {
+  std::int64_t visits = -1;
+  std::int64_t playouts = -1;
+  std::int64_t movetime = -1;
+
+  std::unique_ptr<ChainedSearchStopper> MakeSearchStopper() const;
 };
 
 struct PlayerOptions {
@@ -46,9 +50,9 @@ struct PlayerOptions {
   // Network to use by the player.
   Network* network;
   // Callback when player moves.
-  BestMoveInfo::Callback best_move_callback;
+  CallbackUciResponder::BestMoveCallback best_move_callback;
   // Callback when player outputs info.
-  ThinkingInfo::Callback info_callback;
+  CallbackUciResponder::ThinkingCallback info_callback;
   // Callback when player discards a selected move due to low visits.
   MoveListCallback discarded_callback;
   // NNcache to use.
