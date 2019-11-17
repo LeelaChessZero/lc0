@@ -91,8 +91,10 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
+  const auto max_pv = params_.GetMultiPv();
+  const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv);
   const auto score_type = params_.GetScoreType();
+  const auto per_pv_counters = params_.GetPerPvCounters();
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -101,7 +103,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   common_info.seldepth = max_depth_;
   common_info.time = GetTimeSinceStart();
-  common_info.nodes = total_playouts_ + initial_visits_;
+  if (!per_pv_counters) {
+    common_info.nodes = total_playouts_ + initial_visits_;
+  }
   common_info.hashfull =
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   common_info.nps =
@@ -124,7 +128,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     } else if (score_type == "Q") {
       uci_info.score = edge.GetQ(default_q) * 10000;
     }
-    if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
+    if (max_pv > 1) uci_info.multipv = multipv;
+    if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
     for (auto iter = edge; iter;
          iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
