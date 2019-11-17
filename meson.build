@@ -84,9 +84,10 @@ if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
   endif
 endif
 
-files += gen.process('libs/lczero-common/proto/net.proto',
+pb_files = gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
-  
+files += pb_files
+
 # Extract git short revision.
 short_rev = 'unknown'
 if git.found()
@@ -516,7 +517,7 @@ if get_option('gtest')
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
   test('EncodePositionForNN', 
-    executable('encoder_test', 'src/neural/encoder_test.cc',
+    executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
