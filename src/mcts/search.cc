@@ -976,7 +976,9 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   } else {
     if (search_->cache_->ContainsKey(hash)) return true;
   }
-  auto planes = EncodePositionForNN(history_, 8, params_.GetHistoryFill());
+  auto planes =
+      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
+                          history_, 8, params_.GetHistoryFill());
 
   std::vector<uint16_t> moves;
 

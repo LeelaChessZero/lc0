@@ -349,7 +349,9 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
   }
 
   // Populate planes.
-  InputPlanes planes = EncodePositionForNN(history, 8, fill_empty_history);
+  InputPlanes planes =
+      EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                          history, 8, fill_empty_history);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);

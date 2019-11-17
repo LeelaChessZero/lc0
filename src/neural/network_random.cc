@@ -117,7 +117,8 @@ class RandomNetwork : public Network {
   int delay_ms_ = 0;
   int seed_ = 0;
   bool uniform_mode_ = false;
-  NetworkCapabilities capabilities_{1};
+  NetworkCapabilities capabilities_{
+      pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE};
 };
 }  // namespace
 

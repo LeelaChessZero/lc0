@@ -30,6 +30,7 @@
 #include <memory>
 #include <vector>
 
+#include "proto/net.pb.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -69,8 +70,7 @@ class NetworkComputation {
 };
 
 struct NetworkCapabilities {
-  // Actually enum pblczero::NetworkFormat::InputFormat;
-  int input_format = 0;
+  pblczero::NetworkFormat::InputFormat input_format;
   // TODO expose information of whether GetDVal() is usable or always zero.
 
   // Combines capabilities by setting the most restrictive ones. May throw
