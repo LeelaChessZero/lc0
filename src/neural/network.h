@@ -30,6 +30,8 @@
 #include <memory>
 #include <vector>
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 const int kInputPlanes = 112;
@@ -66,8 +68,25 @@ class NetworkComputation {
   virtual ~NetworkComputation() {}
 };
 
+struct NetworkCapabilities {
+  // Actually enum pblczero::NetworkFormat::InputFormat;
+  int input_format = 0;
+  // TODO expose information of whether GetDVal() is usable or always zero.
+
+  // Combines capabilities by setting the most restrictive ones. May throw
+  // exception.
+  void Merge(const NetworkCapabilities& other) {
+    if (input_format != other.input_format) {
+      throw Exception("Incompatible input formats, " +
+                      std::to_string(input_format) + " vs " +
+                      std::to_string(other.input_format));
+    }
+  }
+};
+
 class Network {
  public:
+  virtual const NetworkCapabilities& GetCapabilities() const = 0;
   virtual std::unique_ptr<NetworkComputation> NewComputation() = 0;
   virtual ~Network(){};
 };

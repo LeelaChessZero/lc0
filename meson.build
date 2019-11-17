@@ -136,7 +136,6 @@ files += [
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
   'src/neural/network_rr.cc',
-  'src/neural/network_st_batch.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
