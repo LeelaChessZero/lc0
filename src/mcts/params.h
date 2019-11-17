@@ -92,6 +92,9 @@ class SearchParams {
   bool GetStickyEndgames() const { return kStickyEndgames; }
   bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
+  bool GetPerPvCounters() const {
+    return options_.Get<bool>(kPerPvCountersId.GetId());
+  }
   std::string GetScoreType() const {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
@@ -127,6 +130,7 @@ class SearchParams {
   static const OptionId kStickyEndgamesId;
   static const OptionId kSyzygyFastPlayId;
   static const OptionId kMultiPvId;
+  static const OptionId kPerPvCountersId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
   static const OptionId kShortSightednessId;
