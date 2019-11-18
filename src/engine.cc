@@ -61,10 +61,12 @@ const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
-                           bool is_black) {
+                           const ChessBoard& board) {
   MoveList result;
   result.reserve(moves.size());
-  for (const auto& move : moves) result.emplace_back(move, is_black);
+  for (const auto& move : moves) {
+    result.push_back(board.GetModernMove({move, board.flipped()}));
+  }
   return result;
 }
 
@@ -283,7 +285,7 @@ void EngineController::Go(const GoParams& params) {
       time_manager_->GetStopper(options_, params, tree_->HeadPosition());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
-      StringsToMovelist(params.searchmoves, tree_->IsBlackToMove()),
+      StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       move_start_time_, std::move(stopper), params.infinite || params.ponder,
       options_, &cache_, syzygy_tb_.get());
 
