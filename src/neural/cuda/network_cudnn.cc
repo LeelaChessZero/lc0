@@ -30,6 +30,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+
 #include "cuda_common.h"
 #include "kernels.h"
 #include "layers.h"
@@ -190,7 +191,8 @@ class CudnnNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudnnNetwork : public Network {
  public:
-  CudnnNetwork(const WeightsFile& file, const OptionsDict& options) {
+  CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
+      : capabilities_{file.format().network_format().input()} {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
@@ -639,6 +641,10 @@ class CudnnNetwork : public Network {
     cublasDestroy(cublas_);
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
@@ -669,6 +675,7 @@ class CudnnNetwork : public Network {
   void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false); }
 
  private:
+  const NetworkCapabilities capabilities_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
   int gpu_id_;

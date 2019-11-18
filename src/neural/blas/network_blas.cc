@@ -16,6 +16,11 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <iostream>
+
 #include "neural/blas/blas.h"
 #include "neural/blas/convolution1.h"
 #include "neural/blas/fully_connected_layer.h"
@@ -27,11 +32,6 @@
 #include "neural/shared/activation.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
-
-#include <algorithm>
-#include <cassert>
-#include <cmath>
-#include <iostream>
 
 #ifdef USE_EIGEN
 #include <Eigen/Core>
@@ -111,10 +111,15 @@ class BlasNetwork : public Network {
                                              conv_policy_);
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
  private:
   // A cap on the max batch size since it consumes a lot of memory
   static constexpr auto kHardMaxBatchSize = 2048;
 
+  const NetworkCapabilities capabilities_;
   LegacyWeights weights_;
   size_t max_batch_size_;
   bool wdl_;
@@ -347,7 +352,8 @@ void BlasComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
 }
 
 BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
-    : weights_(file.weights()) {
+    : capabilities_{file.format().network_format().input()},
+      weights_(file.weights()) {
 #ifndef USE_EIGEN
   int blas_cores = options.GetOrDefault<int>("blas_cores", 1);
 #endif
