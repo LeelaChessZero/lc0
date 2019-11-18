@@ -109,11 +109,11 @@ class KldGainStopper : public SearchStopper {
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
-  const int min_gain_;
+  const float min_gain_;
   const int average_interval_;
   Mutex mutex_;
   std::vector<uint32_t> prev_visits_ GUARDED_BY(mutex_);
-  int64_t prev_child_nodes_ GUARDED_BY(mutex_) = 0;
+  float prev_child_nodes_ GUARDED_BY(mutex_) = 0.0f;
 };
 
 // Does many things:
