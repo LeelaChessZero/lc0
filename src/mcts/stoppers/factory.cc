@@ -125,7 +125,7 @@ void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
   // Should be last in the chain.
   const auto smart_pruning_factor =
       options.Get<float>(kSmartPruningFactorId.GetId());
-  if (smart_pruning_factor >= 0.0f) {
+  if (smart_pruning_factor > 0.0f) {
     stopper->AddStopper(
         std::make_unique<SmartPruningStopper>(smart_pruning_factor));
   }
