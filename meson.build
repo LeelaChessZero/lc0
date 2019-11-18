@@ -506,7 +506,7 @@ if get_option('gtest')
   test('OptionsParserTest',
     executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
-  ), timeout: 90)
+  ), args: '--gtest_output=xml:optionsparser.xml', timeout: 90)
 
   test('SyzygyTest',
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
