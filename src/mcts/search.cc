@@ -50,8 +50,7 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
 
 Search::Search(const NodeTree& tree, Network* network,
-               BestMoveInfo::Callback best_move_callback,
-               ThinkingInfo::Callback info_callback,
+               std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
@@ -67,8 +66,7 @@ Search::Search(const NodeTree& tree, Network* network,
       searchmoves_(searchmoves),
       start_time_(start_time),
       initial_visits_(root_node_->GetN()),
-      best_move_callback_(best_move_callback),
-      info_callback_(info_callback),
+      uci_responder_(std::move(uci_responder)),
       params_(options) {}
 
 namespace {
@@ -93,8 +91,10 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
+  const auto max_pv = params_.GetMultiPv();
+  const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv);
   const auto score_type = params_.GetScoreType();
+  const auto per_pv_counters = params_.GetPerPvCounters();
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -103,7 +103,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   common_info.seldepth = max_depth_;
   common_info.time = GetTimeSinceStart();
-  common_info.nodes = total_playouts_ + initial_visits_;
+  if (!per_pv_counters) {
+    common_info.nodes = total_playouts_ + initial_visits_;
+  }
   common_info.hashfull =
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   common_info.nps =
@@ -116,17 +118,24 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
+    const auto& q = edge.GetQ(default_q);
     if (score_type == "centipawn") {
-      uci_info.score = 295 * edge.GetQ(default_q) /
-                       (1 - 0.976953126 * std::pow(edge.GetQ(default_q), 14));
+      uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
     } else if (score_type == "centipawn_2018") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(default_q));
+      uci_info.score = 290.680623072 * tan(1.548090806 * q);
     } else if (score_type == "win_percentage") {
-      uci_info.score = edge.GetQ(default_q) * 5000 + 5000;
+      uci_info.score = q * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = edge.GetQ(default_q) * 10000;
+      uci_info.score = q * 10000;
     }
-    if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
+    const auto& d = edge.GetD();
+    const int w = static_cast<int>(std::round(500.0 * (1.0 + q - d)));
+    const int l = static_cast<int>(std::round(500.0 * (1.0 - q - d)));
+    // Using 1000-w-l instead of 1000*d for D score so that W+D+L add up to
+    // 1000.0.
+    uci_info.wdl = ThinkingInfo::WDL{w, 1000 - w - l, l};
+    if (max_pv > 1) uci_info.multipv = multipv;
+    if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
     for (auto iter = edge; iter;
          iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
@@ -140,7 +149,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     last_outputted_info_edge_ = current_best_edge_.edge();
   }
 
-  info_callback_(uci_infos);
+  uci_responder_->OutputThinkingInfo(&uci_infos);
 }
 
 // Decides whether anything important changed in stats and new info should be
@@ -161,10 +170,10 @@ void Search::MaybeOutputInfo() {
       SendMovesStats();
     }
     if (stop_.load(std::memory_order_acquire) && !ok_to_respond_bestmove_) {
-      ThinkingInfo info;
-      info.comment =
+      std::vector<ThinkingInfo> info(1);
+      info.back().comment =
           "WARNING: Search has reached limit and does not make any progress.";
-      info_callback_({info});
+      uci_responder_->OutputThinkingInfo(&info);
     }
   }
 }
@@ -271,7 +280,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
                      info.comment = line;
                      return info;
                    });
-    info_callback_(infos);
+    uci_responder_->OutputThinkingInfo(&infos);
   } else {
     LOGFILE << "=== Move stats:";
     for (const auto& line : move_stats) LOGFILE << line;
@@ -323,9 +332,10 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     SendUciInfo();
     EnsureBestMoveKnown();
     SendMovesStats();
-    best_move_callback_(
-        {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
-         final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
+    BestMoveInfo info(
+        final_bestmove_.GetMove(played_history_.IsBlackToMove()),
+        final_pondermove_.GetMove(!played_history_.IsBlackToMove()));
+    uci_responder_->OutputBestMove(&info);
     stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
@@ -428,11 +438,12 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
     PopulateRootMoveLimit(&root_limit);
   }
   // Best child is selected using the following criteria:
+  // * Is terminal win, e.g., checkmate.
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<bool, uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -440,7 +451,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+    const auto Q = edge.GetQ(0.0f);
+    edges.emplace_back(edge.IsTerminal() && Q == 1.0f, edge.GetN(), Q,
+                       edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
@@ -449,7 +462,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
   std::vector<EdgeAndNode> res;
   std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<3>(x); });
+                 [](const El& x) { return std::get<4>(x); });
   return res;
 }
 
@@ -976,7 +989,9 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   } else {
     if (search_->cache_->ContainsKey(hash)) return true;
   }
-  auto planes = EncodePositionForNN(history_, 8, params_.GetHistoryFill());
+  auto planes =
+      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
+                          history_, 8, params_.GetHistoryFill());
 
   std::vector<uint16_t> moves;
 

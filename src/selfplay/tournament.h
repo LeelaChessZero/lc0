@@ -28,6 +28,7 @@
 #pragma once
 
 #include <list>
+
 #include "selfplay/game.h"
 #include "utils/mutex.h"
 #include "utils/optionsdict.h"
@@ -39,8 +40,8 @@ namespace lczero {
 class SelfPlayTournament {
  public:
   SelfPlayTournament(const OptionsDict& options,
-                     BestMoveInfo::Callback best_move_info,
-                     ThinkingInfo::Callback thinking_info,
+                     CallbackUciResponder::BestMoveCallback best_move_info,
+                     CallbackUciResponder::ThinkingCallback thinking_info,
                      GameInfo::Callback game_info,
                      TournamentInfo::Callback tournament_info);
 
@@ -93,8 +94,8 @@ class SelfPlayTournament {
   const OptionsDict player_options_[2];
   SelfPlayLimits search_limits_[2];
 
-  BestMoveInfo::Callback best_move_callback_;
-  ThinkingInfo::Callback info_callback_;
+  CallbackUciResponder::BestMoveCallback best_move_callback_;
+  CallbackUciResponder::ThinkingCallback info_callback_;
   GameInfo::Callback game_callback_;
   TournamentInfo::Callback tournament_callback_;
   const int kThreads[2];

@@ -46,8 +46,7 @@ struct CurrentPosition {
 
 class EngineController {
  public:
-  EngineController(BestMoveInfo::Callback best_move_callback,
-                   ThinkingInfo::Callback info_callback,
+  EngineController(std::unique_ptr<UciResponder> uci_responder,
                    const OptionsDict& options);
 
   ~EngineController() {
@@ -82,8 +81,7 @@ class EngineController {
 
   const OptionsDict& options_;
 
-  BestMoveInfo::Callback best_move_callback_;
-  ThinkingInfo::Callback info_callback_;
+  std::unique_ptr<UciResponder> uci_responder_;
 
   // Locked means that there is some work to wait before responding readyok.
   RpSharedMutex busy_mutex_;

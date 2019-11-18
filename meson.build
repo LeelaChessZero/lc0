@@ -51,17 +51,15 @@ endif
 protoc = find_program('protoc', required : false)
 # For tensorflow skip system protobuf, chances are it will not work.
 if get_option('protobuf-3-6-0')
-  deps += subproject('protobuf-3.6.0').get_variable('protobuf_dep')
+  protobuf_dep = subproject('protobuf-3.6.0').get_variable('protobuf_dep')
   protoc = subproject('protobuf-3.6.0').get_variable('protoc')
 elif not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
-  deps += subproject('protobuf').get_variable('protobuf_dep')
+  protobuf_dep = subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
-else
-  deps += protobuf_dep
-  if protobuf_lib.found()
-    includes += include_directories(get_option('protobuf_include'))
-  endif
+elif protobuf_lib.found()
+  includes += include_directories(get_option('protobuf_include'))
 endif
+deps += protobuf_dep
 
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
@@ -84,9 +82,10 @@ if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
   endif
 endif
 
-files += gen.process('libs/lczero-common/proto/net.proto',
+pb_files = gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
-  
+files += pb_files
+
 # Extract git short revision.
 short_rev = 'unknown'
 if git.found()
@@ -136,7 +135,6 @@ files += [
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
   'src/neural/network_rr.cc',
-  'src/neural/network_st_batch.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
@@ -144,6 +142,7 @@ files += [
   'src/syzygy/syzygy.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
+  'src/utils/esc_codes.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
   'src/utils/optionsdict.cc',
@@ -515,8 +514,9 @@ if get_option('gtest')
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
   test('EncodePositionForNN', 
-    executable('encoder_test', 'src/neural/encoder_test.cc',
-    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+    executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib,
+    dependencies: [gtest, protobuf_dep]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
 endif

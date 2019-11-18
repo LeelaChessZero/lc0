@@ -119,7 +119,9 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
 
-  return NetworkFactory::Get()->Create(backend, weights, network_options);
+  auto ptr = NetworkFactory::Get()->Create(backend, weights, network_options);
+  network_options.CheckAllOptionsRead(backend);
+  return ptr;
 }
 
 }  // namespace lczero
