@@ -181,6 +181,7 @@ SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor)
 
 bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
                                      StoppersHints* hints) {
+  if (smart_pruning_factor_ <= 0.0) return false;
   Mutex::Lock lock(mutex_);
   if (stats.edge_n.size() == 1) {
     LOGFILE << "Only one possible move. Moving immediately.";
