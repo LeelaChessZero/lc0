@@ -101,7 +101,7 @@ class ChessBoard {
   bool IsSameMove(Move move1, Move move2) const;
   // Returns the same move but with castling encoded in legacy way.
   Move GetLegacyMove(Move move) const;
-  // Returns the same move but with castling encoded in modern 😎 way.
+  // Returns the same move but with castling encoded in modern way.
   Move GetModernMove(Move move) const;
 
   uint64_t Hash() const {

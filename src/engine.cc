@@ -65,7 +65,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
   MoveList result;
   result.reserve(moves.size());
   for (const auto& move : moves) {
-    result.push_back(board.GetModernMove({move, board.flipped()}));
+    result.emplace_back(board.GetModernMove({move, board.flipped()}));
   }
   return result;
 }
