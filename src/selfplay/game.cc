@@ -53,10 +53,11 @@ const OptionId kMinimumAllowedVistsId{
     "Unless the selected move is the best move, temperature based selection "
     "will be retried until visits of selected move is greater than or equal to "
     "this threshold."};
-const OptionId kUciChess960{
+}  // namespace
+
+const OptionId SelfPlayGame::kUciChess960{
     "chess960", "UCI_Chess960",
     "Castling moves are encoded as \"king takes rook\"."};
-}  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeId) = false;
@@ -204,7 +205,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                                          kMinimumAllowedVistsId.GetId())) {
         break;
       }
-      auto move_list_to_discard = GetMoves();
+      auto move_list_to_discard =
+          GetMoves(!options_[idx].uci_options->Get<bool>(kUciChess960.GetId()));
       move_list_to_discard.push_back(move);
       options_[idx].discarded_callback(move_list_to_discard);
       search_->ResetBestMove();
@@ -216,16 +218,24 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
   }
 }
 
-std::vector<Move> SelfPlayGame::GetMoves() const {
+std::vector<Move> SelfPlayGame::GetMoves(bool legacy) const {
   std::vector<Move> moves;
-  bool flip = !tree_[0]->IsBlackToMove();
   for (Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
-    moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove(flip));
-    flip = !flip;
+    moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove());
   }
-  std::reverse(moves.begin(), moves.end());
-  return moves;
+  std::vector<Move> result;
+  Position pos = tree_[0]->GetPositionHistory().Starting();
+  while (!moves.empty()) {
+    Move move = moves.back();
+    moves.pop_back();
+    if (legacy) move = pos.GetBoard().GetLegacyMove(move);
+    pos = Position(pos, move);
+    // Position already flipped, therefore flip the move if white to move.
+    if (!pos.IsBlackToMove()) move.Mirror();
+    result.push_back(move);
+  }
+  return result;
 }
 
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {

@@ -87,12 +87,14 @@ class SelfPlayGame {
   void WriteTrainingData(TrainingDataWriter* writer) const;
 
   GameResult GetGameResult() const { return game_result_; }
-  std::vector<Move> GetMoves() const;
+  std::vector<Move> GetMoves(bool legacy) const;
   // Gets the eval which required the biggest swing up to get the final outcome.
   // Eval is the expected outcome in the range 0<->1.
   float GetWorstEvalForWinnerOrDraw() const;
   int move_count_ = 0;
   uint64_t nodes_total_ = 0;
+
+  static const OptionId kUciChess960;
 
  private:
   // options_[0] is for white player, [1] for black.
