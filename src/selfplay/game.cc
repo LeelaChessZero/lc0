@@ -53,6 +53,9 @@ const OptionId kMinimumAllowedVistsId{
     "Unless the selected move is the best move, temperature based selection "
     "will be retried until visits of selected move is greater than or equal to "
     "this threshold."};
+const OptionId kUciChess960{
+    "chess960", "UCI_Chess960",
+    "Castling moves are encoded as \"king takes rook\"."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -61,6 +64,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
   options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
+  options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
 }
 
@@ -105,10 +109,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       auto stoppers = options_[idx].search_limits.MakeSearchStopper();
       PopulateStoppersForSelfplay(stoppers.get(), options_[idx].uci_options);
 
-      search_ = std::make_unique<Search>(
-          *tree_[idx], options_[idx].network,
+      std::unique_ptr<UciResponder> responder =
           std::make_unique<CallbackUciResponder>(
-              options_[idx].best_move_callback, options_[idx].info_callback),
+              options_[idx].best_move_callback, options_[idx].info_callback);
+
+      if (!options_[idx].uci_options->Get<bool>(kUciChess960.GetId())) {
+        // Remap FRC castling to legacy castling.
+        responder = std::make_unique<Chess960Transformer>(
+            std::move(responder), tree_[idx]->HeadPosition().GetBoard());
+      }
+
+      search_ = std::make_unique<Search>(
+          *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers),
           /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,

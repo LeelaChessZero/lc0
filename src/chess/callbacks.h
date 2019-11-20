@@ -196,4 +196,42 @@ class TransformingUciResponder : public UciResponder {
   std::unique_ptr<UciResponder> parent_;
 };
 
+class WDLResponseFilter : public TransformingUciResponder {
+  using TransformingUciResponder::TransformingUciResponder;
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    for (auto& info : *infos) info.wdl.reset();
+  }
+};
+
+// Remaps FRC castling to legacy castling.
+class Chess960Transformer : public TransformingUciResponder {
+ public:
+  Chess960Transformer(std::unique_ptr<UciResponder> parent,
+                      ChessBoard head_board)
+      : TransformingUciResponder(std::move(parent)), head_board_(head_board) {}
+
+ private:
+  void TransformBestMove(BestMoveInfo* best_move) override {
+    std::vector<Move> moves({best_move->bestmove, best_move->ponder});
+    ConvertToLegacyCastling(head_board_, &moves);
+    best_move->bestmove = moves[0];
+    best_move->ponder = moves[1];
+  }
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    for (auto& x : *infos) ConvertToLegacyCastling(head_board_, &x.pv);
+  }
+  static void ConvertToLegacyCastling(ChessBoard pos,
+                                      std::vector<Move>* moves) {
+    for (auto& move : *moves) {
+      if (pos.flipped()) move.Mirror();
+      move = pos.GetLegacyMove(move);
+      pos.ApplyMove(move);
+      if (pos.flipped()) move.Mirror();
+      pos.Mirror();
+    }
+  }
+
+  const ChessBoard head_board_;
+};
+
 }  // namespace lczero

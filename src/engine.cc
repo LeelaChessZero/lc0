@@ -56,7 +56,6 @@ const OptionId kPonderId{"ponder", "Ponder",
 const OptionId kUciChess960{
     "chess960", "UCI_Chess960",
     "Castling moves are encoded as \"king takes rook\"."};
-
 const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
 
@@ -173,15 +172,6 @@ void EngineController::SetupPosition(
 }
 
 namespace {
-void ConvertToLegacyCastling(ChessBoard pos, std::vector<Move>* moves) {
-  for (auto& move : *moves) {
-    if (pos.flipped()) move.Mirror();
-    move = pos.GetLegacyMove(move);
-    pos.ApplyMove(move);
-    if (pos.flipped()) move.Mirror();
-    pos.Mirror();
-  }
-}
 
 class PonderResponseTransformer : public TransformingUciResponder {
  public:
@@ -212,33 +202,6 @@ class PonderResponseTransformer : public TransformingUciResponder {
 
  private:
   std::string ponder_move_;
-};
-
-class WDLResponseFilter : public TransformingUciResponder {
-  using TransformingUciResponder::TransformingUciResponder;
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
-    for (auto& info : *infos) info.wdl.reset();
-  }
-};
-
-// Remaps FRC castling to legacy castling.
-class Chess960Transformer : public TransformingUciResponder {
- public:
-  Chess960Transformer(std::unique_ptr<UciResponder> parent,
-                      ChessBoard head_board)
-      : TransformingUciResponder(std::move(parent)), head_board_(head_board) {}
-
- private:
-  void TransformBestMove(BestMoveInfo* best_move) override {
-    std::vector<Move> moves({best_move->bestmove, best_move->ponder});
-    ConvertToLegacyCastling(head_board_, &moves);
-    best_move->bestmove = moves[0];
-    best_move->ponder = moves[1];
-  }
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
-    for (auto& x : *infos) ConvertToLegacyCastling(head_board_, &x.pv);
-  }
-  const ChessBoard head_board_;
 };
 
 }  // namespace
