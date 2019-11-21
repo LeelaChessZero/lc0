@@ -53,6 +53,9 @@ const OptionId kMinimumAllowedVistsId{
     "Unless the selected move is the best move, temperature based selection "
     "will be retried until visits of selected move is greater than or equal to "
     "this threshold."};
+const OptionId kUciChess960{
+    "chess960", "UCI_Chess960",
+    "Castling moves are encoded as \"king takes rook\"."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -61,12 +64,15 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
   options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
+  options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree, const MoveList& opening)
-    : options_{player1, player2} {
+    : options_{player1, player2},
+      chess960_{player1.uci_options->Get<bool>(kUciChess960.GetId()) ||
+                player2.uci_options->Get<bool>(kUciChess960.GetId())} {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 
@@ -105,10 +111,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       auto stoppers = options_[idx].search_limits.MakeSearchStopper();
       PopulateStoppersForSelfplay(stoppers.get(), options_[idx].uci_options);
 
-      search_ = std::make_unique<Search>(
-          *tree_[idx], options_[idx].network,
+      std::unique_ptr<UciResponder> responder =
           std::make_unique<CallbackUciResponder>(
-              options_[idx].best_move_callback, options_[idx].info_callback),
+              options_[idx].best_move_callback, options_[idx].info_callback);
+
+      if (!chess960_) {
+        // Remap FRC castling to legacy castling.
+        responder = std::make_unique<Chess960Transformer>(
+            std::move(responder), tree_[idx]->HeadPosition().GetBoard());
+      }
+
+      search_ = std::make_unique<Search>(
+          *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers),
           /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
@@ -206,14 +220,22 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
-  bool flip = !tree_[0]->IsBlackToMove();
   for (Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
-    moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove(flip));
-    flip = !flip;
+    moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove());
   }
-  std::reverse(moves.begin(), moves.end());
-  return moves;
+  std::vector<Move> result;
+  Position pos = tree_[0]->GetPositionHistory().Starting();
+  while (!moves.empty()) {
+    Move move = moves.back();
+    moves.pop_back();
+    if (!chess960_) move = pos.GetBoard().GetLegacyMove(move);
+    pos = Position(pos, move);
+    // Position already flipped, therefore flip the move if white to move.
+    if (!pos.IsBlackToMove()) move.Mirror();
+    result.push_back(move);
+  }
+  return result;
 }
 
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
