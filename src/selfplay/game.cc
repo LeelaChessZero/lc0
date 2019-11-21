@@ -53,11 +53,10 @@ const OptionId kMinimumAllowedVistsId{
     "Unless the selected move is the best move, temperature based selection "
     "will be retried until visits of selected move is greater than or equal to "
     "this threshold."};
-}  // namespace
-
-const OptionId SelfPlayGame::kUciChess960{
+const OptionId kUciChess960{
     "chess960", "UCI_Chess960",
     "Castling moves are encoded as \"king takes rook\"."};
+}  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kReuseTreeId) = false;
@@ -71,7 +70,9 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree, const MoveList& opening)
-    : options_{player1, player2} {
+    : options_{player1, player2},
+      chess960_{player1.uci_options->Get<bool>(kUciChess960.GetId()) ||
+                player2.uci_options->Get<bool>(kUciChess960.GetId())} {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 
@@ -114,7 +115,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           std::make_unique<CallbackUciResponder>(
               options_[idx].best_move_callback, options_[idx].info_callback);
 
-      if (!options_[idx].uci_options->Get<bool>(kUciChess960.GetId())) {
+      if (!chess960_) {
         // Remap FRC castling to legacy castling.
         responder = std::make_unique<Chess960Transformer>(
             std::move(responder), tree_[idx]->HeadPosition().GetBoard());
@@ -205,8 +206,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                                          kMinimumAllowedVistsId.GetId())) {
         break;
       }
-      auto move_list_to_discard =
-          GetMoves(!options_[idx].uci_options->Get<bool>(kUciChess960.GetId()));
+      auto move_list_to_discard = GetMoves();
       move_list_to_discard.push_back(move);
       options_[idx].discarded_callback(move_list_to_discard);
       search_->ResetBestMove();
@@ -218,7 +218,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
   }
 }
 
-std::vector<Move> SelfPlayGame::GetMoves(bool legacy) const {
+std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
   for (Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
@@ -229,7 +229,7 @@ std::vector<Move> SelfPlayGame::GetMoves(bool legacy) const {
   while (!moves.empty()) {
     Move move = moves.back();
     moves.pop_back();
-    if (legacy) move = pos.GetBoard().GetLegacyMove(move);
+    if (!chess960_) move = pos.GetBoard().GetLegacyMove(move);
     pos = Position(pos, move);
     // Position already flipped, therefore flip the move if white to move.
     if (!pos.IsBlackToMove()) move.Mirror();

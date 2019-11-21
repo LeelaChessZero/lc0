@@ -283,8 +283,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.game_result = game.GetGameResult();
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
-    game_info.moves = game.GetMoves(
-        !options[0].uci_options->Get<bool>(SelfPlayGame::kUciChess960.GetId()));
+    game_info.moves = game.GetMoves();
     game_info.play_start_ply = opening.size();
     if (!enable_resign) {
       game_info.min_false_positive_threshold =
