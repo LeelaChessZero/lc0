@@ -117,6 +117,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
     }
   }
+  common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
   const auto default_q = -root_node_->GetQ();
