@@ -108,8 +108,15 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   }
   common_info.hashfull =
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
-  common_info.nps =
-      common_info.time ? (total_playouts_ * 1000 / common_info.time) : 0;
+  if (nps_start_time_) {
+    const auto time_since_first_batch_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - *nps_start_time_)
+            .count();
+    if (time_since_first_batch_ms > 0) {
+      common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
+    }
+  }
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
@@ -570,6 +577,9 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->time_since_movestart = GetTimeSinceStart();
 
   SharedMutex::SharedLock nodes_lock(nodes_mutex_);
+  if (!nps_start_time_ && total_playouts_ > 0) {
+    nps_start_time_ = std::chrono::steady_clock::now();
+  }
   stats->total_nodes = total_playouts_ + initial_visits_;
   stats->nodes_since_movestart = total_playouts_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);

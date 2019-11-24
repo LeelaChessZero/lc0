@@ -78,6 +78,7 @@ class EngineController {
 
   void SetupPosition(const std::string& fen,
                      const std::vector<std::string>& moves);
+  void ResetMoveTimer();
 
   const OptionsDict& options_;
 
@@ -105,7 +106,7 @@ class EngineController {
   optional<CurrentPosition> current_position_;
   GoParams go_params_;
 
-  std::chrono::steady_clock::time_point move_start_time_;
+  optional<std::chrono::steady_clock::time_point> move_start_time_;
 };
 
 class EngineLoop : public UciLoop {
