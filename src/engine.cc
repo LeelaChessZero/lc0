@@ -75,8 +75,7 @@ EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
     : options_(options),
       uci_responder_(std::move(uci_responder)),
-      time_manager_(MakeLegacyTimeManager()),
-      move_start_time_(std::chrono::steady_clock::now()) {}
+      time_manager_(MakeLegacyTimeManager()) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -95,6 +94,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
+}
+
+void EngineController::ResetMoveTimer() {
+  move_start_time_ = std::chrono::steady_clock::now();
 }
 
 // Updates values from Uci options.
@@ -130,13 +133,13 @@ void EngineController::EnsureReady() {
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
-  move_start_time_ = std::chrono::steady_clock::now();
+  ResetMoveTimer();
 }
 
 void EngineController::NewGame() {
   // In case anything relies upon defaulting to default position and just calls
   // newgame and goes straight into go.
-  move_start_time_ = std::chrono::steady_clock::now();
+  ResetMoveTimer();
   SharedLock lock(busy_mutex_);
   cache_.Clear();
   search_.reset();
@@ -150,7 +153,7 @@ void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
   // Some UCI hosts just call position then immediately call go, while starting
   // the clock on calling 'position'.
-  move_start_time_ = std::chrono::steady_clock::now();
+  ResetMoveTimer();
   SharedLock lock(busy_mutex_);
   current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
@@ -211,6 +214,7 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
+  if (!move_start_time_) ResetMoveTimer();
   go_params_ = params;
 
   std::unique_ptr<UciResponder> responder =
@@ -249,16 +253,16 @@ void EngineController::Go(const GoParams& params) {
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
-      move_start_time_, std::move(stopper), params.infinite || params.ponder,
+      *move_start_time_, std::move(stopper), params.infinite || params.ponder,
       options_, &cache_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
-          << FormatTime(SteadyClockToSystemClock(move_start_time_));
+          << FormatTime(SteadyClockToSystemClock(*move_start_time_));
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 
 void EngineController::PonderHit() {
-  move_start_time_ = std::chrono::steady_clock::now();
+  ResetMoveTimer();
   go_params_.ponder = false;
   Go(go_params_);
 }
