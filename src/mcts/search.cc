@@ -113,9 +113,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - *nps_start_time_)
             .count();
-    common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
-  } else {
-    common_info.nps = 0;
+    if (time_since_first_batch_ms > 0) {
+      common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
+    }
   }
 
   int multipv = 0;
