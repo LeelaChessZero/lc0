@@ -26,6 +26,7 @@
 */
 
 #include "mcts/stoppers/factory.h"
+
 #include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
@@ -111,9 +112,9 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   }
 }
 
-// Parameters needed for selfplay and uci, but not benchmark.
-void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
-                                 const OptionsDict& options) {
+// Parameters needed for selfplay and uci, but not benchmark nor infinite mode.
+void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
+                               const OptionsDict& options) {
   // KLD gain.
   const auto min_kld_gain =
       options.Get<float>(kMinimumKLDGainPerNodeId.GetId());
@@ -162,7 +163,8 @@ void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
     stopper->AddStopper(std::make_unique<DepthStopper>(*params.depth));
   }
 
-  PopulateStoppersForSelfplay(stopper, options);
+  // Add internal search tree stoppers when we want to automatically stop.
+  if (!infinite) PopulateIntrinsicStoppers(stopper, options);
 }
 
 class LegacyStopper : public TimeLimitStopper {

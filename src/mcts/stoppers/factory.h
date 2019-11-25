@@ -47,7 +47,7 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
 std::unique_ptr<TimeManager> MakeLegacyTimeManager();
 
 // Populates KLDGain and SmartPruning stoppers.
-void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
-                                 const OptionsDict& options);
+void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
+                               const OptionsDict& options);
 
 }  // namespace lczero
