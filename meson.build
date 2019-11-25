@@ -346,12 +346,11 @@ if get_option('build_backends')
 
   opencl_framework=dependency('OpenCL', required: false)
   if opencl_framework.found()
-      deps += [ opencl_framework ]
+      opencl_dep = [ opencl_framework ]
       has_opencl = true
 
   elif opencl_lib.found() and cc.has_header('CL/opencl.h', args: '-I' + get_option('opencl_include'))
-
-      deps += [ opencl_lib ]
+      opencl_dep = [ opencl_lib ]
       has_opencl = true
 
   endif
@@ -373,6 +372,7 @@ if get_option('build_backends')
     if not opencl_framework.found()
       includes += include_directories(get_option('opencl_include'))
     endif
+    deps += opencl_dep
     files += opencl_files
     has_backends = true
 
