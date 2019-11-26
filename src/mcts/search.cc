@@ -1223,12 +1223,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Current node might have become terminal from some other descendant, so
     // backup the rest of the way with more accurate values.
+    auto value_discount = 1.0f;
     if (n->IsTerminal()) {
       v = n->GetQ();
       d = n->GetD();
+    } else {
+      value_discount /= 1.0f + params_.GetShortSightedness() * depth;
     }
-    n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
-                           d, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v * value_discount, d, node_to_process.multivisit);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
