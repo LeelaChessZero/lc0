@@ -1,11 +1,11 @@
 [wrap-file]
-directory = googletest-release-1.8.1
+directory = googletest-release-1.10.0
 
-source_url = https://github.com/google/googletest/archive/release-1.8.1.zip
-source_filename = gtest-1.8.1.zip
-source_hash = 927827c183d01734cc5cfef85e0ff3f5a92ffe6188e0d18e909c5efebf28a0c7
+source_url = https://github.com/google/googletest/archive/release-1.10.0.zip
+source_filename = gtest-1.10.0.zip
+source_hash = 94c634d499558a76fa649edb13721dce6e98fb1e7018dfaeba3cd7a083945e91
 
-patch_url = https://wrapdb.mesonbuild.com/v1/projects/gtest/1.8.1/1/get_zip
-patch_filename = gtest-1.8.1-1-wrap.zip
-patch_hash = f79f5fd46e09507b3f2e09a51ea6eb20020effe543335f5aee59f30cc8d15805
+patch_url = https://wrapdb.mesonbuild.com/v1/projects/gtest/1.10.0/1/get_zip
+patch_filename = gtest-1.10.0-1-wrap.zip
+patch_hash = 2825db6614cb56783e88a3f4a01a8d3423fdac68c5de6cc61e5319b8607b5417
 
