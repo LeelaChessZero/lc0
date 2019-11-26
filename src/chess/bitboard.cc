@@ -26,6 +26,7 @@
 */
 
 #include "chess/bitboard.h"
+
 #include "utils/exception.h"
 
 namespace lczero {
@@ -320,10 +321,6 @@ uint16_t Move::as_packed_int() const {
   }
 }
 
-uint16_t Move::as_nn_index() const {
-  if (!castling()) return kMoveToIdx[as_packed_int()];
-  if (from().col() < to().col()) return kKingCastleIndex;
-  return kQueenCastleIndex;
-}
+uint16_t Move::as_nn_index() const { return kMoveToIdx[as_packed_int()]; }
 
 }  // namespace lczero

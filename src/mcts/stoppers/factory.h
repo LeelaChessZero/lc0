@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,18 +27,27 @@
 
 #pragma once
 
-#include "chess/position.h"
-#include "neural/network.h"
-#include "proto/net.pb.h"
+#include "mcts/stoppers/stoppers.h"
+#include "mcts/stoppers/timemgr.h"
+#include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
-enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
+// Option ID for a cache size. It's used from multiple places and there's no
+// really nice place to declare, so let it be here.
+extern const OptionId kNNCacheSizeId;
 
-// Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(
-    pblczero::NetworkFormat::InputFormat input_format,
-    const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history);
+enum class RunType { kUci, kSelfplay };
+
+// Populates UCI/command line flags with time management options.
+void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
+
+// Creates a time management ("Legacy" because it's planned to be replaced).
+std::unique_ptr<TimeManager> MakeLegacyTimeManager();
+
+// Populates KLDGain and SmartPruning stoppers.
+void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
+                               const OptionsDict& options);
 
 }  // namespace lczero

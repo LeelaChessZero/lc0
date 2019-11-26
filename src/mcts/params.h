@@ -42,9 +42,7 @@ class SearchParams {
   static void Populate(OptionsParser* options);
 
   // Parameter getters.
-  int GetMiniBatchSize() const {
-    return kMiniBatchSize;
-  }
+  int GetMiniBatchSize() const { return kMiniBatchSize; }
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
@@ -79,27 +77,28 @@ class SearchParams {
   bool GetLogLiveStats() const {
     return options_.Get<bool>(kLogLiveStatsId.GetId());
   }
-  float GetSmartPruningFactor() const { return kSmartPruningFactor; }
-  bool GetFpuAbsolute(bool at_root) const { return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute; }
-  float GetFpuValue(bool at_root) const { return at_root ? kFpuValueAtRoot : kFpuValue; }
+  bool GetFpuAbsolute(bool at_root) const {
+    return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute;
+  }
+  float GetFpuValue(bool at_root) const {
+    return at_root ? kFpuValueAtRoot : kFpuValue;
+  }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
+  float GetShortSightedness() const { return kShortSightedness; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   bool GetStickyEndgames() const { return kStickyEndgames; }
   bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
   int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
+  bool GetPerPvCounters() const {
+    return options_.Get<bool>(kPerPvCountersId.GetId());
+  }
   std::string GetScoreType() const {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  int GetKLDGainAverageInterval() const {
-    return options_.Get<int>(kKLDGainAverageInterval.GetId());
-  }
-  float GetMinimumKLDGainPerNode() const {
-    return options_.Get<float>(kMinimumKLDGainPerNode.GetId());
-  }
   float GetMovesLeftFactor() const { return kMovesLeftFactor; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
   float GetMovesLeftScale() const { return kMovesLeftScale; }
@@ -123,7 +122,6 @@ class SearchParams {
   static const OptionId kNoiseAlphaId;
   static const OptionId kVerboseStatsId;
   static const OptionId kLogLiveStatsId;
-  static const OptionId kSmartPruningFactorId;
   static const OptionId kFpuStrategyId;
   static const OptionId kFpuValueId;
   static const OptionId kFpuStrategyAtRootId;
@@ -136,14 +134,14 @@ class SearchParams {
   static const OptionId kStickyEndgamesId;
   static const OptionId kSyzygyFastPlayId;
   static const OptionId kMultiPvId;
+  static const OptionId kPerPvCountersId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
-  static const OptionId kMinimumKLDGainPerNode;
-  static const OptionId kKLDGainAverageInterval;
   static const OptionId kMovesLeftFactorId;
   static const OptionId kMovesLeftThresholdId;
   static const OptionId kMovesLeftScaleId;
   static const OptionId kUseMovesLeftId;
+  static const OptionId kShortSightednessId;
 
  private:
   const OptionsDict& options_;
@@ -159,7 +157,6 @@ class SearchParams {
   const float kCpuctFactor;
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
-  const float kSmartPruningFactor;
   const bool kFpuAbsolute;
   const float kFpuValue;
   const bool kFpuAbsoluteAtRoot;
@@ -177,6 +174,7 @@ class SearchParams {
   const float kMovesLeftThreshold;
   const float kMovesLeftScale;
   const bool kUseMovesLeft;
+  const float kShortSightedness;
 };
 
 }  // namespace lczero

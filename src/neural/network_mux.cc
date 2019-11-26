@@ -25,11 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/factory.h"
-
 #include <condition_variable>
 #include <queue>
 #include <thread>
+
+#include "neural/factory.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -115,6 +115,12 @@ class MuxingNetwork : public Network {
         NetworkFactory::Get()->Create(backend, weights, opts));
     Network* net = networks_.back().get();
 
+    if (networks_.size() == 1) {
+      capabilities_ = net->GetCapabilities();
+    } else {
+      capabilities_.Merge(net->GetCapabilities());
+    }
+
     for (int i = 0; i < nn_threads; ++i) {
       threads_.emplace_back(
           [this, net, max_batch]() { Worker(net, max_batch); });
@@ -125,13 +131,8 @@ class MuxingNetwork : public Network {
     return std::make_unique<MuxingComputation>(this);
   }
 
-  bool MovesLeftSupported() const override {
-    for (auto &network : networks_) {
-      if (!network->MovesLeftSupported()) {
-        return false;
-      }
-    }
-    return true;
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
   }
 
   void Enqueue(MuxingComputation* computation) {
@@ -207,6 +208,7 @@ class MuxingNetwork : public Network {
   std::vector<std::unique_ptr<Network>> networks_;
   std::queue<MuxingComputation*> queue_;
   bool abort_ = false;
+  NetworkCapabilities capabilities_;
 
   std::mutex mutex_;
   std::condition_variable cv_;

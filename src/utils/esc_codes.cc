@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,20 +25,25 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include "utils/esc_codes.h"
 
-#include "chess/position.h"
-#include "neural/network.h"
-#include "proto/net.pb.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace lczero {
 
-enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
+bool EscCodes::enabled_;
 
-// Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(
-    pblczero::NetworkFormat::InputFormat input_format,
-    const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history);
+void EscCodes::Init() {
+#ifdef _WIN32
+  HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD mode;
+  GetConsoleMode(h, &mode);
+  enabled_ = SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#else
+  enabled_ = true;
+#endif
+}
 
 }  // namespace lczero

@@ -292,6 +292,9 @@ class CheckNetwork : public Network {
     check_net_ =
         NetworkFactory::Get()->Create(backendName2, weights, backend2_dict);
 
+    capabilities_ = work_net_->GetCapabilities();
+    capabilities_.Merge(check_net_->GetCapabilities());
+
     check_frequency_ =
         options.GetOrDefault<float>("freq", kDefaultCheckFrequency);
     switch (params_.mode) {
@@ -326,8 +329,8 @@ class CheckNetwork : public Network {
     return work_net_->NewComputation();
   }
 
-  bool MovesLeftSupported() const override {
-    return work_net_->MovesLeftSupported() && check_net_->MovesLeftSupported();
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
   }
 
  private:
@@ -337,6 +340,7 @@ class CheckNetwork : public Network {
   double check_frequency_;
   std::unique_ptr<Network> work_net_;
   std::unique_ptr<Network> check_net_;
+  NetworkCapabilities capabilities_;
 };
 
 std::unique_ptr<Network> MakeCheckNetwork(const WeightsFile& weights,

@@ -25,11 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/factory.h"
-
 #include <condition_variable>
 #include <queue>
 #include <thread>
+
+#include "neural/factory.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -125,6 +125,12 @@ class DemuxingNetwork : public Network {
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
 
+    if (networks_.size() == 1) {
+      capabilities_ = networks_.back()->GetCapabilities();
+    } else {
+      capabilities_.Merge(networks_.back()->GetCapabilities());
+    }
+
     for (int i = 0; i < nn_threads; ++i) {
       threads_.emplace_back([this]() { Worker(); });
     }
@@ -134,13 +140,8 @@ class DemuxingNetwork : public Network {
     return std::make_unique<DemuxingComputation>(this);
   }
 
-  bool MovesLeftSupported() const override {
-    for (auto &network : networks_) {
-      if (!network->MovesLeftSupported()) {
-        return false;
-      }
-    }
-    return true;
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
   }
 
   void Enqueue(DemuxingComputation* computation) {
@@ -205,6 +206,7 @@ class DemuxingNetwork : public Network {
   }
 
   std::vector<std::unique_ptr<Network>> networks_;
+  NetworkCapabilities capabilities_;
   std::queue<DemuxingComputation*> queue_;
   int minimum_split_size_ = 0;
   std::atomic<long long> counter_;
