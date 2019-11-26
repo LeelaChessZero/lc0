@@ -82,8 +82,8 @@ after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%PKG_FOLDER%\cuda\bin\cudnn64_7.dll"
 - cmd: IF %APPVEYOR_REPO_TAG%==true type COPYING |more /P > dist\COPYING
 - cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\COPYING
-- cmd: IF %APPVEYOR_REPO_TAG%==true %NAME%==cpu-dnnl copy "%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp\LICENSE" dist\DNNL-LICENSE
-- cmd: IF %APPVEYOR_REPO_TAG%==true %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %NAME%==cpu-dnnl copy "%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp\LICENSE" dist\DNNL-LICENSE
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%CUDA_PATH%\EULA.txt" dist\CUDA.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%PKG_FOLDER%\cuda\NVIDIA_SLA_cuDNN_Support.txt" dist\CUDNN.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
