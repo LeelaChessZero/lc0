@@ -38,7 +38,35 @@ namespace lczero {
 template <typename T>
 class TypeDict {
  protected:
-  std::unordered_map<std::string, T> dict_;
+  struct V {
+    const T& Get() const {
+      is_used_ = true;
+      return value_;
+    }
+    T& Get() {
+      is_used_ = true;
+      return value_;
+    }
+    void Set(const T& v) {
+      is_used_ = false;
+      value_ = v;
+    }
+    bool IsSet() const { return is_used_; }
+
+   private:
+    mutable bool is_used_ = false;
+    T value_;
+  };
+  std::unordered_map<std::string, V> dict_;
+  void EnsureNoUnusedOptions(const std::string& type_name,
+                             const std::string& prefix) const {
+    for (auto const& option : dict_) {
+      if (!option.second.IsSet()) {
+        throw Exception("Unknown " + type_name + " option: " + prefix +
+                        option.first);
+      }
+    }
+  }
 };
 
 class OptionsDict : TypeDict<bool>,
@@ -95,6 +123,10 @@ class OptionsDict : TypeDict<bool>,
   // is still in scope, when the parent pointer is used
   void AddSubdictFromString(const std::string& str);
 
+  // Throws an exception for the first option in the dict that has not been read
+  // to find syntax errors in options added using AddSubdictFromString.
+  void CheckAllOptionsRead(const std::string& path_from_parent) const;
+
   bool HasSubdict(const std::string& name) const;
 
  private:
@@ -106,7 +138,9 @@ template <typename T>
 T OptionsDict::Get(const std::string& key) const {
   const auto& dict = TypeDict<T>::dict_;
   auto iter = dict.find(key);
-  if (iter != dict.end()) return iter->second;
+  if (iter != dict.end()) {
+    return iter->second.Get();
+  }
   if (parent_) return parent_->Get<T>(key);
   throw Exception("Key [" + key + "] was not set in options.");
 }
@@ -125,19 +159,21 @@ T OptionsDict::GetOrDefault(const std::string& key,
                             const T& default_val) const {
   const auto& dict = TypeDict<T>::dict_;
   auto iter = dict.find(key);
-  if (iter != dict.end()) return iter->second;
+  if (iter != dict.end()) {
+    return iter->second.Get();
+  }
   if (parent_) return parent_->GetOrDefault<T>(key, default_val);
   return default_val;
 }
 
 template <typename T>
 void OptionsDict::Set(const std::string& key, const T& value) {
-  TypeDict<T>::dict_[key] = value;
+  TypeDict<T>::dict_[key].Set(value);
 }
 
 template <typename T>
 T& OptionsDict::GetRef(const std::string& key) {
-  return TypeDict<T>::dict_[key];
+  return TypeDict<T>::dict_[key].Get();
 }
 
 template <typename T>

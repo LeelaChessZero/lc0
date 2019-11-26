@@ -30,6 +30,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+
 #include "cuda_common.h"
 #include "kernels.h"
 #include "layers.h"
@@ -190,7 +191,8 @@ class CudnnNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudnnNetwork : public Network {
  public:
-  CudnnNetwork(const WeightsFile& file, const OptionsDict& options) {
+  CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
+      : capabilities_{file.format().network_format().input()} {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
@@ -198,6 +200,8 @@ class CudnnNetwork : public Network {
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+
+    showInfo();
 
     int total_gpus;
     ReportCUDAErrors(cudaGetDeviceCount(&total_gpus));
@@ -207,7 +211,7 @@ class CudnnNetwork : public Network {
 
     cudaDeviceProp deviceProp = {};
     cudaGetDeviceProperties(&deviceProp, gpu_id_);
-    showInfo(deviceProp);
+    showDeviceInfo(deviceProp);
 
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
@@ -221,8 +225,10 @@ class CudnnNetwork : public Network {
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support FP16.
 
-      if (deviceProp.major == 6 && deviceProp.minor == 0) {
-        // FP16 without tensor cores supported on GP100 (SM 6.0)
+      if ((deviceProp.major == 6 && deviceProp.minor != 1) ||
+          (deviceProp.major == 5 && deviceProp.minor == 3)) {
+        // FP16 without tensor cores supported on GP100 (SM 6.0) and Jetson
+        // (SM 5.3 and 6.2). SM 6.1 GPUs also have FP16, but slower than FP32.
         // nhwc_ remains false.
       } else if (deviceProp.major >= 7) {
         // NHWC layout is faster with Tensor Cores.
@@ -635,6 +641,10 @@ class CudnnNetwork : public Network {
     cublasDestroy(cublas_);
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
@@ -665,6 +675,7 @@ class CudnnNetwork : public Network {
   void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false); }
 
  private:
+  const NetworkCapabilities capabilities_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
   int gpu_id_;
@@ -695,15 +706,17 @@ class CudnnNetwork : public Network {
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void showInfo(const cudaDeviceProp& deviceProp) const {
-    CERR << "GPU: " << deviceProp.name;
-    CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
-         << " Gb";
-    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
-    CERR << "GPU compute capability: " << deviceProp.major << "."
-         << deviceProp.minor;
+  void showInfo() const {
     int version;
-    cudaRuntimeGetVersion(&version);
+    int ret = cudaRuntimeGetVersion(&version);
+    switch (ret) {
+      case cudaErrorInitializationError:
+        throw Exception("CUDA driver and/or runtime could not be initialized");
+      case cudaErrorInsufficientDriver:
+        throw Exception("No CUDA driver, or one older than the CUDA library");
+      case cudaErrorNoDevice:
+        throw Exception("No CUDA-capable devices detected");
+    }
     int major = version / 1000;
     int minor = (version - major * 1000) / 10;
     int pl = version - major * 1000 - minor * 10;
@@ -726,10 +739,6 @@ class CudnnNetwork : public Network {
               "version "
            << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
     }
-    if (version < 7301 && (deviceProp.major > 7 ||
-                           (deviceProp.major == 7 && deviceProp.minor >= 5))) {
-      CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
-    }
     cudaDriverGetVersion(&version);
     major = version / 1000;
     minor = (version - major * 1000) / 10;
@@ -738,6 +747,21 @@ class CudnnNetwork : public Network {
          << minor << "." << pl;
     if (version < CUDART_VERSION) {
       CERR << "WARNING: code was compiled with unsupported CUDA version.";
+    }
+  }
+
+  void showDeviceInfo(const cudaDeviceProp& deviceProp) const {
+    CERR << "GPU: " << deviceProp.name;
+    CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
+         << " Gb";
+    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+    CERR << "GPU compute capability: " << deviceProp.major << "."
+         << deviceProp.minor;
+
+    int version = cudnnGetVersion();
+    if (version < 7301 && (deviceProp.major > 7 ||
+                           (deviceProp.major == 7 && deviceProp.minor >= 5))) {
+      CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
     }
     if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
       CERR << "WARNING: you will probably get better performance from the "

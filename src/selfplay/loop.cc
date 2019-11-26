@@ -105,6 +105,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   if (!info.training_filename.empty())
     res += " trainingfile " + info.training_filename;
   if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
+  res += " play_start_ply " + std::to_string(info.play_start_ply);
   if (info.is_black)
     res += " player1 " + std::string(*info.is_black ? "black" : "white");
   if (info.game_result != GameResult::UNDECIDED) {

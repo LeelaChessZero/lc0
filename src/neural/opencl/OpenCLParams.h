@@ -28,4 +28,5 @@ struct OpenCLParams {
   bool force_tune = false;
   bool tune_exhaustive = false;
   int tune_batch_size = 1;
+  std::string tuner_file;
 };

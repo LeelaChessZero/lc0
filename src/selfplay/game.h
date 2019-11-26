@@ -30,24 +30,31 @@
 #include "chess/position.h"
 #include "chess/uciloop.h"
 #include "mcts/search.h"
+#include "mcts/stoppers/stoppers.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
 
-struct SelfPlayLimits : SearchLimits {
-  // Movetime
-  std::int64_t movetime;
+struct SelfPlayLimits {
+  std::int64_t visits = -1;
+  std::int64_t playouts = -1;
+  std::int64_t movetime = -1;
+
+  std::unique_ptr<ChainedSearchStopper> MakeSearchStopper() const;
 };
 
 struct PlayerOptions {
+  using MoveListCallback = std::function<void(const MoveList&)>;
   // Network to use by the player.
   Network* network;
   // Callback when player moves.
-  BestMoveInfo::Callback best_move_callback;
+  CallbackUciResponder::BestMoveCallback best_move_callback;
   // Callback when player outputs info.
-  ThinkingInfo::Callback info_callback;
+  CallbackUciResponder::ThinkingCallback info_callback;
+  // Callback when player discards a selected move due to low visits.
+  MoveListCallback discarded_callback;
   // NNcache to use.
   NNCache* cache;
   // User options dictionary.
@@ -63,7 +70,8 @@ class SelfPlayGame {
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
-  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree);
+  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree,
+               const MoveList& opening);
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
@@ -101,8 +109,10 @@ class SelfPlayGame {
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
   float min_eval_[2] = {1.0f, 1.0f};
-  // Track the maximum eval for white win, draw, black win for comparison to actual outcome.
+  // Track the maximum eval for white win, draw, black win for comparison to
+  // actual outcome.
   float max_eval_[3] = {0.0f, 0.0f, 0.0f};
+  const bool chess960_;
   std::mutex mutex_;
 
   // Training data to send.

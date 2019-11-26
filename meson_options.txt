@@ -14,9 +14,9 @@ option('openblas_include',
        description: 'Paths to openblas include directories')
 
 option('opencl_include',
-       type: 'array',
-       value: ['/usr/include/'],
-       description: 'Paths to OpenCL include directories')
+       type: 'string',
+       value: '/usr/include/',
+       description: 'Path to OpenCL include directory')
 
 option('tensorflow_libdir',
        type: 'array',
@@ -52,6 +52,11 @@ option('mkl_include',
        type: 'array',
        value: ['/opt/intel/mkl/include'],
        description: 'Paths to MKL libraries')
+
+option('dnnl_dir',
+       type: 'string',
+       value: '',
+       description: 'Paths to DNNL install directory')
 
 option('cudnn_include', 
        type: 'array',
@@ -102,6 +107,11 @@ option('mkl',
        type: 'boolean',
        value: true,
        description: 'Enable MKL BLAS support')
+
+option('dnnl',
+       type: 'boolean',
+       value: false,
+       description: 'Enable DNNL BLAS support')
 
 option('eigen',
        type: 'boolean',
