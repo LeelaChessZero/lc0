@@ -1,4 +1,14 @@
-﻿v0.23.0-rc1 (2019-11-21)
+﻿v0.23.0-rc2 (2019-11-27)
+~~~~~~~~~~~
+
+* Fixes in nps and time reporting during search.
+* Introduced DNNL BLAS build for modern CPUs in addition to OpenBLAS.
+* Build fixes on MacOS without OpenCL.
+* Fixed smart pruning and KLDGain trying to stop search in `go infinite` mode.
+* OpenCL package now has check_opencl tool to find computation behaves sanely.
+* Fixed a bug in interoperation of shortsighteness and certainty propagation.
+
+v0.23.0-rc1 (2019-11-21)
 ~~~~~~~~~~~
 
 * Support for Fischer Random Chess (`UCI_Chess960` option to enable FRC-style
@@ -22,6 +32,7 @@
 * The most basic version of "certainty propagation" feature (actually without
   "propagation"). If the engine sees checkmate, it plays it!
   (before it could play other good move).
+* Benchmark mode no longer supports smart pruning.
 * Various small changes: hidden options to control Dirichlet noise, floating
   point optimizations, Better error reporting if there is exception in worker
   thread, better error messages in CUDA backend.
