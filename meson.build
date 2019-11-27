@@ -218,6 +218,9 @@ if get_option('build_backends')
     mkl_lib = cc.find_library('mklml', dirs: mkl_libdirs, required: false)
   endif
 
+  dnnl_libdirs = get_option('dnnl_dir') + '/lib'
+  dnnl_lib = cc.find_library('dnnl', dirs: dnnl_libdirs, required: false)
+
   openblas_libdirs = get_option('openblas_libdirs')
   openblas_lib = cc.find_library('openblas.dll', dirs: openblas_libdirs, required: false)
   if not openblas_lib.found()
@@ -234,6 +237,12 @@ if get_option('build_backends')
       add_project_arguments('-DUSE_MKL', language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
+      has_blas = true
+
+    elif get_option('dnnl') and dnnl_lib.found()
+      add_project_arguments('-DUSE_DNNL', language : 'cpp')
+      includes += include_directories(get_option('dnnl_dir') + '/include')
+      deps += [ dnnl_lib, dependency('openmp', required:true) ]
       has_blas = true
 
     elif get_option('accelerate') and accelerate_lib.found()
@@ -337,12 +346,11 @@ if get_option('build_backends')
 
   opencl_framework=dependency('OpenCL', required: false)
   if opencl_framework.found()
-      deps += [ opencl_framework ]
+      opencl_dep = [ opencl_framework ]
       has_opencl = true
 
   elif opencl_lib.found() and cc.has_header('CL/opencl.h', args: '-I' + get_option('opencl_include'))
-
-      deps += [ opencl_lib ]
+      opencl_dep = [ opencl_lib ]
       has_opencl = true
 
   endif
@@ -364,6 +372,7 @@ if get_option('build_backends')
     if not opencl_framework.found()
       includes += include_directories(get_option('opencl_include'))
     endif
+    deps += opencl_dep
     files += opencl_files
     has_backends = true
 

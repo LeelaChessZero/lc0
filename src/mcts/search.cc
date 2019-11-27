@@ -108,8 +108,15 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   }
   common_info.hashfull =
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
-  common_info.nps =
-      common_info.time ? (total_playouts_ * 1000 / common_info.time) : 0;
+  if (nps_start_time_) {
+    const auto time_since_first_batch_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - *nps_start_time_)
+            .count();
+    if (time_since_first_batch_ms > 0) {
+      common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
+    }
+  }
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
@@ -452,7 +459,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
       continue;
     }
     const auto Q = edge.GetQ(0.0f);
-    edges.emplace_back(edge.IsTerminal() && Q == 1.0f, edge.GetN(), Q,
+    edges.emplace_back(edge.IsTerminal() && Q > 0.0f, edge.GetN(), Q,
                        edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
@@ -570,6 +577,9 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->time_since_movestart = GetTimeSinceStart();
 
   SharedMutex::SharedLock nodes_lock(nodes_mutex_);
+  if (!nps_start_time_ && total_playouts_ > 0) {
+    nps_start_time_ = std::chrono::steady_clock::now();
+  }
   stats->total_nodes = total_playouts_ + initial_visits_;
   stats->nodes_since_movestart = total_playouts_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
@@ -1226,19 +1236,23 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Convert parents to terminals except the root or those already converted.
     can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
 
-    // A non-winning terminal move needs all other moves to have the same value.
-    if (can_convert && v != 1.0f) {
+    // A non-winning terminal move needs all other moves to be similar.
+    auto all_losing = true;
+    if (can_convert && v <= 0.0f) {
       for (const auto& edge : p->Edges()) {
-        can_convert = can_convert && edge.IsTerminal() && edge.GetQ(0.0f) == v;
+        const auto Q = edge.GetQ(0.0f);
+        can_convert = can_convert && edge.IsTerminal() && Q <= 0.0f;
+        all_losing = all_losing && Q < 0.0f;
       }
     }
 
     // Convert the parent to a terminal loss if at least one move is winning or
-    // to a terminal win or draw if all moves are loss or draw respectively.
+    // to a terminal win if all moves are losing; otherwise there's a mix of
+    // draws and losing, so at best it's a draw.
     if (can_convert) {
-      p->MakeTerminal(v == 1.0f ? GameResult::BLACK_WON
-                                : v == -1.0f ? GameResult::WHITE_WON
-                                             : GameResult::DRAW);
+      p->MakeTerminal(v > 0.0f ? GameResult::BLACK_WON
+                               : all_losing ? GameResult::WHITE_WON
+                                            : GameResult::DRAW);
     }
 
     // Q will be flipped for opponent.

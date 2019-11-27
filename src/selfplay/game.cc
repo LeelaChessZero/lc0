@@ -109,7 +109,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       auto stoppers = options_[idx].search_limits.MakeSearchStopper();
-      PopulateStoppersForSelfplay(stoppers.get(), options_[idx].uci_options);
+      PopulateIntrinsicStoppers(stoppers.get(), options_[idx].uci_options);
 
       std::unique_ptr<UciResponder> responder =
           std::make_unique<CallbackUciResponder>(
