@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,20 +25,34 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
-
-#include "chess/position.h"
-#include "neural/network.h"
-#include "proto/net.pb.h"
+#include "mcts/stoppers/timemgr.h"
+#include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
 
-enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
+StoppersHints::StoppersHints() { Reset(); }
 
-// Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(
-    pblczero::NetworkFormat::InputFormat input_format,
-    const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history);
+void StoppersHints::UpdateEstimatedRemainingTimeMs(int64_t v) {
+  if (v < remaining_time_ms_) remaining_time_ms_ = v;
+}
+int64_t StoppersHints::GetEstimatedRemainingTimeMs() const {
+  return remaining_time_ms_;
+}
+
+void StoppersHints::UpdateEstimatedRemainingRemainingPlayouts(int64_t v) {
+  if (v < remaining_playouts_) remaining_playouts_ = v;
+}
+int64_t StoppersHints::GetEstimatedRemainingPlayouts() const {
+  // Even if we exceeded limits, don't go crazy by not allowing any playouts.
+  return std::max(decltype(remaining_playouts_){1}, remaining_playouts_);
+}
+
+void StoppersHints::Reset() {
+  // Slightly more than 3 years.
+  remaining_time_ms_ = 100000000000;
+  // Type for N in nodes is currently uint32_t, so set limit in order not to
+  // overflow it.
+  remaining_playouts_ = 4000000000;
+}
 
 }  // namespace lczero

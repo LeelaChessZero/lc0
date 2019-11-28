@@ -51,35 +51,62 @@ endif
 protoc = find_program('protoc', required : false)
 # For tensorflow skip system protobuf, chances are it will not work.
 if get_option('protobuf-3-6-0')
-  deps += subproject('protobuf-3.6.0').get_variable('protobuf_dep')
+  protobuf_dep = subproject('protobuf-3.6.0').get_variable('protobuf_dep')
   protoc = subproject('protobuf-3.6.0').get_variable('protoc')
 elif not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
-  deps += subproject('protobuf').get_variable('protobuf_dep')
+  protobuf_dep = subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
-else
-  deps += protobuf_dep
-  if protobuf_lib.found()
-    includes += include_directories(get_option('protobuf_include'))
-  endif
+elif protobuf_lib.found()
+  includes += include_directories(get_option('protobuf_include'))
 endif
+deps += protobuf_dep
 
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
 
+# Handle submodules.
+git = find_program('git', required: false)
 if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
-  if run_command('git', 'status').returncode() == 0
-    message('updating git submodule libs/lczero-common')
-    run_command('git', 'submodule', 'update', '--init', '--recursive')
+  if git.found()
+    if run_command(git, 'status').returncode() == 0
+      message('updating git submodule libs/lczero-common')
+      run_command(git, 'submodule', 'update', '--init', '--recursive')
+    else
+      message('cloning lczero-common.git into libs/lczero-common')
+      run_command(git, 'clone', '--depth=1',
+                  'https://github.com/LeelaChessZero/lczero-common.git',
+                  'libs/lczero-common/')
+    endif
   else
-    message('cloning lczero-common.git into libs/lczero-common')
-    run_command('git', 'clone', '--depth=1',
-                'https://github.com/LeelaChessZero/lczero-common.git',
-                'libs/lczero-common/')
+    error('Please install git to automatically fetch submodules or download the archives manually from GitHub.')
   endif
 endif
 
-files += gen.process('libs/lczero-common/proto/net.proto',
+pb_files = gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+files += pb_files
+
+# Extract git short revision.
+short_rev = 'unknown'
+if git.found()
+  r = run_command(git, 'rev-parse', '--short', 'HEAD')
+  if r.returncode() == 0
+    # Now let's check if the working directory is clean.
+    if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
+      short_rev = r.stdout().strip()
+    else
+      short_rev = 'dirty'
+      warning('Cannot extract valid git short revision from dirty working directory.')
+    endif
+  else
+    warning('Failed to parse short revision. Use git clone instead of downloading the archive from GitHub.')
+  endif
+endif
+
+# Construct build identifier.
+build_identifier = 'git.' + short_rev
+add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
+message('Using build identifier "' + build_identifier + '".')
 
 #############################################################################
 ## Main files
@@ -95,6 +122,9 @@ files += [
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/stoppers/factory.cc',
+  'src/mcts/stoppers/stoppers.cc',
+  'src/mcts/stoppers/timemgr.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
@@ -105,7 +135,6 @@ files += [
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
   'src/neural/network_rr.cc',
-  'src/neural/network_st_batch.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
@@ -113,6 +142,7 @@ files += [
   'src/syzygy/syzygy.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
+  'src/utils/esc_codes.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
   'src/utils/optionsdict.cc',
@@ -190,6 +220,9 @@ if get_option('build_backends')
     mkl_lib = cc.find_library('mklml', dirs: mkl_libdirs, required: false)
   endif
 
+  dnnl_libdirs = get_option('dnnl_dir') + '/lib'
+  dnnl_lib = cc.find_library('dnnl', dirs: dnnl_libdirs, required: false)
+
   openblas_libdirs = get_option('openblas_libdirs')
   openblas_lib = cc.find_library('openblas.dll', dirs: openblas_libdirs, required: false)
   if not openblas_lib.found()
@@ -200,6 +233,7 @@ if get_option('build_backends')
     if get_option('eigen')
       add_project_arguments('-DUSE_EIGEN', language : 'cpp')
       has_blas = true
+      deps += subproject('eigen').get_variable('eigen_dep')
 
     elif get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
@@ -207,8 +241,13 @@ if get_option('build_backends')
       deps += [ mkl_lib ]
       has_blas = true
 
+    elif get_option('dnnl') and dnnl_lib.found()
+      add_project_arguments('-DUSE_DNNL', language : 'cpp')
+      includes += include_directories(get_option('dnnl_dir') + '/include')
+      deps += [ dnnl_lib, dependency('openmp', required:true) ]
+      has_blas = true
+
     elif get_option('accelerate') and accelerate_lib.found()
-      includes += include_directories('/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers')
       deps += [ accelerate_lib ]
       has_blas = true
 
@@ -309,13 +348,16 @@ if get_option('build_backends')
 
   opencl_framework=dependency('OpenCL', required: false)
   if opencl_framework.found()
-      opencl_dep += [ opencl_framework ]
+      opencl_dep = [ opencl_framework ]
+      has_opencl = true
 
-  elif opencl_lib.found()
-
-      opencl_dep += [ opencl_lib ]
+  elif opencl_lib.found() and cc.has_header('CL/opencl.h', args: '-I' + get_option('opencl_include'))
+      opencl_dep = [ opencl_lib ]
+      has_opencl = true
+  
   else
       opencl_dep += [ subproject('opencl').get_variable('opencl_dep') ]
+      has_opencl = true
 
   endif
 
@@ -333,7 +375,10 @@ if get_option('build_backends')
     'src/neural/shared/winograd_filter.cc',
     ]
 
-    includes += include_directories(get_option('opencl_include'))
+    if not opencl_framework.found()
+      includes += include_directories(get_option('opencl_include'))
+    endif
+    deps += opencl_dep
     files += opencl_files
     deps += opencl_dep
     has_backends = true
@@ -380,7 +425,12 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      cuda_arguments += ['-Xcompiler', '-MD']
+      # meson bug fixed in v0.51
+      if meson.version().version_compare('<0.51') or get_option('default_library') != 'static'
+        cuda_arguments += ['-Xcompiler', '-MD']
+      else
+        cuda_arguments += ['-Xcompiler', '-MT']
+      endif
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
@@ -472,7 +522,7 @@ if get_option('gtest')
   test('OptionsParserTest',
     executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
-  ), timeout: 90)
+  ), args: '--gtest_output=xml:optionsparser.xml', timeout: 90)
 
   test('SyzygyTest',
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
@@ -480,8 +530,9 @@ if get_option('gtest')
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
   test('EncodePositionForNN', 
-    executable('encoder_test', 'src/neural/encoder_test.cc',
-    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+    executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib,
+    dependencies: [gtest, protobuf_dep]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
 endif
