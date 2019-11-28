@@ -361,7 +361,7 @@ if get_option('build_backends')
 
   endif
 
-  if get_option('opencl')
+  if get_option('opencl') and has_opencl
 
     opencl_files = [
       'src/neural/opencl/network_opencl.cc',
@@ -380,7 +380,6 @@ if get_option('build_backends')
     endif
     deps += opencl_dep
     files += opencl_files
-    deps += opencl_dep
     has_backends = true
 
   endif
