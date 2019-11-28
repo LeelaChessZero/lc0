@@ -763,7 +763,8 @@ class CudnnNetwork : public Network {
                            (deviceProp.major == 7 && deviceProp.minor >= 5))) {
       CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
     }
-    if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
+    if (std::is_same<float, DataType>::value && deviceProp.major >= 7 &&
+        !strstr(deviceProp.name, "GTX 16")) {
       CERR << "WARNING: you will probably get better performance from the "
               "cudnn-fp16 backend.";
     }
@@ -819,6 +820,25 @@ std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }
 
+std::unique_ptr<Network> MakeCudnnNetworkAuto(const WeightsFile& weights,
+                                              const OptionsDict& options) {
+  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+  cudaDeviceProp deviceProp = {};
+  // No error checking here, this will be repeated later.
+  cudaGetDeviceProperties(&deviceProp, gpu_id);
+
+  // Check if the GPU supports FP16.
+  if ((deviceProp.major >= 7 && !strstr(deviceProp.name, "GTX 16")) ||
+      (deviceProp.major == 6 && deviceProp.minor != 1) ||
+      (deviceProp.major == 5 && deviceProp.minor == 3)) {
+    CERR << "Switching to [cudnn-fp16]...";
+    return MakeCudnnNetwork<half>(weights, options);
+  }
+  CERR << "Switching to [cudnn]...";
+  return MakeCudnnNetwork<float>(weights, options);
+}
+
+REGISTER_NETWORK("cudnn-auto", MakeCudnnNetworkAuto, 120)
 REGISTER_NETWORK("cudnn", MakeCudnnNetwork<float>, 110)
 REGISTER_NETWORK("cudnn-fp16", MakeCudnnNetwork<half>, 105)
 
