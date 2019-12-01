@@ -113,12 +113,7 @@ message('Using build identifier "' + build_identifier + '".')
 #############################################################################
 files += [
   'src/engine.cc',
-  'src/version.cc',
   'src/benchmark/benchmark.cc',
-  'src/chess/bitboard.cc',
-  'src/chess/board.cc',
-  'src/chess/position.cc',
-  'src/chess/uciloop.cc',
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
@@ -139,6 +134,14 @@ files += [
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
+  'src/utils/weights_adapter.cc',
+]
+lib_files = [
+  'src/version.cc',
+  'src/chess/bitboard.cc',
+  'src/chess/board.cc',
+  'src/chess/position.cc',
+  'src/chess/uciloop.cc',
   'src/syzygy/syzygy.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
@@ -150,7 +153,6 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/transpose.cc',
-  'src/utils/weights_adapter.cc',
 ]
 includes += include_directories('src')
 
@@ -487,15 +489,17 @@ if not get_option('pext')
   add_project_arguments('-DNO_PEXT', language : 'cpp')
 endif
 
-executable('lc0', 'src/main.cc',
-  files, include_directories: includes, dependencies: deps, install: true)
+lc0_lib = static_library('lc0_lib', lib_files,
+  include_directories: includes, dependencies: deps)
+
+executable('lc0', 'src/main.cc', files,
+  include_directories: includes, link_with: lc0_lib, dependencies: deps, install: true)
 
 
 ### Tests
 
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
-  lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
@@ -523,7 +527,7 @@ if get_option('gtest')
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
   test('EncodePositionForNN', 
-    executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
+    executable('encoder_test', 'src/neural/encoder.cc', 'src/neural/encoder_test.cc', pb_files,
     include_directories: includes, link_with: lc0_lib,
     dependencies: [gtest, protobuf_dep]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
