@@ -1,4 +1,10 @@
-﻿v0.23.0-rc2 (2019-11-27)
+﻿v0.23.0 (2019-12-01)
+~~~~~~~
+
+* Fixed the order of BLAS options so that Eigen is lower priority, to match
+assumption in check_opencl patch introduced in v0.23.0-rc2.
+
+v0.23.0-rc2 (2019-11-27)
 ~~~~~~~~~~~
 
 * Fixes in nps and time reporting during search.
@@ -16,8 +22,8 @@ v0.23.0-rc1 (2019-11-21)
   code yet.
 * New option `--logit-q` (UCI: `LogitQ`). Changes subtree selection algorithm a
   bit, possibly making it stronger (experimental, default off).
-* Lc0 now reports WDL score. To enable it, use `--wdl-info` command-line
-  argument or `UCI_WdlInfo` UCI option.
+* Lc0 now reports WDL score. To enable it, use `--show-wdl` command-line
+  argument or `UCI_ShowWdl` UCI option.
 * Added "Badgame split" mode during the training. After the engine makes
   inferior move due to temperature, the game is branched and later the game is
   replayed from the position of the branch.
