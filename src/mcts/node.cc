@@ -338,6 +338,8 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
   // Populate probabilities.
   auto total_n = GetChildrenVisits();
   // Prevent garbage/invalid training data from being uploaded to server.
+  // It's possible to have N=0 when there is only one legal move in position
+  // (due to smart pruning).
   if (total_n == 0 && GetNumEdges() != 1) {
     throw Exception("Search generated invalid data!");
   }
