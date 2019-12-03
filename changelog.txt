@@ -1,4 +1,11 @@
-﻿v0.23.0 (2019-12-01)
+﻿v0.23.1 (2019-12-03)
+~~~~~~~
+
+* Fixed a bug with Lc0 crashing sometimes during match phase of training game
+generation.
+* Release packages now include CUDNN version without DLLs bundled.
+
+v0.23.0 (2019-12-01)
 ~~~~~~~
 
 * Fixed the order of BLAS options so that Eigen is lower priority, to match
