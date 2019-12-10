@@ -1228,7 +1228,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
     }
     n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
-                           d, node_to_process.multivisit);
+                           d, node_to_process.multivisit,
+                           params_.GetWeightedAverageAlpha());
 
     // Nothing left to do without ancestors to update.
     if (!p) break;

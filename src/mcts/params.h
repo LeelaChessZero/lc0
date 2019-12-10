@@ -99,6 +99,7 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
+  float GetWeightedAverageAlpha() const { return kWeightedAverageAlpha; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -134,6 +135,7 @@ class SearchParams {
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
   static const OptionId kShortSightednessId;
+  static const OptionId kWeightedAverageAlphaId;
 
  private:
   const OptionsDict& options_;
@@ -163,6 +165,7 @@ class SearchParams {
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
   const float kShortSightedness;
+  const float kWeightedAverageAlpha;
 };
 
 }  // namespace lczero

@@ -265,10 +265,13 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, int multivisit, float alpha) {
   // Recompute Q.
-  q_ += multivisit * (v - q_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
+  for (int i = 0; i < multivisit; ++i) {
+    float decay = alpha / ( (n_ + i) + alpha );
+    q_ = q_ * (1.0f-decay) + v * decay;
+    d_ = d_ * (1.0f-decay) + d * decay;
+  }
 
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
