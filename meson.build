@@ -15,8 +15,8 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
-        meson_version: '>=0.45')
+        default_options : ['cpp_std=c++14', 'b_ndebug=if-release', 'warning_level=3'],
+        meson_version: '>=0.46')
 
 cc = meson.get_compiler('cpp')
 if cc.get_id() == 'clang'
@@ -24,9 +24,6 @@ if cc.get_id() == 'clang'
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
-  add_project_arguments('-Wextra', language : 'cpp')
-  add_project_arguments('-pedantic', language : 'cpp')
-
   if get_option('buildtype') == 'release'
     add_project_arguments('-march=native', language : 'cpp')
   endif
@@ -228,12 +225,7 @@ if get_option('build_backends')
   endif
 
   if get_option('blas')
-    if get_option('eigen')
-      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
-      has_blas = true
-      deps += subproject('eigen').get_variable('eigen_dep')
-
-    elif get_option('mkl') and mkl_lib.found()
+    if get_option('mkl') and mkl_lib.found()
       add_project_arguments('-DUSE_MKL', language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
@@ -271,6 +263,11 @@ if get_option('build_backends')
 
       deps += [ openblas_lib ]
       has_blas = true
+
+    elif get_option('eigen')
+      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
+      has_blas = true
+      deps += subproject('eigen').get_variable('eigen_dep')
     endif
 
     ispc = find_program('ispc', required: false)
