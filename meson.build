@@ -15,8 +15,8 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
-        meson_version: '>=0.45')
+        default_options : ['cpp_std=c++14', 'b_ndebug=if-release', 'warning_level=3'],
+        meson_version: '>=0.46')
 
 cc = meson.get_compiler('cpp')
 if cc.get_id() == 'clang'
@@ -24,9 +24,6 @@ if cc.get_id() == 'clang'
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
-  add_project_arguments('-Wextra', language : 'cpp')
-  add_project_arguments('-pedantic', language : 'cpp')
-
   if get_option('buildtype') == 'release'
     add_project_arguments('-march=native', language : 'cpp')
   endif
