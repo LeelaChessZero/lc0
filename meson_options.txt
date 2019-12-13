@@ -53,6 +53,11 @@ option('mkl_include',
        value: ['/opt/intel/mkl/include'],
        description: 'Paths to MKL libraries')
 
+option('dnnl_dir',
+       type: 'string',
+       value: '',
+       description: 'Paths to DNNL install directory')
+
 option('cudnn_include', 
        type: 'array',
        value: ['/opt/cuda/include/', '/usr/local/cuda/include/'],
@@ -107,6 +112,11 @@ option('mkl',
        type: 'boolean',
        value: true,
        description: 'Enable MKL BLAS support')
+
+option('dnnl',
+       type: 'boolean',
+       value: false,
+       description: 'Enable DNNL BLAS support')
 
 option('eigen',
        type: 'boolean',
