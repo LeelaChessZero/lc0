@@ -147,11 +147,15 @@ class DxNetwork : public Network {
 
   void forwardEval(InputsOutputsDx* io, int batchSize);
   std::unique_ptr<NetworkComputation> NewComputation() override;
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
 
   std::unique_ptr<InputsOutputsDx> GetInputsOutputs();
   void ReleaseInputsOutputs(std::unique_ptr<InputsOutputsDx> resource);
 
  private:
+  const NetworkCapabilities capabilities_;
   DxContext dx_context_;
   int max_batch_size_;
 

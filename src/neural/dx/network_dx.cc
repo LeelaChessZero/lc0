@@ -315,7 +315,8 @@ void DxContext::scheduleUpload(DXAlloc alloc, void* data, size_t size) {
 }
 
 DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
-    : dx_context_(options) {
+    : dx_context_(options),
+      capabilities_{file.format().network_format().input()} {
   printf("\ncreating DX backend!\n");  // Ankan - for testing
   LegacyWeights weights(file.weights());
 
