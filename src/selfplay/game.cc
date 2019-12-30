@@ -208,7 +208,16 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
       auto move_list_to_discard = GetMoves();
       move_list_to_discard.push_back(move);
-      options_[idx].discarded_callback(move_list_to_discard);
+      PositionHistory history_copy = tree_[0]->GetPositionHistory();
+      Move move_for_history = move;
+      if (tree_[idx]->IsBlackToMove()) {
+        move_for_history.Mirror();
+      }
+      history_copy.Append(move_for_history);
+      // Ensure not to discard games that are already decided.
+      if (history_copy.ComputeGameResult() == GameResult::UNDECIDED) {
+        options_[idx].discarded_callback(move_list_to_discard);
+      }
       search_->ResetBestMove();
     }
     // Add best move to the tree.
