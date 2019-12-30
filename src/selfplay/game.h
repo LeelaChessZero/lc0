@@ -114,7 +114,6 @@ class SelfPlayGame {
   float max_eval_[3] = {0.0f, 0.0f, 0.0f};
   const bool chess960_;
   std::mutex mutex_;
-  const int opening_length_;
 
   // Training data to send.
   std::vector<V4TrainingData> training_data_;

@@ -72,8 +72,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree, const MoveList& opening)
     : options_{player1, player2},
       chess960_{player1.uci_options->Get<bool>(kUciChess960.GetId()) ||
-                player2.uci_options->Get<bool>(kUciChess960.GetId())},
-      opening_length_(opening.size()) {
+                player2.uci_options->Get<bool>(kUciChess960.GetId())} {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 
@@ -263,15 +262,8 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
-  assert(!training_data_.empty());
-  bool black_to_move =
-      tree_[0]->GetPositionHistory().Starting().IsBlackToMove();
-  // Training data starts after opening, so if opening is odd length,
-  // black_to_move requires flipping.
-  if ((opening_length_ % 2) == 1) {
-    black_to_move = !black_to_move;
-  }
   for (auto chunk : training_data_) {
+    const bool black_to_move = chunk.side_to_move;
     if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;
     } else if (game_result_ == GameResult::BLACK_WON) {
@@ -280,7 +272,6 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
       chunk.result = 0;
     }
     writer->WriteChunk(chunk);
-    black_to_move = !black_to_move;
   }
 }
 
