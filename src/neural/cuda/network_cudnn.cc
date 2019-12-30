@@ -70,7 +70,8 @@ void dumpTensor(void *memory, int elements, char *message, bool fp16 = false)
             float *arr = (float *)temp;
             val = arr[i];
         }
-        printf("%10.4f ", val);
+        printf("%8.4f ", val);
+        if ((i % 8) == 7) printf("\n");
     }
     free(temp);
     printf("\n");
@@ -484,7 +485,7 @@ class CudnnNetwork : public Network {
     }
 
     // debug code example
-    // dumpTensor(tensor_mem_[0], 512, "After expand Planes", fp16);
+    // dumpTensor(tensor_mem_[0], 64*112, "After expand Planes", fp16);
 
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;
@@ -524,22 +525,22 @@ class CudnnNetwork : public Network {
     if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // conv1
+                          cublas_);  // policy conv1
 
       network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // conv1
+                          cublas_);  // policy conv2
 
       if (fp16) {
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol FC
+                            cublas_);  // policy map layer
         copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
-                          batchSize * kNumOutputPolicy);  // POLICY
+                          batchSize * kNumOutputPolicy);  // POLICY output
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol FC  // POLICY
+                            cublas_);  //policy map layer  // POLICY output
       }
     } else {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
@@ -550,6 +551,7 @@ class CudnnNetwork : public Network {
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // pol FC
+
         copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
                           batchSize * kNumOutputPolicy);  // POLICY
       } else {
@@ -597,6 +599,7 @@ class CudnnNetwork : public Network {
         network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // value FC2
+
         copyTypeConverted(opVal, (half*)(tensor_mem_[2]), batchSize);  // VALUE
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],

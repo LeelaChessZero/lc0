@@ -443,12 +443,13 @@ if get_option('build_backends')
   endif
   
   ## ~~~~~~~~
-  ## DirectML
+  ## DirectX
   ## ~~~~~~~~
   
-  # we should always be able to build DirectML backend on windows platform  
-  if host_machine.system() == 'windows' and get_option('directml')
+  # we should always be able to build DirectX12 backend on windows platform  
+  if host_machine.system() == 'windows' and get_option('dx')
     dx_d3d12 = cc.find_library('d3d12')
+    dx_dxgi = cc.find_library('dxgi')
   
     dx_files = [
       'src/neural/dx/network_dx.cc',
@@ -457,7 +458,7 @@ if get_option('build_backends')
       'src/neural/dx/fp16_utils.cc',
     ]
     files += dx_files
-    deps += [dx_d3d12]
+    deps += [dx_d3d12, dx_dxgi]
     has_backends = true
   endif  
  

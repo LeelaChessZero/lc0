@@ -1,36 +1,38 @@
-REM Need to run this batch file after making changes in any of the shaders.
-REM The batch files generates/updates "shaders.h" (DXIL asm code for compiled HLSL).
-REM TODO: maybe get rid of this and do this as part of build process?
-
 del shaders.h
 
-dxc /Tcs_5_0 /EExpandPlanes_kernel_Fp16_NHWC /Fh temp.txt ExpandPlanes.hlsl
+dxc /Tcs_6_2 /EExpandPlanes_shader_fp32 /Fh temp.txt ExpandPlanes.hlsl -enable-16bit-types
 type temp.txt >> shaders.h
 del temp.txt
 
-dxc /Tcs_6_2 /EPolicyFC_With_Softmax_kernel /Fh temp.txt PolicyFC.hlsl  -enable-16bit-types
+dxc /Tcs_6_2 /EExpandPlanes_shader_fp16 /Fh temp.txt ExpandPlanes.hlsl -enable-16bit-types
+type temp.txt >> shaders.h
+del temp.txt
+
+dxc /Tcs_6_2 /Einput_transform_shader_fp16 /DFP16_IO=1 /Fh temp.txt WinogradTransform.hlsl  -enable-16bit-types
+type temp.txt >> shaders.h
+del temp.txt
+
+dxc /Tcs_6_2 /Eoutput_transform_shader_fp16 /DFP16_IO=1 /Fh temp.txt WinogradTransform.hlsl -enable-16bit-types
+type temp.txt >> shaders.h
+del temp.txt
+
+dxc /Tcs_6_2 /Einput_transform_shader_fp32 /Fh temp.txt WinogradTransform.hlsl -enable-16bit-types
+type temp.txt >> shaders.h
+del temp.txt
+
+dxc /Tcs_6_2 /Eoutput_transform_shader_fp32 /Fh temp.txt WinogradTransform.hlsl -enable-16bit-types
 type temp.txt >> shaders.h
 del temp.txt
 
 
-dxc /Tcs_6_2 /EPolicyFC /Fh temp.txt PolicyFC.hlsl -enable-16bit-types
+dxc /Tcs_6_2 /Econv_1x1_shader_fp16 /DFP16_IO=1 /Fh temp.txt Conv1x1.hlsl -enable-16bit-types
 type temp.txt >> shaders.h
 del temp.txt
 
-dxc /Tcs_6_2 /EPolicySoftmax /Fh temp.txt PolicyFC.hlsl -enable-16bit-types
+dxc /Tcs_6_2 /Econv_1x1_shader_fp32 /Fh temp.txt Conv1x1.hlsl -enable-16bit-types
 type temp.txt >> shaders.h
 del temp.txt
 
-dxc /Tcs_5_0 /EValueFC1 /Fh temp.txt ValueFC1.hlsl
+dxc /Tcs_6_2 /Eadd_vectors_shader /Fh temp.txt AddVectors.hlsl -enable-16bit-types
 type temp.txt >> shaders.h
 del temp.txt
-
-dxc /Tcs_5_0 /EValueFC2 /Fh temp.txt ValueFC2.hlsl
-type temp.txt >> shaders.h
-del temp.txt
-
-dxc /Tcs_5_0 /ESkipAdd /Fh temp.txt SkipAdd.hlsl
-type temp.txt >> shaders.h
-del temp.txt
-
-pause

@@ -1,52 +1,103 @@
+#include "shader_shared.h"
+
 // ------------------- Expand Planes Shader -----------------------------//
 
-RWByteAddressBuffer output : register(u0);
-RWByteAddressBuffer masks : register(u1);
-RWByteAddressBuffer values : register(u2);
+
+RWStructuredBuffer<float>    output_fp32 : register(u0);
+RWStructuredBuffer<uint>     output_fp16 : register(u0);
+RWStructuredBuffer<uint64_t> masks       : register(u1);
+RWStructuredBuffer<float>    values      : register(u2);
 
 cbuffer ExpandPlanesConsts : register(b0) {
   uint N;             // total no of planes to process
   uint kInputPlanes;  // no of planes per position
 };
 
-// TODO: Can optimize using shared memory if this becomes a bottleneck.
-// 256 threads per block
-// each thrad writes 2 output elements
-[numthreads(256, 1, 1)] void ExpandPlanes_kernel_Fp16_NHWC(
-    uint3 threadID
-    : SV_DispatchThreadID) {
-  const int index = threadID.x * 2;
-  if (index >= N * 8 * 8) return;
 
-  const int planeIndex0 = index % kInputPlanes;
-  const int planeIndex1 = planeIndex0 + 1;
+// Block size of 256, same mask/val for 64 consecutive threads.
+#define kNumShmemElements (kExpandPlanesElementsPerBlock / 64)
+groupshared uint64_t sh_masks[kNumShmemElements];
+groupshared float    sh_vals[kNumShmemElements];
 
-  const int boardIndex = index / (kInputPlanes * 8 * 8);
-  const int sqIndex = (index / kInputPlanes) & 0x3F;
+[numthreads(kExpandPlanesFp32BlockSize, 1, 1)] 
+void ExpandPlanes_shader_fp32
+(
+    uint3 globalThreadIdx  : SV_DispatchThreadID, 
+    uint3 threadIdxInGroup : SV_GroupThreadID
+) 
+{
 
-  uint inpIndex0 = boardIndex * kInputPlanes + planeIndex0;
-  uint inpIndex1 = boardIndex * kInputPlanes + planeIndex1;
+  int global_index = globalThreadIdx.x;
+  int local_index  = threadIdxInGroup.x;
 
-  uint64_t mask0 = 0, mask1 = 0;
+  int plane_index = global_index >> 6;
 
-  mask0 = masks.Load(inpIndex0 * 8) |
-          (((uint64_t)masks.Load(inpIndex0 * 8 + 4)) << 32);
+  if (plane_index >= N) return;
 
-  mask1 = masks.Load(inpIndex1 * 8) |
-          (((uint64_t)masks.Load(inpIndex1 * 8 + 4)) << 32);
-
-  float2 opf;
-  bool set = !!(mask0 & (1ull << sqIndex));
-  if (set) {
-    opf.x = asfloat(values.Load(inpIndex0 * 4));  // byte offset
+  // Load inputs to shared memory.
+  if (local_index < kNumShmemElements) {
+    sh_masks[local_index] = masks[plane_index + local_index];
+    sh_vals[local_index] = values[plane_index + local_index];
   }
 
-  set = !!(mask1 & (1ull << sqIndex));
+  GroupMemoryBarrierWithGroupSync();
+
+  uint64_t mask = sh_masks[local_index >> 6];
+
+  int sq_index = global_index & 0x3F;
+  float op = 0;
+
+  bool set = !!(mask & (1ull << sq_index));
   if (set) {
-    opf.y = asfloat(values.Load(inpIndex1 * 4));  // byte offset
+    op = sh_vals[local_index >> 6];
+  }
+  output_fp32[global_index] = op;
+}
+
+
+// every thread writes two consecutive elements
+// NCHW means that the consecutive elements are in W dimension
+[numthreads(kExpandPlanesFp16BlockSize, 1, 1)] 
+void ExpandPlanes_shader_fp16
+(
+    uint3 globalThreadIdx  : SV_DispatchThreadID,
+    uint3 threadIdxInGroup : SV_GroupThreadID
+) 
+{
+  int global_index = globalThreadIdx.x * 2;
+  int local_index = threadIdxInGroup.x * 2;
+
+  int plane_index = global_index >> 6;
+
+  if (plane_index >= N) return;
+
+  // Load inputs to shared memory.
+  if (threadIdxInGroup.x < kNumShmemElements) {
+    sh_masks[threadIdxInGroup.x] = masks[plane_index + threadIdxInGroup.x];
+    sh_vals[threadIdxInGroup.x] = values[plane_index + threadIdxInGroup.x];
+  }
+
+  GroupMemoryBarrierWithGroupSync();
+
+  uint64_t mask = sh_masks[local_index >> 6];
+
+  int sq_index0 = global_index & 0x3F;
+  int sq_index1 = sq_index0 + 1;
+
+  bool set0 = !!(mask & (1ull << sq_index0));
+  bool set1 = !!(mask & (1ull << sq_index1));
+
+  float2 opf = 0;
+
+  if (set0) {
+    opf.x = sh_vals[local_index >> 6];
+  }
+
+  if (set1) {
+    opf.y = sh_vals[local_index >> 6];
   }
 
   uint2 opu = f32tof16(opf);
   uint opVal = opu.x | (opu.y << 16);
-  output.Store(index * 2, opVal);  // byte offset
+  output_fp16[globalThreadIdx.x] = opVal;
 }

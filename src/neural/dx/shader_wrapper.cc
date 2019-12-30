@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -14,231 +14,217 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
-
-  Additional permission under GNU GPL version 3 section 7
-
-  If you modify this Program, or any covered work, by linking or
-  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
-  modified version of those libraries), containing parts covered by the
-  terms of the respective license agreement, the licensors of this
-  Program grant you additional permission to convey the resulting work.
 */
 #include "shader_wrapper.h"
 #include <cassert>
 #include <cstring>
 #include "comdef.h"
 #include "neural/network.h"
+#include "shaders/shader_shared.h"
 #include "shaders/shaders.h"
-
-// Use single shader for policy FC and softmax.
-// With optimized Metacommand path (whenever it's available) the non-fused path
-// should be way faster.
-// the non-fused version has a few bugs too!
-#define FUSED_POLICY 1
 
 namespace lczero {
 namespace dx_backend {
 
-void ShaderWrapper::init(ID3D12Device* pDevice) {
-  // 1. Create root signature - common for all shaders
+void ShaderWrapper::init(ID3D12Device* device) {
+  // Create root signature - common for all shaders.
 
-  // 5 slots
-  // slot 0 to 3 -> root UAV slots 0 to 3 (all in space 0)
-  // slot 4      -> root constants (16 constants - should be enough)
+  // 9 slots
+  // slot 0 to 7 -> root UAV slots 0 to 7 (all in space 0)
+  // slot 8      -> root constants (16 constants - should be enough)
 
-  D3D12_ROOT_PARAMETER rootParameter[5];
-  for (int i = 0; i < 4; i++) {
-    rootParameter[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV;
-    rootParameter[i].Descriptor.RegisterSpace = 0;
-    rootParameter[i].Descriptor.ShaderRegister = i;
-    rootParameter[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+  D3D12_ROOT_PARAMETER root_parameter[kUavSlots + 1];
+  for (int i = 0; i < kUavSlots; i++) {
+    root_parameter[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV;
+    root_parameter[i].Descriptor.RegisterSpace = 0;
+    root_parameter[i].Descriptor.ShaderRegister = i;
+    root_parameter[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
   }
 
-  rootParameter[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-  rootParameter[4].Constants.RegisterSpace = 0;
-  rootParameter[4].Constants.ShaderRegister = 0;
-  rootParameter[4].Constants.Num32BitValues = 16;
-  rootParameter[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+  root_parameter[kUavSlots].ParameterType =
+      D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+  root_parameter[kUavSlots].Constants.RegisterSpace = 0;
+  root_parameter[kUavSlots].Constants.ShaderRegister = 0;
+  root_parameter[kUavSlots].Constants.Num32BitValues = 16;
+  root_parameter[kUavSlots].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
-  D3D12_ROOT_SIGNATURE_DESC rootSigDesc = {5, rootParameter, 0, NULL,
-                                           D3D12_ROOT_SIGNATURE_FLAG_NONE};
+  D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {
+      kUavSlots + 1, root_parameter, 0, NULL, D3D12_ROOT_SIGNATURE_FLAG_NONE};
 
-  ID3DBlob* pSerializedLayout = NULL;
-  D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
-                              &pSerializedLayout, NULL);
+  ID3DBlob* serialized_layout = NULL;
+  D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1_0,
+                              &serialized_layout, NULL);
 
-  ReportDxErrors(pDevice->CreateRootSignature(
-      1, pSerializedLayout->GetBufferPointer(),
-      pSerializedLayout->GetBufferSize(), IID_PPV_ARGS(&root_sign_)));
+  ReportDxErrors(device->CreateRootSignature(
+      1, serialized_layout->GetBufferPointer(),
+      serialized_layout->GetBufferSize(), IID_PPV_ARGS(&root_sign_)));
 
-  pSerializedLayout->Release();
+  serialized_layout->Release();
 
-  // Create PSO objects for each shader
-  // PSO basically holds the compiled shader object (and other state which we
-  // don't use)
+  // Create PSO objects for each shader.
+  // PSO basically holds the compiled shader object.
 
-  // 2. PSO for the expand planes shader
-  D3D12_COMPUTE_PIPELINE_STATE_DESC stateDesc = {};
-  stateDesc.CS = {g_ExpandPlanes_kernel_Fp16_NHWC,
-                  sizeof(g_ExpandPlanes_kernel_Fp16_NHWC)};
-  stateDesc.pRootSignature = root_sign_;
-  ReportDxErrors(pDevice->CreateComputePipelineState(
-      &stateDesc, IID_PPV_ARGS(&expand_planes_state_)));
+  // Expand planes shaders.
+  D3D12_COMPUTE_PIPELINE_STATE_DESC state_desc = {};
+  state_desc.pRootSignature = root_sign_;
 
-  // 3. PSO for policy FC (+softmax) layer
-#if FUSED_POLICY == 1
-  stateDesc.CS = {g_PolicyFC_With_Softmax_kernel,
-                  sizeof(g_PolicyFC_With_Softmax_kernel)};
-#else
-  stateDesc.CS = {g_PolicyFC, sizeof(g_PolicyFC)};
-#endif
-  ReportDxErrors(pDevice->CreateComputePipelineState(
-      &stateDesc, IID_PPV_ARGS(&policy_fc_state_)));
+  state_desc.CS = {g_ExpandPlanes_shader_fp16,
+                   sizeof(g_ExpandPlanes_shader_fp16)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&expand_planes_state_fp16_)));
 
-  stateDesc.CS = {g_PolicySoftmax, sizeof(g_PolicySoftmax)};
-  ReportDxErrors(pDevice->CreateComputePipelineState(
-      &stateDesc, IID_PPV_ARGS(&policy_softmax_state_)));
+  state_desc.CS = {g_ExpandPlanes_shader_fp32,
+                   sizeof(g_ExpandPlanes_shader_fp32)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&expand_planes_state_fp32_)));
 
-  // 4. PSO for value FC layers
-  stateDesc.CS = {g_ValueFC1, sizeof(g_ValueFC1)};
-  ReportDxErrors(pDevice->CreateComputePipelineState(
-      &stateDesc, IID_PPV_ARGS(&value_fc1_state_)));
+  // Winograd Input Transform shaders.
+  state_desc.CS = {g_input_transform_shader_fp16,
+                   sizeof(g_input_transform_shader_fp16)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&winograd_input_transform_fp16_)));
 
-  stateDesc.CS = {g_ValueFC2, sizeof(g_ValueFC2)};
-  ReportDxErrors(pDevice->CreateComputePipelineState(
-      &stateDesc, IID_PPV_ARGS(&value_fc2_state_)));
+  state_desc.CS = {g_input_transform_shader_fp32,
+                   sizeof(g_input_transform_shader_fp32)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&winograd_input_transform_fp32_)));
 
-  // 5. PSO for skip connection add/relu operation
-  stateDesc.CS = {g_SkipAdd, sizeof(g_SkipAdd)};  // ANKAN : TODO!
-  ReportDxErrors(pDevice->CreateComputePipelineState(
-      &stateDesc, IID_PPV_ARGS(&skip_add_state_)));
+  // Winograd Output Transform shaders.
+  state_desc.CS = {g_output_transform_shader_fp16,
+                   sizeof(g_output_transform_shader_fp16)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&winograd_output_transform_fp16_)));
+
+  state_desc.CS = {g_output_transform_shader_fp32,
+                   sizeof(g_output_transform_shader_fp32)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&winograd_output_transform_fp32_)));
+
+  // 1x1 convolution shaders.
+  state_desc.CS = {g_conv_1x1_shader_fp16, sizeof(g_conv_1x1_shader_fp16)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&conv_1x1_fp16_)));
+
+  state_desc.CS = {g_conv_1x1_shader_fp32, sizeof(g_conv_1x1_shader_fp32)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&conv_1x1_fp32_)));
+
+  // Add vectors shader.
+  state_desc.CS = {g_add_vectors_shader, sizeof(g_add_vectors_shader)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&add_vectors_)));
 }
 
 void ShaderWrapper::destroy() {
-  policy_fc_state_->Release();
-  expand_planes_state_->Release();
-  value_fc1_state_->Release();
-  value_fc2_state_->Release();
-  skip_add_state_->Release();
-  policy_softmax_state_->Release();
+  expand_planes_state_fp16_->Release();
+  winograd_input_transform_fp16_->Release();
+  winograd_output_transform_fp16_->Release();
+  conv_1x1_fp16_->Release();
+
+  expand_planes_state_fp32_->Release();
+  winograd_input_transform_fp32_->Release();
+  winograd_output_transform_fp32_->Release();
+  conv_1x1_fp32_->Release();
 
   root_sign_->Release();
 }
 
-void ShaderWrapper::expandPlanes(dx_command_stream stream, DXAlloc opTensor,
-                                 DXAlloc masks, DXAlloc values, int batchSize) {
+void ShaderWrapper::expandPlanes(ID3D12GraphicsCommandList5* command_list,
+                                 DXAlloc output_tensor, DXAlloc masks,
+                                 DXAlloc values, int batchSize, bool fp16) {
   const int N = batchSize * kInputPlanes;
-  int Consts[] = {N, kInputPlanes};
-  stream->SetComputeRootSignature(root_sign_);
-  stream->SetPipelineState(expand_planes_state_);
-  stream->SetComputeRootUnorderedAccessView(0, opTensor.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(1, masks.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(2, values.gpuVA);
-  stream->SetComputeRoot32BitConstants(4, 2, &Consts, 0);
+  int consts[] = {N, kInputPlanes};
+  command_list->SetComputeRootSignature(root_sign_);
+  command_list->SetPipelineState(fp16 ? expand_planes_state_fp16_
+                                      : expand_planes_state_fp32_);
+  command_list->SetComputeRootUnorderedAccessView(0, output_tensor.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(1, masks.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(2, values.gpuVA);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, 2, &consts, 0);
 
-  // Each thread writes two elements
-  int threads = N * 8 * 8 / 2;
-  const int kBlockSize = 256;
-  int blocks = DivUp(threads, kBlockSize);
-  stream->Dispatch(blocks, 1, 1);
+  int elements = batchSize * kInputPlanes * 8 * 8;
+  int blocks = DivUp(elements, kExpandPlanesElementsPerBlock);
+  command_list->Dispatch(blocks, 1, 1);
 }
 
-// TODO: really need to switch to matrix multiply metacommand when it's
-// available although the fully connected are very small, our hand written
-// shaders are relatively very slow.
-void ShaderWrapper::policyFC(dx_command_stream stream, DXAlloc output,
-                             DXAlloc input, DXAlloc weights, DXAlloc biases,
-                             int batchSize) {
-  int Consts[] = {batchSize};
-  stream->SetComputeRootSignature(root_sign_);
-  stream->SetPipelineState(policy_fc_state_);
-  stream->SetComputeRootUnorderedAccessView(0, output.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(1, input.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(2, weights.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(3, biases.gpuVA);
-  stream->SetComputeRoot32BitConstants(4, 1, &Consts, 0);
+void ShaderWrapper::inputTransform(ID3D12GraphicsCommandList5* command_list,
+                                   DXAlloc transformed_input, DXAlloc input,
+                                   int N, int C, bool fp16) {
+  int consts[] = {N, C};
+  command_list->SetComputeRootSignature(root_sign_);
+  command_list->SetPipelineState(fp16 ? winograd_input_transform_fp16_
+                                      : winograd_input_transform_fp32_);
+  command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(1, transformed_input.gpuVA);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, 2, &consts, 0);
 
-#if FUSED_POLICY == 1
-  // Each thread writes two elements
-  // block size is kNumOutputPolicy/2
-  // gird size is 'batchSize' no of blocks
-  stream->Dispatch(batchSize, 1, 1);
-#else
-// TODO : move these to a common include file
-#define blockWidth 16
-#define blockHeight 2
-
-#define elementsPerThreadX 4
-#define elementsPerThreadY 4
-
-#define elementsPerBlockX (blockWidth * elementsPerThreadX)
-#define elementsPerBlockY (blockHeight * elementsPerThreadY)
-
-  int blocksX = DivUp(1858, elementsPerBlockX);  // TODO: remove hardcoding
-  int blocksY = DivUp(batchSize, elementsPerBlockY);
-
-  stream->Dispatch(blocksX, blocksY, 1);
-
-  stream->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(output.pResource));
-
-  // run softmax pass
-  stream->SetPipelineState(policy_softmax_state_);
-  stream->Dispatch(batchSize, 1, 1);
-#endif
+  int blocks = DivUp(N * C, kWinogradTransformShaderBlockSize);
+  command_list->Dispatch(blocks, 1, 1);
 }
 
-void ShaderWrapper::valueFC1(dx_command_stream stream, DXAlloc output,
-                             DXAlloc input, DXAlloc weights, DXAlloc biases,
-                             int batchSize) {
-  int Consts[] = {batchSize};
-  stream->SetComputeRootSignature(root_sign_);
-  stream->SetPipelineState(value_fc1_state_);
-  stream->SetComputeRootUnorderedAccessView(0, output.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(1, input.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(2, weights.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(3, biases.gpuVA);
-  stream->SetComputeRoot32BitConstants(4, 1, &Consts, 0);
+void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
+                                    DXAlloc output, DXAlloc transformed_output,
+                                    DXAlloc skip_connection, DXAlloc bias,
+                                    DXAlloc se_w1, DXAlloc se_b1, DXAlloc se_w2,
+                                    DXAlloc se_b2, int N, int K, bool relu,
+                                    bool bias_add, bool skip_add, bool fused_se,
+                                    bool fp16) {
+  int consts[] = {N, K, relu, bias_add, skip_add, fused_se};
+  command_list->SetComputeRootSignature(root_sign_);
+  command_list->SetPipelineState(fp16 ? winograd_output_transform_fp16_
+                                      : winograd_output_transform_fp32_);
+  command_list->SetComputeRootUnorderedAccessView(0, transformed_output.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(2, bias.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(3, skip_connection.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(4, se_w1.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpuVA);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, 6, &consts, 0);
 
-  // Each thread writes two elements.
-  // Block size is 128/2 = 64.
-  // Gird size is 'batchSize' no of blocks.
-  stream->Dispatch(batchSize, 1, 1);
+  int blocks = DivUp(N * K, kWinogradTransformShaderBlockSize);
+  command_list->Dispatch(blocks, 1, 1);
 }
 
-void ShaderWrapper::valueFC2(dx_command_stream stream, DXAlloc output,
-                             DXAlloc input, DXAlloc weights, DXAlloc biases,
-                             int batchSize) {
-  int Consts[] = {batchSize};
-  stream->SetComputeRootSignature(root_sign_);
-  stream->SetPipelineState(value_fc2_state_);
-  stream->SetComputeRootUnorderedAccessView(0, output.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(1, input.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(2, weights.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(3, biases.gpuVA);
-  stream->SetComputeRoot32BitConstants(4, 1, &Consts, 0);
-
-  // Each thread writes a single element.
-  int blockSize = 32;
-  int numBlocks = DivUp(batchSize, blockSize);
-  stream->Dispatch(numBlocks, 1, 1);
+void ShaderWrapper::conv1x1(ID3D12GraphicsCommandList5* command_list,
+                            DXAlloc output, DXAlloc input, DXAlloc weight,
+                            DXAlloc bias, int N, int C, int K, bool relu,
+                            bool useBias, bool fp16) {
+  int consts[] = {N, K, C, useBias, relu};
+  command_list->SetComputeRootSignature(root_sign_);
+  command_list->SetPipelineState(fp16 ? conv_1x1_fp16_ : conv_1x1_fp32_);
+  command_list->SetComputeRootUnorderedAccessView(0, output.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(1, input.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(2, weight.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(3, bias.gpuVA);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, 5, &consts, 0);
+  command_list->Dispatch(K, N, 1);
 }
 
-void ShaderWrapper::skipAddRelu(dx_command_stream stream, DXAlloc input1,
-                                DXAlloc input2, DXAlloc output,
-                                bool performRelu, int numElements) {
-  int Consts[] = {numElements, performRelu};
-  stream->SetComputeRootSignature(root_sign_);
-  stream->SetPipelineState(skip_add_state_);
-  stream->SetComputeRootUnorderedAccessView(0, output.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(1, input1.gpuVA);
-  stream->SetComputeRootUnorderedAccessView(2, input2.gpuVA);
-  stream->SetComputeRoot32BitConstants(4, 2, &Consts, 0);
+void ShaderWrapper::addVectors(ID3D12GraphicsCommandList5* command_list,
+                               DXAlloc C, DXAlloc A, DXAlloc B, int c_size,
+                               int a_size, int b_size, bool relu, bool tanh,
+                               bool fp16) {
+  if (fp16) {
+    // Shader handles 2 elements per thread in fp16 mode.
+    assert(a_size % 2 == 0);
+    assert(b_size % 2 == 0);
+    assert(c_size % 2 == 0);
+    a_size /= 2;
+    b_size /= 2;
+    c_size /= 2;
+  }
+  int consts[] = {a_size, b_size, c_size, relu, tanh, fp16};
+  command_list->SetComputeRootSignature(root_sign_);
+  command_list->SetPipelineState(add_vectors_);
+  command_list->SetComputeRootUnorderedAccessView(0, A.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(1, B.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(2, C.gpuVA);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, 6, &consts, 0);
 
-  // Each thread writes 2 elements
-  int blockSize = 512;
-  int numBlocks = DivUp(numElements/2, blockSize);
-  stream->Dispatch(numBlocks, 1, 1);
+  int blocks = DivUp(c_size, kAddVectorsBlockSize);
+  command_list->Dispatch(blocks, 1, 1);
 }
 
 }  // namespace dx_backend

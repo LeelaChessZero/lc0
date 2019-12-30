@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -14,15 +14,6 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
-
-  Additional permission under GNU GPL version 3 section 7
-
-  If you modify this Program, or any covered work, by linking or
-  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
-  modified version of those libraries), containing parts covered by the
-  terms of the respective license agreement, the licensors of this
-  Program grant you additional permission to convey the resulting work.
 */
 #include "layers_dx.h"
 #include <cassert>
@@ -40,470 +31,431 @@ namespace dx_backend {
 // for testing
 size_t totalScratchSpace = 0;
 
-void convertFp32NCHWtoFp16NHWC(dx_half* out, const float* in, int N, int C,
-                               int H, int W) {
-  int outIndex = 0;
-  for (int n = 0; n < N; n++)
-    for (int h = 0; h < H; h++)
-      for (int w = 0; w < W; w++)
-        for (int c = 0; c < C; c++) {
-          int inIndex = n * C * H * W + c * H * W + h * W + w;
-          out[outIndex++] = FP32toFP16(in[inIndex]);
-        }
+void copyFloatToHalf(dx_half* out, const float* in, int elements) {
+  for (int i = 0; i < elements; i++) {
+    out[i] = FP32toFP16(in[i]);
+  }
 }
 
-static void getTensorDesc(TensorDesc* outDesc, int n, int c, int h, int w,
-                          bool fp16 = true, bool nhwc = true) {
+static void getTensorDesc(TensorDesc* outDesc, int batchSize, int rows,
+                          int cols, bool fp16 = true) {
   memset(outDesc, 0, sizeof(TensorDesc));
   outDesc->DimensionCount = 4;
   outDesc->DataType = fp16 ? 1 : 0;
 
-  outDesc->Size[0] = n;
-  outDesc->Size[1] = c;
-  outDesc->Size[2] = h;
-  outDesc->Size[3] = w;
+  outDesc->Size[0] = batchSize;
+  outDesc->Size[1] = 1;
+  outDesc->Size[2] = rows;
+  outDesc->Size[3] = cols;
 
-  if (nhwc) {
-    outDesc->Stride[1] = 1;
-    outDesc->Stride[3] = c;
-    outDesc->Stride[2] = c * w;
-    outDesc->Stride[0] = c * w * h;
-  } else {
-    outDesc->Stride[3] = 1;
-    outDesc->Stride[2] = w;
-    outDesc->Stride[1] = w * h;
-    outDesc->Stride[0] = c * w * h;
-  }
+  // row-major by default
+  outDesc->Stride[3] = 1;
+  outDesc->Stride[2] = cols;
+  outDesc->Stride[1] = rows * cols;
+  outDesc->Stride[0] = rows * cols;
 
   for (int i = 0; i < 4; i++) outDesc->StrideAlignment[i] = 1;
 
-  outDesc->BaseAlignmentInBytes = 4096;
-  outDesc->PhysicalSizeInElements = n * c * h * w;
+  outDesc->BaseAlignmentInBytes = 4096;  // arbitary
+  outDesc->PhysicalSizeInElements = batchSize * rows * cols;
 }
 
-static void getStrides(uint32_t strides[4], const uint32_t sizes[4],
-                       bool nhwc) {
-  if (nhwc) {
-    strides[1] = 1;
-    strides[3] = sizes[1];                        // c
-    strides[2] = sizes[1] * sizes[3];             // c * w
-    strides[0] = sizes[1] * sizes[3] * sizes[2];  // c * w * h
-  } else {
-    strides[3] = 1;
-    strides[2] = sizes[3];                        // w
-    strides[1] = sizes[3] * sizes[2];             // w * h
-    strides[0] = sizes[3] * sizes[2] * sizes[1];  // w * h * c
-  }
-}
+GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
+                                 int gemm_batch, bool fp16, bool a_transpose,
+                                 bool b_transpose) {
+  memset(scratch_data_persistent_, 0, sizeof(scratch_data_persistent_));
+  memset(scratch_data_temporary_, 0, sizeof(scratch_data_temporary_));
+  memset(meta_commands_, 0, sizeof(meta_commands_));
 
-DML_BUFFER_TENSOR_DESC getDMLTensorDesc(int n, int c, int h, int w,
-                                        bool fp16 = true, bool nhwc = true) {
-  const UINT tensorSizes[4] = {n, c, h, w};  // this needs to be allocated!
-  UINT tensorStrides[4] = {};
-  if (nhwc) {
-    tensorStrides[1] = 1;
-    tensorStrides[3] = c;
-    tensorStrides[2] = c * w;
-    tensorStrides[0] = c * w * h;
+  // Note: the way GEMM is used, the 'rows'/M - dimension is a function of
+  // batch size. gemm_batch is different and unrelated (either 36 for Winograd,
+  // or 1 for other FC layers)
+  int num_meta_commands = 1;
+  if (rows == 0) {
+    // Create metacommands for each 'rows' that is multiple of 8.
+    num_meta_commands = kMaxMetacommands;
+    rows_known_ = false;
   } else {
-    tensorStrides[3] = 1;
-    tensorStrides[2] = w;
-    tensorStrides[1] = w * h;
-    tensorStrides[0] = c * w * h;
+    rows_known_ = true;
   }
 
-  DML_BUFFER_TENSOR_DESC dmlBufferTensorDesc = {};
-  dmlBufferTensorDesc.DataType =
-      fp16 ? DML_TENSOR_DATA_TYPE_FLOAT16 : DML_TENSOR_DATA_TYPE_FLOAT32;
-  dmlBufferTensorDesc.Flags = DML_TENSOR_FLAG_NONE;
-  dmlBufferTensorDesc.DimensionCount = 4;
-  dmlBufferTensorDesc.Sizes = tensorSizes;
-  dmlBufferTensorDesc.Strides = tensorStrides;
-  dmlBufferTensorDesc.TotalTensorSizeInBytes =
-      n * c * h * w * (fp16 ? sizeof(dx_half) : sizeof(float));
-  return dmlBufferTensorDesc;
-}
+  for (int i = 0; i < num_meta_commands; i++) {
+    int num_rows = rows ? rows : (i + 1) * kMetacommandGranulity;
 
-ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int Cin, int Cout, int H,
-                                 int W, int filterSize, bool skipAdd,
-                                 bool hasBias, bool hasRelu) {
-  if (skipAdd) hasRelu = false;  // relu done after skip addition
+    GemmCreateDesc createDesc = {};
+    getTensorDesc(&createDesc.DescOut, gemm_batch, num_rows, cols, fp16);
+    getTensorDesc(&createDesc.DescA, gemm_batch, a_transpose ? K : num_rows,
+                  a_transpose ? num_rows : K, fp16);
+    getTensorDesc(&createDesc.DescB, gemm_batch, b_transpose ? cols : K,
+                  b_transpose ? K : cols, fp16);
+    createDesc.cMatrixNull = 1;
+    createDesc.ActivationIsNull = 1;
+    createDesc.Alpha = 1.0;
+    createDesc.Beta = 0.0;
+    createDesc.Precision = fp16 ? 1 : 0;  // 0 - fp32, 1 - fp16
+    createDesc.TransA = a_transpose;
+    createDesc.TransB = b_transpose;
 
-  for (int i = 0; i < kMaxSupportedBatchSize; i++) {
-    int n = i + 1;
-
-    ConvCreateDesc desc = {};
-
-    getTensorDesc(&desc.InputDesc, n, Cin, H, W);
-    getTensorDesc(&desc.OutputDesc, n, Cout, H, W);
-    getTensorDesc(&desc.FilterDesc, Cout, Cin, filterSize, filterSize);
-    getTensorDesc(&desc.BiasDesc, Cout, 1, 1, 1);
-    desc.BiasNull = hasBias ? 0 : 1;
-    desc.Mode = 1;  // 1 is for cross-correlation (0 - conv)
-
-    desc.Direction = 0;       // forward
-    desc.DimensionCount = 2;  // 2D conv
-    desc.Stride[0] = 1;
-    desc.Stride[1] = 1;
-    desc.Dilation[0] = 1;
-    desc.Dilation[1] = 1;
-
-    int pad = (filterSize - 1) / 2;
-    desc.StartPadding[0] = pad;
-    desc.StartPadding[1] = pad;
-    desc.EndPadding[0] = pad;
-    desc.EndPadding[1] = pad;
-    desc.GroupCount = 1;
-    if (hasRelu) {
-      desc.ActivationFunction = 9;  // relu (guess?)
-      desc.ActivationIsNull = 0;
-    } else {
-      desc.ActivationIsNull = 1;
-    }
-    desc.Precision = 1;  // fp16
-
-#if 0
-    // The API looks pretty crappy :-/
-    /*
-    IDMLOperator* pDMLConv;
-    DML_TENSOR_DESC dmlTensorDesc{};
-    dmlTensorDesc.Type = DML_TENSOR_TYPE_BUFFER;
-    dmlTensorDesc.Desc = &dmlBufferTensorDesc;
-
-    DML_CONVOLUTION_OPERATOR_DESC dmlConvDesc{};
-    dmlConvDesc.StartPadding
-    */
-    const uint32_t inputSizes[] = {n, Cin, H, W};
-    const uint32_t outputSizes[] = {n, Cout, H, W};
-    const uint32_t filterSizes[] = {Cout, Cin, filterSize, filterSize};
-    const uint32_t biasSizes[] = {1, Cout, 1, 1};
-
-    uint32_t inputStrides[4], outputStrides[4], filterStrides[4],
-        biasStrides[4];
-    getStrides(inputStrides, inputSizes, true);
-    getStrides(outputStrides, outputSizes, true);
-    getStrides(filterStrides, filterSizes, true);
-    getStrides(biasStrides, biasSizes, true);
-
-
-    DML_BUFFER_TENSOR_DESC inputBufferDesc = {DML_TENSOR_DATA_TYPE_FLOAT16,
-                                              DML_TENSOR_FLAG_NONE,
-                                              4,
-                                              inputSizes,
-                                              inputStrides,
-                                              inputStrides[0] * inputSizes[0] * sizeof(dx_half),
-                                              0};
-    DML_TENSOR_DESC inputDesc = {DML_TENSOR_TYPE_BUFFER, &inputBufferDesc};
-
-
-    DML_BUFFER_TENSOR_DESC outputBufferDesc = {DML_TENSOR_DATA_TYPE_FLOAT16,
-                                               DML_TENSOR_FLAG_NONE,
-                                               4,
-                                               outputSizes,
-                                               outputStrides,
-                                               outputStrides[0] * outputStrides[0] * sizeof(dx_half),
-                                               0};
-    DML_TENSOR_DESC outputDesc = {DML_TENSOR_TYPE_BUFFER, &outputBufferDesc};
-
-    DML_BUFFER_TENSOR_DESC filterBufferDesc = {DML_TENSOR_DATA_TYPE_FLOAT16,
-                                               DML_TENSOR_FLAG_NONE,
-                                               4,
-                                               filterSizes,
-                                               filterStrides,
-                                               filterStrides[0] * filterStrides[0] * sizeof(dx_half),
-                                               0};
-    DML_TENSOR_DESC filterDesc = {DML_TENSOR_TYPE_BUFFER, &filterBufferDesc};
-
-
-    DML_BUFFER_TENSOR_DESC biasBufferDesc = {DML_TENSOR_DATA_TYPE_FLOAT16,
-                                             DML_TENSOR_FLAG_NONE,
-                                             4,
-                                             biasSizes,
-                                             biasStrides,
-                                             Cout * sizeof(dx_half),
-                                             0};
-    DML_TENSOR_DESC biasDesc = {DML_TENSOR_TYPE_BUFFER, &biasBufferDesc};
-
-    uint32_t strides[] = {1, 1};
-    uint32_t dilations[] = {1, 1};
-    uint32_t startPadding[] = {filterSize / 2, filterSize / 2};
-    uint32_t endPadding[] = {filterSize / 2, filterSize / 2};
-    uint32_t outputPadding[] = {0, 0};
-
-    DML_ACTIVATION_RELU_OPERATOR_DESC fusedReluDesc = {0};
-    DML_OPERATOR_DESC activationDesc = {DML_OPERATOR_ACTIVATION_RELU,
-                                        &fusedReluDesc};
-
-
-    DML_CONVOLUTION_OPERATOR_DESC convDesc = {
-        &inputDesc,
-        &filterDesc,
-        hasBias ? &biasDesc : nullptr,
-        &outputDesc,
-        DML_CONVOLUTION_MODE_CROSS_CORRELATION,
-        DML_CONVOLUTION_DIRECTION_FORWARD,
-        2,
-        strides,
-        dilations,
-        startPadding,
-        endPadding,
-        outputPadding,
-        1,
-        hasRelu ? &activationDesc : nullptr};
-    DML_OPERATOR_DESC opDesc = {DML_OPERATOR_CONVOLUTION, &convDesc};
-
-    IDMLOperator *op;
-    IDMLCompiledOperator* compiledOpOut;
-    ReportDxErrors(pContext->getDMLDevice()->CreateOperator(&opDesc, IID_PPV_ARGS(&op)));
-
-    ReportDxErrors(pContext->getDMLDevice()->CompileOperator(
-        op, DML_EXECUTION_FLAG_ALLOW_HALF_PRECISION_COMPUTATION,
-        IID_PPV_ARGS(&compiledOpOut)));
-#endif
-
-    int paramSize = sizeof(desc);
-
+    ID3D12MetaCommand* pMetacommand = nullptr;
     HRESULT hr = pContext->getDevice()->CreateMetaCommand(
-        ConvGuid, 0, &desc, sizeof(desc), IID_PPV_ARGS(&pMetaCommands[i]));
+        GemmGuid, 1, &createDesc, sizeof(createDesc),
+        IID_PPV_ARGS(&pMetacommand));
 
     if (hr != S_OK) {
-      throw Exception("Error creating convolution Metacommand\n");
+      throw Exception("Error creating gemm Metacommand\n");
     }
 
-    size_t sizeInBytes = 0;
+    meta_commands_[i] = pMetacommand;
 
-    sizeInBytes = pMetaCommands[i]->GetRequiredParameterResourceSize(
-        D3D12_META_COMMAND_PARAMETER_STAGE_INITIALIZATION,
-        3 /*index of persistent resource in init desc*/);
+    size_t persistent_size = pMetacommand->GetRequiredParameterResourceSize(
+        D3D12_META_COMMAND_PARAMETER_STAGE_EXECUTION, 4);
+    size_t temp_size = pMetacommand->GetRequiredParameterResourceSize(
+        D3D12_META_COMMAND_PARAMETER_STAGE_EXECUTION, 5);
 
-    // TODO: Consider creating a single allocation with chunks suballocated for
-    // each metacommand object
-    if (sizeInBytes) {
-      totalScratchSpace += sizeInBytes;
+    if (persistent_size) {
+#if 0
+      totalScratchSpace += persistent_size;
       printf(
           "allocating %llu bytes for persistent metacommand storage, total: "
           "%llu\n",
-          sizeInBytes, totalScratchSpace);
-      pContext->CreateAlloc(sizeInBytes, D3D12_HEAP_TYPE_DEFAULT,
-                            &scratch_data_[i]);
-    } else {
-      scratch_data_[i].pResource = nullptr;
-      scratch_data_[i].gpuVA = 0;
+          persistent_size, totalScratchSpace);
+      pContext->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
+                            scratch_data_persistent_[i]);
+#endif
+    }
+
+    if (temp_size) {
+#if 0
+      totalScratchSpace += temp_size;
+      printf(
+          "allocating %llu bytes for temp metacommand storage, total: "
+          "%llu\n",
+          temp_size, totalScratchSpace);
+      pContext->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
+                            scratch_data_temporary_[i]);
+#endif
     }
 
     InitConvDesc initDesc = {};
-    if (sizeInBytes) initDesc.PersistentResource = scratch_data_[i].descHandle;
+    initDesc.PersistentResource = scratch_data_persistent_[i].descHandle;
+    initDesc.TemporaryResource = scratch_data_temporary_[i].descHandle;
 
     pContext->getCommandList()->InitializeMetaCommand(
-        pMetaCommands[i], &initDesc, sizeof(initDesc));
+        meta_commands_[i], &initDesc, sizeof(initDesc));
   }
 }
 
-ConvMetaCommand::~ConvMetaCommand() {
-  for (int i = 0; i < kMaxSupportedBatchSize; i++) {
-    scratch_data_[i].pResource->Release();
-    pMetaCommands[i]->Release();
+void GemmMetaCommand::PerformGemm(int rows, DXAlloc A, DXAlloc B,
+                                  DXAlloc output,
+                                  ID3D12GraphicsCommandList5* command_list) {
+  int index = 0;
+  if (!rows_known_) {
+    index = DivUp(rows, 8) - 1;
+  }
+
+  ID3D12MetaCommand* meta_command = meta_commands_[index];
+  DXAlloc& scratch_persistent = scratch_data_persistent_[index];
+  DXAlloc& scratch_temporary = scratch_data_temporary_[index];
+
+  GemmExecuteDesc exec_desc = {};
+  exec_desc.AResource = A.descHandle;
+  exec_desc.BResource = B.descHandle;
+  exec_desc.OutputResource = output.descHandle;
+  exec_desc.PersistentResource = scratch_persistent.descHandle;
+  exec_desc.TemporaryResource = scratch_temporary.descHandle;
+
+  command_list->ExecuteMetaCommand(meta_command, &exec_desc, sizeof(exec_desc));
+}
+
+GemmMetaCommand::~GemmMetaCommand() {
+  for (int i = 0; i < kMaxMetacommands; i++) {
+    if (scratch_data_temporary_[i].pResource)
+      scratch_data_temporary_[i].pResource->Release();
+    if (scratch_data_persistent_[i].pResource)
+      scratch_data_persistent_[i].pResource->Release();
+    if (meta_commands_[i]) meta_commands_[i]->Release();
   }
 }
 
-BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext)
-    : input_(ip), C(c), H(h), W(w), dx_context_(pContext) {}
+BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext,
+                     bool fp16)
+    : input_(ip), C(c), H(h), W(w), dx_context_(pContext), fp16_(fp16) {}
 
-ConvLayer::ConvLayer(ConvMetaCommand* pMetaCommand, DxContext* pContext,
-                     BaseLayer* ip, int C, int H, int W, int filter, int Cin,
-                     bool relu, bool bias, bool skipAdd)
-    : BaseLayer(C, H, W, ip, pContext),
+ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand,
+                     DxContext* pContext, BaseLayer* ip, int C, int H, int W,
+                     int filter, int Cin, bool relu, bool bias, bool skipAdd)
+    : BaseLayer(C, H, W, ip, pContext, fp16),
       meta_command_(pMetaCommand),
       c_input_(Cin),
       filter_size_(filter),
       use_relu_(relu),
       use_bias_(bias),
       skip_add_(skipAdd),
-      weights_(nullptr),
-      biases_(nullptr) {
-  size_t weight_size =
-      sizeof(dx_half) * c_input_ * C * filter_size_ * filter_size_;
-  size_t blas_size = sizeof(dx_half) * C;
+      weights_(),
+      transformed_weights_(),
+      biases_() {
+  size_t element_size = fp16 ? sizeof(dx_half) : sizeof(float);
+  size_t weight_size = element_size * C * Cin * filter * filter;
+  size_t blas_size = element_size * C;
 
-  weights_ = new DXAlloc;
   pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_);
 
+  if (filter == 3) {
+    // 6x6 transformed filter size, for 3x3 convolution
+    pContext->CreateAlloc(weight_size * 4, D3D12_HEAP_TYPE_DEFAULT,
+                          transformed_weights_);
+  }
+
   if (use_bias_) {
-    biases_ = new DXAlloc;
     pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_);
   }
+  shader_wrapper_ = pContext->getShaderWrapper();
 }
 
-void cpuTranspose(dx_half* op, dx_half* ip, int rows, int cols) {
-  printf("\ntranspoising to H W = %d %d\n", rows, cols);
-  for (int i = 0; i < rows; i++)
-    for (int j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
+template <int M, int N, int K, typename T>
+void matrixMulCPU(T* c, T* a, T* b) {
+  for (int i = 0; i < M; ++i)
+    for (int j = 0; j < N; ++j) {
+      float S = 0;
+      for (int k = 0; k < K; ++k)
+        S += (float)(a[i * K + k]) * (float)(b[k * N + j]);
+      c[i * N + j] = (T)S;
+    }
+}
+
+template <typename T>
+void filterTransform4x4(T* transformedFilter, T* filter) {
+  // transform applied to filter (of size 3x3)
+  T G[6 * 3] = {1.0 / 4,  0,         0,        -1.0 / 6, -1.0 / 6, -1.0 / 6,
+                -1.0 / 6, 1.0 / 6,   -1.0 / 6, 1.0 / 24, 1.0 / 12, 1.0 / 6,
+                1.0 / 24, -1.0 / 12, 1.0 / 6,  0,        0,        1};
+
+  T Gt[3 * 6] = {1.0 / 4, -1.0 / 6, -1.0 / 6, 1.0 / 24, 1.0 / 24,  0,
+                 0,       -1.0 / 6, 1.0 / 6,  1.0 / 12, -1.0 / 12, 0,
+                 0,       -1.0 / 6, -1.0 / 6, 1.0 / 6,  1.0 / 6,   1};
+
+  T tempFilter[6 * 3];
+  matrixMulCPU<6, 3, 3, T>(tempFilter, G, filter);
+  matrixMulCPU<6, 6, 3, T>(transformedFilter, tempFilter, Gt);
+}
+
+#define FILTER_IDX_NCHW(k, c, h, w) ((k)*C * S * R + (c)*S * R + (h)*R + w)
+
+// Transform filter for winograd.
+// (e.g: for K C H W - 256x256x3x3, filter output is 6x6x256x256 - H W K C)
+void transformFilterTensor_Winograd4x4(int K, int C, float* transformedFilter,
+                                       const float* weight) {
+  constexpr int S = 3;
+  constexpr int R = 3;
+
+  for (int k = 0; k < K; k++) {
+    for (int c = 0; c < C; c++) {
+      // 1. read single filter from memory
+      float filterTile[3][3];
+      for (int s = 0; s < S; s++)
+        for (int r = 0; r < R; r++) {
+          filterTile[s][r] = weight[FILTER_IDX_NCHW(k, c, s, r)];
+        }
+
+      // 2. transform it
+      float transformedFilterTile[6][6];
+      filterTransform4x4(&(transformedFilterTile[0][0]), &(filterTile[0][0]));
+
+      // 3. write it back to memory (in HWCK layout)
+      for (int i = 0; i < 6; i++)
+        for (int j = 0; j < 6; j++) {
+          transformedFilter[i * 6 * C * K + j * C * K + c * K + k] =
+              transformedFilterTile[i][j];
+        }
+    }
+  }
 }
 
 void ConvLayer::LoadWeights(float* pfilter, float* pBias, DxContext* pContext) {
   int num_weights = c_input_ * C * filter_size_ * filter_size_;
-  size_t weight_size = sizeof(dx_half) * num_weights;
-  size_t bias_size = sizeof(dx_half) * C;
+  size_t element_size = fp16_ ? sizeof(dx_half) : sizeof(float);
+  size_t weight_size = element_size * num_weights;
+  size_t bias_size = element_size * C;
 
   std::vector<dx_half> temp(num_weights);
-  convertFp32NCHWtoFp16NHWC(temp.data(), pfilter, C, c_input_, filter_size_,
-                            filter_size_);
-  pContext->scheduleUpload(*weights_, temp.data(), weight_size);
+  if (fp16_) {
+    copyFloatToHalf(temp.data(), pfilter, num_weights);
+    pContext->scheduleUpload(weights_, temp.data(), weight_size);
+  } else {
+    pContext->scheduleUpload(weights_, pfilter, weight_size);
+  }
 
   if (pBias) {
-    convertFp32NCHWtoFp16NHWC(temp.data(), pBias, C, 1, 1, 1);
-    pContext->scheduleUpload(*biases_, temp.data(), bias_size);
+    if (fp16_) {
+      copyFloatToHalf(temp.data(), pBias, C);
+      pContext->scheduleUpload(biases_, temp.data(), bias_size);
+    } else {
+      pContext->scheduleUpload(biases_, pBias, bias_size);
+    }
+  }
+
+  if (filter_size_ == 3) {
+    std::vector<float> temp_transformed(num_weights * 4);
+    transformFilterTensor_Winograd4x4(C, c_input_, temp_transformed.data(),
+                                      pfilter);
+    if (fp16_) {
+      std::vector<dx_half> temp_transformed_half(num_weights * 4);
+      copyFloatToHalf(temp_transformed_half.data(), temp_transformed.data(),
+                      num_weights * 4);
+      pContext->scheduleUpload(transformed_weights_,
+                               temp_transformed_half.data(), weight_size * 4);
+    } else {
+      pContext->scheduleUpload(transformed_weights_, temp_transformed.data(),
+                               weight_size * 4);
+    }
   }
 }
 
-void ConvLayer::Eval(int N, dx_alloc_handle output, dx_alloc_handle input,
-                     dx_alloc_handle input2, dx_command_stream cmdStream) {
-  ExecuteConvDesc desc = {};
+bool firstTime = false;
 
-  desc.InputResource = input->descHandle;
-  desc.OutputResource = output->descHandle;
-  desc.FilterResource = weights_->descHandle;
-  if (use_bias_) desc.BiasResource = biases_->descHandle;
-  desc.PersistentResource = meta_command_->getScratchHandle(N);
+void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
+                     DXAlloc scratch, DXAlloc scratch2,
+                     ID3D12GraphicsCommandList5* command_list) {
+  if (filter_size_ == 3) {
+    // Need to pad up the input to gemm too (i.e, the transformed Input tensor)!
+    // It's in HWNC layout, and 'N'/GemmN needs to be padded up (HW = 6x6)
+    // to make it simple, just pad up N to multiple of 2 here (so that gemmN is
+    // multiple of 8).
+    // TODO: figure out why padding up by 4 is needed (instead of 2!)
+    N = ((N + 3) / 4) * 4;
 
-  if (input2) {
-    assert(skip_add_);
-    // arbitary input2 not supported by dx path
-    // assert(input2->gpuVA == output->gpuVA);
+    if (firstTime) {
+      // Ankan - upload garbage to see if it matters?
+      dx_half testData[112 * 64];
+      memset(testData, 0x0, sizeof(testData));
+      for (int i = 0; i < 112 * 64; i++) testData[i] = FP32toFP16(0.9f);
+      DXAlloc testAlloc = input;
+      testAlloc.offset += sizeof(testData);
+      testAlloc.gpuVA += sizeof(testData);
+      dx_context_->scheduleUpload(testAlloc, testData, sizeof(testData));
+    }
 
-    desc.OutputResource = dx_context_->getDefaultScratch()->descHandle;
-  }
+    // 1. Input transform (input->scratch2)
+    shader_wrapper_->inputTransform(command_list, scratch, input, N, c_input_,
+                                    fp16_);
 
-  cmdStream->ExecuteMetaCommand(meta_command_->getMetaCommand(N), &desc,
-                                sizeof(desc));
+    command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-  // Ankan - test!
-  // dx_context_->dumpTensor(*output, 1024);
-  // exit(0);
+    if (firstTime) {
+      printf("\nThe input");
+      dx_context_->dumpTensor(input, 2 * 112 * 8 * 8, fp16_);
 
-  if (input2) {
-    dx_context_->getCommandList()->ResourceBarrier(
-        1, &CD3DX12_RESOURCE_BARRIER::UAV(
-               dx_context_->getDefaultScratch()->pResource));
+      printf("\nAfter input transform");
+      dx_context_->dumpTensor(scratch, 2 * 112 * 12 * 12, fp16_);
 
-    // dx_context_->dumpTensor(*output, 1024);
-    // dx_context_->dumpTensor(*dx_context_->getDefaultScratch(), 1024);
-    // exit(0);
+      // printf("\nAfter gemm transform");
+      // dx_context_->dumpTensor(scratch2, 2 * 256 * 12*12, fp16_);
 
-    dx_context_->getShaderWrapper()->skipAddRelu(
-        cmdStream, *dx_context_->getDefaultScratch(), *input2, *output, true,
-        N * C * 64);
+      firstTime = false;
+    }
+
+    // 2. Gemm (scratch2 -> scratch)
+    meta_command_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
+                               command_list);
+
+    command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+
+
+    // 3. Output transform (scratch -> output)
+    // TODO: handle SE!
+    shader_wrapper_->outputTransform(
+        command_list, output, scratch2, input2, biases_, scratch, scratch,
+        scratch, scratch, N, C, use_relu_, use_bias_, skip_add_, false, fp16_);
+
+  } else if (filter_size_ == 1) {
+    shader_wrapper_->conv1x1(command_list, output, input, weights_, biases_, N,
+                             c_input_, C, use_relu_, use_bias_, fp16_);
+  } else {
+    throw Exception("Unsupported filter shape for convolution! ");
   }
 }
 
 ConvLayer::~ConvLayer() {
-  weights_->pResource->Release();
-  delete weights_;
-  weights_ = nullptr;
-  if (biases_) {
-    biases_->pResource->Release();
-    delete biases_;
-    biases_ = nullptr;
-  }
+  if (weights_.pResource) weights_.pResource->Release();
+  if (biases_.pResource) biases_.pResource->Release();
+  if (transformed_weights_.pResource) transformed_weights_.pResource->Release();
 }
 
-FCLayer::FCLayer(DxContext* pContext, BaseLayer* ip, int C, int H, int W,
-                 bool bias, bool relu, bool tanh, bool softmax, bool fp32Out)
-    : BaseLayer(C, H, W, ip, pContext),
+FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
+                 int W, bool bias, bool relu, bool tanh)
+    : BaseLayer(C, H, W, ip, pContext, fp16),
       use_bias_(bias),
       use_relu_(relu),
-      use_tanh_(tanh),
-      use_softmax_(softmax) {
+      use_tanh_(tanh) {
+  size_t element_size = fp16_ ? sizeof(dx_half) : sizeof(float);
   size_t weight_size =
-      sizeof(dx_half) * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
-  size_t blas_size = sizeof(float) * C * H * W;  // biases are in fp32
+      element_size * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
+  size_t blas_size = element_size * C * H * W;
 
-  weights_ = new DXAlloc;
   pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_);
-
-  if (use_bias_) {
-    biases_ = new DXAlloc;
+  if (use_bias_)
     pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_);
-  } else {
-    biases_ = nullptr;
-  }
+
+  shader_wrapper_ = pContext->getShaderWrapper();
+
+  // Create metacommand object
+  int rows = 0;  // batch size
+  int cols = C * H * W;
+  int K = ip->GetC() * ip->GetH() * ip->GetW();  // cols of input matrix
+  // We do Out = A * weight.
+  // The weight matrix need to be transpsoed before it can be multiplied.
+  meta_command_ =
+      new GemmMetaCommand(pContext, rows, cols, K, 1, fp16, false, true);
 }
 
 void FCLayer::LoadWeights(float* cpuWeight, float* cpuBias,
                           DxContext* pContext) {
-  shader_wrapper_ = pContext->getShaderWrapper();
-
   size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
-  size_t weight_size = sizeof(dx_half) * num_weights;
+
+  size_t element_size = fp16_ ? sizeof(dx_half) : sizeof(float);
+  size_t weight_size = element_size * num_weights;
   size_t num_biases = C * H * W;
-  size_t bias_size = sizeof(float) * num_biases;
+  size_t bias_size = element_size * num_biases;
 
-  std::vector<dx_half> scratch(num_weights);
   std::vector<dx_half> temp(num_weights);
-
-  // Observe the way FC layer weights need to be converted.
-  convertFp32NCHWtoFp16NHWC(scratch.data(), cpuWeight, num_biases,
-                            input_->GetC(), input_->GetH(), input_->GetW());
-
-  // transpose weight matrix so that matrix multiply is faster
-  cpuTranspose(temp.data(), scratch.data(), C, num_weights / C);
-  pContext->scheduleUpload(*weights_, temp.data(), weight_size);
+  if (fp16_) {
+    copyFloatToHalf(temp.data(), cpuWeight, num_weights);
+    pContext->scheduleUpload(weights_, temp.data(), weight_size);
+  } else {
+    pContext->scheduleUpload(weights_, cpuWeight, weight_size);
+  }
 
   if (cpuBias) {
-    // no conversion! plain copy
-    pContext->scheduleUpload(*biases_, cpuBias, bias_size);
+    if (fp16_) {
+      copyFloatToHalf(temp.data(), cpuBias, C);
+      pContext->scheduleUpload(biases_, temp.data(), bias_size);
+    } else {
+      pContext->scheduleUpload(biases_, cpuBias, bias_size);
+    }
   }
 }
 
-void FCLayer::Eval(int N, dx_alloc_handle output, dx_alloc_handle input,
-                   dx_alloc_handle input2, dx_command_stream cmdStream) {
+void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
+                   DXAlloc scratch, DXAlloc scratch2,
+                   ID3D12GraphicsCommandList5* command_list) {
   int num_outputs = C * H * W;
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
-  if (use_softmax_) {
-    // if (N == 256) return;  // Ankan - bad test!
+  meta_command_->PerformGemm(N, input, weights_, output, command_list);
 
-    // The shader has these hardcoded.
-    assert(num_outputs == 1858);
-    assert(num_inputs == 2048);
-    shader_wrapper_->policyFC(cmdStream, *output, *input, *weights_, *biases_,
-                              N);
-
-  } else if (num_outputs == 1) {
-    // FC2 of value head.
-    // The shader has this hardcoded.
-    assert(num_inputs == 128);
-    shader_wrapper_->valueFC2(cmdStream, *output, *input, *weights_, *biases_,
-                              N);
-  } else {
-    // FC1 of value head.
-    // The shader has these hardcoded.
-    assert(num_outputs == 128);
-    assert(num_inputs == 2048);
-    shader_wrapper_->valueFC1(cmdStream, *output, *input, *weights_, *biases_,
-                              N);
+  if (use_bias_ || use_relu_ || use_tanh_) {
+    command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+    shader_wrapper_->addVectors(command_list, output, output, biases_,
+                                N * num_outputs, N * num_outputs, num_outputs, 
+                                use_relu_, use_tanh_, fp16_);
   }
 }
 
 FCLayer::~FCLayer() {
-  weights_->pResource->Release();
-  delete weights_;
-  weights_ = nullptr;
-  if (biases_) {
-    biases_->pResource->Release();
-    delete biases_;
-    biases_ = nullptr;
-  }
+  if (weights_.pResource) weights_.pResource->Release();
+  if (biases_.pResource) biases_.pResource->Release();
 }
-
-// misc error handling stuff
-/*
-inline char *GetMessageForHresult(HRESULT hr) {
-  _com_error error(hr);
-  return error.ErrorMessage();
-}
-*/
 
 void DxError(HRESULT status, const char* file, const int& line) {
   if (FAILED(status)) {

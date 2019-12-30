@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -14,15 +14,6 @@
 
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
-
-  Additional permission under GNU GPL version 3 section 7
-
-  If you modify this Program, or any covered work, by linking or
-  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
-  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
-  modified version of those libraries), containing parts covered by the
-  terms of the respective license agreement, the licensors of this
-  Program grant you additional permission to convey the resulting work.
 */
 
 #include <dxgi.h>
@@ -44,45 +35,52 @@ class BaseLayer {
   int GetH() const { return H; }
   int GetW() const { return W; }
 
-  BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext);
+  BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext, bool fp16);
   virtual ~BaseLayer() = default;
-  size_t GetOutputSize(int N) const { return sizeof(dx_half) * N * C * H * W; }
+  size_t GetOutputSize(int N) const {
+    return (fp16_ ? sizeof(dx_half) : sizeof(float)) * N * C * H * W;
+  }
 
   // input2 is optional (skip connection).
-  virtual void Eval(int N, dx_alloc_handle output, dx_alloc_handle input,
-                    dx_alloc_handle input2, dx_command_stream cmdStream) = 0;
+  virtual void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
+                    DXAlloc scratch, DXAlloc scratc2,
+                    ID3D12GraphicsCommandList5* pCL) = 0;
 
  protected:
   BaseLayer* input_;
   DxContext* dx_context_;
 
-  int C;  // Output tensor dimensions.
+  bool fp16_;
+
+  // Output tensor dimensions.
+  int C;  
   int H;
   int W;
 };
 
-// holds Metacommand objects and it's scratch space for all allowed batch sizes
-class ConvMetaCommand {
+// Holds Metacommand objects and their scratch space for all allowed batch sizes.
+class GemmMetaCommand {
  private:
-  // one for every batch size unfortunately!
+  // Need to create a Metacommand object for each batch size unfortunately!
+  // Some hw vendors don't support arbitary sizes anyway, so we create only 
+  // multiples of 8 in no. of rows (when M is 0).
 
-  // official d3d12 metacommand doesn't support alpha/beta factors :-/ (needed
-  // for fused residual add)
-  ID3D12MetaCommand* pMetaCommands[kMaxSupportedBatchSize];
-  //ID3D12NvMetaCommand* pMetaCommands[kMaxSupportedBatchSize];
+  static constexpr int kMetacommandGranulity = 8;
+  static constexpr int kMaxMetacommands =
+      (kMaxSupportedBatchSize * 4) / kMetacommandGranulity;
+  ID3D12MetaCommand* meta_commands_[kMaxMetacommands];
 
-  DXAlloc scratch_data_[kMaxSupportedBatchSize];
+  DXAlloc scratch_data_persistent_[kMaxMetacommands];
+  DXAlloc scratch_data_temporary_[kMaxMetacommands];
 
+  bool rows_known_;
  public:
-  ConvMetaCommand(DxContext* pContext, int Cin,
-                  int Cout, int H, int W, int filterSize, bool skipAdd,
-                  bool hasBias, bool hasRelu);
-  ~ConvMetaCommand();
+  GemmMetaCommand(DxContext* pContext, int M, int N, int K, int gemm_batch,
+                  bool fp16, bool ATranspose, bool BTranspose);
+  ~GemmMetaCommand();
 
-  ID3D12MetaCommand* getMetaCommand(int N) { return pMetaCommands[N - 1]; }
-  D3D12_GPU_DESCRIPTOR_HANDLE getScratchHandle(int N) {
-    return scratch_data_[N - 1].descHandle;
-  }
+  void PerformGemm(int rows, DXAlloc A, DXAlloc B, DXAlloc Output,
+                   ID3D12GraphicsCommandList5* command_list);
 };
 
 class ConvLayer : public BaseLayer {
@@ -94,15 +92,16 @@ class ConvLayer : public BaseLayer {
   using BaseLayer::W;
 
  public:
-  ConvLayer(ConvMetaCommand* pMetaCommand, DxContext* pContext,
-            BaseLayer* ip, int C, int H, int W,
-            int size, int Cin, bool bias, bool relu, bool skipAdd = false);
+  ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand, DxContext* pContext,
+            BaseLayer* ip, int C, int H, int W, int size, int Cin, bool bias,
+            bool relu, bool skipAdd = false);
   ~ConvLayer();
 
   // returns space in uploadBuffer used for loading weights
   void LoadWeights(float* pfilter, float* pBias, DxContext *pContext);
-  void Eval(int N, dx_alloc_handle output, dx_alloc_handle input,
-            dx_alloc_handle input2, dx_command_stream cmdStream) override;
+  void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
+            DXAlloc scratch, DXAlloc scratc2,
+            ID3D12GraphicsCommandList5* pCL) override;
 
  private:
   const int c_input_;
@@ -111,35 +110,37 @@ class ConvLayer : public BaseLayer {
   const bool use_bias_;
   const bool skip_add_;
 
-  dx_alloc_handle biases_;
-  dx_alloc_handle weights_;
+  DXAlloc biases_;
+  DXAlloc weights_;
+  DXAlloc transformed_weights_; // After winograd transform.
 
-  ConvMetaCommand* meta_command_;
+  ShaderWrapper* shader_wrapper_;
+  GemmMetaCommand* meta_command_;
 };
 
 class FCLayer : public BaseLayer {
  public:
-  FCLayer(DxContext* pContext, BaseLayer* ip,
-          int C, int H, int W, bool bias, bool relu, bool tanh, bool softmax,
-          bool fp32Out);
+  FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip,
+          int C, int H, int W, bool bias, bool relu, bool tanh);
   ~FCLayer();
 
   // returns space in uploadBuffer used for loading weights
   void LoadWeights(float* cpuWeight, float* cpuBias, DxContext *pContext);
-  void Eval(int N, dx_alloc_handle output, dx_alloc_handle input,
-            dx_alloc_handle input2, dx_command_stream cmdStream) override;
+  void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
+            DXAlloc scratch, DXAlloc scratc2,
+            ID3D12GraphicsCommandList5* pCL) override;
 
  private:
   const bool use_bias_;
 
-  // Only one of the below 3 activation functions should be enabled.
+  // Only one of the below 2 activation functions should be enabled.
   const bool use_relu_;
   const bool use_tanh_;
-  const bool use_softmax_;
 
-  dx_alloc_handle biases_;
-  dx_alloc_handle weights_;
+  DXAlloc biases_;
+  DXAlloc weights_;
   ShaderWrapper* shader_wrapper_;
+  GemmMetaCommand* meta_command_;
 };
 
 }  // namespace dx_backend

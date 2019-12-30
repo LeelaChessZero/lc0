@@ -93,10 +93,10 @@ option('opencl',
        value: true,
        description: 'Enable OpenCL backend')
 
-option('directml',
+option('dx',
        type: 'boolean',
        value: true,
-       description: 'Enable DirectML backend')
+       description: 'Enable DirectX12 backend')
 
 option('tensorflow',
        type: 'boolean',
