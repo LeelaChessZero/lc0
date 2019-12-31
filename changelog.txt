@@ -1,4 +1,13 @@
-﻿v0.23.1 (2019-12-03)
+﻿v0.23.2 (2019-12-31)
+~~~~~~~
+
+* Fixed a bug where odd length openings had reversed training data results in
+selfplay.
+* Fixed a bug where zero length training games could be generated due to
+discard pile containing positions that were already considered end of game.
+* Add cudnn-auto backend.
+
+v0.23.1 (2019-12-03)
 ~~~~~~~
 
 * Fixed a bug with Lc0 crashing sometimes during match phase of training game
