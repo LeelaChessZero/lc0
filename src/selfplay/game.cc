@@ -262,10 +262,8 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
-  assert(!training_data_.empty());
-  bool black_to_move =
-      tree_[0]->GetPositionHistory().Starting().IsBlackToMove();
   for (auto chunk : training_data_) {
+    const bool black_to_move = chunk.side_to_move;
     if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;
     } else if (game_result_ == GameResult::BLACK_WON) {
@@ -274,7 +272,6 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
       chunk.result = 0;
     }
     writer->WriteChunk(chunk);
-    black_to_move = !black_to_move;
   }
 }
 
