@@ -58,8 +58,9 @@ const OptionId kUciChess960{
     "Castling moves are encoded as \"king takes rook\"."};
 const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
-const OptionId kInstantSyzygy{"syzygy-instant-mode", "SyzygyInstantMode",
-                        "Play direct from dtz without any search if able."};
+const OptionId kInstantSyzygy{
+    "syzygy-instant-mode", "SyzygyInstantMode",
+    "Play direct from dtz without any search if able."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
