@@ -58,6 +58,8 @@ const OptionId kUciChess960{
     "Castling moves are encoded as \"king takes rook\"."};
 const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
+const OptionId kInstantSyzygy{"syzygy-instant-mode", "SyzygyInstantMode",
+                        "Play direct from dtz without any search if able."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -91,6 +93,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<BoolOption>(kUciChess960) = false;
   options->Add<BoolOption>(kShowWDL) = false;
+  options->Add<BoolOption>(kInstantSyzygy) = false;
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
@@ -246,6 +249,25 @@ void EngineController::Go(const GoParams& params) {
   if (!options_.Get<bool>(kShowWDL.GetId())) {
     // Strip WDL information from the response.
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
+  }
+
+  if (options_.Get<bool>(kInstantSyzygy.GetId())) {
+    auto board = tree_->HeadPosition().GetBoard();
+    if (syzygy_tb_ && board.castlings().no_legal_castle() &&
+        (board.ours() | board.theirs()).count() <=
+            syzygy_tb_->max_cardinality()) {
+      MoveList root_moves;
+      if (syzygy_tb_->root_probe(tree_->HeadPosition(), true, &root_moves) ||
+          syzygy_tb_->root_probe_wdl(tree_->HeadPosition(), &root_moves)) {
+        Move candidate = root_moves[0];
+        if (tree_->IsBlackToMove()) {
+          candidate.Mirror();
+        }
+        BestMoveInfo info(candidate);
+        responder->OutputBestMove(&info);
+        return;
+      }
+    }
   }
 
   auto stopper =
