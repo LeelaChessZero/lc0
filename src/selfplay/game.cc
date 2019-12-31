@@ -206,7 +206,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                                          kMinimumAllowedVistsId.GetId())) {
         break;
       }
-      PositionHistory history_copy = tree_[0]->GetPositionHistory();
+      PositionHistory history_copy = tree_[idx]->GetPositionHistory();
       Move move_for_history = move;
       if (tree_[idx]->IsBlackToMove()) {
         move_for_history.Mirror();
