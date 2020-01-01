@@ -51,11 +51,13 @@ class ShaderWrapper {
   ID3D12PipelineState* winograd_input_transform_fp16_;
   ID3D12PipelineState* winograd_output_transform_fp16_;
   ID3D12PipelineState* conv_1x1_fp16_;
+  ID3D12PipelineState* policy_map_fp16_;
 
   ID3D12PipelineState* expand_planes_state_fp32_;
   ID3D12PipelineState* winograd_input_transform_fp32_;
   ID3D12PipelineState* winograd_output_transform_fp32_;
   ID3D12PipelineState* conv_1x1_fp32_;
+  ID3D12PipelineState* policy_map_fp32_;
 
   // Another simple shader (same shaders handles both fp32 and fp16) to add
   // bias, apply relu/tanh, etc.
@@ -106,6 +108,10 @@ class ShaderWrapper {
   void addVectors(ID3D12GraphicsCommandList5* command_list, DXAlloc C,
                   DXAlloc A, DXAlloc B, int c_size, int b_size, int a_size,
                   bool relu, bool tanh, bool fp16);
+
+  void PolicyMap(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
+                 DXAlloc input, DXAlloc weights, int N, int input_size,
+                 int output_size, int used_size, bool fp16);
 };
 
 }  // namespace dx_backend

@@ -39,7 +39,7 @@ static constexpr int kNumOutputPolicyPadded8 = ((kNumOutputPolicy - 1)/8 + 1)*8;
 static constexpr int kNumOutputValuePadded8 = 8;    
 
 struct InputsOutputsDx {
-  InputsOutputsDx(int maxBatchSize, DxContext* pContext, bool wdl);
+  InputsOutputsDx(int maxBatchSize, DxContext* pContext, bool wdl, bool conv_policy);
   ~InputsOutputsDx();
 
   // In default heap (video memory, mapped to support CPU writes too).
@@ -65,6 +65,7 @@ struct InputsOutputsDx {
   // Command list with recorded commands to run the network.
   // ID3D12GraphicsCommandList4* command_list_[1024];
   // ID3D12CommandAllocator* command_allocator_[1024];
+  const bool uses_policy_map_;
 };
 
 class DxNetworkComputation : public NetworkComputation {
@@ -148,7 +149,7 @@ class DxContext {
   // util functions
   void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc);
   void flushAndWait();
-  void scheduleUpload(DXAlloc alloc, void* data, size_t size);
+  void scheduleUpload(DXAlloc alloc, const void* data, size_t size);
   void dumpFp32(float* buf, int elements);
   void copyTensor(DXAlloc dst, DXAlloc src, int bytes);
   void dumpTensor(DXAlloc alloc, int size, bool fp16 = true,

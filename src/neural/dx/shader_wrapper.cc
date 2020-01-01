@@ -125,6 +125,15 @@ void ShaderWrapper::init(ID3D12Device* device) {
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&conv_1x1_fp32_)));
 
+  // policy map shaders.
+  state_desc.CS = {g_policy_map_shader_fp16, sizeof(g_policy_map_shader_fp16)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&policy_map_fp16_)));
+
+  state_desc.CS = {g_policy_map_shader_fp32, sizeof(g_policy_map_shader_fp32)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&policy_map_fp32_)));
+
   // Add vectors shader.
   state_desc.CS = {g_add_vectors_shader, sizeof(g_add_vectors_shader)};
   ReportDxErrors(device->CreateComputePipelineState(
@@ -284,6 +293,22 @@ void ShaderWrapper::addVectors(ID3D12GraphicsCommandList5* command_list,
   command_list->SetComputeRoot32BitConstants(kUavSlots, 6, &consts, 0);
 
   int blocks = DivUp(c_size, kAddVectorsBlockSize);
+  command_list->Dispatch(blocks, 1, 1);
+}
+
+void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
+                              DXAlloc output, DXAlloc input, DXAlloc weights,
+                              int N, int input_size, int output_size,
+                              int used_size, bool fp16) {
+  int consts[] = {N, input_size, used_size, output_size};
+  command_list->SetComputeRootSignature(root_sign_);
+  command_list->SetPipelineState(fp16 ? policy_map_fp16_ : policy_map_fp32_);
+  command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(2, weights.gpuVA);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, 4, &consts, 0);
+
+  int blocks = DivUp(N*used_size, kPolicyMapBlockSize);
   command_list->Dispatch(blocks, 1, 1);
 }
 

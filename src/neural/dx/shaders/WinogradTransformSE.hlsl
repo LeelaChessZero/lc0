@@ -111,44 +111,42 @@ void OutputTransformSE
 
 
     // Scale, add skip connection, perform relu, and write to output.
+    [unroll]
+    for (int h = 0; h < 8; h++)
     {
-        [unroll]
-        for (int y = 0; y < 8; y++)
-        {
-            int index = INDEX_NCHW(n, k, y, 0) / 4;
-            // can possibly use uint4 to write entire row at a time?
-            // couldn't find half2 to uint re-interpret functions :(
-            // same issue for reads.
-            float4 r1;
-            float4 r2;
-            r1.x = board[y][0];
-            r1.y = board[y][1];
-            r1.z = board[y][2];
-            r1.w = board[y][3];
-            r2.x = board[y][4];
-            r2.y = board[y][5];
-            r2.z = board[y][6];
-            r2.w = board[y][7];
+        int index = INDEX_NCHW(n, k, h, 0) / 4;
+        // can possibly use uint4 to write entire row at a time?
+        // couldn't find half2 to uint re-interpret functions :(
+        // same issue for reads.
+        float4 r1;
+        float4 r2;
+        r1.x = board[h][0];
+        r1.y = board[h][1];
+        r1.z = board[h][2];
+        r1.w = board[h][3];
+        r2.x = board[h][4];
+        r2.y = board[h][5];
+        r2.z = board[h][6];
+        r2.w = board[h][7];
 
-            // SE scale and bias
-            r1 = r1*S + B;
-            r2 = r2*S + B;
+        // SE scale and bias
+        r1 = r1*S + B;
+        r2 = r2*S + B;
 
-            // residual add
-            if (skipAdd) {
-                r1 += skipConnection[index];
-                r2 += skipConnection[index+1];
-            }
-
-            // relu
-            if (relu) {
-                float4 zeros = float4(0, 0, 0, 0);
-                r1 = max(r1, zeros);
-                r2 = max(r2, zeros);
-            }
-
-            output[index]     = r1;
-            output[index + 1] = r2;
+        // residual add
+        if (skipAdd) {
+            r1 += skipConnection[index];
+            r2 += skipConnection[index+1];
         }
+
+        // relu
+        if (relu) {
+            float4 zeros = float4(0, 0, 0, 0);
+            r1 = max(r1, zeros);
+            r2 = max(r2, zeros);
+        }
+
+        output[index]     = r1;
+        output[index + 1] = r2;
     }
 }

@@ -154,5 +154,19 @@ class FCLayer : public BaseLayer {
   GemmMetaCommand* meta_command_;
 };
 
+class PolicyMapLayer : public BaseLayer {
+ public:
+  PolicyMapLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
+                 int W, int usedSize);
+  ~PolicyMapLayer();
+  void LoadWeights(const short* cpuWeights);
+  void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
+            DXAlloc scratch, DXAlloc scratc2,
+            ID3D12GraphicsCommandList5* pCL) override;
+ private:
+  const int used_size_;
+  DXAlloc weights_;
+};
+
 }  // namespace dx_backend
-}  // namespace lczero
+}  // namespace dx_backend

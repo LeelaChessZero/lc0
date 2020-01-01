@@ -26,3 +26,5 @@
 #define kConv1x1BlockSize 64
 
 #define kAddVectorsBlockSize 512
+
+#define kPolicyMapBlockSize 256

@@ -183,7 +183,7 @@ BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext,
 
 ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand,
                      DxContext* pContext, BaseLayer* ip, int C, int H, int W,
-                     int filter, int Cin, bool relu, bool bias, bool skipAdd,
+                     int filter, int Cin, bool bias, bool relu, bool skipAdd,
                      bool se, int se_k)
     : BaseLayer(C, H, W, ip, pContext, fp16),
       meta_command_(pMetaCommand),
@@ -390,8 +390,6 @@ void ConvLayer::LoadSEWeights(float* w1, float* b1, float* w2, float* b2) {
   }
 }
 
-bool firstTime = false;
-
 void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                      DXAlloc scratch, DXAlloc scratch2,
                      ID3D12GraphicsCommandList5* command_list) {
@@ -409,30 +407,17 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
 
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-    if (firstTime) {
-      printf("\nThe input");
-      dx_context_->dumpTensor(input, 2 * 112 * 8 * 8, fp16_);
-
-      printf("\nAfter input transform");
-      dx_context_->dumpTensor(scratch, 2 * 112 * 12 * 12, fp16_);
-
-      // printf("\nAfter gemm transform");
-      // dx_context_->dumpTensor(scratch2, 2 * 256 * 12*12, fp16_);
-
-      firstTime = false;
-    }
-
     // 2. Gemm (scratch2 -> scratch)
     meta_command_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
                                command_list);
 
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-
     // 3. Output transform (scratch -> output)
     shader_wrapper_->outputTransform(
         command_list, output, scratch2, input2, biases_, w1_, b1_,
         w2_, b2_, N, C, use_relu_, use_bias_, skip_add_, has_se_, se_k_, fp16_);
+
 
   } else if (filter_size_ == 1) {
     shader_wrapper_->conv1x1(command_list, output, input, weights_, biases_, N,
@@ -528,6 +513,38 @@ FCLayer::~FCLayer() {
   if (weights_.pResource) weights_.pResource->Release();
   if (biases_.pResource) biases_.pResource->Release();
 }
+
+
+PolicyMapLayer::PolicyMapLayer(bool fp16, DxContext* pContext, BaseLayer* ip,
+                               int C, int H, int W, int usedSize)
+    : BaseLayer(C, H, W, ip, pContext, fp16),
+      used_size_(usedSize) {
+  size_t weight_size = sizeof(int) * used_size_;
+  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_);
+}
+
+void PolicyMapLayer::LoadWeights(const short* cpuWeights) {
+  // convert from short to int (as HLSL might have trouble reading short)
+  std::vector<int> temp(used_size_);
+  for (int i = 0; i < used_size_; i++) temp[i] = (int)cpuWeights[i];
+  dx_context_->scheduleUpload(weights_, temp.data(), sizeof(int) * used_size_);
+}
+
+void PolicyMapLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
+                          DXAlloc scratch, DXAlloc scratch2,
+                          ID3D12GraphicsCommandList5* command_list) {
+  int inputSize =
+      this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
+  int outputSize = this->C * this->H * this->W;
+  dx_context_->getShaderWrapper()->PolicyMap(command_list, output, input,
+                                             weights_, N, inputSize, outputSize,
+                                             used_size_, fp16_);
+}
+
+PolicyMapLayer::~PolicyMapLayer() {
+  if (weights_.pResource) weights_.pResource->Release();
+}
+
 
 void DxError(HRESULT status, const char* file, const int& line) {
   if (FAILED(status)) {

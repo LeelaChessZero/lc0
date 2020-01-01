@@ -30,8 +30,9 @@
 #include "shader_wrapper.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
-
+#include "neural/shared/policy_map.h"
 #include "network_dx.h"
+
 
 #define DEBUG_RAW_NPS
 
@@ -273,7 +274,7 @@ void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc) {
   }
 }
 
-void DxContext::scheduleUpload(DXAlloc alloc, void* data, size_t size) {
+void DxContext::scheduleUpload(DXAlloc alloc, const void* data, size_t size) {
   // Make sure enough space is available in the upload scratch buffer
   assert(size <= scratch_size_);
   if (upload_scratch_mem_.offset + size > scratch_size_) flushAndWait();
@@ -335,7 +336,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   auto pol_channels = weights.policy.biases.size();
   if (has_conv_policy_) {
     policy_conv_winograd_gemm_ = new GemmMetaCommand(
-        &dx_context_, 0, kNumFilters, pol_channels, 36, fp16_, false, false);
+        &dx_context_, 0, pol_channels, kNumFilters, 36, fp16_, false, false);
   }
 
   // input
@@ -394,13 +395,17 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     // conv2 has different no. of output filters (pol_channels). No relu.
     auto conv2 = std::make_unique<ConvLayer>(
         fp16_, policy_conv_winograd_gemm_, &dx_context_, getLastLayer(),
-        pol_channels, 8, 8, 3, kNumFilters, false, true);
+        pol_channels, 8, 8, 3, kNumFilters, true, false);
 
     conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                        &dx_context_);
     network_.emplace_back(std::move(conv2));
 
-    // Policy map layer, evaluated on CPU
+    // Policy map layer
+    auto policyMap = std::make_unique<PolicyMapLayer>(fp16_, &dx_context_, getLastLayer(),
+                                         kNumOutputPolicy, 1, 1, 73 * 8 * 8);
+    policyMap->LoadWeights(kConvPolicyMap);
+    network_.emplace_back(std::move(policyMap));
 
   } else {
     // 1x1 convolution, pol_channels output filters
@@ -471,9 +476,6 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
            weights.ip2_val_w.size() * sizeof(float));
     FCVal2->LoadWeights(tempWeight.data(), tempBias.data(), &dx_context_);
     network_.emplace_back(std::move(FCVal2));
-    if (has_wdl_) {
-      // Softmax layer on CPU
-    }
   }
   value_out_ = getLastLayer();
 
@@ -513,9 +515,9 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
   dx_context_.getCommandList()->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-  // Ankan - for testing!
-  //printf("\nAfter expand planes");
-  //dx_context_.dumpTensor(tensor_mem_[0], 1024, fp16_);
+  // Debug dumping example.
+  // printf("\nAfter expand planes");
+  // dx_context_.dumpTensor(tensor_mem_[0], 1024, fp16_);
 
   int l = 0;
   // Input Conv
@@ -525,9 +527,6 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
 
   dx_context_.getCommandList()->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
-
-  //printf("\nAfter input conv");
-  //dx_context_.dumpTensor(tensor_mem_[2], 1024, fp16_);
 
   // Residual tower.
   for (int block = 0; block < numBlocks_; block++) {
@@ -546,28 +545,13 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
 
     dx_context_.getCommandList()->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
-
-      // Ankan - test!
-    /*
-      if (block == 0) {
-        printf("\nAfter conv1");
-        dx_context_.dumpTensor(tensor_mem_[0], 1024, fp16_);
-
-        printf("\nAfter conv2");
-        dx_context_.dumpTensor(tensor_mem_[2], 1024, fp16_);
-
-        exit(0);
-      }
-    */
   }
-
-  // printf("\nAfter residual tower");
-  // dx_context_.dumpTensor(tensor_mem_[2], 1024, fp16_);
 
   //-----------------------------------///---------------------------------------
 
   // Policy head.
   if (has_conv_policy_) {
+
     // Policy conv1.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3],
@@ -576,13 +560,19 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
     dx_context_.getCommandList()->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-    // Policy conv2 (writes directly to system memory).
-    network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[0],
-                        DXAlloc(), tensor_mem_[1], tensor_mem_[3],
+
+    // Policy conv2
+    network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
+                        tensor_mem_[1], tensor_mem_[3],
                         dx_context_.getCommandList());
 
-    // TODO! Policy map layer - run on CPU!
-    // read op_policy_mem_, write to op_policy_mem_final_
+    dx_context_.getCommandList()->ResourceBarrier(
+        1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+
+    // Policy Map layer  (writes directly to system memory).
+    network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[1],
+                        DXAlloc(), DXAlloc(), DXAlloc(),
+                        dx_context_.getCommandList());
   } else {
     // Policy conv.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
@@ -592,16 +582,10 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
     dx_context_.getCommandList()->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-    // printf("\nAfter policy conv");
-    // dx_context_.dumpTensor(tensor_mem_[0], 1024, fp16_);
-
     // Policy FC (writes directly to system memory).
     network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[0],
                         DXAlloc(), tensor_mem_[1], tensor_mem_[3],
                         dx_context_.getCommandList());
-
-    //dx_context_.dumpTensor(io->op_policy_mem_gpu_, 2048*batchSize, fp16_);
-
   }
 
   // Value head.
@@ -614,9 +598,6 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
   dx_context_.getCommandList()->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-  // printf("\nAfter value conv");
-  // dx_context_.dumpTensor(tensor_mem_[0], 1024, fp16_);
-
   // value FC1.
   network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[2], tensor_mem_[3],
@@ -625,27 +606,10 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
   dx_context_.getCommandList()->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-  // printf("\nAfter value fc1");
-  // dx_context_.dumpTensor(tensor_mem_[1], 1024, fp16_);
-
   // value FC2.
   network_[l++]->Eval(batchSize, io->op_value_mem_gpu_, tensor_mem_[1],
                       DXAlloc(), tensor_mem_[2], tensor_mem_[3],
                       dx_context_.getCommandList());
-  /*
-  if (batchSize > 1)
-  {
-   printf("\nAfter value fc2, batch size of %d", batchSize);
-   dx_context_.dumpTensor(io->op_value_mem_gpu_, 128, fp16_);
-   exit(0);
-  }
-  */
-
-  if (has_wdl_) {
-    // Value softmax
-    // TODO! Need to do softmax on CPU (in place over io->op_value_mem_ to
-    // io->op_value_mem_final_)
-  }
 
   // TODO: measure time from start to this point to get an idea of CPU side
   // overhead in recording command list
@@ -656,23 +620,21 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
   dx_context_.flushAndWait();
   lock_.unlock();
 
-  // Do the value head softmax and policy map layers on CPU.
-  // Can do it outside the lock to get some more parallelism.
+  // Do some simple post-processing operations on CPU:
+  // - un-padding of policy and value heads.
+  // - value head softmax (for wdl enabled nets)
+  // We do them outside the lock to get some more parallelism.
   int val_vector_size = has_wdl_ ? 3 : 1;
   if (fp16_) {
-
     // Policy:
-    if (has_conv_policy_) {
-      // run policy map layer
-    } else {
-      // Un-pad policy output, and convert to fp32.
+    // Un-pad policy output, and convert to fp32.
+    if (!has_conv_policy_) {
       dx_half* padded_pol_fp16 = (dx_half*)io->op_policy_mem_;
       for (int n = 0; n < batchSize; n++)
         for (int i = 0; i < kNumOutputPolicy; i++)
           io->op_policy_mem_final_[n * kNumOutputPolicy + i] =
               FP16toFP32(padded_pol_fp16[n * kNumOutputPolicyPadded8 + i]);
     }
-
     // Value:
     // Un-pad value output, converting it to fp32.
     dx_half* padded_val_fp16 = (dx_half*)io->op_value_mem_;
@@ -683,10 +645,8 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
 
   } else {
     // Policy:
-    if (has_conv_policy_) {
-      // Run policy map layer.
-    } else {
-      // Un-pad policy output.
+    // Un-pad policy output.
+    if (!has_conv_policy_) {
       for (int i = 0; i < batchSize; i++)
         memcpy(io->op_policy_mem_final_ + kNumOutputPolicy * i,
                io->op_policy_mem_ + kNumOutputPolicyPadded8 * i,
@@ -701,19 +661,26 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
              val_vector_size * sizeof(float));
   }
 
-  /*
-  if (batchSize > 1) {
-    // Ankan - test!
-    printf("\nValue out: ");
-    dx_context_.dumpCpuTensor(io->op_value_mem_final_, batchSize, false);
+  // Softmax on value head for wdl enabled networks.
+  if (has_wdl_) {
+    for (int i = 0; i < batchSize; i++) {
+      float w = io->op_value_mem_final_[i * 3 + 0];
+      float d = io->op_value_mem_final_[i * 3 + 1];
+      float l = io->op_value_mem_final_[i * 3 + 2];
 
-    //printf("\npolicy out: ");
-    //dx_context_.dumpCpuTensor(io->op_policy_mem_final_, batchSize * kNumOutputPolicy, false);
+      w = exp(w);
+      d = exp(d);
+      l = exp(l);
+      float S = w + d + l;
+      w /= S;
+      d /= S;
+      l /= S;
 
-    exit(0);
+      io->op_value_mem_final_[i * 3 + 0] = w;
+      io->op_value_mem_final_[i * 3 + 1] = d;
+      io->op_value_mem_final_[i * 3 + 2] = l;
+    }
   }
-  */
-
 
 #ifdef DEBUG_RAW_NPS
   const int reportingCalls = 100;
@@ -753,7 +720,6 @@ DxNetwork::~DxNetwork() {
 }
 
 std::unique_ptr<NetworkComputation> DxNetwork::NewComputation() {
-  // TODO: figure out if we need to set correct GPU id here ?
   return std::make_unique<DxNetworkComputation>(this, has_wdl_);
 }
 
@@ -761,7 +727,7 @@ std::unique_ptr<InputsOutputsDx> DxNetwork::GetInputsOutputs() {
   std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
   if (free_inputs_outputs_.empty()) {
     return std::make_unique<InputsOutputsDx>(max_batch_size_, &dx_context_,
-                                             has_wdl_);
+                                             has_wdl_, has_conv_policy_);
   } else {
     std::unique_ptr<InputsOutputsDx> resource =
         std::move(free_inputs_outputs_.front());
@@ -806,7 +772,8 @@ void DxNetworkComputation::ComputeBlocking() {
 }
 
 InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
-                                 bool wdl) {
+                                 bool wdl, bool policy_map)
+    : uses_policy_map_(policy_map) {
   // CPU accesses on Default heap doesn't work.
   // GPU accesses on Upload heap works.
   pContext->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
@@ -836,7 +803,11 @@ InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
   ReportDxErrors(
       op_value_mem_gpu_.pResource->Map(0, nullptr, (void**)&op_value_mem_));
 
-  op_policy_mem_final_ = new float[maxBatchSize * kNumOutputPolicy];
+  // When policy map is enabled, GPU writes directly to the final policy output.
+  if (uses_policy_map_)
+    op_policy_mem_final_ = op_policy_mem_;
+  else
+    op_policy_mem_final_ = new float[maxBatchSize * kNumOutputPolicy];
   op_value_mem_final_ = new float[maxBatchSize * (wdl ? 3 : 1)];
 }
 
@@ -851,7 +822,7 @@ InputsOutputsDx::~InputsOutputsDx() {
   op_policy_mem_gpu_.pResource->Release();
   op_value_mem_gpu_.pResource->Release();
 
-  delete[] op_policy_mem_final_;
+  if (!uses_policy_map_) delete[] op_policy_mem_final_;
   delete[] op_value_mem_final_;
 }
 
