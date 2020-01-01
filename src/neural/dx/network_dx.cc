@@ -361,18 +361,21 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
     network_.emplace_back(std::move(conv1));
 
-    if (has_se_)
-      throw Exception(
-          "SE not yet supported! Ankan, figure out a way to write fused "
-          "kernel!");
+    int se_k = 0;
+    if (has_se_) se_k = weights.residual[block].se.b1.size();
 
     auto conv2 = std::make_unique<ConvLayer>(
         fp16_, residual_block_winograd_gemm_, &dx_context_, getLastLayer(),
-        kNumFilters, 8, 8, 3, kNumFilters, true, true, true);
+        kNumFilters, 8, 8, 3, kNumFilters, true, true, true, has_se_, se_k);
 
     conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                        &weights.residual[block].conv2.biases[0], &dx_context_);
 
+    if (has_se_) {
+      conv2->LoadSEWeights(
+          &weights.residual[block].se.w1[0], &weights.residual[block].se.b1[0],
+          &weights.residual[block].se.w2[0], &weights.residual[block].se.b2[0]);
+    }
     network_.emplace_back(std::move(conv2));
   }
 
@@ -511,8 +514,8 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
   // Ankan - for testing!
-  // printf("\nAfter expand planes");
-  // dx_context_.dumpTensor(tensor_mem_[0], 64 * 112, fp16_);
+  //printf("\nAfter expand planes");
+  //dx_context_.dumpTensor(tensor_mem_[0], 1024, fp16_);
 
   int l = 0;
   // Input Conv
@@ -523,8 +526,8 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
   dx_context_.getCommandList()->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-  // printf("\nAfter input conv");
-  // dx_context_.dumpTensor(tensor_mem_[2], 1024, fp16_);
+  //printf("\nAfter input conv");
+  //dx_context_.dumpTensor(tensor_mem_[2], 1024, fp16_);
 
   // Residual tower.
   for (int block = 0; block < numBlocks_; block++) {
@@ -536,8 +539,6 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
     dx_context_.getCommandList()->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-    // TODO! handle SE
-
     // conv2
     network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                         tensor_mem_[2], tensor_mem_[1], tensor_mem_[3],
@@ -546,6 +547,7 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
     dx_context_.getCommandList()->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
+      // Ankan - test!
     /*
       if (block == 0) {
         printf("\nAfter conv1");
@@ -553,6 +555,8 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
 
         printf("\nAfter conv2");
         dx_context_.dumpTensor(tensor_mem_[2], 1024, fp16_);
+
+        exit(0);
       }
     */
   }

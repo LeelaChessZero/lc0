@@ -183,7 +183,8 @@ BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext,
 
 ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand,
                      DxContext* pContext, BaseLayer* ip, int C, int H, int W,
-                     int filter, int Cin, bool relu, bool bias, bool skipAdd)
+                     int filter, int Cin, bool relu, bool bias, bool skipAdd,
+                     bool se, int se_k)
     : BaseLayer(C, H, W, ip, pContext, fp16),
       meta_command_(pMetaCommand),
       c_input_(Cin),
@@ -191,9 +192,15 @@ ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand,
       use_relu_(relu),
       use_bias_(bias),
       skip_add_(skipAdd),
+      has_se_(se),
+      se_k_(se_k),
       weights_(),
       transformed_weights_(),
-      biases_() {
+      biases_(),
+      w1_(),
+      w2_(),
+      b1_(),
+      b2_() {
   size_t element_size = fp16 ? sizeof(dx_half) : sizeof(float);
   size_t weight_size = element_size * C * Cin * filter * filter;
   size_t blas_size = element_size * C;
@@ -209,6 +216,25 @@ ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand,
   if (use_bias_) {
     pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_);
   }
+
+  if (has_se_)
+  {
+    const size_t num_weights1 = C * se_k_;
+    const size_t num_weights2 = num_weights1 * 2;
+    const size_t num_biases1 = se_k_;
+    const size_t num_biases2 = 2 * C;
+
+    const size_t weight_size1 = element_size * num_weights1;
+    const size_t weight_size2 = element_size * num_weights2;
+    const size_t biases_size1 = element_size * num_biases1;
+    const size_t biases_size2 = element_size * num_biases2;
+
+    pContext->CreateAlloc(weight_size1, D3D12_HEAP_TYPE_DEFAULT, w1_);
+    pContext->CreateAlloc(weight_size2, D3D12_HEAP_TYPE_DEFAULT, w2_);
+    pContext->CreateAlloc(biases_size1, D3D12_HEAP_TYPE_DEFAULT, b1_);
+    pContext->CreateAlloc(biases_size2, D3D12_HEAP_TYPE_DEFAULT, b2_);
+  }
+
   shader_wrapper_ = pContext->getShaderWrapper();
 }
 
@@ -311,6 +337,59 @@ void ConvLayer::LoadWeights(float* pfilter, float* pBias, DxContext* pContext) {
   }
 }
 
+void cpuTranspose(float* op, float* ip, int rows, int cols) {
+  for (int i = 0; i < rows; i++)
+    for (int j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
+}
+
+void ConvLayer::LoadSEWeights(float* w1, float* b1, float* w2, float* b2) {
+  size_t element_size = fp16_ ? sizeof(dx_half) : sizeof(float);
+  const size_t num_weights1 = C * se_k_;
+  const size_t num_weights2 = num_weights1 * 2;
+  const size_t weight_size1 = element_size * num_weights1;
+  const size_t weight_size2 = element_size * num_weights2;
+
+  const size_t num_biases1 = se_k_;
+  const size_t biases_size1 = element_size * num_biases1;
+  const size_t num_biases2 = 2*C;
+  const size_t biases_size2 = element_size * num_biases2;
+
+  // The shader uses transposed weight matrices.
+
+  std::vector<float> temp_transposed(num_weights2);
+  std::vector<dx_half> temp_half(num_weights2);
+
+  cpuTranspose(temp_transposed.data(), w1, se_k_, C);
+  if (fp16_) {
+    copyFloatToHalf(temp_half.data(), temp_transposed.data(), num_weights1);
+    dx_context_->scheduleUpload(w1_, temp_half.data(), weight_size1);
+  } else {
+    dx_context_->scheduleUpload(w1_, temp_transposed.data(), weight_size1);
+  }
+
+  cpuTranspose(temp_transposed.data(), w2, 2*C, se_k_);
+  if (fp16_) {
+    copyFloatToHalf(temp_half.data(), temp_transposed.data(), num_weights2);
+    dx_context_->scheduleUpload(w2_, temp_half.data(), weight_size2);
+  } else {
+    dx_context_->scheduleUpload(w2_, temp_transposed.data(), weight_size2);
+  }
+
+  if (fp16_) {
+    copyFloatToHalf(temp_half.data(), b1, num_biases1);
+    dx_context_->scheduleUpload(b1_, temp_half.data(), biases_size1);
+  } else {
+    dx_context_->scheduleUpload(b1_, b1, biases_size1);
+  }
+
+  if (fp16_) {
+    copyFloatToHalf(temp_half.data(), b2, num_biases2);
+    dx_context_->scheduleUpload(b2_, temp_half.data(), biases_size2);
+  } else {
+    dx_context_->scheduleUpload(b2_, b2, biases_size2);
+  }
+}
+
 bool firstTime = false;
 
 void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
@@ -323,17 +402,6 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     // multiple of 8).
     // TODO: figure out why padding up by 4 is needed (instead of 2!)
     N = ((N + 3) / 4) * 4;
-
-    if (firstTime) {
-      // Ankan - upload garbage to see if it matters?
-      dx_half testData[112 * 64];
-      memset(testData, 0x0, sizeof(testData));
-      for (int i = 0; i < 112 * 64; i++) testData[i] = FP32toFP16(0.9f);
-      DXAlloc testAlloc = input;
-      testAlloc.offset += sizeof(testData);
-      testAlloc.gpuVA += sizeof(testData);
-      dx_context_->scheduleUpload(testAlloc, testData, sizeof(testData));
-    }
 
     // 1. Input transform (input->scratch2)
     shader_wrapper_->inputTransform(command_list, scratch, input, N, c_input_,
@@ -362,10 +430,9 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
 
 
     // 3. Output transform (scratch -> output)
-    // TODO: handle SE!
     shader_wrapper_->outputTransform(
-        command_list, output, scratch2, input2, biases_, scratch, scratch,
-        scratch, scratch, N, C, use_relu_, use_bias_, skip_add_, false, fp16_);
+        command_list, output, scratch2, input2, biases_, w1_, b1_,
+        w2_, b2_, N, C, use_relu_, use_bias_, skip_add_, has_se_, se_k_, fp16_);
 
   } else if (filter_size_ == 1) {
     shader_wrapper_->conv1x1(command_list, output, input, weights_, biases_, N,
@@ -379,6 +446,11 @@ ConvLayer::~ConvLayer() {
   if (weights_.pResource) weights_.pResource->Release();
   if (biases_.pResource) biases_.pResource->Release();
   if (transformed_weights_.pResource) transformed_weights_.pResource->Release();
+
+  if (w1_.pResource) w1_.pResource->Release();
+  if (w2_.pResource) w2_.pResource->Release();
+  if (b1_.pResource) b1_.pResource->Release();
+  if (b2_.pResource) b2_.pResource->Release();
 }
 
 FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,

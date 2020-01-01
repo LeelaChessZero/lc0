@@ -22,9 +22,25 @@
 #include "neural/network.h"
 #include "shaders/shader_shared.h"
 #include "shaders/shaders.h"
+#include "shaders/shaders_se.h"
 
 namespace lczero {
 namespace dx_backend {
+
+// Helper macros to reduce copy-paste.
+#define CREATE_SE_PSO(datatype, channels)                            \
+  state_desc.CS = {                                                  \
+      g_output_transform_shader_##datatype##_se_##channels,          \
+      sizeof(g_output_transform_shader_##datatype##_se_##channels)}; \
+  ReportDxErrors(device->CreateComputePipelineState(                 \
+      &state_desc,                                                   \
+      IID_PPV_ARGS(                                                  \
+          &winograd_output_transform_##datatype##_se_##channels##_))); \
+
+#define SET_SE_PSO(channels)                                 \
+  command_list->SetPipelineState(                            \
+      fp16 ? winograd_output_transform_fp16_se_##channels##_ \
+           : winograd_output_transform_fp32_se_##channels##_); \
 
 void ShaderWrapper::init(ID3D12Device* device) {
   // Create root signature - common for all shaders.
@@ -113,6 +129,25 @@ void ShaderWrapper::init(ID3D12Device* device) {
   state_desc.CS = {g_add_vectors_shader, sizeof(g_add_vectors_shader)};
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&add_vectors_)));
+
+  // Various output-transform fused with SE shaders
+  CREATE_SE_PSO(fp16, 128)
+  CREATE_SE_PSO(fp16, 256)
+  CREATE_SE_PSO(fp16, 320)
+  CREATE_SE_PSO(fp16, 384)
+  CREATE_SE_PSO(fp16, 512)
+  CREATE_SE_PSO(fp16, 640)
+  CREATE_SE_PSO(fp16, 768)
+  CREATE_SE_PSO(fp16, 1024)
+
+  CREATE_SE_PSO(fp32, 128)
+  CREATE_SE_PSO(fp32, 256)
+  CREATE_SE_PSO(fp32, 320)
+  CREATE_SE_PSO(fp32, 384)
+  CREATE_SE_PSO(fp32, 512)
+  CREATE_SE_PSO(fp32, 640)
+  CREATE_SE_PSO(fp32, 768)
+  CREATE_SE_PSO(fp32, 1024)
 }
 
 void ShaderWrapper::destroy() {
@@ -168,11 +203,9 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
                                     DXAlloc se_w1, DXAlloc se_b1, DXAlloc se_w2,
                                     DXAlloc se_b2, int N, int K, bool relu,
                                     bool bias_add, bool skip_add, bool fused_se,
-                                    bool fp16) {
-  int consts[] = {N, K, relu, bias_add, skip_add, fused_se};
+                                    int se_k, bool fp16) {
+  int consts[] = {N, K, relu, bias_add, skip_add, fused_se, se_k};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(fp16 ? winograd_output_transform_fp16_
-                                      : winograd_output_transform_fp32_);
   command_list->SetComputeRootUnorderedAccessView(0, transformed_output.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(2, bias.gpuVA);
@@ -181,9 +214,36 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
   command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpuVA);
-  command_list->SetComputeRoot32BitConstants(kUavSlots, 6, &consts, 0);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, 7, &consts, 0);
 
-  int blocks = DivUp(N * K, kWinogradTransformShaderBlockSize);
+  int blocks = 0;
+  if (fused_se) {
+    blocks = N;
+    if (K <= 128)
+      SET_SE_PSO(128)
+    else if (K <= 256)
+      SET_SE_PSO(256)
+    else if (K <= 320)
+      SET_SE_PSO(320)
+    else if (K <= 384)
+      SET_SE_PSO(384)
+    else if (K <= 512)
+      SET_SE_PSO(512)
+    else if (K <= 640)
+      SET_SE_PSO(640)
+    else if (K <= 768)
+      SET_SE_PSO(768)
+    else if (K <= 1024)
+      SET_SE_PSO(1024)
+    else
+      throw Exception("Unsupported channel count for SE");
+
+  } else {
+    blocks = DivUp(N * K, kWinogradTransformShaderBlockSize);
+    command_list->SetPipelineState(fp16 ? winograd_output_transform_fp16_
+                                        : winograd_output_transform_fp32_);
+  }
+
   command_list->Dispatch(blocks, 1, 1);
 }
 

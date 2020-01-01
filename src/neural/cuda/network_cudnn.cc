@@ -485,7 +485,7 @@ class CudnnNetwork : public Network {
     }
 
     // debug code example
-    // dumpTensor(tensor_mem_[0], 64*112, "After expand Planes", fp16);
+    // dumpTensor(tensor_mem_[0], 1024, "After expand Planes", fp16);
 
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;

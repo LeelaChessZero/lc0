@@ -61,6 +61,25 @@ class ShaderWrapper {
   // bias, apply relu/tanh, etc.
   ID3D12PipelineState* add_vectors_;
 
+  // Fused SE shaders for various standard channel counts
+  ID3D12PipelineState* winograd_output_transform_fp16_se_128_;
+  ID3D12PipelineState* winograd_output_transform_fp16_se_256_;
+  ID3D12PipelineState* winograd_output_transform_fp16_se_320_;
+  ID3D12PipelineState* winograd_output_transform_fp16_se_384_;
+  ID3D12PipelineState* winograd_output_transform_fp16_se_512_;
+  ID3D12PipelineState* winograd_output_transform_fp16_se_640_;
+  ID3D12PipelineState* winograd_output_transform_fp16_se_768_;
+  ID3D12PipelineState* winograd_output_transform_fp16_se_1024_;
+
+  ID3D12PipelineState* winograd_output_transform_fp32_se_128_;
+  ID3D12PipelineState* winograd_output_transform_fp32_se_256_;
+  ID3D12PipelineState* winograd_output_transform_fp32_se_320_;
+  ID3D12PipelineState* winograd_output_transform_fp32_se_384_;
+  ID3D12PipelineState* winograd_output_transform_fp32_se_512_;
+  ID3D12PipelineState* winograd_output_transform_fp32_se_640_;
+  ID3D12PipelineState* winograd_output_transform_fp32_se_768_;
+  ID3D12PipelineState* winograd_output_transform_fp32_se_1024_;
+
  public:
   void init(ID3D12Device* pDevice);
   void destroy();
@@ -77,7 +96,8 @@ class ShaderWrapper {
                        DXAlloc transformed_output, DXAlloc skip_connection,
                        DXAlloc bias, DXAlloc se_w1, DXAlloc se_b1,
                        DXAlloc se_w2, DXAlloc se_b2, int N, int K, bool relu,
-                       bool bias_add, bool skip_add, bool fused_se, bool fp16);
+                       bool bias_add, bool skip_add, bool fused_se, int se_k,
+                       bool fp16);
 
   void conv1x1(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
                DXAlloc input, DXAlloc weight, DXAlloc bias, int N, int C, int K,

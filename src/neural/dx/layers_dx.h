@@ -53,16 +53,17 @@ class BaseLayer {
   bool fp16_;
 
   // Output tensor dimensions.
-  int C;  
+  int C;
   int H;
   int W;
 };
 
-// Holds Metacommand objects and their scratch space for all allowed batch sizes.
+// Holds Metacommand objects and their scratch space for all allowed batch
+// sizes.
 class GemmMetaCommand {
  private:
   // Need to create a Metacommand object for each batch size unfortunately!
-  // Some hw vendors don't support arbitary sizes anyway, so we create only 
+  // Some hw vendors don't support arbitary sizes anyway, so we create only
   // multiples of 8 in no. of rows (when M is 0).
 
   static constexpr int kMetacommandGranulity = 8;
@@ -74,6 +75,7 @@ class GemmMetaCommand {
   DXAlloc scratch_data_temporary_[kMaxMetacommands];
 
   bool rows_known_;
+
  public:
   GemmMetaCommand(DxContext* pContext, int M, int N, int K, int gemm_batch,
                   bool fp16, bool ATranspose, bool BTranspose);
@@ -94,11 +96,12 @@ class ConvLayer : public BaseLayer {
  public:
   ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand, DxContext* pContext,
             BaseLayer* ip, int C, int H, int W, int size, int Cin, bool bias,
-            bool relu, bool skipAdd = false);
+            bool relu, bool skipAdd = false, bool se = false, int se_k = 0);
   ~ConvLayer();
 
   // returns space in uploadBuffer used for loading weights
-  void LoadWeights(float* pfilter, float* pBias, DxContext *pContext);
+  void LoadWeights(float* pfilter, float* pBias, DxContext* pContext);
+  void LoadSEWeights(float* w1, float* b1, float* w2, float* b2);
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
             DXAlloc scratch, DXAlloc scratc2,
             ID3D12GraphicsCommandList5* pCL) override;
@@ -109,10 +112,18 @@ class ConvLayer : public BaseLayer {
   const bool use_relu_;
   const bool use_bias_;
   const bool skip_add_;
+  const bool has_se_;
+  const int se_k_;
 
   DXAlloc biases_;
   DXAlloc weights_;
-  DXAlloc transformed_weights_; // After winograd transform.
+  DXAlloc transformed_weights_;  // After winograd transform.
+
+  // Weights and Biases for (optional) SE.
+  DXAlloc w1_;
+  DXAlloc w2_;
+  DXAlloc b1_;
+  DXAlloc b2_;
 
   ShaderWrapper* shader_wrapper_;
   GemmMetaCommand* meta_command_;
@@ -120,12 +131,12 @@ class ConvLayer : public BaseLayer {
 
 class FCLayer : public BaseLayer {
  public:
-  FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip,
-          int C, int H, int W, bool bias, bool relu, bool tanh);
+  FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H, int W,
+          bool bias, bool relu, bool tanh);
   ~FCLayer();
 
   // returns space in uploadBuffer used for loading weights
-  void LoadWeights(float* cpuWeight, float* cpuBias, DxContext *pContext);
+  void LoadWeights(float* cpuWeight, float* cpuBias, DxContext* pContext);
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
             DXAlloc scratch, DXAlloc scratc2,
             ID3D12GraphicsCommandList5* pCL) override;
