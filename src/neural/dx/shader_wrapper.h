@@ -59,6 +59,11 @@ class ShaderWrapper {
   ID3D12PipelineState* conv_1x1_fp32_;
   ID3D12PipelineState* policy_map_fp32_;
 
+  // Gemm shaders (used when gemm Metacommand isn't supported by the HW vendor)
+  ID3D12PipelineState* gemm_fp16_;
+  ID3D12PipelineState* gemm_fp32_;
+
+
   // Another simple shader (same shaders handles both fp32 and fp16) to add
   // bias, apply relu/tanh, etc.
   ID3D12PipelineState* add_vectors_;
@@ -112,6 +117,10 @@ class ShaderWrapper {
   void PolicyMap(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
                  DXAlloc input, DXAlloc weights, int N, int input_size,
                  int output_size, int used_size, bool fp16);
+
+  void MatrixMultiply(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
+                      DXAlloc A, DXAlloc B, int M, int N, int K, int batch,
+                      bool fp16);
 };
 
 }  // namespace dx_backend

@@ -28,3 +28,16 @@
 #define kAddVectorsBlockSize 512
 
 #define kPolicyMapBlockSize 256
+
+
+// Constants for GEMM shader.
+#define BLOCK_WIDTH 16
+#define BLOCK_HEIGHT 16
+
+#define ELEMENTS_PER_THREAD_X 8
+#define ELEMENTS_PER_THREAD_Y 8
+
+#define ELEMENTS_PER_BLOCK_X (ELEMENTS_PER_THREAD_X * BLOCK_WIDTH)
+#define ELEMENTS_PER_BLOCK_Y (ELEMENTS_PER_THREAD_Y * BLOCK_HEIGHT)
+
+#define SHARED_MEM_K_CHUNK 16

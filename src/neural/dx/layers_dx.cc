@@ -401,15 +401,21 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     // TODO: figure out why padding up by 4 is needed (instead of 2!)
     N = ((N + 3) / 4) * 4;
 
-    // 1. Input transform (input->scratch2)
+    // 1. Input transform (input->scratch)
     shader_wrapper_->inputTransform(command_list, scratch, input, N, c_input_,
                                     fp16_);
 
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-    // 2. Gemm (scratch2 -> scratch)
+    // 2. Gemm (scratch -> scratch2)
+#if 1
     meta_command_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
                                command_list);
+#else
+    shader_wrapper_->MatrixMultiply(command_list, scratch2, scratch,
+                                    transformed_weights_, N * 4, C, c_input_,
+                                    36, fp16_);
+#endif
 
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 

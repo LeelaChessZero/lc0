@@ -23,6 +23,7 @@
 #include "shaders/shader_shared.h"
 #include "shaders/shaders.h"
 #include "shaders/shaders_se.h"
+#include "shaders/shaders_gemm.h"
 
 namespace lczero {
 namespace dx_backend {
@@ -134,6 +135,16 @@ void ShaderWrapper::init(ID3D12Device* device) {
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&policy_map_fp32_)));
 
+
+  // Gemm shaders.
+  state_desc.CS = {g_MatrixMul_Fp16, sizeof(g_MatrixMul_Fp16)};
+  ReportDxErrors(device->CreateComputePipelineState(
+      &state_desc, IID_PPV_ARGS(&gemm_fp16_)));
+
+  state_desc.CS = {g_MatrixMul_Fp32, sizeof(g_MatrixMul_Fp32)};
+  ReportDxErrors(device->CreateComputePipelineState(&state_desc,
+                                                    IID_PPV_ARGS(&gemm_fp32_)));
+
   // Add vectors shader.
   state_desc.CS = {g_add_vectors_shader, sizeof(g_add_vectors_shader)};
   ReportDxErrors(device->CreateComputePipelineState(
@@ -164,11 +175,35 @@ void ShaderWrapper::destroy() {
   winograd_input_transform_fp16_->Release();
   winograd_output_transform_fp16_->Release();
   conv_1x1_fp16_->Release();
+  policy_map_fp16_->Release();
+  gemm_fp16_->Release();
 
   expand_planes_state_fp32_->Release();
   winograd_input_transform_fp32_->Release();
   winograd_output_transform_fp32_->Release();
   conv_1x1_fp32_->Release();
+  policy_map_fp32_->Release();
+  gemm_fp32_->Release();
+
+  add_vectors_->Release();
+
+  winograd_output_transform_fp16_se_128_->Release();
+  winograd_output_transform_fp16_se_256_->Release();
+  winograd_output_transform_fp16_se_320_->Release();
+  winograd_output_transform_fp16_se_384_->Release();
+  winograd_output_transform_fp16_se_512_->Release();
+  winograd_output_transform_fp16_se_640_->Release();
+  winograd_output_transform_fp16_se_768_->Release();
+  winograd_output_transform_fp16_se_1024_->Release();
+
+  winograd_output_transform_fp32_se_128_->Release();
+  winograd_output_transform_fp32_se_256_->Release();
+  winograd_output_transform_fp32_se_320_->Release();
+  winograd_output_transform_fp32_se_384_->Release();
+  winograd_output_transform_fp32_se_512_->Release();
+  winograd_output_transform_fp32_se_640_->Release();
+  winograd_output_transform_fp32_se_768_->Release();
+  winograd_output_transform_fp32_se_1024_->Release();
 
   root_sign_->Release();
 }
@@ -310,6 +345,24 @@ void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
 
   int blocks = DivUp(N*used_size, kPolicyMapBlockSize);
   command_list->Dispatch(blocks, 1, 1);
+}
+
+void ShaderWrapper::MatrixMultiply(ID3D12GraphicsCommandList5* command_list,
+                                   DXAlloc output, DXAlloc A, DXAlloc B, int M,
+                                   int N, int K, int batch, bool fp16) {
+  int Consts[] = {M, N, K, batch};
+  command_list->SetComputeRootSignature(root_sign_);
+  command_list->SetPipelineState(fp16 ? gemm_fp16_ : gemm_fp32_);
+  command_list->SetComputeRootUnorderedAccessView(0, A.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(1, B.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(2, output.gpuVA);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, 4, &Consts, 0);
+
+  int blocksX = DivUp(N, ELEMENTS_PER_BLOCK_X);
+  int blocksY = DivUp(M, ELEMENTS_PER_BLOCK_Y);
+  int blocksZ = batch;
+
+  command_list->Dispatch(blocksX, blocksY, blocksZ);
 }
 
 }  // namespace dx_backend
