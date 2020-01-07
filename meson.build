@@ -128,6 +128,7 @@ files += [
   'src/neural/loader.cc',
   'src/neural/network_check.cc',
   'src/neural/network_demux.cc',
+  'src/neural/network_external.cc',
   'src/neural/network_legacy.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
