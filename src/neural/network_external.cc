@@ -96,11 +96,12 @@ class ExternalNetwork : public Network {
         "mmap_file", "external_net_transport");
     map_ = make_map(
         mmap_name,
-        std::max(data.size() + 16, static_cast<size_t>(16) + 1024 * 4 * (116 * 8 * 8 + 1858 + 3)));
+        std::max(data.size() + 24, static_cast<size_t>(16) + 1024 * sizeof(float) * (116 * 8 * 8 + 1858 + 3)));
     // TODO: There is a race if external sees file and maps it before we clear this flag and the 'undefined value' happens to be read as a 1.
     static_cast<size_t*>(map_)[0] = 0;
+    static_cast<size_t*>(map_)[2] = data.size();
     // write weights bytes at small offset.
-    memcpy(static_cast<char*>(map_) + 16, data.data(), data.size());
+    memcpy(static_cast<char*>(map_) + 24, data.data(), data.size());
     // Write 'weights ready' flag.
     static_cast<size_t*>(map_)[0] = 1;
     // Spin Wait for 'dest ready' flag.
