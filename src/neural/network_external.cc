@@ -45,16 +45,21 @@
 namespace lczero {
 
 namespace {
+#ifdef _WIN32
+typedef HANDLE map_t;
+#else
+typedef size_t map_t;
+#endif
 
-void* make_map(std::string file_name, unsigned long long needed_size)
+void* make_map(std::string file_name, unsigned long long needed_size, map_t *maybeHandle)
 {
   void* base_address;
 #ifndef _WIN32
-  struct stat statbuf;
   // TODO: create file with specific size, not open readonly.
   int fd = ::open(file_name.c_str(), O_RDONLY);
   if (fd == -1) return nullptr;
   base_address = mmap(nullptr, needed_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+  *maybeHandle = needed_size;
   ::close(fd);
   if (base_address == MAP_FAILED) {
     exit(1);
@@ -71,6 +76,7 @@ void* make_map(std::string file_name, unsigned long long needed_size)
   HANDLE mmap =
       CreateFileMapping(fd, nullptr, PAGE_READWRITE, needed_size >> 32,
                                   needed_size & 0xFFFFFFFFu, nullptr);
+  *maybeHandle = mmap;
   CloseHandle(fd);
   if (!mmap) {
     exit(1);
@@ -96,24 +102,39 @@ class ExternalNetwork : public Network {
         "mmap_file", "external_net_transport");
     map_ = make_map(
         mmap_name,
-        std::max(data.size() + 24, static_cast<size_t>(16) + 1024 * sizeof(float) * (116 * 8 * 8 + 1858 + 3)));
-    // TODO: There is a race if external sees file and maps it before we clear this flag and the 'undefined value' happens to be read as a 1.
-    static_cast<size_t*>(map_)[0] = 0;
-    static_cast<size_t*>(map_)[2] = data.size();
+        std::max(data.size() + 24, static_cast<size_t>(16) + 1024 * sizeof(float) * (112 * 8 * 8 + 1858 + 3)),
+		&map_handle_);
+    source_flag_ = new (map_) std::atomic<size_t>();
+    dest_flag_ = new (static_cast<char*>(map_) + 8) std::atomic<size_t>();
+    length_ = reinterpret_cast<size_t*>(static_cast<char*>(map_) + 16);
+    inputs_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 24);
+    policies_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 24 +
+                                         1024 * sizeof(float) * (112 * 8 * 8));
+    wdls_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 24 +
+                                         1024 * sizeof(float) * (112 * 8 * 8 + 1858));
+    // TODO: There is a race if external sees file and maps it before we clear
+    // this flag and the 'undefined value' happens to be read as a 1.
+    *source_flag_ = 0;
+    *length_ = data.size();
     // write weights bytes at small offset.
     memcpy(static_cast<char*>(map_) + 24, data.data(), data.size());
     // Write 'weights ready' flag.
-    static_cast<size_t*>(map_)[0] = 1;
+    *source_flag_ = 1;
     // Spin Wait for 'dest ready' flag.
-    // TODO: use atomic read, not just volatile to get better semantic guarantee.
-    while (static_cast<volatile size_t*>(map_)[1] != 1) {
+    while (*dest_flag_ != 1) {
       // Sleep a ms or two should be fine for this loop.  TODO:
     }
   }
 
   ~ExternalNetwork()
   {
-    // unmap map_ and delete.
+#ifndef _WIN32
+    munmap(map_, map_handle_);
+#else
+    UnmapViewOfFile(map_);
+    CloseHandle(map_handle_);
+#endif
+    // TODO: delete the file.
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override;
@@ -123,18 +144,44 @@ class ExternalNetwork : public Network {
                std::vector<std::vector<float>>* policies) const {
     // Take lock.
     // Write raw_input at small offset with length.
+    *length_ = raw_input.size();
+    int flat_index = 0;
+    for (auto inputs : raw_input) {
+      for (auto input : inputs) {
+        for (int i = 0; i < 64; i++) {
+          if ((1ULL << i) & input.mask) {
+            inputs_[flat_index] = input.value; 
+          } else {
+            inputs_[flat_index] = 0.0f;
+          }
+          flat_index++;
+        }
+      }
+    }
     // Write 'input ready' flag value.
-    static_cast<size_t*>(map_)[0] = 2;
+    *source_flag_ = 2;
     // Otherside clears input ready flag.
     // Spin Wait for 'output ready' flag value.
-    // TODO: use atomic read, not just volatile to get better semantic
-    // guarantee.
-    while (static_cast<volatile size_t*>(map_)[1] != 2) {
+    while (*dest_flag_ != 2) {
       // TODO: no sleep for first n loops, then sleep 0.
     }
     // Clear 'output ready' flag. (Maybe atomic_compare_swap in spin wait?)
-    static_cast<size_t*>(map_)[1] = 0;
+    *dest_flag_ = 0;
     // Copy output in wdls/policies.
+    for (int i = 0; i < raw_input.size(); i++) {
+      std::vector<float> policy(0.0f, 1858);
+      for (int j = 0; j < 1858; j++) {
+        policy[j] = policies_[i * 1858 + j];
+      }
+      policies->emplace_back(policy);
+    }
+    for (int i = 0; i < raw_input.size(); i++) {
+      std::vector<float> wdl(0.0f, 3);
+      for (int j = 0; j < 3; j++) {
+        wdl[j] = wdls_[i * 3 + j];
+      }
+      wdls->emplace_back(wdl);
+    }
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -145,6 +192,13 @@ class ExternalNetwork : public Network {
 
  private:
   void* map_;
+  map_t map_handle_;
+  std::atomic<size_t>* source_flag_;
+  std::atomic<size_t>* dest_flag_;
+  size_t* length_;
+  float* inputs_;
+  float* policies_;
+  float* wdls_;
 };
 
 class ExternalNetworkComputation : public NetworkComputation {
