@@ -143,6 +143,7 @@ class ExternalNetwork : public Network {
                std::vector<std::vector<float>>* wdls,
                std::vector<std::vector<float>>* policies) const {
     // Take lock.
+    std::lock_guard<std::mutex> lock(lock_);
     // Write raw_input at small offset with length.
     *length_ = raw_input.size();
     int flat_index = 0;
@@ -199,6 +200,7 @@ class ExternalNetwork : public Network {
   float* inputs_;
   float* policies_;
   float* wdls_;
+  mutable std::mutex lock_;
 };
 
 class ExternalNetworkComputation : public NetworkComputation {
