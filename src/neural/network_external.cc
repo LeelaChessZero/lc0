@@ -93,7 +93,8 @@ class ExternalNetworkComputation;
 
 class ExternalNetwork : public Network {
  public:
-  ExternalNetwork(const WeightsFile& file, const OptionsDict& options) {
+  ExternalNetwork(const WeightsFile& file, const OptionsDict& options)
+      : capabilities_{file.format().network_format().input()} {
     // Serialize file to bytes.
     auto data = file.SerializeAsString();
     // Make large memory mapped file big enough to contain plus some extra and
@@ -102,22 +103,22 @@ class ExternalNetwork : public Network {
         "mmap_file", "external_net_transport");
     map_ = make_map(
         mmap_name,
-        std::max(data.size() + 24, static_cast<size_t>(16) + 1024 * sizeof(float) * (112 * 8 * 8 + 1858 + 3)),
+        std::max(data.size() + 32, static_cast<size_t>(32) + 1024 * sizeof(float) * (112 * 8 * 8 + 1858 + 3)),
 		&map_handle_);
     source_flag_ = new (map_) std::atomic<size_t>();
     dest_flag_ = new (static_cast<char*>(map_) + 8) std::atomic<size_t>();
     length_ = reinterpret_cast<size_t*>(static_cast<char*>(map_) + 16);
-    inputs_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 24);
-    policies_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 24 +
+    inputs_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 32);
+    policies_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 32 +
                                          1024 * sizeof(float) * (112 * 8 * 8));
-    wdls_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 24 +
+    wdls_ = reinterpret_cast<float*>(static_cast<char*>(map_) + 32 +
                                          1024 * sizeof(float) * (112 * 8 * 8 + 1858));
     // TODO: There is a race if external sees file and maps it before we clear
     // this flag and the 'undefined value' happens to be read as a 1.
     *source_flag_ = 0;
     *length_ = data.size();
     // write weights bytes at small offset.
-    memcpy(static_cast<char*>(map_) + 24, data.data(), data.size());
+    memcpy(static_cast<char*>(map_) + 32, data.data(), data.size());
     // Write 'weights ready' flag.
     *source_flag_ = 1;
     // Spin Wait for 'dest ready' flag.
@@ -170,14 +171,14 @@ class ExternalNetwork : public Network {
     *dest_flag_ = 0;
     // Copy output in wdls/policies.
     for (int i = 0; i < raw_input.size(); i++) {
-      std::vector<float> policy(0.0f, 1858);
+      std::vector<float> policy(1858, 0.0f);
       for (int j = 0; j < 1858; j++) {
         policy[j] = policies_[i * 1858 + j];
       }
       policies->emplace_back(policy);
     }
     for (int i = 0; i < raw_input.size(); i++) {
-      std::vector<float> wdl(0.0f, 3);
+      std::vector<float> wdl(3, 0.0f);
       for (int j = 0; j < 3; j++) {
         wdl[j] = wdls_[i * 3 + j];
       }
@@ -186,12 +187,11 @@ class ExternalNetwork : public Network {
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
-    // TODO: use same capabilities as weights file implies.
-    static NetworkCapabilities capabilities;
-    return capabilities;
+    return capabilities_;
   }
 
  private:
+  const NetworkCapabilities capabilities_;
   void* map_;
   map_t map_handle_;
   std::atomic<size_t>* source_flag_;
