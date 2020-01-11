@@ -27,12 +27,11 @@
 #include <vector>
 
 #include "layers_dx.h"
+#include "network_dx.h"
+#include "neural/shared/policy_map.h"
 #include "shader_wrapper.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
-#include "neural/shared/policy_map.h"
-#include "network_dx.h"
-
 
 #define DEBUG_RAW_NPS
 
@@ -53,7 +52,7 @@ void DxContext::flushAndWait() {
 
   command_allocator_->Reset();
   command_list_->Reset(command_allocator_, NULL);
-
+  command_list_->SetDescriptorHeaps(1, &desc_heap_);
   upload_scratch_mem_.offset = 0;
 }
 
@@ -165,6 +164,8 @@ DxContext::DxContext(const OptionsDict& options) {
   ReportDxErrors(
       device_->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&desc_heap_)));
 
+  command_list_->SetDescriptorHeaps(1, &desc_heap_);
+
   next_slot_in_desc_heap_ = 0;
 
   fenceVal = 0ull;
@@ -179,8 +180,8 @@ DxContext::DxContext(const OptionsDict& options) {
 
   // 256 MB should be enough for uploading weights, etc.
   scratch_size_ = 256 * 1024 * 1024;
-  CreateAlloc(scratch_size_, D3D12_HEAP_TYPE_UPLOAD, upload_scratch_mem_);
-  CreateAlloc(scratch_size_, D3D12_HEAP_TYPE_READBACK, readback_scratch_mem_);
+  CreateAlloc(scratch_size_, D3D12_HEAP_TYPE_UPLOAD, upload_scratch_mem_, false);
+  CreateAlloc(scratch_size_, D3D12_HEAP_TYPE_READBACK, readback_scratch_mem_, false);
 }
 
 DxContext::~DxContext() {
@@ -199,7 +200,7 @@ DxContext::~DxContext() {
   device_->Release();
 }
 
-void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc) {
+void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc, bool fp16) {
   // some alignment
   int factor = DivUp(size, 4);
   size = factor * 4;
@@ -244,33 +245,61 @@ void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc) {
   alloc.offset = 0;
   alloc.gpuVA = alloc.pResource->GetGPUVirtualAddress();
 
-  // Create desc heap entry for UAV resources.
+  // Create desc heap entries for UAV resources.
   if (resourceState == D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
-    int slot = next_slot_in_desc_heap_++;
-
     int handleIncrementSize = device_->GetDescriptorHandleIncrementSize(
         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescHandle(
-        desc_heap_->GetCPUDescriptorHandleForHeapStart(), slot,
-        handleIncrementSize);
+    size_t element_size = fp16 ? sizeof(dx_half) : sizeof(float);
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescHandle(
-        desc_heap_->GetGPUDescriptorHandleForHeapStart(), slot,
-        handleIncrementSize);
+    // Scalar UAV.
+    {
+      int slot = next_slot_in_desc_heap_++;
 
-    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-    uavDesc.Format = DXGI_FORMAT_R32_TYPELESS;
-    uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
+      CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescHandle(
+          desc_heap_->GetCPUDescriptorHandleForHeapStart(), slot,
+          handleIncrementSize);
 
-    uavDesc.Buffer.FirstElement = 0;
-    uavDesc.Buffer.NumElements = size / 4;
+      CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescHandle(
+          desc_heap_->GetGPUDescriptorHandleForHeapStart(), slot,
+          handleIncrementSize);
 
-    device_->CreateUnorderedAccessView(alloc.pResource, nullptr, &uavDesc,
-                                       cpuDescHandle);
+      D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+      uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+      uavDesc.Format = fp16 ? DXGI_FORMAT_R16_FLOAT : DXGI_FORMAT_R32_FLOAT;
+      uavDesc.Buffer.FirstElement = 0;
+      uavDesc.Buffer.NumElements = size / element_size;
 
-    alloc.descHandle = gpuDescHandle;
+      device_->CreateUnorderedAccessView(alloc.pResource, nullptr, &uavDesc,
+                                         cpuDescHandle);
+
+      alloc.descHandleScalar = gpuDescHandle;
+    }
+
+    // 4-component vector UAV.
+    {
+      int slot = next_slot_in_desc_heap_++;
+
+      CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescHandle(
+          desc_heap_->GetCPUDescriptorHandleForHeapStart(), slot,
+          handleIncrementSize);
+
+      CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescHandle(
+          desc_heap_->GetGPUDescriptorHandleForHeapStart(), slot,
+          handleIncrementSize);
+
+      D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+      uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+      uavDesc.Format = fp16 ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                            : DXGI_FORMAT_R32G32B32A32_FLOAT;
+      uavDesc.Buffer.FirstElement = 0;
+      uavDesc.Buffer.NumElements = size / (4 * element_size);
+
+      device_->CreateUnorderedAccessView(alloc.pResource, nullptr, &uavDesc,
+                                         cpuDescHandle);
+
+      alloc.descHandleVector = gpuDescHandle;
+    }
   }
 }
 
@@ -402,7 +431,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     network_.emplace_back(std::move(conv2));
 
     // Policy map layer
-    auto policyMap = std::make_unique<PolicyMapLayer>(fp16_, &dx_context_, getLastLayer(),
+    auto policyMap =
+        std::make_unique<PolicyMapLayer>(fp16_, &dx_context_, getLastLayer(),
                                          kNumOutputPolicy, 1, 1, 73 * 8 * 8);
     policyMap->LoadWeights(kConvPolicyMap);
     network_.emplace_back(std::move(policyMap));
@@ -496,7 +526,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // max_size = 256 * 1024 * 1024; // Ankan for testing! 256 MB!
 
   for (auto& mem : tensor_mem_) {
-    dx_context_.CreateAlloc(max_size, D3D12_HEAP_TYPE_DEFAULT, mem);
+    dx_context_.CreateAlloc(max_size, D3D12_HEAP_TYPE_DEFAULT, mem, fp16_);
   }
 }
 
@@ -551,7 +581,6 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
 
   // Policy head.
   if (has_conv_policy_) {
-
     // Policy conv1.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3],
@@ -559,7 +588,6 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
 
     dx_context_.getCommandList()->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
-
 
     // Policy conv2
     network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
@@ -778,18 +806,18 @@ InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
   // GPU accesses on Upload heap works.
   pContext->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
                         D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
-                        input_masks_mem_gpu_);
+                        input_masks_mem_gpu_, false);
 
   pContext->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(float),
                         D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
-                        input_val_mem_gpu_);
+                        input_val_mem_gpu_, false);
 
   // CUSTOM heap created to have GPU directly write to system memory
   pContext->CreateAlloc(maxBatchSize * kNumOutputPolicyPadded8 * sizeof(float),
-                        D3D12_HEAP_TYPE_CUSTOM, op_policy_mem_gpu_);
+                        D3D12_HEAP_TYPE_CUSTOM, op_policy_mem_gpu_, false);
 
   pContext->CreateAlloc(maxBatchSize * kNumOutputValuePadded8 * sizeof(float),
-                        D3D12_HEAP_TYPE_CUSTOM, op_value_mem_gpu_);
+                        D3D12_HEAP_TYPE_CUSTOM, op_value_mem_gpu_, false);
 
   ReportDxErrors(input_masks_mem_gpu_.pResource->Map(
       0, nullptr, (void**)&input_masks_mem_));

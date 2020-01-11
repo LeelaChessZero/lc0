@@ -147,7 +147,7 @@ class DxContext {
   ShaderWrapper* getShaderWrapper() { return &shader_wrapper_; }
 
   // util functions
-  void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc);
+  void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc, bool fp16);
   void flushAndWait();
   void scheduleUpload(DXAlloc alloc, const void* data, size_t size);
   void dumpFp32(float* buf, int elements);

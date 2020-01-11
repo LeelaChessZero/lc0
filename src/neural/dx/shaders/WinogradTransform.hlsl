@@ -1,7 +1,7 @@
 #include "WinogradCommon.h"
 
-// fp16/half math seems a bit slow! - at least on nvidia RTX 2060
-#if USE_FP16_MATH == 1 && FP16_IO == 1
+// fp16/half math seems a bit slow! - on both nvidia Turing and AMD Vega 7
+#if USE_FP16_MATH == 1
 
 [numthreads(kWinogradTransformShaderBlockSize, 1, 1)] 
 void input_transform_shader_fp16
@@ -209,7 +209,7 @@ void output_transform_shader_fp16
 //----------------------------- FP32 versions of the same shaders above ------------------------------//
 
 [numthreads(kWinogradTransformShaderBlockSize, 1, 1)]
-#if FP16_IO == 1
+#if USE_FP16_MATH == 1
 void input_transform_shader_fp16
 #else
 void input_transform_shader_fp32
@@ -331,7 +331,7 @@ void input_transform_shader_fp32
 
 
 [numthreads(kWinogradTransformShaderBlockSize, 1, 1)]
-#if FP16_IO == 1
+#if USE_FP16_MATH == 1
 void output_transform_shader_fp16
 #else
 void output_transform_shader_fp32

@@ -46,10 +46,19 @@ class ShaderWrapper {
 
   //
   // Two copies of all of the above as we need both fp16 and fp32 versions.
+  // TODO: 2 copies not needed for now, as:
+  //   i) We should use typed UAVs for resource access as they seem to be
+  //   faster.
+  //      With Typed UAVs, the shader automatically recieves datatype converted
+  //      values (e.g: in fp32 even when the allocation was in fp16)
+  //   ii) Most of these operations are memory bound - except for the GEMM, but:
+  //  iii) Due to driver/compiler bugs or lack of optimizations fp16 path seems
+  //  slower on both Nvidia and AMD for most of the shaders - even GEMM on AMD
+  //  is faster with fp32!
 
   ID3D12PipelineState* expand_planes_state_fp16_;
-  ID3D12PipelineState* winograd_input_transform_fp16_;
-  ID3D12PipelineState* winograd_output_transform_fp16_;
+  //ID3D12PipelineState* winograd_input_transform_fp16_;
+  //ID3D12PipelineState* winograd_output_transform_fp16_;
   ID3D12PipelineState* conv_1x1_fp16_;
   ID3D12PipelineState* policy_map_fp16_;
 
@@ -69,6 +78,7 @@ class ShaderWrapper {
   ID3D12PipelineState* add_vectors_;
 
   // Fused SE shaders for various standard channel counts
+  /*
   ID3D12PipelineState* winograd_output_transform_fp16_se_128_;
   ID3D12PipelineState* winograd_output_transform_fp16_se_256_;
   ID3D12PipelineState* winograd_output_transform_fp16_se_320_;
@@ -77,6 +87,7 @@ class ShaderWrapper {
   ID3D12PipelineState* winograd_output_transform_fp16_se_640_;
   ID3D12PipelineState* winograd_output_transform_fp16_se_768_;
   ID3D12PipelineState* winograd_output_transform_fp16_se_1024_;
+  */
 
   ID3D12PipelineState* winograd_output_transform_fp32_se_128_;
   ID3D12PipelineState* winograd_output_transform_fp32_se_256_;

@@ -25,6 +25,7 @@
 #include "shaders/shaders_se.h"
 #include "shaders/shaders_gemm.h"
 
+#define ARR_ELEMENT_COUNT(x) (sizeof(x) / sizeof(x[0]))
 namespace lczero {
 namespace dx_backend {
 
@@ -38,19 +39,28 @@ namespace dx_backend {
       IID_PPV_ARGS(                                                  \
           &winograd_output_transform_##datatype##_se_##channels##_))); \
 
+#if 0
 #define SET_SE_PSO(channels)                                 \
   command_list->SetPipelineState(                            \
       fp16 ? winograd_output_transform_fp16_se_##channels##_ \
-           : winograd_output_transform_fp32_se_##channels##_); \
+           : winograd_output_transform_fp32_se_##channels##_);
+#endif
+
+#define SET_SE_PSO(channels)      \
+  command_list->SetPipelineState( \
+      winograd_output_transform_fp32_se_##channels##_);
+
 
 void ShaderWrapper::init(ID3D12Device* device) {
   // Create root signature - common for all shaders.
 
-  // 9 slots
-  // slot 0 to 7 -> root UAV slots 0 to 7 (all in space 0)
-  // slot 8      -> root constants (16 constants - should be enough)
+  // 8+1+8 slots
+  // slot 0 to 7  -> root UAV slots 0 to 7 (all in space 0)
+  // slot 8       -> root constants (16 constants - should be enough)
+  // slot 9 to 16 -> descriptor UAVs of same allocations as slots 0-7, bound
+  //                 at shader slots 8-15
 
-  D3D12_ROOT_PARAMETER root_parameter[kUavSlots + 1];
+  D3D12_ROOT_PARAMETER root_parameter[kUavSlots + 1 + kUavSlots];
   for (int i = 0; i < kUavSlots; i++) {
     root_parameter[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV;
     root_parameter[i].Descriptor.RegisterSpace = 0;
@@ -65,8 +75,26 @@ void ShaderWrapper::init(ID3D12Device* device) {
   root_parameter[kUavSlots].Constants.Num32BitValues = 16;
   root_parameter[kUavSlots].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
-  D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {
-      kUavSlots + 1, root_parameter, 0, NULL, D3D12_ROOT_SIGNATURE_FLAG_NONE};
+  D3D12_DESCRIPTOR_RANGE descRange[kUavSlots] = {};
+  for (int i = 0; i < kUavSlots; i++) {
+    descRange[i].BaseShaderRegister = i + kUavSlots;
+    descRange[i].NumDescriptors = 1;
+    descRange[i].OffsetInDescriptorsFromTableStart = 0;
+    descRange[i].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    descRange[i].RegisterSpace = 0;
+
+    root_parameter[i + kUavSlots + 1].ParameterType =
+        D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    root_parameter[i + kUavSlots + 1].DescriptorTable.NumDescriptorRanges = 1;
+    root_parameter[i + kUavSlots + 1].DescriptorTable.pDescriptorRanges =
+        &descRange[i];
+    root_parameter[i + kUavSlots + 1].ShaderVisibility =
+        D3D12_SHADER_VISIBILITY_ALL;
+  }
+
+  D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {kUavSlots + 1 + kUavSlots,
+                                             root_parameter, 0, NULL,
+                                             D3D12_ROOT_SIGNATURE_FLAG_NONE};
 
   ID3DBlob* serialized_layout = NULL;
   D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1_0,
@@ -96,10 +124,12 @@ void ShaderWrapper::init(ID3D12Device* device) {
       &state_desc, IID_PPV_ARGS(&expand_planes_state_fp32_)));
 
   // Winograd Input Transform shaders.
+  /*
   state_desc.CS = {g_input_transform_shader_fp16,
                    sizeof(g_input_transform_shader_fp16)};
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&winograd_input_transform_fp16_)));
+      */
 
   state_desc.CS = {g_input_transform_shader_fp32,
                    sizeof(g_input_transform_shader_fp32)};
@@ -107,10 +137,12 @@ void ShaderWrapper::init(ID3D12Device* device) {
       &state_desc, IID_PPV_ARGS(&winograd_input_transform_fp32_)));
 
   // Winograd Output Transform shaders.
+  /*
   state_desc.CS = {g_output_transform_shader_fp16,
                    sizeof(g_output_transform_shader_fp16)};
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&winograd_output_transform_fp16_)));
+  */
 
   state_desc.CS = {g_output_transform_shader_fp32,
                    sizeof(g_output_transform_shader_fp32)};
@@ -151,6 +183,7 @@ void ShaderWrapper::init(ID3D12Device* device) {
       &state_desc, IID_PPV_ARGS(&add_vectors_)));
 
   // Various output-transform fused with SE shaders
+  /*
   CREATE_SE_PSO(fp16, 128)
   CREATE_SE_PSO(fp16, 256)
   CREATE_SE_PSO(fp16, 320)
@@ -159,6 +192,7 @@ void ShaderWrapper::init(ID3D12Device* device) {
   CREATE_SE_PSO(fp16, 640)
   CREATE_SE_PSO(fp16, 768)
   CREATE_SE_PSO(fp16, 1024)
+  */
 
   CREATE_SE_PSO(fp32, 128)
   CREATE_SE_PSO(fp32, 256)
@@ -172,8 +206,8 @@ void ShaderWrapper::init(ID3D12Device* device) {
 
 void ShaderWrapper::destroy() {
   expand_planes_state_fp16_->Release();
-  winograd_input_transform_fp16_->Release();
-  winograd_output_transform_fp16_->Release();
+  //winograd_input_transform_fp16_->Release();
+  //winograd_output_transform_fp16_->Release();
   conv_1x1_fp16_->Release();
   policy_map_fp16_->Release();
   gemm_fp16_->Release();
@@ -187,6 +221,7 @@ void ShaderWrapper::destroy() {
 
   add_vectors_->Release();
 
+  /*
   winograd_output_transform_fp16_se_128_->Release();
   winograd_output_transform_fp16_se_256_->Release();
   winograd_output_transform_fp16_se_320_->Release();
@@ -195,6 +230,7 @@ void ShaderWrapper::destroy() {
   winograd_output_transform_fp16_se_640_->Release();
   winograd_output_transform_fp16_se_768_->Release();
   winograd_output_transform_fp16_se_1024_->Release();
+  */
 
   winograd_output_transform_fp32_se_128_->Release();
   winograd_output_transform_fp32_se_256_->Release();
@@ -231,11 +267,17 @@ void ShaderWrapper::inputTransform(ID3D12GraphicsCommandList5* command_list,
                                    int N, int C, bool fp16) {
   int consts[] = {N, C};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(fp16 ? winograd_input_transform_fp16_
-                                      : winograd_input_transform_fp32_);
+  command_list->SetPipelineState(/*fp16 ? winograd_input_transform_fp16_
+                                      :*/ winograd_input_transform_fp32_);
   command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, transformed_input.gpuVA);
-  command_list->SetComputeRoot32BitConstants(kUavSlots, 2, &consts, 0);
+  command_list->SetComputeRoot32BitConstants(
+      kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 0,
+                                              input.descHandleVector);
+  command_list->SetComputeRootDescriptorTable(
+      kUavSlots + 1 + 1, transformed_input.descHandleScalar);
+
 
   int blocks = DivUp(N * C, kWinogradTransformShaderBlockSize);
   command_list->Dispatch(blocks, 1, 1);
@@ -252,13 +294,39 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetComputeRootUnorderedAccessView(0, transformed_output.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(2, bias.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(3, skip_connection.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(4, se_w1.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpuVA);
-  command_list->SetComputeRoot32BitConstants(kUavSlots, 7, &consts, 0);
+  if (bias_add) command_list->SetComputeRootUnorderedAccessView(2, bias.gpuVA);
+  if (skip_add)
+    command_list->SetComputeRootUnorderedAccessView(3, skip_connection.gpuVA);
+  if (fused_se) {
+    command_list->SetComputeRootUnorderedAccessView(4, se_w1.gpuVA);
+    command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpuVA);
+    command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpuVA);
+    command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpuVA);
+  }
+  command_list->SetComputeRoot32BitConstants(kUavSlots, ARR_ELEMENT_COUNT(consts),
+                                             &consts, 0);
+
+
+  command_list->SetComputeRootDescriptorTable(
+      kUavSlots + 1 + 0, transformed_output.descHandleScalar);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 1,
+                                              output.descHandleVector);
+  if (bias_add)
+    command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 2,
+                                                bias.descHandleScalar);
+  if (skip_add)
+    command_list->SetComputeRootDescriptorTable(
+        kUavSlots + 1 + 3, skip_connection.descHandleVector);
+  if (fused_se) {
+    command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 4,
+                                                se_w1.descHandleScalar);
+    command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 5,
+                                                se_b1.descHandleScalar);
+    command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 6,
+                                                se_w2.descHandleScalar);
+    command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 7,
+                                                se_b2.descHandleScalar);
+  }
 
   int blocks = 0;
   if (fused_se) {
@@ -284,8 +352,8 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
 
   } else {
     blocks = DivUp(N * K, kWinogradTransformShaderBlockSize);
-    command_list->SetPipelineState(fp16 ? winograd_output_transform_fp16_
-                                        : winograd_output_transform_fp32_);
+    command_list->SetPipelineState(/*fp16 ? winograd_output_transform_fp16_
+                                        :*/ winograd_output_transform_fp32_);
   }
 
   command_list->Dispatch(blocks, 1, 1);

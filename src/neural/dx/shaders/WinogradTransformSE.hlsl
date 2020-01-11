@@ -99,7 +99,7 @@ void OutputTransformSE
     S = 0;
     float B = 0;
     for (int i = 0; i < se_K; i++) {
-      half val = sharedData[i];
+      float val = sharedData[i];
       S += val * readw2(i, k);
       B += val * readw2(i, k + C);
     }

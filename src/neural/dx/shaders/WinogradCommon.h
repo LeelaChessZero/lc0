@@ -18,33 +18,33 @@
 
 #include "shader_shared.h"
 
-#if FP16_IO == 1
+#if USE_FP16_MATH == 1
 
-RWStructuredBuffer<float16_t4>  input               : register(u0);
-RWStructuredBuffer<float16_t>   transformedInput    : register(u1);
+RWBuffer<float16_t4>  input               : register(u8);
+RWBuffer<float16_t>   transformedInput    : register(u9);
 
-RWStructuredBuffer<float16_t>  transformedOutput    : register(u0);
-RWStructuredBuffer<float16_t4> output               : register(u1);
-RWStructuredBuffer<float16_t>  bias                 : register(u2);
-RWStructuredBuffer<float16_t4> skipConnection       : register(u3);
-RWStructuredBuffer<float16_t>  se_w1                : register(u4);
-RWStructuredBuffer<float16_t>  se_b1                : register(u5);
-RWStructuredBuffer<float16_t>  se_w2                : register(u6);
-RWStructuredBuffer<float16_t>  se_b2                : register(u7);
+RWBuffer<float16_t>  transformedOutput    : register(u8);
+RWBuffer<float16_t4> output               : register(u9);
+RWBuffer<float16_t>  bias                 : register(u10);
+RWBuffer<float16_t4> skipConnection       : register(u11);
+RWBuffer<float16_t>  se_w1                : register(u12);
+RWBuffer<float16_t>  se_b1                : register(u13);
+RWBuffer<float16_t>  se_w2                : register(u14);
+RWBuffer<float16_t>  se_b2                : register(u15);
 
 #else
 
-RWStructuredBuffer<float4>  input               : register(u0);
-RWStructuredBuffer<float>   transformedInput    : register(u1);
+RWBuffer<float4>  input               : register(u8);
+RWBuffer<float>   transformedInput    : register(u9);
 
-RWStructuredBuffer<float>  transformedOutput    : register(u0);
-RWStructuredBuffer<float4> output               : register(u1);
-RWStructuredBuffer<float>  bias                 : register(u2);
-RWStructuredBuffer<float4> skipConnection       : register(u3);
-RWStructuredBuffer<float>  se_w1                : register(u4);
-RWStructuredBuffer<float>  se_b1                : register(u5);
-RWStructuredBuffer<float>  se_w2                : register(u6);
-RWStructuredBuffer<float>  se_b2                : register(u7);
+RWBuffer<float>  transformedOutput    : register(u8);
+RWBuffer<float4> output               : register(u9);
+RWBuffer<float>  bias                 : register(u10);
+RWBuffer<float4> skipConnection       : register(u11);
+RWBuffer<float>  se_w1                : register(u12);
+RWBuffer<float>  se_b1                : register(u13);
+RWBuffer<float>  se_w2                : register(u14);
+RWBuffer<float>  se_b2                : register(u15);
 #endif
 
 
@@ -74,8 +74,9 @@ cbuffer consts : register(b0) {
 
 //----------------------------- Utility functions for Winograd transform ------------------------------//
 
-// fp16/half math seems a bit slow! - at least on nvidia RTX 2060
-#if USE_FP16_MATH == 1 && FP16_IO == 1
+// fp16/half math seems a bit slow! - on both Nvidia Turing and AMD Vega 7 (Bugs? Lack of optimizations?)
+// These are memory bandwidth bound shaders anyway.
+#if USE_FP16_MATH == 1
 
 void matrixMul_gpu_serial_6x6x6(out float16_t c[6][6], in float16_t a[6][6], in float16_t b[6][6])
 {

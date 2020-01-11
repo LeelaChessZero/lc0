@@ -119,9 +119,9 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
           "allocating %llu bytes for persistent metacommand storage, total: "
           "%llu\n",
           persistent_size, totalScratchSpace);
-      pContext->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
-                            scratch_data_persistent_[i]);
 #endif
+      pContext->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
+                            scratch_data_persistent_[i], fp16);
     }
 
     if (temp_size) {
@@ -131,14 +131,14 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
           "allocating %llu bytes for temp metacommand storage, total: "
           "%llu\n",
           temp_size, totalScratchSpace);
-      pContext->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
-                            scratch_data_temporary_[i]);
 #endif
+      pContext->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
+                            scratch_data_temporary_[i], fp16);
     }
 
     InitConvDesc initDesc = {};
-    initDesc.PersistentResource = scratch_data_persistent_[i].descHandle;
-    initDesc.TemporaryResource = scratch_data_temporary_[i].descHandle;
+    initDesc.PersistentResource = scratch_data_persistent_[i].descHandleScalar;
+    initDesc.TemporaryResource = scratch_data_temporary_[i].descHandleScalar;
 
     pContext->getCommandList()->InitializeMetaCommand(
         meta_commands_[i], &initDesc, sizeof(initDesc));
@@ -158,11 +158,11 @@ void GemmMetaCommand::PerformGemm(int rows, DXAlloc A, DXAlloc B,
   DXAlloc& scratch_temporary = scratch_data_temporary_[index];
 
   GemmExecuteDesc exec_desc = {};
-  exec_desc.AResource = A.descHandle;
-  exec_desc.BResource = B.descHandle;
-  exec_desc.OutputResource = output.descHandle;
-  exec_desc.PersistentResource = scratch_persistent.descHandle;
-  exec_desc.TemporaryResource = scratch_temporary.descHandle;
+  exec_desc.AResource = A.descHandleScalar;
+  exec_desc.BResource = B.descHandleScalar;
+  exec_desc.OutputResource = output.descHandleScalar;
+  exec_desc.PersistentResource = scratch_persistent.descHandleScalar;
+  exec_desc.TemporaryResource = scratch_temporary.descHandleScalar;
 
   command_list->ExecuteMetaCommand(meta_command, &exec_desc, sizeof(exec_desc));
 }
@@ -205,16 +205,16 @@ ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand,
   size_t weight_size = element_size * C * Cin * filter * filter;
   size_t blas_size = element_size * C;
 
-  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_);
+  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
 
   if (filter == 3) {
     // 6x6 transformed filter size, for 3x3 convolution
     pContext->CreateAlloc(weight_size * 4, D3D12_HEAP_TYPE_DEFAULT,
-                          transformed_weights_);
+                          transformed_weights_, fp16);
   }
 
   if (use_bias_) {
-    pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_);
+    pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_, fp16);
   }
 
   if (has_se_)
@@ -229,10 +229,10 @@ ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand,
     const size_t biases_size1 = element_size * num_biases1;
     const size_t biases_size2 = element_size * num_biases2;
 
-    pContext->CreateAlloc(weight_size1, D3D12_HEAP_TYPE_DEFAULT, w1_);
-    pContext->CreateAlloc(weight_size2, D3D12_HEAP_TYPE_DEFAULT, w2_);
-    pContext->CreateAlloc(biases_size1, D3D12_HEAP_TYPE_DEFAULT, b1_);
-    pContext->CreateAlloc(biases_size2, D3D12_HEAP_TYPE_DEFAULT, b2_);
+    pContext->CreateAlloc(weight_size1, D3D12_HEAP_TYPE_DEFAULT, w1_, fp16);
+    pContext->CreateAlloc(weight_size2, D3D12_HEAP_TYPE_DEFAULT, w2_, fp16);
+    pContext->CreateAlloc(biases_size1, D3D12_HEAP_TYPE_DEFAULT, b1_, fp16);
+    pContext->CreateAlloc(biases_size2, D3D12_HEAP_TYPE_DEFAULT, b2_, fp16);
   }
 
   shader_wrapper_ = pContext->getShaderWrapper();
@@ -455,9 +455,9 @@ FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
       element_size * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
   size_t blas_size = element_size * C * H * W;
 
-  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_);
+  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
   if (use_bias_)
-    pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_);
+    pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_, fp16);
 
   shader_wrapper_ = pContext->getShaderWrapper();
 
@@ -526,7 +526,7 @@ PolicyMapLayer::PolicyMapLayer(bool fp16, DxContext* pContext, BaseLayer* ip,
     : BaseLayer(C, H, W, ip, pContext, fp16),
       used_size_(usedSize) {
   size_t weight_size = sizeof(int) * used_size_;
-  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_);
+  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
 }
 
 void PolicyMapLayer::LoadWeights(const short* cpuWeights) {
