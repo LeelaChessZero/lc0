@@ -1,9 +1,22 @@
+/*
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2020 The LCZero Authors
+
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include "WinogradCommon.h"
-
-// Note that the weight matrices are transposed.
-#define readw1(row, col) (se_w1[(row)*se_K + (col)])
-#define readw2(row, col) (se_w2[(row)*2*C + (col)])
-
 
 // Output transform shader - fused with SE.
 // Each thread block processes entire 'C' dimension worth of data.
@@ -12,6 +25,10 @@
 // versions of this same HLSL shader with various standard channel counts (128,
 // 256, 320, 384, 512, 640, 768 and 1024) and use the next bigger channel count
 // version to handle channel counts not in the list of standard counts.
+
+// Note that the weight matrices are transposed.
+#define readw1(row, col) (se_w1[(row)*se_K + (col)])
+#define readw2(row, col) (se_w2[(row)*2 * C + (col)])
 
 #if USE_FP16_MATH == 1
 groupshared half sharedData[BLOCK_SIZE];
