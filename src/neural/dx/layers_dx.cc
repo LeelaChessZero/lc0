@@ -16,7 +16,6 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-// Non-metacommand path still has bugs (for value head FC :-/)
 #define USE_METACOMMANDS 1
 
 #include "layers_dx.h"
@@ -516,20 +515,23 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
   meta_command_->PerformGemm(N, input, weights_, output, command_list);
 #else
   shader_wrapper_->MatrixMultiply(command_list, output, input, weights_,
-                                  DivUp(N, 8),
+                                  DivUp(N, 8) * 8,
                                   num_outputs, num_inputs, 1,
                                   fp16_);
 #endif
 
   // Ankan - debug!
-  /*
+#if 0
   if (N > 1) {
+    printf("\nInput: \n");
+    dx_context_->dumpTensor(input, num_inputs*N, fp16_);
     printf("\nAfter FC mat-mul, cols: %d, rows: %d, k: %d\n", num_outputs, N,
            num_inputs);
-    dx_context_->dumpTensor(output, 8192, fp16_);
-    exit(0);
+    dx_context_->dumpTensor(output, num_outputs*N, fp16_);
+    if (num_outputs != 128)
+      exit(0);
   }
-  */
+#endif
 
   if (use_bias_ || use_relu_ || use_tanh_) {
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));

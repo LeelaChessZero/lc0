@@ -755,7 +755,7 @@ std::unique_ptr<InputsOutputsDx> DxNetwork::GetInputsOutputs() {
   std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
   if (free_inputs_outputs_.empty()) {
     return std::make_unique<InputsOutputsDx>(max_batch_size_, &dx_context_,
-                                             has_wdl_, has_conv_policy_);
+                                             has_wdl_, has_conv_policy_, fp16_);
   } else {
     std::unique_ptr<InputsOutputsDx> resource =
         std::move(free_inputs_outputs_.front());
@@ -800,24 +800,24 @@ void DxNetworkComputation::ComputeBlocking() {
 }
 
 InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
-                                 bool wdl, bool policy_map)
+                                 bool wdl, bool policy_map, bool fp16)
     : uses_policy_map_(policy_map) {
   // CPU accesses on Default heap doesn't work.
   // GPU accesses on Upload heap works.
   pContext->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
                         D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
-                        input_masks_mem_gpu_, false);
+                        input_masks_mem_gpu_, fp16);
 
   pContext->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(float),
                         D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
-                        input_val_mem_gpu_, false);
+                        input_val_mem_gpu_, fp16);
 
   // CUSTOM heap created to have GPU directly write to system memory
   pContext->CreateAlloc(maxBatchSize * kNumOutputPolicyPadded8 * sizeof(float),
-                        D3D12_HEAP_TYPE_CUSTOM, op_policy_mem_gpu_, false);
+                        D3D12_HEAP_TYPE_CUSTOM, op_policy_mem_gpu_, fp16);
 
   pContext->CreateAlloc(maxBatchSize * kNumOutputValuePadded8 * sizeof(float),
-                        D3D12_HEAP_TYPE_CUSTOM, op_value_mem_gpu_, false);
+                        D3D12_HEAP_TYPE_CUSTOM, op_value_mem_gpu_, fp16);
 
   ReportDxErrors(input_masks_mem_gpu_.pResource->Map(
       0, nullptr, (void**)&input_masks_mem_));

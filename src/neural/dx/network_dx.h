@@ -39,7 +39,8 @@ static constexpr int kNumOutputPolicyPadded8 = ((kNumOutputPolicy - 1)/8 + 1)*8;
 static constexpr int kNumOutputValuePadded8 = 8;    
 
 struct InputsOutputsDx {
-  InputsOutputsDx(int maxBatchSize, DxContext* pContext, bool wdl, bool conv_policy);
+  InputsOutputsDx(int maxBatchSize, DxContext* pContext, bool wdl,
+                  bool conv_policy, bool fp16);
   ~InputsOutputsDx();
 
   // In default heap (video memory, mapped to support CPU writes too).
