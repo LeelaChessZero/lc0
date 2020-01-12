@@ -105,7 +105,13 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
         IID_PPV_ARGS(&pMetacommand));
 
     if (hr != S_OK) {
-      throw Exception("Error creating gemm Metacommand\n");
+      printf(
+          "\nCan't create GEMM Metacommand for "
+          "rows: %d, cols: %d, K: %d, batch: "
+          "%d\n",
+          num_rows, cols, K, gemm_batch);
+      create_succeeded_ = false;
+      return;
     }
 
     meta_commands_[i] = pMetacommand;
@@ -116,25 +122,11 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
         D3D12_META_COMMAND_PARAMETER_STAGE_EXECUTION, 5);
 
     if (persistent_size) {
-#if 0
-      totalScratchSpace += persistent_size;
-      printf(
-          "allocating %llu bytes for persistent metacommand storage, total: "
-          "%llu\n",
-          persistent_size, totalScratchSpace);
-#endif
       pContext->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
                             scratch_data_persistent_[i], fp16);
     }
 
     if (temp_size) {
-#if 0
-      totalScratchSpace += temp_size;
-      printf(
-          "allocating %llu bytes for temp metacommand storage, total: "
-          "%llu\n",
-          temp_size, totalScratchSpace);
-#endif
       pContext->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
                             scratch_data_temporary_[i], fp16);
     }
@@ -146,11 +138,16 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
     pContext->getCommandList()->InitializeMetaCommand(
         meta_commands_[i], &initDesc, sizeof(initDesc));
   }
+
+  create_succeeded_ = true;
 }
 
 void GemmMetaCommand::PerformGemm(int rows, DXAlloc A, DXAlloc B,
                                   DXAlloc output,
                                   ID3D12GraphicsCommandList5* command_list) {
+  if (!create_succeeded_)
+    throw Exception("Metacommand not created");
+
   int index = 0;
   if (!rows_known_) {
     index = DivUp(rows, 8) - 1;
@@ -412,14 +409,14 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // 2. Gemm (scratch -> scratch2)
-#if USE_METACOMMANDS == 1
-    meta_command_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
-                               command_list);
-#else
-    shader_wrapper_->MatrixMultiply(command_list, scratch2, scratch,
-                                    transformed_weights_, N * 4, C, c_input_,
-                                    36, fp16_);
-#endif
+    if (meta_command_->IsAvailable())
+      meta_command_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
+                                 command_list);
+    else
+      shader_wrapper_->MatrixMultiply(command_list, scratch2, scratch,
+                                      transformed_weights_, N * 4, C, c_input_,
+                                      36, fp16_);
+
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // 3. Output transform (scratch -> output)
@@ -511,15 +508,12 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
   int num_outputs = C * H * W;
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
-#if USE_METACOMMANDS == 1
-  meta_command_->PerformGemm(N, input, weights_, output, command_list);
-#else
-  shader_wrapper_->MatrixMultiply(command_list, output, input, weights_,
-                                  DivUp(N, 8) * 8,
-                                  num_outputs, num_inputs, 1,
-                                  fp16_);
-#endif
-
+  if (meta_command_->IsAvailable())
+    meta_command_->PerformGemm(N, input, weights_, output, command_list);
+  else
+    shader_wrapper_->MatrixMultiply(command_list, output, input, weights_,
+                                    DivUp(N, 8) * 8, num_outputs, num_inputs, 1,
+                                    fp16_);
   // Ankan - debug!
 #if 0
   if (N > 1) {

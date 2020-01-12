@@ -75,6 +75,7 @@ class GemmMetaCommand {
   DXAlloc scratch_data_temporary_[kMaxMetacommands];
 
   bool rows_known_;
+  bool create_succeeded_;
 
  public:
   GemmMetaCommand(DxContext* pContext, int M, int N, int K, int gemm_batch,
@@ -83,6 +84,8 @@ class GemmMetaCommand {
 
   void PerformGemm(int rows, DXAlloc A, DXAlloc B, DXAlloc Output,
                    ID3D12GraphicsCommandList5* command_list);
+
+  bool IsAvailable() { return create_succeeded_; }
 };
 
 class ConvLayer : public BaseLayer {
