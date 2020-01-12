@@ -1,12 +1,7 @@
 #include "shader_shared.h"
 
 // ------------------- Policy Map Shader -----------------------------//
-
-#if FP16_IO == 1
-RWStructuredBuffer<float16_t> input : register(u0);
-#else
-RWStructuredBuffer<float> input : register(u0);
-#endif
+RWBuffer<float> input : register(u8);
 
 // Output is always fp32.
 RWStructuredBuffer<float> output  : register(u1);

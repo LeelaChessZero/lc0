@@ -361,12 +361,23 @@ void ShaderWrapper::conv1x1(ID3D12GraphicsCommandList5* command_list,
                             bool useBias, bool fp16) {
   int consts[] = {N, K, C, useBias, relu};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(fp16 ? conv_1x1_fp16_ : conv_1x1_fp32_);
+  command_list->SetPipelineState(conv_1x1_fp32_);
   command_list->SetComputeRootUnorderedAccessView(0, output.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, input.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(2, weight.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(3, bias.gpuVA);
-  command_list->SetComputeRoot32BitConstants(kUavSlots, 5, &consts, 0);
+  command_list->SetComputeRoot32BitConstants(
+      kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
+
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 0,
+                                              output.descHandleScalar);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 1,
+                                              input.descHandleScalar);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 2,
+                                              weight.descHandleScalar);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 3,
+                                              bias.descHandleScalar);
+
   command_list->Dispatch(K, N, 1);
 }
 
@@ -401,11 +412,12 @@ void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
                               int used_size, bool fp16) {
   int consts[] = {N, input_size, used_size, output_size};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(fp16 ? policy_map_fp16_ : policy_map_fp32_);
+  command_list->SetPipelineState(policy_map_fp32_);
   command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(2, weights.gpuVA);
-  command_list->SetComputeRoot32BitConstants(kUavSlots, 4, &consts, 0);
+  command_list->SetComputeRoot32BitConstants(kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
+  command_list->SetComputeRootDescriptorTable(kUavSlots+1, input.descHandleScalar);
 
   int blocks = DivUp(N * used_size, kPolicyMapBlockSize);
   command_list->Dispatch(blocks, 1, 1);
@@ -417,8 +429,8 @@ void ShaderWrapper::MatrixMultiply(ID3D12GraphicsCommandList5* command_list,
   int Consts[] = {M, N, K, batch};
   command_list->SetComputeRootSignature(root_sign_);
 
-  // On AMD, fp32 math is tiny bit faster than fp16.. likely a bug?
-  //command_list->SetPipelineState(fp16 ? gemm_fp16_ : gemm_fp32_);
+  // On AMD, fp32 math is much faster than fp16.. likely a bug?
+  // command_list->SetPipelineState(fp16 ? gemm_fp16_ : gemm_fp32_);
   command_list->SetPipelineState(gemm_fp32_);
 
   command_list->SetComputeRootUnorderedAccessView(0, A.gpuVA);
