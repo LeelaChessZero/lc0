@@ -71,14 +71,12 @@ class ShaderWrapper {
   // Gemm shaders (used when gemm Metacommand isn't supported by the HW vendor)
   ID3D12PipelineState* gemm_fp16_;
   ID3D12PipelineState* gemm_fp32_;
-
-
+ 
   // Another simple shader (same shaders handles both fp32 and fp16) to add
   // bias, apply relu/tanh, etc.
   ID3D12PipelineState* add_vectors_;
 
   // Fused SE shaders for various standard channel counts
-  /*
   ID3D12PipelineState* winograd_output_transform_fp16_se_128_;
   ID3D12PipelineState* winograd_output_transform_fp16_se_256_;
   ID3D12PipelineState* winograd_output_transform_fp16_se_320_;
@@ -87,7 +85,6 @@ class ShaderWrapper {
   ID3D12PipelineState* winograd_output_transform_fp16_se_640_;
   ID3D12PipelineState* winograd_output_transform_fp16_se_768_;
   ID3D12PipelineState* winograd_output_transform_fp16_se_1024_;
-  */
 
   ID3D12PipelineState* winograd_output_transform_fp32_se_128_;
   ID3D12PipelineState* winograd_output_transform_fp32_se_256_;

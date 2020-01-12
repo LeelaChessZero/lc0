@@ -22,8 +22,8 @@
 #include "neural/network.h"
 #include "shaders/shader_shared.h"
 #include "shaders/shaders.h"
-#include "shaders/shaders_se.h"
 #include "shaders/shaders_gemm.h"
+#include "shaders/shaders_se.h"
 
 #define ARR_ELEMENT_COUNT(x) (sizeof(x) / sizeof(x[0]))
 namespace lczero {
@@ -37,19 +37,20 @@ namespace dx_backend {
   ReportDxErrors(device->CreateComputePipelineState(                 \
       &state_desc,                                                   \
       IID_PPV_ARGS(                                                  \
-          &winograd_output_transform_##datatype##_se_##channels##_))); \
+          &winograd_output_transform_##datatype##_se_##channels##_)));
+
 
 #if 0
+// FP16 SE math - Slower than fp32!
 #define SET_SE_PSO(channels)                                 \
   command_list->SetPipelineState(                            \
       fp16 ? winograd_output_transform_fp16_se_##channels##_ \
            : winograd_output_transform_fp32_se_##channels##_);
-#endif
-
-#define SET_SE_PSO(channels)      \
-  command_list->SetPipelineState( \
+#else
+#define SET_SE_PSO(channels)                            \
+  command_list->SetPipelineState(                       \
       winograd_output_transform_fp32_se_##channels##_);
-
+#endif
 
 void ShaderWrapper::init(ID3D12Device* device) {
   // Create root signature - common for all shaders.
@@ -167,11 +168,10 @@ void ShaderWrapper::init(ID3D12Device* device) {
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&policy_map_fp32_)));
 
-
   // Gemm shaders.
   state_desc.CS = {g_MatrixMul_Fp16, sizeof(g_MatrixMul_Fp16)};
-  ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&gemm_fp16_)));
+  ReportDxErrors(device->CreateComputePipelineState(&state_desc,
+                                                    IID_PPV_ARGS(&gemm_fp16_)));
 
   state_desc.CS = {g_MatrixMul_Fp32, sizeof(g_MatrixMul_Fp32)};
   ReportDxErrors(device->CreateComputePipelineState(&state_desc,
@@ -183,7 +183,6 @@ void ShaderWrapper::init(ID3D12Device* device) {
       &state_desc, IID_PPV_ARGS(&add_vectors_)));
 
   // Various output-transform fused with SE shaders
-  /*
   CREATE_SE_PSO(fp16, 128)
   CREATE_SE_PSO(fp16, 256)
   CREATE_SE_PSO(fp16, 320)
@@ -192,7 +191,6 @@ void ShaderWrapper::init(ID3D12Device* device) {
   CREATE_SE_PSO(fp16, 640)
   CREATE_SE_PSO(fp16, 768)
   CREATE_SE_PSO(fp16, 1024)
-  */
 
   CREATE_SE_PSO(fp32, 128)
   CREATE_SE_PSO(fp32, 256)
@@ -206,8 +204,8 @@ void ShaderWrapper::init(ID3D12Device* device) {
 
 void ShaderWrapper::destroy() {
   expand_planes_state_fp16_->Release();
-  //winograd_input_transform_fp16_->Release();
-  //winograd_output_transform_fp16_->Release();
+  // winograd_input_transform_fp16_->Release();
+  // winograd_output_transform_fp16_->Release();
   conv_1x1_fp16_->Release();
   policy_map_fp16_->Release();
   gemm_fp16_->Release();
@@ -221,7 +219,6 @@ void ShaderWrapper::destroy() {
 
   add_vectors_->Release();
 
-  /*
   winograd_output_transform_fp16_se_128_->Release();
   winograd_output_transform_fp16_se_256_->Release();
   winograd_output_transform_fp16_se_320_->Release();
@@ -230,7 +227,6 @@ void ShaderWrapper::destroy() {
   winograd_output_transform_fp16_se_640_->Release();
   winograd_output_transform_fp16_se_768_->Release();
   winograd_output_transform_fp16_se_1024_->Release();
-  */
 
   winograd_output_transform_fp32_se_128_->Release();
   winograd_output_transform_fp32_se_256_->Release();
@@ -268,7 +264,8 @@ void ShaderWrapper::inputTransform(ID3D12GraphicsCommandList5* command_list,
   int consts[] = {N, C};
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetPipelineState(/*fp16 ? winograd_input_transform_fp16_
-                                      :*/ winograd_input_transform_fp32_);
+                                      :*/
+                                 winograd_input_transform_fp32_);
   command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, transformed_input.gpuVA);
   command_list->SetComputeRoot32BitConstants(
@@ -277,7 +274,6 @@ void ShaderWrapper::inputTransform(ID3D12GraphicsCommandList5* command_list,
                                               input.descHandleVector);
   command_list->SetComputeRootDescriptorTable(
       kUavSlots + 1 + 1, transformed_input.descHandleScalar);
-
 
   int blocks = DivUp(N * C, kWinogradTransformShaderBlockSize);
   command_list->Dispatch(blocks, 1, 1);
@@ -303,9 +299,8 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
     command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpuVA);
     command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpuVA);
   }
-  command_list->SetComputeRoot32BitConstants(kUavSlots, ARR_ELEMENT_COUNT(consts),
-                                             &consts, 0);
-
+  command_list->SetComputeRoot32BitConstants(
+      kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
 
   command_list->SetComputeRootDescriptorTable(
       kUavSlots + 1 + 0, transformed_output.descHandleScalar);
@@ -353,7 +348,8 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
   } else {
     blocks = DivUp(N * K, kWinogradTransformShaderBlockSize);
     command_list->SetPipelineState(/*fp16 ? winograd_output_transform_fp16_
-                                        :*/ winograd_output_transform_fp32_);
+                                        :*/
+                                   winograd_output_transform_fp32_);
   }
 
   command_list->Dispatch(blocks, 1, 1);
@@ -411,7 +407,7 @@ void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
   command_list->SetComputeRootUnorderedAccessView(2, weights.gpuVA);
   command_list->SetComputeRoot32BitConstants(kUavSlots, 4, &consts, 0);
 
-  int blocks = DivUp(N*used_size, kPolicyMapBlockSize);
+  int blocks = DivUp(N * used_size, kPolicyMapBlockSize);
   command_list->Dispatch(blocks, 1, 1);
 }
 
@@ -420,11 +416,23 @@ void ShaderWrapper::MatrixMultiply(ID3D12GraphicsCommandList5* command_list,
                                    int N, int K, int batch, bool fp16) {
   int Consts[] = {M, N, K, batch};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(fp16 ? gemm_fp16_ : gemm_fp32_);
+
+  // On AMD, fp32 math is tiny bit faster than fp16.. likely a bug?
+  //command_list->SetPipelineState(fp16 ? gemm_fp16_ : gemm_fp32_);
+  command_list->SetPipelineState(gemm_fp32_);
+
   command_list->SetComputeRootUnorderedAccessView(0, A.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, B.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(2, output.gpuVA);
-  command_list->SetComputeRoot32BitConstants(kUavSlots, 4, &Consts, 0);
+  command_list->SetComputeRoot32BitConstants(
+      kUavSlots, ARR_ELEMENT_COUNT(Consts), &Consts, 0);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 0,
+                                              A.descHandleVector);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 1,
+                                              B.descHandleVector);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 2,
+                                              output.descHandleVector);
+
 
   int blocksX = DivUp(N, ELEMENTS_PER_BLOCK_X);
   int blocksY = DivUp(M, ELEMENTS_PER_BLOCK_Y);

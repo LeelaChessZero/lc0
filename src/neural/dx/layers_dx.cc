@@ -15,6 +15,10 @@
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
+
+// Non-metacommand path still has bugs (for value head FC :-/)
+#define USE_METACOMMANDS 1
+
 #include "layers_dx.h"
 #include <cassert>
 #include <cstring>
@@ -399,6 +403,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     // to make it simple, just pad up N to multiple of 2 here (so that gemmN is
     // multiple of 8).
     // TODO: figure out why padding up by 4 is needed (instead of 2!)
+    //N = ((N + 1) / 2) * 2;
     N = ((N + 3) / 4) * 4;
 
     // 1. Input transform (input->scratch)
@@ -408,7 +413,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // 2. Gemm (scratch -> scratch2)
-#if 1
+#if USE_METACOMMANDS == 1
     meta_command_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
                                command_list);
 #else
@@ -416,15 +421,12 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                                     transformed_weights_, N * 4, C, c_input_,
                                     36, fp16_);
 #endif
-
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // 3. Output transform (scratch -> output)
     shader_wrapper_->outputTransform(
         command_list, output, scratch2, input2, biases_, w1_, b1_,
         w2_, b2_, N, C, use_relu_, use_bias_, skip_add_, has_se_, se_k_, fp16_);
-
-
   } else if (filter_size_ == 1) {
     shader_wrapper_->conv1x1(command_list, output, input, weights_, biases_, N,
                              c_input_, C, use_relu_, use_bias_, fp16_);
@@ -467,26 +469,31 @@ FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
   int K = ip->GetC() * ip->GetH() * ip->GetW();  // cols of input matrix
   // We do Out = A * weight.
   // The weight matrix need to be transpsoed before it can be multiplied.
+  // The transpose is done on CPU when loading weights
   meta_command_ =
-      new GemmMetaCommand(pContext, rows, cols, K, 1, fp16, false, true);
+      new GemmMetaCommand(pContext, rows, cols, K, 1, fp16, false, false);
 }
 
 void FCLayer::LoadWeights(float* cpuWeight, float* cpuBias,
                           DxContext* pContext) {
+  size_t rows = C * H * W;
+  size_t cols = input_->GetC() * input_->GetH() * input_->GetW();
   size_t num_weights =
-      C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
+      rows * cols;
 
   size_t element_size = fp16_ ? sizeof(dx_half) : sizeof(float);
   size_t weight_size = element_size * num_weights;
   size_t num_biases = C * H * W;
   size_t bias_size = element_size * num_biases;
 
+  std::vector<float> temp_transposed(num_weights);
+  cpuTranspose(temp_transposed.data(), cpuWeight, rows, cols);
   std::vector<dx_half> temp(num_weights);
   if (fp16_) {
-    copyFloatToHalf(temp.data(), cpuWeight, num_weights);
+    copyFloatToHalf(temp.data(), temp_transposed.data(), num_weights);
     pContext->scheduleUpload(weights_, temp.data(), weight_size);
   } else {
-    pContext->scheduleUpload(weights_, cpuWeight, weight_size);
+    pContext->scheduleUpload(weights_, temp_transposed.data(), weight_size);
   }
 
   if (cpuBias) {
@@ -505,7 +512,24 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
   int num_outputs = C * H * W;
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
+#if USE_METACOMMANDS == 1
   meta_command_->PerformGemm(N, input, weights_, output, command_list);
+#else
+  shader_wrapper_->MatrixMultiply(command_list, output, input, weights_,
+                                  DivUp(N, 8),
+                                  num_outputs, num_inputs, 1,
+                                  fp16_);
+#endif
+
+  // Ankan - debug!
+  /*
+  if (N > 1) {
+    printf("\nAfter FC mat-mul, cols: %d, rows: %d, k: %d\n", num_outputs, N,
+           num_inputs);
+    dx_context_->dumpTensor(output, 8192, fp16_);
+    exit(0);
+  }
+  */
 
   if (use_bias_ || use_relu_ || use_tanh_) {
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
