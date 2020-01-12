@@ -40,17 +40,9 @@ namespace dx_backend {
           &winograd_output_transform_##datatype##_se_##channels##_)));
 
 
-#if 0
-// FP16 SE math - Slower than fp32!
-#define SET_SE_PSO(channels)                                 \
-  command_list->SetPipelineState(                            \
-      fp16 ? winograd_output_transform_fp16_se_##channels##_ \
-           : winograd_output_transform_fp32_se_##channels##_);
-#else
 #define SET_SE_PSO(channels)                            \
   command_list->SetPipelineState(                       \
       winograd_output_transform_fp32_se_##channels##_);
-#endif
 
 void ShaderWrapper::init(ID3D12Device* device) {
   // Create root signature - common for all shaders.
@@ -124,46 +116,24 @@ void ShaderWrapper::init(ID3D12Device* device) {
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&expand_planes_state_fp32_)));
 
-  // Winograd Input Transform shaders.
-  /*
-  state_desc.CS = {g_input_transform_shader_fp16,
-                   sizeof(g_input_transform_shader_fp16)};
-  ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&winograd_input_transform_fp16_)));
-      */
-
+  // Winograd Input Transform shader.
   state_desc.CS = {g_input_transform_shader_fp32,
                    sizeof(g_input_transform_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&winograd_input_transform_fp32_)));
 
-  // Winograd Output Transform shaders.
-  /*
-  state_desc.CS = {g_output_transform_shader_fp16,
-                   sizeof(g_output_transform_shader_fp16)};
-  ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&winograd_output_transform_fp16_)));
-  */
-
+  // Winograd Output Transform shader.
   state_desc.CS = {g_output_transform_shader_fp32,
                    sizeof(g_output_transform_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&winograd_output_transform_fp32_)));
 
-  // 1x1 convolution shaders.
-  state_desc.CS = {g_conv_1x1_shader_fp16, sizeof(g_conv_1x1_shader_fp16)};
-  ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&conv_1x1_fp16_)));
-
+  // 1x1 convolution shader.
   state_desc.CS = {g_conv_1x1_shader_fp32, sizeof(g_conv_1x1_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&conv_1x1_fp32_)));
 
-  // policy map shaders.
-  state_desc.CS = {g_policy_map_shader_fp16, sizeof(g_policy_map_shader_fp16)};
-  ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&policy_map_fp16_)));
-
+  // policy map shader.
   state_desc.CS = {g_policy_map_shader_fp32, sizeof(g_policy_map_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&policy_map_fp32_)));
@@ -183,15 +153,6 @@ void ShaderWrapper::init(ID3D12Device* device) {
       &state_desc, IID_PPV_ARGS(&add_vectors_)));
 
   // Various output-transform fused with SE shaders
-  CREATE_SE_PSO(fp16, 128)
-  CREATE_SE_PSO(fp16, 256)
-  CREATE_SE_PSO(fp16, 320)
-  CREATE_SE_PSO(fp16, 384)
-  CREATE_SE_PSO(fp16, 512)
-  CREATE_SE_PSO(fp16, 640)
-  CREATE_SE_PSO(fp16, 768)
-  CREATE_SE_PSO(fp16, 1024)
-
   CREATE_SE_PSO(fp32, 128)
   CREATE_SE_PSO(fp32, 256)
   CREATE_SE_PSO(fp32, 320)
@@ -204,29 +165,14 @@ void ShaderWrapper::init(ID3D12Device* device) {
 
 void ShaderWrapper::destroy() {
   expand_planes_state_fp16_->Release();
-  // winograd_input_transform_fp16_->Release();
-  // winograd_output_transform_fp16_->Release();
-  conv_1x1_fp16_->Release();
-  policy_map_fp16_->Release();
   gemm_fp16_->Release();
-
   expand_planes_state_fp32_->Release();
   winograd_input_transform_fp32_->Release();
   winograd_output_transform_fp32_->Release();
   conv_1x1_fp32_->Release();
   policy_map_fp32_->Release();
   gemm_fp32_->Release();
-
   add_vectors_->Release();
-
-  winograd_output_transform_fp16_se_128_->Release();
-  winograd_output_transform_fp16_se_256_->Release();
-  winograd_output_transform_fp16_se_320_->Release();
-  winograd_output_transform_fp16_se_384_->Release();
-  winograd_output_transform_fp16_se_512_->Release();
-  winograd_output_transform_fp16_se_640_->Release();
-  winograd_output_transform_fp16_se_768_->Release();
-  winograd_output_transform_fp16_se_1024_->Release();
 
   winograd_output_transform_fp32_se_128_->Release();
   winograd_output_transform_fp32_se_256_->Release();

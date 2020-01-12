@@ -57,10 +57,6 @@ class ShaderWrapper {
   //  is faster with fp32!
 
   ID3D12PipelineState* expand_planes_state_fp16_;
-  //ID3D12PipelineState* winograd_input_transform_fp16_;
-  //ID3D12PipelineState* winograd_output_transform_fp16_;
-  ID3D12PipelineState* conv_1x1_fp16_;
-  ID3D12PipelineState* policy_map_fp16_;
 
   ID3D12PipelineState* expand_planes_state_fp32_;
   ID3D12PipelineState* winograd_input_transform_fp32_;
@@ -76,16 +72,7 @@ class ShaderWrapper {
   // bias, apply relu/tanh, etc.
   ID3D12PipelineState* add_vectors_;
 
-  // Fused SE shaders for various standard channel counts
-  ID3D12PipelineState* winograd_output_transform_fp16_se_128_;
-  ID3D12PipelineState* winograd_output_transform_fp16_se_256_;
-  ID3D12PipelineState* winograd_output_transform_fp16_se_320_;
-  ID3D12PipelineState* winograd_output_transform_fp16_se_384_;
-  ID3D12PipelineState* winograd_output_transform_fp16_se_512_;
-  ID3D12PipelineState* winograd_output_transform_fp16_se_640_;
-  ID3D12PipelineState* winograd_output_transform_fp16_se_768_;
-  ID3D12PipelineState* winograd_output_transform_fp16_se_1024_;
-
+  // Fused SE shaders for various standard channel counts.
   ID3D12PipelineState* winograd_output_transform_fp32_se_128_;
   ID3D12PipelineState* winograd_output_transform_fp32_se_256_;
   ID3D12PipelineState* winograd_output_transform_fp32_se_320_;
