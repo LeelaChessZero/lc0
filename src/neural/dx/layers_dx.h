@@ -88,6 +88,31 @@ class GemmMetaCommand {
   bool IsAvailable() { return create_succeeded_; }
 };
 
+class ConvMetaCommand {
+ private:
+  // Metacommand objects for each multiple of 8 batch size
+  static constexpr int kMetacommandGranulity = 8;
+  static constexpr int kMaxMetacommands =
+      kMaxSupportedBatchSize / kMetacommandGranulity;
+  ID3D12MetaCommand* meta_commands_[kMaxMetacommands];
+
+  DXAlloc scratch_data_persistent_[kMaxMetacommands];
+  DXAlloc scratch_data_temporary_[kMaxMetacommands];
+  bool create_succeeded_;
+  bool use_bias_;
+
+ public:
+  ConvMetaCommand(DxContext* pContext, int C, int K, int H, int W, int F,
+                  bool relu, bool bias, bool fp16);
+  ~ConvMetaCommand();
+
+  void PerformConv(int batch, DXAlloc input, DXAlloc filter, DXAlloc bias,
+                   DXAlloc Output, ID3D12GraphicsCommandList5* command_list);
+
+  bool IsAvailable() { return create_succeeded_; }
+};
+
+
 class ConvLayer : public BaseLayer {
   using BaseLayer::C;
   using BaseLayer::GetC;
@@ -97,7 +122,8 @@ class ConvLayer : public BaseLayer {
   using BaseLayer::W;
 
  public:
-  ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand, DxContext* pContext,
+  ConvLayer(bool fp16, GemmMetaCommand* pMetaCommandGemm,
+            ConvMetaCommand* pMetaCommandConv, DxContext* pContext,
             BaseLayer* ip, int C, int H, int W, int size, int Cin, bool bias,
             bool relu, bool skipAdd = false, bool se = false, int se_k = 0);
   ~ConvLayer();
@@ -129,7 +155,8 @@ class ConvLayer : public BaseLayer {
   DXAlloc b2_;
 
   ShaderWrapper* shader_wrapper_;
-  GemmMetaCommand* meta_command_;
+  GemmMetaCommand* meta_command_gemm_;
+  ConvMetaCommand* meta_command_conv_;
 };
 
 class FCLayer : public BaseLayer {

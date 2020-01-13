@@ -33,10 +33,11 @@ static constexpr int kNumOutputPolicy = 1858;
 
 // Padding needed as on some HW (e.g: NV) fp16 requires gemm matrix dimensions
 // to be multiples of 8
-static constexpr int kNumOutputPolicyPadded8 = ((kNumOutputPolicy - 1)/8 + 1)*8;
+static constexpr int kNumOutputPolicyPadded8 =
+    ((kNumOutputPolicy - 1) / 8 + 1) * 8;
 
 // Normally 3 when using wdl, and 1 without
-static constexpr int kNumOutputValuePadded8 = 8;    
+static constexpr int kNumOutputValuePadded8 = 8;
 
 struct InputsOutputsDx {
   InputsOutputsDx(int maxBatchSize, DxContext* pContext, bool wdl,
@@ -104,7 +105,6 @@ class DxNetworkComputation : public NetworkComputation {
         ->op_policy_mem_final_[sample * kNumOutputPolicy + move_id];
   }
 
-
  private:
   // Memory holding inputs, outputs.
   std::unique_ptr<InputsOutputsDx> inputs_outputs_;
@@ -142,13 +142,13 @@ class DxContext {
   DxContext(const OptionsDict& options);
   ~DxContext();
 
-
   ID3D12Device5* getDevice() { return device_; }
   ID3D12GraphicsCommandList5* getCommandList() { return command_list_; }
   ShaderWrapper* getShaderWrapper() { return &shader_wrapper_; }
 
   // util functions
-  void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc, bool fp16);
+  void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
+                   bool fp16);
   void flushAndWait();
   void scheduleUpload(DXAlloc alloc, const void* data, size_t size);
   void dumpFp32(float* buf, int elements);
@@ -202,6 +202,12 @@ class DxNetwork : public Network {
   GemmMetaCommand* input_conv_winograd_gemm_;
   GemmMetaCommand* residual_block_winograd_gemm_;
   GemmMetaCommand* policy_conv_winograd_gemm_;
+
+  // TODO: rename these with better names (Metacommand should be in name)!
+  ConvMetaCommand* input_conv_;
+  ConvMetaCommand* resi_block_conv_1_;
+  ConvMetaCommand* resi_block_conv_2_;
+  ConvMetaCommand* policy_conv_;
 
   // In device memory.
   DXAlloc tensor_mem_[4];

@@ -3,7 +3,7 @@
 
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2019 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -368,11 +368,29 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
         &dx_context_, 0, pol_channels, kNumFilters, 36, fp16_, false, false);
   }
 
+  // Unique Conv metacommands required by the network:
+  // 3x3, 112 channels -> kNumFilters channels, relu, bias.
+  input_conv_ = new ConvMetaCommand(&dx_context_, kNumInputPlanes, kNumFilters,
+                                    8, 8, 3, true, true, fp16_);
+
+  // 3x3, kNumFilters channels -> kNumFilters channels, relu, bias.
+  resi_block_conv_1_ = new ConvMetaCommand(
+      &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, true, true, fp16_);
+
+  // 3x3, kNumFilters channels -> kNumFilters channels, no relu
+  // relu needs to be done after SE and skip connection add.
+  resi_block_conv_2_ = new ConvMetaCommand(
+      &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, false, true, fp16_);
+
+  if (has_conv_policy_)
+    policy_conv_ = new ConvMetaCommand(&dx_context_, kNumFilters, pol_channels,
+                                       8, 8, 3, false, true, fp16_);
+
   // input
   {
     auto inputConv = std::make_unique<ConvLayer>(
-        fp16_, input_conv_winograd_gemm_, &dx_context_, nullptr, kNumFilters, 8,
-        8, 3, kNumInputPlanes, true, true);
+        fp16_, input_conv_winograd_gemm_, input_conv_, &dx_context_, nullptr,
+        kNumFilters, 8, 8, 3, kNumInputPlanes, true, true);
 
     inputConv->LoadWeights(&weights.input.weights[0], &weights.input.biases[0],
                            &dx_context_);
@@ -383,8 +401,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // residual block
   for (size_t block = 0; block < weights.residual.size(); block++) {
     auto conv1 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_winograd_gemm_, &dx_context_, getLastLayer(),
-        kNumFilters, 8, 8, 3, kNumFilters, true, true);
+        fp16_, residual_block_winograd_gemm_, resi_block_conv_1_, &dx_context_,
+        getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
 
     conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                        &weights.residual[block].conv1.biases[0], &dx_context_);
@@ -395,7 +413,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     if (has_se_) se_k = weights.residual[block].se.b1.size();
 
     auto conv2 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_winograd_gemm_, &dx_context_, getLastLayer(),
+        fp16_, residual_block_winograd_gemm_, resi_block_conv_2_, &dx_context_, getLastLayer(),
         kNumFilters, 8, 8, 3, kNumFilters, true, true, true, has_se_, se_k);
 
     conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
@@ -415,7 +433,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   if (has_conv_policy_) {
     // conv1 is same as residual block convolution.
     auto conv1 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_winograd_gemm_, &dx_context_, getLastLayer(),
+        fp16_, residual_block_winograd_gemm_, resi_block_conv_1_, &dx_context_, getLastLayer(),
         kNumFilters, 8, 8, 3, kNumFilters, true, true);
     conv1->LoadWeights(&weights.policy1.weights[0], &weights.policy1.biases[0],
                        &dx_context_);
@@ -423,8 +441,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
     // conv2 has different no. of output filters (pol_channels). No relu.
     auto conv2 = std::make_unique<ConvLayer>(
-        fp16_, policy_conv_winograd_gemm_, &dx_context_, getLastLayer(),
-        pol_channels, 8, 8, 3, kNumFilters, true, false);
+        fp16_, policy_conv_winograd_gemm_, policy_conv_, &dx_context_,
+        getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, true, false);
 
     conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                        &dx_context_);
@@ -439,7 +457,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
   } else {
     // 1x1 convolution, pol_channels output filters
-    auto convPol = std::make_unique<ConvLayer>(fp16_, nullptr, &dx_context_,
+    auto convPol = std::make_unique<ConvLayer>(fp16_, nullptr, nullptr, &dx_context_,
                                                getLastLayer(), pol_channels, 8,
                                                8, 1, kNumFilters, true, true);
     convPol->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
@@ -471,7 +489,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     auto val_channels = weights.value.biases.size();
 
     // 1x1 convolution, val_channels output filters
-    auto convVal = std::make_unique<ConvLayer>(fp16_, nullptr, &dx_context_,
+    auto convVal = std::make_unique<ConvLayer>(fp16_, nullptr, nullptr, &dx_context_,
                                                getLastLayer(), val_channels, 8,
                                                8, 1, kNumFilters, true, true);
     convVal->LoadWeights(&weights.value.weights[0], &weights.value.biases[0],

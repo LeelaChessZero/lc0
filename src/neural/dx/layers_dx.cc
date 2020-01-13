@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2019 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,17 +31,14 @@
 namespace lczero {
 namespace dx_backend {
 
-// for testing
-size_t totalScratchSpace = 0;
-
 void copyFloatToHalf(dx_half* out, const float* in, int elements) {
   for (int i = 0; i < elements; i++) {
     out[i] = FP32toFP16(in[i]);
   }
 }
 
-static void getTensorDesc(TensorDesc* outDesc, int batchSize, int rows,
-                          int cols, bool fp16 = true) {
+static void getGemmTensorDesc(TensorDesc* outDesc, int batchSize, int rows,
+                              int cols, bool fp16) {
   memset(outDesc, 0, sizeof(TensorDesc));
   outDesc->DimensionCount = 4;
   outDesc->DataType = fp16 ? 1 : 0;
@@ -86,10 +83,10 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
     int num_rows = rows ? rows : (i + 1) * kMetacommandGranulity;
 
     GemmCreateDesc createDesc = {};
-    getTensorDesc(&createDesc.DescOut, gemm_batch, num_rows, cols, fp16);
-    getTensorDesc(&createDesc.DescA, gemm_batch, a_transpose ? K : num_rows,
+    getGemmTensorDesc(&createDesc.DescOut, gemm_batch, num_rows, cols, fp16);
+    getGemmTensorDesc(&createDesc.DescA, gemm_batch, a_transpose ? K : num_rows,
                   a_transpose ? num_rows : K, fp16);
-    getTensorDesc(&createDesc.DescB, gemm_batch, b_transpose ? cols : K,
+    getGemmTensorDesc(&createDesc.DescB, gemm_batch, b_transpose ? cols : K,
                   b_transpose ? K : cols, fp16);
     createDesc.cMatrixNull = 1;
     createDesc.ActivationIsNull = 1;
@@ -131,7 +128,7 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
                             scratch_data_temporary_[i], fp16);
     }
 
-    InitConvDesc initDesc = {};
+    GemmInitDesc initDesc = {};
     initDesc.PersistentResource = scratch_data_persistent_[i].descHandleScalar;
     initDesc.TemporaryResource = scratch_data_temporary_[i].descHandleScalar;
 
@@ -177,16 +174,156 @@ GemmMetaCommand::~GemmMetaCommand() {
   }
 }
 
+static void getConvTensorDesc(TensorDesc* outDesc, int N, int C,
+                              int H, int W, bool fp16) {
+  memset(outDesc, 0, sizeof(TensorDesc));
+  outDesc->DimensionCount = 4;
+  outDesc->DataType = fp16 ? 1 : 0;
+
+  outDesc->Size[0] = N;
+  outDesc->Size[1] = C;
+  outDesc->Size[2] = H;
+  outDesc->Size[3] = W;
+
+  // NCHW layout
+  outDesc->Stride[3] = 1;
+  outDesc->Stride[2] = W;
+  outDesc->Stride[1] = H*W;
+  outDesc->Stride[0] = C*H*W;
+
+  for (int i = 0; i < 4; i++) outDesc->StrideAlignment[i] = 1;
+
+  outDesc->BaseAlignmentInBytes = 4096;  // arbitary
+  outDesc->PhysicalSizeInElements = N*C*H*W;
+}
+
+ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int C, int K, int H,
+                                 int W, int F, bool relu, bool bias,
+                                 bool fp16) {
+  memset(scratch_data_persistent_, 0, sizeof(scratch_data_persistent_));
+  memset(scratch_data_temporary_, 0, sizeof(scratch_data_temporary_));
+  memset(meta_commands_, 0, sizeof(meta_commands_));
+
+  for (int i = 0; i < kMaxMetacommands; i++) {
+    int n = (i + 1) * kMetacommandGranulity;
+
+    ConvCreateDesc createDesc = {};
+    getConvTensorDesc(&createDesc.InputDesc, n, C, H, W, fp16);
+    getConvTensorDesc(&createDesc.OutputDesc, n, K, H, W, fp16);
+    getConvTensorDesc(&createDesc.FilterDesc, K, C, F, F, fp16);
+    getConvTensorDesc(&createDesc.BiasDesc, K, 1, 1, 1, fp16);
+    createDesc.BiasNull = bias ? 0 : 1;
+    createDesc.Mode = 1;  // 1 is for cross-correlation (0 - conv)
+
+    createDesc.Direction = 0;  // forward
+    createDesc.DimensionCount = 2;  // 2D conv
+    createDesc.Stride[0] = 1;
+    createDesc.Stride[1] = 1;
+    createDesc.Dilation[0] = 1;
+    createDesc.Dilation[1] = 1;
+
+    int pad = (F - 1) / 2;
+    createDesc.StartPadding[0] = pad;
+    createDesc.StartPadding[1] = pad;
+    createDesc.EndPadding[0] = pad;
+    createDesc.EndPadding[1] = pad;
+    createDesc.GroupCount = 1;
+    if (relu) {
+      createDesc.ActivationFunction = 9;  // relu (guess?)
+      createDesc.ActivationIsNull = 0;
+    } else {
+      createDesc.ActivationIsNull = 1;
+    }
+    createDesc.Precision = fp16 ? 1 : 0;  // 0 - fp32, 1 - fp16
+
+    ID3D12MetaCommand* pMetacommand = nullptr;
+    HRESULT hr = pContext->getDevice()->CreateMetaCommand(
+        ConvGuid, 1, &createDesc, sizeof(createDesc),
+        IID_PPV_ARGS(&pMetacommand));
+
+    if (hr != S_OK) {
+      printf(
+          "\nCan't create Conv Metacommand for "
+          "N, C, K, H, W, f: %d %d %d %d %d %d\n",
+          n, C, K, H, W, F);
+      create_succeeded_ = false;
+      return;
+    }
+
+    meta_commands_[i] = pMetacommand;
+
+    size_t persistent_size = pMetacommand->GetRequiredParameterResourceSize(
+        D3D12_META_COMMAND_PARAMETER_STAGE_EXECUTION, 4);
+    size_t temp_size = pMetacommand->GetRequiredParameterResourceSize(
+        D3D12_META_COMMAND_PARAMETER_STAGE_EXECUTION, 5);
+
+    if (persistent_size) {
+      pContext->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
+                            scratch_data_persistent_[i], fp16);
+    }
+
+    if (temp_size) {
+      pContext->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
+                            scratch_data_temporary_[i], fp16);
+    }
+
+    InitConvDesc initDesc = {};
+    initDesc.PersistentResource = scratch_data_persistent_[i].descHandleScalar;
+    initDesc.TemporaryResource = scratch_data_temporary_[i].descHandleScalar;
+
+    pContext->getCommandList()->InitializeMetaCommand(
+        meta_commands_[i], &initDesc, sizeof(initDesc));
+  }
+  use_bias_ = bias;
+  create_succeeded_ = true;
+}
+
+void ConvMetaCommand::PerformConv(int batch, DXAlloc input, DXAlloc filter,
+                                  DXAlloc bias, DXAlloc output,
+                                  ID3D12GraphicsCommandList5* command_list) {
+  if (!create_succeeded_) throw Exception("Metacommand not created");
+
+  int index = DivUp(batch, 8) - 1;
+
+  ID3D12MetaCommand* meta_command = meta_commands_[index];
+  DXAlloc& scratch_persistent = scratch_data_persistent_[index];
+  DXAlloc& scratch_temporary = scratch_data_temporary_[index];
+
+  ExecuteConvDesc exec_desc = {};
+  exec_desc.InputResource = input.descHandleScalar;
+  exec_desc.FilterResource = filter.descHandleScalar;
+  if (use_bias_)
+    exec_desc.BiasResource = bias.descHandleScalar;
+  exec_desc.OutputResource = output.descHandleScalar;
+  exec_desc.PersistentResource = scratch_persistent.descHandleScalar;
+  exec_desc.TemporaryResource = scratch_temporary.descHandleScalar;
+
+  command_list->ExecuteMetaCommand(meta_command, &exec_desc, sizeof(exec_desc));
+}
+
+ConvMetaCommand::~ConvMetaCommand() {
+  for (int i = 0; i < kMaxMetacommands; i++) {
+    if (scratch_data_temporary_[i].pResource)
+      scratch_data_temporary_[i].pResource->Release();
+    if (scratch_data_persistent_[i].pResource)
+      scratch_data_persistent_[i].pResource->Release();
+    if (meta_commands_[i]) meta_commands_[i]->Release();
+  }
+}
+
+
 BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext,
                      bool fp16)
     : input_(ip), C(c), H(h), W(w), dx_context_(pContext), fp16_(fp16) {}
 
-ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommand,
+ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommandGemm,
+                     ConvMetaCommand* pMetaCommandConv,
                      DxContext* pContext, BaseLayer* ip, int C, int H, int W,
                      int filter, int Cin, bool bias, bool relu, bool skipAdd,
                      bool se, int se_k)
     : BaseLayer(C, H, W, ip, pContext, fp16),
-      meta_command_(pMetaCommand),
+      meta_command_gemm_(pMetaCommandGemm),
+      meta_command_conv_(pMetaCommandConv),
       c_input_(Cin),
       filter_size_(filter),
       use_relu_(relu),
@@ -393,7 +530,16 @@ void ConvLayer::LoadSEWeights(float* w1, float* b1, float* w2, float* b2) {
 void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                      DXAlloc scratch, DXAlloc scratch2,
                      ID3D12GraphicsCommandList5* command_list) {
-  if (filter_size_ == 3) {
+
+  // Use winograd for filter size of 3, when GEMM metacommand is available,
+  // Or when GEMM metacommand isn't available but Convolution metacommand is
+  // also not available (compute shader matrix multiply path).
+  bool useWinograd =
+      (filter_size_ == 3) && 
+      ((meta_command_gemm_ && meta_command_gemm_->IsAvailable()) ||
+       !meta_command_conv_ || !meta_command_conv_->IsAvailable());
+
+  if (useWinograd) {
     // Need to pad up the input to gemm too (i.e, the transformed Input tensor)!
     // It's in HWNC layout, and 'N'/GemmN needs to be padded up (HW = 6x6)
     // to make it simple, just pad up N to multiple of 2 here (so that gemmN is
@@ -409,8 +555,8 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // 2. Gemm (scratch -> scratch2)
-    if (meta_command_->IsAvailable())
-      meta_command_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
+    if (meta_command_gemm_->IsAvailable())
+      meta_command_gemm_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
                                  command_list);
     else
       shader_wrapper_->MatrixMultiply(command_list, scratch2, scratch,
@@ -442,7 +588,29 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
           N, C, use_relu_, use_bias_, skip_add_, has_se_, se_k_, fp16_);
     }
 
-  } else if (filter_size_ == 1) {
+  } 
+  else if (meta_command_conv_ && meta_command_conv_->IsAvailable()) {
+    if (skip_add_ || has_se_)
+      meta_command_conv_->PerformConv(N, input, weights_, biases_, scratch,
+                                      command_list);
+    else
+      meta_command_conv_->PerformConv(N, input, weights_, biases_, output,
+                                      command_list);
+    if (has_se_) {
+      command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+      shader_wrapper_->se(command_list, output, scratch, input2, biases_, w1_,
+                          b1_, w2_, b2_, N, C, use_relu_, false, skip_add_,
+                          se_k_, fp16_);
+    } else if (skip_add_) {
+      throw Exception("Bias additon shader un-implemented! ");
+#if 0
+      shader_wrapper_->addVectors(command_list, output, scratch, biases_,
+                                  N * C * H * W, C, N * C * H * W,
+                                  use_relu_, false, fp16_); // Ankan - TODO! not going to work for nchw! Need a new shader!
+#endif
+    }
+  }
+  else if (filter_size_ == 1) {
     shader_wrapper_->conv1x1(command_list, output, input, weights_, biases_, N,
                              c_input_, C, use_relu_, use_bias_, fp16_);
   } else {
