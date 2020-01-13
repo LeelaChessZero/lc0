@@ -73,6 +73,17 @@ class ShaderWrapper {
   ID3D12PipelineState* add_vectors_;
 
   // Fused SE shaders for various standard channel counts.
+  ID3D12PipelineState* se_128_;
+  ID3D12PipelineState* se_256_;
+  ID3D12PipelineState* se_320_;
+  ID3D12PipelineState* se_384_;
+  ID3D12PipelineState* se_512_;
+  ID3D12PipelineState* se_640_;
+  ID3D12PipelineState* se_768_;
+  ID3D12PipelineState* se_1024_;
+
+  // Winograd output transform fused with SE for various standard channel
+  // counts.
   ID3D12PipelineState* winograd_output_transform_fp32_se_128_;
   ID3D12PipelineState* winograd_output_transform_fp32_se_256_;
   ID3D12PipelineState* winograd_output_transform_fp32_se_320_;
@@ -100,6 +111,11 @@ class ShaderWrapper {
                        DXAlloc se_w2, DXAlloc se_b2, int N, int K, bool relu,
                        bool bias_add, bool skip_add, bool fused_se, int se_k,
                        bool fp16);
+
+  void se(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
+          DXAlloc input, DXAlloc skip_connection, DXAlloc bias, DXAlloc se_w1,
+          DXAlloc se_b1, DXAlloc se_w2, DXAlloc se_b2, int N, int K, bool relu,
+          bool bias_add, bool skip_add, int se_k, bool fp16);
 
   void conv1x1(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
                DXAlloc input, DXAlloc weight, DXAlloc bias, int N, int C, int K,

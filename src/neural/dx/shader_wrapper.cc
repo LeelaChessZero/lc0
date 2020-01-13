@@ -30,7 +30,7 @@ namespace lczero {
 namespace dx_backend {
 
 // Helper macros to reduce copy-paste.
-#define CREATE_SE_PSO(datatype, channels)                            \
+#define CREATE_WINOGRAD_SE_PSO(datatype, channels)                   \
   state_desc.CS = {                                                  \
       g_output_transform_shader_##datatype##_se_##channels,          \
       sizeof(g_output_transform_shader_##datatype##_se_##channels)}; \
@@ -39,9 +39,14 @@ namespace dx_backend {
       IID_PPV_ARGS(                                                  \
           &winograd_output_transform_##datatype##_se_##channels##_)));
 
+#define CREATE_SE_PSO(channels)                               \
+  state_desc.CS = {g_se_##channels, sizeof(g_se_##channels)}; \
+  ReportDxErrors(device->CreateComputePipelineState(          \
+      &state_desc, IID_PPV_ARGS(&se_##channels##_)));
 
-#define SET_SE_PSO(channels)                            \
-  command_list->SetPipelineState(                       \
+
+#define SET_WINOGRAD_SE_PSO(channels)                         \
+  command_list->SetPipelineState(                             \
       winograd_output_transform_fp32_se_##channels##_);
 
 void ShaderWrapper::init(ID3D12Device* device) {
@@ -152,15 +157,25 @@ void ShaderWrapper::init(ID3D12Device* device) {
   ReportDxErrors(device->CreateComputePipelineState(
       &state_desc, IID_PPV_ARGS(&add_vectors_)));
 
-  // Various output-transform fused with SE shaders
-  CREATE_SE_PSO(fp32, 128)
-  CREATE_SE_PSO(fp32, 256)
-  CREATE_SE_PSO(fp32, 320)
-  CREATE_SE_PSO(fp32, 384)
-  CREATE_SE_PSO(fp32, 512)
-  CREATE_SE_PSO(fp32, 640)
-  CREATE_SE_PSO(fp32, 768)
-  CREATE_SE_PSO(fp32, 1024)
+  // Various SE shaders.
+  CREATE_SE_PSO(128);
+  CREATE_SE_PSO(256);
+  CREATE_SE_PSO(320);
+  CREATE_SE_PSO(384);
+  CREATE_SE_PSO(512);
+  CREATE_SE_PSO(640);
+  CREATE_SE_PSO(768);
+  CREATE_SE_PSO(1024);
+
+  // Various output-transform fused with SE shaders.
+  CREATE_WINOGRAD_SE_PSO(fp32, 128)
+  CREATE_WINOGRAD_SE_PSO(fp32, 256)
+  CREATE_WINOGRAD_SE_PSO(fp32, 320)
+  CREATE_WINOGRAD_SE_PSO(fp32, 384)
+  CREATE_WINOGRAD_SE_PSO(fp32, 512)
+  CREATE_WINOGRAD_SE_PSO(fp32, 640)
+  CREATE_WINOGRAD_SE_PSO(fp32, 768)
+  CREATE_WINOGRAD_SE_PSO(fp32, 1024)
 }
 
 void ShaderWrapper::destroy() {
@@ -173,6 +188,15 @@ void ShaderWrapper::destroy() {
   policy_map_fp32_->Release();
   gemm_fp32_->Release();
   add_vectors_->Release();
+
+  se_128_->Release();
+  se_256_->Release();
+  se_320_->Release();
+  se_384_->Release();
+  se_512_->Release();
+  se_640_->Release();
+  se_768_->Release();
+  se_1024_->Release();
 
   winograd_output_transform_fp32_se_128_->Release();
   winograd_output_transform_fp32_se_256_->Release();
@@ -225,6 +249,69 @@ void ShaderWrapper::inputTransform(ID3D12GraphicsCommandList5* command_list,
   command_list->Dispatch(blocks, 1, 1);
 }
 
+void ShaderWrapper::se(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
+    DXAlloc input, DXAlloc skip_connection, DXAlloc bias,
+    DXAlloc se_w1, DXAlloc se_b1, DXAlloc se_w2,
+    DXAlloc se_b2, int N, int K, bool relu, bool bias_add,
+    bool skip_add, int se_k, bool fp16) {
+  int consts[] = {N, K, relu, bias_add, skip_add, se_k};
+  command_list->SetComputeRootSignature(root_sign_);
+  command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
+  if (bias_add) command_list->SetComputeRootUnorderedAccessView(2, bias.gpuVA);
+  if (skip_add)
+    command_list->SetComputeRootUnorderedAccessView(3, skip_connection.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(4, se_w1.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpuVA);
+
+  command_list->SetComputeRoot32BitConstants(
+      kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
+
+  command_list->SetComputeRootDescriptorTable(
+      kUavSlots + 1 + 0, input.descHandleVector);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 1,
+                                              output.descHandleVector);
+  if (bias_add)
+    command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 2,
+                                                bias.descHandleScalar);
+  if (skip_add)
+    command_list->SetComputeRootDescriptorTable(
+        kUavSlots + 1 + 3, skip_connection.descHandleVector);
+
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 4,
+                                              se_w1.descHandleScalar);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 5,
+                                              se_b1.descHandleScalar);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 6,
+                                              se_w2.descHandleScalar);
+  command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 7,
+                                              se_b2.descHandleScalar);
+
+  int blocks = N;
+  if (K <= 128)
+    command_list->SetPipelineState(se_128_);
+  else if (K <= 256)
+    command_list->SetPipelineState(se_256_);
+  else if (K <= 320)
+    command_list->SetPipelineState(se_320_);
+  else if (K <= 384)
+    command_list->SetPipelineState(se_384_);
+  else if (K <= 512)
+    command_list->SetPipelineState(se_512_);
+  else if (K <= 640)
+    command_list->SetPipelineState(se_640_);
+  else if (K <= 768)
+    command_list->SetPipelineState(se_768_);
+  else if (K <= 1024)
+    command_list->SetPipelineState(se_1024_);
+  else
+    throw Exception("Unsupported channel count for SE");
+
+  command_list->Dispatch(blocks, 1, 1);
+}
+
 void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
                                     DXAlloc output, DXAlloc transformed_output,
                                     DXAlloc skip_connection, DXAlloc bias,
@@ -273,21 +360,21 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
   if (fused_se) {
     blocks = N;
     if (K <= 128)
-      SET_SE_PSO(128)
+      SET_WINOGRAD_SE_PSO(128)
     else if (K <= 256)
-      SET_SE_PSO(256)
+      SET_WINOGRAD_SE_PSO(256)
     else if (K <= 320)
-      SET_SE_PSO(320)
+      SET_WINOGRAD_SE_PSO(320)
     else if (K <= 384)
-      SET_SE_PSO(384)
+      SET_WINOGRAD_SE_PSO(384)
     else if (K <= 512)
-      SET_SE_PSO(512)
+      SET_WINOGRAD_SE_PSO(512)
     else if (K <= 640)
-      SET_SE_PSO(640)
+      SET_WINOGRAD_SE_PSO(640)
     else if (K <= 768)
-      SET_SE_PSO(768)
+      SET_WINOGRAD_SE_PSO(768)
     else if (K <= 1024)
-      SET_SE_PSO(1024)
+      SET_WINOGRAD_SE_PSO(1024)
     else
       throw Exception("Unsupported channel count for SE");
 

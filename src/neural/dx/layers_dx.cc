@@ -419,10 +419,29 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
 
     command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
-    // 3. Output transform (scratch -> output)
-    shader_wrapper_->outputTransform(
-        command_list, output, scratch2, input2, biases_, w1_, b1_,
-        w2_, b2_, N, C, use_relu_, use_bias_, skip_add_, has_se_, se_k_, fp16_);
+    // 3. Output transform (scratch2 -> output)
+#if 0
+    if (has_se_)
+    {
+      // non-fused winograd output transform and SE
+      shader_wrapper_->outputTransform(command_list, scratch, scratch2, input2,
+                                       biases_, w1_, b1_, w2_, b2_, N, C, false,
+                                       false, false, false, se_k_, fp16_);
+
+      command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+
+      shader_wrapper_->se(command_list, output, scratch, input2, biases_, w1_,
+                          b1_, w2_, b2_, N, C, use_relu_, use_bias_, skip_add_,
+                          se_k_, fp16_);
+
+    } else 
+#endif
+    {
+      shader_wrapper_->outputTransform(
+          command_list, output, scratch2, input2, biases_, w1_, b1_, w2_, b2_,
+          N, C, use_relu_, use_bias_, skip_add_, has_se_, se_k_, fp16_);
+    }
+
   } else if (filter_size_ == 1) {
     shader_wrapper_->conv1x1(command_list, output, input, weights_, biases_, N,
                              c_input_, C, use_relu_, use_bias_, fp16_);
