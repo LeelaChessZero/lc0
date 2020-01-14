@@ -970,18 +970,6 @@ MoveList ChessBoard::GenerateLegalMoves() const {
       std::remove_if(result.begin(), result.end(),
                      [&](Move m) { return !IsLegalMove(m, king_attack_info); }),
       result.end());
-
-  // moves ordering try to put checks first in the list...
-  std::vector<ChessBoard> vec;
-  for (const auto move : result) {
-    ChessBoard board = ChessBoard(*this);
-    board.ApplyMove(move);
-    vec.emplace_back(board);
-  }
-  // following sorts the vector, but not the result..ehh?
-  std::sort(vec.begin(), vec.end(), [](ChessBoard& a, ChessBoard& b) {
-    return (a.IsUnderCheck() == true ? 1 : 0) > (b.IsUnderCheck() == true ? 1 : 0);
-  });
   return result;
 }
 
