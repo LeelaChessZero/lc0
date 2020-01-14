@@ -1163,17 +1163,27 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   float total = 0.0;
   
-  Position nodePosition = history_.GetPositionAt(idx_in_computation);
+  // determine current position and exercise all moves
+  Node* root_node = search_->root_node_;
+  std::vector<Move> moves;
+  for (; node != root_node; node = node->GetParent()) {
+    moves.push_back(node->GetOwnEdge()->GetMove());
+  }
+  Position rootPosition = history_.Last();
+  ChessBoard board = rootPosition.GetBoard();
+  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
+    board.ApplyMove(*iter);
+  }
     
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
     
     // Boost p if it is a check move
-    ChessBoard board = nodePosition.GetBoard();
-    board.ApplyMove(edge.GetMove());
-    if (board.IsUnderCheck()) {
-      p = p + 1;
+    ChessBoard boardmove = board;
+    boardmove.ApplyMove(edge.GetMove());
+    if (boardmove.IsUnderCheck()) {
+      p = p + 100;
     }
 
     // Perform softmax and take into account policy softmax temperature T.
