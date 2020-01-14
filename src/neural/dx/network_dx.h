@@ -67,6 +67,9 @@ struct InputsOutputsDx {
   // Command list with recorded commands to run the network.
   // ID3D12GraphicsCommandList4* command_list_[1024];
   // ID3D12CommandAllocator* command_allocator_[1024];
+
+  ID3D12GraphicsCommandList5* command_list_;
+  ID3D12CommandAllocator* command_allocator_;
   const bool uses_policy_map_;
 };
 
@@ -126,7 +129,7 @@ class DxContext {
   ID3D12CommandAllocator* command_allocator_;
   ID3D12DescriptorHeap* desc_heap_;
   ID3D12Fence* fence_;
-  uint64_t fenceVal;
+  uint64_t fence_val_;
   ShaderWrapper shader_wrapper_;
 
   std::atomic<unsigned int> next_slot_in_desc_heap_;
@@ -149,6 +152,11 @@ class DxContext {
   // util functions
   void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
                    bool fp16);
+  uint64_t flushCL(ID3D12GraphicsCommandList5 *cl = nullptr);
+  void waitForGPU(uint64_t fence_val = 0);
+  void resetCL(ID3D12GraphicsCommandList5* cl = nullptr,
+               ID3D12CommandAllocator* ca = nullptr);
+
   void flushAndWait();
   void scheduleUpload(DXAlloc alloc, const void* data, size_t size);
   void dumpFp32(float* buf, int elements);
@@ -166,7 +174,7 @@ class DxNetwork : public Network {
   DxNetwork(const WeightsFile& file, const OptionsDict& options);
   ~DxNetwork();
 
-  void forwardEval(InputsOutputsDx* io, int batchSize);
+  void Eval(InputsOutputsDx* io, int batchSize);
   std::unique_ptr<NetworkComputation> NewComputation() override;
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;

@@ -39,21 +39,36 @@ namespace lczero {
 
 using namespace dx_backend;
 
-void DxContext::flushAndWait() {
-  command_list_->Close();
-  command_queue_->ExecuteCommandLists(1, (ID3D12CommandList**)&command_list_);
-  command_queue_->Signal(fence_, ++fenceVal);
+uint64_t DxContext::flushCL(ID3D12GraphicsCommandList5* cl) {
+  if (!cl) cl = command_list_;
+  cl->Close();
+  command_queue_->ExecuteCommandLists(1, (ID3D12CommandList**)&cl);
+  command_queue_->Signal(fence_, ++fence_val_);
+  return fence_val_;
+}
 
+void DxContext::waitForGPU(uint64_t fence_val) {
+  if (!fence_val) fence_val = fence_val_;
   // Wait for commands to finish on GPU.
   // (spinloop has lowest latency, we can try event based signal if CPU
   // overhead becomes a bottleneck).
-  while (fence_->GetCompletedValue() != fenceVal)
+  while (fence_->GetCompletedValue() != fence_val)
     ;
-
-  command_allocator_->Reset();
-  command_list_->Reset(command_allocator_, NULL);
-  command_list_->SetDescriptorHeaps(1, &desc_heap_);
   upload_scratch_mem_.offset = 0;
+}
+
+void DxContext::resetCL(ID3D12GraphicsCommandList5* cl, ID3D12CommandAllocator* ca) {
+  if (!cl) cl = command_list_;
+  if (!ca) ca = command_allocator_;
+  ca->Reset();
+  cl->Reset(ca, NULL);
+  cl->SetDescriptorHeaps(1, &desc_heap_);
+}
+
+void DxContext::flushAndWait() {
+  flushCL();
+  waitForGPU();
+  resetCL();
 }
 
 void DxContext::dumpFp32(float* buf, int elements) {
@@ -168,8 +183,8 @@ DxContext::DxContext(const OptionsDict& options) {
 
   next_slot_in_desc_heap_ = 0;
 
-  fenceVal = 0ull;
-  ReportDxErrors(device_->CreateFence(fenceVal, D3D12_FENCE_FLAG_NONE,
+  fence_val_ = 0ull;
+  ReportDxErrors(device_->CreateFence(fence_val_, D3D12_FENCE_FLAG_NONE,
                                       IID_PPV_ARGS(&fence_)));
 
   shader_wrapper_.init(device_);
@@ -548,19 +563,19 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   }
 }
 
-void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
-  lock_.lock();
-
+void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
+  ID3D12GraphicsCommandList5* cl = io->command_list_;
+  dx_context_.resetCL(cl, io->command_allocator_);
 #ifdef DEBUG_RAW_NPS
   auto t_start = std::chrono::high_resolution_clock::now();
 #endif
 
   // Expand packed board representation into full planes.
   dx_context_.getShaderWrapper()->expandPlanes(
-      dx_context_.getCommandList(), tensor_mem_[0], io->input_masks_mem_gpu_,
+      cl, tensor_mem_[0], io->input_masks_mem_gpu_,
       io->input_val_mem_gpu_, batchSize, fp16_);
 
-  dx_context_.getCommandList()->ResourceBarrier(
+  cl->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
   // Debug dumping example.
@@ -571,9 +586,9 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
   // Input Conv
   network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[1], tensor_mem_[3],
-                      dx_context_.getCommandList());
+                      cl);
 
-  dx_context_.getCommandList()->ResourceBarrier(
+  cl->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
   // Residual tower.
@@ -581,17 +596,17 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
     // conv1
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3],
-                        dx_context_.getCommandList());
+                        cl);
 
-    dx_context_.getCommandList()->ResourceBarrier(
+    cl->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // conv2
     network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                         tensor_mem_[2], tensor_mem_[1], tensor_mem_[3],
-                        dx_context_.getCommandList());
+                        cl);
 
-    dx_context_.getCommandList()->ResourceBarrier(
+    cl->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
   }
 
@@ -602,36 +617,36 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
     // Policy conv1.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3],
-                        dx_context_.getCommandList());
+                        cl);
 
-    dx_context_.getCommandList()->ResourceBarrier(
+    cl->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // Policy conv2
     network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3],
-                        dx_context_.getCommandList());
+                        cl);
 
-    dx_context_.getCommandList()->ResourceBarrier(
+    cl->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // Policy Map layer  (writes directly to system memory).
     network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[1],
                         DXAlloc(), DXAlloc(), DXAlloc(),
-                        dx_context_.getCommandList());
+                        cl);
   } else {
     // Policy conv.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3],
-                        dx_context_.getCommandList());
+                        cl);
 
-    dx_context_.getCommandList()->ResourceBarrier(
+    cl->ResourceBarrier(
         1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
     // Policy FC (writes directly to system memory).
     network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[0],
                         DXAlloc(), tensor_mem_[1], tensor_mem_[3],
-                        dx_context_.getCommandList());
+                        cl);
   }
 
   // Value head.
@@ -639,32 +654,36 @@ void DxNetwork::forwardEval(InputsOutputsDx* io, int batchSize) {
   // Value conv.
   network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                       tensor_mem_[1], tensor_mem_[3],
-                      dx_context_.getCommandList());
+                      cl);
 
-  dx_context_.getCommandList()->ResourceBarrier(
+  cl->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
   // value FC1.
   network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[2], tensor_mem_[3],
-                      dx_context_.getCommandList());
+                      cl);
 
-  dx_context_.getCommandList()->ResourceBarrier(
+  cl->ResourceBarrier(
       1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
   // value FC2.
   network_[l++]->Eval(batchSize, io->op_value_mem_gpu_, tensor_mem_[1],
                       DXAlloc(), tensor_mem_[2], tensor_mem_[3],
-                      dx_context_.getCommandList());
+                      cl);
 
   // TODO: measure time from start to this point to get an idea of CPU side
-  // overhead in recording command list
+  // overhead in recording command list.
 #ifdef DEBUG_RAW_NPS
   auto t_cpu_end = std::chrono::high_resolution_clock::now();
 #endif
 
-  dx_context_.flushAndWait();
+  //dx_context_.flushAndWait();
+  lock_.lock();
+  uint64_t fence = dx_context_.flushCL(cl);
   lock_.unlock();
+
+  dx_context_.waitForGPU(fence);
 
   // Do some simple post-processing operations on CPU:
   // - un-padding of policy and value heads.
@@ -814,7 +833,7 @@ void DxNetworkComputation::AddInput(InputPlanes&& input) {
 }
 
 void DxNetworkComputation::ComputeBlocking() {
-  network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
+  network_->Eval(inputs_outputs_.get(), GetBatchSize());
 }
 
 InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
@@ -855,6 +874,13 @@ InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
   else
     op_policy_mem_final_ = new float[maxBatchSize * kNumOutputPolicy];
   op_value_mem_final_ = new float[maxBatchSize * (wdl ? 3 : 1)];
+
+  ReportDxErrors(pContext->getDevice()->CreateCommandAllocator(
+      D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocator_)));
+
+  ReportDxErrors(pContext->getDevice()->CreateCommandList(
+      1, D3D12_COMMAND_LIST_TYPE_DIRECT, command_allocator_, NULL,
+      IID_PPV_ARGS(&command_list_)));
 }
 
 InputsOutputsDx::~InputsOutputsDx() {
@@ -867,6 +893,9 @@ InputsOutputsDx::~InputsOutputsDx() {
   input_val_mem_gpu_.pResource->Release();
   op_policy_mem_gpu_.pResource->Release();
   op_value_mem_gpu_.pResource->Release();
+
+  command_allocator_->Release();
+  command_list_->Release();
 
   if (!uses_policy_map_) delete[] op_policy_mem_final_;
   delete[] op_value_mem_final_;
