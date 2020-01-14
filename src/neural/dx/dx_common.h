@@ -20,7 +20,7 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <stdint.h>
-#include "d3dx12.h"
+#include "../../../third_party/d3dx12.h"
 
 namespace lczero {
 
