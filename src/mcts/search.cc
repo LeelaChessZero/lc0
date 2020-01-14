@@ -1165,9 +1165,10 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   
   // determine current position and exercise all moves
   Node* root_node = search_->root_node_;
+  Node* walknode = node;
   std::vector<Move> moves;
-  for (; node != root_node; node = node->GetParent()) {
-    moves.push_back(node->GetOwnEdge()->GetMove());
+  for (; walknode != root_node; walknode = walknode->GetParent()) {
+    moves.push_back(walknode->GetOwnEdge()->GetMove());
   }
   Position rootPosition = history_.Last();
   ChessBoard board = rootPosition.GetBoard();
