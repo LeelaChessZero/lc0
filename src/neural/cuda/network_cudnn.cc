@@ -40,7 +40,7 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
-#define DEBUG_RAW_NPS
+//#define DEBUG_RAW_NPS
 
 namespace lczero {
 using namespace cudnn_backend;

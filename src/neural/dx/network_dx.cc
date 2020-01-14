@@ -33,8 +33,6 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
-#define DEBUG_RAW_NPS
-
 namespace lczero {
 
 using namespace dx_backend;
@@ -566,9 +564,6 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   ID3D12GraphicsCommandList5* cl = io->command_list_;
   dx_context_.resetCL(cl, io->command_allocator_);
-#ifdef DEBUG_RAW_NPS
-  auto t_start = std::chrono::high_resolution_clock::now();
-#endif
 
   // Expand packed board representation into full planes.
   dx_context_.getShaderWrapper()->expandPlanes(
@@ -672,13 +667,9 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
                       DXAlloc(), tensor_mem_[2], tensor_mem_[3],
                       cl);
 
-  // TODO: measure time from start to this point to get an idea of CPU side
-  // overhead in recording command list.
-#ifdef DEBUG_RAW_NPS
-  auto t_cpu_end = std::chrono::high_resolution_clock::now();
-#endif
-
-  //dx_context_.flushAndWait();
+  // TODO: Get rid of this lock once we move the Command Queue also to InputsOutputs structure
+  // This isn't a bottleneck anyway (for CPU side perf).
+  // The hope is that we will get some GPU side parallelism with multiple async compute queues.
   lock_.lock();
   uint64_t fence = dx_context_.flushCL(cl);
   lock_.unlock();
@@ -746,34 +737,6 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
       io->op_value_mem_final_[i * 3 + 2] = l;
     }
   }
-
-#ifdef DEBUG_RAW_NPS
-  const int reportingCalls = 100;
-  static int numCalls = 0;
-  static int sumBatchSize = 0;
-  static double totalTime = 0;
-
-  sumBatchSize += batchSize;
-  numCalls++;
-
-  auto t_end = std::chrono::high_resolution_clock::now();
-  // auto t_end = t_cpu_end;
-
-  double dt = std::chrono::duration<double>(t_end - t_start).count();
-  totalTime += dt;
-  if (numCalls == reportingCalls) {
-    double avgBatchSize = ((double)sumBatchSize) / numCalls;
-    double nps = sumBatchSize / totalTime;
-    printf(
-        "\nAvg batch size: %lf, NN eval time: %lf seconds per %d evals. "
-        "NPS: "
-        "%g\n",
-        avgBatchSize, totalTime, sumBatchSize, nps);
-    sumBatchSize = 0;
-    totalTime = 0;
-    numCalls = 0;
-  }
-#endif
 }
 
 DxNetwork::~DxNetwork() {
