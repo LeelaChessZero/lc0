@@ -1184,7 +1184,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     ChessBoard boardmove = board;
     boardmove.ApplyMove(edge.GetMove());
     if (boardmove.IsUnderCheck()) {
-      p = p + 100;
+      p = p + 1;
     }
 
     // Perform softmax and take into account policy softmax temperature T.
