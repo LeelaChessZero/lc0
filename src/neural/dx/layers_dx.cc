@@ -28,10 +28,12 @@
 #include "MetaCommand.h"
 #include "network_dx.h"
 
+#include <comdef.h>
+
 namespace lczero {
 namespace dx_backend {
 
-void copyFloatToHalf(dx_half* out, const float* in, int elements) {
+void copyFloatToHalf(dx_half* out, const float* in, size_t elements) {
   for (int i = 0; i < elements; i++) {
     out[i] = FP32toFP16(in[i]);
   }
@@ -375,31 +377,30 @@ ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommandGemm,
   shader_wrapper_ = pContext->getShaderWrapper();
 }
 
-template <int M, int N, int K, typename T>
-void matrixMulCPU(T* c, T* a, T* b) {
+template <int M, int N, int K>
+void matrixMulCPU(float* c, const float* a, const float* b) {
   for (int i = 0; i < M; ++i)
     for (int j = 0; j < N; ++j) {
       float S = 0;
       for (int k = 0; k < K; ++k)
-        S += (float)(a[i * K + k]) * (float)(b[k * N + j]);
-      c[i * N + j] = (T)S;
+        S += a[i * K + k] * b[k * N + j];
+      c[i * N + j] = S;
     }
 }
 
-template <typename T>
-void filterTransform4x4(T* transformedFilter, T* filter) {
+void filterTransform4x4(float* transformedFilter, const float* filter) {
   // transform applied to filter (of size 3x3)
-  T G[6 * 3] = {1.0 / 4,  0,         0,        -1.0 / 6, -1.0 / 6, -1.0 / 6,
-                -1.0 / 6, 1.0 / 6,   -1.0 / 6, 1.0 / 24, 1.0 / 12, 1.0 / 6,
-                1.0 / 24, -1.0 / 12, 1.0 / 6,  0,        0,        1};
+  float G[6 * 3] = { 1.0f / 4,   0,           0,       -1.0f / 6, -1.0f / 6, -1.0f / 6,
+                    -1.0f / 6,   1.0f / 6,   -1.0f / 6, 1.0f / 24, 1.0f / 12, 1.0f / 6,
+                     1.0f / 24, -1.0f / 12,   1.0f / 6, 0,         0,         1};
 
-  T Gt[3 * 6] = {1.0 / 4, -1.0 / 6, -1.0 / 6, 1.0 / 24, 1.0 / 24,  0,
-                 0,       -1.0 / 6, 1.0 / 6,  1.0 / 12, -1.0 / 12, 0,
-                 0,       -1.0 / 6, -1.0 / 6, 1.0 / 6,  1.0 / 6,   1};
+  float Gt[3 * 6] = {1.0f / 4, -1.0f / 6, -1.0f / 6,  1.0f / 24,  1.0f / 24,  0,
+                     0,        -1.0f / 6,  1.0f / 6,  1.0f / 12, -1.0f / 12,  0,
+                     0,        -1.0f / 6, -1.0f / 6,  1.0f / 6,   1.0f / 6,   1};
 
-  T tempFilter[6 * 3];
-  matrixMulCPU<6, 3, 3, T>(tempFilter, G, filter);
-  matrixMulCPU<6, 6, 3, T>(transformedFilter, tempFilter, Gt);
+  float tempFilter[6 * 3];
+  matrixMulCPU<6, 3, 3>(tempFilter, G, filter);
+  matrixMulCPU<6, 6, 3>(transformedFilter, tempFilter, Gt);
 }
 
 #define FILTER_IDX_NCHW(k, c, h, w) ((k)*C * S * R + (c)*S * R + (h)*R + w)
@@ -474,9 +475,9 @@ void ConvLayer::LoadWeights(float* pfilter, float* pBias, DxContext* pContext) {
   }
 }
 
-void cpuTranspose(float* op, float* ip, int rows, int cols) {
-  for (int i = 0; i < rows; i++)
-    for (int j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
+void cpuTranspose(float* op, float* ip, size_t rows, size_t cols) {
+  for (size_t i = 0; i < rows; i++)
+    for (size_t j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
 }
 
 void ConvLayer::LoadSEWeights(float* w1, float* b1, float* w2, float* b2) {
@@ -552,7 +553,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     shader_wrapper_->inputTransform(command_list, scratch, input, N, c_input_,
                                     fp16_);
 
-    command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+    dx_context_->uavBarrier(command_list);
 
     // 2. Gemm (scratch -> scratch2)
     if (meta_command_gemm_->IsAvailable())
@@ -563,7 +564,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                                       transformed_weights_, N * 4, C, c_input_,
                                       36, fp16_);
 
-    command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+    dx_context_->uavBarrier(command_list);
 
     // 3. Output transform (scratch2 -> output)
     shader_wrapper_->outputTransform(
@@ -579,16 +580,17 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
       meta_command_conv_->PerformConv(N, input, weights_, biases_, output,
                                       command_list);
     if (has_se_) {
-      command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+      dx_context_->uavBarrier(command_list);
       shader_wrapper_->se(command_list, output, scratch, input2, biases_, w1_,
                           b1_, w2_, b2_, N, C, use_relu_, false, skip_add_,
                           se_k_, fp16_);
     } else if (skip_add_) {
       throw Exception("Bias additon shader un-implemented! ");
 #if 0
+      // Ankan - TODO! not going to work for nchw! Need a new shader!
       shader_wrapper_->addVectors(command_list, output, scratch, biases_,
                                   N * C * H * W, C, N * C * H * W,
-                                  use_relu_, false, fp16_); // Ankan - TODO! not going to work for nchw! Need a new shader!
+                                  use_relu_, false, fp16_); 
 #endif
     }
   }
@@ -616,6 +618,7 @@ FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
     : BaseLayer(C, H, W, ip, pContext, fp16),
       use_bias_(bias),
       use_relu_(relu),
+      meta_command_(nullptr),
       use_tanh_(tanh) {
   size_t element_size = fp16_ ? sizeof(dx_half) : sizeof(float);
   size_t weight_size =
@@ -630,7 +633,7 @@ FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
 
   // Create metacommand object
   int rows = 0;  // batch size
-  int cols = C * H * W;
+  int cols = C * H * W; // cols of the output matrix
   int K = ip->GetC() * ip->GetH() * ip->GetW();  // cols of input matrix
   // We do Out = A * weight.
   // The weight matrix need to be transpsoed before it can be multiplied.
@@ -671,8 +674,8 @@ void FCLayer::LoadWeights(float* cpuWeight, float* cpuBias,
   }
 }
 
-void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
-                   DXAlloc scratch, DXAlloc scratch2,
+void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
+                   DXAlloc /*scratch*/, DXAlloc /*scratch2*/,
                    ID3D12GraphicsCommandList5* command_list) {
   int num_outputs = C * H * W;
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
@@ -683,21 +686,9 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     shader_wrapper_->MatrixMultiply(command_list, output, input, weights_,
                                     DivUp(N, 8) * 8, num_outputs, num_inputs, 1,
                                     fp16_);
-  // Ankan - debug!
-#if 0
-  if (N > 1) {
-    printf("\nInput: \n");
-    dx_context_->dumpTensor(input, num_inputs*N, fp16_);
-    printf("\nAfter FC mat-mul, cols: %d, rows: %d, k: %d\n", num_outputs, N,
-           num_inputs);
-    dx_context_->dumpTensor(output, num_outputs*N, fp16_);
-    if (num_outputs != 128)
-      exit(0);
-  }
-#endif
 
   if (use_bias_ || use_relu_ || use_tanh_) {
-    command_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+    dx_context_->uavBarrier(command_list);
     shader_wrapper_->addVectors(command_list, output, output, biases_,
                                 N * num_outputs, N * num_outputs, num_outputs, 
                                 use_relu_, use_tanh_, fp16_);
@@ -725,8 +716,8 @@ void PolicyMapLayer::LoadWeights(const short* cpuWeights) {
   dx_context_->scheduleUpload(weights_, temp.data(), sizeof(int) * used_size_);
 }
 
-void PolicyMapLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
-                          DXAlloc scratch, DXAlloc scratch2,
+void PolicyMapLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
+                          DXAlloc /*scratch*/, DXAlloc /*scratch2*/,
                           ID3D12GraphicsCommandList5* command_list) {
   int inputSize =
       this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
@@ -744,8 +735,10 @@ PolicyMapLayer::~PolicyMapLayer() {
 void DxError(HRESULT status, const char* file, const int& line) {
   if (FAILED(status)) {
     assert(0);
-    char message[128];
-    sprintf(message, "Dx error: %s (%s:%d) ", "generic dx error", file, line);
+    char message[512];
+    _com_error err(status);
+    LPCTSTR errMsg = err.ErrorMessage();
+    sprintf_s(message, "Dx error: %s (%s:%d) ", errMsg, file, line);
     throw Exception(message);
   }
 }

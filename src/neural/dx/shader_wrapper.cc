@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2019 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -30,14 +30,12 @@ namespace lczero {
 namespace dx_backend {
 
 // Helper macros to reduce copy-paste.
-#define CREATE_WINOGRAD_SE_PSO(datatype, channels)                   \
-  state_desc.CS = {                                                  \
-      g_output_transform_shader_##datatype##_se_##channels,          \
-      sizeof(g_output_transform_shader_##datatype##_se_##channels)}; \
-  ReportDxErrors(device->CreateComputePipelineState(                 \
-      &state_desc,                                                   \
-      IID_PPV_ARGS(                                                  \
-          &winograd_output_transform_##datatype##_se_##channels##_)));
+#define CREATE_WINOGRAD_SE_PSO(channels)                                  \
+  state_desc.CS = {g_output_transform_shader_fp32_se_##channels,          \
+                   sizeof(g_output_transform_shader_fp32_se_##channels)}; \
+  ReportDxErrors(device->CreateComputePipelineState(                      \
+      &state_desc,                                                        \
+      IID_PPV_ARGS(&winograd_output_transform_se_##channels##_)));
 
 #define CREATE_SE_PSO(channels)                               \
   state_desc.CS = {g_se_##channels, sizeof(g_se_##channels)}; \
@@ -47,7 +45,7 @@ namespace dx_backend {
 
 #define SET_WINOGRAD_SE_PSO(channels)                         \
   command_list->SetPipelineState(                             \
-      winograd_output_transform_fp32_se_##channels##_);
+      winograd_output_transform_se_##channels##_);
 
 void ShaderWrapper::init(ID3D12Device* device) {
   // Create root signature - common for all shaders.
@@ -110,47 +108,42 @@ void ShaderWrapper::init(ID3D12Device* device) {
   // Expand planes shaders.
   D3D12_COMPUTE_PIPELINE_STATE_DESC state_desc = {};
   state_desc.pRootSignature = root_sign_;
-
+  
   state_desc.CS = {g_ExpandPlanes_shader_fp16,
                    sizeof(g_ExpandPlanes_shader_fp16)};
   ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&expand_planes_state_fp16_)));
+      &state_desc, IID_PPV_ARGS(&expand_planes_fp16_)));
 
   state_desc.CS = {g_ExpandPlanes_shader_fp32,
                    sizeof(g_ExpandPlanes_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&expand_planes_state_fp32_)));
+      &state_desc, IID_PPV_ARGS(&expand_planes_fp32_)));
 
   // Winograd Input Transform shader.
   state_desc.CS = {g_input_transform_shader_fp32,
                    sizeof(g_input_transform_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&winograd_input_transform_fp32_)));
+      &state_desc, IID_PPV_ARGS(&winograd_input_transform_)));
 
   // Winograd Output Transform shader.
   state_desc.CS = {g_output_transform_shader_fp32,
                    sizeof(g_output_transform_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&winograd_output_transform_fp32_)));
+      &state_desc, IID_PPV_ARGS(&winograd_output_transform_)));
 
   // 1x1 convolution shader.
   state_desc.CS = {g_conv_1x1_shader_fp32, sizeof(g_conv_1x1_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&conv_1x1_fp32_)));
+      &state_desc, IID_PPV_ARGS(&conv_1x1_)));
 
   // policy map shader.
   state_desc.CS = {g_policy_map_shader_fp32, sizeof(g_policy_map_shader_fp32)};
   ReportDxErrors(device->CreateComputePipelineState(
-      &state_desc, IID_PPV_ARGS(&policy_map_fp32_)));
-
-  // Gemm shaders.
-  state_desc.CS = {g_MatrixMul_Fp16, sizeof(g_MatrixMul_Fp16)};
-  ReportDxErrors(device->CreateComputePipelineState(&state_desc,
-                                                    IID_PPV_ARGS(&gemm_fp16_)));
+      &state_desc, IID_PPV_ARGS(&policy_map_)));
 
   state_desc.CS = {g_MatrixMul_Fp32, sizeof(g_MatrixMul_Fp32)};
   ReportDxErrors(device->CreateComputePipelineState(&state_desc,
-                                                    IID_PPV_ARGS(&gemm_fp32_)));
+                                                    IID_PPV_ARGS(&gemm_)));
 
   // Add vectors shader.
   state_desc.CS = {g_add_vectors_shader, sizeof(g_add_vectors_shader)};
@@ -168,25 +161,25 @@ void ShaderWrapper::init(ID3D12Device* device) {
   CREATE_SE_PSO(1024);
 
   // Various output-transform fused with SE shaders.
-  CREATE_WINOGRAD_SE_PSO(fp32, 128)
-  CREATE_WINOGRAD_SE_PSO(fp32, 256)
-  CREATE_WINOGRAD_SE_PSO(fp32, 320)
-  CREATE_WINOGRAD_SE_PSO(fp32, 384)
-  CREATE_WINOGRAD_SE_PSO(fp32, 512)
-  CREATE_WINOGRAD_SE_PSO(fp32, 640)
-  CREATE_WINOGRAD_SE_PSO(fp32, 768)
-  CREATE_WINOGRAD_SE_PSO(fp32, 1024)
+  CREATE_WINOGRAD_SE_PSO(128)
+  CREATE_WINOGRAD_SE_PSO(256)
+  CREATE_WINOGRAD_SE_PSO(320)
+  CREATE_WINOGRAD_SE_PSO(384)
+  CREATE_WINOGRAD_SE_PSO(512)
+  CREATE_WINOGRAD_SE_PSO(640)
+  CREATE_WINOGRAD_SE_PSO(768)
+  CREATE_WINOGRAD_SE_PSO(1024)
 }
 
 void ShaderWrapper::destroy() {
-  expand_planes_state_fp16_->Release();
-  gemm_fp16_->Release();
-  expand_planes_state_fp32_->Release();
-  winograd_input_transform_fp32_->Release();
-  winograd_output_transform_fp32_->Release();
-  conv_1x1_fp32_->Release();
-  policy_map_fp32_->Release();
-  gemm_fp32_->Release();
+  expand_planes_fp16_->Release();
+  expand_planes_fp32_->Release();
+
+  winograd_input_transform_->Release();
+  winograd_output_transform_->Release();
+  conv_1x1_->Release();
+  policy_map_->Release();
+  gemm_->Release();
   add_vectors_->Release();
 
   se_128_->Release();
@@ -198,14 +191,14 @@ void ShaderWrapper::destroy() {
   se_768_->Release();
   se_1024_->Release();
 
-  winograd_output_transform_fp32_se_128_->Release();
-  winograd_output_transform_fp32_se_256_->Release();
-  winograd_output_transform_fp32_se_320_->Release();
-  winograd_output_transform_fp32_se_384_->Release();
-  winograd_output_transform_fp32_se_512_->Release();
-  winograd_output_transform_fp32_se_640_->Release();
-  winograd_output_transform_fp32_se_768_->Release();
-  winograd_output_transform_fp32_se_1024_->Release();
+  winograd_output_transform_se_128_->Release();
+  winograd_output_transform_se_256_->Release();
+  winograd_output_transform_se_320_->Release();
+  winograd_output_transform_se_384_->Release();
+  winograd_output_transform_se_512_->Release();
+  winograd_output_transform_se_640_->Release();
+  winograd_output_transform_se_768_->Release();
+  winograd_output_transform_se_1024_->Release();
 
   root_sign_->Release();
 }
@@ -216,8 +209,8 @@ void ShaderWrapper::expandPlanes(ID3D12GraphicsCommandList5* command_list,
   const int N = batchSize * kInputPlanes;
   int consts[] = {N, kInputPlanes};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(fp16 ? expand_planes_state_fp16_
-                                      : expand_planes_state_fp32_);
+  command_list->SetPipelineState(fp16 ? expand_planes_fp16_
+                                      : expand_planes_fp32_);
   command_list->SetComputeRootUnorderedAccessView(0, output_tensor.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, masks.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(2, values.gpuVA);
@@ -230,12 +223,10 @@ void ShaderWrapper::expandPlanes(ID3D12GraphicsCommandList5* command_list,
 
 void ShaderWrapper::inputTransform(ID3D12GraphicsCommandList5* command_list,
                                    DXAlloc transformed_input, DXAlloc input,
-                                   int N, int C, bool fp16) {
+                                   int N, int C, bool /*fp16*/) {
   int consts[] = {N, C};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(/*fp16 ? winograd_input_transform_fp16_
-                                      :*/
-                                 winograd_input_transform_fp32_);
+  command_list->SetPipelineState(winograd_input_transform_);
   command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, transformed_input.gpuVA);
   command_list->SetComputeRoot32BitConstants(
@@ -253,7 +244,7 @@ void ShaderWrapper::se(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
     DXAlloc input, DXAlloc skip_connection, DXAlloc bias,
     DXAlloc se_w1, DXAlloc se_b1, DXAlloc se_w2,
     DXAlloc se_b2, int N, int K, bool relu, bool bias_add,
-    bool skip_add, int se_k, bool fp16) {
+    bool skip_add, int se_k, bool /*fp16*/) {
   int consts[] = {N, K, relu, bias_add, skip_add, se_k};
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
@@ -318,7 +309,7 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
                                     DXAlloc se_w1, DXAlloc se_b1, DXAlloc se_w2,
                                     DXAlloc se_b2, int N, int K, bool relu,
                                     bool bias_add, bool skip_add, bool fused_se,
-                                    int se_k, bool fp16) {
+                                    int se_k, bool /*fp16*/) {
   int consts[] = {N, K, relu, bias_add, skip_add, fused_se, se_k};
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetComputeRootUnorderedAccessView(0, transformed_output.gpuVA);
@@ -380,9 +371,7 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
 
   } else {
     blocks = DivUp(N * K, kWinogradTransformShaderBlockSize);
-    command_list->SetPipelineState(/*fp16 ? winograd_output_transform_fp16_
-                                        :*/
-                                   winograd_output_transform_fp32_);
+    command_list->SetPipelineState(winograd_output_transform_);
   }
 
   command_list->Dispatch(blocks, 1, 1);
@@ -391,10 +380,10 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
 void ShaderWrapper::conv1x1(ID3D12GraphicsCommandList5* command_list,
                             DXAlloc output, DXAlloc input, DXAlloc weight,
                             DXAlloc bias, int N, int C, int K, bool relu,
-                            bool useBias, bool fp16) {
+                            bool useBias, bool /*fp16*/) {
   int consts[] = {N, K, C, useBias, relu};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(conv_1x1_fp32_);
+  command_list->SetPipelineState(conv_1x1_);
   command_list->SetComputeRootUnorderedAccessView(0, output.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, input.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(2, weight.gpuVA);
@@ -433,7 +422,8 @@ void ShaderWrapper::addVectors(ID3D12GraphicsCommandList5* command_list,
   command_list->SetComputeRootUnorderedAccessView(0, A.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, B.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(2, C.gpuVA);
-  command_list->SetComputeRoot32BitConstants(kUavSlots, 6, &consts, 0);
+  command_list->SetComputeRoot32BitConstants(
+      kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
 
   int blocks = DivUp(c_size, kAddVectorsBlockSize);
   command_list->Dispatch(blocks, 1, 1);
@@ -442,10 +432,10 @@ void ShaderWrapper::addVectors(ID3D12GraphicsCommandList5* command_list,
 void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
                               DXAlloc output, DXAlloc input, DXAlloc weights,
                               int N, int input_size, int output_size,
-                              int used_size, bool fp16) {
+                              int used_size, bool /*fp16*/) {
   int consts[] = {N, input_size, used_size, output_size};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetPipelineState(policy_map_fp32_);
+  command_list->SetPipelineState(policy_map_);
   command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(2, weights.gpuVA);
@@ -458,13 +448,11 @@ void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
 
 void ShaderWrapper::MatrixMultiply(ID3D12GraphicsCommandList5* command_list,
                                    DXAlloc output, DXAlloc A, DXAlloc B, int M,
-                                   int N, int K, int batch, bool fp16) {
+                                   int N, int K, int batch, bool /*fp16*/) {
   int Consts[] = {M, N, K, batch};
   command_list->SetComputeRootSignature(root_sign_);
 
-  // On AMD, fp32 math is much faster than fp16.. likely a bug?
-  // command_list->SetPipelineState(fp16 ? gemm_fp16_ : gemm_fp32_);
-  command_list->SetPipelineState(gemm_fp32_);
+  command_list->SetPipelineState(gemm_);
 
   command_list->SetComputeRootUnorderedAccessView(0, A.gpuVA);
   command_list->SetComputeRootUnorderedAccessView(1, B.gpuVA);

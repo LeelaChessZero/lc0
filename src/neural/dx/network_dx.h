@@ -134,8 +134,9 @@ class DxContext {
 
   std::atomic<unsigned int> next_slot_in_desc_heap_;
 
-  // in system memory (used to copy to/from CPU data).
-  size_t scratch_size_;
+  // Scratch space in system memory (used to copy to/from CPU data).
+  // 256 MB should be enough for uploading weights, etc.
+  constexpr static size_t kUploadDownloadScratchSize = 256 * 1024 * 1024;
   DXAlloc upload_scratch_mem_;
   DXAlloc readback_scratch_mem_;
 
@@ -152,6 +153,7 @@ class DxContext {
   // util functions
   void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
                    bool fp16);
+  void uavBarrier(ID3D12GraphicsCommandList5* cl = nullptr);
   uint64_t flushCL(ID3D12GraphicsCommandList5 *cl = nullptr);
   void waitForGPU(uint64_t fence_val = 0);
   void resetCL(ID3D12GraphicsCommandList5* cl = nullptr,
@@ -193,7 +195,7 @@ class DxNetwork : public Network {
   mutable std::mutex lock_;
 
   // Network Properties.
-  int numBlocks_;
+  int num_blocks_;
   bool has_se_;
   bool has_wdl_;
   bool has_conv_policy_;

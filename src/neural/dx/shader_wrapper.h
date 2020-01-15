@@ -32,44 +32,37 @@ class ShaderWrapper {
   // 1. Expand planes: Used to convert packed bit-board representation to
   //                   'planes' that is input to NN
   // 2. Winograd Input transform.
-  // 3. Winograd Output transform (compile seperate versions only if better for perf):
-  //      - Without anything.
-  //      - Just optional relu.
-  //      - Fused with skip connection add and relu.
-  //      - Fused with SE and skip connection add and relu?
+  // 3. Winograd Output transform.
+  //      - Fused with bias add, skip connection add, and relu.
+  //      - Fused with SE, bias add, skip connection add and relu.
   // 4. Policy Map layer. (can also be done on CPU side)
-  // 5. Fully connected softmax when using wdl. (maybe can be done on CPU side too)
-  // 6. 1x1 convolution custom kernel (used by policy and value heads).
-  // (We have a conv metacommand, but dealing with nhwc/nchw memory layouts for
-  //  different vendors/datatypes is probably harder than just writing a kernel ourselves
-  //  which shouldn't be the bottleneck anyway).
-
+  // 5. 1x1 convolution custom kernel (used by policy and value heads).
+  //      - TODO: Try replacing this with conv metacommand when available.
   //
-  // Two copies of all of the above as we need both fp16 and fp32 versions.
-  // TODO: 2 copies not needed for now, as:
+  // For best performance it would seem that we would need two copies of all the
+  // shaders - fp16 and fp32 versions. However 2 copies not needed for now, as:
   //   i) We should use typed UAVs for resource access as they seem to be
-  //   faster.
-  //      With Typed UAVs, the shader automatically recieves datatype converted
-  //      values (e.g: in fp32 even when the allocation was in fp16)
+  //   faster. With Typed UAVs, the shader automatically recieves datatype converted
+  //   values (e.g: in fp32 even when the allocation was in fp16)
   //   ii) Most of these operations are memory bound - except for the GEMM, but:
   //  iii) Due to driver/compiler bugs or lack of optimizations fp16 path seems
   //  slower on both Nvidia and AMD for most of the shaders - even GEMM on AMD
-  //  is faster with fp32!
+  //  is way slower with fp16 math than with fp32.
 
-  ID3D12PipelineState* expand_planes_state_fp16_;
+  // Only expand planes has different shaders for different datatypes.
+  //  - Mostly a meaningless 'early' optimization as this shouldn't be the bottleneck.
+  ID3D12PipelineState* expand_planes_fp16_;
+  ID3D12PipelineState* expand_planes_fp32_;
 
-  ID3D12PipelineState* expand_planes_state_fp32_;
-  ID3D12PipelineState* winograd_input_transform_fp32_;
-  ID3D12PipelineState* winograd_output_transform_fp32_;
-  ID3D12PipelineState* conv_1x1_fp32_;
-  ID3D12PipelineState* policy_map_fp32_;
+  ID3D12PipelineState* winograd_input_transform_;
+  ID3D12PipelineState* winograd_output_transform_;
+  ID3D12PipelineState* conv_1x1_;
+  ID3D12PipelineState* policy_map_;
 
   // Gemm shaders (used when gemm Metacommand isn't supported by the HW vendor)
-  ID3D12PipelineState* gemm_fp16_;
-  ID3D12PipelineState* gemm_fp32_;
+  ID3D12PipelineState* gemm_;
  
-  // Another simple shader (same shaders handles both fp32 and fp16) to add
-  // bias, apply relu/tanh, etc.
+  // Another simple shader to add bias, apply relu/tanh, etc.
   ID3D12PipelineState* add_vectors_;
 
   // Fused SE shaders for various standard channel counts.
@@ -84,14 +77,14 @@ class ShaderWrapper {
 
   // Winograd output transform fused with SE for various standard channel
   // counts.
-  ID3D12PipelineState* winograd_output_transform_fp32_se_128_;
-  ID3D12PipelineState* winograd_output_transform_fp32_se_256_;
-  ID3D12PipelineState* winograd_output_transform_fp32_se_320_;
-  ID3D12PipelineState* winograd_output_transform_fp32_se_384_;
-  ID3D12PipelineState* winograd_output_transform_fp32_se_512_;
-  ID3D12PipelineState* winograd_output_transform_fp32_se_640_;
-  ID3D12PipelineState* winograd_output_transform_fp32_se_768_;
-  ID3D12PipelineState* winograd_output_transform_fp32_se_1024_;
+  ID3D12PipelineState* winograd_output_transform_se_128_;
+  ID3D12PipelineState* winograd_output_transform_se_256_;
+  ID3D12PipelineState* winograd_output_transform_se_320_;
+  ID3D12PipelineState* winograd_output_transform_se_384_;
+  ID3D12PipelineState* winograd_output_transform_se_512_;
+  ID3D12PipelineState* winograd_output_transform_se_640_;
+  ID3D12PipelineState* winograd_output_transform_se_768_;
+  ID3D12PipelineState* winograd_output_transform_se_1024_;
 
  public:
   void init(ID3D12Device* pDevice);
