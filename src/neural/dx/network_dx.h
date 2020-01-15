@@ -58,18 +58,14 @@ struct InputsOutputsDx {
   float* op_policy_mem_;
   float* op_value_mem_;
 
-  // separate copy, un-padded and always in fp32
+  // Separate copy, un-padded and always in fp32
   float* op_policy_mem_final_;
   float* op_value_mem_final_;
 
-  // TODO: This can be useful to bake once - execute multiple times
-  // which can significantly reduce CPU side overhead of DX calls.
-  // Command list with recorded commands to run the network.
-  // ID3D12GraphicsCommandList4* command_list_[1024];
-  // ID3D12CommandAllocator* command_allocator_[1024];
-
   ID3D12GraphicsCommandList5* command_list_;
   ID3D12CommandAllocator* command_allocator_;
+  bool needs_reset_;    // Always needs reset after first time.
+
   const bool uses_policy_map_;
 };
 
@@ -157,7 +153,7 @@ class DxContext {
   uint64_t flushCL(ID3D12GraphicsCommandList5 *cl = nullptr);
   void waitForGPU(uint64_t fence_val = 0);
   void resetCL(ID3D12GraphicsCommandList5* cl = nullptr,
-               ID3D12CommandAllocator* ca = nullptr);
+               ID3D12CommandAllocator* ca = nullptr, bool reset = true);
 
   void flushAndWait();
   void scheduleUpload(DXAlloc alloc, const void* data, size_t size);
@@ -209,15 +205,18 @@ class DxNetwork : public Network {
   BaseLayer* value_out_;
 
   // Unique Metacommands used multiple times in the network.
-  GemmMetaCommand* input_conv_winograd_gemm_;
-  GemmMetaCommand* residual_block_winograd_gemm_;
-  GemmMetaCommand* policy_conv_winograd_gemm_;
 
-  // TODO: rename these with better names (Metacommand should be in name)!
-  ConvMetaCommand* input_conv_;
-  ConvMetaCommand* resi_block_conv_1_;
-  ConvMetaCommand* resi_block_conv_2_;
-  ConvMetaCommand* policy_conv_;
+  // GEMM metacommands needed by winograd algorithm.
+  GemmMetaCommand* input_conv_gemm_metacommand_;
+  GemmMetaCommand* residual_block_gemm_metacommand_;
+  GemmMetaCommand* policy_conv_gemm_metacommand_;
+
+  // Convolution metacommands to directly perform convolution.
+  //  - used only when GEMM metacommand isn't supported.
+  ConvMetaCommand* input_conv_metacommand_;
+  ConvMetaCommand* resi_block_conv_1_metacommand_;
+  ConvMetaCommand* resi_block_conv_2_metacommand_;
+  ConvMetaCommand* policy_conv_metacommand_;
 
   // In device memory.
   DXAlloc tensor_mem_[4];

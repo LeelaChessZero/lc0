@@ -698,6 +698,7 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
 FCLayer::~FCLayer() {
   if (weights_.pResource) weights_.pResource->Release();
   if (biases_.pResource) biases_.pResource->Release();
+  if (meta_command_) delete meta_command_;
 }
 
 

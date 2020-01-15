@@ -1,6 +1,3 @@
-// Ankan - test
-#define DEFAULT_FP16 true
-
 /*
   This file is part of Leela Chess Zero.
   Copyright (C) 2020 The LCZero Authors
@@ -33,6 +30,8 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
+#define DEFAULT_FP16 true
+
 namespace lczero {
 
 using namespace dx_backend;
@@ -56,11 +55,14 @@ void DxContext::waitForGPU(uint64_t fence_val) {
 }
 
 void DxContext::resetCL(ID3D12GraphicsCommandList5* cl,
-                        ID3D12CommandAllocator* ca) {
+                        ID3D12CommandAllocator* ca, bool reset) {
   if (!cl) cl = command_list_;
   if (!ca) ca = command_allocator_;
-  ca->Reset();
-  cl->Reset(ca, NULL);
+  if (reset)
+  {
+    ca->Reset();
+    cl->Reset(ca, NULL);
+  }
   cl->SetDescriptorHeaps(1, &desc_heap_);
 }
 
@@ -289,7 +291,7 @@ void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
       uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
       uavDesc.Format = fp16 ? DXGI_FORMAT_R16_FLOAT : DXGI_FORMAT_R32_FLOAT;
       uavDesc.Buffer.FirstElement = 0;
-      uavDesc.Buffer.NumElements = (UINT) (size / element_size);
+      uavDesc.Buffer.NumElements = (UINT)(size / element_size);
 
       device_->CreateUnorderedAccessView(alloc.pResource, nullptr, &uavDesc,
                                          cpuDescHandle);
@@ -314,7 +316,7 @@ void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
       uavDesc.Format = fp16 ? DXGI_FORMAT_R16G16B16A16_FLOAT
                             : DXGI_FORMAT_R32G32B32A32_FLOAT;
       uavDesc.Buffer.FirstElement = 0;
-      uavDesc.Buffer.NumElements = (UINT) (size / (4 * element_size));
+      uavDesc.Buffer.NumElements = (UINT)(size / (4 * element_size));
 
       device_->CreateUnorderedAccessView(alloc.pResource, nullptr, &uavDesc,
                                          cpuDescHandle);
@@ -346,7 +348,7 @@ void DxContext::scheduleUpload(DXAlloc alloc, const void* data, size_t size) {
   command_list_->CopyBufferRegion(alloc.pResource, alloc.offset,
                                   upload_scratch_mem_.pResource,
                                   upload_scratch_mem_.offset, size);
-  
+
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
       alloc.pResource, D3D12_RESOURCE_STATE_COPY_DEST,
       D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -355,13 +357,12 @@ void DxContext::scheduleUpload(DXAlloc alloc, const void* data, size_t size) {
   upload_scratch_mem_.pResource->Unmap(0, nullptr);
 
   // reset at flush and wait
-  upload_scratch_mem_.offset += (uint32_t) size;
+  upload_scratch_mem_.offset += (uint32_t)size;
 }
 
 DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     : dx_context_(options),
       capabilities_{file.format().network_format().input()} {
-  printf("\ncreating DX backend!\n");  // Ankan - for testing
   LegacyWeights weights(file.weights());
 
   has_conv_policy_ = file.format().network_format().policy() ==
@@ -371,58 +372,58 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // Default is fp16, to use fp32: --backend-opts=fp16=false.
   fp16_ = options.GetOrDefault<bool>("fp16", DEFAULT_FP16);
 
-  const int kNumFilters =(int)  weights.input.biases.size();
+  const int kNumFilters = (int)weights.input.biases.size();
 
-  num_blocks_ = (int) weights.residual.size();
+  num_blocks_ = (int)weights.residual.size();
   has_se_ = weights.residual[0].has_se;
 
   // 2. Build the network, and copy the weights to GPU memory.
 
   // Unique GEMMs for winograd required by the network.
-  input_conv_winograd_gemm_ = new GemmMetaCommand(
+  input_conv_gemm_metacommand_ = new GemmMetaCommand(
       &dx_context_, 0, kNumFilters, kInputPlanes, 36, fp16_, false, false);
 
-  residual_block_winograd_gemm_ = new GemmMetaCommand(
+  residual_block_gemm_metacommand_ = new GemmMetaCommand(
       &dx_context_, 0, kNumFilters, kNumFilters, 36, fp16_, false, false);
 
-  int pol_channels = (int) weights.policy.biases.size();
+  int pol_channels = (int)weights.policy.biases.size();
   if (has_conv_policy_) {
-    policy_conv_winograd_gemm_ = new GemmMetaCommand(
+    policy_conv_gemm_metacommand_ = new GemmMetaCommand(
         &dx_context_, 0, pol_channels, kNumFilters, 36, fp16_, false, false);
   }
 
   // Unique Conv metacommands required by the network.
   // Create only if we were not able to create GEMM metacommands for some reason
-  input_conv_ = nullptr;
-  resi_block_conv_1_ = nullptr;
-  resi_block_conv_2_ = nullptr;
-  policy_conv_ = nullptr;
+  input_conv_metacommand_ = nullptr;
+  resi_block_conv_1_metacommand_ = nullptr;
+  resi_block_conv_2_metacommand_ = nullptr;
+  policy_conv_metacommand_ = nullptr;
 
   // 3x3, 112 channels -> kNumFilters channels, relu, bias.
-  if (!input_conv_winograd_gemm_->IsAvailable())
-    input_conv_ = new ConvMetaCommand(&dx_context_, kInputPlanes,
-                                      kNumFilters, 8, 8, 3, true, true, fp16_);
+  if (!input_conv_gemm_metacommand_->IsAvailable())
+    input_conv_metacommand_ = new ConvMetaCommand(
+        &dx_context_, kInputPlanes, kNumFilters, 8, 8, 3, true, true, fp16_);
 
-  if (!residual_block_winograd_gemm_->IsAvailable()) {
+  if (!residual_block_gemm_metacommand_->IsAvailable()) {
     // 3x3, kNumFilters channels -> kNumFilters channels, relu, bias.
-    resi_block_conv_1_ = new ConvMetaCommand(
+    resi_block_conv_1_metacommand_ = new ConvMetaCommand(
         &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, true, true, fp16_);
 
     // 3x3, kNumFilters channels -> kNumFilters channels, no relu
     // relu needs to be done after SE and skip connection add.
-    resi_block_conv_2_ = new ConvMetaCommand(
+    resi_block_conv_2_metacommand_ = new ConvMetaCommand(
         &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, false, true, fp16_);
   }
 
-  if (has_conv_policy_ && !policy_conv_winograd_gemm_->IsAvailable())
-    policy_conv_ = new ConvMetaCommand(&dx_context_, kNumFilters, pol_channels,
-                                       8, 8, 3, false, true, fp16_);
+  if (has_conv_policy_ && !policy_conv_gemm_metacommand_->IsAvailable())
+    policy_conv_metacommand_ = new ConvMetaCommand(
+        &dx_context_, kNumFilters, pol_channels, 8, 8, 3, false, true, fp16_);
 
   // input
   {
     auto inputConv = std::make_unique<ConvLayer>(
-        fp16_, input_conv_winograd_gemm_, input_conv_, &dx_context_, nullptr,
-        kNumFilters, 8, 8, 3, kInputPlanes, true, true);
+        fp16_, input_conv_gemm_metacommand_, input_conv_metacommand_,
+        &dx_context_, nullptr, kNumFilters, 8, 8, 3, kInputPlanes, true, true);
 
     inputConv->LoadWeights(&weights.input.weights[0], &weights.input.biases[0],
                            &dx_context_);
@@ -433,8 +434,9 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // residual block
   for (size_t block = 0; block < weights.residual.size(); block++) {
     auto conv1 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_winograd_gemm_, resi_block_conv_1_, &dx_context_,
-        getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
+        fp16_, residual_block_gemm_metacommand_, resi_block_conv_1_metacommand_,
+        &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
+        true);
 
     conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                        &weights.residual[block].conv1.biases[0], &dx_context_);
@@ -442,12 +444,12 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     network_.emplace_back(std::move(conv1));
 
     int se_k = 0;
-    if (has_se_) se_k = (int) weights.residual[block].se.b1.size();
+    if (has_se_) se_k = (int)weights.residual[block].se.b1.size();
 
     auto conv2 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_winograd_gemm_, resi_block_conv_2_, &dx_context_,
-        getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true, true,
-        has_se_, se_k);
+        fp16_, residual_block_gemm_metacommand_, resi_block_conv_2_metacommand_,
+        &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
+        true, true, has_se_, se_k);
 
     conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                        &weights.residual[block].conv2.biases[0], &dx_context_);
@@ -466,16 +468,18 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   if (has_conv_policy_) {
     // conv1 is same as residual block convolution.
     auto conv1 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_winograd_gemm_, resi_block_conv_1_, &dx_context_,
-        getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
+        fp16_, residual_block_gemm_metacommand_, resi_block_conv_1_metacommand_,
+        &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
+        true);
     conv1->LoadWeights(&weights.policy1.weights[0], &weights.policy1.biases[0],
                        &dx_context_);
     network_.emplace_back(std::move(conv1));
 
     // conv2 has different no. of output filters (pol_channels). No relu.
     auto conv2 = std::make_unique<ConvLayer>(
-        fp16_, policy_conv_winograd_gemm_, policy_conv_, &dx_context_,
-        getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, true, false);
+        fp16_, policy_conv_gemm_metacommand_, policy_conv_metacommand_,
+        &dx_context_, getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, true,
+        false);
 
     conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                        &dx_context_);
@@ -519,7 +523,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
   // value head
   {
-    int val_channels = (int) weights.value.biases.size();
+    int val_channels = (int)weights.value.biases.size();
 
     // 1x1 convolution, val_channels output filters
     auto convVal = std::make_unique<ConvLayer>(
@@ -531,7 +535,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
     // Bias and relu activation.
     auto FCVal1 = std::make_unique<FCLayer>(fp16_, &dx_context_, getLastLayer(),
-                                            (int) weights.ip1_val_b.size(), 1, 1,
+                                            (int)weights.ip1_val_b.size(), 1, 1,
                                             true, true, false);
     FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0],
                         &dx_context_);
@@ -562,17 +566,17 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
   dx_context_.flushAndWait();
 
-  // 3. Allocate GPU memory for running the network
-  //    - 4 buffers of max size are enough:
-  //       * one to hold input,
-  //       * second to hold output
-  //       * third to hold skip connection's input
-  //       * and fourth to act as scratch space needed by some layers
+  // Allocate GPU memory for running the network
+  // 4 buffers of max size are enough:
+  //   * one to hold input,
+  //   * second to hold output
+  //   * third to hold skip connection's input
+  //   * and fourth to act as scratch space needed by some layers.
   size_t max_size = resi_last_->GetOutputSize(max_batch_size_);
 
   // Winograd transformed inputs/outputs need more space.
   // Every 4x4 block of input/output is transfored to 6x6 block.
-  max_size *= (size_t) ceil(36.0 / 16.0);
+  max_size *= (size_t)ceil(36.0 / 16.0);
 
   for (auto& mem : tensor_mem_) {
     dx_context_.CreateAlloc(max_size, D3D12_HEAP_TYPE_DEFAULT, mem, fp16_);
@@ -580,8 +584,11 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 }
 
 void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
+  if (batchSize > kMaxSupportedBatchSize)
+    throw Exception("Unsupported batch size: " + std::to_string(batchSize));
+
   ID3D12GraphicsCommandList5* cl = io->command_list_;
-  dx_context_.resetCL(cl, io->command_allocator_);
+  dx_context_.resetCL(cl, io->command_allocator_, io->needs_reset_);
 
   // Expand packed board representation into full planes.
   dx_context_.getShaderWrapper()->expandPlanes(
@@ -594,10 +601,14 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   // dx_context_.dumpTensor(tensor_mem_[0], 1024, fp16_);
 
   int l = 0;
+
+  //-----------------------------------///---------------------------------------
   // Input Conv
   network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[1], tensor_mem_[3], cl);
   dx_context_.uavBarrier(cl);
+
+  //-----------------------------------///---------------------------------------
 
   // Residual tower.
   for (int block = 0; block < num_blocks_; block++) {
@@ -641,6 +652,8 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
                         DXAlloc(), tensor_mem_[1], tensor_mem_[3], cl);
   }
 
+  //-----------------------------------///---------------------------------------
+
   // Value head.
 
   // Value conv.
@@ -657,6 +670,8 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   network_[l++]->Eval(batchSize, io->op_value_mem_gpu_, tensor_mem_[1],
                       DXAlloc(), tensor_mem_[2], tensor_mem_[3], cl);
 
+  //-----------------------------------///---------------------------------------
+
   // TODO: Get rid of this lock once we move the Command Queue also to
   // InputsOutputs structure This isn't a bottleneck anyway (for CPU side perf).
   // The hope is that we will get some GPU side parallelism with multiple async
@@ -666,6 +681,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   lock_.unlock();
 
   dx_context_.waitForGPU(fence);
+  io->needs_reset_ = true;
 
   // Do some simple post-processing operations on CPU:
   // - un-padding of policy and value heads.
@@ -736,6 +752,14 @@ DxNetwork::~DxNetwork() {
   for (auto mem : tensor_mem_) {
     mem.pResource->Release();
   }
+
+  delete input_conv_gemm_metacommand_;
+  delete residual_block_gemm_metacommand_;
+  delete policy_conv_gemm_metacommand_;
+  delete input_conv_metacommand_;
+  delete resi_block_conv_1_metacommand_;
+  delete resi_block_conv_2_metacommand_;
+  delete policy_conv_metacommand_;
 }
 
 std::unique_ptr<NetworkComputation> DxNetwork::NewComputation() {
@@ -792,7 +816,7 @@ void DxNetworkComputation::ComputeBlocking() {
 
 InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
                                  bool wdl, bool policy_map, bool fp16)
-    : uses_policy_map_(policy_map) {
+    : uses_policy_map_(policy_map), needs_reset_(false) {
   // CPU accesses on Default heap doesn't work.
   // GPU accesses on Upload heap works.
   pContext->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
