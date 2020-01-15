@@ -19,6 +19,7 @@
 #include <dxgi.h>
 #include "dx_common.h"
 #include "shader_wrapper.h"
+#include <memory>
 
 namespace lczero {
 class DxContext;
@@ -181,7 +182,7 @@ class FCLayer : public BaseLayer {
   DXAlloc biases_;
   DXAlloc weights_;
   ShaderWrapper* shader_wrapper_;
-  GemmMetaCommand* meta_command_;
+  std::unique_ptr<GemmMetaCommand> meta_command_;
 };
 
 class PolicyMapLayer : public BaseLayer {

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2019 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ class DxNetwork;
 
 static constexpr int kNumOutputPolicy = 1858;
 
-// Padding needed as on some HW (e.g: NV) fp16 requires gemm matrix dimensions
+// Padding needed because on some HW (e.g: NV) fp16 requires gemm matrix dimensions
 // to be multiples of 8
 static constexpr int kNumOutputPolicyPadded8 =
     ((kNumOutputPolicy - 1) / 8 + 1) * 8;
@@ -62,9 +62,12 @@ struct InputsOutputsDx {
   float* op_policy_mem_final_;
   float* op_value_mem_final_;
 
+  // For recording GPU commands.
   ID3D12GraphicsCommandList5* command_list_;
   ID3D12CommandAllocator* command_allocator_;
-  bool needs_reset_;    // Always needs reset after first time.
+
+  // Always need to reset command list / allocator after first time.
+  bool needs_reset_;
 
   const bool uses_policy_map_;
 };
@@ -200,23 +203,19 @@ class DxNetwork : public Network {
   std::vector<std::unique_ptr<BaseLayer>> network_;
   BaseLayer* getLastLayer() { return network_.back().get(); }
 
-  BaseLayer* resi_last_;
-  BaseLayer* policy_out_;
-  BaseLayer* value_out_;
-
   // Unique Metacommands used multiple times in the network.
 
   // GEMM metacommands needed by winograd algorithm.
-  GemmMetaCommand* input_conv_gemm_metacommand_;
-  GemmMetaCommand* residual_block_gemm_metacommand_;
-  GemmMetaCommand* policy_conv_gemm_metacommand_;
+  std::unique_ptr<GemmMetaCommand> input_conv_gemm_metacommand_;
+  std::unique_ptr<GemmMetaCommand> residual_block_gemm_metacommand_;
+  std::unique_ptr<GemmMetaCommand> policy_conv_gemm_metacommand_;
 
   // Convolution metacommands to directly perform convolution.
   //  - used only when GEMM metacommand isn't supported.
-  ConvMetaCommand* input_conv_metacommand_;
-  ConvMetaCommand* resi_block_conv_1_metacommand_;
-  ConvMetaCommand* resi_block_conv_2_metacommand_;
-  ConvMetaCommand* policy_conv_metacommand_;
+  std::unique_ptr<ConvMetaCommand> input_conv_metacommand_;
+  std::unique_ptr<ConvMetaCommand> resi_block_conv_1_metacommand_;
+  std::unique_ptr<ConvMetaCommand> resi_block_conv_2_metacommand_;
+  std::unique_ptr<ConvMetaCommand> policy_conv_metacommand_;
 
   // In device memory.
   DXAlloc tensor_mem_[4];

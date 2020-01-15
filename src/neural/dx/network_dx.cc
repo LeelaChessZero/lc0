@@ -380,49 +380,45 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // 2. Build the network, and copy the weights to GPU memory.
 
   // Unique GEMMs for winograd required by the network.
-  input_conv_gemm_metacommand_ = new GemmMetaCommand(
+  input_conv_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
       &dx_context_, 0, kNumFilters, kInputPlanes, 36, fp16_, false, false);
 
-  residual_block_gemm_metacommand_ = new GemmMetaCommand(
+  residual_block_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
       &dx_context_, 0, kNumFilters, kNumFilters, 36, fp16_, false, false);
 
   int pol_channels = (int)weights.policy.biases.size();
   if (has_conv_policy_) {
-    policy_conv_gemm_metacommand_ = new GemmMetaCommand(
+    policy_conv_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
         &dx_context_, 0, pol_channels, kNumFilters, 36, fp16_, false, false);
   }
 
   // Unique Conv metacommands required by the network.
   // Create only if we were not able to create GEMM metacommands for some reason
-  input_conv_metacommand_ = nullptr;
-  resi_block_conv_1_metacommand_ = nullptr;
-  resi_block_conv_2_metacommand_ = nullptr;
-  policy_conv_metacommand_ = nullptr;
 
   // 3x3, 112 channels -> kNumFilters channels, relu, bias.
   if (!input_conv_gemm_metacommand_->IsAvailable())
-    input_conv_metacommand_ = new ConvMetaCommand(
+    input_conv_metacommand_ = std::make_unique<ConvMetaCommand>(
         &dx_context_, kInputPlanes, kNumFilters, 8, 8, 3, true, true, fp16_);
 
   if (!residual_block_gemm_metacommand_->IsAvailable()) {
     // 3x3, kNumFilters channels -> kNumFilters channels, relu, bias.
-    resi_block_conv_1_metacommand_ = new ConvMetaCommand(
+    resi_block_conv_1_metacommand_ = std::make_unique<ConvMetaCommand>(
         &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, true, true, fp16_);
 
     // 3x3, kNumFilters channels -> kNumFilters channels, no relu
     // relu needs to be done after SE and skip connection add.
-    resi_block_conv_2_metacommand_ = new ConvMetaCommand(
+    resi_block_conv_2_metacommand_ = std::make_unique<ConvMetaCommand>(
         &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, false, true, fp16_);
   }
 
   if (has_conv_policy_ && !policy_conv_gemm_metacommand_->IsAvailable())
-    policy_conv_metacommand_ = new ConvMetaCommand(
+    policy_conv_metacommand_ = std::make_unique<ConvMetaCommand>(
         &dx_context_, kNumFilters, pol_channels, 8, 8, 3, false, true, fp16_);
 
   // input
   {
     auto inputConv = std::make_unique<ConvLayer>(
-        fp16_, input_conv_gemm_metacommand_, input_conv_metacommand_,
+        fp16_, input_conv_gemm_metacommand_.get(), input_conv_metacommand_.get(),
         &dx_context_, nullptr, kNumFilters, 8, 8, 3, kInputPlanes, true, true);
 
     inputConv->LoadWeights(&weights.input.weights[0], &weights.input.biases[0],
@@ -434,7 +430,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // residual block
   for (size_t block = 0; block < weights.residual.size(); block++) {
     auto conv1 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_gemm_metacommand_, resi_block_conv_1_metacommand_,
+        fp16_, residual_block_gemm_metacommand_.get(),
+        resi_block_conv_1_metacommand_.get(),
         &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
         true);
 
@@ -447,7 +444,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     if (has_se_) se_k = (int)weights.residual[block].se.b1.size();
 
     auto conv2 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_gemm_metacommand_, resi_block_conv_2_metacommand_,
+        fp16_, residual_block_gemm_metacommand_.get(),
+        resi_block_conv_2_metacommand_.get(),
         &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
         true, true, has_se_, se_k);
 
@@ -462,13 +460,14 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     network_.emplace_back(std::move(conv2));
   }
 
-  resi_last_ = getLastLayer();
+  BaseLayer* resi_last = getLastLayer();
 
   // policy head
   if (has_conv_policy_) {
     // conv1 is same as residual block convolution.
     auto conv1 = std::make_unique<ConvLayer>(
-        fp16_, residual_block_gemm_metacommand_, resi_block_conv_1_metacommand_,
+        fp16_, residual_block_gemm_metacommand_.get(),
+        resi_block_conv_1_metacommand_.get(),
         &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
         true);
     conv1->LoadWeights(&weights.policy1.weights[0], &weights.policy1.biases[0],
@@ -477,7 +476,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
     // conv2 has different no. of output filters (pol_channels). No relu.
     auto conv2 = std::make_unique<ConvLayer>(
-        fp16_, policy_conv_gemm_metacommand_, policy_conv_metacommand_,
+        fp16_, policy_conv_gemm_metacommand_.get(),
+        policy_conv_metacommand_.get(),
         &dx_context_, getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, true,
         false);
 
@@ -519,7 +519,6 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     FCPol->LoadWeights(tempWeight.data(), tempBias.data(), &dx_context_);
     network_.emplace_back(std::move(FCPol));
   }
-  policy_out_ = getLastLayer();
 
   // value head
   {
@@ -562,7 +561,6 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     FCVal2->LoadWeights(tempWeight.data(), tempBias.data(), &dx_context_);
     network_.emplace_back(std::move(FCVal2));
   }
-  value_out_ = getLastLayer();
 
   dx_context_.flushAndWait();
 
@@ -572,7 +570,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   //   * second to hold output
   //   * third to hold skip connection's input
   //   * and fourth to act as scratch space needed by some layers.
-  size_t max_size = resi_last_->GetOutputSize(max_batch_size_);
+  size_t max_size = resi_last->GetOutputSize(max_batch_size_);
 
   // Winograd transformed inputs/outputs need more space.
   // Every 4x4 block of input/output is transfored to 6x6 block.
@@ -752,14 +750,6 @@ DxNetwork::~DxNetwork() {
   for (auto mem : tensor_mem_) {
     mem.pResource->Release();
   }
-
-  delete input_conv_gemm_metacommand_;
-  delete residual_block_gemm_metacommand_;
-  delete policy_conv_gemm_metacommand_;
-  delete input_conv_metacommand_;
-  delete resi_block_conv_1_metacommand_;
-  delete resi_block_conv_2_metacommand_;
-  delete policy_conv_metacommand_;
 }
 
 std::unique_ptr<NetworkComputation> DxNetwork::NewComputation() {

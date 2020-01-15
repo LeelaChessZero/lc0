@@ -618,7 +618,7 @@ FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
     : BaseLayer(C, H, W, ip, pContext, fp16),
       use_bias_(bias),
       use_relu_(relu),
-      meta_command_(nullptr),
+      meta_command_(),
       use_tanh_(tanh) {
   size_t element_size = fp16_ ? sizeof(dx_half) : sizeof(float);
   size_t weight_size =
@@ -638,8 +638,8 @@ FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
   // We do Out = A * weight.
   // The weight matrix need to be transpsoed before it can be multiplied.
   // The transpose is done on CPU when loading weights
-  meta_command_ =
-      new GemmMetaCommand(pContext, rows, cols, K, 1, fp16, false, false);
+  meta_command_ = std::make_unique<GemmMetaCommand>(pContext, rows, cols, K, 1,
+                                                    fp16, false, false);
 }
 
 void FCLayer::LoadWeights(float* cpuWeight, float* cpuBias,
@@ -698,7 +698,6 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
 FCLayer::~FCLayer() {
   if (weights_.pResource) weights_.pResource->Release();
   if (biases_.pResource) biases_.pResource->Release();
-  if (meta_command_) delete meta_command_;
 }
 
 
