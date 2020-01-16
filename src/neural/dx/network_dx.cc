@@ -406,7 +406,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
         &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, true, true, fp16_);
 
     // 3x3, kNumFilters channels -> kNumFilters channels, no relu
-    // relu needs to be done after SE and skip connection add.
+    // relu needs to be done after SE and/or skip connection add.
     resi_block_conv_2_metacommand_ = std::make_unique<ConvMetaCommand>(
         &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, false, true, fp16_);
   }

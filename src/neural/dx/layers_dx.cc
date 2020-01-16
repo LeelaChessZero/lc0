@@ -585,13 +585,12 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                           b1_, w2_, b2_, N, C, use_relu_, false, skip_add_,
                           se_k_, fp16_);
     } else if (skip_add_) {
-      throw Exception("Bias additon shader un-implemented! ");
-#if 0
-      // Ankan - TODO! not going to work for nchw! Need a new shader!
-      shader_wrapper_->addVectors(command_list, output, scratch, biases_,
-                                  N * C * H * W, C, N * C * H * W,
+      // Need seperate pass for skip connection addition as Metacommand API 
+      // doesn't allow it to be fused with convolution.
+      dx_context_->uavBarrier(command_list);
+      shader_wrapper_->addVectors(command_list, output, scratch, input2,
+                                  N * C * H * W, N * C * H * W, N * C * H * W,
                                   use_relu_, false, fp16_); 
-#endif
     }
   }
   else if (filter_size_ == 1) {
