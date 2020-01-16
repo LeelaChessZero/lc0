@@ -17,103 +17,29 @@
 */
 
 #include <cstdint>
+#include <immintrin.h>
 
 namespace lczero {
 
 uint16_t FP32toFP16(float f32) {
-  uint32_t f = *(uint32_t*)&f32;
-
-  uint16_t f16 = 0;
-
-  f16 |= (f >> 16) & 0x8000;  // copy sign bit
-
-  uint32_t e = (f >> 23) & 0xff;  // extract exponent
-  uint32_t m = f & 0x7fffff;      // extract mantissa
-
-  if (e == 255) {
-    // dealing with a special here
-    if (m == 0) {
-      // infinity
-      return (f16 | 0x7c00);  // e=31, m=0, preserve sign
-    } else {
-      // NaN
-      return 0x7e00;  // e=31, m=0x200, s=0
-    }
-  } else if ((e >= 143) || ((e == 142) && (m > 0x7fe000))) {
-    // not representable in FP16, so return infinity
-    return (f16 | 0x7c00);  // e=31, m=0, preserve sign
-  } else if ((e <= 101) || ((e == 102) && (m < 0x2000))) {
-    // underflow to 0
-    return f16;
-  } else if (e <= 112) {
-    // denorm situation
-    m |= 0x800000;  // add leading 1
-
-    // the 24-bit mantissa needs to shift 14 bits over to
-    // fit into 10 bits, and then as many bits as the exponent
-    // is below our denorm exponent
-    //  127 (fp32 bias)
-    // -  e (actual fp32 exponent)
-    // + 24 (fp32 mantissa bits including leading 1)
-    // - 10 (fp16 mantissa bits not including leading 1)
-    // - 15 (fp16 denorm exponent)
-    // = 126 - e
-    m >>= (126 - e);
-
-    return (uint16_t)(f16 | m);  // e=0, preserve sign
-  } else {
-    // can convert directly to fp16
-    e -= 112;  // 127 - 15 exponent bias
-    m >>= 13;  // 23 - 10 mantissa bits
-    return (uint16_t)(f16 | (e << 10) | m);
-  }
+#if 0
+  return _cvtss_sh(f32, 0);
+#else
+  __m128 A = _mm_set_ss(f32);
+  __m128i H = _mm_cvtps_ph(A, 0);
+  return _mm_extract_epi16(H, 0);
+#endif
 }
 
 float FP16toFP32(uint16_t f16) {
-  uint32_t f = f16;
-
-  uint32_t f32 = 0;
-
-  f32 |= (f << 16) & 0x80000000;  // copy sign bit
-
-  uint32_t e = (f >> 10) & 0x1f;  // extract exponent
-  uint32_t m = f & 0x3ff;         // extract mantissa
-
-  if (e == 0) {
-    if (m == 0) {
-      // nothing to do; it's already +/- 0
-    } else {
-      // denorm
-      e = 113;
-      m <<= 13;
-      // shift mantissa until the top bit is 1<<23
-      // note that we've alrady guaranteed that the
-      // mantissa is non-zero and that the top bit is
-      // at or below 1<<23
-      while (!(m & 0x800000)) {
-        e--;
-        m <<= 1;
-      }
-      m &= 0x7fffff;
-
-      f32 |= (e << 23) | m;
-    }
-  } else if (e == 31) {
-    // FP special
-    if (m == 0) {
-      // Inf
-      f32 |= 0x7f800000;  // e=255, m=0, preserve sign
-    } else {
-      // NaN
-      f32 = 0x7fc00000;  // e=255, m=0x800000, s=0
-    }
-  } else {
-    e += 112;  // 127-15 exponent bias
-    m <<= 13;  // 23-10 mantissa bits
-    f32 |= (e << 23) | m;
-  }
-
-  return *(float*)&f32;
+#if 0
+  return _cvtsh_ss(f16);
+#else
+  __m128i H  = _mm_setzero_si128();
+  H = _mm_insert_epi16(H, f16, 0);
+  __m128 A = _mm_cvtph_ps(H);
+  return _mm_cvtss_f32(A);
+#endif
 }
 
 };  // namespace lczero
