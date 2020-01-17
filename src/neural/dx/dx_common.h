@@ -16,16 +16,13 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <cstdint>
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <stdint.h>
-#include "../../../third_party/d3dx12.h"
-
+#include <cstdint>
+#include "d3dx12.h"
+#include "fp16_utils.h"
 namespace lczero {
-
-uint16_t FP32toFP16(float f32);
-float FP16toFP32(uint16_t f16);
 
 namespace dx_backend {
 
@@ -37,11 +34,15 @@ struct DXAlloc {
   uint32_t offset;
   // Various ways of binding an allocation to shader:
   // 1. RAW/Structured buffer bound as root UAV, use gpuVA directly.
-  // 2. Typed buffer UAV bound as 4-component typed format (e.g: R16G16B16A16_FLOAT)
-  // 3. Typed buffer UAV bound as single component scalar typed format (e.g: R16_FLOAT)
+  // 2. Typed buffer UAV bound as 4-component typed format (e.g:
+  // R16G16B16A16_FLOAT)
+  // 3. Typed buffer UAV bound as single component scalar typed format (e.g:
+  // R16_FLOAT)
   uint64_t gpuVA;
-  D3D12_GPU_DESCRIPTOR_HANDLE descHandleVector; // Handle of UAV created as 4-component vector type
-  D3D12_GPU_DESCRIPTOR_HANDLE descHandleScalar; // Handle of UAV created as scalar type
+  D3D12_GPU_DESCRIPTOR_HANDLE
+      descHandleVector;  // Handle of UAV created as 4-component vector type
+  D3D12_GPU_DESCRIPTOR_HANDLE
+      descHandleScalar;  // Handle of UAV created as scalar type
 };
 
 typedef uint16_t dx_half;

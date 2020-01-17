@@ -33,11 +33,13 @@
 namespace lczero {
 namespace dx_backend {
 
+namespace {
 void copyFloatToHalf(dx_half* out, const float* in, size_t elements) {
   for (int i = 0; i < elements; i++) {
     out[i] = FP32toFP16(in[i]);
   }
 }
+};  // namespace
 
 static void getGemmTensorDesc(TensorDesc* outDesc, int batchSize, int rows,
                               int cols, bool fp16) {

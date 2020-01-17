@@ -18,6 +18,7 @@
 
 #pragma once
 
+namespace lczero {
 // Obtained by using EnumerateMetaCommands and EnumerateMetaCommandParameters
 // calls. Simplified a bit.
 
@@ -36,10 +37,10 @@ struct TensorDesc {
 // GEMM (Matrix multiply)
 //----------------------------------------------------------------------------------//
 
-const GUID GemmGuid = {0x1e52ebab,
-                       0x25ba,
-                       0x463a,
-                       {0xa2, 0x85, 0x0a, 0x78, 0x8e, 0xef, 0x5d, 0x01}};
+constexpr GUID GemmGuid = {0x1e52ebab,
+                           0x25ba,
+                           0x463a,
+                           {0xa2, 0x85, 0x0a, 0x78, 0x8e, 0xef, 0x5d, 0x01}};
 
 struct GemmCreateDesc {
   TensorDesc DescA;
@@ -82,10 +83,10 @@ struct GemmExecuteDesc {
 // Convolution
 //----------------------------------------------------------------------------------//
 
-GUID ConvGuid = {0x17804d6b,
-                 0xebfe,
-                 0x426f,
-                 {0x88, 0xfc, 0xfe, 0xa7, 0x2e, 0x3f, 0x33, 0x56}};
+constexpr GUID ConvGuid = {0x17804d6b,
+                           0xebfe,
+                           0x426f,
+                           {0x88, 0xfc, 0xfe, 0xa7, 0x2e, 0x3f, 0x33, 0x56}};
 
 struct ConvCreateDesc {
   TensorDesc InputDesc;
@@ -126,3 +127,5 @@ struct ExecuteConvDesc {
   D3D12_GPU_DESCRIPTOR_HANDLE PersistentResource;
   D3D12_GPU_DESCRIPTOR_HANDLE TemporaryResource;
 };
+
+};  // namespace lczero
