@@ -372,48 +372,65 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // Default is fp16, to use fp32: --backend-opts=fp16=false.
   fp16_ = options.GetOrDefault<bool>("fp16", DEFAULT_FP16);
 
+  // Default is to attempt using Winograd algorithm for Convolutions using GEMM
+  // Metacommand first, if not available - attempt using Convolution Metacommand
+  // directly (whatever algorithm HW vendor is providing), and if neither is
+  // available use winograd algorithm with our own GEMM compute shader.
+  // The below backend options can be used to override this for testing.
+  bool enable_gemm_metacommand =
+      options.GetOrDefault<bool>("enable-gemm-metacommand", true);
+  bool enable_conv_metacommand =
+      options.GetOrDefault<bool>("enable-conv-metacommand", true);
+
+
   const int kNumFilters = (int)weights.input.biases.size();
 
   num_blocks_ = (int)weights.residual.size();
   has_se_ = weights.residual[0].has_se;
+  int pol_channels = (int)weights.policy.biases.size();
 
-  // 2. Build the network, and copy the weights to GPU memory.
+  // Build the network, and copy the weights to GPU memory.
 
   // Unique GEMMs for winograd required by the network.
-  input_conv_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
-      &dx_context_, 0, kNumFilters, kInputPlanes, 36, fp16_, false, false);
+  if (enable_gemm_metacommand) {
+    input_conv_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
+        &dx_context_, 0, kNumFilters, kInputPlanes, 36, fp16_, false, false);
 
-  residual_block_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
-      &dx_context_, 0, kNumFilters, kNumFilters, 36, fp16_, false, false);
+    residual_block_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
+        &dx_context_, 0, kNumFilters, kNumFilters, 36, fp16_, false, false);
 
-  int pol_channels = (int)weights.policy.biases.size();
-  if (has_conv_policy_) {
-    policy_conv_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
-        &dx_context_, 0, pol_channels, kNumFilters, 36, fp16_, false, false);
+    if (has_conv_policy_) {
+      policy_conv_gemm_metacommand_ = std::make_unique<GemmMetaCommand>(
+          &dx_context_, 0, pol_channels, kNumFilters, 36, fp16_, false, false);
+    }
   }
 
   // Unique Conv metacommands required by the network.
-  // Create only if we were not able to create GEMM metacommands for some reason
+  if (enable_conv_metacommand) {
+    // Create only if we were not able to create GEMM metacommands for some
+    // reason 3x3, 112 channels -> kNumFilters channels, relu, bias.
+    if (!input_conv_gemm_metacommand_ ||
+        !input_conv_gemm_metacommand_->IsAvailable())
+      input_conv_metacommand_ = std::make_unique<ConvMetaCommand>(
+          &dx_context_, kInputPlanes, kNumFilters, 8, 8, 3, true, true, fp16_);
 
-  // 3x3, 112 channels -> kNumFilters channels, relu, bias.
-  if (!input_conv_gemm_metacommand_->IsAvailable())
-    input_conv_metacommand_ = std::make_unique<ConvMetaCommand>(
-        &dx_context_, kInputPlanes, kNumFilters, 8, 8, 3, true, true, fp16_);
+    if (!residual_block_gemm_metacommand_ ||
+        !residual_block_gemm_metacommand_->IsAvailable()) {
+      // 3x3, kNumFilters channels -> kNumFilters channels, relu, bias.
+      resi_block_conv_1_metacommand_ = std::make_unique<ConvMetaCommand>(
+          &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, true, true, fp16_);
 
-  if (!residual_block_gemm_metacommand_->IsAvailable()) {
-    // 3x3, kNumFilters channels -> kNumFilters channels, relu, bias.
-    resi_block_conv_1_metacommand_ = std::make_unique<ConvMetaCommand>(
-        &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, true, true, fp16_);
+      // 3x3, kNumFilters channels -> kNumFilters channels, no relu
+      // relu needs to be done after SE and/or skip connection add.
+      resi_block_conv_2_metacommand_ = std::make_unique<ConvMetaCommand>(
+          &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, false, true, fp16_);
+    }
 
-    // 3x3, kNumFilters channels -> kNumFilters channels, no relu
-    // relu needs to be done after SE and/or skip connection add.
-    resi_block_conv_2_metacommand_ = std::make_unique<ConvMetaCommand>(
-        &dx_context_, kNumFilters, kNumFilters, 8, 8, 3, false, true, fp16_);
+    if (has_conv_policy_ && (!policy_conv_gemm_metacommand_ ||
+                             !policy_conv_gemm_metacommand_->IsAvailable()))
+      policy_conv_metacommand_ = std::make_unique<ConvMetaCommand>(
+          &dx_context_, kNumFilters, pol_channels, 8, 8, 3, false, true, fp16_);
   }
-
-  if (has_conv_policy_ && !policy_conv_gemm_metacommand_->IsAvailable())
-    policy_conv_metacommand_ = std::make_unique<ConvMetaCommand>(
-        &dx_context_, kNumFilters, pol_channels, 8, 8, 3, false, true, fp16_);
 
   // input
   {

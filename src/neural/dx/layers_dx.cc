@@ -16,8 +16,6 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#define USE_METACOMMANDS 1
-
 #include "layers_dx.h"
 #include <cassert>
 #include <cstring>
@@ -558,7 +556,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     dx_context_->uavBarrier(command_list);
 
     // 2. Gemm (scratch -> scratch2)
-    if (meta_command_gemm_->IsAvailable())
+    if (meta_command_gemm_ && meta_command_gemm_->IsAvailable())
       meta_command_gemm_->PerformGemm(N * 4, scratch, transformed_weights_, scratch2,
                                  command_list);
     else
