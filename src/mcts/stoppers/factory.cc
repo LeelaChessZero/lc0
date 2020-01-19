@@ -299,7 +299,7 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   result->AddStopper(CreateTimeManagementStopper(options, params, position));
   // All the standard stoppers (go nodes, RAM limit, smart pruning, etc).
   PopulateStoppers(result.get(), options, params);
-  return std::move(result);
+  return result;
 }
 
 }  // namespace lczero

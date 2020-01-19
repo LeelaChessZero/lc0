@@ -26,6 +26,7 @@
 */
 
 #include "selfplay/loop.h"
+
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
 
@@ -163,18 +164,19 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   }
   if (elo) {
     oss << " Elo: " << std::fixed << std::setw(5) << std::setprecision(2)
-        << (elo.value_or(0.0f));
+        << (*elo);
   }
   if (los) {
     oss << " LOS: " << std::fixed << std::setw(5) << std::setprecision(2)
-        << (los.value_or(0.0f) * 100.0f) << "%";
+        << (*los * 100.0f) << "%";
   }
 
   oss << " P1-W: +" << info.results[0][0] << " -" << info.results[2][0] << " ="
       << info.results[1][0];
   oss << " P1-B: +" << info.results[0][1] << " -" << info.results[2][1] << " ="
       << info.results[1][1];
-  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) / info.move_count_);
+  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) /
+                                  info.move_count_);
   oss << " nodes " + std::to_string(info.nodes_total_);
   oss << " moves " + std::to_string(info.move_count_);
   SendResponse(oss.str());

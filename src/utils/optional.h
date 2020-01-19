@@ -46,7 +46,8 @@ class optional {
   T value_or(const T& def) const { return has_value_ ? value_ : def; }
 
  private:
-  T value_;
+  // Initializing to default to suppress g++'s maybe_unitialize warning.
+  T value_{};
   bool has_value_ = false;
 };
 
