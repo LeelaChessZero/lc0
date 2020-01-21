@@ -55,12 +55,26 @@ const OptionId kSlowMoverId{
     "Budgeted time for a move is multiplied by this value, causing the engine "
     "to spend more time (if value is greater than 1) or less time (if the "
     "value is less than 1)."};
-const OptionId kTimeMidpointMoveId{
+const OptionId kTimeFactorId{"time-factor", "TimeFactor",
+                             "Like slowmover, but for the start allocations."};
+const OptionId kTimeFactorSlopeId{"time-factor-slope", "TimeFactorSlope",
+                                  "Per move increment of time-factor."};
+const OptionId kTimeMidpointMoveId{"time-midpoint-move", "TimeMidpointMove",
+                                   "The time budgeting algorithm gradually "
+                                   "switches to smaller time allocations. Half "
+                                   "of the time allocated for the first move "
+                                   "is allocated at approximately this move."};
+const OptionId kTimeSteepnessId{"time-steepness", "TimeSteepness",
+                                "\"Steepness\" of the function the time "
+                                "budgeting algorithm uses. Lower values leave "
+                                "more time for the endgame, higher values use "
+                                "more time for each move before the midpoint."};
+const OptionId kGameMidpointMoveId{
     "game-midpoint-move", "GameMidpointMove",
     "The move where the game length estimation algorithm guesses half of all "
     "games to be completed by. Formally this is the scale parameter of a log-"
     "logistic distribution, which is also the median of the distribution."};
-const OptionId kTimeSteepnessId{
+const OptionId kGameMovesSteepnessId{
     "game-moves-steepness", "GameMovesSteepness",
     "\"Steepness\" of the function the game length estimation algorithm uses "
     "to consider when games are completed. Formally this is the shape "
@@ -101,13 +115,17 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
     options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
     options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
     options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
-    options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 72.75f;
-    options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 3.0f;
+    options->Add<FloatOption>(kTimeFactorId, 0.0f, 100.0f) = 1.15f;
+    options->Add<FloatOption>(kTimeFactorSlopeId, -2.0f, 2.0f) = 0.0025f;
+    options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
+    options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
+    options->Add<FloatOption>(kGameMidpointMoveId, 1.0f, 100.0f) = 72.75f;
+    options->Add<FloatOption>(kGameMovesSteepnessId, 1.0f, 100.0f) = 3.0f;
     options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
 
     // Hide time curve options.
-    options->HideOption(kTimeMidpointMoveId);
-    options->HideOption(kTimeSteepnessId);
+    options->HideOption(kGameMidpointMoveId);
+    options->HideOption(kGameMovesSteepnessId);
   }
 }
 
@@ -232,13 +250,22 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
 
   // How to scale moves time.
   const float slowmover = options.Get<float>(kSlowMoverId.GetId());
+  const float time_factor = options.Get<float>(kTimeFactorId.GetId());
+  const float time_factor_slope =
+      options.Get<float>(kTimeFactorSlopeId.GetId());
   const float time_curve_midpoint =
       options.Get<float>(kTimeMidpointMoveId.GetId());
+  // Adjust so that the old defaults are reasonable
   const float time_curve_steepness =
+      options.Get<float>(kTimeSteepnessId.GetId()) / 20.0f;
+
+  const float game_curve_midpoint =
+      options.Get<float>(kGameMidpointMoveId.GetId());
+  const float game_curve_steepness =
       options.Get<float>(kTimeSteepnessId.GetId());
 
   float movestogo = ComputeEstimatedMovesToGo(
-      position.GetGamePly(), time_curve_midpoint, time_curve_steepness);
+      position.GetGamePly(), game_curve_midpoint, game_curve_steepness);
 
   // If the number of moves remaining until the time control are less than
   // the estimated number of moves left in the game, then use the number of
@@ -248,6 +275,13 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
       *params.movestogo < movestogo) {
     movestogo = *params.movestogo;
   }
+
+  // Calculate the time curve for the current move.
+  int move = position.GetGamePly() / 2;
+  float time_curve_mult = 1.0f +
+                          (time_factor - 1.0f + move * time_factor_slope) /
+                              (1.0f + std::exp(time_curve_steepness *
+                                               (move - time_curve_midpoint)));
 
   // Total time, including increments, until time control.
   auto total_moves_time =
@@ -264,7 +298,7 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
   }
 
   // Evenly split total time between all moves.
-  float this_move_time = total_moves_time / movestogo;
+  float this_move_time = time_curve_mult * total_moves_time / movestogo;
 
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
