@@ -26,7 +26,9 @@
 */
 
 #include "neural/encoder.h"
+
 #include <algorithm>
+
 #include "utils/optional.h"
 
 namespace lczero {
@@ -37,18 +39,52 @@ const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 }  // namespace
 
-InputPlanes EncodePositionForNN(const PositionHistory& history,
-                                int history_planes,
-                                FillEmptyHistory fill_empty_history) {
+InputPlanes EncodePositionForNN(
+    pblczero::NetworkFormat::InputFormat input_format,
+    const PositionHistory& history, int history_planes,
+    FillEmptyHistory fill_empty_history) {
   InputPlanes result(kAuxPlaneBase + 8);
 
   {
     const ChessBoard& board = history.Last().GetBoard();
     const bool we_are_black = board.flipped();
-    if (board.castlings().we_can_000()) result[kAuxPlaneBase + 0].SetAll();
-    if (board.castlings().we_can_00()) result[kAuxPlaneBase + 1].SetAll();
-    if (board.castlings().they_can_000()) result[kAuxPlaneBase + 2].SetAll();
-    if (board.castlings().they_can_00()) result[kAuxPlaneBase + 3].SetAll();
+    switch (input_format) {
+      case pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE: {
+        // "Legacy" input planes with:
+        // - Plane 104 (0-based) filled with 1 if white can castle queenside.
+        // - Plane 105 filled with ones if white can castle kingside.
+        // - Plane 106 filled with ones if black can castle queenside.
+        // - Plane 107 filled with ones if white can castle kingside.
+        if (board.castlings().we_can_000()) result[kAuxPlaneBase + 0].SetAll();
+        if (board.castlings().we_can_00()) result[kAuxPlaneBase + 1].SetAll();
+        if (board.castlings().they_can_000()) {
+          result[kAuxPlaneBase + 2].SetAll();
+        }
+        if (board.castlings().they_can_00()) result[kAuxPlaneBase + 3].SetAll();
+        break;
+      }
+
+      case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE: {
+        // - Plane 104 for positions of rooks (both white and black) which have
+        // a-side (queenside) castling right.
+        // - Plane 105 for positions of rooks (both white and black) which have
+        // h-side (kingside) castling right.
+        const auto& cast = board.castlings();
+        result[kAuxPlaneBase + 0].mask =
+            ((cast.we_can_000() ? ChessBoard::A1 : 0) |
+             (cast.they_can_000() ? ChessBoard::A8 : 0))
+            << cast.queenside_rook();
+        result[kAuxPlaneBase + 1].mask =
+            ((cast.we_can_00() ? ChessBoard::A1 : 0) |
+             (cast.they_can_00() ? ChessBoard::A8 : 0))
+            << cast.kingside_rook();
+        break;
+      }
+
+      default:
+        throw Exception("Unsupported input plane encoding " +
+                        std::to_string(input_format));
+    };
     if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
     result[kAuxPlaneBase + 5].Fill(history.Last().GetNoCaptureNoPawnPly());
     // Plane kAuxPlaneBase + 6 used to be movecount plane, now it's all zeros.

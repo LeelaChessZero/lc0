@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -46,5 +46,17 @@ uint64_t GetFileSize(const std::string& filename);
 
 // Returns modification time of a file. Throws exception if file doesn't exist.
 time_t GetFileTime(const std::string& filename);
+
+// Returns the base directory relative to which user specific non-essential data
+// files are stored or an empty string if unspecified.
+std::string GetUserCacheDirectory();
+
+// Returns the base directory relative to which user specific configuration
+// files are stored or an empty string if unspecified.
+std::string GetUserConfigDirectory();
+
+// Returns the base directory relative to which user specific data files are
+// stored or an empty string if unspecified.
+std::string GetUserDataDirectory();
 
 }  // namespace lczero
