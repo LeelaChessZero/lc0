@@ -104,11 +104,13 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
         IID_PPV_ARGS(&pMetacommand));
 
     if (hr != S_OK) {
+#ifdef DEBUG_DUMP_PER_LAYER_DATA
       printf(
           "\nCan't create GEMM Metacommand for "
           "rows: %d, cols: %d, K: %d, batch: "
           "%d\n",
           num_rows, cols, K, gemm_batch);
+#endif
       create_succeeded_ = false;
       return;
     }
@@ -244,10 +246,12 @@ ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int C, int K, int H,
         IID_PPV_ARGS(&pMetacommand));
 
     if (hr != S_OK) {
+#ifdef DEBUG_DUMP_PER_LAYER_DATA
       printf(
           "\nCan't create Conv Metacommand for "
           "N, C, K, H, W, f: %d %d %d %d %d %d\n",
           n, C, K, H, W, F);
+#endif
       create_succeeded_ = false;
       return;
     }

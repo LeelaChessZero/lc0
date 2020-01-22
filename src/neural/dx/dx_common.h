@@ -22,6 +22,10 @@
 #include <cstdint>
 #include "d3dx12.h"
 #include "fp16_utils.h"
+
+#define DEFAULT_FP16 true
+//#define DEBUG_DUMP_PER_LAYER_DATA
+
 namespace lczero {
 
 namespace dx_backend {

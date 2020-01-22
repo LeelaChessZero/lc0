@@ -162,8 +162,8 @@ class DxContext {
   void scheduleUpload(DXAlloc alloc, const void* data, size_t size);
   void dumpFp32(float* buf, int elements);
   void copyTensor(DXAlloc dst, DXAlloc src, int bytes);
-  void dumpTensor(DXAlloc alloc, int size, bool fp16 = true,
-                  bool allnewline = false);
+  void dumpTensor(const char* message, DXAlloc alloc, int size,
+                  bool fp16 = true, bool allnewline = false);
   void dumpCpuTensor(void* data, int size, bool fp16 = true,
                      bool allnewline = false);
 };

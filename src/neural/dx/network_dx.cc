@@ -30,8 +30,6 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
-#define DEFAULT_FP16 true
-
 namespace lczero {
 
 using namespace dx_backend;
@@ -58,8 +56,7 @@ void DxContext::resetCL(ID3D12GraphicsCommandList5* cl,
                         ID3D12CommandAllocator* ca, bool reset) {
   if (!cl) cl = command_list_;
   if (!ca) ca = command_allocator_;
-  if (reset)
-  {
+  if (reset) {
     ca->Reset();
     cl->Reset(ca, NULL);
   }
@@ -127,8 +124,10 @@ void DxContext::dumpCpuTensor(void* data, int size, bool fp16,
   printf("\n");
 }
 
-void DxContext::dumpTensor(DXAlloc alloc, int size, bool fp16,
-                           bool allnewline) {
+#ifdef DEBUG_DUMP_PER_LAYER_DATA
+void DxContext::dumpTensor(const char* message, DXAlloc alloc, int size,
+                           bool fp16, bool allnewline) {
+  printf("\n%s", message);
   int bytes = size * (fp16 ? sizeof(dx_half) : sizeof(float));
   CD3DX12_RESOURCE_BARRIER barrier;
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -151,6 +150,10 @@ void DxContext::dumpTensor(DXAlloc alloc, int size, bool fp16,
   dumpCpuTensor(cpuPtr, size, fp16, allnewline);
   readback_scratch_mem_.pResource->Unmap(0, nullptr);
 }
+#else
+void DxContext::dumpTensor(const char*, DXAlloc, int, bool, bool) {}
+#endif
+
 
 DxContext::DxContext(const OptionsDict& options) {
   gpu_id_ = options.GetOrDefault<int>("gpu", 0);
@@ -602,8 +605,13 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   if (batchSize > kMaxSupportedBatchSize)
     throw Exception("Unsupported batch size: " + std::to_string(batchSize));
 
+#ifdef DEBUG_DUMP_PER_LAYER_DATA
+  lock_.lock();
+  ID3D12GraphicsCommandList5* cl = dx_context_.getCommandList();
+#else
   ID3D12GraphicsCommandList5* cl = io->command_list_;
   dx_context_.resetCL(cl, io->command_allocator_, io->needs_reset_);
+#endif
 
   // Expand packed board representation into full planes.
   dx_context_.getShaderWrapper()->expandPlanes(
@@ -611,9 +619,8 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
       batchSize, fp16_);
   dx_context_.uavBarrier(cl);
 
-  // Debug dumping example.
-  // printf("\nAfter expand planes");
-  // dx_context_.dumpTensor(tensor_mem_[0], 1024, fp16_);
+  // Debug logging (not compiled by default)
+  dx_context_.dumpTensor("After expand planes", tensor_mem_[0], 1024, fp16_);
 
   int l = 0;
 
@@ -622,6 +629,9 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[1], tensor_mem_[3], cl);
   dx_context_.uavBarrier(cl);
+
+  dx_context_.dumpTensor("After input planes", tensor_mem_[2], 1024, fp16_);
+
 
   //-----------------------------------///---------------------------------------
 
@@ -638,6 +648,9 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
     dx_context_.uavBarrier(cl);
   }
 
+
+  dx_context_.dumpTensor("After Residual tower", tensor_mem_[2], 1024, fp16_);
+
   //-----------------------------------///---------------------------------------
 
   // Policy head.
@@ -647,15 +660,23 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
                         tensor_mem_[1], tensor_mem_[3], cl);
     dx_context_.uavBarrier(cl);
 
+    dx_context_.dumpTensor("After policy conv1", tensor_mem_[0], 1024, fp16_);
+
     // Policy conv2
     network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
 
     dx_context_.uavBarrier(cl);
 
+    dx_context_.dumpTensor("After policy conv2", tensor_mem_[1], 1024, fp16_);
+
     // Policy Map layer  (writes directly to system memory).
     network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[1],
                         DXAlloc(), DXAlloc(), DXAlloc(), cl);
+
+    // Output of policy map layer is always FP32.
+    dx_context_.dumpTensor("After policy map", io->op_policy_mem_gpu_, 1024, false);    
+
   } else {
     // Policy conv.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
@@ -676,17 +697,26 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
                       tensor_mem_[1], tensor_mem_[3], cl);
   dx_context_.uavBarrier(cl);
 
+  dx_context_.dumpTensor("After value conv", tensor_mem_[0], 1024, fp16_);
+
   // value FC1.
   network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[2], tensor_mem_[3], cl);
   dx_context_.uavBarrier(cl);
 
+  dx_context_.dumpTensor("After value fc1", tensor_mem_[1], 128, fp16_);
+
   // value FC2.
   network_[l++]->Eval(batchSize, io->op_value_mem_gpu_, tensor_mem_[1],
                       DXAlloc(), tensor_mem_[2], tensor_mem_[3], cl);
 
-  //-----------------------------------///---------------------------------------
+  dx_context_.dumpTensor("After value fc2", io->op_value_mem_gpu_, 8, fp16_);
 
+  //-----------------------------------///---------------------------------------
+#ifdef DEBUG_DUMP_PER_LAYER_DATA
+  dx_context_.flushAndWait();
+  lock_.unlock();
+#else
   // TODO: Get rid of this lock once we move the Command Queue also to
   // InputsOutputs structure This isn't a bottleneck anyway (for CPU side perf).
   // The hope is that we will get some GPU side parallelism with multiple async
@@ -697,6 +727,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
 
   dx_context_.waitForGPU(fence);
   io->needs_reset_ = true;
+#endif
 
   // Do some simple post-processing operations on CPU:
   // - un-padding of policy and value heads.
