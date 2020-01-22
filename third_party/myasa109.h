@@ -279,7 +279,8 @@ double xinbta ( double p, double q, double beta, double alpha, int *ifault )
   double qq;
   double r;
   double s;
-  double sae = -30.0;
+//  double sae = -30.0;
+  double sae = -5.0; // lower precision ok
   double sq;
   double t;
   double tx;
