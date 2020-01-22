@@ -29,7 +29,9 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <thread>
+
 #include "neural/factory.h"
 #include "utils/hashcat.h"
 
@@ -107,11 +109,16 @@ class RandomNetwork : public Network {
     return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_,
                                                       uniform_mode_);
   }
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
 
  private:
   int delay_ms_ = 0;
   int seed_ = 0;
   bool uniform_mode_ = false;
+  NetworkCapabilities capabilities_{
+      pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE};
 };
 }  // namespace
 

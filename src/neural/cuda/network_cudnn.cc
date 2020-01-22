@@ -30,6 +30,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+
 #include "cuda_common.h"
 #include "kernels.h"
 #include "layers.h"
@@ -190,7 +191,8 @@ class CudnnNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudnnNetwork : public Network {
  public:
-  CudnnNetwork(const WeightsFile& file, const OptionsDict& options) {
+  CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
+      : capabilities_{file.format().network_format().input()} {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
@@ -639,6 +641,10 @@ class CudnnNetwork : public Network {
     cublasDestroy(cublas_);
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
@@ -669,6 +675,7 @@ class CudnnNetwork : public Network {
   void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false); }
 
  private:
+  const NetworkCapabilities capabilities_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
   int gpu_id_;
@@ -812,6 +819,25 @@ std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }
 
+std::unique_ptr<Network> MakeCudnnNetworkAuto(const WeightsFile& weights,
+                                              const OptionsDict& options) {
+  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+  cudaDeviceProp deviceProp = {};
+  // No error checking here, this will be repeated later.
+  cudaGetDeviceProperties(&deviceProp, gpu_id);
+
+  // Check if the GPU supports FP16.
+  if (deviceProp.major >= 7 ||
+      (deviceProp.major == 6 && deviceProp.minor != 1) ||
+      (deviceProp.major == 5 && deviceProp.minor == 3)) {
+    CERR << "Switching to [cudnn-fp16]...";
+    return MakeCudnnNetwork<half>(weights, options);
+  }
+  CERR << "Switching to [cudnn]...";
+  return MakeCudnnNetwork<float>(weights, options);
+}
+
+REGISTER_NETWORK("cudnn-auto", MakeCudnnNetworkAuto, 120)
 REGISTER_NETWORK("cudnn", MakeCudnnNetwork<float>, 110)
 REGISTER_NETWORK("cudnn-fp16", MakeCudnnNetwork<half>, 105)
 

@@ -25,15 +25,15 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <tensorflow/cc/client/client_session.h>
+#include <tensorflow/cc/ops/standard_ops.h>
+#include <tensorflow/core/framework/tensor.h>
+
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
 #include "utils/bititer.h"
 #include "utils/optionsdict.h"
 #include "utils/transpose.h"
-
-#include <tensorflow/cc/client/client_session.h>
-#include <tensorflow/cc/ops/standard_ops.h>
-#include <tensorflow/core/framework/tensor.h>
 
 namespace lczero {
 
@@ -177,6 +177,11 @@ class TFNetwork : public Network {
 
   tensorflow::Status Compute(tensorflow::Tensor& input,
                              std::vector<tensorflow::Tensor>* outputs) const;
+
+  const NetworkCapabilities& GetCapabilities() const override {
+    static NetworkCapabilities capabilities;
+    return capabilities;
+  }
 
  private:
   tensorflow::Scope scope_;

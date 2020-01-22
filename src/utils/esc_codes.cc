@@ -25,29 +25,25 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include "utils/esc_codes.h"
 
-#include "mcts/stoppers/stoppers.h"
-#include "mcts/stoppers/timemgr.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace lczero {
 
-// Option ID for a cache size. It's used from multiple places and there's no
-// really nice place to declare, so let it be here.
-extern const OptionId kNNCacheSizeId;
+bool EscCodes::enabled_;
 
-enum class RunType { kUci, kSelfplay };
-
-// Populates UCI/command line flags with time management options.
-void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
-
-// Creates a time management ("Legacy" because it's planned to be replaced).
-std::unique_ptr<TimeManager> MakeLegacyTimeManager();
-
-// Populates KLDGain and SmartPruning stoppers.
-void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
-                               const OptionsDict& options);
+void EscCodes::Init() {
+#ifdef _WIN32
+  HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD mode;
+  GetConsoleMode(h, &mode);
+  enabled_ = SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#else
+  enabled_ = true;
+#endif
+}
 
 }  // namespace lczero

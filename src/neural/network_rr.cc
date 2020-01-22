@@ -25,11 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/factory.h"
-
 #include <condition_variable>
 #include <queue>
 #include <thread>
+
+#include "neural/factory.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -57,6 +57,12 @@ class RoundRobinNetwork : public Network {
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
+
+    if (networks_.size() == 1) {
+      capabilities_ = networks_.back()->GetCapabilities();
+    } else {
+      capabilities_.Merge(networks_.back()->GetCapabilities());
+    }
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -64,11 +70,16 @@ class RoundRobinNetwork : public Network {
     return networks_[val % networks_.size()]->NewComputation();
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
   ~RoundRobinNetwork() {}
 
  private:
   std::vector<std::unique_ptr<Network>> networks_;
   std::atomic<long long> counter_;
+  NetworkCapabilities capabilities_;
 };
 
 std::unique_ptr<Network> MakeRoundRobinNetwork(const WeightsFile& weights,

@@ -759,6 +759,13 @@ Move ChessBoard::GetLegacyMove(Move move) const {
   return move;
 }
 
+Move ChessBoard::GetModernMove(Move move) const {
+  if (our_king_ != E1 || move.from() != E1) return move;
+  if (move == Move(E1, G1) && !our_pieces_.get(G1)) return Move(E1, H1);
+  if (move == Move(E1, C1) && !our_pieces_.get(C1)) return Move(E1, A1);
+  return move;
+}
+
 KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   KingAttackInfo king_attack_info;
 
@@ -1031,7 +1038,8 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
       const bool is_black = std::islower(c);
       const int king_col = (is_black ? their_king_ : our_king_).col();
       if (!is_black) c = std::tolower(c);
-      const auto rooks = (is_black ? their_pieces_ : our_pieces_) & rooks_;
+      const auto rooks =
+          (is_black ? their_pieces_ : our_pieces_) & ChessBoard::rooks();
       if (c == 'k') {
         // Finding rightmost rook.
         for (right_rook = FILE_H; right_rook > king_col; --right_rook) {
