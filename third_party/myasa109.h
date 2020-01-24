@@ -53,8 +53,7 @@ double betain ( double x, double p, double q, double beta, int *ifault )
     Beta function ratio.
 */
 {
-//  double acu = 0.1E-14;
-  double acu = 0.1E-6; // reduced accuracy ok here as well?
+  double acu = 0.1E-14;
   double ai;
   double cx;
   int indx;
