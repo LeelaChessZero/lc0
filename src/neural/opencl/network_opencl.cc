@@ -16,21 +16,20 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/factory.h"
-#include "neural/network.h"
-#include "neural/opencl/OpenCL.h"
-#include "neural/opencl/OpenCLParams.h"
-#include "neural/shared/activation.h"
-#include "neural/shared/policy_map.h"
-#include "neural/shared/winograd_filter.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <condition_variable>
 #include <thread>
 
+#include "neural/factory.h"
+#include "neural/network.h"
 #include "neural/network_legacy.h"
+#include "neural/opencl/OpenCL.h"
+#include "neural/opencl/OpenCLParams.h"
+#include "neural/shared/activation.h"
+#include "neural/shared/policy_map.h"
+#include "neural/shared/winograd_filter.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 #include "utils/logging.h"
@@ -201,13 +200,19 @@ class OpenCLNetwork : public Network {
   virtual ~OpenCLNetwork(){};
 
   OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
-      : weights_(file), params_(), opencl_(), opencl_net_(opencl_) {
+      : capabilities_{file.format().network_format().input()},
+        weights_(file),
+        params_(),
+        opencl_(),
+        opencl_net_(opencl_) {
     LegacyWeights weights(file.weights());
     params_.gpuId = options.GetOrDefault<int>("gpu", -1);
     params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
+    params_.tuner_file =
+        options.GetOrDefault<std::string>("tuner_file", "leelaz_opencl_tuning");
 
     wdl_ = file.format().network_format().output() ==
            pblczero::NetworkFormat::OUTPUT_WDL;
@@ -347,11 +352,16 @@ class OpenCLNetwork : public Network {
     return std::make_unique<OpenCLComputation>(opencl_net_, weights_, wdl_);
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
  private:
   static constexpr auto kHardMaxBatchSize = 32;
   static constexpr auto kPolicyUsedPlanes = 73;
   static constexpr auto kPolicyOutputs = 1858;
 
+  const NetworkCapabilities capabilities_;
   OpenCLWeights weights_;
   OpenCLParams params_;
   OpenCL opencl_;
