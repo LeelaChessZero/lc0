@@ -113,7 +113,6 @@ Move SanToMove(const std::string& san, const ChessBoard& board) {
     } else {
       m = Move(BoardSquare(0, 4), BoardSquare(0, 6));
     }
-    m.SetCastling();
     // std::cerr << m.as_string() << std::endl;
     return m;
   }
