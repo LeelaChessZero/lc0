@@ -87,34 +87,34 @@ class ShaderWrapper {
   ID3D12PipelineState* winograd_output_transform_se_1024_;
 
  public:
-  void init(ID3D12Device* pDevice);
-  void destroy();
+  void Init(ID3D12Device* pDevice);
+  void Destroy();
 
-  void expandPlanes(ID3D12GraphicsCommandList5* command_list,
+  void ExpandPlanes(ID3D12GraphicsCommandList5* command_list,
                     DXAlloc output_tensor, DXAlloc masks, DXAlloc values,
                     int batchSize, bool fp16);
 
-  void inputTransform(ID3D12GraphicsCommandList5* command_list,
+  void InputTransform(ID3D12GraphicsCommandList5* command_list,
                       DXAlloc transformed_input, DXAlloc input, int N, int C,
                       bool fp16);
 
-  void outputTransform(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
+  void OutputTransform(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
                        DXAlloc transformed_output, DXAlloc skip_connection,
                        DXAlloc bias, DXAlloc se_w1, DXAlloc se_b1,
                        DXAlloc se_w2, DXAlloc se_b2, int N, int K, bool relu,
                        bool bias_add, bool skip_add, bool fused_se, int se_k,
                        bool fp16);
 
-  void se(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
+  void Se(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
           DXAlloc input, DXAlloc skip_connection, DXAlloc bias, DXAlloc se_w1,
           DXAlloc se_b1, DXAlloc se_w2, DXAlloc se_b2, int N, int K, bool relu,
           bool bias_add, bool skip_add, int se_k, bool fp16);
 
-  void conv1x1(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
+  void Conv1x1(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
                DXAlloc input, DXAlloc weight, DXAlloc bias, int N, int C, int K,
                bool relu, bool useBias, bool fp16);
 
-  void addVectors(ID3D12GraphicsCommandList5* command_list, DXAlloc C,
+  void AddVectors(ID3D12GraphicsCommandList5* command_list, DXAlloc C,
                   DXAlloc A, DXAlloc B, int c_size, int b_size, int a_size,
                   bool relu, bool tanh, bool fp16);
 

@@ -559,7 +559,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     N = ((N + 3) / 4) * 4;
 
     // 1. Input transform (input->scratch)
-    shader_wrapper_->inputTransform(command_list, scratch, input, N, c_input_,
+    shader_wrapper_->InputTransform(command_list, scratch, input, N, c_input_,
                                     fp16_);
 
     dx_context_->UavBarrier(command_list);
@@ -576,7 +576,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     dx_context_->UavBarrier(command_list);
 
     // 3. Output transform (scratch2 -> output)
-    shader_wrapper_->outputTransform(
+    shader_wrapper_->OutputTransform(
         command_list, output, scratch2, input2, biases_, w1_, b1_, w2_, b2_, N,
         C, use_relu_, use_bias_, skip_add_, has_se_, se_k_, fp16_);
 
@@ -590,20 +590,20 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                                       command_list);
     if (has_se_) {
       dx_context_->UavBarrier(command_list);
-      shader_wrapper_->se(command_list, output, scratch, input2, biases_, w1_,
+      shader_wrapper_->Se(command_list, output, scratch, input2, biases_, w1_,
                           b1_, w2_, b2_, N, C, use_relu_, false, skip_add_,
                           se_k_, fp16_);
     } else if (skip_add_) {
       // Need seperate pass for skip connection addition as Metacommand API 
       // doesn't allow it to be fused with convolution.
       dx_context_->UavBarrier(command_list);
-      shader_wrapper_->addVectors(command_list, output, scratch, input2,
+      shader_wrapper_->AddVectors(command_list, output, scratch, input2,
                                   N * C * H * W, N * C * H * W, N * C * H * W,
                                   use_relu_, false, fp16_); 
     }
   }
   else if (filter_size_ == 1) {
-    shader_wrapper_->conv1x1(command_list, output, input, weights_, biases_, N,
+    shader_wrapper_->Conv1x1(command_list, output, input, weights_, biases_, N,
                              c_input_, C, use_relu_, use_bias_, fp16_);
   } else {
     throw Exception("Unsupported filter shape for convolution! ");
@@ -697,7 +697,7 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
 
   if (use_bias_ || use_relu_ || use_tanh_) {
     dx_context_->UavBarrier(command_list);
-    shader_wrapper_->addVectors(command_list, output, output, biases_,
+    shader_wrapper_->AddVectors(command_list, output, output, biases_,
                                 N * num_outputs, N * num_outputs, num_outputs, 
                                 use_relu_, use_tanh_, fp16_);
   }

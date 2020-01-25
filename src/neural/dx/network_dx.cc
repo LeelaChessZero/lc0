@@ -200,7 +200,7 @@ DxContext::DxContext(const OptionsDict& options) {
   ReportDxErrors(device_->CreateFence(fence_val_, D3D12_FENCE_FLAG_NONE,
                                       IID_PPV_ARGS(&fence_)));
 
-  shader_wrapper_.init(device_);
+  shader_wrapper_.Init(device_);
 
   // Allocate scratch space for uploads and read-back.
   CreateAlloc(kUploadDownloadScratchSize, D3D12_HEAP_TYPE_UPLOAD,
@@ -216,7 +216,7 @@ DxContext::~DxContext() {
   upload_scratch_mem_.resource->Release();
   readback_scratch_mem_.resource->Release();
 
-  shader_wrapper_.destroy();
+  shader_wrapper_.Destroy();
   command_list_->Release();
   command_allocator_->Release();
   command_queue_->Release();
@@ -614,7 +614,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
 #endif
 
   // Expand packed board representation into full planes.
-  dx_context_.getShaderWrapper()->expandPlanes(
+  dx_context_.getShaderWrapper()->ExpandPlanes(
       cl, tensor_mem_[0], io->input_masks_mem_gpu_, io->input_val_mem_gpu_,
       batchSize, fp16_);
   dx_context_.UavBarrier(cl);

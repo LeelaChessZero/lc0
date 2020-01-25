@@ -44,7 +44,9 @@ struct InputsOutputsDx {
                   bool conv_policy, bool fp16);
   ~InputsOutputsDx();
 
-  // In default heap (video memory, mapped to support CPU writes too).
+  // Wanted to put these in default heap (video memory, mapped to support CPU writes too).
+  //  - but this isn't supported by DX12 API!
+  // So right now we have it in upload ueap (system memory mapped for both CPU and GPU).
   DXAlloc input_masks_mem_gpu_;
   DXAlloc input_val_mem_gpu_;
 
