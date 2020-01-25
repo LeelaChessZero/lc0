@@ -80,17 +80,21 @@ const OptionId kBookModeId{"book-mode", "BookMode",
 Move MoveFor(int r1, int c1, int r2, int c2, int p2) {
   Move m;
   if (p2 != -1) {
-    if (p2 == 2)
+    if (p2 == 2) {
       m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2),
                Move::Promotion::Queen);
-    else if (p2 == 3)
+    } else if (p2 == 3) {
       m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2),
                Move::Promotion::Bishop);
-    else if (p2 == 4)
+    } else if (p2 == 4) {
       m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2),
                Move::Promotion::Knight);
-    else if (p2 == 5)
+    } else if (p2 == 5) {
       m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2), Move::Promotion::Rook);
+    } else {
+      std::cerr << "Unexpected promotion!!" << std::endl;
+      throw Exception("Trying to create a move with illegal promotion.");
+    }
   } else {
     m = Move(BoardSquare(r1, c1), BoardSquare(r2, c2));
   }
@@ -118,7 +122,6 @@ Move SanToMove(const std::string& san, const ChessBoard& board) {
     } else {
       m = Move(BoardSquare(0, 4), BoardSquare(0, 6));
     }
-    // std::cerr << m.as_string() << std::endl;
     return m;
   }
   if (p != 0) idx++;
@@ -194,12 +197,14 @@ Move SanToMove(const std::string& san, const ChessBoard& board) {
         continue;
       if (pc1 != -1) {
         std::cerr << "Ambiguous!!" << std::endl;
+        throw Exception("Opening book move seems ambiguous.");
       }
       pr1 = sq.row();
       pc1 = sq.col();
     }
     if (pc1 == -1) {
       std::cerr << "No Match!!" << std::endl;
+      throw Exception("Opening book move seems illegal.");
     }
     r1 = pr1;
     c1 = pc1;
@@ -209,25 +214,23 @@ Move SanToMove(const std::string& san, const ChessBoard& board) {
   }
   Move m = MoveFor(r1, c1, r2, c2, p2);
   if (board.flipped()) m.Mirror();
-  // std::cerr << m.as_string() << std::endl;
   return m;
 }
 
-std::vector<std::vector<Move>> ReadBook(std::string path) {
-  std::vector<std::vector<Move>> result;
-  std::vector<Move> cur;
+std::vector<MoveList> ReadBook(const std::string& path) {
+  std::vector<MoveList> result;
+  MoveList cur;
   ChessBoard board;
   board.SetFromFen(ChessBoard::kStartposFen);
   std::ifstream file(path);
   std::string line;
   bool in_comment = false;
   while (std::getline(file, line)) {
-    if (line.size() == 0 || line[0] == '[') {
-      if (cur.size() > 0) {
+    if (line.empty() || line[0] == '[') {
+      if (!cur.empty()) {
         result.push_back(cur);
         cur.clear();
         board.SetFromFen(ChessBoard::kStartposFen);
-        // std::cerr << "" << std::endl;
       }
       continue;
     }
@@ -251,20 +254,19 @@ std::vector<std::vector<Move>> ReadBook(std::string path) {
     if (line.find(';') != std::string::npos) {
       line = line.substr(0, line.find(';'));
     }
-    if (line.size() == 0) continue;
+    if (line.empty()) continue;
     std::istringstream iss(line);
-    // std::cerr << line << std::endl;
     std::string word;
     while (!iss.eof()) {
       word.clear();
       iss >> word;
       if (word.size() < 2) continue;
       // Trim move numbers from front.
-      int idx = word.find('.');
+      const auto idx = word.find('.');
       if (idx != std::string::npos) {
         bool all_nums = true;
         for (int i = 0; i < idx; i++) {
-          if (word[i] < '0' || word[i] > '9') {
+          if (word[i] < '0' || word[i] > '8') {
             all_nums = false;
             break;
           }
@@ -278,7 +280,6 @@ std::vector<std::vector<Move>> ReadBook(std::string path) {
       // Ignore score line.
       if (word == "1/2-1/2" || word == "1-0" || word == "0-1" || word == "*")
         continue;
-      // std::cerr << word << std::endl;
       cur.push_back(SanToMove(word, board));
       board.ApplyMove(cur.back());
       // Board ApplyMove wants mirrored for black, but outside code wants
@@ -290,7 +291,7 @@ std::vector<std::vector<Move>> ReadBook(std::string path) {
       board.Mirror();
     }
   }
-  if (cur.size() > 0) {
+  if (!cur.empty()) {
     result.push_back(cur);
     cur.clear();
   }
