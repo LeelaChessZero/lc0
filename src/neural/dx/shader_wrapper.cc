@@ -22,8 +22,6 @@
 #include "neural/network.h"
 #include "shaders/shader_shared.h"
 #include "shaders/shaders.h"
-#include "shaders/shaders_gemm.h"
-#include "shaders/shaders_se.h"
 
 #define ARR_ELEMENT_COUNT(x) (sizeof(x) / sizeof(x[0]))
 namespace lczero {
@@ -211,9 +209,9 @@ void ShaderWrapper::expandPlanes(ID3D12GraphicsCommandList5* command_list,
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetPipelineState(fp16 ? expand_planes_fp16_
                                       : expand_planes_fp32_);
-  command_list->SetComputeRootUnorderedAccessView(0, output_tensor.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(1, masks.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(2, values.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(0, output_tensor.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(1, masks.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(2, values.gpu_va);
   command_list->SetComputeRoot32BitConstants(kUavSlots, 2, &consts, 0);
 
   int elements = batchSize * kInputPlanes * 8 * 8;
@@ -227,14 +225,14 @@ void ShaderWrapper::inputTransform(ID3D12GraphicsCommandList5* command_list,
   int consts[] = {N, C};
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetPipelineState(winograd_input_transform_);
-  command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(1, transformed_input.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(0, input.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(1, transformed_input.gpu_va);
   command_list->SetComputeRoot32BitConstants(
       kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 0,
-                                              input.descHandleVector);
+                                              input.desc_handle_vector);
   command_list->SetComputeRootDescriptorTable(
-      kUavSlots + 1 + 1, transformed_input.descHandleScalar);
+      kUavSlots + 1 + 1, transformed_input.desc_handle_scalar);
 
   int blocks = DivUp(N * C, kWinogradTransformShaderBlockSize);
   command_list->Dispatch(blocks, 1, 1);
@@ -247,38 +245,38 @@ void ShaderWrapper::se(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
     bool skip_add, int se_k, bool /*fp16*/) {
   int consts[] = {N, K, relu, bias_add, skip_add, se_k};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
-  if (bias_add) command_list->SetComputeRootUnorderedAccessView(2, bias.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(0, input.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(1, output.gpu_va);
+  if (bias_add) command_list->SetComputeRootUnorderedAccessView(2, bias.gpu_va);
   if (skip_add)
-    command_list->SetComputeRootUnorderedAccessView(3, skip_connection.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(4, se_w1.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpuVA);
+    command_list->SetComputeRootUnorderedAccessView(3, skip_connection.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(4, se_w1.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpu_va);
 
   command_list->SetComputeRoot32BitConstants(
       kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
 
   command_list->SetComputeRootDescriptorTable(
-      kUavSlots + 1 + 0, input.descHandleVector);
+      kUavSlots + 1 + 0, input.desc_handle_vector);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 1,
-                                              output.descHandleVector);
+                                              output.desc_handle_vector);
   if (bias_add)
     command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 2,
-                                                bias.descHandleScalar);
+                                                bias.desc_handle_scalar);
   if (skip_add)
     command_list->SetComputeRootDescriptorTable(
-        kUavSlots + 1 + 3, skip_connection.descHandleVector);
+        kUavSlots + 1 + 3, skip_connection.desc_handle_vector);
 
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 4,
-                                              se_w1.descHandleScalar);
+                                              se_w1.desc_handle_scalar);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 5,
-                                              se_b1.descHandleScalar);
+                                              se_b1.desc_handle_scalar);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 6,
-                                              se_w2.descHandleScalar);
+                                              se_w2.desc_handle_scalar);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 7,
-                                              se_b2.descHandleScalar);
+                                              se_b2.desc_handle_scalar);
 
   int blocks = N;
   if (K <= 128)
@@ -312,39 +310,39 @@ void ShaderWrapper::outputTransform(ID3D12GraphicsCommandList5* command_list,
                                     int se_k, bool /*fp16*/) {
   int consts[] = {N, K, relu, bias_add, skip_add, fused_se, se_k};
   command_list->SetComputeRootSignature(root_sign_);
-  command_list->SetComputeRootUnorderedAccessView(0, transformed_output.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
-  if (bias_add) command_list->SetComputeRootUnorderedAccessView(2, bias.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(0, transformed_output.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(1, output.gpu_va);
+  if (bias_add) command_list->SetComputeRootUnorderedAccessView(2, bias.gpu_va);
   if (skip_add)
-    command_list->SetComputeRootUnorderedAccessView(3, skip_connection.gpuVA);
+    command_list->SetComputeRootUnorderedAccessView(3, skip_connection.gpu_va);
   if (fused_se) {
-    command_list->SetComputeRootUnorderedAccessView(4, se_w1.gpuVA);
-    command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpuVA);
-    command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpuVA);
-    command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpuVA);
+    command_list->SetComputeRootUnorderedAccessView(4, se_w1.gpu_va);
+    command_list->SetComputeRootUnorderedAccessView(5, se_b1.gpu_va);
+    command_list->SetComputeRootUnorderedAccessView(6, se_w2.gpu_va);
+    command_list->SetComputeRootUnorderedAccessView(7, se_b2.gpu_va);
   }
   command_list->SetComputeRoot32BitConstants(
       kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
 
   command_list->SetComputeRootDescriptorTable(
-      kUavSlots + 1 + 0, transformed_output.descHandleScalar);
+      kUavSlots + 1 + 0, transformed_output.desc_handle_scalar);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 1,
-                                              output.descHandleVector);
+                                              output.desc_handle_vector);
   if (bias_add)
     command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 2,
-                                                bias.descHandleScalar);
+                                                bias.desc_handle_scalar);
   if (skip_add)
     command_list->SetComputeRootDescriptorTable(
-        kUavSlots + 1 + 3, skip_connection.descHandleVector);
+        kUavSlots + 1 + 3, skip_connection.desc_handle_vector);
   if (fused_se) {
     command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 4,
-                                                se_w1.descHandleScalar);
+                                                se_w1.desc_handle_scalar);
     command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 5,
-                                                se_b1.descHandleScalar);
+                                                se_b1.desc_handle_scalar);
     command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 6,
-                                                se_w2.descHandleScalar);
+                                                se_w2.desc_handle_scalar);
     command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 7,
-                                                se_b2.descHandleScalar);
+                                                se_b2.desc_handle_scalar);
   }
 
   int blocks = 0;
@@ -384,21 +382,21 @@ void ShaderWrapper::conv1x1(ID3D12GraphicsCommandList5* command_list,
   int consts[] = {N, K, C, useBias, relu};
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetPipelineState(conv_1x1_);
-  command_list->SetComputeRootUnorderedAccessView(0, output.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(1, input.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(2, weight.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(3, bias.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(0, output.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(1, input.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(2, weight.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(3, bias.gpu_va);
   command_list->SetComputeRoot32BitConstants(
       kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
 
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 0,
-                                              output.descHandleScalar);
+                                              output.desc_handle_scalar);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 1,
-                                              input.descHandleScalar);
+                                              input.desc_handle_scalar);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 2,
-                                              weight.descHandleScalar);
+                                              weight.desc_handle_scalar);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 3,
-                                              bias.descHandleScalar);
+                                              bias.desc_handle_scalar);
 
   command_list->Dispatch(K, N, 1);
 }
@@ -419,9 +417,9 @@ void ShaderWrapper::addVectors(ID3D12GraphicsCommandList5* command_list,
   int consts[] = {a_size, b_size, c_size, relu, tanh, fp16};
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetPipelineState(add_vectors_);
-  command_list->SetComputeRootUnorderedAccessView(0, A.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(1, B.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(2, C.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(0, A.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(1, B.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(2, C.gpu_va);
   command_list->SetComputeRoot32BitConstants(
       kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
 
@@ -436,11 +434,11 @@ void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
   int consts[] = {N, input_size, used_size, output_size};
   command_list->SetComputeRootSignature(root_sign_);
   command_list->SetPipelineState(policy_map_);
-  command_list->SetComputeRootUnorderedAccessView(0, input.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(1, output.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(2, weights.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(0, input.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(1, output.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(2, weights.gpu_va);
   command_list->SetComputeRoot32BitConstants(kUavSlots, ARR_ELEMENT_COUNT(consts), &consts, 0);
-  command_list->SetComputeRootDescriptorTable(kUavSlots+1, input.descHandleScalar);
+  command_list->SetComputeRootDescriptorTable(kUavSlots+1, input.desc_handle_scalar);
 
   int blocks = DivUp(N * used_size, kPolicyMapBlockSize);
   command_list->Dispatch(blocks, 1, 1);
@@ -454,21 +452,21 @@ void ShaderWrapper::MatrixMultiply(ID3D12GraphicsCommandList5* command_list,
 
   command_list->SetPipelineState(gemm_);
 
-  command_list->SetComputeRootUnorderedAccessView(0, A.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(1, B.gpuVA);
-  command_list->SetComputeRootUnorderedAccessView(2, output.gpuVA);
+  command_list->SetComputeRootUnorderedAccessView(0, A.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(1, B.gpu_va);
+  command_list->SetComputeRootUnorderedAccessView(2, output.gpu_va);
   command_list->SetComputeRoot32BitConstants(
       kUavSlots, ARR_ELEMENT_COUNT(Consts), &Consts, 0);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 0,
-                                              A.descHandleVector);
+                                              A.desc_handle_vector);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 1,
-                                              B.descHandleVector);
+                                              B.desc_handle_vector);
   command_list->SetComputeRootDescriptorTable(kUavSlots + 1 + 2,
-                                              output.descHandleVector);
+                                              output.desc_handle_vector);
 
 
-  int blocksX = DivUp(N, ELEMENTS_PER_BLOCK_X);
-  int blocksY = DivUp(M, ELEMENTS_PER_BLOCK_Y);
+  int blocksX = DivUp(N, kGemmElPerBlockX);
+  int blocksY = DivUp(M, kGemmElPerBlockY);
   int blocksZ = batch;
 
   command_list->Dispatch(blocksX, blocksY, blocksZ);

@@ -44,7 +44,7 @@ files += custom_target('ExpandPlanes_shader_fp32',
 files += custom_target('ExpandPlanes_shader_fp16',
     output : 'ExpandPlanes_shader_fp16.h',
     input : 'ExpandPlanes.hlsl',
-    command : [dxc_helper, '/EExpandPlanes_shader_fp16', '-enable-16bit-types'] + dxc_common
+    command : [dxc_helper, '/EExpandPlanes_shader_fp16'] + dxc_common
 )
 
 files += custom_target('input_transform_shader_fp32',

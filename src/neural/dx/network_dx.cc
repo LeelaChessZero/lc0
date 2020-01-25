@@ -34,7 +34,7 @@ namespace lczero {
 
 using namespace dx_backend;
 
-uint64_t DxContext::flushCL(ID3D12GraphicsCommandList5* cl) {
+uint64_t DxContext::FlushCL(ID3D12GraphicsCommandList5* cl) {
   if (!cl) cl = command_list_;
   cl->Close();
   command_queue_->ExecuteCommandLists(1, (ID3D12CommandList**)&cl);
@@ -42,7 +42,7 @@ uint64_t DxContext::flushCL(ID3D12GraphicsCommandList5* cl) {
   return fence_val_;
 }
 
-void DxContext::waitForGPU(uint64_t fence_val) {
+void DxContext::WaitForGpu(uint64_t fence_val) {
   if (!fence_val) fence_val = fence_val_;
   // Wait for commands to finish on GPU.
   // (spinloop has lowest latency, we can try event based signal if CPU
@@ -52,7 +52,7 @@ void DxContext::waitForGPU(uint64_t fence_val) {
   upload_scratch_mem_.offset = 0;
 }
 
-void DxContext::resetCL(ID3D12GraphicsCommandList5* cl,
+void DxContext::ResetCL(ID3D12GraphicsCommandList5* cl,
                         ID3D12CommandAllocator* ca, bool reset) {
   if (!cl) cl = command_list_;
   if (!ca) ca = command_allocator_;
@@ -63,19 +63,19 @@ void DxContext::resetCL(ID3D12GraphicsCommandList5* cl,
   cl->SetDescriptorHeaps(1, &desc_heap_);
 }
 
-void DxContext::flushAndWait() {
-  flushCL();
-  waitForGPU();
-  resetCL();
+void DxContext::FlushAndWait() {
+  FlushCL();
+  WaitForGpu();
+  ResetCL();
 }
 
-void DxContext::uavBarrier(ID3D12GraphicsCommandList5* command_list) {
+void DxContext::UavBarrier(ID3D12GraphicsCommandList5* command_list) {
   if (!command_list) command_list = command_list_;
   CD3DX12_RESOURCE_BARRIER uav_barrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
   command_list->ResourceBarrier(1, &uav_barrier);
 }
 
-void DxContext::dumpFp32(float* buf, int elements) {
+void DxContext::DumpFp32(float* buf, int elements) {
   printf("\n");
   for (int i = 0; i < elements; i++) {
     printf("%8.4f ", buf[i]);
@@ -84,34 +84,34 @@ void DxContext::dumpFp32(float* buf, int elements) {
   printf("\n");
 }
 
-void DxContext::copyTensor(DXAlloc dst, DXAlloc src, int bytes) {
+void DxContext::CopyTensor(DXAlloc dst, DXAlloc src, int bytes) {
   CD3DX12_RESOURCE_BARRIER barrier;
 
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      src.pResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+      src.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
       D3D12_RESOURCE_STATE_COPY_SOURCE);
   command_list_->ResourceBarrier(1, &barrier);
 
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      dst.pResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+      dst.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
       D3D12_RESOURCE_STATE_COPY_DEST);
   command_list_->ResourceBarrier(1, &barrier);
 
-  command_list_->CopyBufferRegion(dst.pResource, dst.offset, src.pResource,
+  command_list_->CopyBufferRegion(dst.resource, dst.offset, src.resource,
                                   src.offset, bytes);
 
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      src.pResource, D3D12_RESOURCE_STATE_COPY_SOURCE,
+      src.resource, D3D12_RESOURCE_STATE_COPY_SOURCE,
       D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
   command_list_->ResourceBarrier(1, &barrier);
 
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      dst.pResource, D3D12_RESOURCE_STATE_COPY_DEST,
+      dst.resource, D3D12_RESOURCE_STATE_COPY_DEST,
       D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
   command_list_->ResourceBarrier(1, &barrier);
 }
 
-void DxContext::dumpCpuTensor(void* data, int size, bool fp16,
+void DxContext::DumpCpuTensor(void* data, int size, bool fp16,
                               bool allnewline) {
   printf("\n");
   float* fp32arr = (float*)data;
@@ -125,33 +125,33 @@ void DxContext::dumpCpuTensor(void* data, int size, bool fp16,
 }
 
 #ifdef DEBUG_DUMP_PER_LAYER_DATA
-void DxContext::dumpTensor(const char* message, DXAlloc alloc, int size,
+void DxContext::DumpTensor(const char* message, DXAlloc alloc, int size,
                            bool fp16, bool allnewline) {
   printf("\n%s", message);
   int bytes = size * (fp16 ? sizeof(dx_half) : sizeof(float));
   CD3DX12_RESOURCE_BARRIER barrier;
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      alloc.pResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+      alloc.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
       D3D12_RESOURCE_STATE_COPY_SOURCE);
   command_list_->ResourceBarrier(1, &barrier);
 
-  command_list_->CopyBufferRegion(readback_scratch_mem_.pResource,
-                                  readback_scratch_mem_.offset, alloc.pResource,
+  command_list_->CopyBufferRegion(readback_scratch_mem_.resource,
+                                  readback_scratch_mem_.offset, alloc.resource,
                                   alloc.offset, bytes);
 
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      alloc.pResource, D3D12_RESOURCE_STATE_COPY_SOURCE,
+      alloc.resource, D3D12_RESOURCE_STATE_COPY_SOURCE,
       D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
   command_list_->ResourceBarrier(1, &barrier);
 
-  flushAndWait();
+  FlushAndWait();
   void* cpuPtr;
-  readback_scratch_mem_.pResource->Map(0, nullptr, &cpuPtr);
-  dumpCpuTensor(cpuPtr, size, fp16, allnewline);
-  readback_scratch_mem_.pResource->Unmap(0, nullptr);
+  readback_scratch_mem_.resource->Map(0, nullptr, &cpuPtr);
+  DumpCpuTensor(cpuPtr, size, fp16, allnewline);
+  readback_scratch_mem_.resource->Unmap(0, nullptr);
 }
 #else
-void DxContext::dumpTensor(const char*, DXAlloc, int, bool, bool) {}
+void DxContext::DumpTensor(const char*, DXAlloc, int, bool, bool) {}
 #endif
 
 
@@ -211,10 +211,10 @@ DxContext::DxContext(const OptionsDict& options) {
 
 DxContext::~DxContext() {
   // Make sure nothing is in flight
-  flushAndWait();
+  FlushAndWait();
 
-  upload_scratch_mem_.pResource->Release();
-  readback_scratch_mem_.pResource->Release();
+  upload_scratch_mem_.resource->Release();
+  readback_scratch_mem_.resource->Release();
 
   shader_wrapper_.destroy();
   command_list_->Release();
@@ -266,10 +266,10 @@ void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
   bufferDesc.Width = size;
   ReportDxErrors(device_->CreateCommittedResource(
       &heapDesc, D3D12_HEAP_FLAG_NONE, &bufferDesc, resourceState, nullptr,
-      IID_PPV_ARGS(&alloc.pResource)));
+      IID_PPV_ARGS(&alloc.resource)));
 
   alloc.offset = 0;
-  alloc.gpuVA = alloc.pResource->GetGPUVirtualAddress();
+  alloc.gpu_va = alloc.resource->GetGPUVirtualAddress();
 
   // Create desc heap entries for UAV resources.
   if (resourceState == D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
@@ -296,10 +296,10 @@ void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
       uavDesc.Buffer.FirstElement = 0;
       uavDesc.Buffer.NumElements = (UINT)(size / element_size);
 
-      device_->CreateUnorderedAccessView(alloc.pResource, nullptr, &uavDesc,
+      device_->CreateUnorderedAccessView(alloc.resource, nullptr, &uavDesc,
                                          cpuDescHandle);
 
-      alloc.descHandleScalar = gpuDescHandle;
+      alloc.desc_handle_scalar = gpuDescHandle;
     }
 
     // 4-component vector UAV.
@@ -321,22 +321,22 @@ void DxContext::CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
       uavDesc.Buffer.FirstElement = 0;
       uavDesc.Buffer.NumElements = (UINT)(size / (4 * element_size));
 
-      device_->CreateUnorderedAccessView(alloc.pResource, nullptr, &uavDesc,
+      device_->CreateUnorderedAccessView(alloc.resource, nullptr, &uavDesc,
                                          cpuDescHandle);
 
-      alloc.descHandleVector = gpuDescHandle;
+      alloc.desc_handle_vector = gpuDescHandle;
     }
   }
 }
 
-void DxContext::scheduleUpload(DXAlloc alloc, const void* data, size_t size) {
+void DxContext::ScheduleUpload(DXAlloc alloc, const void* data, size_t size) {
   // Make sure enough space is available in the upload scratch buffer
   assert(size <= kUploadDownloadScratchSize);
   if (upload_scratch_mem_.offset + size > kUploadDownloadScratchSize)
-    flushAndWait();
+    FlushAndWait();
 
   uint8_t* temp;
-  upload_scratch_mem_.pResource->Map(0, nullptr, (void**)&temp);
+  upload_scratch_mem_.resource->Map(0, nullptr, (void**)&temp);
 
   dx_half* cpuPtr = (dx_half*)(temp + upload_scratch_mem_.offset);
   memcpy(cpuPtr, data, size);
@@ -344,20 +344,20 @@ void DxContext::scheduleUpload(DXAlloc alloc, const void* data, size_t size) {
   CD3DX12_RESOURCE_BARRIER barrier;
 
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      alloc.pResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+      alloc.resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
       D3D12_RESOURCE_STATE_COPY_DEST);
   command_list_->ResourceBarrier(1, &barrier);
 
-  command_list_->CopyBufferRegion(alloc.pResource, alloc.offset,
-                                  upload_scratch_mem_.pResource,
+  command_list_->CopyBufferRegion(alloc.resource, alloc.offset,
+                                  upload_scratch_mem_.resource,
                                   upload_scratch_mem_.offset, size);
 
   barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      alloc.pResource, D3D12_RESOURCE_STATE_COPY_DEST,
+      alloc.resource, D3D12_RESOURCE_STATE_COPY_DEST,
       D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
   command_list_->ResourceBarrier(1, &barrier);
 
-  upload_scratch_mem_.pResource->Unmap(0, nullptr);
+  upload_scratch_mem_.resource->Unmap(0, nullptr);
 
   // reset at flush and wait
   upload_scratch_mem_.offset += (uint32_t)size;
@@ -582,7 +582,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     network_.emplace_back(std::move(FCVal2));
   }
 
-  dx_context_.flushAndWait();
+  dx_context_.FlushAndWait();
 
   // Allocate GPU memory for running the network
   // 4 buffers of max size are enough:
@@ -610,17 +610,17 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   ID3D12GraphicsCommandList5* cl = dx_context_.getCommandList();
 #else
   ID3D12GraphicsCommandList5* cl = io->command_list_;
-  dx_context_.resetCL(cl, io->command_allocator_, io->needs_reset_);
+  dx_context_.ResetCL(cl, io->command_allocator_, io->needs_reset_);
 #endif
 
   // Expand packed board representation into full planes.
   dx_context_.getShaderWrapper()->expandPlanes(
       cl, tensor_mem_[0], io->input_masks_mem_gpu_, io->input_val_mem_gpu_,
       batchSize, fp16_);
-  dx_context_.uavBarrier(cl);
+  dx_context_.UavBarrier(cl);
 
   // Debug logging (not compiled by default)
-  dx_context_.dumpTensor("After expand planes", tensor_mem_[0], 1024, fp16_);
+  dx_context_.DumpTensor("After expand planes", tensor_mem_[0], 1024, fp16_);
 
   int l = 0;
 
@@ -628,9 +628,9 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   // Input Conv
   network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[1], tensor_mem_[3], cl);
-  dx_context_.uavBarrier(cl);
+  dx_context_.UavBarrier(cl);
 
-  dx_context_.dumpTensor("After input planes", tensor_mem_[2], 1024, fp16_);
+  dx_context_.DumpTensor("After input planes", tensor_mem_[2], 1024, fp16_);
 
 
   //-----------------------------------///---------------------------------------
@@ -640,16 +640,16 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
     // conv1
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
-    dx_context_.uavBarrier(cl);
+    dx_context_.UavBarrier(cl);
 
     // conv2
     network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                         tensor_mem_[2], tensor_mem_[1], tensor_mem_[3], cl);
-    dx_context_.uavBarrier(cl);
+    dx_context_.UavBarrier(cl);
   }
 
 
-  dx_context_.dumpTensor("After Residual tower", tensor_mem_[2], 1024, fp16_);
+  dx_context_.DumpTensor("After Residual tower", tensor_mem_[2], 1024, fp16_);
 
   //-----------------------------------///---------------------------------------
 
@@ -658,30 +658,30 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
     // Policy conv1.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
-    dx_context_.uavBarrier(cl);
+    dx_context_.UavBarrier(cl);
 
-    dx_context_.dumpTensor("After policy conv1", tensor_mem_[0], 1024, fp16_);
+    dx_context_.DumpTensor("After policy conv1", tensor_mem_[0], 1024, fp16_);
 
     // Policy conv2
     network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
 
-    dx_context_.uavBarrier(cl);
+    dx_context_.UavBarrier(cl);
 
-    dx_context_.dumpTensor("After policy conv2", tensor_mem_[1], 1024, fp16_);
+    dx_context_.DumpTensor("After policy conv2", tensor_mem_[1], 1024, fp16_);
 
     // Policy Map layer  (writes directly to system memory).
     network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[1],
                         DXAlloc(), DXAlloc(), DXAlloc(), cl);
 
     // Output of policy map layer is always FP32.
-    dx_context_.dumpTensor("After policy map", io->op_policy_mem_gpu_, 1024, false);    
+    dx_context_.DumpTensor("After policy map", io->op_policy_mem_gpu_, 1024, false);    
 
   } else {
     // Policy conv.
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
-    dx_context_.uavBarrier(cl);
+    dx_context_.UavBarrier(cl);
 
     // Policy FC (writes directly to system memory).
     network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[0],
@@ -695,26 +695,26 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   // Value conv.
   network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                       tensor_mem_[1], tensor_mem_[3], cl);
-  dx_context_.uavBarrier(cl);
+  dx_context_.UavBarrier(cl);
 
-  dx_context_.dumpTensor("After value conv", tensor_mem_[0], 1024, fp16_);
+  dx_context_.DumpTensor("After value conv", tensor_mem_[0], 1024, fp16_);
 
   // value FC1.
   network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[2], tensor_mem_[3], cl);
-  dx_context_.uavBarrier(cl);
+  dx_context_.UavBarrier(cl);
 
-  dx_context_.dumpTensor("After value fc1", tensor_mem_[1], 128, fp16_);
+  dx_context_.DumpTensor("After value fc1", tensor_mem_[1], 128, fp16_);
 
   // value FC2.
   network_[l++]->Eval(batchSize, io->op_value_mem_gpu_, tensor_mem_[1],
                       DXAlloc(), tensor_mem_[2], tensor_mem_[3], cl);
 
-  dx_context_.dumpTensor("After value fc2", io->op_value_mem_gpu_, 8, fp16_);
+  dx_context_.DumpTensor("After value fc2", io->op_value_mem_gpu_, 8, fp16_);
 
   //-----------------------------------///---------------------------------------
 #ifdef DEBUG_DUMP_PER_LAYER_DATA
-  dx_context_.flushAndWait();
+  dx_context_.FlushAndWait();
   lock_.unlock();
 #else
   // TODO: Get rid of this lock once we move the Command Queue also to
@@ -722,10 +722,10 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   // The hope is that we will get some GPU side parallelism with multiple async
   // compute queues.
   lock_.lock();
-  uint64_t fence = dx_context_.flushCL(cl);
+  uint64_t fence = dx_context_.FlushCL(cl);
   lock_.unlock();
 
-  dx_context_.waitForGPU(fence);
+  dx_context_.WaitForGpu(fence);
   io->needs_reset_ = true;
 #endif
 
@@ -793,10 +793,10 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
 }
 
 DxNetwork::~DxNetwork() {
-  dx_context_.flushAndWait();
+  dx_context_.FlushAndWait();
   // Free memory and destroy all dx objects.
   for (auto mem : tensor_mem_) {
-    mem.pResource->Release();
+    mem.resource->Release();
   }
 }
 
@@ -852,37 +852,37 @@ void DxNetworkComputation::ComputeBlocking() {
   network_->Eval(inputs_outputs_.get(), GetBatchSize());
 }
 
-InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
+InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* dx_context,
                                  bool wdl, bool policy_map, bool fp16)
     : uses_policy_map_(policy_map), needs_reset_(false) {
   // CPU accesses on Default heap doesn't work.
   // GPU accesses on Upload heap works.
-  pContext->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
+  dx_context->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
                         D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
                         input_masks_mem_gpu_, fp16);
 
-  pContext->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(float),
+  dx_context->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(float),
                         D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
                         input_val_mem_gpu_, fp16);
 
   // CUSTOM heap created to have GPU directly write to system memory
-  pContext->CreateAlloc(maxBatchSize * kNumOutputPolicyPadded8 * sizeof(float),
+  dx_context->CreateAlloc(maxBatchSize * kNumOutputPolicyPadded8 * sizeof(float),
                         D3D12_HEAP_TYPE_CUSTOM, op_policy_mem_gpu_, fp16);
 
-  pContext->CreateAlloc(maxBatchSize * kNumOutputValuePadded8 * sizeof(float),
+  dx_context->CreateAlloc(maxBatchSize * kNumOutputValuePadded8 * sizeof(float),
                         D3D12_HEAP_TYPE_CUSTOM, op_value_mem_gpu_, fp16);
 
-  ReportDxErrors(input_masks_mem_gpu_.pResource->Map(
+  ReportDxErrors(input_masks_mem_gpu_.resource->Map(
       0, nullptr, (void**)&input_masks_mem_));
 
   ReportDxErrors(
-      input_val_mem_gpu_.pResource->Map(0, nullptr, (void**)&input_val_mem_));
+      input_val_mem_gpu_.resource->Map(0, nullptr, (void**)&input_val_mem_));
 
   ReportDxErrors(
-      op_policy_mem_gpu_.pResource->Map(0, nullptr, (void**)&op_policy_mem_));
+      op_policy_mem_gpu_.resource->Map(0, nullptr, (void**)&op_policy_mem_));
 
   ReportDxErrors(
-      op_value_mem_gpu_.pResource->Map(0, nullptr, (void**)&op_value_mem_));
+      op_value_mem_gpu_.resource->Map(0, nullptr, (void**)&op_value_mem_));
 
   // When policy map is enabled, GPU writes directly to the final policy output.
   if (uses_policy_map_)
@@ -891,24 +891,24 @@ InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* pContext,
     op_policy_mem_final_ = new float[maxBatchSize * kNumOutputPolicy];
   op_value_mem_final_ = new float[maxBatchSize * (wdl ? 3 : 1)];
 
-  ReportDxErrors(pContext->getDevice()->CreateCommandAllocator(
+  ReportDxErrors(dx_context->getDevice()->CreateCommandAllocator(
       D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocator_)));
 
-  ReportDxErrors(pContext->getDevice()->CreateCommandList(
+  ReportDxErrors(dx_context->getDevice()->CreateCommandList(
       1, D3D12_COMMAND_LIST_TYPE_DIRECT, command_allocator_, NULL,
       IID_PPV_ARGS(&command_list_)));
 }
 
 InputsOutputsDx::~InputsOutputsDx() {
-  input_masks_mem_gpu_.pResource->Unmap(0, nullptr);
-  input_val_mem_gpu_.pResource->Unmap(0, nullptr);
-  op_policy_mem_gpu_.pResource->Unmap(0, nullptr);
-  op_value_mem_gpu_.pResource->Unmap(0, nullptr);
+  input_masks_mem_gpu_.resource->Unmap(0, nullptr);
+  input_val_mem_gpu_.resource->Unmap(0, nullptr);
+  op_policy_mem_gpu_.resource->Unmap(0, nullptr);
+  op_value_mem_gpu_.resource->Unmap(0, nullptr);
 
-  input_masks_mem_gpu_.pResource->Release();
-  input_val_mem_gpu_.pResource->Release();
-  op_policy_mem_gpu_.pResource->Release();
-  op_value_mem_gpu_.pResource->Release();
+  input_masks_mem_gpu_.resource->Release();
+  input_val_mem_gpu_.resource->Release();
+  op_policy_mem_gpu_.resource->Release();
+  op_value_mem_gpu_.resource->Release();
 
   command_allocator_->Release();
   command_list_->Release();

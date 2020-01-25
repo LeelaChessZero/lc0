@@ -31,38 +31,129 @@
 namespace lczero {
 namespace dx_backend {
 
+// Utility functions used only in this file.
 namespace {
-void copyFloatToHalf(dx_half* out, const float* in, size_t elements) {
+
+static void CopyFloatToHalf(dx_half* out, const float* in, size_t elements) {
   for (int i = 0; i < elements; i++) {
     out[i] = FP32toFP16(in[i]);
   }
 }
-};  // namespace
 
-static void getGemmTensorDesc(TensorDesc* outDesc, int batchSize, int rows,
-                              int cols, bool fp16) {
-  memset(outDesc, 0, sizeof(TensorDesc));
-  outDesc->DimensionCount = 4;
-  outDesc->DataType = fp16 ? 1 : 0;
-
-  outDesc->Size[0] = batchSize;
-  outDesc->Size[1] = 1;
-  outDesc->Size[2] = rows;
-  outDesc->Size[3] = cols;
-
-  // row-major by default
-  outDesc->Stride[3] = 1;
-  outDesc->Stride[2] = cols;
-  outDesc->Stride[1] = rows * cols;
-  outDesc->Stride[0] = rows * cols;
-
-  for (int i = 0; i < 4; i++) outDesc->StrideAlignment[i] = 1;
-
-  outDesc->BaseAlignmentInBytes = 4096;  // arbitary
-  outDesc->PhysicalSizeInElements = batchSize * rows * cols;
+static void CpuTranspose(float* op, float* ip, size_t rows, size_t cols) {
+  for (size_t i = 0; i < rows; i++)
+    for (size_t j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
 }
 
-GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
+
+template <int M, int N, int K>
+static void MatrixMulCPU(float* c, const float* a, const float* b) {
+  for (int i = 0; i < M; ++i)
+    for (int j = 0; j < N; ++j) {
+      float S = 0;
+      for (int k = 0; k < K; ++k)
+        S += a[i * K + k] * b[k * N + j];
+      c[i * N + j] = S;
+    }
+}
+
+static void FilterTransform4x4(float* transformed_filter, const float* filter) {
+  // transform applied to filter (of size 3x3)
+  float G[6 * 3] = { 1.0f / 4,   0,           0,       -1.0f / 6, -1.0f / 6, -1.0f / 6,
+                    -1.0f / 6,   1.0f / 6,   -1.0f / 6, 1.0f / 24, 1.0f / 12, 1.0f / 6,
+                     1.0f / 24, -1.0f / 12,   1.0f / 6, 0,         0,         1};
+
+  float Gt[3 * 6] = {1.0f / 4, -1.0f / 6, -1.0f / 6,  1.0f / 24,  1.0f / 24,  0,
+                     0,        -1.0f / 6,  1.0f / 6,  1.0f / 12, -1.0f / 12,  0,
+                     0,        -1.0f / 6, -1.0f / 6,  1.0f / 6,   1.0f / 6,   1};
+
+  float temp_filter[6 * 3];
+  MatrixMulCPU<6, 3, 3>(temp_filter, G, filter);
+  MatrixMulCPU<6, 6, 3>(transformed_filter, temp_filter, Gt);
+}
+
+#define FILTER_IDX_NCHW(k, c, h, w) ((k)*C * S * R + (c)*S * R + (h)*R + w)
+
+// Transform filter for winograd.
+// (e.g: for K C H W - 256x256x3x3, filter output is 6x6x256x256 - H W K C)
+static void TransformFilterTensor_Winograd4x4(int K, int C, float* transformed_filter,
+                                              const float* weight) {
+  constexpr int S = 3;
+  constexpr int R = 3;
+
+  for (int k = 0; k < K; k++) {
+    for (int c = 0; c < C; c++) {
+      // 1. read single filter from memory
+      float filter_tile[3][3];
+      for (int s = 0; s < S; s++)
+        for (int r = 0; r < R; r++) {
+          filter_tile[s][r] = weight[FILTER_IDX_NCHW(k, c, s, r)];
+        }
+
+      // 2. transform it
+      float transformed_tile[6][6];
+      FilterTransform4x4(&(transformed_tile[0][0]), &(filter_tile[0][0]));
+
+      // 3. write it back to memory (in HWCK layout)
+      for (int i = 0; i < 6; i++)
+        for (int j = 0; j < 6; j++) {
+          transformed_filter[i * 6 * C * K + j * C * K + c * K + k] =
+              transformed_tile[i][j];
+        }
+    }
+  }
+}
+
+
+static void GetGemmTensorDesc(TensorDesc* out_desc, int batch_size, int rows,
+                              int cols, bool fp16) {
+  memset(out_desc, 0, sizeof(TensorDesc));
+  out_desc->DimensionCount = 4;
+  out_desc->DataType = fp16 ? 1 : 0;
+
+  out_desc->Size[0] = batch_size;
+  out_desc->Size[1] = 1;
+  out_desc->Size[2] = rows;
+  out_desc->Size[3] = cols;
+
+  // row-major by default
+  out_desc->Stride[3] = 1;
+  out_desc->Stride[2] = cols;
+  out_desc->Stride[1] = rows * cols;
+  out_desc->Stride[0] = rows * cols;
+
+  for (int i = 0; i < 4; i++) out_desc->StrideAlignment[i] = 1;
+
+  out_desc->BaseAlignmentInBytes = 4096;  // arbitary
+  out_desc->PhysicalSizeInElements = batch_size * rows * cols;
+}
+
+static void GetConvTensorDesc(TensorDesc* out_desc, int N, int C,
+                              int H, int W, bool fp16) {
+  memset(out_desc, 0, sizeof(TensorDesc));
+  out_desc->DimensionCount = 4;
+  out_desc->DataType = fp16 ? 1 : 0;
+
+  out_desc->Size[0] = N;
+  out_desc->Size[1] = C;
+  out_desc->Size[2] = H;
+  out_desc->Size[3] = W;
+
+  // NCHW layout
+  out_desc->Stride[3] = 1;
+  out_desc->Stride[2] = W;
+  out_desc->Stride[1] = H * W;
+  out_desc->Stride[0] = C * H * W;
+
+  for (int i = 0; i < 4; i++) out_desc->StrideAlignment[i] = 1;
+
+  out_desc->BaseAlignmentInBytes = 4096;  // arbitary
+  out_desc->PhysicalSizeInElements = N * C * H * W;
+}
+
+};  // namespace
+
+GemmMetaCommand::GemmMetaCommand(DxContext* dx_context, int rows, int cols, int K,
                                  int gemm_batch, bool fp16, bool a_transpose,
                                  bool b_transpose) {
   memset(scratch_data_persistent_, 0, sizeof(scratch_data_persistent_));
@@ -85,10 +176,10 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
     int num_rows = rows ? rows : (i + 1) * kMetacommandGranulity;
 
     GemmCreateDesc createDesc = {};
-    getGemmTensorDesc(&createDesc.DescOut, gemm_batch, num_rows, cols, fp16);
-    getGemmTensorDesc(&createDesc.DescA, gemm_batch, a_transpose ? K : num_rows,
+    GetGemmTensorDesc(&createDesc.DescOut, gemm_batch, num_rows, cols, fp16);
+    GetGemmTensorDesc(&createDesc.DescA, gemm_batch, a_transpose ? K : num_rows,
                   a_transpose ? num_rows : K, fp16);
-    getGemmTensorDesc(&createDesc.DescB, gemm_batch, b_transpose ? cols : K,
+    GetGemmTensorDesc(&createDesc.DescB, gemm_batch, b_transpose ? cols : K,
                   b_transpose ? K : cols, fp16);
     createDesc.cMatrixNull = 1;
     createDesc.ActivationIsNull = 1;
@@ -99,7 +190,7 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
     createDesc.TransB = b_transpose;
 
     ID3D12MetaCommand* pMetacommand = nullptr;
-    HRESULT hr = pContext->getDevice()->CreateMetaCommand(
+    HRESULT hr = dx_context->getDevice()->CreateMetaCommand(
         GemmGuid, 1, &createDesc, sizeof(createDesc),
         IID_PPV_ARGS(&pMetacommand));
 
@@ -123,20 +214,20 @@ GemmMetaCommand::GemmMetaCommand(DxContext* pContext, int rows, int cols, int K,
         D3D12_META_COMMAND_PARAMETER_STAGE_EXECUTION, 5);
 
     if (persistent_size) {
-      pContext->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
+      dx_context->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
                             scratch_data_persistent_[i], fp16);
     }
 
     if (temp_size) {
-      pContext->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
+      dx_context->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
                             scratch_data_temporary_[i], fp16);
     }
 
     GemmInitDesc initDesc = {};
-    initDesc.PersistentResource = scratch_data_persistent_[i].descHandleScalar;
-    initDesc.TemporaryResource = scratch_data_temporary_[i].descHandleScalar;
+    initDesc.PersistentResource = scratch_data_persistent_[i].desc_handle_scalar;
+    initDesc.TemporaryResource = scratch_data_temporary_[i].desc_handle_scalar;
 
-    pContext->getCommandList()->InitializeMetaCommand(
+    dx_context->getCommandList()->InitializeMetaCommand(
         meta_commands_[i], &initDesc, sizeof(initDesc));
   }
 
@@ -159,49 +250,26 @@ void GemmMetaCommand::PerformGemm(int rows, DXAlloc A, DXAlloc B,
   DXAlloc& scratch_temporary = scratch_data_temporary_[index];
 
   GemmExecuteDesc exec_desc = {};
-  exec_desc.AResource = A.descHandleScalar;
-  exec_desc.BResource = B.descHandleScalar;
-  exec_desc.OutputResource = output.descHandleScalar;
-  exec_desc.PersistentResource = scratch_persistent.descHandleScalar;
-  exec_desc.TemporaryResource = scratch_temporary.descHandleScalar;
+  exec_desc.AResource = A.desc_handle_scalar;
+  exec_desc.BResource = B.desc_handle_scalar;
+  exec_desc.OutputResource = output.desc_handle_scalar;
+  exec_desc.PersistentResource = scratch_persistent.desc_handle_scalar;
+  exec_desc.TemporaryResource = scratch_temporary.desc_handle_scalar;
 
   command_list->ExecuteMetaCommand(meta_command, &exec_desc, sizeof(exec_desc));
 }
 
 GemmMetaCommand::~GemmMetaCommand() {
   for (int i = 0; i < kMaxMetacommands; i++) {
-    if (scratch_data_temporary_[i].pResource)
-      scratch_data_temporary_[i].pResource->Release();
-    if (scratch_data_persistent_[i].pResource)
-      scratch_data_persistent_[i].pResource->Release();
+    if (scratch_data_temporary_[i].resource)
+      scratch_data_temporary_[i].resource->Release();
+    if (scratch_data_persistent_[i].resource)
+      scratch_data_persistent_[i].resource->Release();
     if (meta_commands_[i]) meta_commands_[i]->Release();
   }
 }
 
-static void getConvTensorDesc(TensorDesc* outDesc, int N, int C,
-                              int H, int W, bool fp16) {
-  memset(outDesc, 0, sizeof(TensorDesc));
-  outDesc->DimensionCount = 4;
-  outDesc->DataType = fp16 ? 1 : 0;
-
-  outDesc->Size[0] = N;
-  outDesc->Size[1] = C;
-  outDesc->Size[2] = H;
-  outDesc->Size[3] = W;
-
-  // NCHW layout
-  outDesc->Stride[3] = 1;
-  outDesc->Stride[2] = W;
-  outDesc->Stride[1] = H*W;
-  outDesc->Stride[0] = C*H*W;
-
-  for (int i = 0; i < 4; i++) outDesc->StrideAlignment[i] = 1;
-
-  outDesc->BaseAlignmentInBytes = 4096;  // arbitary
-  outDesc->PhysicalSizeInElements = N*C*H*W;
-}
-
-ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int C, int K, int H,
+ConvMetaCommand::ConvMetaCommand(DxContext* dx_context, int C, int K, int H,
                                  int W, int F, bool relu, bool bias,
                                  bool fp16) {
   memset(scratch_data_persistent_, 0, sizeof(scratch_data_persistent_));
@@ -212,10 +280,10 @@ ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int C, int K, int H,
     int n = (i + 1) * kMetacommandGranulity;
 
     ConvCreateDesc createDesc = {};
-    getConvTensorDesc(&createDesc.InputDesc, n, C, H, W, fp16);
-    getConvTensorDesc(&createDesc.OutputDesc, n, K, H, W, fp16);
-    getConvTensorDesc(&createDesc.FilterDesc, K, C, F, F, fp16);
-    getConvTensorDesc(&createDesc.BiasDesc, K, 1, 1, 1, fp16);
+    GetConvTensorDesc(&createDesc.InputDesc, n, C, H, W, fp16);
+    GetConvTensorDesc(&createDesc.OutputDesc, n, K, H, W, fp16);
+    GetConvTensorDesc(&createDesc.FilterDesc, K, C, F, F, fp16);
+    GetConvTensorDesc(&createDesc.BiasDesc, K, 1, 1, 1, fp16);
     createDesc.BiasNull = bias ? 0 : 1;
     createDesc.Mode = 1;  // 1 is for cross-correlation (0 - conv)
 
@@ -241,7 +309,7 @@ ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int C, int K, int H,
     createDesc.Precision = fp16 ? 1 : 0;  // 0 - fp32, 1 - fp16
 
     ID3D12MetaCommand* pMetacommand = nullptr;
-    HRESULT hr = pContext->getDevice()->CreateMetaCommand(
+    HRESULT hr = dx_context->getDevice()->CreateMetaCommand(
         ConvGuid, 1, &createDesc, sizeof(createDesc),
         IID_PPV_ARGS(&pMetacommand));
 
@@ -264,20 +332,20 @@ ConvMetaCommand::ConvMetaCommand(DxContext* pContext, int C, int K, int H,
         D3D12_META_COMMAND_PARAMETER_STAGE_EXECUTION, 5);
 
     if (persistent_size) {
-      pContext->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
+      dx_context->CreateAlloc(persistent_size, D3D12_HEAP_TYPE_DEFAULT,
                             scratch_data_persistent_[i], fp16);
     }
 
     if (temp_size) {
-      pContext->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
+      dx_context->CreateAlloc(temp_size, D3D12_HEAP_TYPE_DEFAULT,
                             scratch_data_temporary_[i], fp16);
     }
 
     InitConvDesc initDesc = {};
-    initDesc.PersistentResource = scratch_data_persistent_[i].descHandleScalar;
-    initDesc.TemporaryResource = scratch_data_temporary_[i].descHandleScalar;
+    initDesc.PersistentResource = scratch_data_persistent_[i].desc_handle_scalar;
+    initDesc.TemporaryResource = scratch_data_temporary_[i].desc_handle_scalar;
 
-    pContext->getCommandList()->InitializeMetaCommand(
+    dx_context->getCommandList()->InitializeMetaCommand(
         meta_commands_[i], &initDesc, sizeof(initDesc));
   }
   use_bias_ = bias;
@@ -296,38 +364,38 @@ void ConvMetaCommand::PerformConv(int batch, DXAlloc input, DXAlloc filter,
   DXAlloc& scratch_temporary = scratch_data_temporary_[index];
 
   ExecuteConvDesc exec_desc = {};
-  exec_desc.InputResource = input.descHandleScalar;
-  exec_desc.FilterResource = filter.descHandleScalar;
+  exec_desc.InputResource = input.desc_handle_scalar;
+  exec_desc.FilterResource = filter.desc_handle_scalar;
   if (use_bias_)
-    exec_desc.BiasResource = bias.descHandleScalar;
-  exec_desc.OutputResource = output.descHandleScalar;
-  exec_desc.PersistentResource = scratch_persistent.descHandleScalar;
-  exec_desc.TemporaryResource = scratch_temporary.descHandleScalar;
+    exec_desc.BiasResource = bias.desc_handle_scalar;
+  exec_desc.OutputResource = output.desc_handle_scalar;
+  exec_desc.PersistentResource = scratch_persistent.desc_handle_scalar;
+  exec_desc.TemporaryResource = scratch_temporary.desc_handle_scalar;
 
   command_list->ExecuteMetaCommand(meta_command, &exec_desc, sizeof(exec_desc));
 }
 
 ConvMetaCommand::~ConvMetaCommand() {
   for (int i = 0; i < kMaxMetacommands; i++) {
-    if (scratch_data_temporary_[i].pResource)
-      scratch_data_temporary_[i].pResource->Release();
-    if (scratch_data_persistent_[i].pResource)
-      scratch_data_persistent_[i].pResource->Release();
+    if (scratch_data_temporary_[i].resource)
+      scratch_data_temporary_[i].resource->Release();
+    if (scratch_data_persistent_[i].resource)
+      scratch_data_persistent_[i].resource->Release();
     if (meta_commands_[i]) meta_commands_[i]->Release();
   }
 }
 
 
-BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext,
+BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* dx_context,
                      bool fp16)
-    : input_(ip), C(c), H(h), W(w), dx_context_(pContext), fp16_(fp16) {}
+    : input_(ip), C(c), H(h), W(w), dx_context_(dx_context), fp16_(fp16) {}
 
 ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommandGemm,
                      ConvMetaCommand* pMetaCommandConv,
-                     DxContext* pContext, BaseLayer* ip, int C, int H, int W,
+                     DxContext* dx_context, BaseLayer* ip, int C, int H, int W,
                      int filter, int Cin, bool bias, bool relu, bool skipAdd,
                      bool se, int se_k)
-    : BaseLayer(C, H, W, ip, pContext, fp16),
+    : BaseLayer(C, H, W, ip, dx_context, fp16),
       meta_command_gemm_(pMetaCommandGemm),
       meta_command_conv_(pMetaCommandConv),
       c_input_(Cin),
@@ -348,16 +416,16 @@ ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommandGemm,
   size_t weight_size = element_size * C * Cin * filter * filter;
   size_t blas_size = element_size * C;
 
-  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
+  dx_context->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
 
   if (filter == 3) {
     // 6x6 transformed filter size, for 3x3 convolution
-    pContext->CreateAlloc(weight_size * 4, D3D12_HEAP_TYPE_DEFAULT,
+    dx_context->CreateAlloc(weight_size * 4, D3D12_HEAP_TYPE_DEFAULT,
                           transformed_weights_, fp16);
   }
 
   if (use_bias_) {
-    pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_, fp16);
+    dx_context->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_, fp16);
   }
 
   if (has_se_)
@@ -372,74 +440,16 @@ ConvLayer::ConvLayer(bool fp16, GemmMetaCommand* pMetaCommandGemm,
     const size_t biases_size1 = element_size * num_biases1;
     const size_t biases_size2 = element_size * num_biases2;
 
-    pContext->CreateAlloc(weight_size1, D3D12_HEAP_TYPE_DEFAULT, w1_, fp16);
-    pContext->CreateAlloc(weight_size2, D3D12_HEAP_TYPE_DEFAULT, w2_, fp16);
-    pContext->CreateAlloc(biases_size1, D3D12_HEAP_TYPE_DEFAULT, b1_, fp16);
-    pContext->CreateAlloc(biases_size2, D3D12_HEAP_TYPE_DEFAULT, b2_, fp16);
+    dx_context->CreateAlloc(weight_size1, D3D12_HEAP_TYPE_DEFAULT, w1_, fp16);
+    dx_context->CreateAlloc(weight_size2, D3D12_HEAP_TYPE_DEFAULT, w2_, fp16);
+    dx_context->CreateAlloc(biases_size1, D3D12_HEAP_TYPE_DEFAULT, b1_, fp16);
+    dx_context->CreateAlloc(biases_size2, D3D12_HEAP_TYPE_DEFAULT, b2_, fp16);
   }
 
-  shader_wrapper_ = pContext->getShaderWrapper();
+  shader_wrapper_ = dx_context->getShaderWrapper();
 }
 
-template <int M, int N, int K>
-void matrixMulCPU(float* c, const float* a, const float* b) {
-  for (int i = 0; i < M; ++i)
-    for (int j = 0; j < N; ++j) {
-      float S = 0;
-      for (int k = 0; k < K; ++k)
-        S += a[i * K + k] * b[k * N + j];
-      c[i * N + j] = S;
-    }
-}
-
-void filterTransform4x4(float* transformedFilter, const float* filter) {
-  // transform applied to filter (of size 3x3)
-  float G[6 * 3] = { 1.0f / 4,   0,           0,       -1.0f / 6, -1.0f / 6, -1.0f / 6,
-                    -1.0f / 6,   1.0f / 6,   -1.0f / 6, 1.0f / 24, 1.0f / 12, 1.0f / 6,
-                     1.0f / 24, -1.0f / 12,   1.0f / 6, 0,         0,         1};
-
-  float Gt[3 * 6] = {1.0f / 4, -1.0f / 6, -1.0f / 6,  1.0f / 24,  1.0f / 24,  0,
-                     0,        -1.0f / 6,  1.0f / 6,  1.0f / 12, -1.0f / 12,  0,
-                     0,        -1.0f / 6, -1.0f / 6,  1.0f / 6,   1.0f / 6,   1};
-
-  float tempFilter[6 * 3];
-  matrixMulCPU<6, 3, 3>(tempFilter, G, filter);
-  matrixMulCPU<6, 6, 3>(transformedFilter, tempFilter, Gt);
-}
-
-#define FILTER_IDX_NCHW(k, c, h, w) ((k)*C * S * R + (c)*S * R + (h)*R + w)
-
-// Transform filter for winograd.
-// (e.g: for K C H W - 256x256x3x3, filter output is 6x6x256x256 - H W K C)
-void transformFilterTensor_Winograd4x4(int K, int C, float* transformedFilter,
-                                       const float* weight) {
-  constexpr int S = 3;
-  constexpr int R = 3;
-
-  for (int k = 0; k < K; k++) {
-    for (int c = 0; c < C; c++) {
-      // 1. read single filter from memory
-      float filterTile[3][3];
-      for (int s = 0; s < S; s++)
-        for (int r = 0; r < R; r++) {
-          filterTile[s][r] = weight[FILTER_IDX_NCHW(k, c, s, r)];
-        }
-
-      // 2. transform it
-      float transformedFilterTile[6][6];
-      filterTransform4x4(&(transformedFilterTile[0][0]), &(filterTile[0][0]));
-
-      // 3. write it back to memory (in HWCK layout)
-      for (int i = 0; i < 6; i++)
-        for (int j = 0; j < 6; j++) {
-          transformedFilter[i * 6 * C * K + j * C * K + c * K + k] =
-              transformedFilterTile[i][j];
-        }
-    }
-  }
-}
-
-void ConvLayer::LoadWeights(float* pfilter, float* pBias, DxContext* pContext) {
+void ConvLayer::LoadWeights(float* cpu_filter, float* cpu_bias, DxContext* dx_context) {
   int num_weights = c_input_ * C * filter_size_ * filter_size_;
   size_t element_size = fp16_ ? sizeof(dx_half) : sizeof(float);
   size_t weight_size = element_size * num_weights;
@@ -447,41 +457,36 @@ void ConvLayer::LoadWeights(float* pfilter, float* pBias, DxContext* pContext) {
 
   std::vector<dx_half> temp(num_weights);
   if (fp16_) {
-    copyFloatToHalf(temp.data(), pfilter, num_weights);
-    pContext->scheduleUpload(weights_, temp.data(), weight_size);
+    CopyFloatToHalf(temp.data(), cpu_filter, num_weights);
+    dx_context->ScheduleUpload(weights_, temp.data(), weight_size);
   } else {
-    pContext->scheduleUpload(weights_, pfilter, weight_size);
+    dx_context->ScheduleUpload(weights_, cpu_filter, weight_size);
   }
 
-  if (pBias) {
+  if (cpu_bias) {
     if (fp16_) {
-      copyFloatToHalf(temp.data(), pBias, C);
-      pContext->scheduleUpload(biases_, temp.data(), bias_size);
+      CopyFloatToHalf(temp.data(), cpu_bias, C);
+      dx_context->ScheduleUpload(biases_, temp.data(), bias_size);
     } else {
-      pContext->scheduleUpload(biases_, pBias, bias_size);
+      dx_context->ScheduleUpload(biases_, cpu_bias, bias_size);
     }
   }
 
   if (filter_size_ == 3) {
     std::vector<float> temp_transformed(num_weights * 4);
-    transformFilterTensor_Winograd4x4(C, c_input_, temp_transformed.data(),
-                                      pfilter);
+    TransformFilterTensor_Winograd4x4(C, c_input_, temp_transformed.data(),
+                                      cpu_filter);
     if (fp16_) {
       std::vector<dx_half> temp_transformed_half(num_weights * 4);
-      copyFloatToHalf(temp_transformed_half.data(), temp_transformed.data(),
+      CopyFloatToHalf(temp_transformed_half.data(), temp_transformed.data(),
                       num_weights * 4);
-      pContext->scheduleUpload(transformed_weights_,
+      dx_context->ScheduleUpload(transformed_weights_,
                                temp_transformed_half.data(), weight_size * 4);
     } else {
-      pContext->scheduleUpload(transformed_weights_, temp_transformed.data(),
+      dx_context->ScheduleUpload(transformed_weights_, temp_transformed.data(),
                                weight_size * 4);
     }
   }
-}
-
-void cpuTranspose(float* op, float* ip, size_t rows, size_t cols) {
-  for (size_t i = 0; i < rows; i++)
-    for (size_t j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
 }
 
 void ConvLayer::LoadSEWeights(float* w1, float* b1, float* w2, float* b2) {
@@ -501,34 +506,34 @@ void ConvLayer::LoadSEWeights(float* w1, float* b1, float* w2, float* b2) {
   std::vector<float> temp_transposed(num_weights2);
   std::vector<dx_half> temp_half(num_weights2);
 
-  cpuTranspose(temp_transposed.data(), w1, se_k_, C);
+  CpuTranspose(temp_transposed.data(), w1, se_k_, C);
   if (fp16_) {
-    copyFloatToHalf(temp_half.data(), temp_transposed.data(), num_weights1);
-    dx_context_->scheduleUpload(w1_, temp_half.data(), weight_size1);
+    CopyFloatToHalf(temp_half.data(), temp_transposed.data(), num_weights1);
+    dx_context_->ScheduleUpload(w1_, temp_half.data(), weight_size1);
   } else {
-    dx_context_->scheduleUpload(w1_, temp_transposed.data(), weight_size1);
+    dx_context_->ScheduleUpload(w1_, temp_transposed.data(), weight_size1);
   }
 
-  cpuTranspose(temp_transposed.data(), w2, 2*C, se_k_);
+  CpuTranspose(temp_transposed.data(), w2, 2*C, se_k_);
   if (fp16_) {
-    copyFloatToHalf(temp_half.data(), temp_transposed.data(), num_weights2);
-    dx_context_->scheduleUpload(w2_, temp_half.data(), weight_size2);
+    CopyFloatToHalf(temp_half.data(), temp_transposed.data(), num_weights2);
+    dx_context_->ScheduleUpload(w2_, temp_half.data(), weight_size2);
   } else {
-    dx_context_->scheduleUpload(w2_, temp_transposed.data(), weight_size2);
-  }
-
-  if (fp16_) {
-    copyFloatToHalf(temp_half.data(), b1, num_biases1);
-    dx_context_->scheduleUpload(b1_, temp_half.data(), biases_size1);
-  } else {
-    dx_context_->scheduleUpload(b1_, b1, biases_size1);
+    dx_context_->ScheduleUpload(w2_, temp_transposed.data(), weight_size2);
   }
 
   if (fp16_) {
-    copyFloatToHalf(temp_half.data(), b2, num_biases2);
-    dx_context_->scheduleUpload(b2_, temp_half.data(), biases_size2);
+    CopyFloatToHalf(temp_half.data(), b1, num_biases1);
+    dx_context_->ScheduleUpload(b1_, temp_half.data(), biases_size1);
   } else {
-    dx_context_->scheduleUpload(b2_, b2, biases_size2);
+    dx_context_->ScheduleUpload(b1_, b1, biases_size1);
+  }
+
+  if (fp16_) {
+    CopyFloatToHalf(temp_half.data(), b2, num_biases2);
+    dx_context_->ScheduleUpload(b2_, temp_half.data(), biases_size2);
+  } else {
+    dx_context_->ScheduleUpload(b2_, b2, biases_size2);
   }
 }
 
@@ -557,7 +562,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
     shader_wrapper_->inputTransform(command_list, scratch, input, N, c_input_,
                                     fp16_);
 
-    dx_context_->uavBarrier(command_list);
+    dx_context_->UavBarrier(command_list);
 
     // 2. Gemm (scratch -> scratch2)
     if (meta_command_gemm_ && meta_command_gemm_->IsAvailable())
@@ -568,7 +573,7 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                                       transformed_weights_, N * 4, C, c_input_,
                                       36, fp16_);
 
-    dx_context_->uavBarrier(command_list);
+    dx_context_->UavBarrier(command_list);
 
     // 3. Output transform (scratch2 -> output)
     shader_wrapper_->outputTransform(
@@ -584,14 +589,14 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
       meta_command_conv_->PerformConv(N, input, weights_, biases_, output,
                                       command_list);
     if (has_se_) {
-      dx_context_->uavBarrier(command_list);
+      dx_context_->UavBarrier(command_list);
       shader_wrapper_->se(command_list, output, scratch, input2, biases_, w1_,
                           b1_, w2_, b2_, N, C, use_relu_, false, skip_add_,
                           se_k_, fp16_);
     } else if (skip_add_) {
       // Need seperate pass for skip connection addition as Metacommand API 
       // doesn't allow it to be fused with convolution.
-      dx_context_->uavBarrier(command_list);
+      dx_context_->UavBarrier(command_list);
       shader_wrapper_->addVectors(command_list, output, scratch, input2,
                                   N * C * H * W, N * C * H * W, N * C * H * W,
                                   use_relu_, false, fp16_); 
@@ -606,19 +611,19 @@ void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
 }
 
 ConvLayer::~ConvLayer() {
-  if (weights_.pResource) weights_.pResource->Release();
-  if (biases_.pResource) biases_.pResource->Release();
-  if (transformed_weights_.pResource) transformed_weights_.pResource->Release();
+  if (weights_.resource) weights_.resource->Release();
+  if (biases_.resource) biases_.resource->Release();
+  if (transformed_weights_.resource) transformed_weights_.resource->Release();
 
-  if (w1_.pResource) w1_.pResource->Release();
-  if (w2_.pResource) w2_.pResource->Release();
-  if (b1_.pResource) b1_.pResource->Release();
-  if (b2_.pResource) b2_.pResource->Release();
+  if (w1_.resource) w1_.resource->Release();
+  if (w2_.resource) w2_.resource->Release();
+  if (b1_.resource) b1_.resource->Release();
+  if (b2_.resource) b2_.resource->Release();
 }
 
-FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
+FCLayer::FCLayer(bool fp16, DxContext* dx_context, BaseLayer* ip, int C, int H,
                  int W, bool bias, bool relu, bool tanh)
-    : BaseLayer(C, H, W, ip, pContext, fp16),
+    : BaseLayer(C, H, W, ip, dx_context, fp16),
       use_bias_(bias),
       use_relu_(relu),
       meta_command_(),
@@ -628,11 +633,11 @@ FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
       element_size * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
   size_t blas_size = element_size * C * H * W;
 
-  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
+  dx_context->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
   if (use_bias_)
-    pContext->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_, fp16);
+    dx_context->CreateAlloc(blas_size, D3D12_HEAP_TYPE_DEFAULT, biases_, fp16);
 
-  shader_wrapper_ = pContext->getShaderWrapper();
+  shader_wrapper_ = dx_context->getShaderWrapper();
 
   // Create metacommand object
   int rows = 0;  // batch size
@@ -641,12 +646,12 @@ FCLayer::FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
   // We do Out = A * weight.
   // The weight matrix need to be transpsoed before it can be multiplied.
   // The transpose is done on CPU when loading weights
-  meta_command_ = std::make_unique<GemmMetaCommand>(pContext, rows, cols, K, 1,
+  meta_command_ = std::make_unique<GemmMetaCommand>(dx_context, rows, cols, K, 1,
                                                     fp16, false, false);
 }
 
 void FCLayer::LoadWeights(float* cpuWeight, float* cpuBias,
-                          DxContext* pContext) {
+                          DxContext* dx_context) {
   size_t rows = C * H * W;
   size_t cols = input_->GetC() * input_->GetH() * input_->GetW();
   size_t num_weights =
@@ -658,21 +663,21 @@ void FCLayer::LoadWeights(float* cpuWeight, float* cpuBias,
   size_t bias_size = element_size * num_biases;
 
   std::vector<float> temp_transposed(num_weights);
-  cpuTranspose(temp_transposed.data(), cpuWeight, rows, cols);
+  CpuTranspose(temp_transposed.data(), cpuWeight, rows, cols);
   std::vector<dx_half> temp(num_weights);
   if (fp16_) {
-    copyFloatToHalf(temp.data(), temp_transposed.data(), num_weights);
-    pContext->scheduleUpload(weights_, temp.data(), weight_size);
+    CopyFloatToHalf(temp.data(), temp_transposed.data(), num_weights);
+    dx_context->ScheduleUpload(weights_, temp.data(), weight_size);
   } else {
-    pContext->scheduleUpload(weights_, temp_transposed.data(), weight_size);
+    dx_context->ScheduleUpload(weights_, temp_transposed.data(), weight_size);
   }
 
   if (cpuBias) {
     if (fp16_) {
-      copyFloatToHalf(temp.data(), cpuBias, C);
-      pContext->scheduleUpload(biases_, temp.data(), bias_size);
+      CopyFloatToHalf(temp.data(), cpuBias, C);
+      dx_context->ScheduleUpload(biases_, temp.data(), bias_size);
     } else {
-      pContext->scheduleUpload(biases_, cpuBias, bias_size);
+      dx_context->ScheduleUpload(biases_, cpuBias, bias_size);
     }
   }
 }
@@ -691,7 +696,7 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
                                     fp16_);
 
   if (use_bias_ || use_relu_ || use_tanh_) {
-    dx_context_->uavBarrier(command_list);
+    dx_context_->UavBarrier(command_list);
     shader_wrapper_->addVectors(command_list, output, output, biases_,
                                 N * num_outputs, N * num_outputs, num_outputs, 
                                 use_relu_, use_tanh_, fp16_);
@@ -699,24 +704,24 @@ void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
 }
 
 FCLayer::~FCLayer() {
-  if (weights_.pResource) weights_.pResource->Release();
-  if (biases_.pResource) biases_.pResource->Release();
+  if (weights_.resource) weights_.resource->Release();
+  if (biases_.resource) biases_.resource->Release();
 }
 
 
-PolicyMapLayer::PolicyMapLayer(bool fp16, DxContext* pContext, BaseLayer* ip,
+PolicyMapLayer::PolicyMapLayer(bool fp16, DxContext* dx_context, BaseLayer* ip,
                                int C, int H, int W, int usedSize)
-    : BaseLayer(C, H, W, ip, pContext, fp16),
+    : BaseLayer(C, H, W, ip, dx_context, fp16),
       used_size_(usedSize) {
   size_t weight_size = sizeof(int) * used_size_;
-  pContext->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
+  dx_context->CreateAlloc(weight_size, D3D12_HEAP_TYPE_DEFAULT, weights_, fp16);
 }
 
 void PolicyMapLayer::LoadWeights(const short* cpuWeights) {
   // convert from short to int (as HLSL might have trouble reading short)
   std::vector<int> temp(used_size_);
   for (int i = 0; i < used_size_; i++) temp[i] = (int)cpuWeights[i];
-  dx_context_->scheduleUpload(weights_, temp.data(), sizeof(int) * used_size_);
+  dx_context_->ScheduleUpload(weights_, temp.data(), sizeof(int) * used_size_);
 }
 
 void PolicyMapLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
@@ -731,7 +736,7 @@ void PolicyMapLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2
 }
 
 PolicyMapLayer::~PolicyMapLayer() {
-  if (weights_.pResource) weights_.pResource->Release();
+  if (weights_.resource) weights_.resource->Release();
 }
 
 

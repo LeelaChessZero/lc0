@@ -15,10 +15,10 @@
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
-
+#pragma once
 namespace lczero {
 
-uint16_t FP32toFP16(float f32);
+inline uint16_t FP32toFP16(float f32);
 inline float FP16toFP32(uint16_t f16);
 
 };  // namespace lczero

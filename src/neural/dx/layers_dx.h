@@ -36,7 +36,7 @@ class BaseLayer {
   int GetH() const { return H; }
   int GetW() const { return W; }
 
-  BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* pContext, bool fp16);
+  BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* dx_context, bool fp16);
   virtual ~BaseLayer() = default;
   size_t GetOutputSize(int N) const {
     return (fp16_ ? sizeof(dx_half) : sizeof(float)) * N * C * H * W;
@@ -44,8 +44,8 @@ class BaseLayer {
 
   // input2 is optional (skip connection).
   virtual void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
-                    DXAlloc scratch, DXAlloc scratc2,
-                    ID3D12GraphicsCommandList5* pCL) = 0;
+                    DXAlloc scratch, DXAlloc scratch2,
+                    ID3D12GraphicsCommandList5* command_list) = 0;
 
  protected:
   BaseLayer* input_;
@@ -79,8 +79,8 @@ class GemmMetaCommand {
   bool create_succeeded_;
 
  public:
-  GemmMetaCommand(DxContext* pContext, int M, int N, int K, int gemm_batch,
-                  bool fp16, bool ATranspose, bool BTranspose);
+  GemmMetaCommand(DxContext* dx_context, int M, int N, int K, int gemm_batch,
+                  bool fp16, bool a_transpose, bool b_transpose);
   ~GemmMetaCommand();
 
   void PerformGemm(int rows, DXAlloc A, DXAlloc B, DXAlloc Output,
@@ -103,12 +103,12 @@ class ConvMetaCommand {
   bool use_bias_;
 
  public:
-  ConvMetaCommand(DxContext* pContext, int C, int K, int H, int W, int F,
+  ConvMetaCommand(DxContext* dx_context, int C, int K, int H, int W, int F,
                   bool relu, bool bias, bool fp16);
   ~ConvMetaCommand();
 
   void PerformConv(int batch, DXAlloc input, DXAlloc filter, DXAlloc bias,
-                   DXAlloc Output, ID3D12GraphicsCommandList5* command_list);
+                   DXAlloc output, ID3D12GraphicsCommandList5* command_list);
 
   bool IsAvailable() { return create_succeeded_; }
 };
@@ -123,18 +123,18 @@ class ConvLayer : public BaseLayer {
   using BaseLayer::W;
 
  public:
-  ConvLayer(bool fp16, GemmMetaCommand* pMetaCommandGemm,
-            ConvMetaCommand* pMetaCommandConv, DxContext* pContext,
+  ConvLayer(bool fp16, GemmMetaCommand* meta_command_gemm,
+            ConvMetaCommand* meta_command_conv, DxContext* dx_context,
             BaseLayer* ip, int C, int H, int W, int size, int Cin, bool bias,
             bool relu, bool skipAdd = false, bool se = false, int se_k = 0);
   ~ConvLayer();
 
   // returns space in uploadBuffer used for loading weights
-  void LoadWeights(float* pfilter, float* pBias, DxContext* pContext);
+  void LoadWeights(float* filter, float* bias, DxContext* dx_context);
   void LoadSEWeights(float* w1, float* b1, float* w2, float* b2);
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
-            DXAlloc scratch, DXAlloc scratc2,
-            ID3D12GraphicsCommandList5* pCL) override;
+            DXAlloc scratch, DXAlloc scratch2,
+            ID3D12GraphicsCommandList5* command_list) override;
 
  private:
   const int c_input_;
@@ -162,15 +162,15 @@ class ConvLayer : public BaseLayer {
 
 class FCLayer : public BaseLayer {
  public:
-  FCLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H, int W,
+  FCLayer(bool fp16, DxContext* dx_context, BaseLayer* ip, int C, int H, int W,
           bool bias, bool relu, bool tanh);
   ~FCLayer();
 
   // returns space in uploadBuffer used for loading weights
-  void LoadWeights(float* cpuWeight, float* cpuBias, DxContext* pContext);
+  void LoadWeights(float* cpu_weight, float* cpu_bias, DxContext* dx_context);
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
-            DXAlloc scratch, DXAlloc scratc2,
-            ID3D12GraphicsCommandList5* pCL) override;
+            DXAlloc scratch, DXAlloc scratch2,
+            ID3D12GraphicsCommandList5* command_list) override;
 
  private:
   const bool use_bias_;
@@ -187,13 +187,13 @@ class FCLayer : public BaseLayer {
 
 class PolicyMapLayer : public BaseLayer {
  public:
-  PolicyMapLayer(bool fp16, DxContext* pContext, BaseLayer* ip, int C, int H,
-                 int W, int usedSize);
+  PolicyMapLayer(bool fp16, DxContext* dx_context, BaseLayer* ip, int C, int H,
+                 int W, int used_size);
   ~PolicyMapLayer();
-  void LoadWeights(const short* cpuWeights);
+  void LoadWeights(const short* cpu_weights);
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
-            DXAlloc scratch, DXAlloc scratc2,
-            ID3D12GraphicsCommandList5* pCL) override;
+            DXAlloc scratch, DXAlloc scratch2,
+            ID3D12GraphicsCommandList5* command_list) override;
  private:
   const int used_size_;
   DXAlloc weights_;

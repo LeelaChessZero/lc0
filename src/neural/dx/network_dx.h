@@ -40,7 +40,7 @@ static constexpr int kNumOutputPolicyPadded8 =
 static constexpr int kNumOutputValuePadded8 = 8;
 
 struct InputsOutputsDx {
-  InputsOutputsDx(int maxBatchSize, DxContext* pContext, bool wdl,
+  InputsOutputsDx(int maxBatchSize, DxContext* dx_context, bool wdl,
                   bool conv_policy, bool fp16);
   ~InputsOutputsDx();
 
@@ -152,19 +152,19 @@ class DxContext {
   // util functions
   void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
                    bool fp16);
-  void uavBarrier(ID3D12GraphicsCommandList5* cl = nullptr);
-  uint64_t flushCL(ID3D12GraphicsCommandList5 *cl = nullptr);
-  void waitForGPU(uint64_t fence_val = 0);
-  void resetCL(ID3D12GraphicsCommandList5* cl = nullptr,
+  void UavBarrier(ID3D12GraphicsCommandList5* cl = nullptr);
+  uint64_t FlushCL(ID3D12GraphicsCommandList5 *cl = nullptr);
+  void WaitForGpu(uint64_t fence_val = 0);
+  void ResetCL(ID3D12GraphicsCommandList5* cl = nullptr,
                ID3D12CommandAllocator* ca = nullptr, bool reset = true);
 
-  void flushAndWait();
-  void scheduleUpload(DXAlloc alloc, const void* data, size_t size);
-  void dumpFp32(float* buf, int elements);
-  void copyTensor(DXAlloc dst, DXAlloc src, int bytes);
-  void dumpTensor(const char* message, DXAlloc alloc, int size,
+  void FlushAndWait();
+  void ScheduleUpload(DXAlloc alloc, const void* data, size_t size);
+  void DumpFp32(float* buf, int elements);
+  void CopyTensor(DXAlloc dst, DXAlloc src, int bytes);
+  void DumpTensor(const char* message, DXAlloc alloc, int size,
                   bool fp16 = true, bool allnewline = false);
-  void dumpCpuTensor(void* data, int size, bool fp16 = true,
+  void DumpCpuTensor(void* data, int size, bool fp16 = true,
                      bool allnewline = false);
 };
 

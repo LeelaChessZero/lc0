@@ -48,11 +48,11 @@ cbuffer consts : register(b0) {
 // Double-buffered shared memory buffers
 // (so that the GPU can overlap loads into shared memory with the math)
 #if USE_FP16_MATH==1
-groupshared float16_t sharedA[2][ELEMENTS_PER_BLOCK_Y][SHARED_MEM_K_CHUNK];
-groupshared float16_t sharedB[2][SHARED_MEM_K_CHUNK][ELEMENTS_PER_BLOCK_X];
+groupshared float16_t sharedA[2][kGemmElPerBlockY][kGemmShMemKChunk];
+groupshared float16_t sharedB[2][kGemmShMemKChunk][kGemmElPerBlockX];
 #else
-groupshared float sharedA[2][ELEMENTS_PER_BLOCK_Y][SHARED_MEM_K_CHUNK];
-groupshared float sharedB[2][SHARED_MEM_K_CHUNK][ELEMENTS_PER_BLOCK_X];
+groupshared float sharedA[2][kGemmElPerBlockY][kGemmShMemKChunk];
+groupshared float sharedB[2][kGemmShMemKChunk][kGemmElPerBlockX];
 #endif
 
 #define divUp(a, b) (((a)-1)/(b) + 1)
@@ -65,15 +65,17 @@ void loadShmemBuffers(int batch, int hs, int ws, int ks, int tidy, int tidx, int
     float4 temp;
 #endif
 
-    const int iterationsA = divUp((ELEMENTS_PER_BLOCK_Y * SHARED_MEM_K_CHUNK), (BLOCK_WIDTH * BLOCK_HEIGHT * 4));
+    const int iterationsA = divUp((kGemmElPerBlockY * kGemmShMemKChunk),
+                                  (kGemmBlockWidth * kGemmBlockHeight * 4));
     int i;
     [unroll]
     for (i = 0; i < iterationsA; i++)
     {
-        int index = (BLOCK_WIDTH * BLOCK_HEIGHT) * i + BLOCK_HEIGHT * tidy + tidx;
+      int index = (kGemmBlockWidth * kGemmBlockHeight) * i +
+                  kGemmBlockHeight * tidy + tidx;
         index *= 4;
-        int lx = index % SHARED_MEM_K_CHUNK;
-        int ly = index / SHARED_MEM_K_CHUNK;
+        int lx = index % kGemmShMemKChunk;
+        int ly = index / kGemmShMemKChunk;
         if ((hs + ly < M) && (ks + lx < K))
         {
             temp = matrixA[MAT_A_INDEX(batch, hs + ly, ks + lx) / 4];
@@ -89,14 +91,16 @@ void loadShmemBuffers(int batch, int hs, int ws, int ks, int tidy, int tidx, int
 
     }
 
-    const int iterationsB = divUp((SHARED_MEM_K_CHUNK * ELEMENTS_PER_BLOCK_X), (BLOCK_WIDTH * BLOCK_HEIGHT * 4));
+    const int iterationsB = divUp((kGemmShMemKChunk * kGemmElPerBlockX),
+                                  (kGemmBlockWidth * kGemmBlockHeight * 4));
     [unroll]
     for (i = 0; i < iterationsB; i++)
     {
-        int index = (BLOCK_WIDTH * BLOCK_HEIGHT) * i + BLOCK_HEIGHT * tidy + tidx;
+      int index = (kGemmBlockWidth * kGemmBlockHeight) * i +
+                  kGemmBlockHeight * tidy + tidx;
         index *= 4;
-        int lx = index % ELEMENTS_PER_BLOCK_X;
-        int ly = index / ELEMENTS_PER_BLOCK_X;
+        int lx = index % kGemmElPerBlockX;
+        int ly = index / kGemmElPerBlockX;
         if ((ks + ly < K) && (ws + lx < N))
         {
             temp = matrixB[MAT_B_INDEX(batch, ks + ly, ws + lx) / 4];
@@ -113,9 +117,8 @@ void loadShmemBuffers(int batch, int hs, int ws, int ks, int tidy, int tidx, int
 }
 
 
-[numthreads(BLOCK_WIDTH, BLOCK_HEIGHT, 1)]
-void MatrixMul
-(
+[numthreads(kGemmBlockWidth, kGemmBlockHeight, 1)] 
+void MatrixMul(
     uint3 g_tid : SV_DispatchThreadID,
     uint3 gid : SV_GroupID,
     uint3 l_tid : SV_GroupThreadID
@@ -124,24 +127,22 @@ void MatrixMul
     int x, y;
 
 #if USE_FP16_MATH==1
-    float16_t S[ELEMENTS_PER_THREAD_Y][ELEMENTS_PER_THREAD_X];
+    float16_t S[kGemmElPerThreadY][kGemmElPerThreadX];
 #else
-    float S[ELEMENTS_PER_THREAD_Y][ELEMENTS_PER_THREAD_X];
+    float S[kGemmElPerThreadY][kGemmElPerThreadX];
 #endif
 
-    [unroll]
-    for (y = 0; y < ELEMENTS_PER_THREAD_Y; y++)
-        [unroll]
-        for (x = 0; x < ELEMENTS_PER_THREAD_X; x++)
-            S[y][x] = 0;
+    [unroll] for (y = 0; y < kGemmElPerThreadY; y++)
+      [unroll] for (x = 0; x < kGemmElPerThreadX; x++)
+        S[y][x] = 0;
 
-    int wStartThread = g_tid.x * ELEMENTS_PER_THREAD_X;
-    int hStartThread = g_tid.y * ELEMENTS_PER_THREAD_Y;
+    int wStartThread = g_tid.x * kGemmElPerThreadX;
+    int hStartThread = g_tid.y * kGemmElPerThreadY;
 
-    int wStartBlock = gid.x * BLOCK_WIDTH * ELEMENTS_PER_THREAD_X;
-    int hStartBlock = gid.y * BLOCK_HEIGHT * ELEMENTS_PER_THREAD_Y;
+    int wStartBlock = gid.x * kGemmBlockWidth * kGemmElPerThreadX;
+    int hStartBlock = gid.y * kGemmBlockHeight * kGemmElPerThreadY;
 
-    for (int ks = 0, index = 0; ks < K; ks += SHARED_MEM_K_CHUNK, index++)
+    for (int ks = 0, index = 0; ks < K; ks += kGemmShMemKChunk, index++)
     {
         int shIndex = index & 1;
         // Load chunks of matrices A and B into shared memory.
@@ -152,14 +153,14 @@ void MatrixMul
         // Do the Multiplication for the Tile.
         // Removing this unroll improves performance on Nvidia Turing but makes it slightly slower on AMD Vega 7.
         [unroll]
-        for (int k = 0; k < SHARED_MEM_K_CHUNK; k++)
+        for (int k = 0; k < kGemmShMemKChunk; k++)
             [unroll]
-            for (y = 0; y < ELEMENTS_PER_THREAD_Y; y++)
+            for (y = 0; y < kGemmElPerThreadY; y++)
                 [unroll]
-                for (x = 0; x < ELEMENTS_PER_THREAD_X; x++)
+                for (x = 0; x < kGemmElPerThreadX; x++)
                 {
-                    int shy = y + l_tid.y * ELEMENTS_PER_THREAD_Y;
-                    int shx = x + l_tid.x * ELEMENTS_PER_THREAD_X;
+                    int shy = y + l_tid.y * kGemmElPerThreadY;
+                    int shx = x + l_tid.x * kGemmElPerThreadX;
                     S[y][x] += sharedA[shIndex][shy][k] * sharedB[shIndex][k][shx];
                 }
     }
@@ -172,7 +173,7 @@ void MatrixMul
 #endif
 
     [unroll]
-    for (y = 0; y < ELEMENTS_PER_THREAD_Y; y++)
+    for (y = 0; y < kGemmElPerThreadY; y++)
     {
         int w = wStartThread;
         int h = hStartThread + y;

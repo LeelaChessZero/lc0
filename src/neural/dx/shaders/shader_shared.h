@@ -31,13 +31,13 @@
 
 
 // Constants for GEMM shader.
-#define BLOCK_WIDTH 16
-#define BLOCK_HEIGHT 16
+#define kGemmBlockWidth 16
+#define kGemmBlockHeight 16
 
-#define ELEMENTS_PER_THREAD_X 8
-#define ELEMENTS_PER_THREAD_Y 8
+#define kGemmElPerThreadX 8
+#define kGemmElPerThreadY 8
 
-#define ELEMENTS_PER_BLOCK_X (ELEMENTS_PER_THREAD_X * BLOCK_WIDTH)
-#define ELEMENTS_PER_BLOCK_Y (ELEMENTS_PER_THREAD_Y * BLOCK_HEIGHT)
+#define kGemmElPerBlockX (kGemmElPerThreadX * kGemmBlockWidth)
+#define kGemmElPerBlockY (kGemmElPerThreadY * kGemmBlockHeight)
 
-#define SHARED_MEM_K_CHUNK 16
+#define kGemmShMemKChunk 16
