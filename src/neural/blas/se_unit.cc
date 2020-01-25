@@ -18,7 +18,6 @@
 
 #include "neural/blas/se_unit.h"
 #include "neural/blas/fully_connected_layer.h"
-#include "utils/fastmath.h"
 
 #include <cmath>
 
@@ -48,7 +47,7 @@ static void apply_se(const size_t channels, const size_t batch_size,
   };
 
   const auto lambda_sigmoid = [](const auto val) {
-    return 1.0f / (1.0f + FastExp(-val));
+    return 1.0f / (1.0f + exp(-val));
   };
 
   for (auto c = size_t{0}; c < channels * batch_size; c++) {
