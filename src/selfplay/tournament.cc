@@ -71,12 +71,11 @@ const OptionId kDiscardedStartChanceId{
 const OptionId kBookFileId{
     "pgn-book", "PGNBook",
     "A path name to a pgn file containing openings to use."};
-const OptionId kBookMirroredId{
-    "book-mirrored", "BookMirrored",
-    "If true, each opening will be played in pairs. Not really compatible with book mode random."};
-const OptionId kBookModeId{
-    "book-mode", "BookMode",
-    "A choice of sequential, shuffled, or random."};
+const OptionId kBookMirroredId{"book-mirrored", "BookMirrored",
+                               "If true, each opening will be played in pairs. "
+                               "Not really compatible with book mode random."};
+const OptionId kBookModeId{"book-mode", "BookMode",
+                           "A choice of sequential, shuffled, or random."};
 
 Move MoveFor(int r1, int c1, int r2, int c2, int p2) {
   Move m;
@@ -431,8 +430,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       if (static_cast<int>(openings_.size()) > game_number / 2) {
         opening = openings_[game_number / 2];
       }
-    } else if (!openings_.empty() && player_options_[0].Get<std::string>(kBookModeId.GetId()) ==
-               "random") {
+    } else if (!openings_.empty() && player_options_[0].Get<std::string>(
+                                         kBookModeId.GetId()) == "random") {
       opening = openings_[Random::Get().GetInt(0, openings_.size() - 1)];
     } else {
       if (static_cast<int>(openings_.size()) > game_number) {
@@ -591,7 +590,8 @@ void SelfPlayTournament::Worker() {
       bool mirrored = player_options_[0].Get<bool>(kBookMirroredId.GetId());
       if (kTotalGames != -1 && games_count_ >= kTotalGames ||
           kTotalGames == -1 && !openings_.empty() &&
-              games_count_ >= static_cast<int>(openings_.size()) * (mirrored ? 2 : 1))
+              games_count_ >=
+                  static_cast<int>(openings_.size()) * (mirrored ? 2 : 1))
         break;
       game_id = games_count_++;
     }
