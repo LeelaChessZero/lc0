@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <random>
 #include <string>
 #include "utils/mutex.h"
