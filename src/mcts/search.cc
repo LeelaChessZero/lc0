@@ -459,7 +459,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
       continue;
     }
     const auto Q = edge.GetQ(0.0f);
-    edges.emplace_back(edge.IsTerminal() && Q == 1.0f, edge.GetN(), Q,
+    edges.emplace_back(edge.IsTerminal() && Q > 0.0f, edge.GetN(), Q,
                        edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
@@ -1236,19 +1236,23 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Convert parents to terminals except the root or those already converted.
     can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
 
-    // A non-winning terminal move needs all other moves to have the same value.
-    if (can_convert && v != 1.0f) {
+    // A non-winning terminal move needs all other moves to be similar.
+    auto all_losing = true;
+    if (can_convert && v <= 0.0f) {
       for (const auto& edge : p->Edges()) {
-        can_convert = can_convert && edge.IsTerminal() && edge.GetQ(0.0f) == v;
+        const auto Q = edge.GetQ(0.0f);
+        can_convert = can_convert && edge.IsTerminal() && Q <= 0.0f;
+        all_losing = all_losing && Q < 0.0f;
       }
     }
 
     // Convert the parent to a terminal loss if at least one move is winning or
-    // to a terminal win or draw if all moves are loss or draw respectively.
+    // to a terminal win if all moves are losing; otherwise there's a mix of
+    // draws and losing, so at best it's a draw.
     if (can_convert) {
-      p->MakeTerminal(v == 1.0f ? GameResult::BLACK_WON
-                                : v == -1.0f ? GameResult::WHITE_WON
-                                             : GameResult::DRAW);
+      p->MakeTerminal(v > 0.0f ? GameResult::BLACK_WON
+                               : all_losing ? GameResult::WHITE_WON
+                                            : GameResult::DRAW);
     }
 
     // Q will be flipped for opponent.

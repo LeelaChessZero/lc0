@@ -206,9 +206,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                                          kMinimumAllowedVistsId.GetId())) {
         break;
       }
-      auto move_list_to_discard = GetMoves();
-      move_list_to_discard.push_back(move);
-      options_[idx].discarded_callback(move_list_to_discard);
+      PositionHistory history_copy = tree_[idx]->GetPositionHistory();
+      Move move_for_history = move;
+      if (tree_[idx]->IsBlackToMove()) {
+        move_for_history.Mirror();
+      }
+      history_copy.Append(move_for_history);
+      // Ensure not to discard games that are already decided.
+      if (history_copy.ComputeGameResult() == GameResult::UNDECIDED) {
+        auto move_list_to_discard = GetMoves();
+        move_list_to_discard.push_back(move);
+        options_[idx].discarded_callback(move_list_to_discard);
+      }
       search_->ResetBestMove();
     }
     // Add best move to the tree.
@@ -262,10 +271,8 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
-  assert(!training_data_.empty());
-  bool black_to_move =
-      tree_[0]->GetPositionHistory().Starting().IsBlackToMove();
   for (auto chunk : training_data_) {
+    const bool black_to_move = chunk.side_to_move;
     if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;
     } else if (game_result_ == GameResult::BLACK_WON) {
@@ -274,7 +281,6 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
       chunk.result = 0;
     }
     writer->WriteChunk(chunk);
-    black_to_move = !black_to_move;
   }
 }
 
