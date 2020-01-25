@@ -43,6 +43,8 @@ class Random {
   int GetInt(int min, int max);
   std::string GetString(int length);
   bool GetBool();
+  template <class RandomAccessIterator>
+  void Shuffle(RandomAccessIterator s, RandomAccessIterator e);
 
  private:
   Random();
@@ -50,5 +52,11 @@ class Random {
   Mutex mutex_;
   std::mt19937 gen_ GUARDED_BY(mutex_);
 };
+
+template <class RandomAccessIterator>
+void Random::Shuffle(RandomAccessIterator s, RandomAccessIterator e) {
+  Mutex::Lock lock(mutex_);
+  std::shuffle(s, e, gen_);
+}
 
 }  // namespace lczero

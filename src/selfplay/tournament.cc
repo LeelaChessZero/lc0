@@ -71,6 +71,12 @@ const OptionId kDiscardedStartChanceId{
 const OptionId kBookFileId{
     "pgn-book", "PGNBook",
     "A path name to a pgn file containing openings to use."};
+const OptionId kBookMirroredId{
+    "book-mirrored", "BookMirrored",
+    "If true, each opening will be played in pairs. Not really compatible with book mode random."};
+const OptionId kBookModeId{
+    "book-mode", "BookMode",
+    "A choice of sequential, shuffled, or random."};
 
 Move MoveFor(int r1, int c1, int r2, int c2, int p2) {
   Move m;
@@ -315,6 +321,9 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kDiscardedStartChanceId, 0.0f, 100.0f) = 0.0f;
   options->Add<StringOption>(kBookFileId) = "";
+  options->Add<BoolOption>(kBookMirroredId) = false;
+  std::vector<std::string> book_modes = {"sequential", "shuffled", "random"};
+  options->Add<ChoiceOption>(kBookModeId, book_modes) = "sequential";
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -360,12 +369,15 @@ SelfPlayTournament::SelfPlayTournament(
       kDiscardedStartChance(
           options.Get<float>(kDiscardedStartChanceId.GetId())) {
   std::string book = options.Get<std::string>(kBookFileId.GetId());
-  if (book.size() != 0) {
+  if (!book.empty()) {
     openings_ = ReadBook(book);
+    if (options.Get<std::string>(kBookModeId.GetId()) == "shuffled") {
+      Random::Get().Shuffle(openings_.begin(), openings_.end());
+    }
   }
   // If playing just one game, the player1 is white, otherwise randomize.
-  // If opening book, also not randomized since we play mirrored.
-  if (kTotalGames != 1 && openings_.size() == 0) {
+  // If mirrored opening book, also not randomized since there is no point.
+  if (kTotalGames != 1 && !options.Get<bool>(kBookMirroredId.GetId())) {
     first_game_black_ = Random::Get().GetBool();
   }
 
@@ -414,8 +426,18 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   {
     Mutex::Lock lock(mutex_);
     player1_black = ((game_number % 2) == 1) ^ first_game_black_;
-    if (openings_.size() > game_number / 2) {
-      opening = openings_[game_number / 2];
+    bool mirrored = player_options_[0].Get<bool>(kBookMirroredId.GetId());
+    if (mirrored) {
+      if (static_cast<int>(openings_.size()) > game_number / 2) {
+        opening = openings_[game_number / 2];
+      }
+    } else if (!openings_.empty() && player_options_[0].Get<std::string>(kBookModeId.GetId()) ==
+               "random") {
+      opening = openings_[Random::Get().GetInt(0, openings_.size() - 1)];
+    } else {
+      if (static_cast<int>(openings_.size()) > game_number) {
+        opening = openings_[game_number];
+      }
     }
     if (discard_pile_.size() > 0 &&
         Random::Get().GetFloat(100.0f) < kDiscardedStartChance) {
@@ -566,9 +588,10 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
+      bool mirrored = player_options_[0].Get<bool>(kBookMirroredId.GetId());
       if (kTotalGames != -1 && games_count_ >= kTotalGames ||
-          kTotalGames == -1 && openings_.size() > 0 &&
-              games_count_ >= openings_.size() * 2)
+          kTotalGames == -1 && !openings_.empty() &&
+              games_count_ >= static_cast<int>(openings_.size()) * (mirrored ? 2 : 1))
         break;
       game_id = games_count_++;
     }
