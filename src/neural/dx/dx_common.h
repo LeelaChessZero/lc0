@@ -24,6 +24,9 @@
 #include "fp16_utils.h"
 
 #define DEFAULT_FP16 true
+
+// Some GPUs (e.g: AMD Vega 56?) can't read from sysmem directly.
+#define COPY_BEFORE_SHADER_READ
 //#define DEBUG_DUMP_PER_LAYER_DATA
 
 namespace lczero {
@@ -42,14 +45,14 @@ struct DXAlloc {
   // R16G16B16A16_FLOAT)
   // 3. Typed buffer UAV bound as single component scalar typed format (e.g:
   // R16_FLOAT)
-  
+
   uint64_t gpu_va;
-  
+
   // Handle of UAV created as 4-component vector type.
-  D3D12_GPU_DESCRIPTOR_HANDLE desc_handle_vector;  
-  
+  D3D12_GPU_DESCRIPTOR_HANDLE desc_handle_vector;
+
   // Handle of UAV created as scalar type.
-  D3D12_GPU_DESCRIPTOR_HANDLE desc_handle_scalar;  
+  D3D12_GPU_DESCRIPTOR_HANDLE desc_handle_scalar;
 };
 
 typedef uint16_t dx_half;

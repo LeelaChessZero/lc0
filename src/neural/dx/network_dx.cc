@@ -154,7 +154,6 @@ void DxContext::DumpTensor(const char* message, DXAlloc alloc, int size,
 void DxContext::DumpTensor(const char*, DXAlloc, int, bool, bool) {}
 #endif
 
-
 DxContext::DxContext(const OptionsDict& options) {
   gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
@@ -385,7 +384,6 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   bool enable_conv_metacommand =
       options.GetOrDefault<bool>("enable-conv-metacommand", true);
 
-
   const int kNumFilters = (int)weights.input.biases.size();
 
   num_blocks_ = (int)weights.residual.size();
@@ -438,8 +436,9 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // input
   {
     auto inputConv = std::make_unique<ConvLayer>(
-        fp16_, input_conv_gemm_metacommand_.get(), input_conv_metacommand_.get(),
-        &dx_context_, nullptr, kNumFilters, 8, 8, 3, kInputPlanes, true, true);
+        fp16_, input_conv_gemm_metacommand_.get(),
+        input_conv_metacommand_.get(), &dx_context_, nullptr, kNumFilters, 8, 8,
+        3, kInputPlanes, true, true);
 
     inputConv->LoadWeights(&weights.input.weights[0], &weights.input.biases[0],
                            &dx_context_);
@@ -451,9 +450,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   for (size_t block = 0; block < weights.residual.size(); block++) {
     auto conv1 = std::make_unique<ConvLayer>(
         fp16_, residual_block_gemm_metacommand_.get(),
-        resi_block_conv_1_metacommand_.get(),
-        &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
-        true);
+        resi_block_conv_1_metacommand_.get(), &dx_context_, getLastLayer(),
+        kNumFilters, 8, 8, 3, kNumFilters, true, true);
 
     conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                        &weights.residual[block].conv1.biases[0], &dx_context_);
@@ -465,9 +463,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
     auto conv2 = std::make_unique<ConvLayer>(
         fp16_, residual_block_gemm_metacommand_.get(),
-        resi_block_conv_2_metacommand_.get(),
-        &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
-        true, true, has_se_, se_k);
+        resi_block_conv_2_metacommand_.get(), &dx_context_, getLastLayer(),
+        kNumFilters, 8, 8, 3, kNumFilters, true, true, true, has_se_, se_k);
 
     conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                        &weights.residual[block].conv2.biases[0], &dx_context_);
@@ -487,9 +484,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     // conv1 is same as residual block convolution.
     auto conv1 = std::make_unique<ConvLayer>(
         fp16_, residual_block_gemm_metacommand_.get(),
-        resi_block_conv_1_metacommand_.get(),
-        &dx_context_, getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true,
-        true);
+        resi_block_conv_1_metacommand_.get(), &dx_context_, getLastLayer(),
+        kNumFilters, 8, 8, 3, kNumFilters, true, true);
     conv1->LoadWeights(&weights.policy1.weights[0], &weights.policy1.biases[0],
                        &dx_context_);
     network_.emplace_back(std::move(conv1));
@@ -497,9 +493,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     // conv2 has different no. of output filters (pol_channels). No relu.
     auto conv2 = std::make_unique<ConvLayer>(
         fp16_, policy_conv_gemm_metacommand_.get(),
-        policy_conv_metacommand_.get(),
-        &dx_context_, getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, true,
-        false);
+        policy_conv_metacommand_.get(), &dx_context_, getLastLayer(),
+        pol_channels, 8, 8, 3, kNumFilters, true, false);
 
     conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                        &dx_context_);
@@ -601,9 +596,9 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   }
 }
 
-void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
-  if (batchSize > kMaxSupportedBatchSize)
-    throw Exception("Unsupported batch size: " + std::to_string(batchSize));
+void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
+  if (batch_size > kMaxSupportedBatchSize)
+    throw Exception("Unsupported batch size: " + std::to_string(batch_size));
 
 #ifdef DEBUG_DUMP_PER_LAYER_DATA
   lock_.lock();
@@ -614,9 +609,49 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
 #endif
 
   // Expand packed board representation into full planes.
+
+#ifdef COPY_BEFORE_SHADER_READ
+  // First copy from upload heap to scratch mem
+  CD3DX12_RESOURCE_BARRIER barrier;
+
+  barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+      tensor_mem_[1].resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+      D3D12_RESOURCE_STATE_COPY_DEST);
+  cl->ResourceBarrier(1, &barrier);
+
+  barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+      tensor_mem_[2].resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+      D3D12_RESOURCE_STATE_COPY_DEST);
+  cl->ResourceBarrier(1, &barrier);
+
+  cl->CopyBufferRegion(tensor_mem_[1].resource, 0,
+                       io->input_masks_mem_gpu_.resource, 0,
+                       sizeof(uint64_t) * batch_size * kInputPlanes);
+  cl->CopyBufferRegion(tensor_mem_[2].resource, 0,
+                       io->input_val_mem_gpu_.resource, 0,
+                       sizeof(float) * batch_size * kInputPlanes);
+
+  barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+      tensor_mem_[1].resource, D3D12_RESOURCE_STATE_COPY_DEST,
+      D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+  cl->ResourceBarrier(1, &barrier);
+
+  barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+      tensor_mem_[2].resource, D3D12_RESOURCE_STATE_COPY_DEST,
+      D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+  cl->ResourceBarrier(1, &barrier);
+
+  dx_context_.UavBarrier(cl);
+
+  dx_context_.getShaderWrapper()->ExpandPlanes(
+      cl, tensor_mem_[0], tensor_mem_[1], tensor_mem_[2], batch_size, fp16_);
+
+#else
   dx_context_.getShaderWrapper()->ExpandPlanes(
       cl, tensor_mem_[0], io->input_masks_mem_gpu_, io->input_val_mem_gpu_,
-      batchSize, fp16_);
+      batch_size, fp16_);
+#endif
+
   dx_context_.UavBarrier(cl);
 
   // Debug logging (not compiled by default)
@@ -626,28 +661,26 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
 
   //-----------------------------------///---------------------------------------
   // Input Conv
-  network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], DXAlloc(),
+  network_[l++]->Eval(batch_size, tensor_mem_[2], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[1], tensor_mem_[3], cl);
   dx_context_.UavBarrier(cl);
 
-  dx_context_.DumpTensor("After input planes", tensor_mem_[2], 1024, fp16_);
-
+  dx_context_.DumpTensor("After input conv", tensor_mem_[2], 1024, fp16_);
 
   //-----------------------------------///---------------------------------------
 
   // Residual tower.
   for (int block = 0; block < num_blocks_; block++) {
     // conv1
-    network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
+    network_[l++]->Eval(batch_size, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
     dx_context_.UavBarrier(cl);
 
     // conv2
-    network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
+    network_[l++]->Eval(batch_size, tensor_mem_[2], tensor_mem_[0],
                         tensor_mem_[2], tensor_mem_[1], tensor_mem_[3], cl);
     dx_context_.UavBarrier(cl);
   }
-
 
   dx_context_.DumpTensor("After Residual tower", tensor_mem_[2], 1024, fp16_);
 
@@ -656,14 +689,14 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   // Policy head.
   if (has_conv_policy_) {
     // Policy conv1.
-    network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
+    network_[l++]->Eval(batch_size, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
     dx_context_.UavBarrier(cl);
 
     dx_context_.DumpTensor("After policy conv1", tensor_mem_[0], 1024, fp16_);
 
     // Policy conv2
-    network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
+    network_[l++]->Eval(batch_size, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
 
     dx_context_.UavBarrier(cl);
@@ -671,20 +704,21 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
     dx_context_.DumpTensor("After policy conv2", tensor_mem_[1], 1024, fp16_);
 
     // Policy Map layer  (writes directly to system memory).
-    network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[1],
+    network_[l++]->Eval(batch_size, io->op_policy_mem_gpu_, tensor_mem_[1],
                         DXAlloc(), DXAlloc(), DXAlloc(), cl);
 
     // Output of policy map layer is always FP32.
-    dx_context_.DumpTensor("After policy map", io->op_policy_mem_gpu_, 1024, false);    
+    dx_context_.DumpTensor("After policy map", io->op_policy_mem_gpu_, 1024,
+                           false);
 
   } else {
     // Policy conv.
-    network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
+    network_[l++]->Eval(batch_size, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                         tensor_mem_[1], tensor_mem_[3], cl);
     dx_context_.UavBarrier(cl);
 
     // Policy FC (writes directly to system memory).
-    network_[l++]->Eval(batchSize, io->op_policy_mem_gpu_, tensor_mem_[0],
+    network_[l++]->Eval(batch_size, io->op_policy_mem_gpu_, tensor_mem_[0],
                         DXAlloc(), tensor_mem_[1], tensor_mem_[3], cl);
   }
 
@@ -693,21 +727,21 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
   // Value head.
 
   // Value conv.
-  network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
+  network_[l++]->Eval(batch_size, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
                       tensor_mem_[1], tensor_mem_[3], cl);
   dx_context_.UavBarrier(cl);
 
   dx_context_.DumpTensor("After value conv", tensor_mem_[0], 1024, fp16_);
 
   // value FC1.
-  network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
+  network_[l++]->Eval(batch_size, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
                       tensor_mem_[2], tensor_mem_[3], cl);
   dx_context_.UavBarrier(cl);
 
   dx_context_.DumpTensor("After value fc1", tensor_mem_[1], 128, fp16_);
 
   // value FC2.
-  network_[l++]->Eval(batchSize, io->op_value_mem_gpu_, tensor_mem_[1],
+  network_[l++]->Eval(batch_size, io->op_value_mem_gpu_, tensor_mem_[1],
                       DXAlloc(), tensor_mem_[2], tensor_mem_[3], cl);
 
   dx_context_.DumpTensor("After value fc2", io->op_value_mem_gpu_, 8, fp16_);
@@ -739,7 +773,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
     // Un-pad policy output, and convert to fp32.
     if (!has_conv_policy_) {
       dx_half* padded_pol_fp16 = (dx_half*)io->op_policy_mem_;
-      for (int n = 0; n < batchSize; n++)
+      for (int n = 0; n < batch_size; n++)
         for (int i = 0; i < kNumOutputPolicy; i++)
           io->op_policy_mem_final_[n * kNumOutputPolicy + i] =
               FP16toFP32(padded_pol_fp16[n * kNumOutputPolicyPadded8 + i]);
@@ -747,7 +781,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
     // Value:
     // Un-pad value output, converting it to fp32.
     dx_half* padded_val_fp16 = (dx_half*)io->op_value_mem_;
-    for (int n = 0; n < batchSize; n++)
+    for (int n = 0; n < batch_size; n++)
       for (int i = 0; i < val_vector_size; i++)
         io->op_value_mem_final_[n * val_vector_size + i] =
             FP16toFP32(padded_val_fp16[n * kNumOutputValuePadded8 + i]);
@@ -756,7 +790,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
     // Policy:
     // Un-pad policy output.
     if (!has_conv_policy_) {
-      for (int i = 0; i < batchSize; i++)
+      for (int i = 0; i < batch_size; i++)
         memcpy(io->op_policy_mem_final_ + kNumOutputPolicy * i,
                io->op_policy_mem_ + kNumOutputPolicyPadded8 * i,
                kNumOutputPolicy * sizeof(float));
@@ -764,7 +798,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
 
     // Value:
     // Un-pad value output.
-    for (int i = 0; i < batchSize; i++)
+    for (int i = 0; i < batch_size; i++)
       memcpy(io->op_value_mem_final_ + val_vector_size * i,
              io->op_value_mem_ + kNumOutputValuePadded8 * i,
              val_vector_size * sizeof(float));
@@ -772,7 +806,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batchSize) {
 
   // Softmax on value head for wdl enabled networks.
   if (has_wdl_) {
-    for (int i = 0; i < batchSize; i++) {
+    for (int i = 0; i < batch_size; i++) {
       float w_val = io->op_value_mem_final_[i * 3 + 0];
       float d_val = io->op_value_mem_final_[i * 3 + 1];
       float l_val = io->op_value_mem_final_[i * 3 + 2];
@@ -858,22 +892,23 @@ InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* dx_context,
   // CPU accesses on Default heap doesn't work.
   // GPU accesses on Upload heap works.
   dx_context->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
-                        D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
-                        input_masks_mem_gpu_, fp16);
+                          D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
+                          input_masks_mem_gpu_, fp16);
 
   dx_context->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(float),
-                        D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
-                        input_val_mem_gpu_, fp16);
+                          D3D12_HEAP_TYPE_UPLOAD /*D3D12_HEAP_TYPE_DEFAULT*/,
+                          input_val_mem_gpu_, fp16);
 
   // CUSTOM heap created to have GPU directly write to system memory
-  dx_context->CreateAlloc(maxBatchSize * kNumOutputPolicyPadded8 * sizeof(float),
-                        D3D12_HEAP_TYPE_CUSTOM, op_policy_mem_gpu_, fp16);
+  dx_context->CreateAlloc(
+      maxBatchSize * kNumOutputPolicyPadded8 * sizeof(float),
+      D3D12_HEAP_TYPE_CUSTOM, op_policy_mem_gpu_, fp16);
 
   dx_context->CreateAlloc(maxBatchSize * kNumOutputValuePadded8 * sizeof(float),
-                        D3D12_HEAP_TYPE_CUSTOM, op_value_mem_gpu_, fp16);
+                          D3D12_HEAP_TYPE_CUSTOM, op_value_mem_gpu_, fp16);
 
-  ReportDxErrors(input_masks_mem_gpu_.resource->Map(
-      0, nullptr, (void**)&input_masks_mem_));
+  ReportDxErrors(input_masks_mem_gpu_.resource->Map(0, nullptr,
+                                                    (void**)&input_masks_mem_));
 
   ReportDxErrors(
       input_val_mem_gpu_.resource->Map(0, nullptr, (void**)&input_val_mem_));
