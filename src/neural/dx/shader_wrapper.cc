@@ -201,7 +201,7 @@ void ShaderWrapper::Destroy() {
   root_sign_->Release();
 }
 
-void ShaderWrapper::ExpandPlanes(ID3D12GraphicsCommandList5* command_list,
+void ShaderWrapper::ExpandPlanes(ID3D12GraphicsCommandList4* command_list,
                                  DXAlloc output_tensor, DXAlloc masks,
                                  DXAlloc values, int batchSize, bool fp16) {
   const int N = batchSize * kInputPlanes;
@@ -219,7 +219,7 @@ void ShaderWrapper::ExpandPlanes(ID3D12GraphicsCommandList5* command_list,
   command_list->Dispatch(blocks, 1, 1);
 }
 
-void ShaderWrapper::InputTransform(ID3D12GraphicsCommandList5* command_list,
+void ShaderWrapper::InputTransform(ID3D12GraphicsCommandList4* command_list,
                                    DXAlloc transformed_input, DXAlloc input,
                                    int N, int C, bool /*fp16*/) {
   int consts[] = {N, C};
@@ -238,7 +238,7 @@ void ShaderWrapper::InputTransform(ID3D12GraphicsCommandList5* command_list,
   command_list->Dispatch(blocks, 1, 1);
 }
 
-void ShaderWrapper::Se(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
+void ShaderWrapper::Se(ID3D12GraphicsCommandList4* command_list, DXAlloc output,
     DXAlloc input, DXAlloc skip_connection, DXAlloc bias,
     DXAlloc se_w1, DXAlloc se_b1, DXAlloc se_w2,
     DXAlloc se_b2, int N, int K, bool relu, bool bias_add,
@@ -301,7 +301,7 @@ void ShaderWrapper::Se(ID3D12GraphicsCommandList5* command_list, DXAlloc output,
   command_list->Dispatch(blocks, 1, 1);
 }
 
-void ShaderWrapper::OutputTransform(ID3D12GraphicsCommandList5* command_list,
+void ShaderWrapper::OutputTransform(ID3D12GraphicsCommandList4* command_list,
                                     DXAlloc output, DXAlloc transformed_output,
                                     DXAlloc skip_connection, DXAlloc bias,
                                     DXAlloc se_w1, DXAlloc se_b1, DXAlloc se_w2,
@@ -375,7 +375,7 @@ void ShaderWrapper::OutputTransform(ID3D12GraphicsCommandList5* command_list,
   command_list->Dispatch(blocks, 1, 1);
 }
 
-void ShaderWrapper::Conv1x1(ID3D12GraphicsCommandList5* command_list,
+void ShaderWrapper::Conv1x1(ID3D12GraphicsCommandList4* command_list,
                             DXAlloc output, DXAlloc input, DXAlloc weight,
                             DXAlloc bias, int N, int C, int K, bool relu,
                             bool useBias, bool /*fp16*/) {
@@ -401,7 +401,7 @@ void ShaderWrapper::Conv1x1(ID3D12GraphicsCommandList5* command_list,
   command_list->Dispatch(K, N, 1);
 }
 
-void ShaderWrapper::AddVectors(ID3D12GraphicsCommandList5* command_list,
+void ShaderWrapper::AddVectors(ID3D12GraphicsCommandList4* command_list,
                                DXAlloc C, DXAlloc A, DXAlloc B, int c_size,
                                int a_size, int b_size, bool relu, bool tanh,
                                bool fp16) {
@@ -427,7 +427,7 @@ void ShaderWrapper::AddVectors(ID3D12GraphicsCommandList5* command_list,
   command_list->Dispatch(blocks, 1, 1);
 }
 
-void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
+void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList4* command_list,
                               DXAlloc output, DXAlloc input, DXAlloc weights,
                               int N, int input_size, int output_size,
                               int used_size, bool /*fp16*/) {
@@ -444,7 +444,7 @@ void ShaderWrapper::PolicyMap(ID3D12GraphicsCommandList5* command_list,
   command_list->Dispatch(blocks, 1, 1);
 }
 
-void ShaderWrapper::MatrixMultiply(ID3D12GraphicsCommandList5* command_list,
+void ShaderWrapper::MatrixMultiply(ID3D12GraphicsCommandList4* command_list,
                                    DXAlloc output, DXAlloc A, DXAlloc B, int M,
                                    int N, int K, int batch, bool /*fp16*/) {
   int Consts[] = {M, N, K, batch};

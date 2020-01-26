@@ -236,7 +236,7 @@ GemmMetaCommand::GemmMetaCommand(DxContext* dx_context, int rows, int cols, int 
 
 void GemmMetaCommand::PerformGemm(int rows, DXAlloc A, DXAlloc B,
                                   DXAlloc output,
-                                  ID3D12GraphicsCommandList5* command_list) {
+                                  ID3D12GraphicsCommandList4* command_list) {
   if (!create_succeeded_)
     throw Exception("Metacommand not created");
 
@@ -354,7 +354,7 @@ ConvMetaCommand::ConvMetaCommand(DxContext* dx_context, int C, int K, int H,
 
 void ConvMetaCommand::PerformConv(int batch, DXAlloc input, DXAlloc filter,
                                   DXAlloc bias, DXAlloc output,
-                                  ID3D12GraphicsCommandList5* command_list) {
+                                  ID3D12GraphicsCommandList4* command_list) {
   if (!create_succeeded_) throw Exception("Metacommand not created");
 
   int index = DivUp(batch, 8) - 1;
@@ -539,7 +539,7 @@ void ConvLayer::LoadSEWeights(float* w1, float* b1, float* w2, float* b2) {
 
 void ConvLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                      DXAlloc scratch, DXAlloc scratch2,
-                     ID3D12GraphicsCommandList5* command_list) {
+                     ID3D12GraphicsCommandList4* command_list) {
 
   // Use winograd for filter size of 3, when GEMM metacommand is available,
   // Or when GEMM metacommand isn't available but Convolution metacommand is
@@ -684,7 +684,7 @@ void FCLayer::LoadWeights(float* cpuWeight, float* cpuBias,
 
 void FCLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
                    DXAlloc /*scratch*/, DXAlloc /*scratch2*/,
-                   ID3D12GraphicsCommandList5* command_list) {
+                   ID3D12GraphicsCommandList4* command_list) {
   int num_outputs = C * H * W;
   int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
@@ -726,7 +726,7 @@ void PolicyMapLayer::LoadWeights(const short* cpuWeights) {
 
 void PolicyMapLayer::Eval(int N, DXAlloc output, DXAlloc input, DXAlloc /*input2*/,
                           DXAlloc /*scratch*/, DXAlloc /*scratch2*/,
-                          ID3D12GraphicsCommandList5* command_list) {
+                          ID3D12GraphicsCommandList4* command_list) {
   int inputSize =
       this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
   int outputSize = this->C * this->H * this->W;

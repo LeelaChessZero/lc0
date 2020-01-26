@@ -65,7 +65,7 @@ struct InputsOutputsDx {
   float* op_value_mem_final_;
 
   // For recording GPU commands.
-  ID3D12GraphicsCommandList5* command_list_;
+  ID3D12GraphicsCommandList4* command_list_;
   ID3D12CommandAllocator* command_allocator_;
 
   // Always need to reset command list / allocator after first time.
@@ -126,7 +126,7 @@ class DxContext {
 
   ID3D12Device5* device_;
   ID3D12CommandQueue* command_queue_;
-  ID3D12GraphicsCommandList5* command_list_;
+  ID3D12GraphicsCommandList4* command_list_;
   ID3D12CommandAllocator* command_allocator_;
   ID3D12DescriptorHeap* desc_heap_;
   ID3D12Fence* fence_;
@@ -148,16 +148,16 @@ class DxContext {
   ~DxContext();
 
   ID3D12Device5* getDevice() { return device_; }
-  ID3D12GraphicsCommandList5* getCommandList() { return command_list_; }
+  ID3D12GraphicsCommandList4* getCommandList() { return command_list_; }
   ShaderWrapper* getShaderWrapper() { return &shader_wrapper_; }
 
   // util functions
   void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
                    bool fp16);
-  void UavBarrier(ID3D12GraphicsCommandList5* cl = nullptr);
-  uint64_t FlushCL(ID3D12GraphicsCommandList5 *cl = nullptr);
+  void UavBarrier(ID3D12GraphicsCommandList4* cl = nullptr);
+  uint64_t FlushCL(ID3D12GraphicsCommandList4 *cl = nullptr);
   void WaitForGpu(uint64_t fence_val = 0);
-  void ResetCL(ID3D12GraphicsCommandList5* cl = nullptr,
+  void ResetCL(ID3D12GraphicsCommandList4* cl = nullptr,
                ID3D12CommandAllocator* ca = nullptr, bool reset = true);
 
   void FlushAndWait();

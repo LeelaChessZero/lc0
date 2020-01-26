@@ -45,7 +45,7 @@ class BaseLayer {
   // input2 is optional (skip connection).
   virtual void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
                     DXAlloc scratch, DXAlloc scratch2,
-                    ID3D12GraphicsCommandList5* command_list) = 0;
+                    ID3D12GraphicsCommandList4* command_list) = 0;
 
  protected:
   BaseLayer* input_;
@@ -84,7 +84,7 @@ class GemmMetaCommand {
   ~GemmMetaCommand();
 
   void PerformGemm(int rows, DXAlloc A, DXAlloc B, DXAlloc Output,
-                   ID3D12GraphicsCommandList5* command_list);
+                   ID3D12GraphicsCommandList4* command_list);
 
   bool IsAvailable() { return create_succeeded_; }
 };
@@ -108,7 +108,7 @@ class ConvMetaCommand {
   ~ConvMetaCommand();
 
   void PerformConv(int batch, DXAlloc input, DXAlloc filter, DXAlloc bias,
-                   DXAlloc output, ID3D12GraphicsCommandList5* command_list);
+                   DXAlloc output, ID3D12GraphicsCommandList4* command_list);
 
   bool IsAvailable() { return create_succeeded_; }
 };
@@ -134,7 +134,7 @@ class ConvLayer : public BaseLayer {
   void LoadSEWeights(float* w1, float* b1, float* w2, float* b2);
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
             DXAlloc scratch, DXAlloc scratch2,
-            ID3D12GraphicsCommandList5* command_list) override;
+            ID3D12GraphicsCommandList4* command_list) override;
 
  private:
   const int c_input_;
@@ -170,7 +170,7 @@ class FCLayer : public BaseLayer {
   void LoadWeights(float* cpu_weight, float* cpu_bias, DxContext* dx_context);
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
             DXAlloc scratch, DXAlloc scratch2,
-            ID3D12GraphicsCommandList5* command_list) override;
+            ID3D12GraphicsCommandList4* command_list) override;
 
  private:
   const bool use_bias_;
@@ -193,7 +193,7 @@ class PolicyMapLayer : public BaseLayer {
   void LoadWeights(const short* cpu_weights);
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
             DXAlloc scratch, DXAlloc scratch2,
-            ID3D12GraphicsCommandList5* command_list) override;
+            ID3D12GraphicsCommandList4* command_list) override;
  private:
   const int used_size_;
   DXAlloc weights_;

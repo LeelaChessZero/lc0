@@ -34,7 +34,7 @@ namespace lczero {
 
 using namespace dx_backend;
 
-uint64_t DxContext::FlushCL(ID3D12GraphicsCommandList5* cl) {
+uint64_t DxContext::FlushCL(ID3D12GraphicsCommandList4* cl) {
   if (!cl) cl = command_list_;
   cl->Close();
   command_queue_->ExecuteCommandLists(1, (ID3D12CommandList**)&cl);
@@ -52,7 +52,7 @@ void DxContext::WaitForGpu(uint64_t fence_val) {
   upload_scratch_mem_.offset = 0;
 }
 
-void DxContext::ResetCL(ID3D12GraphicsCommandList5* cl,
+void DxContext::ResetCL(ID3D12GraphicsCommandList4* cl,
                         ID3D12CommandAllocator* ca, bool reset) {
   if (!cl) cl = command_list_;
   if (!ca) ca = command_allocator_;
@@ -69,7 +69,7 @@ void DxContext::FlushAndWait() {
   ResetCL();
 }
 
-void DxContext::UavBarrier(ID3D12GraphicsCommandList5* command_list) {
+void DxContext::UavBarrier(ID3D12GraphicsCommandList4* command_list) {
   if (!command_list) command_list = command_list_;
   CD3DX12_RESOURCE_BARRIER uav_barrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
   command_list->ResourceBarrier(1, &uav_barrier);
@@ -602,9 +602,9 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
 
 #ifdef DEBUG_DUMP_PER_LAYER_DATA
   lock_.lock();
-  ID3D12GraphicsCommandList5* cl = dx_context_.getCommandList();
+  ID3D12GraphicsCommandList4* cl = dx_context_.getCommandList();
 #else
-  ID3D12GraphicsCommandList5* cl = io->command_list_;
+  ID3D12GraphicsCommandList4* cl = io->command_list_;
   dx_context_.ResetCL(cl, io->command_allocator_, io->needs_reset_);
 #endif
 

@@ -25,8 +25,9 @@
 
 #define DEFAULT_FP16 true
 
-// Some GPUs (e.g: AMD Vega 56?) can't read from sysmem directly.
-#define COPY_BEFORE_SHADER_READ
+// To debug in case some GPUs can't read from sysmem directly in shader.
+//#define COPY_BEFORE_SHADER_READ
+// Dump per-layer debug data to find where things go wrong.
 //#define DEBUG_DUMP_PER_LAYER_DATA
 
 namespace lczero {
