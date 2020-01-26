@@ -153,7 +153,9 @@ SelfPlayTournament::SelfPlayTournament(
           options.Get<float>(kDiscardedStartChanceId.GetId())) {
   std::string book = options.Get<std::string>(kOpeningsFileId.GetId());
   if (!book.empty()) {
-    openings_ = ReadBook(book);
+    PgnReader book_reader;
+    book_reader.AddPgnFile(book);
+    openings_ = book_reader.ReleaseGames();
     if (options.Get<std::string>(kOpeningsModeId.GetId()) == "shuffled") {
       Random::Get().Shuffle(openings_.begin(), openings_.end());
     }
