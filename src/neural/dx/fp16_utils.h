@@ -18,7 +18,7 @@
 #pragma once
 namespace lczero {
 
-inline uint16_t FP32toFP16(float f32);
-inline float FP16toFP32(uint16_t f16);
+uint16_t FP32toFP16(float f32);
+float FP16toFP32(uint16_t f16);
 
 };  // namespace lczero
