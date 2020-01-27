@@ -35,6 +35,7 @@
 #include <iterator>
 #include <sstream>
 #include <thread>
+#include <future>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
@@ -875,10 +876,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
 
-    // betamcts::calculate relevances every X visits
+    // betamcts::calculate relevances asynchronously every X visits
     if ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
-      node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
-                                        params_.GetBetamctsPercentile());
+      std::async(std::launch::async, [this, &node]()
+        { return node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
+            params_.GetBetamctsPercentile()); } );
     }
 
     // Either terminal or unexamined leaf node -- the end of this playout.
