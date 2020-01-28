@@ -66,17 +66,19 @@ before_build:
 - cmd: IF %DX%==true SET BUILD_BLAS=true
 - cmd: meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Deigen=true -Ddx=%DX% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
 build_script:
-- cmd: IF %APPVEYOR_REPO_TAG%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
-- cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGInstrument /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: SET PGO=false
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %DX%==false SET PGO=true
+- cmd: IF %PGO%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGInstrument /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 - cmd: cd build
 - cmd: IF %NAME%==cpu-openblas copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
 - cmd: IF %NAME%==cpu-dnnl copy C:\cache\dnnl_win_1.1.1_cpu_vcomp\bin\dnnl.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %OPENCL%==true copy C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy %PKG_FOLDER%\cuda\bin\cudnn64_7.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true lc0 benchmark --weights=c:\cache\testnet --backend=random --movetime=10000
+- cmd: IF %PGO%==true IF %OPENCL%==true copy C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
+- cmd: IF %PGO%==true IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll
+- cmd: IF %PGO%==true IF %CUDA%==true copy %PKG_FOLDER%\cuda\bin\cudnn64_7.dll
+- cmd: IF %PGO%==true lc0 benchmark --weights=c:\cache\testnet --backend=random --movetime=10000
 - cmd: cd ..
-- cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
 - cmd: IF %APPVEYOR_REPO_TAG%==true appveyor DownloadFile "https://ci.appveyor.com/api/projects/LeelaChessZero/lczero-client/artifacts/client.exe?branch=release&pr=false&job=Environment%%3A%%20NAME%%3D.exe%%2C%%20GOOS%%3Dwindows"
