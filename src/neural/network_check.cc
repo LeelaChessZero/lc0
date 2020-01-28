@@ -297,8 +297,8 @@ class CheckNetwork : public Network {
       case kCheckOnly:
         CERR << std::scientific << std::setprecision(1)
              << "Check mode: check only with relative tolerance "
-             << params_.absolute_tolerance << ", absolute tolerance "
-             << params_.relative_tolerance << ".";
+             << params_.relative_tolerance << ", absolute tolerance "
+             << params_.absolute_tolerance << ".";
         break;
       case kErrorDisplay:
         CERR << "Check mode: error display.";
