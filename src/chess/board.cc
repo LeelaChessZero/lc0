@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
+
 #include "utils/exception.h"
 
 #if not defined(NO_PEXT)
@@ -77,10 +78,6 @@ static const std::pair<int, int> kRookDirections[] = {
 
 static const std::pair<int, int> kBishopDirections[] = {
     {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
-
-// If those squares are attacked, king cannot castle.
-static const int k00Attackers[] = {4, 5, 6};
-static const int k000Attackers[] = {2, 3, 4};
 
 // Which squares can rook attack from every of squares.
 static const BitBoard kRookAttacks[] = {
@@ -450,46 +447,43 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         result.emplace_back(source, destination);
       }
       // Castlings.
-      if (castlings_.we_can_00()) {
-        bool can_castle = true;
-        for (int i = 5; i < 7; ++i) {
-          if (our_pieces_.get(i) || their_pieces_.get(i)) {
-            can_castle = false;
-            break;
-          }
+      auto walk_free = [this](int from, int to, int rook, int king) {
+        for (int i = from; i <= to; ++i) {
+          if (i == rook || i == king) continue;
+          if (our_pieces_.get(i) || their_pieces_.get(i)) return false;
         }
-        if (can_castle) {
-          for (auto x : k00Attackers) {
-            if (IsUnderAttack(x)) {
-              can_castle = false;
-              break;
-            }
-          }
+        return true;
+      };
+      // @From may be less or greater than @to. @To is not included in check
+      // unless it is the same with @from.
+      auto range_attacked = [this](int from, int to) {
+        if (from == to) return IsUnderAttack(from);
+        const int increment = from < to ? 1 : -1;
+        while (from != to) {
+          if (IsUnderAttack(from)) return true;
+          from += increment;
         }
-        if (can_castle) {
-          result.emplace_back(source, BoardSquare(0, 6));
-          result.back().SetCastling();
+        return false;
+      };
+      const uint8_t king = source.col();
+      // For castlings we don't check destination king square for checks, it
+      // will be done in legal move check phase.
+      if (castlings_.we_can_000()) {
+        const uint8_t qrook = castlings_.queenside_rook();
+        if (walk_free(std::min(static_cast<uint8_t>(C1), qrook),
+                      std::max(static_cast<uint8_t>(D1), king), qrook, king) &&
+            !range_attacked(king, C1)) {
+          result.emplace_back(source,
+                              BoardSquare(RANK_1, castlings_.queenside_rook()));
         }
       }
-      if (castlings_.we_can_000()) {
-        bool can_castle = true;
-        for (int i = 1; i < 4; ++i) {
-          if (our_pieces_.get(i) || their_pieces_.get(i)) {
-            can_castle = false;
-            break;
-          }
-        }
-        if (can_castle) {
-          for (auto x : k000Attackers) {
-            if (IsUnderAttack(x)) {
-              can_castle = false;
-              break;
-            }
-          }
-        }
-        if (can_castle) {
-          result.emplace_back(source, BoardSquare(0, 2));
-          result.back().SetCastling();
+      if (castlings_.we_can_00()) {
+        const uint8_t krook = castlings_.kingside_rook();
+        if (walk_free(std::min(static_cast<uint8_t>(F1), king),
+                      std::max(static_cast<uint8_t>(G1), krook), krook, king) &&
+            !range_attacked(king, G1)) {
+          result.emplace_back(source,
+                              BoardSquare(RANK_1, castlings_.kingside_rook()));
         }
       }
       continue;
@@ -525,13 +519,13 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         const BoardSquare destination(dst_row, dst_col);
 
         if (!our_pieces_.get(destination) && !their_pieces_.get(destination)) {
-          if (dst_row != 7) {
+          if (dst_row != RANK_8) {
             result.emplace_back(source, destination);
-            if (dst_row == 2) {
+            if (dst_row == RANK_3) {
               // Maybe it'll be possible to move two squares.
-              if (!our_pieces_.get(3, dst_col) &&
-                  !their_pieces_.get(3, dst_col)) {
-                result.emplace_back(source, BoardSquare(3, dst_col));
+              if (!our_pieces_.get(RANK_4, dst_col) &&
+                  !their_pieces_.get(RANK_4, dst_col)) {
+                result.emplace_back(source, BoardSquare(RANK_4, dst_col));
               }
             }
           } else {
@@ -550,7 +544,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
           if (dst_col < 0 || dst_col >= 8) continue;
           const BoardSquare destination(dst_row, dst_col);
           if (their_pieces_.get(destination)) {
-            if (dst_row == 7) {
+            if (dst_row == RANK_8) {
               // Promotion.
               for (auto promotion : kPromotions) {
                 result.emplace_back(source, destination, promotion);
@@ -559,7 +553,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
               // Ordinary capture.
               result.emplace_back(source, destination);
             }
-          } else if (dst_row == 5 && pawns_.get(7, dst_col)) {
+          } else if (dst_row == RANK_6 && pawns_.get(RANK_8, dst_col)) {
             // En passant.
             // "Pawn" on opponent's file 8 means that en passant is possible.
             // Those fake pawns are reset in ApplyMove.
@@ -578,7 +572,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     }
   }
   return result;
-}
+}  // namespace lczero
 
 bool ChessBoard::ApplyMove(Move move) {
   const auto& from = move.from();
@@ -588,28 +582,67 @@ bool ChessBoard::ApplyMove(Move move) {
   const auto to_row = to.row();
   const auto to_col = to.col();
 
+  // Castlings.
+  if (from == our_king_) {
+    castlings_.reset_we_can_00();
+    castlings_.reset_we_can_000();
+    auto do_castling = [this](int king_dst, int rook_src, int rook_dst) {
+      // Remove en passant flags.
+      pawns_ &= kPawnMask;
+      our_pieces_.reset(our_king_);
+      our_pieces_.reset(rook_src);
+      rooks_.reset(rook_src);
+      our_pieces_.set(king_dst);
+      our_pieces_.set(rook_dst);
+      rooks_.set(rook_dst);
+      our_king_ = king_dst;
+    };
+    if (from_row == RANK_1 && to_row == RANK_1) {
+      const auto our_rooks = rooks() & our_pieces_;
+      if (our_rooks.get(to)) {
+        // Castling.
+        if (to_col > from_col) {
+          // Kingside.
+          do_castling(G1, to.as_int(), F1);
+        } else {
+          // Queenside.
+          do_castling(C1, to.as_int(), D1);
+        }
+        return false;
+      } else if (from_col == FILE_E && to_col == FILE_G) {
+        // Non FRC-style e1g1 castling (as opposed to e1h1).
+        do_castling(G1, H1, F1);
+        return false;
+      } else if (from_col == FILE_E && to_col == FILE_C) {
+        // Non FRC-style e1c1 castling (as opposed to e1a1).
+        do_castling(C1, A1, D1);
+        return false;
+      }
+    }
+  }
+
   // Move in our pieces.
   our_pieces_.reset(from);
   our_pieces_.set(to);
 
-  // Remove captured piece
+  // Remove captured piece.
   bool reset_50_moves = their_pieces_.get(to);
   their_pieces_.reset(to);
   rooks_.reset(to);
   bishops_.reset(to);
   pawns_.reset(to);
-  if (to.as_int() == 63) {
+  if (to.as_int() == 56 + castlings_.kingside_rook()) {
     castlings_.reset_they_can_00();
   }
-  if (to.as_int() == 56) {
+  if (to.as_int() == 56 + castlings_.queenside_rook()) {
     castlings_.reset_they_can_000();
   }
 
-  // En passant
-  if (from_row == 4 && pawns_.get(from) && from_col != to_col &&
-      pawns_.get(7, to_col)) {
-    pawns_.reset(4, to_col);
-    their_pieces_.reset(4, to_col);
+  // En passant.
+  if (from_row == RANK_5 && pawns_.get(from) && from_col != to_col &&
+      pawns_.get(RANK_8, to_col)) {
+    pawns_.reset(RANK_5, to_col);
+    their_pieces_.reset(RANK_5, to_col);
   }
 
   // Remove en passant flags.
@@ -618,29 +651,13 @@ bool ChessBoard::ApplyMove(Move move) {
   // If pawn was moved, reset 50 move draw counter.
   reset_50_moves |= pawns_.get(from);
 
-  // King
+  // King, non-castling move
   if (from == our_king_) {
-    castlings_.reset_we_can_00();
-    castlings_.reset_we_can_000();
     our_king_ = to;
-    // Castling
-    if (to_col - from_col > 1) {
-      // 0-0
-      our_pieces_.reset(7);
-      rooks_.reset(7);
-      our_pieces_.set(5);
-      rooks_.set(5);
-    } else if (from_col - to_col > 1) {
-      // 0-0-0
-      our_pieces_.reset(0);
-      rooks_.reset(0);
-      our_pieces_.set(3);
-      rooks_.set(3);
-    }
     return reset_50_moves;
   }
 
-  // Promotion
+  // Promotion.
   if (move.promotion() != Move::Promotion::None) {
     switch (move.promotion()) {
       case Move::Promotion::Rook:
@@ -660,11 +677,9 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // Reset castling rights.
-  if (from.as_int() == 0) {
-    castlings_.reset_we_can_000();
-  }
-  if (from.as_int() == 7) {
-    castlings_.reset_we_can_00();
+  if (from_row == RANK_1 && rooks_.get(from)) {
+    if (from_col == castlings_.queenside_rook()) castlings_.reset_we_can_000();
+    if (from_col == castlings_.kingside_rook()) castlings_.reset_we_can_00();
   }
 
   // Ordinary move.
@@ -717,6 +732,38 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
     }
   }
   return false;
+}
+
+bool ChessBoard::IsSameMove(Move move1, Move move2) const {
+  // If moves are equal, it's the same move.
+  if (move1 == move2) return true;
+  // Explicitly check all legacy castling moves. Need to check for king, for
+  // e.g. rook e1a1 and e1c1 are different moves.
+  if (move1.from() != move2.from() || move1.from() != E1 ||
+      our_king_ != move1.from()) {
+    return false;
+  }
+  if (move1.to() == A1 && move2.to() == C1) return true;
+  if (move1.to() == C1 && move2.to() == A1) return true;
+  if (move1.to() == G1 && move2.to() == H1) return true;
+  if (move1.to() == H1 && move2.to() == G1) return true;
+  return false;
+}
+
+Move ChessBoard::GetLegacyMove(Move move) const {
+  if (our_king_ != move.from() || !our_pieces_.get(move.to())) {
+    return move;
+  }
+  if (move == Move(E1, H1)) return Move(E1, G1);
+  if (move == Move(E1, A1)) return Move(E1, C1);
+  return move;
+}
+
+Move ChessBoard::GetModernMove(Move move) const {
+  if (our_king_ != E1 || move.from() != E1) return move;
+  if (move == Move(E1, G1) && !our_pieces_.get(G1)) return Move(E1, H1);
+  if (move == Move(E1, C1) && !our_pieces_.get(C1)) return Move(E1, A1);
+  return move;
 }
 
 KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
@@ -885,11 +932,17 @@ bool ChessBoard::IsLegalMove(Move move,
     }
   }
 
-  // Castlings were checked earlier.
-  // Moreover, no pseudolegal king moves to an attacked square are generated.
-  // If it's king's move at this moment, its certainly legal.
+  // King moves.
   if (from == our_king_) {
-    return true;
+    if (from.row() != 0 || to.row() != 0 ||
+        (abs(from.col() - to.col()) == 1 && !our_pieces_.get(to))) {
+      // Non-castling move. Already checked during movegen.
+      return true;
+    }
+    // Checking whether king is under check after castling.
+    ChessBoard board(*this);
+    board.ApplyMove(move);
+    return !board.IsUnderCheck();
   }
 
   // If we get here, we are not under check.
@@ -979,31 +1032,69 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
   }
 
   if (castlings != "-") {
+    uint8_t left_rook = FILE_A;
+    uint8_t right_rook = FILE_H;
     for (char c : castlings) {
-      switch (c) {
-        case 'K':
-          castlings_.set_we_can_00();
-          break;
-        case 'k':
+      const bool is_black = std::islower(c);
+      const int king_col = (is_black ? their_king_ : our_king_).col();
+      if (!is_black) c = std::tolower(c);
+      const auto rooks =
+          (is_black ? their_pieces_ : our_pieces_) & ChessBoard::rooks();
+      if (c == 'k') {
+        // Finding rightmost rook.
+        for (right_rook = FILE_H; right_rook > king_col; --right_rook) {
+          if (rooks.get(is_black ? RANK_8 : RANK_1, right_rook)) break;
+        }
+        if (right_rook == king_col) {
+          throw Exception("Bad fen string (no kingside rook): " + fen);
+        }
+        if (is_black) {
           castlings_.set_they_can_00();
-          break;
-        case 'Q':
-          castlings_.set_we_can_000();
-          break;
-        case 'q':
+        } else {
+          castlings_.set_we_can_00();
+        }
+      } else if (c == 'q') {
+        // Finding leftmost rook.
+        for (left_rook = FILE_A; left_rook < king_col; ++left_rook) {
+          if (rooks.get(is_black ? RANK_8 : RANK_1, left_rook)) break;
+        }
+        if (left_rook == king_col) {
+          throw Exception("Bad fen string (no queenside rook): " + fen);
+        }
+        if (is_black) {
           castlings_.set_they_can_000();
-          break;
-        default:
-          throw Exception("Bad fen string: " + fen);
+        } else {
+          castlings_.set_we_can_000();
+        }
+      } else if (c >= 'a' && c <= 'h') {
+        int rook_col = c - 'a';
+        if (rook_col < king_col) {
+          left_rook = rook_col;
+          if (is_black) {
+            castlings_.set_they_can_000();
+          } else {
+            castlings_.set_we_can_000();
+          }
+        } else {
+          right_rook = rook_col;
+          if (is_black) {
+            castlings_.set_they_can_00();
+          } else {
+            castlings_.set_we_can_00();
+          }
+        }
+      } else {
+        throw Exception("Bad fen string (unexpected casting symbol): " + fen);
       }
     }
+    castlings_.SetRookPositions(left_rook, right_rook);
   }
 
   if (en_passant != "-") {
     auto square = BoardSquare(en_passant);
-    if (square.row() != 2 && square.row() != 5)
+    if (square.row() != RANK_3 && square.row() != RANK_6)
       throw Exception("Bad fen string: " + fen + " wrong en passant rank");
-    pawns_.set((square.row() == 2) ? 0 : 7, square.col());
+    pawns_.set((square.row() == RANK_3) ? RANK_1 : RANK_8, square.col());
   }
 
   if (who_to_move == "b" || who_to_move == "B") {
@@ -1074,7 +1165,7 @@ string ChessBoard::DebugString() const {
       result += c;
     }
     if (i == 0) {
-      result += " " + castlings_.as_string();
+      result += " " + castlings_.DebugString();
       result += flipped_ ? " (from black's eyes)" : " (from white's eyes)";
       result += " Hash: " + std::to_string(Hash());
     }

@@ -26,11 +26,14 @@
 */
 
 #include <cassert>
+
 #include "cuda_common.h"
-#include "neural/network.h"
 
 namespace lczero {
 namespace cudnn_backend {
+namespace {
+constexpr int kInputPlanes = 112;
+}  // namespace
 
 /////////////////////////////////////////////////////////////////////////////
 //          Simple CUDA kernels used by certain layers                     //

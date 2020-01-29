@@ -1,4 +1,108 @@
-﻿v0.21.0-rc2 (2019-03-06)
+﻿v0.23.0 (2019-12-01)
+~~~~~~~
+
+* Fixed the order of BLAS options so that Eigen is lower priority, to match
+  assumption in check_opencl patch introduced in v0.23.0-rc2.
+
+v0.23.0-rc2 (2019-11-27)
+~~~~~~~~~~~
+
+* Fixes in nps and time reporting during search.
+* Introduced DNNL BLAS build for modern CPUs in addition to OpenBLAS.
+* Build fixes on MacOS without OpenCL.
+* Fixed smart pruning and KLDGain trying to stop search in `go infinite` mode.
+* OpenCL package now has check_opencl tool to find computation behaves sanely.
+* Fixed a bug in interoperation of shortsighteness and certainty propagation.
+
+v0.23.0-rc1 (2019-11-21)
+~~~~~~~~~~~
+
+* Support for Fischer Random Chess (`UCI_Chess960` option to enable FRC-style
+  castling). Also added support for FRC-compatible weight files, but no training
+  code yet.
+* New option `--logit-q` (UCI: `LogitQ`). Changes subtree selection algorithm a
+  bit, possibly making it stronger (experimental, default off).
+* Lc0 now reports WDL score. To enable it, use `--show-wdl` command-line
+  argument or `UCI_ShowWdl` UCI option.
+* Added "Badgame split" mode during the training. After the engine makes
+  inferior move due to temperature, the game is branched and later the game is
+  replayed from the position of the branch.
+* Added experimental `--short-sightedness` (UCI: `ShortSightedness`) parameter.
+  Treats longer variations as more "drawish".
+* Lc0 can now open Fat Fritz weight files.
+* Time management code refactoring. No functional changes, but will make time
+  management changes easier.
+* Lc0 logo is now printed in red! \o/
+* Command line argument `-v` is now short for `--verbose-move-stats`.
+* Errors in `--backend-opts` parameter syntax are now reported.
+* The most basic version of "certainty propagation" feature (actually without
+  "propagation"). If the engine sees checkmate, it plays it!
+  (before it could play other good move).
+* Benchmark mode no longer supports smart pruning.
+* Various small changes: hidden options to control Dirichlet noise, floating
+  point optimizations, Better error reporting if there is exception in worker
+  thread, better error messages in CUDA backend.
+
+v0.22.0 (2019-08-05)
+~~~~~~~
+
+(no changes)
+
+v0.22.0-rc1 (2019-08-03)
+~~~~~~~~~~~
+
+* Remove softmax calculation from backends and apply it after filtering for
+  illegal moves to ensure spurious outputs on illegal moves don't reduce (or
+  entirely remove) the quality of the policy values on the legal moves.
+* Fix for blas backend allocation bug with small network sizes.
+* The blas backend can be built with eigen - the result is reasonably optimized
+  for the build machine.
+* Other small tweaks piled up in master branch.
+
+
+v0.21.4 (2019-07-28)
+~~~~~~~~~~~~~~~~~~~~
+
+* A fix for crashes that can occur during use of sticky-endgames.
+* Change the false positive value reported when in wdl style resign and display
+  average nodes per move as part of tournament stats in selfplay mode.
+
+v0.21.3 (2019-07-21)
+~~~~~~~
+
+* Fix for potential memory corruption/crash in using small networks or using the
+  wdl head with cuda backends. (#892)
+* Fix for building with newer versions of meson. (#904)
+
+v0.21.2 (2019-06-09)
+~~~~~~~
+
+* Divide by a slightly smaller divisor to truncate to +/-12800. (#880)
+
+v0.21.2-rc3 (2019-06-08)
+~~~~~~~~~~~
+
+* Centipawn conversion (#860)
+
+v0.21.2-rc2 (2019-05-22)
+~~~~~~~~~~~
+
+* Add 320 and 352 channel support for fused SE layer (#855)
+* SE layer fix when not using fused kernel (#852)
+* Fp16 nchw for cudnn-fp16 backend (support GTX 16xx GPUs) (#849)
+
+v0.21.2-rc1 (2019-05-05)
+~~~~~~~~~~~
+
+* Make --sticky-endgames on by default (still off in training) (#844)
+* update download links in README (#842)
+* Recalibrate centipawn formula (#841)
+* Also make parents Terminal if any move is a win or all moves are loss or draw. (#822)
+* Use parent Q as a default score instead of 0 for unvisited pv. (#828)
+* Add stop command to selfplay interactive mode to allow for graceful exit. (#810)
+* Increased hard limit on batch size in opencl backend to 32 (#807)
+
+v0.21.0-rc2 (2019-03-06)
 ~~~~~~~~~~~
 
 * Add support for cudnn7.0 (#717)

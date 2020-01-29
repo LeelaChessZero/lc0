@@ -16,10 +16,11 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "chess/position.h"
+
 #include <gtest/gtest.h>
 
 #include <iostream>
-#include "src/chess/position.h"
 
 namespace lczero {
 

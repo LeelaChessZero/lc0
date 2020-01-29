@@ -288,14 +288,17 @@ class CheckNetwork : public Network {
     check_net_ =
         NetworkFactory::Get()->Create(backendName2, weights, backend2_dict);
 
+    capabilities_ = work_net_->GetCapabilities();
+    capabilities_.Merge(check_net_->GetCapabilities());
+
     check_frequency_ =
         options.GetOrDefault<float>("freq", kDefaultCheckFrequency);
     switch (params_.mode) {
       case kCheckOnly:
         CERR << std::scientific << std::setprecision(1)
              << "Check mode: check only with relative tolerance "
-             << params_.absolute_tolerance << ", absolute tolerance "
-             << params_.relative_tolerance << ".";
+             << params_.relative_tolerance << ", absolute tolerance "
+             << params_.absolute_tolerance << ".";
         break;
       case kErrorDisplay:
         CERR << "Check mode: error display.";
@@ -322,6 +325,10 @@ class CheckNetwork : public Network {
     return work_net_->NewComputation();
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
  private:
   CheckParams params_;
 
@@ -329,6 +336,7 @@ class CheckNetwork : public Network {
   double check_frequency_;
   std::unique_ptr<Network> work_net_;
   std::unique_ptr<Network> check_net_;
+  NetworkCapabilities capabilities_;
 };
 
 std::unique_ptr<Network> MakeCheckNetwork(const WeightsFile& weights,

@@ -9,7 +9,7 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 
 Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
 
-For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.19`), which is equivalent to using the latest version tag.
+For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.23`), which is equivalent to using the latest version tag.
 
 Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the versions output by the client and engine.
 
@@ -17,11 +17,11 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 Download using git:
 
 ```
-git clone -b release/0.21 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+git clone -b release/0.23 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
 ```
 
 If you prefer to download an archive, you need to also download and place the submodule:
- * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.21) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.21) archive is also available)
+ * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.23) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.23) archive is also available)
  * Extract
  * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
  * Move the second archive into the first archive's `libs/lczero-common/` folder and extract
@@ -103,10 +103,8 @@ Make sure that `~/.local/bin` is in your `PATH` environment variable. You can no
 
 #### openSUSE (all versions)
 
-Instructions, packages and tools for building on openSUSE are at the following page
+Instructions, packages and tools for building on openSUSE are at [openSUSE_install.md](openSUSE_install.md)
 
-[openSUSE_install.md](openSUSE_install.md)
-=======
 #### Docker
 
 Use https://github.com/vochicong/lc0-docker
@@ -141,13 +139,18 @@ Or.
 
 ### Mac
 
+First you need to install some required packages:
 1. Install brew as per the instructions at https://brew.sh/
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
 5. When using Mojave install SDK headers: installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /
-6. Run `./build.sh`
-7. The resulting binary will be in build/release
+
+Now download the lc0 source, if you haven't already done so, following the instructions earlier in the page.
+
+6. Go to the lc0 directory.
+7. Run `./build.sh`
+8. The resulting binary will be in build/release
 
 ### Raspberry Pi
 
