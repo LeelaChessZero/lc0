@@ -56,7 +56,7 @@ void DxContext::WaitForGpu(uint64_t fence_val) {
   // Wait for commands to finish on GPU.
   // (spinloop has lowest latency, we can try event based signal if CPU
   // overhead becomes a bottleneck).
-  while (fence_->GetCompletedValue() != fence_val)
+  while (fence_->GetCompletedValue() < fence_val)
     ;
   upload_scratch_mem_.offset = 0;
 }
