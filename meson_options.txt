@@ -93,6 +93,11 @@ option('opencl',
        value: true,
        description: 'Enable OpenCL backend')
 
+option('dx',
+       type: 'boolean',
+       value: true,
+       description: 'Enable DirectX12 backend')
+
 option('tensorflow',
        type: 'boolean',
        value: false,
