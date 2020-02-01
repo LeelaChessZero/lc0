@@ -40,7 +40,7 @@ option('opencl_libdirs',
 
 option('cudnn_libdirs',
        type: 'array',
-       value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'],
+       value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/', '/usr/lib/cuda/lib64/'],
        description: 'Paths to Cuda/cudnn libraries')
 
 option('mkl_libdirs',
@@ -60,7 +60,7 @@ option('dnnl_dir',
 
 option('cudnn_include', 
        type: 'array',
-       value: ['/opt/cuda/include/', '/usr/local/cuda/include/'],
+       value: ['/opt/cuda/include/', '/usr/local/cuda/include/', '/usr/lib/cuda/include/'],
        description: 'Paths to cudnn include directory')
 
 option('build_backends',
