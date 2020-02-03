@@ -115,10 +115,10 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
     options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
     options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
     options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
-    options->Add<FloatOption>(kTimeFactorId, 0.0f, 100.0f) = 1.15f;
-    options->Add<FloatOption>(kTimeFactorSlopeId, -2.0f, 2.0f) = 0.0025f;
-    options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
-    options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
+    options->Add<FloatOption>(kTimeFactorId, 0.0f, 100.0f) = 1.5738f;
+    options->Add<FloatOption>(kTimeFactorSlopeId, -2.0f, 2.0f) = 0.0017f;
+    options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 98.975f;
+    options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 5.6307f;
     options->Add<FloatOption>(kGameMidpointMoveId, 1.0f, 100.0f) = 72.75f;
     options->Add<FloatOption>(kGameMovesSteepnessId, 1.0f, 100.0f) = 3.0f;
     options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
@@ -255,9 +255,8 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
       options.Get<float>(kTimeFactorSlopeId.GetId());
   const float time_curve_midpoint =
       options.Get<float>(kTimeMidpointMoveId.GetId());
-  // Adjust so that the old defaults are reasonable
   const float time_curve_steepness =
-      options.Get<float>(kTimeSteepnessId.GetId()) / 20.0f;
+      options.Get<float>(kTimeSteepnessId.GetId());
 
   const float game_curve_midpoint =
       options.Get<float>(kGameMidpointMoveId.GetId());
@@ -276,11 +275,12 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
     movestogo = *params.movestogo;
   }
 
-  // Calculate the time curve for the current move.
+  // Calculate the time curve for the current move. The division by 20 is so
+  // that old values for time_curve_steepness are still reasonable.
   int move = position.GetGamePly() / 2;
   float time_curve_mult = 1.0f +
                           (time_factor - 1.0f + move * time_factor_slope) /
-                              (1.0f + std::exp(time_curve_steepness *
+                              (1.0f + std::exp(time_curve_steepness / 20.0f *
                                                (move - time_curve_midpoint)));
 
   // Total time, including increments, until time control.
