@@ -125,7 +125,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto& q = edge.GetQ(default_q, GetDrawScore(false));
+    const auto q = edge.GetQ(default_q, GetDrawScore(false));
     if (score_type == "centipawn") {
       uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
     } else if (score_type == "centipawn_2018") {
@@ -135,9 +135,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     } else if (score_type == "Q") {
       uci_info.score = q * 10000;
     }
+    const auto wl = edge.GetWL();
     const auto& d = edge.GetD();
-    const int w = static_cast<int>(std::round(500.0 * (1.0 + q - d)));
-    const int l = static_cast<int>(std::round(500.0 * (1.0 - q - d)));
+    const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
+    const int l = static_cast<int>(std::round(500.0 * (1.0 - wl - d)));
     // Using 1000-w-l instead of 1000*d for D score so that W+D+L add up to
     // 1000.0.
     uci_info.wdl = ThinkingInfo::WDL{w, 1000 - w - l, l};
