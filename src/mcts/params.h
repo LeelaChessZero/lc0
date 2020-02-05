@@ -99,6 +99,8 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
+  float GetDrawScore() const { return kDrawScore; }
+  bool DrawScoreRelativeToCurPlayer() const { return kDrawScorePOV; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -134,6 +136,8 @@ class SearchParams {
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
   static const OptionId kShortSightednessId;
+  static const OptionId kDrawScoreId;
+  static const OptionId kDrawScorePOVId;
 
  private:
   const OptionsDict& options_;
@@ -142,7 +146,7 @@ class SearchParams {
   // reasons.
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
-  //            trivial search optimiations.
+  //            trivial search optimizations.
   const bool kLogitQ;
   const float kCpuct;
   const float kCpuctBase;
@@ -163,6 +167,8 @@ class SearchParams {
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
   const float kShortSightedness;
+  const float kDrawScore;
+  const bool kDrawScorePOV;
 };
 
 }  // namespace lczero

@@ -189,6 +189,11 @@ const OptionId SearchParams::kHistoryFillId{
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
+const OptionId SearchParams::kDrawScoreId{"draw-score", "DrawScore",
+                                          "Score of a drawn game."};
+const OptionId SearchParams::kDrawScorePOVId{
+    "draw-score-pov", "DrawScorePOV",
+    "From point of view of which player the draw score is specified."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -232,6 +237,9 @@ void SearchParams::Populate(OptionsParser* options) {
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
+  options->Add<IntOption>(kDrawScoreId, -100, 100) = 0;
+  std::vector<std::string> draw_pov_opt{"self", "opponent", "white", "black"};
+  options->Add<ChoiceOption>(kDrawScorePOVId, draw_pov_opt) = "self";
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -269,6 +277,17 @@ SearchParams::SearchParams(const OptionsDict& options)
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
-      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())) {}
+      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
+      kDrawScore(
+          options.Get<int>(kDrawScoreId.GetId()) /
+          ((options.Get<std::string>(kDrawScorePOVId.GetId()) == "self" ||
+            options.Get<std::string>(kDrawScorePOVId.GetId()) == "white")
+               ? 100.0
+               : -100.0)),
+      kDrawScorePOV(
+          options.Get<std::string>(kDrawScorePOVId.GetId()) == "self" ||
+          options.Get<std::string>(kDrawScorePOVId.GetId()) == "opponent")
+
+{}
 
 }  // namespace lczero

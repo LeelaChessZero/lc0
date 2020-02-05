@@ -126,11 +126,16 @@ class Search {
   void PopulateCommonIterationStats(IterationStats* stats);
 
   // Returns verbose information about given node, as vector of strings.
-  std::vector<std::string> GetVerboseStats(Node* node,
-                                           bool is_black_to_move) const;
+  std::vector<std::string> GetVerboseStats(Node* node, bool is_black_to_move,
+                                           bool is_odd_depth) const;
 
   // Returns NN eval for a given node from cache, if that node is cached.
   NNCacheLock GetCachedNNEval(Node* node) const;
+
+  // Returns the draw score at the root of the search. At odd depth pass true to
+  // the value of @is_odd_depth to change the sign of the draw score.
+  // Depth of a root node is 0 (even number).
+  float GetDrawScore(bool is_odd_depth) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -278,7 +283,7 @@ class SearchWorker {
   NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
-  int PrefetchIntoCache(Node* node, int budget);
+  int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
