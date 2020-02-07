@@ -129,7 +129,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     const auto d = edge.GetD();
     const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
     const auto q = edge.GetQ(default_q, GetDrawScore(false));
-    if (score_type == "centipawn") {
+    if (score_type == "centipawn_with_drawscore") {
       uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
     } else if (score_type == "centipawn_2019") {
       uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(q, 14));

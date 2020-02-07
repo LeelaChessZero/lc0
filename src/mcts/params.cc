@@ -190,16 +190,16 @@ const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
 const OptionId SearchParams::kSidetomoveDrawScoreId{
-    "sidetomove-draw-score", "SideToMoveDrawScore",
+    "draw-score-sidetomove", "DrawScoreSideToMove",
     "Score of a drawn game, as seen by a player making the move."};
 const OptionId SearchParams::kOpponentDrawScoreId{
-    "opponent-draw-score", "OpponentDrawScore",
+    "draw-score-opponent", "DrawScoreOpponent",
     "Score of a drawn game, as seen by an opponent the move."};
 const OptionId SearchParams::kWhiteDrawDeltaId{
-    "white-draw-delta", "WhiteDrawDelta",
+    "draw-score-white", "DrawScoreWhite",
     "Adjustment, added to a draw score of a white player."};
 const OptionId SearchParams::kBlackDrawDeltaId{
-    "black-draw-delta", "BlackDrawDelta",
+    "draw-score-black", "DrawScoreBlack",
     "Adjustment, added to a draw score of a black player."};
 
 void SearchParams::Populate(OptionsParser* options) {
@@ -238,10 +238,13 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   options->Add<BoolOption>(kPerPvCountersId) = false;
-  std::vector<std::string> score_type = {
-      "centipawn", "centipawn_2019", "centipawn_2018", "win_percentage", "Q",
-      "W-L"};
-  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn_2019";
+  std::vector<std::string> score_type = {"centipawn",
+                                         "centipawn_with_drawscore",
+                                         "centipawn_2018",
+                                         "win_percentage",
+                                         "Q",
+                                         "W-L"};
+  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
