@@ -189,11 +189,21 @@ const OptionId SearchParams::kHistoryFillId{
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
-const OptionId SearchParams::kDrawScoreId{"draw-score", "DrawScore",
-                                          "Score of a drawn game."};
-const OptionId SearchParams::kDrawScorePOVId{
-    "draw-score-pov", "DrawScorePOV",
-    "From point of view of which player the draw score is specified."};
+const OptionId SearchParams::kSidetomoveDrawScoreId{
+    "sidetomove-draw-score", "SideToMoveDrawScore",
+    "Score of a drawn game, as seen by a player making the move."};
+const OptionId SearchParams::kOpponentDrawScoreId{
+    "opponent-draw-score", "OpponentDrawScore",
+    "Score of a drawn game, as seen by an opponent the move."};
+const OptionId SearchParams::kWhiteDrawDeltaId{
+    "white-draw-delta", "WhiteDrawDelta",
+    "Adjustment, added to a draw score of a white player."};
+const OptionId SearchParams::kBlackDrawDeltaId{
+    "black-draw-delta", "BlackDrawDelta",
+    "Adjustment, added to a draw score of a black player."};
+const OptionId SearchParams::kDisplayTrueScoreId{
+    "display-true-score", "DisplayTrueScore",
+    "Include adjusted draw score in centipawn display."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -237,9 +247,11 @@ void SearchParams::Populate(OptionsParser* options) {
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
-  options->Add<IntOption>(kDrawScoreId, -100, 100) = 0;
-  std::vector<std::string> draw_pov_opt{"self", "opponent", "white", "black"};
-  options->Add<ChoiceOption>(kDrawScorePOVId, draw_pov_opt) = "self";
+  options->Add<IntOption>(kSidetomoveDrawScoreId, -100, 100) = 0;
+  options->Add<IntOption>(kOpponentDrawScoreId, -100, 100) = 0;
+  options->Add<IntOption>(kWhiteDrawDeltaId, -100, 100) = 0;
+  options->Add<IntOption>(kBlackDrawDeltaId, -100, 100) = 0;
+  options->Add<BoolOption>(kDisplayTrueScoreId) = false;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -278,16 +290,12 @@ SearchParams::SearchParams(const OptionsDict& options)
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
       kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
-      kDrawScore(
-          options.Get<int>(kDrawScoreId.GetId()) /
-          ((options.Get<std::string>(kDrawScorePOVId.GetId()) == "self" ||
-            options.Get<std::string>(kDrawScorePOVId.GetId()) == "white")
-               ? 100.0
-               : -100.0)),
-      kDrawScorePOV(
-          options.Get<std::string>(kDrawScorePOVId.GetId()) == "self" ||
-          options.Get<std::string>(kDrawScorePOVId.GetId()) == "opponent")
-
-{}
+      kSidetomoveDrawScore(options.Get<int>(kSidetomoveDrawScoreId.GetId()) /
+                           100.0f),
+      kOpponentDrawScore(options.Get<int>(kOpponentDrawScoreId.GetId()) /
+                         100.0f),
+      kWhiteDrawDelta(options.Get<int>(kWhiteDrawDeltaId.GetId()) / 100.0f),
+      kBlackDrawDelta(options.Get<int>(kBlackDrawDeltaId.GetId()) / 100.0f),
+      kDisplayTrueScore(options.Get<bool>(kDisplayTrueScoreId.GetId())) {}
 
 }  // namespace lczero

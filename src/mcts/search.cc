@@ -120,12 +120,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
-  const auto default_q = -root_node_->GetQ(GetDrawScore(false));
+  const auto default_q = -root_node_->GetQ(0.0);
   for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto q = edge.GetQ(default_q, GetDrawScore(false));
+    const auto q = edge.GetQ(
+        default_q, params_.GetDisplayTrueScore() ? GetDrawScore(false) : 0.0f);
     if (score_type == "centipawn") {
       uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
     } else if (score_type == "centipawn_2018") {
@@ -192,12 +193,13 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
-float Search::GetDrawScore(bool flip) const {
-  if (!params_.DrawScoreRelativeToCurPlayer() &&
-      played_history_.IsBlackToMove()) {
-    flip = !flip;
-  }
-  return flip ? -params_.GetDrawScore() : params_.GetDrawScore();
+// Root is depth 0, i.e. even depth.
+float Search::GetDrawScore(bool is_odd_depth) const {
+  return (is_odd_depth ? params_.GetOpponentDrawScore()
+                       : params_.GetSidetomoveDrawScore()) +
+         (is_odd_depth == played_history_.IsBlackToMove()
+              ? params_.GetWhiteDrawDelta()
+              : params_.GetBlackDrawDelta());
 }
 
 namespace {
@@ -206,7 +208,7 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ(draw_score) -
+             : -node->GetQ(-draw_score) -
                    value * std::sqrt(node->GetVisitedPolicy());
 }
 
@@ -827,7 +829,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
-  float draw_score = search_->GetDrawScore(false);
+  const float even_draw_score = search_->GetDrawScore(false);
+  const float odd_draw_score = search_->GetDrawScore(true);
   uint16_t depth = 0;
   bool node_already_updated = true;
 
@@ -877,6 +880,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
+    // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
+    // the weirdness.
+    const float draw_score =
+        (depth % 2 == 0) ? odd_draw_score : even_draw_score;
     const float fpu = GetFpu(params_, node, is_root_node, draw_score);
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -925,7 +932,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     is_root_node = false;
-    draw_score = -draw_score;
   }
 }
 

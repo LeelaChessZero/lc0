@@ -99,8 +99,11 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  float GetDrawScore() const { return kDrawScore; }
-  bool DrawScoreRelativeToCurPlayer() const { return kDrawScorePOV; }
+  int GetSidetomoveDrawScore() const { return kSidetomoveDrawScore; }
+  int GetOpponentDrawScore() const { return kOpponentDrawScore; }
+  int GetWhiteDrawDelta() const { return kWhiteDrawDelta; }
+  int GetBlackDrawDelta() const { return kBlackDrawDelta; }
+  int GetDisplayTrueScore() const { return kDisplayTrueScore; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -138,6 +141,11 @@ class SearchParams {
   static const OptionId kShortSightednessId;
   static const OptionId kDrawScoreId;
   static const OptionId kDrawScorePOVId;
+  static const OptionId kSidetomoveDrawScoreId;
+  static const OptionId kOpponentDrawScoreId;
+  static const OptionId kWhiteDrawDeltaId;
+  static const OptionId kBlackDrawDeltaId;
+  static const OptionId kDisplayTrueScoreId;
 
  private:
   const OptionsDict& options_;
@@ -167,8 +175,11 @@ class SearchParams {
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
   const float kShortSightedness;
-  const float kDrawScore;
-  const bool kDrawScorePOV;
+  const int kSidetomoveDrawScore;
+  const int kOpponentDrawScore;
+  const int kWhiteDrawDelta;
+  const int kBlackDrawDelta;
+  const bool kDisplayTrueScore;
 };
 
 }  // namespace lczero
