@@ -201,9 +201,6 @@ const OptionId SearchParams::kWhiteDrawDeltaId{
 const OptionId SearchParams::kBlackDrawDeltaId{
     "black-draw-delta", "BlackDrawDelta",
     "Adjustment, added to a draw score of a black player."};
-const OptionId SearchParams::kDisplayTrueScoreId{
-    "display-true-score", "DisplayTrueScore",
-    "Include adjusted draw score in centipawn display."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -241,9 +238,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   options->Add<BoolOption>(kPerPvCountersId) = false;
-  std::vector<std::string> score_type = {"centipawn", "centipawn_2018",
-                                         "win_percentage", "Q"};
-  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
+  std::vector<std::string> score_type = {
+      "centipawn", "centipawn_2019", "centipawn_2018", "win_percentage", "Q",
+      "W-L"};
+  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn_2019";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
@@ -251,7 +249,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kOpponentDrawScoreId, -100, 100) = 0;
   options->Add<IntOption>(kWhiteDrawDeltaId, -100, 100) = 0;
   options->Add<IntOption>(kBlackDrawDeltaId, -100, 100) = 0;
-  options->Add<BoolOption>(kDisplayTrueScoreId) = false;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -295,7 +292,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kOpponentDrawScore(options.Get<int>(kOpponentDrawScoreId.GetId()) /
                          100.0f),
       kWhiteDrawDelta(options.Get<int>(kWhiteDrawDeltaId.GetId()) / 100.0f),
-      kBlackDrawDelta(options.Get<int>(kBlackDrawDeltaId.GetId()) / 100.0f),
-      kDisplayTrueScore(options.Get<bool>(kDisplayTrueScoreId.GetId())) {}
+      kBlackDrawDelta(options.Get<int>(kBlackDrawDeltaId.GetId()) / 100.0f) {}
 
 }  // namespace lczero
