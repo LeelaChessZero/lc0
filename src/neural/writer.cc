@@ -46,7 +46,8 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-InputPlanes PlanesFromTrainingData(const V4TrainingData& data) { InputPlanes result;
+InputPlanes PlanesFromTrainingData(const V4TrainingData& data) {
+  InputPlanes result;
   for (int i = 0; i < 104; i++) {
     result.emplace_back();
     result.back().mask = ReverseBitsInBytes(data.planes[i]);
@@ -79,18 +80,18 @@ TrainingDataReader::TrainingDataReader(std::string filename)
   }
 }
 
-TrainingDataReader::~TrainingDataReader() {
-  gzclose(fin_);
-}
+TrainingDataReader::~TrainingDataReader() { gzclose(fin_); }
 
 bool TrainingDataReader::ReadChunk(V4TrainingData* data) {
   if (format_v4) {
-    return gzread(fin_, reinterpret_cast<void*>(data), sizeof(*data)) ==
-           sizeof(*data);
+    int read_size = gzread(fin_, reinterpret_cast<void*>(data), sizeof(*data));
+    if (read_size < 0) throw Exception("Corrupt read.");
+    return read_size == sizeof(*data);
   } else {
     size_t v4_extra = 16;
     size_t v3_size = sizeof(*data) - v4_extra;
     int read_size = gzread(fin_, reinterpret_cast<void*>(data), v3_size);
+    if (read_size < 0) throw Exception("Corrupt read.");
     if (read_size != v3_size) return false;
     if (data->version == 3) {
       data->version = 4;
@@ -101,10 +102,12 @@ bool TrainingDataReader::ReadChunk(V4TrainingData* data) {
       return true;
     } else {
       format_v4 = true;
-      return gzread(fin_,
-                    reinterpret_cast<void*>(reinterpret_cast<char*>(data) +
-                                            v3_size),
-                    v4_extra) == v4_extra;
+      read_size = gzread(
+          fin_,
+          reinterpret_cast<void*>(reinterpret_cast<char*>(data) + v3_size),
+          v4_extra);
+      if (read_size < 0) throw Exception("Corrupt read.");
+      return read_size == v4_extra;
     }
   }
 }
@@ -124,7 +127,8 @@ TrainingDataWriter::TrainingDataWriter(int game_id) {
   if (!fout_) throw Exception("Cannot create gzip file " + filename_);
 }
 
-TrainingDataWriter::TrainingDataWriter(std::string filename) : filename_(filename) {
+TrainingDataWriter::TrainingDataWriter(std::string filename)
+    : filename_(filename) {
   fout_ = gzopen(filename_.c_str(), "wb");
   if (!fout_) throw Exception("Cannot create gzip file " + filename_);
 }
