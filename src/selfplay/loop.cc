@@ -72,6 +72,38 @@ std::atomic<int> policy_bump_total_hist[11];
 std::atomic<int> policy_dtm_bump(0);
 bool gaviotaEnabled = false;
 
+void DataAssert(bool check_result) {
+  if (!check_result) throw Exception("Range Violation");
+}
+
+void Validate(const std::vector<V4TrainingData>& fileContents) {
+  for (int i = 0; i < fileContents.size(); i++) {
+    auto& data = fileContents[i];
+    DataAssert(data.best_d >= 0.0f && data.best_d <= 1.0f);
+    DataAssert(data.root_d >= 0.0f && data.root_d <= 1.0f);
+    DataAssert(data.best_q >= -1.0f && data.best_q <= 1.0f);
+    DataAssert(data.root_q >= -1.0f && data.root_q <= 1.0f);
+    DataAssert(data.castling_them_oo >= 0 && data.castling_them_oo <= 1);
+    DataAssert(data.castling_them_ooo >= 0 && data.castling_them_ooo <= 1);
+    DataAssert(data.castling_us_oo >= 0 && data.castling_us_oo <= 1);
+    DataAssert(data.castling_us_ooo >= 0 && data.castling_us_ooo <= 1);
+    DataAssert(data.side_to_move >= 0 && data.side_to_move <= 1);
+    DataAssert(data.result >= -1 && data.result <= 1);
+    DataAssert(data.rule50_count >= 0 && data.rule50_count <= 100);
+    float sum = 0.0f;
+    for (int j = 0; j < sizeof(data.probabilities) / sizeof(float); j++) {
+      float prob = data.probabilities[j];
+      DataAssert(prob >= 0.0f && prob <= 1.0f || prob == -1.0f || isnan(prob));
+      if (prob >= 0.0f) {
+        sum += prob;
+      }
+    }
+    if (sum < 0.99f || sum > 1.01f) {
+      throw Exception("Probability sum error is huge!");
+    }
+  }
+}
+
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
                  float dtzBoost) {
@@ -84,6 +116,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       while (reader.ReadChunk(&data)) {
         fileContents.push_back(data);
       }
+      Validate(fileContents);
       std::string fileName = file.substr(file.find_last_of("/\\") + 1);
       TrainingDataWriter writer(outputDir + "/" + fileName);
       MoveList moves;
@@ -512,7 +545,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         writer.WriteChunk(chunk);
       }
     } catch (Exception& ex) {
-      std::cerr << "While processing: " << file << " - Exception thrown: " << ex.what() << std::endl;
+      std::cerr << "While processing: " << file
+                << " - Exception thrown: " << ex.what() << std::endl;
       std::cerr << "It will be deleted." << std::endl;
     }
   }
