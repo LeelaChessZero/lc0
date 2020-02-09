@@ -77,69 +77,173 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  float dtzBoost) {
   // Scope to ensure reader and writer are closed before deleting source file.
   {
-    TrainingDataReader reader(file);
-    std::string fileName = file.substr(file.find_last_of("/\\") + 1);
-    TrainingDataWriter writer(outputDir + "/" + fileName);
-    std::vector<V4TrainingData> fileContents;
-    V4TrainingData data;
-    while (reader.ReadChunk(&data)) {
-      fileContents.push_back(data);
-    }
-    MoveList moves;
-    for (int i = 1; i < fileContents.size(); i++) {
-      moves.push_back(
-          DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i])));
-      // All moves decoded are from the point of view of the side after the move
-      // so need to mirror them all to be applicable to apply to the position
-      // before.
-      moves.back().Mirror();
-    }
-    games += 1;
-    positions += fileContents.size();
-    PositionHistory history;
-    int rule50ply;
-    int gameply;
-    ChessBoard board;
-    PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                  PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                  &gameply);
-    history.Reset(board, rule50ply, gameply);
-    int last_rescore = -1;
-    orig_counts[fileContents[0].result + 1]++;
-    fixed_counts[fileContents[0].result + 1]++;
-    for (int i = 0; i < moves.size(); i++) {
-      history.Append(moves[i]);
-      const auto& board = history.Last().GetBoard();
-      if (board.castlings().no_legal_castle() &&
-          history.Last().GetNoCaptureNoPawnPly() == 0 &&
-          (board.ours() | board.theirs()).count() <=
-              tablebase->max_cardinality()) {
-        ProbeState state;
-        WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
-        // Only fail state means the WDL is wrong, probe_wdl may produce correct
-        // result with a stat other than OK.
-        if (state != FAIL) {
-          int8_t score_to_apply = 0;
-          if (wdl == WDL_WIN) {
-            score_to_apply = 1;
-          } else if (wdl == WDL_LOSS) {
-            score_to_apply = -1;
-          }
-          for (int j = i + 1; j > last_rescore; j--) {
-            if (fileContents[j].result != score_to_apply) {
-              if (j == i + 1 && last_rescore == -1) {
-                fixed_counts[fileContents[0].result + 1]--;
-                bool flip = (i % 2) == 0;
-                fixed_counts[(flip ? -score_to_apply : score_to_apply) + 1]++;
+    try {
+      TrainingDataReader reader(file);
+      std::vector<V4TrainingData> fileContents;
+      V4TrainingData data;
+      while (reader.ReadChunk(&data)) {
+        fileContents.push_back(data);
+      }
+      std::string fileName = file.substr(file.find_last_of("/\\") + 1);
+      TrainingDataWriter writer(outputDir + "/" + fileName);
+      MoveList moves;
+      for (int i = 1; i < fileContents.size(); i++) {
+        moves.push_back(
+            DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i])));
+        // All moves decoded are from the point of view of the side after the
+        // move so need to mirror them all to be applicable to apply to the
+        // position before.
+        moves.back().Mirror();
+      }
+      games += 1;
+      positions += fileContents.size();
+      PositionHistory history;
+      int rule50ply;
+      int gameply;
+      ChessBoard board;
+      PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                    PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                    &gameply);
+      history.Reset(board, rule50ply, gameply);
+      int last_rescore = -1;
+      orig_counts[fileContents[0].result + 1]++;
+      fixed_counts[fileContents[0].result + 1]++;
+      for (int i = 0; i < moves.size(); i++) {
+        history.Append(moves[i]);
+        const auto& board = history.Last().GetBoard();
+        if (board.castlings().no_legal_castle() &&
+            history.Last().GetNoCaptureNoPawnPly() == 0 &&
+            (board.ours() | board.theirs()).count() <=
+                tablebase->max_cardinality()) {
+          ProbeState state;
+          WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+          // Only fail state means the WDL is wrong, probe_wdl may produce
+          // correct result with a stat other than OK.
+          if (state != FAIL) {
+            int8_t score_to_apply = 0;
+            if (wdl == WDL_WIN) {
+              score_to_apply = 1;
+            } else if (wdl == WDL_LOSS) {
+              score_to_apply = -1;
+            }
+            for (int j = i + 1; j > last_rescore; j--) {
+              if (fileContents[j].result != score_to_apply) {
+                if (j == i + 1 && last_rescore == -1) {
+                  fixed_counts[fileContents[0].result + 1]--;
+                  bool flip = (i % 2) == 0;
+                  fixed_counts[(flip ? -score_to_apply : score_to_apply) + 1]++;
+                  /*
+                  std::cerr << "Rescoring: " << file << " "  <<
+                  (int)fileContents[j].result << " -> "
+                            << (int)score_to_apply
+                            << std::endl;
+                            */
+                }
+                rescored += 1;
+                delta += abs(fileContents[j].result - score_to_apply);
                 /*
-                std::cerr << "Rescoring: " << file << " "  <<
-                (int)fileContents[j].result << " -> "
-                          << (int)score_to_apply
-                          << std::endl;
-                          */
+              std::cerr << "Rescoring: " << (int)fileContents[j].result << " ->
+              "
+                        << (int)score_to_apply
+                        << std::endl;
+                        */
               }
-              rescored += 1;
-              delta += abs(fileContents[j].result - score_to_apply);
+
+              fileContents[j].result = score_to_apply;
+              score_to_apply = -score_to_apply;
+            }
+            last_rescore = i + 1;
+          }
+        }
+      }
+      PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                    PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                    &gameply);
+      history.Reset(board, rule50ply, gameply);
+      for (int i = 0; i < moves.size(); i++) {
+        history.Append(moves[i]);
+        const auto& board = history.Last().GetBoard();
+        if (board.castlings().no_legal_castle() &&
+            history.Last().GetNoCaptureNoPawnPly() != 0 &&
+            (board.ours() | board.theirs()).count() <=
+                tablebase->max_cardinality()) {
+          ProbeState state;
+          WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+          // Only fail state means the WDL is wrong, probe_wdl may produce
+          // correct result with a stat other than OK.
+          if (state != FAIL) {
+            int8_t score_to_apply = 0;
+            if (wdl == WDL_WIN) {
+              score_to_apply = 1;
+            } else if (wdl == WDL_LOSS) {
+              score_to_apply = -1;
+            }
+            // If the WDL result disagrees with the game outcome, make it a
+            // draw. WDL draw is always draw regardless of prior moves since
+            // zero, so that clearly works. Otherwise, the WDL result could be
+            // correct or draw, so best we can do is change scores that don't
+            // agree, to be a draw. If score was a draw this is a no-op, if it
+            // was opposite it becomes a draw.
+            int8_t new_score = fileContents[i + 1].result != score_to_apply
+                                   ? 0
+                                   : fileContents[i + 1].result;
+            bool dtz_rescored = false;
+            // if score is not already right, and the score to apply isn't 0,
+            // dtz can let us know its definitely correct.
+            if (fileContents[i + 1].result != score_to_apply &&
+                score_to_apply != 0) {
+              // Any repetitions in the history since last 50 ply makes it risky
+              // to assume dtz is still correct.
+              int steps = history.Last().GetNoCaptureNoPawnPly();
+              bool no_reps = true;
+              for (int i = 0; i < steps; i++) {
+                // If game started from non-zero 50 move rule, this could
+                // underflow. Only safe option is to assume there were
+                // repetitions before this point.
+                if (history.GetLength() - i - 1 < 0) {
+                  no_reps = false;
+                  break;
+                }
+                if (history.GetPositionAt(history.GetLength() - i - 1)
+                        .GetRepetitions() != 0) {
+                  no_reps = false;
+                  break;
+                }
+              }
+              if (no_reps) {
+                int depth = tablebase->probe_dtz(history.Last(), &state);
+                if (state != FAIL) {
+                  // This should be able to be <= 99 safely, but I've not
+                  // convinced myself thats true.
+                  if (steps + std::abs(depth) < 99) {
+                    rescored3++;
+                    new_score = score_to_apply;
+                    dtz_rescored = true;
+                  }
+                }
+              }
+            }
+
+            // If score is not already a draw, and its not obviously a draw,
+            // check if 50 move rule has advanced so far its obviously a draw.
+            // Obviously not needed if we've already proven with dtz that its a
+            // win/loss.
+            if (fileContents[i + 1].result != 0 && score_to_apply != 0 &&
+                !dtz_rescored) {
+              int depth = tablebase->probe_dtz(history.Last(), &state);
+              if (state != FAIL) {
+                int steps = history.Last().GetNoCaptureNoPawnPly();
+                // This should be able to be >= 101 safely, but I've not
+                // convinced myself thats true.
+                if (steps + std::abs(depth) > 101) {
+                  rescored3++;
+                  new_score = 0;
+                  dtz_rescored = true;
+                }
+              }
+            }
+            if (new_score != fileContents[i + 1].result) {
+              rescored2 += 1;
               /*
             std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
                       << (int)score_to_apply
@@ -147,49 +251,220 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                       */
             }
 
-            fileContents[j].result = score_to_apply;
-            score_to_apply = -score_to_apply;
+            fileContents[i + 1].result = new_score;
           }
-          last_rescore = i + 1;
         }
       }
-    }
-    PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                  PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                  &gameply);
-    history.Reset(board, rule50ply, gameply);
-    for (int i = 0; i < moves.size(); i++) {
-      history.Append(moves[i]);
-      const auto& board = history.Last().GetBoard();
-      if (board.castlings().no_legal_castle() &&
-          history.Last().GetNoCaptureNoPawnPly() != 0 &&
-          (board.ours() | board.theirs()).count() <=
-              tablebase->max_cardinality()) {
-        ProbeState state;
-        WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
-        // Only fail state means the WDL is wrong, probe_wdl may produce correct
-        // result with a stat other than OK.
-        if (state != FAIL) {
-          int8_t score_to_apply = 0;
-          if (wdl == WDL_WIN) {
-            score_to_apply = 1;
-          } else if (wdl == WDL_LOSS) {
-            score_to_apply = -1;
+      if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
+        PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                      PlanesFromTrainingData(fileContents[0]), &board,
+                      &rule50ply, &gameply);
+        history.Reset(board, rule50ply, gameply);
+        int move_index = 0;
+        for (auto& chunk : fileContents) {
+          const auto& board = history.Last().GetBoard();
+          std::vector<bool> boost_probs(1858, false);
+          int boost_count = 0;
+
+          if (dtzBoost != 0.0f && board.castlings().no_legal_castle() &&
+              (board.ours() | board.theirs()).count() <=
+                  tablebase->max_cardinality()) {
+            MoveList to_boost;
+            MoveList maybe_boost;
+            tablebase->root_probe(history.Last(),
+                                  history.DidRepeatSinceLastZeroingMove(), true,
+                                  &to_boost, &maybe_boost);
+            // If there is only one move, dtm fixup is not helpful.
+            // This code assumes all gaviota 3-4-5 tbs are present, as checked
+            // at startup.
+            if (gaviotaEnabled && maybe_boost.size() > 1 &&
+                (board.ours() | board.theirs()).count() <= 5) {
+              std::vector<int> dtms;
+              dtms.resize(maybe_boost.size());
+              int mininum_dtm = 1000;
+              // Only safe moves being considered, boost the smallest dtm
+              // amongst them.
+              unsigned int wsq[17];
+              unsigned int bsq[17];
+              unsigned char wpc[17];
+              unsigned char bpc[17];
+              for (auto& move : maybe_boost) {
+                Position next_pos = Position(history.Last(), move);
+                auto stm = next_pos.IsBlackToMove() ? tb_BLACK_TO_MOVE
+                                                    : tb_WHITE_TO_MOVE;
+                auto& board = next_pos.IsBlackToMove() ? next_pos.GetThemBoard()
+                                                       : next_pos.GetBoard();
+                auto epsq = tb_NOSQUARE;
+                for (auto sq : board.en_passant()) {
+                  // Our internal representation stores en_passant 2 rows away
+                  // from the actual sq.
+                  if (sq.row() == 0) {
+                    epsq = (TB_squares)(sq.as_int() + 16);
+                  } else {
+                    epsq = (TB_squares)(sq.as_int() - 16);
+                  }
+                }
+                int idx = 0;
+                for (auto sq : board.our_king()) {
+                  wsq[idx] = (TB_squares)sq.as_int();
+                  wpc[idx] = tb_KING;
+                  idx++;
+                }
+                for (auto sq : board.our_knights()) {
+                  wsq[idx] = (TB_squares)sq.as_int();
+                  wpc[idx] = tb_KNIGHT;
+                  idx++;
+                }
+                for (auto sq : (board.ours() & board.queens())) {
+                  wsq[idx] = (TB_squares)sq.as_int();
+                  wpc[idx] = tb_QUEEN;
+                  idx++;
+                }
+                for (auto sq : (board.ours() & board.rooks())) {
+                  wsq[idx] = (TB_squares)sq.as_int();
+                  wpc[idx] = tb_ROOK;
+                  idx++;
+                }
+                for (auto sq : (board.ours() & board.bishops())) {
+                  wsq[idx] = (TB_squares)sq.as_int();
+                  wpc[idx] = tb_BISHOP;
+                  idx++;
+                }
+                for (auto sq : (board.ours() & board.pawns())) {
+                  wsq[idx] = (TB_squares)sq.as_int();
+                  wpc[idx] = tb_PAWN;
+                  idx++;
+                }
+                wsq[idx] = tb_NOSQUARE;
+                wpc[idx] = tb_NOPIECE;
+
+                idx = 0;
+                for (auto sq : board.their_king()) {
+                  bsq[idx] = (TB_squares)sq.as_int();
+                  bpc[idx] = tb_KING;
+                  idx++;
+                }
+                for (auto sq : board.their_knights()) {
+                  bsq[idx] = (TB_squares)sq.as_int();
+                  bpc[idx] = tb_KNIGHT;
+                  idx++;
+                }
+                for (auto sq : (board.theirs() & board.queens())) {
+                  bsq[idx] = (TB_squares)sq.as_int();
+                  bpc[idx] = tb_QUEEN;
+                  idx++;
+                }
+                for (auto sq : (board.theirs() & board.rooks())) {
+                  bsq[idx] = (TB_squares)sq.as_int();
+                  bpc[idx] = tb_ROOK;
+                  idx++;
+                }
+                for (auto sq : (board.theirs() & board.bishops())) {
+                  bsq[idx] = (TB_squares)sq.as_int();
+                  bpc[idx] = tb_BISHOP;
+                  idx++;
+                }
+                for (auto sq : (board.theirs() & board.pawns())) {
+                  bsq[idx] = (TB_squares)sq.as_int();
+                  bpc[idx] = tb_PAWN;
+                  idx++;
+                }
+                bsq[idx] = tb_NOSQUARE;
+                bpc[idx] = tb_NOPIECE;
+
+                unsigned int info;
+                unsigned int dtm;
+                tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info,
+                              &dtm);
+                dtms.push_back(dtm);
+                if (dtm < mininum_dtm) mininum_dtm = dtm;
+              }
+              if (mininum_dtm < 1000) {
+                to_boost.clear();
+                int dtm_idx = 0;
+                for (auto& move : maybe_boost) {
+                  if (dtms[dtm_idx] == mininum_dtm) {
+                    to_boost.push_back(move);
+                  }
+                  dtm_idx++;
+                }
+                policy_dtm_bump++;
+              }
+            }
+            for (auto& move : to_boost) {
+              boost_probs[move.as_nn_index()] = true;
+            }
+            boost_count = to_boost.size();
           }
-          // If the WDL result disagrees with the game outcome, make it a draw.
-          // WDL draw is always draw regardless of prior moves since zero, so
-          // that clearly works. Otherwise, the WDL result could be correct or
-          // draw, so best we can do is change scores that don't agree, to be a
-          // draw. If score was a draw this is a no-op, if it was opposite it
-          // becomes a draw.
-          int8_t new_score = fileContents[i + 1].result != score_to_apply
-                                 ? 0
-                                 : fileContents[i + 1].result;
-          bool dtz_rescored = false;
-          // if score is not already right, and the score to apply isn't 0, dtz
-          // can let us know its definitely correct.
-          if (fileContents[i + 1].result != score_to_apply &&
-              score_to_apply != 0) {
+          float sum = 0.0;
+          int prob_index = 0;
+          float preboost_sum = 0.0f;
+          for (auto& prob : chunk.probabilities) {
+            float offset =
+                distOffset +
+                (boost_probs[prob_index] ? (dtzBoost / boost_count) : 0.0f);
+            if (dtzBoost != 0.0f && boost_probs[prob_index]) {
+              preboost_sum += prob;
+              if (prob < 0 || std::isnan(prob))
+                std::cerr << "Bump for move that is illegal????" << std::endl;
+              policy_bump++;
+            }
+            prob_index++;
+            if (prob < 0 || std::isnan(prob)) continue;
+            prob = std::max(0.0f, prob + offset);
+            prob = std::pow(prob, 1.0f / distTemp);
+            sum += prob;
+          }
+          prob_index = 0;
+          float boost_sum = 0.0f;
+          for (auto& prob : chunk.probabilities) {
+            if (dtzBoost != 0.0f && boost_probs[prob_index]) {
+              boost_sum += prob / sum;
+            }
+            prob_index++;
+            if (prob < 0 || std::isnan(prob)) continue;
+            prob /= sum;
+          }
+          if (boost_count > 0) {
+            policy_nobump_total_hist[(int)(preboost_sum * 10)]++;
+            policy_bump_total_hist[(int)(boost_sum * 10)]++;
+          }
+          history.Append(moves[move_index]);
+          move_index++;
+        }
+      }
+
+      int offset = 0;
+      for (auto& chunk : fileContents) {
+        chunk.move_count =
+            std::min(255, (int)(fileContents.size() - offset) / 2);
+        offset++;
+      }
+      // Correct move_count using DTM. Since we don't actually have DTM, use DTZ
+      // for 3 piece no-pawn positions only.
+      PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                    PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                    &gameply);
+      history.Reset(board, rule50ply, gameply);
+      for (int i = 0; i < moves.size(); i++) {
+        history.Append(moves[i]);
+        const auto& board = history.Last().GetBoard();
+        if (board.castlings().no_legal_castle() &&
+            (board.ours() | board.theirs()).count() <= 3 &&
+            board.pawns().empty()) {
+          ProbeState state;
+          WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+          // Only fail state means the WDL is wrong, probe_wdl may produce
+          // correct result with a stat other than OK.
+          if (state != FAIL) {
+            int8_t score_to_apply = 0;
+            if (wdl == WDL_WIN) {
+              score_to_apply = 1;
+            } else if (wdl == WDL_LOSS) {
+              score_to_apply = -1;
+            }
+            // No point updating for draws.
+            if (score_to_apply == 0) continue;
             // Any repetitions in the history since last 50 ply makes it risky
             // to assume dtz is still correct.
             int steps = history.Last().GetNoCaptureNoPawnPly();
@@ -211,301 +486,34 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             if (no_reps) {
               int depth = tablebase->probe_dtz(history.Last(), &state);
               if (state != FAIL) {
+                // if depth == -1 this is wrong, since that is mate and the
+                // answer should be 0, but the move before depth is -2. Since
+                // data never contains mate position, ignore that discrepency.
+                int converted_ply_remaining = std::abs(depth);
                 // This should be able to be <= 99 safely, but I've not
                 // convinced myself thats true.
                 if (steps + std::abs(depth) < 99) {
-                  rescored3++;
-                  new_score = score_to_apply;
-                  dtz_rescored = true;
+                  fileContents[i + 1].move_count =
+                      std::min(255, converted_ply_remaining / 2);
                 }
-              }
-            }
-          }
-
-          // If score is not already a draw, and its not obviously a draw, check
-          // if 50 move rule has advanced so far its obviously a draw. Obviously
-          // not needed if we've already proven with dtz that its a win/loss.
-          if (fileContents[i + 1].result != 0 && score_to_apply != 0 &&
-              !dtz_rescored) {
-            int depth = tablebase->probe_dtz(history.Last(), &state);
-            if (state != FAIL) {
-              int steps = history.Last().GetNoCaptureNoPawnPly();
-              // This should be able to be >= 101 safely, but I've not convinced
-              // myself thats true.
-              if (steps + std::abs(depth) > 101) {
-                rescored3++;
-                new_score = 0;
-                dtz_rescored = true;
-              }
-            }
-          }
-          if (new_score != fileContents[i + 1].result) {
-            rescored2 += 1;
-            /*
-          std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
-                    << (int)score_to_apply
-                    << std::endl;
-                    */
-          }
-
-          fileContents[i + 1].result = new_score;
-        }
-      }
-    }
-    if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
-      PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                    PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                    &gameply);
-      history.Reset(board, rule50ply, gameply);
-      int move_index = 0;
-      for (auto& chunk : fileContents) {
-        const auto& board = history.Last().GetBoard();
-        std::vector<bool> boost_probs(1858, false);
-        int boost_count = 0;
-
-        if (dtzBoost != 0.0f && board.castlings().no_legal_castle() &&
-            (board.ours() | board.theirs()).count() <=
-                tablebase->max_cardinality()) {
-          MoveList to_boost;
-          MoveList maybe_boost;
-          tablebase->root_probe(history.Last(),
-                                history.DidRepeatSinceLastZeroingMove(), true,
-                                &to_boost, &maybe_boost);
-          // If there is only one move, dtm fixup is not helpful.
-          // This code assumes all gaviota 3-4-5 tbs are present, as checked at
-          // startup.
-          if (gaviotaEnabled && maybe_boost.size() > 1 &&
-              (board.ours() | board.theirs()).count() <= 5) {
-            std::vector<int> dtms;
-            dtms.resize(maybe_boost.size());
-            int mininum_dtm = 1000;
-            // Only safe moves being considered, boost the smallest dtm amongst
-            // them.
-            unsigned int wsq[17];
-            unsigned int bsq[17];
-            unsigned char wpc[17];
-            unsigned char bpc[17];
-            for (auto& move : maybe_boost) {
-              Position next_pos = Position(history.Last(), move);
-              auto stm = next_pos.IsBlackToMove() ? tb_BLACK_TO_MOVE
-                                                  : tb_WHITE_TO_MOVE;
-              auto& board = next_pos.IsBlackToMove() ? next_pos.GetThemBoard()
-                                                     : next_pos.GetBoard();
-              auto epsq = tb_NOSQUARE;
-              for (auto sq : board.en_passant()) {
-                // Our internal representation stores en_passant 2 rows away
-                // from the actual sq.
-                if (sq.row() == 0) {
-                  epsq = (TB_squares)(sq.as_int() + 16);
-                } else {
-                  epsq = (TB_squares)(sq.as_int() - 16);
-                }
-              }
-              int idx = 0;
-              for (auto sq : board.our_king()) {
-                wsq[idx] = (TB_squares)sq.as_int();
-                wpc[idx] = tb_KING;
-                idx++;
-              }
-              for (auto sq : board.our_knights()) {
-                wsq[idx] = (TB_squares)sq.as_int();
-                wpc[idx] = tb_KNIGHT;
-                idx++;
-              }
-              for (auto sq : (board.ours() & board.queens())) {
-                wsq[idx] = (TB_squares)sq.as_int();
-                wpc[idx] = tb_QUEEN;
-                idx++;
-              }
-              for (auto sq : (board.ours() & board.rooks())) {
-                wsq[idx] = (TB_squares)sq.as_int();
-                wpc[idx] = tb_ROOK;
-                idx++;
-              }
-              for (auto sq : (board.ours() & board.bishops())) {
-                wsq[idx] = (TB_squares)sq.as_int();
-                wpc[idx] = tb_BISHOP;
-                idx++;
-              }
-              for (auto sq : (board.ours() & board.pawns())) {
-                wsq[idx] = (TB_squares)sq.as_int();
-                wpc[idx] = tb_PAWN;
-                idx++;
-              }
-              wsq[idx] = tb_NOSQUARE;
-              wpc[idx] = tb_NOPIECE;
-
-              idx = 0;
-              for (auto sq : board.their_king()) {
-                bsq[idx] = (TB_squares)sq.as_int();
-                bpc[idx] = tb_KING;
-                idx++;
-              }
-              for (auto sq : board.their_knights()) {
-                bsq[idx] = (TB_squares)sq.as_int();
-                bpc[idx] = tb_KNIGHT;
-                idx++;
-              }
-              for (auto sq : (board.theirs() & board.queens())) {
-                bsq[idx] = (TB_squares)sq.as_int();
-                bpc[idx] = tb_QUEEN;
-                idx++;
-              }
-              for (auto sq : (board.theirs() & board.rooks())) {
-                bsq[idx] = (TB_squares)sq.as_int();
-                bpc[idx] = tb_ROOK;
-                idx++;
-              }
-              for (auto sq : (board.theirs() & board.bishops())) {
-                bsq[idx] = (TB_squares)sq.as_int();
-                bpc[idx] = tb_BISHOP;
-                idx++;
-              }
-              for (auto sq : (board.theirs() & board.pawns())) {
-                bsq[idx] = (TB_squares)sq.as_int();
-                bpc[idx] = tb_PAWN;
-                idx++;
-              }
-              bsq[idx] = tb_NOSQUARE;
-              bpc[idx] = tb_NOPIECE;
-
-              unsigned int info;
-              unsigned int dtm;
-              tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info,
-                            &dtm);
-              dtms.push_back(dtm);
-              if (dtm < mininum_dtm) mininum_dtm = dtm;
-            }
-            if (mininum_dtm < 1000) {
-              to_boost.clear();
-              int dtm_idx = 0;
-              for (auto& move : maybe_boost) {
-                if (dtms[dtm_idx] == mininum_dtm) {
-                  to_boost.push_back(move);
-                }
-                dtm_idx++;
-              }
-              policy_dtm_bump++;
-            }
-          }
-          for (auto& move : to_boost) {
-            boost_probs[move.as_nn_index()] = true;
-          }
-          boost_count = to_boost.size();
-        }
-        float sum = 0.0;
-        int prob_index = 0;
-        float preboost_sum = 0.0f;
-        for (auto& prob : chunk.probabilities) {
-          float offset =
-              distOffset +
-              (boost_probs[prob_index] ? (dtzBoost / boost_count) : 0.0f);
-          if (dtzBoost != 0.0f && boost_probs[prob_index]) {
-            preboost_sum += prob;
-            if (prob < 0 || std::isnan(prob))
-              std::cerr << "Bump for move that is illegal????" << std::endl;
-            policy_bump++;
-          }
-          prob_index++;
-          if (prob < 0 || std::isnan(prob)) continue;
-          prob = std::max(0.0f, prob + offset);
-          prob = std::pow(prob, 1.0f / distTemp);
-          sum += prob;
-        }
-        prob_index = 0;
-        float boost_sum = 0.0f;
-        for (auto& prob : chunk.probabilities) {
-          if (dtzBoost != 0.0f && boost_probs[prob_index]) {
-            boost_sum += prob / sum;
-          }
-          prob_index++;
-          if (prob < 0 || std::isnan(prob)) continue;
-          prob /= sum;
-        }
-        if (boost_count > 0) {
-          policy_nobump_total_hist[(int)(preboost_sum * 10)]++;
-          policy_bump_total_hist[(int)(boost_sum * 10)]++;
-        }
-        history.Append(moves[move_index]);
-        move_index++;
-      }
-    }
-
-    int offset = 0;
-    for (auto& chunk : fileContents) {
-      chunk.move_count = std::min(255, (int)(fileContents.size() - offset) / 2);
-      offset++;
-    }
-    // Correct move_count using DTM. Since we don't actually have DTM, use DTZ
-    // for 3 piece no-pawn positions only.
-    PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                  PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                  &gameply);
-    history.Reset(board, rule50ply, gameply);
-    for (int i = 0; i < moves.size(); i++) {
-      history.Append(moves[i]);
-      const auto& board = history.Last().GetBoard();
-      if (board.castlings().no_legal_castle() &&
-          (board.ours() | board.theirs()).count() <= 3 &&
-          board.pawns().empty()) {
-        ProbeState state;
-        WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
-        // Only fail state means the WDL is wrong, probe_wdl may produce
-        // correct result with a stat other than OK.
-        if (state != FAIL) {
-          int8_t score_to_apply = 0;
-          if (wdl == WDL_WIN) {
-            score_to_apply = 1;
-          } else if (wdl == WDL_LOSS) {
-            score_to_apply = -1;
-          }
-          // No point updating for draws.
-          if (score_to_apply == 0) continue;
-          // Any repetitions in the history since last 50 ply makes it risky
-          // to assume dtz is still correct.
-          int steps = history.Last().GetNoCaptureNoPawnPly();
-          bool no_reps = true;
-          for (int i = 0; i < steps; i++) {
-            // If game started from non-zero 50 move rule, this could
-            // underflow. Only safe option is to assume there were repetitions
-            // before this point.
-            if (history.GetLength() - i - 1 < 0) {
-              no_reps = false;
-              break;
-            }
-            if (history.GetPositionAt(history.GetLength() - i - 1)
-                    .GetRepetitions() != 0) {
-              no_reps = false;
-              break;
-            }
-          }
-          if (no_reps) {
-            int depth = tablebase->probe_dtz(history.Last(), &state);
-            if (state != FAIL) {
-              // if depth == -1 this is wrong, since that is mate and the
-              // answer should be 0, but the move before depth is -2. Since
-              // data never contains mate position, ignore that discrepency.
-              int converted_ply_remaining = std::abs(depth);
-              // This should be able to be <= 99 safely, but I've not
-              // convinced myself thats true.
-              if (steps + std::abs(depth) < 99) {
-                fileContents[i + 1].move_count =
-                    std::min(255, converted_ply_remaining / 2);
-              }
-              if (steps == 0) {
-                for (int j = i; j >= 0; j--) {
-                  fileContents[j].move_count = std::min(
-                      255, (converted_ply_remaining + (i + 1 - j)) / 2);
+                if (steps == 0) {
+                  for (int j = i; j >= 0; j--) {
+                    fileContents[j].move_count = std::min(
+                        255, (converted_ply_remaining + (i + 1 - j)) / 2);
+                  }
                 }
               }
             }
           }
         }
       }
-    }
 
-    for (auto chunk : fileContents) {
-      writer.WriteChunk(chunk);
+      for (auto chunk : fileContents) {
+        writer.WriteChunk(chunk);
+      }
+    } catch (Exception& ex) {
+      std::cerr << "While processing: " << file << " - Exception thrown: " << ex.what() << std::endl;
+      std::cerr << "It will be deleted." << std::endl;
     }
   }
   remove(file.c_str());
@@ -517,6 +525,10 @@ void ProcessFiles(const std::vector<std::string>& files,
                   int mod) {
   std::cerr << "Thread: " << offset << " starting" << std::endl;
   for (int i = offset; i < files.size(); i += mod) {
+    if (files[i].rfind(".gz") != files[i].size() - 3) {
+      std::cerr << "Skipping: " << files[i] << std::endl;
+      continue;
+    }
     ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset, dtzBoost);
   }
 }
