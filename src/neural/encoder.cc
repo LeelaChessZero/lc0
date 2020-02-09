@@ -313,10 +313,17 @@ Move DecodeMoveFromInput(const InputPlanes& planes) {
     assert(false);
     return Move();
   }
-  // TODO: Ensure move returned for castling is correct.
   // check king first as castling moves both king and rook.
   auto kingdiff = BitBoard(planes[11].mask ^ planes[kPlanesPerBoard + 11].mask);
   if (kingdiff.count() == 2) {
+    if (rookdiff.count() == 2) {
+      // TODO: Fix this properly for full 960 support.
+      auto from =
+          SingleSquare(planes[kPlanesPerBoard + 11].mask & kingdiff.as_int());
+      auto to =
+          SingleSquare(planes[kPlanesPerBoard + 9].mask & rookdiff.as_int());
+      return Move(from, to);
+    }
     auto from =
         SingleSquare(planes[kPlanesPerBoard + 11].mask & kingdiff.as_int());
     auto to = SingleSquare(planes[11].mask & kingdiff.as_int());
