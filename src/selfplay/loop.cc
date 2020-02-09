@@ -117,8 +117,6 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         fileContents.push_back(data);
       }
       Validate(fileContents);
-      std::string fileName = file.substr(file.find_last_of("/\\") + 1);
-      TrainingDataWriter writer(outputDir + "/" + fileName);
       MoveList moves;
       for (int i = 1; i < fileContents.size(); i++) {
         moves.push_back(
@@ -541,6 +539,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
 
+      std::string fileName = file.substr(file.find_last_of("/\\") + 1);
+      TrainingDataWriter writer(outputDir + "/" + fileName);
       for (auto chunk : fileContents) {
         writer.WriteChunk(chunk);
       }
