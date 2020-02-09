@@ -64,7 +64,7 @@ void Benchmark::Run() {
     const int visits = option_dict.Get<int>(kNodesId.GetId());
     const int movetime = option_dict.Get<int>(kMovetimeId.GetId());
 
-	std::vector<std::double_t> times;
+    std::vector<std::double_t> times;
     std::vector<std::int64_t> playouts;
     std::uint64_t cnt = 1;
     for (std::string position : positions) {
@@ -101,7 +101,7 @@ void Benchmark::Run() {
       playouts.push_back(search->GetTotalPlayouts());
     }
 
-	const auto totalPlayouts = std::accumulate(playouts.begin(), playouts.end(), 0);
+    const auto totalPlayouts = std::accumulate(playouts.begin(), playouts.end(), 0);
     const auto totalTime = std::accumulate(times.begin(), times.end(), 0);
     std::cout << "\n==========================="
               << "\nTotal time (ms) : " << totalTime
