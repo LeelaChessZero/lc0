@@ -41,7 +41,8 @@ enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
 Move DecodeMoveFromInput(const InputPlanes& planes);
 
 // Decodes the current position into a board, rule50 and gameply.
-void PopulateBoard(InputPlanes planes, ChessBoard* board, int* rule50,
+void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
+                   InputPlanes planes, ChessBoard* board, int* rule50,
                    int* gameply);
 
 // Encodes the last position in history for the neural network request.

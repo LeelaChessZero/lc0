@@ -149,6 +149,17 @@ class ChessBoard {
       return result;
     }
 
+    std::string as_string() const {
+      // TODO: support xfen extensions as needed.
+      std::string result;
+      if (data_ == 0) result = "-";
+      if (we_can_00()) result += 'K';
+      if (we_can_000()) result += 'Q';
+      if (they_can_00()) result += 'k';
+      if (they_can_000()) result += 'q';
+      return result;
+    }
+
     uint8_t as_int() const { return data_; }
 
     bool operator==(const Castlings& other) const {

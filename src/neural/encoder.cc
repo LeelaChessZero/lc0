@@ -49,7 +49,8 @@ BoardSquare SingleSquare(BitBoard input) {
 }
 }  // namespace
 
-void PopulateBoard(InputPlanes planes, ChessBoard* board, int* rule50,
+void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
+                   InputPlanes planes, ChessBoard* board, int* rule50,
                    int* gameply) {
   auto pawnsOurs = BitBoard(planes[0].mask);
   auto knightsOurs = BitBoard(planes[1].mask);
@@ -64,17 +65,22 @@ void PopulateBoard(InputPlanes planes, ChessBoard* board, int* rule50,
   auto queenTheirs = BitBoard(planes[10].mask);
   auto kingTheirs = BitBoard(planes[11].mask);
   ChessBoard::Castlings castlings;
-  if (planes[kAuxPlaneBase + 0].mask != 0) {
-    castlings.set_we_can_000();
-  }
-  if (planes[kAuxPlaneBase + 1].mask != 0) {
-    castlings.set_we_can_00();
-  }
-  if (planes[kAuxPlaneBase + 2].mask != 0) {
-    castlings.set_they_can_000();
-  }
-  if (planes[kAuxPlaneBase + 3].mask != 0) {
-    castlings.set_they_can_00();
+  if (input_format == pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE) {
+    if (planes[kAuxPlaneBase + 0].mask != 0) {
+      castlings.set_we_can_000();
+    }
+    if (planes[kAuxPlaneBase + 1].mask != 0) {
+      castlings.set_we_can_00();
+    }
+    if (planes[kAuxPlaneBase + 2].mask != 0) {
+      castlings.set_they_can_000();
+    }
+    if (planes[kAuxPlaneBase + 3].mask != 0) {
+      castlings.set_they_can_00();
+    }
+  } else {
+    // TODO: support.
+    throw Exception("New castling format not supported yet.");
   }
   std::string fen;
   if (planes[kAuxPlaneBase + 4].mask != 0) {
@@ -147,7 +153,8 @@ void PopulateBoard(InputPlanes planes, ChessBoard* board, int* rule50,
   fen += castlings.as_string();
   fen += " ";
   auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
-  // If no pawns then 2 pawns, history isn't filled properly and we shouldn't try and infer enpassant.
+  // If no pawns then 2 pawns, history isn't filled properly and we shouldn't
+  // try and infer enpassant.
   if (pawndiff.count() == 2 && planes[kPlanesPerBoard + 6].mask != 0) {
     auto from =
         SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
