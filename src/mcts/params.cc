@@ -189,16 +189,16 @@ const OptionId SearchParams::kHistoryFillId{
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
-const OptionId SearchParams::kSidetomoveDrawScoreId{
+const OptionId SearchParams::kDrawScoreSidetomoveId{
     "draw-score-sidetomove", "DrawScoreSideToMove",
     "Score of a drawn game, as seen by a player making the move."};
-const OptionId SearchParams::kOpponentDrawScoreId{
+const OptionId SearchParams::kDrawScoreOpponentId{
     "draw-score-opponent", "DrawScoreOpponent",
     "Score of a drawn game, as seen by an opponent the move."};
-const OptionId SearchParams::kWhiteDrawDeltaId{
+const OptionId SearchParams::kDrawScoreWhiteId{
     "draw-score-white", "DrawScoreWhite",
     "Adjustment, added to a draw score of a white player."};
-const OptionId SearchParams::kBlackDrawDeltaId{
+const OptionId SearchParams::kDrawScoreBlackId{
     "draw-score-black", "DrawScoreBlack",
     "Adjustment, added to a draw score of a black player."};
 
@@ -248,10 +248,10 @@ void SearchParams::Populate(OptionsParser* options) {
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
-  options->Add<IntOption>(kSidetomoveDrawScoreId, -100, 100) = 0;
-  options->Add<IntOption>(kOpponentDrawScoreId, -100, 100) = 0;
-  options->Add<IntOption>(kWhiteDrawDeltaId, -100, 100) = 0;
-  options->Add<IntOption>(kBlackDrawDeltaId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -290,11 +290,11 @@ SearchParams::SearchParams(const OptionsDict& options)
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
       kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
-      kSidetomoveDrawScore(options.Get<int>(kSidetomoveDrawScoreId.GetId()) /
-                           100.0f),
-      kOpponentDrawScore(options.Get<int>(kOpponentDrawScoreId.GetId()) /
-                         100.0f),
-      kWhiteDrawDelta(options.Get<int>(kWhiteDrawDeltaId.GetId()) / 100.0f),
-      kBlackDrawDelta(options.Get<int>(kBlackDrawDeltaId.GetId()) / 100.0f) {}
+      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId.GetId()) /
+                           100.0f},
+      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId.GetId()) /
+                         100.0f},
+      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
+      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f} {}
 
 }  // namespace lczero
