@@ -100,10 +100,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     int rule50ply;
     int gameply;
     ChessBoard board;
-    PopulateBoard(
-        pblczero::NetworkFormat::
-            INPUT_CLASSICAL_112_PLANE, PlanesFromTrainingData(fileContents[0]),
-        &board, &rule50ply,
+    PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                  PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
                   &gameply);
     history.Reset(board, rule50ply, gameply);
     int last_rescore = -1;
@@ -156,10 +154,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
     }
-    PopulateBoard(
-        pblczero::NetworkFormat::
-            INPUT_CLASSICAL_112_PLANE, PlanesFromTrainingData(fileContents[0]),
-        &board, &rule50ply,
+    PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                  PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
                   &gameply);
     history.Reset(board, rule50ply, gameply);
     for (int i = 0; i < moves.size(); i++) {
@@ -257,10 +253,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       }
     }
     if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
-      PopulateBoard(
-          pblczero::NetworkFormat::
-              INPUT_CLASSICAL_112_PLANE, PlanesFromTrainingData(fileContents[0]),
-          &board, &rule50ply,
+      PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                    PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
                     &gameply);
       history.Reset(board, rule50ply, gameply);
       int move_index = 0;
@@ -444,10 +438,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     }
     // Correct move_count using DTM. Since we don't actually have DTM, use DTZ
     // for 3 piece no-pawn positions only.
-    PopulateBoard(
-        pblczero::NetworkFormat::
-            INPUT_CLASSICAL_112_PLANE, PlanesFromTrainingData(fileContents[0]),
-        &board, &rule50ply,
+    PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                  PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
                   &gameply);
     history.Reset(board, rule50ply, gameply);
     for (int i = 0; i < moves.size(); i++) {
