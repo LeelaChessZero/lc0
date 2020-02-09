@@ -108,18 +108,11 @@ const OptionId SearchParams::kNoiseAlphaId{
     "Larger values result in flatter / more evenly distributed values."};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
-    "Display Q, V, N, U and P values of every move candidate after each move."};
+    "Display Q, V, N, U and P values of every move candidate after each move.",
+    'v'};
 const OptionId SearchParams::kLogLiveStatsId{
     "log-live-stats", "LogLiveStats",
     "Do VerboseMoveStats on every info update."};
-const OptionId SearchParams::kSmartPruningFactorId{
-    "smart-pruning-factor", "SmartPruningFactor",
-    "Do not spend time on the moves which cannot become bestmove given the "
-    "remaining time to search. When no other move can overtake the current "
-    "best, the search stops, saving the time. Values greater than 1 stop less "
-    "promising moves from being considered even earlier. Values less than 1 "
-    "causes hopeless moves to still have some attention. When set to 0, smart "
-    "pruning is deactivated."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
     "How is an eval of unvisited node determined. \"First Play Urgency\" "
@@ -180,6 +173,9 @@ const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV",
     "Number of game play lines (principal variations) to show in UCI info "
     "output."};
+const OptionId SearchParams::kPerPvCountersId{
+    "per-pv-counters", "PerPVCounters",
+    "Show node counts per principal variation instead of total nodes in UCI."};
 const OptionId SearchParams::kScoreTypeId{
     "score-type", "ScoreType",
     "What to display as score. Either centipawns (the UCI default), win "
@@ -190,15 +186,9 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
-const OptionId SearchParams::kMinimumKLDGainPerNode{
-    "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
-    "If greater than 0 search will abort unless the last "
-    "KLDGainAverageInterval nodes have an average gain per node of at least "
-    "this much."};
-const OptionId SearchParams::kKLDGainAverageInterval{
-    "kldgain-average-interval", "KLDGainAverageInterval",
-    "Used to decide how frequently to evaluate the average KLDGainPerNode to "
-    "check the MinimumKLDGainPerNode, if specified."};
+const OptionId SearchParams::kShortSightednessId{
+    "short-sightedness", "ShortSightedness",
+    "Used to focus more on short term gains over long term."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -221,7 +211,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kNoiseAlphaId, 0.0f, 10000000.0f) = 0.3f;
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<BoolOption>(kLogLiveStatsId) = false;
-  options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
@@ -236,13 +225,13 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
+  options->Add<BoolOption>(kPerPvCountersId) = false;
   std::vector<std::string> score_type = {"centipawn", "centipawn_2018",
                                          "win_percentage", "Q"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<IntOption>(kKLDGainAverageInterval, 1, 10000000) = 100;
-  options->Add<FloatOption>(kMinimumKLDGainPerNode, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -259,7 +248,6 @@ SearchParams::SearchParams(const OptionsDict& options)
                         ? 0.25f
                         : options.Get<float>(kNoiseEpsilonId.GetId())),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
-      kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),
@@ -280,6 +268,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())) {}
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
+      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())) {}
 
 }  // namespace lczero
