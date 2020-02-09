@@ -95,7 +95,7 @@ void Validate(const std::vector<V4TrainingData>& fileContents) {
     float sum = 0.0f;
     for (int j = 0; j < sizeof(data.probabilities) / sizeof(float); j++) {
       float prob = data.probabilities[j];
-      DataAssert(prob >= 0.0f && prob <= 1.0f || prob == -1.0f || isnan(prob));
+      DataAssert(prob >= 0.0f && prob <= 1.0f || prob == -1.0f || std::isnan(prob));
       if (prob >= 0.0f) {
         sum += prob;
       }
