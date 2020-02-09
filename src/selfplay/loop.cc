@@ -77,6 +77,8 @@ void DataAssert(bool check_result) {
 }
 
 void Validate(const std::vector<V4TrainingData>& fileContents) {
+  if (fileContents.empty()) throw Exception("Empty File");
+
   for (int i = 0; i < fileContents.size(); i++) {
     auto& data = fileContents[i];
     DataAssert(data.best_d >= 0.0f && data.best_d <= 1.0f);
@@ -104,6 +106,29 @@ void Validate(const std::vector<V4TrainingData>& fileContents) {
   }
 }
 
+void Validate(const std::vector<V4TrainingData>& fileContents,
+              const MoveList& moves) {
+  PositionHistory history;
+  int rule50ply;
+  int gameply;
+  ChessBoard board;
+  PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                &gameply);
+  history.Reset(board, rule50ply, gameply);
+  for (int i = 0; i < moves.size(); i++) {
+    if (!(fileContents[i].probabilities[moves[i].as_nn_index()] >= 0.0f)) {
+      std::cerr << "Illegal move: " <<  moves[i].as_string() << std::endl;
+      throw Exception("Move performed is marked illegal in probabilities.");
+    }
+    auto legal = history.Last().GetBoard().GenerateLegalMoves();
+    if (std::find(legal.begin(), legal.end(), moves[i]) == legal.end()) {
+      throw Exception("Move performed is an illegal move.");
+    }
+    history.Append(moves[i]);
+  }
+}
+
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
                  float dtzBoost) {
@@ -126,6 +151,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         // position before.
         moves.back().Mirror();
       }
+      Validate(fileContents, moves);
       games += 1;
       positions += fileContents.size();
       PositionHistory history;
