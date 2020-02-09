@@ -118,11 +118,12 @@ void Validate(const std::vector<V4TrainingData>& fileContents,
   history.Reset(board, rule50ply, gameply);
   for (int i = 0; i < moves.size(); i++) {
     if (!(fileContents[i].probabilities[moves[i].as_nn_index()] >= 0.0f)) {
-      std::cerr << "Illegal move: " <<  moves[i].as_string() << std::endl;
+      std::cerr << "Illegal move: " << moves[i].as_string() << std::endl;
       throw Exception("Move performed is marked illegal in probabilities.");
     }
     auto legal = history.Last().GetBoard().GenerateLegalMoves();
     if (std::find(legal.begin(), legal.end(), moves[i]) == legal.end()) {
+      std::cerr << "Illegal move: " << moves[i].as_string() << std::endl;
       throw Exception("Move performed is an illegal move.");
     }
     history.Append(moves[i]);
