@@ -133,6 +133,7 @@ void TFV2NetworkComputation::ComputeBlocking() {
                                       kInputPlanes, 8, 8});
 
   auto data = static_cast<float*>(input.GetBuffer());
+  std::memset(data, 0, input.GetByteSize());
   for (size_t input_idx = 0; input_idx < raw_input_.size(); ++input_idx) {
     const auto& sample = raw_input_[input_idx];
     int base = kInputPlanes * 8 * 8 * input_idx;
