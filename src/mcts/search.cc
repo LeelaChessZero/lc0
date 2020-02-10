@@ -70,7 +70,7 @@ Search::Search(const NodeTree& tree, Network* network,
       params_(options) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
-                             std::memory_order_acq_rel);
+                             std::memory_order_release);
   }
 }
 
@@ -719,7 +719,7 @@ void SearchWorker::GatherMinibatch() {
     while (true) {
       if (search_->stop_.load(std::memory_order_acquire)) return;
       int available =
-          search_->pending_searchers_.load(std::memory_order_acq_rel);
+          search_->pending_searchers_.load(std::memory_order_acquire);
       if (available > 0 &&
           search_->pending_searchers_.compare_exchange_weak(
               available, available - 1, std::memory_order_acq_rel)) {
