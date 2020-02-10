@@ -42,6 +42,7 @@ const OptionId kThreadsOptionId{"threads", "Threads",
 const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
 const OptionId kMovetimeId{"movetime", "",
                            "Benchmark time allocation, in milliseconds."};
+const OptionId kStartingPosition{"starting-position", "", "Benchmark starting position FEN only."};
 }  // namespace
 
 void Benchmark::Run() {
@@ -53,6 +54,7 @@ void Benchmark::Run() {
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
   options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
+  options.Add<BoolOption>(kStartingPosition) = false;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -67,6 +69,10 @@ void Benchmark::Run() {
     std::vector<std::double_t> times;
     std::vector<std::int64_t> playouts;
     std::uint64_t cnt = 1;
+
+	if (option_dict.Get<bool>(kStartingPosition.GetId())) {
+      positions = { ChessBoard::kStartposFen };
+    }
     for (std::string position : positions) {
       std::cout << "\nPosition: " << cnt++ << "/" << positions.size() << " " << position << std::endl;
 
