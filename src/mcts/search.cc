@@ -67,7 +67,12 @@ Search::Search(const NodeTree& tree, Network* network,
       start_time_(start_time),
       initial_visits_(root_node_->GetN()),
       uci_responder_(std::move(uci_responder)),
-      params_(options) {}
+      params_(options) {
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
+                             std::memory_order_acq_rel);
+  }
+}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -710,6 +715,21 @@ void SearchWorker::GatherMinibatch() {
   int minibatch_size = 0;
   int collision_events_left = params_.GetMaxCollisionEvents();
   int collisions_left = params_.GetMaxCollisionVisitsId();
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    while (true) {
+      if (search_->stop_.load(std::memory_order_acquire)) return;
+      int available =
+          search_->pending_searchers_.load(std::memory_order_acq_rel);
+      if (available > 0 &&
+          search_->pending_searchers_.compare_exchange_weak(
+              available, available - 1, std::memory_order_acq_rel)) {
+        break;
+      }
+      // This is a hard spin lock to reduce latency but at the expense of busy
+      // wait cpu usage. If search worker count is large, this is probably a bad
+      // idea.
+    }
+  }
 
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
@@ -1126,7 +1146,12 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() {
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    search_->pending_searchers_.fetch_add(1, std::memory_order_acq_rel);
+  }
+  computation_->ComputeBlocking();
+}
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
