@@ -106,7 +106,7 @@ void Benchmark::Run() {
     std::cout << "\n==========================="
               << "\nTotal time (ms) : " << totalTime
               << "\nNodes searched  : " << totalPlayouts
-              << "\nNodes/second    : " << 1000 * totalPlayouts / totalTime
+              << "\nNodes/second    : " << std::lround(1000.0 * totalPlayouts / (totalTime + 1))
               << std::endl;
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;
