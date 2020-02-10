@@ -39,13 +39,13 @@ has_backends = false
 includes += include_directories('third_party', is_system: true)
 
 # Both protobuf and protoc must be the same version, so couple them together.
-protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
+protobuf_lib = cc.find_library('libprotobuf', dirs : '/home/crem/tmp/protobuf.git/src/.libs', required : false)
 if not protobuf_lib.found()
   protobuf_dep = dependency('protobuf', required : false)
 else
   protobuf_dep = protobuf_lib
 endif
-protoc = find_program('protoc', required : false)
+protoc = find_program('/home/crem/tmp/protobuf.git/src/.libs/protoc', required : false)
 # For tensorflow skip system protobuf, chances are it will not work.
 if get_option('protobuf-3-6-0')
   protobuf_dep = subproject('protobuf-3.6.0').get_variable('protobuf_dep')
@@ -54,7 +54,7 @@ elif not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
   protobuf_dep = subproject('protobuf').get_variable('protobuf_dep')
   protoc = subproject('protobuf').get_variable('protoc')
 elif protobuf_lib.found()
-  includes += include_directories(get_option('protobuf_include'))
+  includes += include_directories('/home/crem/tmp/protobuf.git/src/', is_system:true)
 endif
 deps += protobuf_dep
 
@@ -195,6 +195,35 @@ if get_option('build_backends')
     )
     deps += [tf_dl_lib, tf_tensorflow_lib]
     files += 'src/neural/network_tf.cc'
+    has_backends = true
+  endif
+
+
+  ## ~~~~~~~~~~~~
+  ## Tensorflow C
+  ## ~~~~~~~~~~~~
+  # Installed from https://github.com/FloopCZ/tensorflow_cc
+  #tensorflow_include = '/home/crem/tmp/tensorflow/include/'
+  # tensorflow_libdir = get_option('tensorflow_libdir')
+  # tf_dl_lib = cc.find_library('dl', required: false)
+  tf_tensorflow_lib = cc.find_library('libtensorflow',
+              required: false)
+
+  if get_option('tensorflowv2')
+     includes += include_directories(
+       tensorflow_include,
+    #   tensorflow_include[0] + '/bazel-genfiles',
+    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
+    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
+    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
+    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
+    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
+    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
+       is_system: true
+     )
+    #deps += [tf_dl_lib, tf_tensorflow_lib]
+    deps += [tf_tensorflow_lib]
+    files += 'src/neural/tensorflow/network_tensorflow.cc'
     has_backends = true
   endif
 

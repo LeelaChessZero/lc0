@@ -103,6 +103,11 @@ option('tensorflow',
        value: false,
        description: 'Enable TensorFlow backend')
 
+option('tensorflowv2',
+       type: 'boolean',
+       value: true,
+       description: 'Enable TensorFlow v2 backend')
+
 option('openblas',
        type: 'boolean',
        value: true,
