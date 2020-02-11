@@ -301,7 +301,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       1.0f) {
     throw Exception(
         "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
-        "be <= 1.");
+        "be <= 100");
   }
 }
 
