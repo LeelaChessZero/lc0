@@ -27,6 +27,8 @@
 
 #include "selfplay/loop.h"
 
+#include <optional>
+
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
 
@@ -137,8 +139,8 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
 
   // Initialize variables.
   float percentage = -1;
-  optional<float> elo;
-  optional<float> los;
+  std::optional<float> elo;
+  std::optional<float> los;
 
   // Only caculate percentage if any games at all (avoid divide by 0).
   if ((winp1 + losep1 + draws) > 0) {

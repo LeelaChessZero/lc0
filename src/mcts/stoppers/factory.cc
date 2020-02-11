@@ -27,6 +27,8 @@
 
 #include "mcts/stoppers/factory.h"
 
+#include <optional>
+
 #include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
@@ -223,12 +225,12 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
     const OptionsDict& options, const GoParams& params,
     const Position& position) {
   const bool is_black = position.IsBlackToMove();
-  const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
+  const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId.GetId());
-  const optional<int64_t>& inc = is_black ? params.binc : params.winc;
+  const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
   const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
   // How to scale moves time.

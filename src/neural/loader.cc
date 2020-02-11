@@ -88,7 +88,9 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   ArrayInputStream raw_input_stream(buffer.data(), buffer.size());
   CodedInputStream input_stream(&raw_input_stream);
   // Set protobuf limit to 2GB.
-  input_stream.SetTotalBytesLimit(2000 * 1000000);
+  // Remove the second parameter when everyone uses newer protobufs.
+  // Until then, let everyone who uses new libprotobuf observe warnings. :sigh:
+  input_stream.SetTotalBytesLimit(2000 * 1000000, 500 * 1000000);
 
   if (!net.ParseFromCodedStream(&input_stream))
     throw Exception("Invalid weight file: parse error.");

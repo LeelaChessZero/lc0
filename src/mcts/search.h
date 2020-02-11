@@ -28,6 +28,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <shared_mutex>
 #include <thread>
 
@@ -41,7 +42,6 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
-#include "utils/optional.h"
 
 namespace lczero {
 
@@ -173,7 +173,7 @@ class Search {
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
-  optional<std::chrono::steady_clock::time_point> nps_start_time_;
+  std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
   std::atomic<int> tb_hits_{0};
 
   std::unique_ptr<UciResponder> uci_responder_;
