@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,39 +25,28 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#define kExpandPlanesElementsPerBlock 256
+#define kExpandPlanesFp32BlockSize kExpandPlanesElementsPerBlock
+#define kExpandPlanesFp16BlockSize (kExpandPlanesElementsPerBlock / 2)
 
-#include <algorithm>
-#include <random>
-#include <string>
-#include "utils/mutex.h"
+// for both input transform and output transform shaders
+#define kWinogradTransformShaderBlockSize 64
 
-namespace lczero {
+#define kConv1x1BlockSize 64
 
-class Random {
- public:
-  static Random& Get();
-  double GetDouble(double max_val);
-  float GetFloat(float max_val);
-  double GetGamma(double alpha, double beta);
-  // Both sides are included.
-  int GetInt(int min, int max);
-  std::string GetString(int length);
-  bool GetBool();
-  template <class RandomAccessIterator>
-  void Shuffle(RandomAccessIterator s, RandomAccessIterator e);
+#define kAddVectorsBlockSize 512
 
- private:
-  Random();
+#define kPolicyMapBlockSize 256
 
-  Mutex mutex_;
-  std::mt19937 gen_ GUARDED_BY(mutex_);
-};
 
-template <class RandomAccessIterator>
-void Random::Shuffle(RandomAccessIterator s, RandomAccessIterator e) {
-  Mutex::Lock lock(mutex_);
-  std::shuffle(s, e, gen_);
-}
+// Constants for GEMM shader.
+#define kGemmBlockWidth 16
+#define kGemmBlockHeight 16
 
-}  // namespace lczero
+#define kGemmElPerThreadX 8
+#define kGemmElPerThreadY 8
+
+#define kGemmElPerBlockX (kGemmElPerThreadX * kGemmBlockWidth)
+#define kGemmElPerBlockY (kGemmElPerThreadY * kGemmBlockHeight)
+
+#define kGemmShMemKChunk 16

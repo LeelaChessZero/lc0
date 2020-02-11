@@ -1,5 +1,5 @@
 # This file is part of Leela Chess Zero.
-# Copyright (C) 2018-2019 The LCZero Authors
+# Copyright (C) 2018-2020 The LCZero Authors
 #
 # Leela Chess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -441,6 +441,30 @@ if get_option('build_backends')
     files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])
     has_backends = true
   endif
+  
+  ## ~~~~~~~~
+  ## DirectX
+  ## ~~~~~~~~
+  
+  # we should always be able to build DirectX12 backend on windows platform  
+  if host_machine.system() == 'windows' and get_option('dx')
+    dx_d3d12 = cc.find_library('d3d12')
+    dx_dxgi = cc.find_library('dxgi')
+  
+    dx_files = [
+      'src/neural/dx/network_dx.cc',
+      'src/neural/dx/shader_wrapper.cc',
+      'src/neural/dx/layers_dx.cc',
+      'src/neural/dx/fp16_utils.cc',
+    ]
+    files += dx_files
+    deps += [dx_d3d12, dx_dxgi]
+
+    subdir('src/neural/dx/shaders')
+
+    has_backends = true
+  endif  
+ 
 
 endif # if get_option('build_backends')
 
