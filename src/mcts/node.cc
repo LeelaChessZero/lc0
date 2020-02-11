@@ -243,7 +243,7 @@ void Node::MakeTerminal(GameResult result, const bool inflate_terminals=false) {
     }
 }
 
-void Node::CalculateRelevanceBetamctsNew(const float trust, const float percentile) {
+void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
   const auto winrate = (1.0f - GetQBetamcts())/2.0f;
   const auto visits = GetNBetamcts();
 
@@ -270,7 +270,7 @@ void Node::CalculateRelevanceBetamctsNew(const float trust, const float percenti
     }
 }
 
-void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
+void Node::CalculateRelevanceBetamctsNew(const float trust, const float percentile) {
   const auto winrate = (1.0f - GetQBetamcts())/2.0f;
   const auto visits = GetNBetamcts();
   const auto visits_eff = std::min(1000000.0f,visits * trust);
