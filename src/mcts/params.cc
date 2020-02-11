@@ -295,6 +295,14 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId.GetId()) /
                          100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
-      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f} {}
+      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f} {
+  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
+          std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
+      1.0f) {
+    throw Exception(
+        "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
+        "be <= 1.");
+  }
+}
 
 }  // namespace lczero
