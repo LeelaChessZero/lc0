@@ -255,7 +255,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << edge.GetQ(fpu, logit_q) + edge.GetU(U_coeff) << ") ";
 
     oss << "(V: ";
-    optional<float> v;
+    std::optional<float> v;
     if (edge.IsTerminal()) {
       v = edge.node()->GetQ();
     } else {
