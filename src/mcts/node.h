@@ -170,8 +170,8 @@ class Node {
   float GetD() const { return d_; }
 
   // betamcts::update relevances of children
-  void CalculateRelevanceBetamctsNew(const float trust, const float percentile);
   void CalculateRelevanceBetamcts(const float trust, const float percentile);
+  void CalculateRelevanceBetamctsOld(const float trust, const float percentile);
 
   float GetRBetamcts() const { return r_betamcts_; }
   /* betamcts::relevance should be edge property.
