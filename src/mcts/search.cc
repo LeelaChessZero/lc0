@@ -878,9 +878,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // betamcts::calculate relevances asynchronously every X visits
     if ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
-      std::async(std::launch::async, [this, &node]()
-        { return node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
-            params_.GetBetamctsPercentile()); } );
+      node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
+            params_.GetBetamctsPercentile());
     }
 
     // Either terminal or unexamined leaf node -- the end of this playout.
