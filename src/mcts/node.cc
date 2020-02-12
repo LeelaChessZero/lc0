@@ -245,7 +245,7 @@ void Node::MakeTerminal(GameResult result, const bool inflate_terminals=false) {
 
 void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
   const auto winrate = (1.0f - GetQBetamcts())/2.0f;
-  const auto visits = GetNBetamcts();
+  const auto visits = GetNBetamcts() * trust;
 
   auto alpha = 1.0f + winrate * visits;
   auto beta = 1.0f + (1.0f - winrate) * visits;
@@ -256,7 +256,7 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float percentile)
       // betamcts::child Q values are flipped
       if (child.GetN() == 0) {continue;}
       const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
-      const auto visits_child = child.GetNBetamcts();
+      const auto visits_child = child.GetNBetamcts() * trust;
 
       auto alpha_child = 1.0f + winrate_child * visits_child;
       auto beta_child = 1.0f + (1.0f - winrate_child) * visits_child;
