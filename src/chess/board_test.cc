@@ -2122,7 +2122,7 @@ const struct {
 
 TEST(ChessBoard, FRC) {
   // Up to 6 is possible, but too long, so keeping at 4.
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < 3; ++i) {
     for (const auto& x : kChess960Positions) {
       ChessBoard board;
       board.SetFromFen(x.fen);
