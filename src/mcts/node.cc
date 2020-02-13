@@ -351,14 +351,24 @@ void Node::CancelScoreUpdate(int multivisit) {
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit,
                     const bool inflate_terminals=false) {
   if (IsTerminal()) {
-    /* terminal node special treatment only for draws */
-    if ((q_betamcts_ == 0.0) && (inflate_terminals)) {
+    // terminal logic for draws only
+/*    if ((q_betamcts_ == 0.0) && (inflate_terminals)) {
       n_betamcts_ += multivisit * 100;
     } else if (q_betamcts_ == 0.0) {
       n_betamcts_ += multivisit * 10;
     } else {
       n_betamcts_ += multivisit;
+    } */
+
+    // treat all terminals equally:
+    // terminal node will start at 100 visits, getting +10 on every visit
+    if (inflate_terminals) {
+      n_betamcts_ += multivisit * 100;
+    } else {
+      n_betamcts_ += multivisit * 10;
     }
+
+
   } else {
     if (edges_) { /* betamcts::update q_betamcts_ here */
         float q_temp = q_betamcts_;
