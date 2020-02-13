@@ -389,7 +389,7 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit,
               q_betamcts_ = q_temp / n_temp;
               n_betamcts_ = n_temp; }
         } else {
-          q_betamcts_ += multivisit * (v - q_betamcts_) / (n_betamcts_ + multivisit);
+          q_betamcts_ += multivisit * (v - q_betamcts_) / (n_ + multivisit);
           n_betamcts_ += multivisit;
         }
       }
