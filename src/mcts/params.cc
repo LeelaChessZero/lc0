@@ -58,6 +58,9 @@ const OptionId SearchParams::kCpuctId{
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
+const OptionId SearchParams::kCpuctAtRootOffsetId{
+    "cpuct-root-offset", "CPuctRootOffset",
+    "cpuct_init value adjustment for the root node."};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
@@ -200,6 +203,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
+  options->Add<FloatOption>(kCpuctAtRootOffsetId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
@@ -247,6 +251,7 @@ SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kLogitQ(options.Get<bool>(kLogitQId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
+      kCpuctAtRootOffset(options.Get<float>(kCpuctAtRootOffsetId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())

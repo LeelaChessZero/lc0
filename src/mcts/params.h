@@ -48,6 +48,7 @@ class SearchParams {
   }
   bool GetLogitQ() const { return kLogitQ; }
   float GetCpuct() const { return kCpuct; }
+  float GetCpuctOffsetAtRoot() const { return kCpuctAtRootOffset; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
   float GetTemperature() const {
@@ -106,6 +107,7 @@ class SearchParams {
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kLogitQId;
   static const OptionId kCpuctId;
+  static const OptionId kCpuctAtRootOffsetId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
   static const OptionId kTemperatureId;
@@ -147,6 +149,7 @@ class SearchParams {
   //            trivial search optimiations.
   const bool kLogitQ;
   const float kCpuct;
+  const float kCpuctAtRootOffset;
   const float kCpuctBase;
   const float kCpuctFactor;
   const float kNoiseEpsilon;
