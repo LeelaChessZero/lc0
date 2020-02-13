@@ -673,11 +673,33 @@ void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
   InitializeIteration(search_->network_->NewComputation());
 
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    while (true) {
+      // If search is stop, we've not gathered or done anything and we don't
+      // want to, so we can safely skip all below.
+      if (search_->stop_.load(std::memory_order_acquire)) return;
+      int available =
+          search_->pending_searchers_.load(std::memory_order_acquire);
+      if (available > 0 &&
+          search_->pending_searchers_.compare_exchange_weak(
+              available, available - 1, std::memory_order_acq_rel)) {
+        break;
+      }
+      // This is a hard spin lock to reduce latency but at the expense of busy
+      // wait cpu usage. If search worker count is large, this is probably a bad
+      // idea.
+    }
+  }
+
   // 2. Gather minibatch.
   GatherMinibatch();
 
   // 3. Prefetch into cache.
   MaybePrefetchIntoCache();
+
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    search_->pending_searchers_.fetch_add(1, std::memory_order_acq_rel);
+  }
 
   // 4. Run NN computation.
   RunNNComputation();
@@ -715,21 +737,6 @@ void SearchWorker::GatherMinibatch() {
   int minibatch_size = 0;
   int collision_events_left = params_.GetMaxCollisionEvents();
   int collisions_left = params_.GetMaxCollisionVisitsId();
-  if (params_.GetMaxConcurrentSearchers() != 0) {
-    while (true) {
-      if (search_->stop_.load(std::memory_order_acquire)) return;
-      int available =
-          search_->pending_searchers_.load(std::memory_order_acquire);
-      if (available > 0 &&
-          search_->pending_searchers_.compare_exchange_weak(
-              available, available - 1, std::memory_order_acq_rel)) {
-        break;
-      }
-      // This is a hard spin lock to reduce latency but at the expense of busy
-      // wait cpu usage. If search worker count is large, this is probably a bad
-      // idea.
-    }
-  }
 
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
@@ -1146,12 +1153,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() {
-  if (params_.GetMaxConcurrentSearchers() != 0) {
-    search_->pending_searchers_.fetch_add(1, std::memory_order_acq_rel);
-  }
-  computation_->ComputeBlocking();
-}
+void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -236,7 +236,7 @@ void SearchParams::Populate(OptionsParser* options) {
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
-  options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 1000000) = 0;
+  options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 0;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
