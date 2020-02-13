@@ -876,7 +876,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
 
-    // betamcts::calculate relevances asynchronously every X visits
+    // betamcts::calculate relevances only every X visits
     if ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
       node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
             params_.GetBetamctsPercentile());
@@ -1297,7 +1297,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
     }
     n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
-                 d, node_to_process.multivisit, params_.GetBetamctsLevel()>=3);
+                 d, node_to_process.multivisit, params_.GetBetamctsLevel()>=2,
+       ((n->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0));
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
@@ -1322,8 +1323,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       p->MakeTerminal(v > 0.0f ? GameResult::BLACK_WON
                                : all_losing ? GameResult::WHITE_WON
                                             : GameResult::DRAW,
-                    v == 0.0f ? params_.GetBetamctsLevel()>=3 :
-                      params_.GetBetamctsLevel()>=4);
+                    v == 0.0f ? params_.GetBetamctsLevel()>=2 :
+                      params_.GetBetamctsLevel()>=2);
     }
 
     // Q will be flipped for opponent.

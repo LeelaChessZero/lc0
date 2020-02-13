@@ -349,7 +349,7 @@ void Node::CancelScoreUpdate(int multivisit) {
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, int multivisit,
-                    const bool inflate_terminals=false) {
+    const bool inflate_terminals=false, const bool full_betamcts_update=true) {
   if (IsTerminal()) {
     // terminal logic for draws only
 /*    if ((q_betamcts_ == 0.0) && (inflate_terminals)) {
@@ -374,19 +374,24 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit,
         float q_temp = q_betamcts_;
         // float q_temp = q_betamcts_; // evals of expanded nodes not kept
         float n_temp = 1.0f;
-        for (const auto& child : Edges()) {
-          const auto n = child.GetNBetamcts();
-          const auto r = child.GetRBetamcts();
-          if (n > 0) {
-            const auto visits_eff = r * n;
-            n_temp += visits_eff;
-            // Flip Q for opponent.
-            q_temp += -child.node()->GetQBetamcts() * visits_eff;
+        if (full_betamcts_update) {
+          for (const auto& child : Edges()) {
+            const auto n = child.GetNBetamcts();
+            const auto r = child.GetRBetamcts();
+            if (n > 0) {
+              const auto visits_eff = r * n;
+              n_temp += visits_eff;
+              // Flip Q for opponent.
+              q_temp += -child.node()->GetQBetamcts() * visits_eff;
+            }
           }
+          if (n_temp > 0) {
+              q_betamcts_ = q_temp / n_temp;
+              n_betamcts_ = n_temp; }
+        } else {
+          q_betamcts_ += multivisit * (v - q_betamcts_) / (n_betamcts_ + multivisit);
+          n_betamcts_ += multivisit;
         }
-        if (n_temp > 0) {
-            q_betamcts_ = q_temp / n_temp;
-            n_betamcts_ = n_temp; }
       }
   }
 
