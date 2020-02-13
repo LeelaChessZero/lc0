@@ -90,7 +90,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         bool enable_resign) {
-  bool blacks_move = (tree_[0]->GetPlyCount() % 2) == 1;
+  bool blacks_move = tree_[0]->IsBlackToMove();
 
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {

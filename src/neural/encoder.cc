@@ -29,8 +29,6 @@
 
 #include <algorithm>
 
-#include "utils/optional.h"
-
 namespace lczero {
 
 namespace {
