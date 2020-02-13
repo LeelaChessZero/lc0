@@ -26,6 +26,7 @@
 */
 
 #include "mcts/stoppers/stoppers.h"
+
 #include "mcts/node.h"
 #include "neural/cache.h"
 
@@ -146,15 +147,15 @@ KldGainStopper::KldGainStopper(float min_gain, int average_interval)
 
 bool KldGainStopper::ShouldStop(const IterationStats& stats, StoppersHints*) {
   Mutex::Lock lock(mutex_);
-  const auto new_child_nodes = stats.total_nodes - 1;
+  const auto new_child_nodes = stats.total_nodes - 1.0;
   if (new_child_nodes < prev_child_nodes_ + average_interval_) return false;
 
   const auto new_visits = stats.edge_n;
   if (!prev_visits_.empty()) {
-    float kldgain = 0.0f;
+    double kldgain = 0.0;
     for (decltype(new_visits)::size_type i = 0; i < new_visits.size(); i++) {
-      float o_p = prev_visits_[i] / prev_child_nodes_;
-      float n_p = new_visits[i] / new_child_nodes;
+      double o_p = prev_visits_[i] / prev_child_nodes_;
+      double n_p = new_visits[i] / new_child_nodes;
       if (prev_visits_[i] != 0) kldgain += o_p * log(o_p / n_p);
     }
     if (kldgain / (new_child_nodes - prev_child_nodes_) < min_gain_) {
@@ -181,6 +182,7 @@ SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor)
 
 bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
                                      StoppersHints* hints) {
+  if (smart_pruning_factor_ <= 0.0) return false;
   Mutex::Lock lock(mutex_);
   if (stats.edge_n.size() == 1) {
     LOGFILE << "Only one possible move. Moving immediately.";

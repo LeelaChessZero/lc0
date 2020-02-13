@@ -25,11 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "engine.h"
+
 #include <algorithm>
 #include <cmath>
 #include <functional>
 
-#include "engine.h"
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
 #include "utils/configfile.h"
@@ -52,25 +53,29 @@ const OptionId kSyzygyTablebaseId{
     's'};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
+const OptionId kUciChess960{
+    "chess960", "UCI_Chess960",
+    "Castling moves are encoded as \"king takes rook\"."};
+const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
+                        "Show win, draw and lose probability."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
-                           bool is_black) {
+                           const ChessBoard& board) {
   MoveList result;
   result.reserve(moves.size());
-  for (const auto& move : moves) result.emplace_back(move, is_black);
+  for (const auto& move : moves) {
+    result.emplace_back(board.GetModernMove({move, board.flipped()}));
+  }
   return result;
 }
 
 }  // namespace
 
-EngineController::EngineController(BestMoveInfo::Callback best_move_callback,
-                                   ThinkingInfo::Callback info_callback,
+EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
     : options_(options),
-      best_move_callback_(best_move_callback),
-      info_callback_(info_callback),
-      time_manager_(MakeLegacyTimeManager()),
-      move_start_time_(std::chrono::steady_clock::now()) {}
+      uci_responder_(std::move(uci_responder)),
+      time_manager_(MakeLegacyTimeManager()) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -84,9 +89,15 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
+  options->Add<BoolOption>(kUciChess960) = false;
+  options->Add<BoolOption>(kShowWDL) = false;
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
+}
+
+void EngineController::ResetMoveTimer() {
+  move_start_time_ = std::chrono::steady_clock::now();
 }
 
 // Updates values from Uci options.
@@ -122,13 +133,13 @@ void EngineController::EnsureReady() {
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
-  move_start_time_ = std::chrono::steady_clock::now();
+  ResetMoveTimer();
 }
 
 void EngineController::NewGame() {
   // In case anything relies upon defaulting to default position and just calls
   // newgame and goes straight into go.
-  move_start_time_ = std::chrono::steady_clock::now();
+  ResetMoveTimer();
   SharedLock lock(busy_mutex_);
   cache_.Clear();
   search_.reset();
@@ -142,7 +153,7 @@ void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
   // Some UCI hosts just call position then immediately call go, while starting
   // the clock on calling 'position'.
-  move_start_time_ = std::chrono::steady_clock::now();
+  ResetMoveTimer();
   SharedLock lock(busy_mutex_);
   current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
@@ -163,15 +174,51 @@ void EngineController::SetupPosition(
   if (!is_same_game) time_manager_->ResetGame();
 }
 
+namespace {
+
+class PonderResponseTransformer : public TransformingUciResponder {
+ public:
+  PonderResponseTransformer(std::unique_ptr<UciResponder> parent,
+                            std::string ponder_move)
+      : TransformingUciResponder(std::move(parent)),
+        ponder_move_(std::move(ponder_move)) {}
+
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    // Output all stats from main variation (not necessary the ponder move)
+    // but PV only from ponder move.
+    ThinkingInfo ponder_info;
+    for (const auto& info : *infos) {
+      if (info.multipv <= 1) {
+        ponder_info = info;
+        if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+        if (ponder_info.depth > 1) ponder_info.depth--;
+        if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+        ponder_info.pv.clear();
+      }
+      if (!info.pv.empty() && info.pv[0].as_string() == ponder_move_) {
+        ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
+      }
+    }
+    infos->clear();
+    infos->push_back(ponder_info);
+  }
+
+ private:
+  std::string ponder_move_;
+};
+
+}  // namespace
+
 void EngineController::Go(const GoParams& params) {
   // TODO: should consecutive calls to go be considered to be a continuation and
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
+  if (!move_start_time_) ResetMoveTimer();
   go_params_ = params;
 
-  ThinkingInfo::Callback info_callback(info_callback_);
-  BestMoveInfo::Callback best_move_callback(best_move_callback_);
+  std::unique_ptr<UciResponder> responder =
+      std::make_unique<NonOwningUciRespondForwarder>(uci_responder_.get());
 
   // Setting up current position, now that it's known whether it's ponder or
   // not.
@@ -181,26 +228,8 @@ void EngineController::Go(const GoParams& params) {
       std::string ponder_move = moves.back();
       moves.pop_back();
       SetupPosition(current_position_->fen, moves);
-
-      info_callback = [this,
-                       ponder_move](const std::vector<ThinkingInfo>& infos) {
-        ThinkingInfo ponder_info;
-        // Output all stats from main variation (not necessary the ponder move)
-        // but PV only from ponder move.
-        for (const auto& info : infos) {
-          if (info.multipv <= 1) {
-            ponder_info = info;
-            if (ponder_info.score) ponder_info.score = -*ponder_info.score;
-            if (ponder_info.depth > 1) ponder_info.depth--;
-            if (ponder_info.seldepth > 1) ponder_info.seldepth--;
-            ponder_info.pv.clear();
-          }
-          if (!info.pv.empty() && info.pv[0].as_string() == ponder_move) {
-            ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
-          }
-        }
-        info_callback_({ponder_info});
-      };
+      responder = std::make_unique<PonderResponseTransformer>(
+          std::move(responder), ponder_move);
     } else {
       SetupPosition(current_position_->fen, current_position_->moves);
     }
@@ -208,21 +237,32 @@ void EngineController::Go(const GoParams& params) {
     SetupPosition(ChessBoard::kStartposFen, {});
   }
 
+  if (!options_.Get<bool>(kUciChess960.GetId())) {
+    // Remap FRC castling to legacy castling.
+    responder = std::make_unique<Chess960Transformer>(
+        std::move(responder), tree_->HeadPosition().GetBoard());
+  }
+
+  if (!options_.Get<bool>(kShowWDL.GetId())) {
+    // Strip WDL information from the response.
+    responder = std::make_unique<WDLResponseFilter>(std::move(responder));
+  }
+
   auto stopper =
       time_manager_->GetStopper(options_, params, tree_->HeadPosition());
   search_ = std::make_unique<Search>(
-      *tree_, network_.get(), best_move_callback, info_callback,
-      StringsToMovelist(params.searchmoves, tree_->IsBlackToMove()),
-      move_start_time_, std::move(stopper), params.infinite || params.ponder,
+      *tree_, network_.get(), std::move(responder),
+      StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
+      *move_start_time_, std::move(stopper), params.infinite || params.ponder,
       options_, &cache_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
-          << FormatTime(SteadyClockToSystemClock(move_start_time_));
+          << FormatTime(SteadyClockToSystemClock(*move_start_time_));
   search_->StartThreads(options_.Get<int>(kThreadsOptionId.GetId()));
 }
 
 void EngineController::PonderHit() {
-  move_start_time_ = std::chrono::steady_clock::now();
+  ResetMoveTimer();
   go_params_.ponder = false;
   Go(go_params_);
 }
@@ -232,9 +272,11 @@ void EngineController::Stop() {
 }
 
 EngineLoop::EngineLoop()
-    : engine_(std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
-              std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
-              options_.GetOptionsDict()) {
+    : engine_(
+          std::make_unique<CallbackUciResponder>(
+              std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
+              std::bind(&UciLoop::SendInfo, this, std::placeholders::_1)),
+          options_.GetOptionsDict()) {
   engine_.PopulateOptions(&options_);
   options_.Add<StringOption>(kLogFileId);
 }

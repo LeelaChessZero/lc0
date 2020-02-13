@@ -27,7 +27,9 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
+
 #include "mcts/node.h"
 #include "mcts/stoppers/timemgr.h"
 
@@ -109,11 +111,11 @@ class KldGainStopper : public SearchStopper {
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
-  const int min_gain_;
+  const double min_gain_;
   const int average_interval_;
   Mutex mutex_;
   std::vector<uint32_t> prev_visits_ GUARDED_BY(mutex_);
-  int64_t prev_child_nodes_ GUARDED_BY(mutex_);
+  double prev_child_nodes_ GUARDED_BY(mutex_) = 0.0;
 };
 
 // Does many things:
@@ -128,7 +130,7 @@ class SmartPruningStopper : public SearchStopper {
  private:
   const double smart_pruning_factor_;
   Mutex mutex_;
-  optional<int64_t> first_eval_time_ GUARDED_BY(mutex_);
+  std::optional<int64_t> first_eval_time_ GUARDED_BY(mutex_);
 };
 
 }  // namespace lczero

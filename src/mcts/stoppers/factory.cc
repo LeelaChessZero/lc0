@@ -26,6 +26,9 @@
 */
 
 #include "mcts/stoppers/factory.h"
+
+#include <optional>
+
 #include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
@@ -124,13 +127,13 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   }
 }
 
-// Parameters needed for selfplay and uci, but not benchmark.
-void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
-                                 const OptionsDict& options) {
+// Parameters needed for selfplay and uci, but not benchmark nor infinite mode.
+void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
+                               const OptionsDict& options) {
   // KLD gain.
   const auto min_kld_gain =
       options.Get<float>(kMinimumKLDGainPerNodeId.GetId());
-  if (min_kld_gain >= 0.0f) {
+  if (min_kld_gain > 0.0f) {
     stopper->AddStopper(std::make_unique<KldGainStopper>(
         min_kld_gain, options.Get<int>(kKLDGainAverageIntervalId.GetId())));
   }
@@ -138,7 +141,7 @@ void PopulateStoppersForSelfplay(ChainedSearchStopper* stopper,
   // Should be last in the chain.
   const auto smart_pruning_factor =
       options.Get<float>(kSmartPruningFactorId.GetId());
-  if (smart_pruning_factor >= 0.0f) {
+  if (smart_pruning_factor > 0.0f) {
     stopper->AddStopper(
         std::make_unique<SmartPruningStopper>(smart_pruning_factor));
   }
@@ -175,7 +178,8 @@ void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
     stopper->AddStopper(std::make_unique<DepthStopper>(*params.depth));
   }
 
-  PopulateStoppersForSelfplay(stopper, options);
+  // Add internal search tree stoppers when we want to automatically stop.
+  if (!infinite) PopulateIntrinsicStoppers(stopper, options);
 }
 
 class LegacyStopper : public TimeLimitStopper {
@@ -237,12 +241,12 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
     const OptionsDict& options, const GoParams& params,
     const Position& position) {
   const bool is_black = position.IsBlackToMove();
-  const optional<int64_t>& time = (is_black ? params.btime : params.wtime);
+  const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId.GetId());
-  const optional<int64_t>& inc = is_black ? params.binc : params.winc;
+  const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
   const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
   // How to scale moves time.
@@ -352,7 +356,7 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   }
   // All the standard stoppers (go nodes, RAM limit, smart pruning, etc).
   PopulateStoppers(result.get(), options, params);
-  return std::move(result);
+  return result;
 }
 
 }  // namespace lczero

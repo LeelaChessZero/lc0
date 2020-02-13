@@ -6,20 +6,27 @@ image:
 environment:
   matrix:
   - NAME: gpu-nvidia-cuda
+  - NAME: gpu-dx
   - NAME: gpu-opencl
+  - NAME: cpu-dnnl
   - NAME: cpu-openblas
 clone_folder: c:\projects\lc0
 install:
 - cmd: set CUDA=false
+- cmd: set DX=false
 - cmd: set OPENCL=false
 - cmd: set BLAS=false
 - cmd: set GTEST=false
 - cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
+- cmd: IF %NAME%==gpu-dx set DX=true
 - cmd: IF %NAME%==gpu-opencl set OPENCL=true
+- cmd: IF %NAME%==cpu-dnnl set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set GTEST=true
-- cmd: IF %BLAS%==true IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
-- cmd: IF %BLAS%==true IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
+- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.1.1_cpu_vcomp appveyor DownloadFile https://github.com/intel/mkl-dnn/releases/download/v1.1.1/dnnl_win_1.1.1_cpu_vcomp.zip
+- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.1.1_cpu_vcomp 7z x dnnl_win_1.1.1_cpu_vcomp.zip -oC:\cache
+- cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
+- cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
 - cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows appveyor DownloadFile https://sourceforge.net/projects/ispcmirror/files/v1.9.2/ispc-v1.9.2-windows.zip
 - cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows 7z x ispc-v1.9.2-windows.zip -oC:\cache
@@ -54,52 +61,66 @@ cache:
   - C:\projects\lc0\subprojects\packagecache
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
+- cmd: SET BUILD_BLAS=%BLAS%
+- cmd: IF %OPENCL%==true SET BUILD_BLAS=true
+- cmd: IF %DX%==true SET BUILD_BLAS=true
+- cmd: meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Deigen=true -Ddx=%DX% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
 build_script:
-- cmd: IF %APPVEYOR_REPO_TAG%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
-- cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGInstrument /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: SET PGO=false
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %DX%==false SET PGO=true
+- cmd: IF %PGO%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGInstrument /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 - cmd: cd build
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %BLAS%==true copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %OPENCL%==true copy C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy %PKG_FOLDER%\cuda\bin\cudnn64_7.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true lc0 benchmark --weights=c:\cache\testnet --backend=random --movetime=10000
+- cmd: IF %NAME%==cpu-openblas copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
+- cmd: IF %NAME%==cpu-dnnl copy C:\cache\dnnl_win_1.1.1_cpu_vcomp\bin\dnnl.dll
+- cmd: IF %PGO%==true IF %OPENCL%==true copy C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
+- cmd: IF %PGO%==true IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll
+- cmd: IF %PGO%==true IF %CUDA%==true copy %PKG_FOLDER%\cuda\bin\cudnn64_7.dll
+- cmd: IF %PGO%==true lc0 benchmark --weights=c:\cache\testnet --backend=random --movetime=10000
 - cmd: cd ..
-- cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
-- cmd: IF %APPVEYOR_REPO_TAG%==true appveyor DownloadFile "https://ci.appveyor.com/api/projects/LeelaChessZero/lczero-client/artifacts/client.exe?branch=release&pr=false&job=Environment%%%%3A%%%%20NAME%%%%3D.exe%%%%2C%%%%20GOOS%%%%3Dwindows"
+- cmd: IF %APPVEYOR_REPO_TAG%==true appveyor DownloadFile "https://ci.appveyor.com/api/projects/LeelaChessZero/lczero-client/artifacts/client.exe?branch=release&pr=false&job=Environment%%3A%%20NAME%%3D.exe%%2C%%20GOOS%%3Dwindows"
 - cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip client.exe
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %BLAS%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true type COPYING |more /P > dist\COPYING
+- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\COPYING
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-nodll.zip
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %NAME%==cpu-openblas 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\dnnl_win_1.1.1_cpu_vcomp\bin\dnnl.dll
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_100.dll" "%CUDA_PATH%\bin\cublas64_100.dll"
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%PKG_FOLDER%\cuda\bin\cudnn64_7.dll"
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type COPYING |more /P > dist\COPYING
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %NAME%==cpu-dnnl copy "%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp\LICENSE" dist\DNNL-LICENSE
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %OPENCL%==true type scripts\check_opencl.bat |more /P > dist\check_opencl.bat
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\check_opencl.bat
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %DX%==true type scripts\check_dx.bat |more /P > dist\check_dx.bat
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %DX%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\check_dx.bat
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%CUDA_PATH%\EULA.txt" dist\CUDA.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%PKG_FOLDER%\cuda\NVIDIA_SLA_cuDNN_Support.txt" dist\CUDNN.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\COPYING .\dist\CUDA.txt .\dist\CUDNN.txt
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\CUDA.txt .\dist\CUDNN.txt
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
-  - path: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
+  - path: /*.zip/
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
   - path: build/lc0.pdb
     name: lc0-debug-symbols
 deploy:
   - provider: GitHub
-    artifact: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
+    artifact: /.*\.zip/
     auth_token:
       secure: USFAdwQKTXqOXQjCYQfzWvzRpUhvqJLBkN4hbOg+j876vDxGZHt9bMYayb5evePp
     on:
       appveyor_repo_tag: true
 test_script:
 - cmd: cd build
-- cmd: IF %GTEST%==true copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
 - cmd: IF %GTEST%==true xcopy /s /i C:\cache\syzygy syzygy
 - cmd: IF %GTEST%==true meson test --print-errorlogs
 - cmd: cd ..
 on_finish:
-- cmd: cd build
+- cmd: cd C:\projects\lc0\build
 - cmd: IF %GTEST%==true for %%a in (*.xml) do curl -F file=@%%a https://ci.appveyor.com/api/testresults/junit/%APPVEYOR_JOB_ID%
 - cmd: cd ..

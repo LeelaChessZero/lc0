@@ -27,6 +27,7 @@
 
 #include "selfplay/tournament.h"
 
+#include "chess/pgn.h"
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
 #include "neural/factory.h"
@@ -39,7 +40,10 @@ namespace {
 const OptionId kShareTreesId{"share-trees", "ShareTrees",
                              "When on, game tree is shared for two players; "
                              "when off, each side has a separate tree."};
-const OptionId kTotalGamesId{"games", "Games", "Number of games to play."};
+const OptionId kTotalGamesId{
+    "games", "Games",
+    "Number of games to play. -1 to play forever, -2 to play equal to book "
+    "length, or double book length if mirrored."};
 const OptionId kParallelGamesId{"parallelism", "Parallelism",
                                 "Number of games to play in parallel."};
 const OptionId kThreadsId{
@@ -57,6 +61,8 @@ const OptionId kTrainingId{
     "temporary subdirectory that the engine creates."};
 const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
                                   "Show verbose thinking messages."};
+const OptionId kMoveThinkingId{"move-thinking", "MoveThinking",
+                               "Show all the per-move thinking."};
 const OptionId kResignPlaythroughId{
     "resign-playthrough", "ResignPlaythrough",
     "The percentage of games which ignore resign."};
@@ -64,6 +70,15 @@ const OptionId kDiscardedStartChanceId{
     "discarded-start-chance", "DiscardedStartChance",
     "The percentage chance each game will attempt to start from a position "
     "discarded due to not getting enough visits."};
+const OptionId kOpeningsFileId{
+    "openings-pgn", "OpeningsPgnFile",
+    "A path name to a pgn file containing openings to use."};
+const OptionId kOpeningsMirroredId{
+    "mirror-openings", "MirrorOpenings",
+    "If true, each opening will be played in pairs. "
+    "Not really compatible with openings mode random."};
+const OptionId kOpeningsModeId{"openings-mode", "OpeningsMode",
+                               "A choice of sequential, shuffled, or random."};
 
 }  // namespace
 
@@ -84,8 +99,14 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kTimeMsId, -1, 999999999) = -1;
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
+  options->Add<BoolOption>(kMoveThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kDiscardedStartChanceId, 0.0f, 100.0f) = 0.0f;
+  options->Add<StringOption>(kOpeningsFileId) = "";
+  options->Add<BoolOption>(kOpeningsMirroredId) = false;
+  std::vector<std::string> openings_modes = {"sequential", "shuffled",
+                                             "random"};
+  options->Add<ChoiceOption>(kOpeningsModeId, openings_modes) = "sequential";
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -108,11 +129,11 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<bool>(SearchParams::kLogitQId.GetId(), false);
 }
 
-SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
-                                       BestMoveInfo::Callback best_move_info,
-                                       ThinkingInfo::Callback thinking_info,
-                                       GameInfo::Callback game_info,
-                                       TournamentInfo::Callback tournament_info)
+SelfPlayTournament::SelfPlayTournament(
+    const OptionsDict& options,
+    CallbackUciResponder::BestMoveCallback best_move_info,
+    CallbackUciResponder::ThinkingCallback thinking_info,
+    GameInfo::Callback game_info, TournamentInfo::Callback tournament_info)
     : player_options_{options.GetSubdict("player1"),
                       options.GetSubdict("player2")},
       best_move_callback_(best_move_info),
@@ -130,9 +151,18 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId.GetId())),
       kDiscardedStartChance(
           options.Get<float>(kDiscardedStartChanceId.GetId())) {
+  std::string book = options.Get<std::string>(kOpeningsFileId.GetId());
+  if (!book.empty()) {
+    PgnReader book_reader;
+    book_reader.AddPgnFile(book);
+    openings_ = book_reader.ReleaseGames();
+    if (options.Get<std::string>(kOpeningsModeId.GetId()) == "shuffled") {
+      Random::Get().Shuffle(openings_.begin(), openings_.end());
+    }
+  }
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
-    next_game_black_ = Random::Get().GetBool();
+    first_game_black_ = Random::Get().GetBool();
   }
 
   static const char* kPlayerNames[2] = {"player1", "player2"};
@@ -179,8 +209,17 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   MoveList opening;
   {
     Mutex::Lock lock(mutex_);
-    player1_black = next_game_black_;
-    next_game_black_ = !next_game_black_;
+    player1_black = ((game_number % 2) == 1) != first_game_black_;
+    if (!openings_.empty()) {
+      if (player_options_[0].Get<bool>(kOpeningsMirroredId.GetId())) {
+        opening = openings_[(game_number / 2) % openings_.size()];
+      } else if (player_options_[0].Get<std::string>(kOpeningsModeId.GetId()) ==
+                 "random") {
+        opening = openings_[Random::Get().GetInt(0, openings_.size() - 1)];
+      } else {
+        opening = openings_[game_number % openings_.size()];
+      }
+    }
     if (discard_pile_.size() > 0 &&
         Random::Get().GetFloat(100.0f) < kDiscardedStartChance) {
       const size_t idx = Random::Get().GetInt(0, discard_pile_.size() - 1);
@@ -199,6 +238,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   for (int pl_idx : {0, 1}) {
     const bool verbose_thinking =
         player_options_[pl_idx].Get<bool>(kVerboseThinkingId.GetId());
+    const bool move_thinking =
+        player_options_[pl_idx].Get<bool>(kMoveThinkingId.GetId());
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
     opt.network = networks_[pl_idx].get();
@@ -208,8 +249,12 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
     // "bestmove" callback.
     opt.best_move_callback = [this, game_number, pl_idx, player1_black,
-                              verbose_thinking,
+                              verbose_thinking, move_thinking,
                               &last_thinking_info](const BestMoveInfo& info) {
+      if (!move_thinking) {
+        last_thinking_info.clear();
+        return;
+      }
       // In non-verbose mode, output the last "info" message.
       if (!verbose_thinking && !last_thinking_info.empty()) {
         info_callback_(last_thinking_info);
@@ -324,7 +369,12 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      if (kTotalGames != -1 && games_count_ >= kTotalGames) break;
+      bool mirrored = player_options_[0].Get<bool>(kOpeningsMirroredId.GetId());
+      if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
+          (kTotalGames == -2 && !openings_.empty() &&
+           games_count_ >=
+               static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)))
+        break;
       game_id = games_count_++;
     }
     PlayOneGame(game_id);

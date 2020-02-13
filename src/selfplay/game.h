@@ -50,9 +50,9 @@ struct PlayerOptions {
   // Network to use by the player.
   Network* network;
   // Callback when player moves.
-  BestMoveInfo::Callback best_move_callback;
+  CallbackUciResponder::BestMoveCallback best_move_callback;
   // Callback when player outputs info.
-  ThinkingInfo::Callback info_callback;
+  CallbackUciResponder::ThinkingCallback info_callback;
   // Callback when player discards a selected move due to low visits.
   MoveListCallback discarded_callback;
   // NNcache to use.
@@ -112,6 +112,7 @@ class SelfPlayGame {
   // Track the maximum eval for white win, draw, black win for comparison to
   // actual outcome.
   float max_eval_[3] = {0.0f, 0.0f, 0.0f};
+  const bool chess960_;
   std::mutex mutex_;
 
   // Training data to send.

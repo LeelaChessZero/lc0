@@ -34,6 +34,7 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
@@ -335,30 +336,38 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
   result.version = 4;
 
   // Populate probabilities.
-  const float total_n = static_cast<float>(GetChildrenVisits());
+  auto total_n = GetChildrenVisits();
   // Prevent garbage/invalid training data from being uploaded to server.
-  if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
+  // It's possible to have N=0 when there is only one legal move in position
+  // (due to smart pruning).
+  if (total_n == 0 && GetNumEdges() != 1) {
+    throw Exception("Search generated invalid data!");
+  }
   // Set illegal moves to have -1 probability.
-  std::fill(std::begin(result.probabilities), std::end(result.probabilities), -1);
+  std::fill(std::begin(result.probabilities), std::end(result.probabilities),
+            -1);
   // Set moves probabilities according to their relative amount of visits.
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
-        child.GetN() / total_n;
+        total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
   }
 
   // Populate planes.
-  InputPlanes planes = EncodePositionForNN(history, 8, fill_empty_history);
+  InputPlanes planes =
+      EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                          history, 8, fill_empty_history);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
 
   const auto& position = history.Last();
+  const auto& castlings = position.GetBoard().castlings();
   // Populate castlings.
-  result.castling_us_ooo = position.CanCastle(Position::WE_CAN_OOO) ? 1 : 0;
-  result.castling_us_oo = position.CanCastle(Position::WE_CAN_OO) ? 1 : 0;
-  result.castling_them_ooo = position.CanCastle(Position::THEY_CAN_OOO) ? 1 : 0;
-  result.castling_them_oo = position.CanCastle(Position::THEY_CAN_OO) ? 1 : 0;
+  result.castling_us_ooo = castlings.we_can_000() ? 1 : 0;
+  result.castling_us_oo = castlings.we_can_00() ? 1 : 0;
+  result.castling_them_ooo = castlings.they_can_000() ? 1 : 0;
+  result.castling_them_oo = castlings.they_can_00() ? 1 : 0;
 
   // Other params.
   result.side_to_move = position.IsBlackToMove() ? 1 : 0;
@@ -401,10 +410,11 @@ std::string EdgeAndNode::DebugString() const {
 
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
+  const auto& board = HeadPosition().GetBoard();
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
-    if (n.GetMove() == move) {
+    if (board.IsSameMove(n.GetMove(), move)) {
       new_head = n.GetOrSpawnNode(current_head_);
       // Ensure head is not terminal, so search can extend or visit children of
       // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
@@ -412,6 +422,7 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
+  move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);

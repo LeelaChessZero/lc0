@@ -41,7 +41,7 @@ R"(
                   const int batch_size,
                   __global const net_t * restrict input,
                   __global net_t * restrict residual,
-                  __constant const net_t * restrict fc_out) {
+                  __global const net_t * restrict fc_out) {
 
         const int col = get_global_id(0);  // column
         const int c = get_global_id(1);  // channel

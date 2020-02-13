@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,29 +25,28 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#define kExpandPlanesElementsPerBlock 256
+#define kExpandPlanesFp32BlockSize kExpandPlanesElementsPerBlock
+#define kExpandPlanesFp16BlockSize (kExpandPlanesElementsPerBlock / 2)
 
-namespace lczero {
+// for both input transform and output transform shaders
+#define kWinogradTransformShaderBlockSize 64
 
-// Very poor-man implementation of std::optional. It literally cannot do
-// anything, but it's enough for our use case.
-template <class T>
-class optional {
- public:
-  operator bool() const { return has_value_; }
-  constexpr const T& operator*() const& { return value_; }
-  constexpr const T* operator->() const& { return &value_; }
-  optional<T>& operator=(const T& value) {
-    value_ = value;
-    has_value_ = true;
-    return *this;
-  }
-  void reset() { has_value_ = false; }
-  T value_or(const T& def) const { return has_value_ ? value_ : def; }
+#define kConv1x1BlockSize 64
 
- private:
-  T value_;
-  bool has_value_ = false;
-};
+#define kAddVectorsBlockSize 512
 
-}  // namespace lczero
+#define kPolicyMapBlockSize 256
+
+
+// Constants for GEMM shader.
+#define kGemmBlockWidth 16
+#define kGemmBlockHeight 16
+
+#define kGemmElPerThreadX 8
+#define kGemmElPerThreadY 8
+
+#define kGemmElPerBlockX (kGemmElPerThreadX * kGemmBlockWidth)
+#define kGemmElPerBlockY (kGemmElPerThreadY * kGemmBlockHeight)
+
+#define kGemmShMemKChunk 16
