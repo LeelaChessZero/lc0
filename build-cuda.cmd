@@ -9,11 +9,25 @@ call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary
 
 rem meson.py build --backend vs2017 --buildtype release ^
 meson build --backend vs2019 --buildtype release ^
--Dcudnn_libdirs="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0\lib\x64","C:\dev\cuDNN\cuda\lib\x64" ^
--Dcudnn_include="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0\include","C:\dev\cuDNN\cuda\include" ^
--Ddefault_library=static
+-Dcudnn_libdirs="C:\CUDA\lib\x64","C:\dev\cuDNN\cuda\lib\x64" ^
+-Dcudnn_include="C:\CUDA\include","C:\dev\cuDNN\cuda\include" ^
+-Ddefault_library=static ^
+-Dopencl=false ^
+-Dcudnn=true ^ 
+-Ddx=false ^
 
+rem -Ddx=false
+
+rem meson.py build --backend vs2017 --buildtype release ^
+
+rem -Dcudnn_libdirs="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0\lib\x64","C:\dev\cuDNN\cuda\lib\x64" ^
+rem -Dcudnn_include="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0\include","C:\dev\cuDNN\cuda\include" ^
+
+rem -Dprotobuf_libdir="C:\code\lc0\subprojects\protobuf-3.5.1" 
+
+ 
 pause
+rem -Ddefault_library=static ^
 
 
 cd build
