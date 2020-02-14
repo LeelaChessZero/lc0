@@ -27,6 +27,8 @@
 
 #include "mcts/params.h"
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 namespace {
@@ -280,6 +282,10 @@ SearchParams::SearchParams(const OptionsDict& options)
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
       kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
-      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())) {}
+      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())) {
+  if (kCpuct + kCpuctAtRootOffset < 0.0f) {
+    throw Exception("CPuct + CPuctRootOffset must be >= 0.");
+  }
+}
 
 }  // namespace lczero
