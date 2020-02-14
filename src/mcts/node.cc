@@ -361,11 +361,11 @@ void Node::FinalizeScoreUpdate(float v, float d, int multivisit,
     } */
 
     // treat all terminals equally:
-    // terminal node will start at 100 visits, getting +10 on every visit
+    // terminal node will start at 500 visits, getting +50 on every visit
     if (inflate_terminals) {
-      n_betamcts_ += multivisit * 100;
+      n_betamcts_ += multivisit * 500;
     } else {
-      n_betamcts_ += multivisit * 10;
+      n_betamcts_ += multivisit * 50;
     }
 
 
