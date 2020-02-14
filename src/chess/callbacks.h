@@ -29,12 +29,12 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "chess/bitboard.h"
 #include "chess/position.h"
-#include "utils/optional.h"
 
 namespace lczero {
 
@@ -50,7 +50,7 @@ struct BestMoveInfo {
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player, if known.
-  optional<bool> is_black;
+  std::optional<bool> is_black;
 };
 
 // Is sent during the search.
@@ -68,14 +68,14 @@ struct ThinkingInfo {
   // Hash fullness * 1000
   int hashfull = -1;
   // Win in centipawns.
-  optional<int> score;
+  std::optional<int> score;
   // Win/Draw/Lose probability * 1000.
   struct WDL {
     int w;
     int d;
     int l;
   };
-  optional<WDL> wdl;
+  std::optional<WDL> wdl;
   // Number of successful TB probes (not the same as playouts ending in TB hit).
   int tb_hits = -1;
   // Best line found. Moves are from perspective of white player.
@@ -91,7 +91,7 @@ struct ThinkingInfo {
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player, if known.
-  optional<bool> is_black;
+  std::optional<bool> is_black;
 };
 
 // Is sent when a single game is finished.
@@ -107,11 +107,11 @@ struct GameInfo {
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player1, if known.
-  optional<bool> is_black;
+  std::optional<bool> is_black;
   // Minimum resign threshold which would have resulted in a false positive
   // if resign had of been enabled.
   // Only provided if the game wasn't played with resign enabled.
-  optional<float> min_false_positive_threshold;
+  std::optional<float> min_false_positive_threshold;
 
   using Callback = std::function<void(const GameInfo&)>;
 };
