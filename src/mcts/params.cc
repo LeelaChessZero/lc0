@@ -197,6 +197,10 @@ const OptionId SearchParams::kShortSightednessId{
 const OptionId SearchParams::kDisplayCacheUsageId{
     "display-cache-usage", "DisplayCacheUsage",
     "Display cache fullness through UCI info `hash` section."};
+const OptionId SearchParams::kMaxConcurrentSearchersId{
+    "max-concurrent-searchers", "MaxConcurrentSearchers",
+    "If not 0, at most this many search workers can be gathering minibatches "
+    "at once."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -242,6 +246,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
+  options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 0;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -282,7 +287,9 @@ SearchParams::SearchParams(const OptionsDict& options)
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
       kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
-      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())) {
+      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())),
+      kMaxConcurrentSearchers(
+          options.Get<int>(kMaxConcurrentSearchersId.GetId())) {
   if (kCpuct + kCpuctAtRootOffset < 0.0f) {
     throw Exception("CPuct + CPuctRootOffset must be >= 0.");
   }

@@ -176,6 +176,8 @@ class Search {
   std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
   std::atomic<int> tb_hits_{0};
 
+  std::atomic<int> pending_searchers_{0};
+
   std::unique_ptr<UciResponder> uci_responder_;
   const SearchParams params_;
 
