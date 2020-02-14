@@ -24,6 +24,8 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#include "network_dx.h"
+
 #include <algorithm>
 #include <cassert>
 #include <functional>
@@ -33,7 +35,6 @@
 #include <vector>
 
 #include "layers_dx.h"
-#include "network_dx.h"
 #include "neural/shared/policy_map.h"
 #include "shader_wrapper.h"
 #include "utils/bititer.h"
@@ -966,6 +967,6 @@ std::unique_ptr<Network> MakeDxNetwork(const WeightsFile& weights,
   return std::make_unique<DxNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("dx", MakeDxNetwork, 120)
+REGISTER_NETWORK("dx12", MakeDxNetwork, 120)
 
 }  // namespace lczero
