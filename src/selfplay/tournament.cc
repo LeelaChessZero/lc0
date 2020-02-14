@@ -370,10 +370,10 @@ void SelfPlayTournament::Worker() {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
       bool mirrored = player_options_[0].Get<bool>(kOpeningsMirroredId.GetId());
-      if (kTotalGames >= 0 && games_count_ >= kTotalGames ||
-          kTotalGames == -2 && !openings_.empty() &&
-              games_count_ >=
-                  static_cast<int>(openings_.size()) * (mirrored ? 2 : 1))
+      if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
+          (kTotalGames == -2 && !openings_.empty() &&
+           games_count_ >=
+               static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)))
         break;
       game_id = games_count_++;
     }

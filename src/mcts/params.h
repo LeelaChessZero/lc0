@@ -48,6 +48,7 @@ class SearchParams {
   }
   bool GetLogitQ() const { return kLogitQ; }
   float GetCpuct() const { return kCpuct; }
+  float GetCpuctOffsetAtRoot() const { return kCpuctAtRootOffset; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
   float GetTemperature() const {
@@ -99,6 +100,8 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
+  bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
+  int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
@@ -109,6 +112,7 @@ class SearchParams {
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kLogitQId;
   static const OptionId kCpuctId;
+  static const OptionId kCpuctAtRootOffsetId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
   static const OptionId kTemperatureId;
@@ -138,8 +142,8 @@ class SearchParams {
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
   static const OptionId kShortSightednessId;
-  static const OptionId kDrawScoreId;
-  static const OptionId kDrawScorePOVId;
+  static const OptionId kDisplayCacheUsageId;
+  static const OptionId kMaxConcurrentSearchersId;
   static const OptionId kDrawScoreSidetomoveId;
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
@@ -155,6 +159,7 @@ class SearchParams {
   //            trivial search optimizations.
   const bool kLogitQ;
   const float kCpuct;
+  const float kCpuctAtRootOffset;
   const float kCpuctBase;
   const float kCpuctFactor;
   const float kNoiseEpsilon;
@@ -173,6 +178,8 @@ class SearchParams {
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
   const float kShortSightedness;
+  const bool kDisplayCacheUsage;
+  const int kMaxConcurrentSearchers;
   const float kDrawScoreSidetomove;
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
