@@ -459,9 +459,8 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     }
   }
 
-  final_bestmove_ = temperature
-                        ? GetBestChildWithTemperature(root_node_, temperature)
-                        : GetBestChildNoTemperature(root_node_);
+  final_bestmove_ = temperature ? GetBestRootChildWithTemperature(temperature)
+                                : GetBestChildNoTemperature(root_node_);
 
   if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node());
@@ -510,12 +509,11 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   return res.empty() ? EdgeAndNode() : res.front();
 }
 
-// Returns a child chosen according to weighted-by-temperature visit count.
-EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
-                                                float temperature) const {
-  // Only works with root node because of draw score handling.
-  assert(parent == root_node_);
-  constexpr bool is_odd_depth = false;
+// Returns a child of a root chosen according to weighted-by-temperature visit
+// count.
+EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
+  // Root is at even depth.
+  const bool draw_score = GetDrawScore(/* is_odd_depth= */ false);
   MoveList root_limit;
   PopulateRootMoveLimit(&root_limit);
 
@@ -525,33 +523,31 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   const float offset = params_.GetTemperatureVisitOffset();
   float max_eval = -1.0f;
   const float fpu =
-      GetFpu(params_, parent, parent == root_node_, GetDrawScore(is_odd_depth));
+      GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
 
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
+  for (auto edge : root_node_->Edges()) {
+    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
+                                         edge.GetMove()) == root_limit.end()) {
       continue;
     }
     if (edge.GetN() + offset > max_n) {
       max_n = edge.GetN() + offset;
-      max_eval = edge.GetQ(fpu, is_odd_depth);
+      max_eval = edge.GetQ(fpu, draw_score);
     }
   }
 
   // No move had enough visits for temperature, so use default child criteria
-  if (max_n <= 0.0f) return GetBestChildNoTemperature(parent);
+  if (max_n <= 0.0f) return GetBestChildNoTemperature(root_node_);
 
   // TODO(crem) Simplify this code when samplers.h is merged.
   const float min_eval =
       max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
+  for (auto edge : root_node_->Edges()) {
+    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
+                                         edge.GetMove()) == root_limit.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, is_odd_depth) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     sum += std::pow(
         std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
         1 / temperature);
@@ -564,13 +560,12 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
       std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
       cumulative_sums.begin();
 
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
+  for (auto edge : root_node_->Edges()) {
+    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
+                                         edge.GetMove()) == root_limit.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, is_odd_depth) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
@@ -1107,6 +1102,7 @@ void SearchWorker::MaybePrefetchIntoCache() {
 // Prefetches up to @budget nodes into cache. Returns number of nodes
 // prefetched.
 int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
+  const float draw_score = search_->GetDrawScore(is_odd_depth);
   if (budget <= 0) return 0;
 
   // We are in a leaf, which is not yet being processed.
@@ -1134,12 +1130,12 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       ComputeCpuct(params_, node->GetN(), node == search_->root_node_);
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float fpu = GetFpu(params_, node, node == search_->root_node_,
-                           search_->GetDrawScore(is_odd_depth));
+  const float fpu =
+      GetFpu(params_, node, node == search_->root_node_, draw_score);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, is_odd_depth),
+    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score),
                         edge);
   }
 
@@ -1170,7 +1166,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-fpu, is_odd_depth);
+      const float q = edge.GetQ(-fpu, draw_score);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -

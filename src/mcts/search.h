@@ -101,8 +101,7 @@ class Search {
   EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
   std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
                                                         int count) const;
-  EdgeAndNode GetBestChildWithTemperature(Node* parent,
-                                          float temperature) const;
+  EdgeAndNode GetBestRootChildWithTemperature(float temperature) const;
 
   int64_t GetTimeSinceStart() const;
   void MaybeTriggerStop(const IterationStats& stats, StoppersHints* hints);
