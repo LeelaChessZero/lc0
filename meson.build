@@ -56,7 +56,7 @@ elif not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
 elif protobuf_lib.found()
   includes += include_directories(get_option('protobuf_include'))
 endif
-deps += protobuf_dep
+# deps += protobuf_dep
 
 gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
   arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
@@ -81,7 +81,7 @@ endif
 
 pb_files = gen.process('libs/lczero-common/proto/net.proto',
   preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
-files += pb_files
+# files += pb_files
 
 # Extract git short revision.
 short_rev = 'unknown'
@@ -144,6 +144,7 @@ files += [
   'src/utils/logging.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
+  'src/utils/protomessage.cc',
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/transpose.cc',

@@ -83,20 +83,12 @@ std::string DecompressGzip(const std::string& filename) {
 WeightsFile ParseWeightsProto(const std::string& buffer) {
   WeightsFile net;
   using namespace google::protobuf::io;
-  using nf = pblczero::NetworkFormat;
 
-  ArrayInputStream raw_input_stream(buffer.data(), buffer.size());
-  CodedInputStream input_stream(&raw_input_stream);
-  // Set protobuf limit to 2GB.
-  // Remove the second parameter when everyone uses newer protobufs.
-  // Until then, let everyone who uses new libprotobuf observe warnings. :sigh:
-  input_stream.SetTotalBytesLimit(2000 * 1000000, 500 * 1000000);
+  net.ParseFromString(buffer);
 
-  if (!net.ParseFromCodedStream(&input_stream))
-    throw Exception("Invalid weight file: parse error.");
-
-  if (net.magic() != kWeightMagic)
+  if (net.magic() != kWeightMagic) {
     throw Exception("Invalid weight file: bad header.");
+  }
 
   const auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
@@ -113,34 +105,6 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
     throw Exception("Invalid weight file: unsupported encoding.");
-
-  // Older protobufs don't have format definition.
-  // Populate format fields with legacy (or "classical") formats.
-  if (!net.format().has_network_format()) {
-    auto net_format = net.mutable_format()->mutable_network_format();
-    net_format->set_input(nf::INPUT_CLASSICAL_112_PLANE);
-    net_format->set_output(nf::OUTPUT_CLASSICAL);
-    net_format->set_network(nf::NETWORK_CLASSICAL);
-  }
-
-  // Populate policyFormat and valueFormat fields in old protobufs
-  // without these fields.
-  if (net.format().network_format().network() ==
-      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
-    auto net_format = net.mutable_format()->mutable_network_format();
-
-    net_format->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
-    net_format->set_value(nf::VALUE_CLASSICAL);
-    net_format->set_policy(nf::POLICY_CLASSICAL);
-
-  } else if (net.format().network_format().network() ==
-             pblczero::NetworkFormat::NETWORK_SE) {
-    auto net_format = net.mutable_format()->mutable_network_format();
-
-    net_format->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
-    net_format->set_value(nf::VALUE_CLASSICAL);
-    net_format->set_policy(nf::POLICY_CLASSICAL);
-  }
 
   return net;
 }
