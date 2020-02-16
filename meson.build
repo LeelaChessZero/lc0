@@ -42,10 +42,9 @@ has_backends = false
 includes += include_directories('third_party', is_system: true)
 
 # Compiling protobufs.
-python = find_program('python3')
-gen = generator(python, output: ['@BASENAME@.pb.h'],
+compile_proto = find_program('scripts/compile_proto.py')
+gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
   arguments : [
-    '@CURRENT_SOURCE_DIR@/scripts/compile_proto.py',
     '--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common',
     '--cpp_out=@BUILD_DIR@',
     '@INPUT@'])
