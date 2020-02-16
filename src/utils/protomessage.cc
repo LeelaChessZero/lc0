@@ -83,6 +83,7 @@ size_t ProtoMessage::WireFieldCount(int wire_field_id) const {
 const char* ProtoMessage::GetFieldPtr(int wire_field_id, size_t index) const {
   auto iter = offsets_.find(wire_field_id);
   if (iter == offsets_.end()) return nullptr;
+  if (index == kLast) return iter->second.back();
   return iter->second.at(index);
 }
 

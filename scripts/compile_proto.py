@@ -225,7 +225,7 @@ class ProtoFieldParser:
 
     def Generate(self, w):
         name = self.name.group(0)
-        index = 'i' if self.category == 'repeated' else '0'
+        index = 'i' if self.category == 'repeated' else 'kLast'
         wire_id = self.number * 8 + self.type.GetWireType()
         func_body = self.type.DecodeFunction(wire_id, index)
         cpp_type = self.type.GetCppType()

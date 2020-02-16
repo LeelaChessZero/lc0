@@ -51,6 +51,8 @@ class ProtoMessage {
   void ParseFromString(const std::string&);
 
  protected:
+  static constexpr size_t kLast = std::numeric_limits<size_t>::max();
+
   ProtoMessage(std::string_view serialized_proto);
   size_t WireFieldCount(int wire_field_id) const;
   std::uint64_t GetVarintVal(int wire_field_id, size_t index) const;
