@@ -25,10 +25,14 @@
   Program grant you additional permission to convey the resulting work.
 */
 #pragma once
+
+#define NOMINMAX
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <stdint.h>
+
 #include <cstdint>
+
 #include "d3dx12.h"
 #include "fp16_utils.h"
 
