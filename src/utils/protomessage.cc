@@ -29,11 +29,12 @@ uint64_t ReadVarInt(const char** iter, const char* const end) {
 
 void ProtoMessage::RebuildOffsets() {
   offsets_.clear();
+  const char* const begin = buf_unowned_.data();
   const char* iter = buf_unowned_.data();
   const char* const end = buf_unowned_.data() + buf_unowned_.size();
   while (iter < end) {
     uint64_t field_id = ReadVarInt(&iter, end);
-    offsets_[field_id].push_back(iter);
+    auto offset = iter;
     switch (field_id & 0x7) {
       case 0:
         ReadVarInt(&iter, end);
@@ -52,6 +53,8 @@ void ProtoMessage::RebuildOffsets() {
       default:
         throw Exception("The file seems to be unparseable.");
     }
+    offsets_[field_id].push_back({static_cast<size_t>(offset - begin),
+                                  static_cast<size_t>(iter - offset)});
   }
   if (iter != end) {
     throw Exception("The file is truncated.");
@@ -60,12 +63,11 @@ void ProtoMessage::RebuildOffsets() {
 
 ProtoMessage::ProtoMessage(ProtoMessage&& other) {
   buf_owned_ = std::move(other.buf_owned_);
-  if (!buf_owned_.empty() && other.buf_unowned_.data() != buf_owned_.data()) {
+  offsets_ = std::move(other.offsets_);
+  if (!buf_owned_.empty()) {
     buf_unowned_ = buf_owned_;
-    RebuildOffsets();
   } else {
     buf_unowned_ = std::move(other.buf_unowned_);
-    offsets_ = std::move(other.offsets_);
   }
 }
 
@@ -83,8 +85,8 @@ size_t ProtoMessage::WireFieldCount(int wire_field_id) const {
 const char* ProtoMessage::GetFieldPtr(int wire_field_id, size_t index) const {
   auto iter = offsets_.find(wire_field_id);
   if (iter == offsets_.end()) return nullptr;
-  if (index == kLast) return iter->second.back();
-  return iter->second.at(index);
+  if (index == kLast) return buf_unowned_.data() + iter->second.back().offset;
+  return buf_unowned_.data() + iter->second.at(index).offset;
 }
 
 std::uint64_t ProtoMessage::GetVarintVal(int wire_field_id,

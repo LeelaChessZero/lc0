@@ -66,8 +66,11 @@ class ProtoMessage {
   void RebuildOffsets();
   const char* GetFieldPtr(int wire_field_id, size_t index) const;
 
-  using Offset = const char*;
-  using Offsets = std::vector<Offset>;
+  struct FieldPos {
+    size_t offset;
+    size_t size;
+  };
+  using Offsets = std::vector<FieldPos>;
   using FieldOffsets = std::map<int, Offsets>;
 
   FieldOffsets offsets_;
