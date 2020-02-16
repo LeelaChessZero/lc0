@@ -27,8 +27,6 @@
 
 #include "neural/loader.h"
 
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <zlib.h>
 
 #include <algorithm>
@@ -82,8 +80,6 @@ std::string DecompressGzip(const std::string& filename) {
 
 WeightsFile ParseWeightsProto(const std::string& buffer) {
   WeightsFile net;
-  using namespace google::protobuf::io;
-
   net.ParseFromString(buffer);
 
   if (net.magic() != kWeightMagic) {
