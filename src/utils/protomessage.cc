@@ -98,6 +98,7 @@ double ProtoMessage::GetDoubleVal(int wire_field_id, size_t index) const {
 }
 std::uint32_t ProtoMessage::GetFixed32Val(int wire_field_id,
                                           size_t index) const {
+  // WARNING: Doesn't support big-endian.
   auto x = GetFieldPtr(wire_field_id, index);
   if (x == nullptr) return 0;
   std::uint32_t res;
@@ -106,6 +107,7 @@ std::uint32_t ProtoMessage::GetFixed32Val(int wire_field_id,
 }
 std::uint64_t ProtoMessage::GetFixed64Val(int wire_field_id,
                                           size_t index) const {
+  // WARNING: Doesn't support big-endian.
   auto x = GetFieldPtr(wire_field_id, index);
   if (x == nullptr) return 0;
   std::uint64_t res;

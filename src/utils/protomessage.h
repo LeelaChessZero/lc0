@@ -46,6 +46,8 @@ class ProtoIterator {
 class ProtoMessage {
  public:
   ProtoMessage() = default;
+  ProtoMessage(const ProtoMessage& other);
+  ProtoMessage(ProtoMessage&& other);
   void ParseFromString(const std::string&);
 
  protected:
