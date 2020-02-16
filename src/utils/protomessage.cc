@@ -61,6 +61,7 @@ void ProtoMessage::RebuildOffsets() {
 ProtoMessage::ProtoMessage(ProtoMessage&& other) {
   buf_owned_ = std::move(other.buf_owned_);
   if (!buf_owned_.empty() && other.buf_unowned_.data() != buf_owned_.data()) {
+    buf_unowned_ = buf_owned_;
     RebuildOffsets();
   } else {
     buf_unowned_ = std::move(other.buf_unowned_);
