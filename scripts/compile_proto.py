@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import argparse
+import os
 import re
 import sys
 
@@ -411,6 +413,19 @@ class Writer:
 
 
 if __name__ == "__main__":
-    proto_file = ProtoFileParser(Lexer(sys.stdin.read()))
-    writer = Writer(sys.stdout)
-    proto_file.Generate(writer)
+    parser = argparse.ArgumentParser(description="Compile protobuf files.")
+    parser.add_argument('input', type=str)
+    parser.add_argument('--proto_path', type=str)
+    parser.add_argument('--cpp_out', type=str)
+    args = parser.parse_args()
+
+    rel_path = os.path.relpath(args.input, args.proto_path)
+    dest_name = os.path.splitext(rel_path)[0] + '.pb.h'
+    dest_path = os.path.join(args.cpp_out, dest_name)
+    dest_dir = os.path.dirname(dest_path)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    with open(args.input, 'r') as input, open(dest_path, 'w') as output:
+        proto_file = ProtoFileParser(Lexer(input.read()))
+        writer = Writer(output)
+        proto_file.Generate(writer)
