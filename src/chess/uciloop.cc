@@ -114,7 +114,7 @@ int GetNumeric(const std::unordered_map<std::string, std::string>& params,
       throw Exception("expected value after " + key);
     }
     return std::stoi(str);
-  } catch (std::invalid_argument& e) {
+  } catch (std::invalid_argument&) {
     throw Exception("invalid value " + str);
   }
 }
