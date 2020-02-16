@@ -58,6 +58,16 @@ void ProtoMessage::RebuildOffsets() {
   }
 }
 
+ProtoMessage::ProtoMessage(ProtoMessage&& other) {
+  buf_owned_ = std::move(other.buf_owned_);
+  if (!buf_owned_.empty() && other.buf_unowned_.data() != buf_owned_.data()) {
+    RebuildOffsets();
+  } else {
+    buf_unowned_ = std::move(other.buf_unowned_);
+    offsets_ = std::move(other.offsets_);
+  }
+}
+
 ProtoMessage::ProtoMessage(std::string_view serialized_proto)
     : buf_unowned_(serialized_proto) {
   RebuildOffsets();
