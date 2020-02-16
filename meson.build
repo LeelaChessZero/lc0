@@ -28,6 +28,9 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
     add_project_arguments('-march=native', language : 'cpp')
   endif
 endif
+if host_machine.system() == 'windows'
+  add_project_arguments('-DNOMINMAX', language : 'cpp')
+endif
 
 # Files to compile.
 deps = []
