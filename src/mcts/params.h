@@ -53,6 +53,7 @@ class SearchParams {
   int GetBetamctsUpdateInterval() const { return kBetamctsUpdateInterval; }
   bool GetNewUEnabled() const { return kNewUEnabled; }
   float GetCpuct() const { return kCpuct; }
+  float GetCpuctOffsetAtRoot() const { return kCpuctAtRootOffset; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
   float GetTemperature() const {
@@ -117,6 +118,7 @@ class SearchParams {
   static const OptionId kBetamctsUpdateIntervalId;
   static const OptionId kNewUEnabledId;
   static const OptionId kCpuctId;
+  static const OptionId kCpuctAtRootOffsetId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
   static const OptionId kTemperatureId;
@@ -164,6 +166,7 @@ class SearchParams {
   const int kBetamctsUpdateInterval;
   const bool kNewUEnabled;
   const float kCpuct;
+  const float kCpuctAtRootOffset;
   const float kCpuctBase;
   const float kCpuctFactor;
   const float kNoiseEpsilon;
