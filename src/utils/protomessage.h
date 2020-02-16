@@ -45,12 +45,34 @@ class ProtoIterator {
 
 class ProtoMessage {
  public:
+  void ParseFromString(const std::string&);
+
+  class Builder {
+   public:
+    Builder();
+    std::string AsString() const;
+
+   protected:
+    void operator=(const ProtoMessage& msg);
+    Builder(const ProtoMessage&);
+    void WireFieldClear(int wire_field_id);
+    void WireFieldSetVarint(int wire_field_id, std::uint64_t varint);
+    void WireFieldSetMessage(int wire_field_id, const ProtoMessage& val);
+
+   private:
+    using Bits = std::vector<std::string>;
+    using Fields = std::map<int, Bits>;
+    Fields fields_;
+  };
+
+ protected:
   ProtoMessage() = default;
   ProtoMessage(const ProtoMessage& other);
   ProtoMessage(ProtoMessage&& other);
-  void ParseFromString(const std::string&);
-
- protected:
+  void operator=(const ProtoMessage& other);
+  void operator=(ProtoMessage&& other);
+  ProtoMessage(const Builder&);
+  void operator=(const Builder&);
   static constexpr size_t kLast = std::numeric_limits<size_t>::max();
 
   ProtoMessage(std::string_view serialized_proto);

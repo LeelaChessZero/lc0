@@ -265,6 +265,23 @@ class ProtoFieldParser:
                 func_body,
             ))
 
+    def GenerateForBuilder(self, w):
+        name = self.name.group(0)
+        repeated = self.category == 'repeated'
+        wire_id = self.number * 8 + self.type.GetWireType()
+        # w.Write('void clear_%s() { WireFieldClear(%d); }' % (name, wire_id))
+        if repeated:
+            pass
+        else:
+            if self.type.typetype == 'enum':
+                w.Write('void set_%s(%s val) { WireFieldSetVarint'
+                        '(%d, static_cast<std::uint64_t>(val)); }' %
+                        (name, self.type.GetCppType(), wire_id))
+            if self.type.typetype == 'message':
+                w.Write('void set_%s(const %s& val) { WireFieldSetMessage'
+                        '(%d, val); }' %
+                        (name, self.type.GetCppType(), wire_id))
+
 
 class ProtoEnumParser:
     def __init__(self, lexer):
@@ -339,13 +356,40 @@ class ProtoMessageParser:
         w.Write('class %s : public lczero::ProtoMessage {' % self.name)
         w.Write(' public:')
         w.Indent()
-        w.Write('using ProtoMessage::ProtoMessage;')
+        w.Write('%s() = default;' % (self.name))
+        w.Write('%s(const %s&) = default;' % (self.name, self.name))
         w.Write('%s(%s&&) = default;' % (self.name, self.name))
+        w.Write('%s& operator=(const %s&) = default;' % (self.name, self.name))
+        w.Write('%s& operator=(%s&&) = default;' % (self.name, self.name))
         w.Write(
             'static %s CreateNotOwned(std::string_view s) { return %s(s); }' %
             (self.name, self.name))
         for x in self.objects:
             x.Generate(w)
+        w.Write('class Builder : public lczero::ProtoMessage::Builder {')
+        w.Write(' public:')
+        w.Indent()
+        w.Write(
+            'Builder(const %s& msg) : lczero::ProtoMessage::Builder(msg) {}' %
+            self.name)
+        w.Write('%s Build() const { return %s(*this); }' %
+                (self.name, self.name))
+        for x in self.objects:
+            if not x.IsType():
+                x.GenerateForBuilder(w)
+        w.Unindent()
+        w.Write('};')
+        w.Write('Builder AsBuilder() const {')
+        w.Write('  return Builder(*this);')
+        w.Write('}')
+        w.Unindent()
+        w.Write(' private:')
+        w.Indent()
+        w.Write('%s(std::string_view str) : lczero::ProtoMessage(str) {}' %
+                (self.name))
+        w.Write(
+            '%s(const Builder& builder) : lczero::ProtoMessage(builder) {}' %
+            (self.name))
         w.Unindent()
         w.Write('};')
 

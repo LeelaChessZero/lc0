@@ -61,7 +61,7 @@ void ProtoMessage::RebuildOffsets() {
   }
 }
 
-ProtoMessage::ProtoMessage(ProtoMessage&& other) {
+void ProtoMessage::operator=(ProtoMessage&& other) {
   buf_owned_ = std::move(other.buf_owned_);
   offsets_ = std::move(other.offsets_);
   if (!buf_owned_.empty()) {
@@ -69,6 +69,10 @@ ProtoMessage::ProtoMessage(ProtoMessage&& other) {
   } else {
     buf_unowned_ = std::move(other.buf_unowned_);
   }
+}
+
+ProtoMessage::ProtoMessage(ProtoMessage&& other) {
+  operator=(std::move(other));
 }
 
 ProtoMessage::ProtoMessage(std::string_view serialized_proto)
@@ -134,6 +138,58 @@ std::string_view ProtoMessage::GetBytesVal(int wire_field_id,
   if (x == nullptr) return {};
   size_t size = ReadVarInt(&x, buf_unowned_.data() + buf_unowned_.size());
   return std::string_view(x, size);
+}
+
+ProtoMessage::Builder::Builder(const ProtoMessage& msg) {
+  for (const auto& iter : msg.offsets_) {
+    auto& bucket = fields_[iter.first];
+    for (const auto& entry : iter.second) {
+      bucket.emplace_back(msg.buf_unowned_.data() + entry.offset, entry.size);
+    }
+  }
+}
+
+namespace {
+
+std::string EncodeVarInt(std::uint64_t val) {
+  std::string res;
+  while (true) {
+    char c = (val & 0x7f);
+    val >>= 7;
+    if (val) c |= 0x80;
+    res += c;
+    if (!val) return res;
+  }
+}
+
+}  // namespace
+
+void ProtoMessage::Builder::WireFieldSetVarint(int wire_field_id,
+                                               std::uint64_t value) {
+  fields_[wire_field_id] = {EncodeVarInt(value)};
+}
+
+ProtoMessage::ProtoMessage(const ProtoMessage::Builder& builder) {
+  buf_owned_ = builder.AsString();
+  buf_unowned_ = buf_owned_;
+  RebuildOffsets();
+}
+
+std::string ProtoMessage::Builder::AsString() const {
+  std::string res;
+  for (const auto& iter : fields_) {
+    for (const auto& entry : iter.second) {
+      res += EncodeVarInt(iter.first);
+      res += entry;
+    }
+  }
+  return res;
+}
+
+void ProtoMessage::Builder::WireFieldSetMessage(int wire_field_id,
+                                                const ProtoMessage& msg) {
+  fields_[wire_field_id] = {EncodeVarInt(msg.buf_unowned_.size()) +
+                            std::string(msg.buf_unowned_)};
 }
 
 }  // namespace lczero

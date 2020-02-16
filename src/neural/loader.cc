@@ -78,6 +78,45 @@ std::string DecompressGzip(const std::string& filename) {
   return buffer;
 }
 
+void FixOlderWeightsFile(WeightsFile* file) {
+  using nf = pblczero::NetworkFormat;
+  auto network_format = file->format().network_format().network();
+  if (file->format().has_network_format() &&
+      network_format != nf::NETWORK_CLASSICAL &&
+      network_format != nf::NETWORK_SE) {
+    // Already in a new format, return unchanged.
+    return;
+  }
+
+  WeightsFile::Builder builder(*file);
+
+  auto format = file->format().AsBuilder();
+  auto net_builder = file->format().network_format().AsBuilder();
+
+  if (!file->format().has_network_format()) {
+    // Older protobufs don't have format definition.
+    net_builder.set_input(nf::INPUT_CLASSICAL_112_PLANE);
+    net_builder.set_output(nf::OUTPUT_CLASSICAL);
+    net_builder.set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
+    net_builder.set_value(nf::VALUE_CLASSICAL);
+    net_builder.set_policy(nf::POLICY_CLASSICAL);
+  } else if (network_format == pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    // Populate policyFormat and valueFormat fields in old protobufs
+    // without these fields.
+    net_builder.set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
+    net_builder.set_value(nf::VALUE_CLASSICAL);
+    net_builder.set_policy(nf::POLICY_CLASSICAL);
+  } else if (network_format == pblczero::NetworkFormat::NETWORK_SE) {
+    net_builder.set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
+    net_builder.set_value(nf::VALUE_CLASSICAL);
+    net_builder.set_policy(nf::POLICY_CLASSICAL);
+  }
+
+  format.set_network_format(net_builder.Build());
+  builder.set_format(format.Build());
+  *file = builder.Build();
+}
+
 WeightsFile ParseWeightsProto(const std::string& buffer) {
   WeightsFile net;
   net.ParseFromString(buffer);
@@ -93,6 +132,8 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   const auto net_ver =
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch());
+
+  FixOlderWeightsFile(&net);
 
   // Weights files with this signature are also compatible.
   if (net_ver != 0x5c99973 && net_ver > lc0_ver)
