@@ -70,7 +70,8 @@ void dumpTensor(void *memory, int elements, char *message, bool fp16 = false)
             float *arr = (float *)temp;
             val = arr[i];
         }
-        printf("%10.4f ", val);
+        printf("%8.4f ", val);
+        if ((i % 8) == 7) printf("\n");
     }
     free(temp);
     printf("\n");
@@ -542,7 +543,7 @@ class CudnnNetwork : public Network {
     }
 
     // debug code example
-    // dumpTensor(tensor_mem_[0], 512, "After expand Planes", fp16);
+    // dumpTensor(tensor_mem_[0], 1024, "After expand Planes", fp16);
 
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;
@@ -583,22 +584,22 @@ class CudnnNetwork : public Network {
     if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // conv1
+                          cublas_);  // policy conv1
 
       network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // conv1
+                          cublas_);  // policy conv2
 
       if (fp16) {
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol FC
+                            cublas_);  // policy map layer
         copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
-                          batchSize * kNumOutputPolicy);  // POLICY
+                          batchSize * kNumOutputPolicy);  // POLICY output
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol FC  // POLICY
+                            cublas_);  //policy map layer  // POLICY output
       }
     } else {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
@@ -609,6 +610,7 @@ class CudnnNetwork : public Network {
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // pol FC
+
         copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
                           batchSize * kNumOutputPolicy);  // POLICY
       } else {
@@ -923,6 +925,25 @@ std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }
 
+std::unique_ptr<Network> MakeCudnnNetworkAuto(const WeightsFile& weights,
+                                              const OptionsDict& options) {
+  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+  cudaDeviceProp deviceProp = {};
+  // No error checking here, this will be repeated later.
+  cudaGetDeviceProperties(&deviceProp, gpu_id);
+
+  // Check if the GPU supports FP16.
+  if (deviceProp.major >= 7 ||
+      (deviceProp.major == 6 && deviceProp.minor != 1) ||
+      (deviceProp.major == 5 && deviceProp.minor == 3)) {
+    CERR << "Switching to [cudnn-fp16]...";
+    return MakeCudnnNetwork<half>(weights, options);
+  }
+  CERR << "Switching to [cudnn]...";
+  return MakeCudnnNetwork<float>(weights, options);
+}
+
+REGISTER_NETWORK("cudnn-auto", MakeCudnnNetworkAuto, 120)
 REGISTER_NETWORK("cudnn", MakeCudnnNetwork<float>, 110)
 REGISTER_NETWORK("cudnn-fp16", MakeCudnnNetwork<half>, 105)
 

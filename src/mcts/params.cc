@@ -27,6 +27,8 @@
 
 #include "mcts/params.h"
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 namespace {
@@ -58,6 +60,9 @@ const OptionId SearchParams::kCpuctId{
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
+const OptionId SearchParams::kCpuctAtRootOffsetId{
+    "cpuct-root-offset", "CPuctRootOffset",
+    "cpuct_init value adjustment for the root node."};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
@@ -202,6 +207,13 @@ const OptionId SearchParams::kUseMovesLeftId{
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
+const OptionId SearchParams::kDisplayCacheUsageId{
+    "display-cache-usage", "DisplayCacheUsage",
+    "Display cache fullness through UCI info `hash` section."};
+const OptionId SearchParams::kMaxConcurrentSearchersId{
+    "max-concurrent-searchers", "MaxConcurrentSearchers",
+    "If not 0, at most this many search workers can be gathering minibatches "
+    "at once."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -210,6 +222,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
+  options->Add<FloatOption>(kCpuctAtRootOffsetId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
@@ -249,16 +262,20 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMovesLeftScaleId, 1.0f, 100.0f) = 10.0f;
   options->Add<BoolOption>(kUseMovesLeftId) = true;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
+  options->Add<BoolOption>(kDisplayCacheUsageId) = false;
+  options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 0;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
+  options->HideOption(kDisplayCacheUsageId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kLogitQ(options.Get<bool>(kLogitQId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
+      kCpuctAtRootOffset(options.Get<float>(kCpuctAtRootOffsetId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
@@ -290,6 +307,13 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId.GetId())),
       kMovesLeftScale(options.Get<float>(kMovesLeftScaleId.GetId())),
       kUseMovesLeft(options.Get<bool>(kUseMovesLeftId.GetId())),
-      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())) {}
+      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
+      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())),
+      kMaxConcurrentSearchers(
+          options.Get<int>(kMaxConcurrentSearchersId.GetId())) {
+  if (kCpuct + kCpuctAtRootOffset < 0.0f) {
+    throw Exception("CPuct + CPuctRootOffset must be >= 0.");
+  }
+}
 
 }  // namespace lczero

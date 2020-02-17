@@ -67,7 +67,12 @@ Search::Search(const NodeTree& tree, Network* network,
       start_time_(start_time),
       initial_visits_(root_node_->GetN()),
       uci_responder_(std::move(uci_responder)),
-      params_(options) {}
+      params_(options) {
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
+                             std::memory_order_release);
+  }
+}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -95,6 +100,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv);
   const auto score_type = params_.GetScoreType();
   const auto per_pv_counters = params_.GetPerPvCounters();
+  const auto display_cache_usage = params_.GetDisplayCacheUsage();
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -106,8 +112,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   if (!per_pv_counters) {
     common_info.nodes = total_playouts_ + initial_visits_;
   }
-  common_info.hashfull =
-      cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
+  if (display_cache_usage) {
+    common_info.hashfull =
+        cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
+  }
   if (nps_start_time_) {
     const auto time_since_first_batch_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -199,8 +207,10 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
              : -node->GetQ() - value * std::sqrt(node->GetVisitedPolicy());
 }
 
-inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
-  const float init = params.GetCpuct();
+inline float ComputeCpuct(const SearchParams& params, uint32_t N,
+                          bool is_root_node) {
+  const float init =
+      params.GetCpuct() + (is_root_node ? params.GetCpuctOffsetAtRoot() : 0.0f);
   const float k = params.GetCpuctFactor();
   const float base = params.GetCpuctBase();
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
@@ -210,7 +220,7 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
 std::vector<std::string> Search::GetVerboseStats(Node* node,
                                                  bool is_black_to_move) const {
   const float fpu = GetFpu(params_, node, node == root_node_);
-  const float cpuct = ComputeCpuct(params_, node->GetN());
+  const float cpuct = ComputeCpuct(params_, node->GetN(), node == root_node_);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
@@ -261,7 +271,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
         << edge.GetQ(fpu, logit_q) + edge.GetU(U_coeff) << ") ";
 
     oss << "(V: ";
-    optional<float> v;
+    std::optional<float> v;
     if (edge.IsTerminal()) {
       v = edge.node()->GetQ();
     } else {
@@ -465,7 +475,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
       continue;
     }
     const auto Q = edge.GetQ(0.0f);
-    edges.emplace_back(edge.IsTerminal() && Q == 1.0f, edge.GetN(), Q,
+    edges.emplace_back(edge.IsTerminal() && Q > 0.0f, edge.GetN(), Q,
                        edge.GetP(), edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
@@ -674,11 +684,33 @@ void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
   InitializeIteration(search_->network_->NewComputation());
 
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    while (true) {
+      // If search is stop, we've not gathered or done anything and we don't
+      // want to, so we can safely skip all below.
+      if (search_->stop_.load(std::memory_order_acquire)) return;
+      int available =
+          search_->pending_searchers_.load(std::memory_order_acquire);
+      if (available > 0 &&
+          search_->pending_searchers_.compare_exchange_weak(
+              available, available - 1, std::memory_order_acq_rel)) {
+        break;
+      }
+      // This is a hard spin lock to reduce latency but at the expense of busy
+      // wait cpu usage. If search worker count is large, this is probably a bad
+      // idea.
+    }
+  }
+
   // 2. Gather minibatch.
   GatherMinibatch();
 
   // 3. Prefetch into cache.
   MaybePrefetchIntoCache();
+
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    search_->pending_searchers_.fetch_add(1, std::memory_order_acq_rel);
+  }
 
   // 4. Run NN computation.
   RunNNComputation();
@@ -872,7 +904,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    const float cpuct = ComputeCpuct(params_, node->GetN());
+    const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
     const float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
@@ -1099,7 +1131,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   // Populate all subnodes and their scores.
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
-  const float cpuct = ComputeCpuct(params_, node->GetN());
+  const float cpuct =
+      ComputeCpuct(params_, node->GetN(), node == search_->root_node_);
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_);
@@ -1273,19 +1306,23 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Convert parents to terminals except the root or those already converted.
     can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
 
-    // A non-winning terminal move needs all other moves to have the same value.
-    if (can_convert && v != 1.0f) {
+    // A non-winning terminal move needs all other moves to be similar.
+    auto all_losing = true;
+    if (can_convert && v <= 0.0f) {
       for (const auto& edge : p->Edges()) {
-        can_convert = can_convert && edge.IsTerminal() && edge.GetQ(0.0f) == v;
+        const auto Q = edge.GetQ(0.0f);
+        can_convert = can_convert && edge.IsTerminal() && Q <= 0.0f;
+        all_losing = all_losing && Q < 0.0f;
       }
     }
 
     // Convert the parent to a terminal loss if at least one move is winning or
-    // to a terminal win or draw if all moves are loss or draw respectively.
+    // to a terminal win if all moves are losing; otherwise there's a mix of
+    // draws and losing, so at best it's a draw.
     if (can_convert) {
-      p->MakeTerminal(v == 1.0f ? GameResult::BLACK_WON
-                                : v == -1.0f ? GameResult::WHITE_WON
-                                             : GameResult::DRAW, false);
+      p->MakeTerminal(v > 0.0f ? GameResult::BLACK_WON
+                               : all_losing ? GameResult::WHITE_WON
+                                            : GameResult::DRAW, false);
     }
 
     // Q will be flipped for opponent.

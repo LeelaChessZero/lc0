@@ -71,12 +71,13 @@ class SelfPlayTournament {
   void PlayOneGame(int game_id);
 
   Mutex mutex_;
-  // Whether next game will be black for player1.
-  bool next_game_black_ GUARDED_BY(mutex_) = false;
+  // Whether first game will be black for player1.
+  bool first_game_black_ GUARDED_BY(mutex_) = false;
   std::vector<MoveList> discard_pile_ GUARDED_BY(mutex_);
   // Number of games which already started.
   int games_count_ GUARDED_BY(mutex_) = 0;
   bool abort_ GUARDED_BY(mutex_) = false;
+  std::vector<MoveList> openings_ GUARDED_BY(mutex_);
   // Games in progress. Exposed here to be able to abort them in case if
   // Abort(). Stored as list and not vector so that threads can keep iterators
   // to them and not worry that it becomes invalid.

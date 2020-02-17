@@ -48,6 +48,7 @@ class SearchParams {
   }
   bool GetLogitQ() const { return kLogitQ; }
   float GetCpuct() const { return kCpuct; }
+  float GetCpuctOffsetAtRoot() const { return kCpuctAtRootOffset; }
   float GetCpuctBase() const { return kCpuctBase; }
   float GetCpuctFactor() const { return kCpuctFactor; }
   float GetTemperature() const {
@@ -103,12 +104,15 @@ class SearchParams {
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
   float GetMovesLeftScale() const { return kMovesLeftScale; }
   bool GetUseMovesLeft() const { return kUseMovesLeft; }
+  bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
+  int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kLogitQId;
   static const OptionId kCpuctId;
+  static const OptionId kCpuctAtRootOffsetId;
   static const OptionId kCpuctBaseId;
   static const OptionId kCpuctFactorId;
   static const OptionId kTemperatureId;
@@ -142,6 +146,8 @@ class SearchParams {
   static const OptionId kMovesLeftScaleId;
   static const OptionId kUseMovesLeftId;
   static const OptionId kShortSightednessId;
+  static const OptionId kDisplayCacheUsageId;
+  static const OptionId kMaxConcurrentSearchersId;
 
  private:
   const OptionsDict& options_;
@@ -153,6 +159,7 @@ class SearchParams {
   //            trivial search optimiations.
   const bool kLogitQ;
   const float kCpuct;
+  const float kCpuctAtRootOffset;
   const float kCpuctBase;
   const float kCpuctFactor;
   const float kNoiseEpsilon;
@@ -175,6 +182,8 @@ class SearchParams {
   const float kMovesLeftScale;
   const bool kUseMovesLeft;
   const float kShortSightedness;
+  const bool kDisplayCacheUsage;
+  const int kMaxConcurrentSearchers;
 };
 
 }  // namespace lczero

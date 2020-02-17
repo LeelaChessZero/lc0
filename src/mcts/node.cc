@@ -340,16 +340,20 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
   result.version = 4;
 
   // Populate probabilities.
-  const float total_n = static_cast<float>(GetChildrenVisits());
+  auto total_n = GetChildrenVisits();
   // Prevent garbage/invalid training data from being uploaded to server.
-  if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
+  // It's possible to have N=0 when there is only one legal move in position
+  // (due to smart pruning).
+  if (total_n == 0 && GetNumEdges() != 1) {
+    throw Exception("Search generated invalid data!");
+  }
   // Set illegal moves to have -1 probability.
   std::fill(std::begin(result.probabilities), std::end(result.probabilities),
             -1);
   // Set moves probabilities according to their relative amount of visits.
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
-        child.GetN() / total_n;
+        total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
   }
 
   // Populate planes.

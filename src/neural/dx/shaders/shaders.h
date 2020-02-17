@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,37 +27,31 @@
 
 #pragma once
 
-#include <algorithm>
-#include <random>
-#include <string>
-#include "utils/mutex.h"
+#include "ExpandPlanes_shader_fp32.h"
+#include "ExpandPlanes_shader_fp16.h"
+#include "input_transform_shader_fp32.h"
+#include "output_transform_shader_fp32.h"
+#include "conv_1x1_shader_fp32.h"
+#include "add_vectors_shader.h"
+#include "policy_map_shader_fp32.h"
 
-namespace lczero {
+#include "output_transform_shader_fp32_se_128.h"
+#include "output_transform_shader_fp32_se_256.h"
+#include "output_transform_shader_fp32_se_320.h"
+#include "output_transform_shader_fp32_se_384.h"
+#include "output_transform_shader_fp32_se_512.h"
+#include "output_transform_shader_fp32_se_640.h"
+#include "output_transform_shader_fp32_se_768.h"
+#include "output_transform_shader_fp32_se_1024.h"
 
-class Random {
- public:
-  static Random& Get();
-  double GetDouble(double max_val);
-  float GetFloat(float max_val);
-  double GetGamma(double alpha, double beta);
-  // Both sides are included.
-  int GetInt(int min, int max);
-  std::string GetString(int length);
-  bool GetBool();
-  template <class RandomAccessIterator>
-  void Shuffle(RandomAccessIterator s, RandomAccessIterator e);
+#include "se_128.h"
+#include "se_256.h"
+#include "se_320.h"
+#include "se_384.h"
+#include "se_512.h"
+#include "se_640.h"
+#include "se_768.h"
+#include "se_1024.h"
 
- private:
-  Random();
-
-  Mutex mutex_;
-  std::mt19937 gen_ GUARDED_BY(mutex_);
-};
-
-template <class RandomAccessIterator>
-void Random::Shuffle(RandomAccessIterator s, RandomAccessIterator e) {
-  Mutex::Lock lock(mutex_);
-  std::shuffle(s, e, gen_);
-}
-
-}  // namespace lczero
+#include "MatrixMul_Fp32.h"
+#include "MatrixMul_Fp16.h"
