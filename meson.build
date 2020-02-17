@@ -24,7 +24,7 @@ if cc.get_id() == 'clang'
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
-  if get_option('buildtype') == 'release'
+  if get_option('buildtype') == 'release' and cc.has_argument('-march=native')
     add_project_arguments('-march=native', language : 'cpp')
   endif
 endif
