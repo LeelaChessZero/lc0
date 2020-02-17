@@ -107,12 +107,13 @@ void Benchmark::Run() {
       playouts.push_back(search->GetTotalPlayouts());
     }
 
-    const auto totalPlayouts = std::accumulate(playouts.begin(), playouts.end(), 0);
-    const auto totalTime = std::accumulate(times.begin(), times.end(), 0);
+    const auto total_playouts = std::accumulate(playouts.begin(), playouts.end(), 0);
+    const auto total_time = std::accumulate(times.begin(), times.end(), 0);
     std::cout << "\n==========================="
-              << "\nTotal time (ms) : " << totalTime
-              << "\nNodes searched  : " << totalPlayouts
-              << "\nNodes/second    : " << std::lround(1000.0 * totalPlayouts / (totalTime + 1))
+              << "\nTotal time (ms) : " << total_time
+              << "\nNodes searched  : " << total_playouts
+              << "\nNodes/second    : "
+              << std::lround(1000.0 * total_playouts / (total_time + 1))
               << std::endl;
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;
