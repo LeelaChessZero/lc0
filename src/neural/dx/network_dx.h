@@ -27,6 +27,7 @@
 #pragma once
 
 #include "dx_common.h"
+#include "layers_dx.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
 
@@ -40,8 +41,8 @@ class DxNetwork;
 
 static constexpr int kNumOutputPolicy = 1858;
 
-// Padding needed because on some HW (e.g: NV) fp16 requires gemm matrix dimensions
-// to be multiples of 8
+// Padding needed because on some HW (e.g: NV) fp16 requires gemm matrix
+// dimensions to be multiples of 8
 static constexpr int kNumOutputPolicyPadded8 =
     ((kNumOutputPolicy - 1) / 8 + 1) * 8;
 
@@ -53,9 +54,11 @@ struct InputsOutputsDx {
                   bool conv_policy, bool fp16);
   ~InputsOutputsDx();
 
-  // Wanted to put these in default heap (video memory, mapped to support CPU writes too).
+  // Wanted to put these in default heap (video memory, mapped to support CPU
+  // writes too).
   //  - but this isn't supported by DX12 API!
-  // So right now we have it in upload ueap (system memory mapped for both CPU and GPU).
+  // So right now we have it in upload ueap (system memory mapped for both CPU
+  // and GPU).
   DXAlloc input_masks_mem_gpu_;
   DXAlloc input_val_mem_gpu_;
 
@@ -164,7 +167,7 @@ class DxContext {
   void CreateAlloc(size_t size, D3D12_HEAP_TYPE type, DXAlloc& alloc,
                    bool fp16);
   void UavBarrier(ID3D12GraphicsCommandList4* cl = nullptr);
-  uint64_t FlushCL(ID3D12GraphicsCommandList4 *cl = nullptr);
+  uint64_t FlushCL(ID3D12GraphicsCommandList4* cl = nullptr);
   void WaitForGpu(uint64_t fence_val = 0);
   void ResetCL(ID3D12GraphicsCommandList4* cl = nullptr,
                ID3D12CommandAllocator* ca = nullptr, bool reset = true);
