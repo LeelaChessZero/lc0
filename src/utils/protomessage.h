@@ -4,8 +4,17 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <string>
 #include <string_view>
 #include <vector>
+
+// Undef g++ macros to ged rid of warnings.
+#ifdef minor
+#undef minor
+#endif
+#ifdef major
+#undef major
+#endif
 
 namespace lczero {
 
