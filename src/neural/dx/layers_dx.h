@@ -26,14 +26,16 @@
 */
 
 #include <dxgi.h>
-#include "dx_common.h"
-#include "shader_wrapper.h"
+
 #include <memory>
 
-namespace lczero {
-class DxContext;
+#include "dx_common.h"
+#include "shader_wrapper.h"
 
+namespace lczero {
 namespace dx_backend {
+
+class DxContext;
 constexpr int kMaxSupportedBatchSize = 256;
 
 // The Layer objects only hold memory for weights, biases, etc
@@ -45,7 +47,8 @@ class BaseLayer {
   int GetH() const { return H; }
   int GetW() const { return W; }
 
-  BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* dx_context, bool fp16);
+  BaseLayer(int c, int h, int w, BaseLayer* ip, DxContext* dx_context,
+            bool fp16);
   virtual ~BaseLayer() = default;
   size_t GetOutputSize(int N) const {
     return (fp16_ ? sizeof(dx_half) : sizeof(float)) * N * C * H * W;
@@ -121,7 +124,6 @@ class ConvMetaCommand {
 
   bool IsAvailable() { return create_succeeded_; }
 };
-
 
 class ConvLayer : public BaseLayer {
   using BaseLayer::C;
@@ -203,10 +205,11 @@ class PolicyMapLayer : public BaseLayer {
   void Eval(int N, DXAlloc output, DXAlloc input, DXAlloc input2,
             DXAlloc scratch, DXAlloc scratch2,
             ID3D12GraphicsCommandList4* command_list) override;
+
  private:
   const int used_size_;
   DXAlloc weights_;
 };
 
 }  // namespace dx_backend
-}  // namespace dx_backend
+}  // namespace lczero

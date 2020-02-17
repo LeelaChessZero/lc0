@@ -41,8 +41,7 @@
 #include "utils/exception.h"
 
 namespace lczero {
-
-using namespace dx_backend;
+namespace dx_backend {
 
 uint64_t DxContext::FlushCL(ID3D12GraphicsCommandList4* cl) {
   if (!cl) cl = command_list_;
@@ -969,4 +968,5 @@ std::unique_ptr<Network> MakeDxNetwork(const WeightsFile& weights,
 
 REGISTER_NETWORK("dx12", MakeDxNetwork, 120)
 
+}  // namespace dx_backend
 }  // namespace lczero

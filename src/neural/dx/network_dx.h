@@ -35,8 +35,8 @@
 // backend into some base class(es).
 
 namespace lczero {
+namespace dx_backend {
 
-using namespace dx_backend;
 class DxNetwork;
 
 static constexpr int kNumOutputPolicy = 1858;
@@ -238,4 +238,5 @@ class DxNetwork : public Network {
   std::list<std::unique_ptr<InputsOutputsDx>> free_inputs_outputs_;
 };
 
-};  // namespace lczero
+}  // namespace dx_backend
+}  // namespace lczero
