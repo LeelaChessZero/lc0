@@ -128,7 +128,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
-  const auto default_q = -root_node_->GetQ(0.0);
+  const auto default_q = -root_node_->GetWL();
   for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
@@ -233,12 +233,14 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }
 }  // namespace
 
-std::vector<std::string> Search::GetVerboseStats(Node* node,
-                                                 bool is_black_to_move,
-                                                 bool is_odd_depth) const {
+std::vector<std::string> Search::GetVerboseStats(Node* node) const {
+  assert(node == root_node_ || node->GetParent() == root_node_);
+  const bool is_root = (node == root_node_);
+  const bool is_odd_depth = !is_root;
+  const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
-  const float fpu = GetFpu(params_, node, node == root_node_, draw_score);
-  const float cpuct = ComputeCpuct(params_, node->GetN(), node == root_node_);
+  const float fpu = GetFpu(params_, node, is_root, draw_score);
+  const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
@@ -307,8 +309,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
 }
 
 void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
-  const bool is_black_to_move = played_history_.IsBlackToMove();
-  auto move_stats = GetVerboseStats(root_node_, is_black_to_move, false);
+  auto move_stats = GetVerboseStats(root_node_);
 
   if (params_.GetVerboseStats()) {
     std::vector<ThinkingInfo> infos;
@@ -327,8 +328,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
     LOGFILE
         << "--- Opponent moves after: "
         << final_bestmove_.GetMove(played_history_.IsBlackToMove()).as_string();
-    for (const auto& line :
-         GetVerboseStats(final_bestmove_.node(), !is_black_to_move, true)) {
+    for (const auto& line : GetVerboseStats(final_bestmove_.node())) {
       LOGFILE << line;
     }
   }

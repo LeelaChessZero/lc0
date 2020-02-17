@@ -125,8 +125,8 @@ class Search {
   void PopulateCommonIterationStats(IterationStats* stats);
 
   // Returns verbose information about given node, as vector of strings.
-  std::vector<std::string> GetVerboseStats(Node* node, bool is_black_to_move,
-                                           bool is_odd_depth) const;
+  // Node can only be root or ponder (depth 1).
+  std::vector<std::string> GetVerboseStats(Node* node) const;
 
   // Returns NN eval for a given node from cache, if that node is cached.
   NNCacheLock GetCachedNNEval(Node* node) const;
