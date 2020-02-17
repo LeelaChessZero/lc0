@@ -373,7 +373,8 @@ void DxContext::ScheduleUpload(DXAlloc alloc, const void* data, size_t size) {
 
 DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     : dx_context_(options),
-      capabilities_{file.format().network_format().input()} {
+      capabilities_{file.format().network_format().input(),
+                    pblczero::NetworkFormat::MOVES_LEFT_NONE} {
   LegacyWeights weights(file.weights());
 
   has_conv_policy_ = file.format().network_format().policy() ==
