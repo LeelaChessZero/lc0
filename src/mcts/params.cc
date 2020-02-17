@@ -206,7 +206,7 @@ const OptionId SearchParams::kDrawScoreSidetomoveId{
     "Score of a drawn game, as seen by a player making the move."};
 const OptionId SearchParams::kDrawScoreOpponentId{
     "draw-score-opponent", "DrawScoreOpponent",
-    "Score of a drawn game, as seen by an opponent the move."};
+    "Score of a drawn game, as seen by the opponent."};
 const OptionId SearchParams::kDrawScoreWhiteId{
     "draw-score-white", "DrawScoreWhite",
     "Adjustment, added to a draw score of a white player."};
