@@ -1,20 +1,23 @@
 /*
- This file is part of Leela Zero.
- Copyright (C) 2017 Gian-Carlo Pascutto
+  Originally from the Leela Zero project.
+  Copyright (C) 2017 Gian-Carlo Pascutto
 
- Leela Zero is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2018 The LCZero Authors
 
- Leela Zero is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
- You should have received a copy of the GNU General Public License
- along with Leela Zero.  If not, see <http://www.gnu.org/licenses/>.
- */
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #include <array>
 #include <cassert>
@@ -32,7 +35,6 @@
 
 #include "utils/logging.h"
 
-const auto TUNER_FILE_LOCAL = std::string("leelaz_opencl_tuning");
 constexpr auto MAX_ERROR = 1e-4f;
 
 static void sgemmBatched_ref(const std::vector<float>& a,
@@ -368,7 +370,7 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
   auto file_contents = std::vector<std::string>();
   {
     // Read the previous contents to string.
-    auto file = std::ifstream{TUNER_FILE_LOCAL};
+    auto file = std::ifstream{m_params.tuner_file};
     if (file.good()) {
       auto line = std::string{};
       while (std::getline(file, line)) {
@@ -376,7 +378,7 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
       }
     }
   }
-  auto file = std::ofstream{TUNER_FILE_LOCAL};
+  auto file = std::ofstream{m_params.tuner_file};
 
   auto device_name = m_opencl.get_device_name();
   auto tuning_params = std::stringstream{};
@@ -400,7 +402,7 @@ void Tuner::store_sgemm_tuners(const int m, const int n, const int k,
 
   if (file.fail()) {
     CERR << "Could not save the tuning result.";
-    CERR << "Do I have write permissions on " << TUNER_FILE_LOCAL << "?";
+    CERR << "Do I have write permissions on " << m_params.tuner_file << "?";
   }
 }
 
@@ -453,7 +455,7 @@ std::string Tuner::sgemm_tuners_from_line(std::string line, const int m,
 std::string Tuner::load_sgemm_tuners(const int m, const int n, const int k,
                                      const int batch_size) {
   if (!m_params.force_tune) {
-    auto file = std::ifstream{TUNER_FILE_LOCAL};
+    auto file = std::ifstream{m_params.tuner_file};
     if (file.good()) {
       auto line = std::string{};
       while (std::getline(file, line)) {

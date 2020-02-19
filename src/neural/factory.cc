@@ -105,8 +105,8 @@ bool NetworkFactory::BackendConfiguration::operator==(
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
   std::string net_path = options.Get<std::string>(kWeightsId.GetId());
-  std::string backend = options.Get<std::string>(kBackendId.GetId());
-  std::string backend_options =
+  const std::string backend = options.Get<std::string>(kBackendId.GetId());
+  const std::string backend_options =
       options.Get<std::string>(kBackendOptionsId.GetId());
 
   if (net_path == kAutoDiscover) {
@@ -114,12 +114,14 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
-  WeightsFile weights = LoadWeightsFromFile(net_path);
+  const WeightsFile weights = LoadWeightsFromFile(net_path);
 
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
 
-  return NetworkFactory::Get()->Create(backend, weights, network_options);
+  auto ptr = NetworkFactory::Get()->Create(backend, weights, network_options);
+  network_options.CheckAllOptionsRead(backend);
+  return ptr;
 }
 
 }  // namespace lczero

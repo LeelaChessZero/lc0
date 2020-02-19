@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,7 +26,10 @@
 */
 
 #include "benchmark/benchmark.h"
+
 #include "mcts/search.h"
+#include "mcts/stoppers/factory.h"
+#include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
 namespace {
@@ -34,27 +37,22 @@ const int kDefaultThreads = 2;
 
 const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
-const OptionId kNNCacheSizeId{
-    "nncache", "NNCacheSize",
-    "Number of positions to store in a memory cache. A large cache can speed "
-    "up searching, but takes memory."};
 const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
 const OptionId kMovetimeId{"movetime", "",
                            "Benchmark time allocation, in milliseconds."};
 const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
-
 }  // namespace
 
 void Benchmark::Run() {
   OptionsParser options;
   NetworkFactory::PopulateOptions(&options);
+  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   SearchParams::Populate(&options);
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
   options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
-  options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
-  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -69,29 +67,31 @@ void Benchmark::Run() {
     NNCache cache;
     cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId.GetId()));
 
-    auto start = std::chrono::steady_clock::now();
-
-    SearchLimits limits;
     int visits = option_dict.Get<int>(kNodesId.GetId());
-    int movetime = option_dict.Get<int>(kMovetimeId.GetId());
+    const int movetime = option_dict.Get<int>(kMovetimeId.GetId());
+
+    auto stopper = std::make_unique<ChainedSearchStopper>();
     if (movetime > -1) {
-      limits.search_deadline = start + std::chrono::milliseconds(movetime);
+      stopper->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
     }
     if (visits > -1) {
-        limits.visits = visits;
+      stopper->AddStopper(std::make_unique<VisitsStopper>(visits));
     }
 
+    const auto start = std::chrono::steady_clock::now();
     auto search = std::make_unique<Search>(
         tree, network.get(),
-        std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
-        std::bind(&Benchmark::OnInfo, this, std::placeholders::_1), limits,
-        option_dict, &cache, nullptr);
+        std::make_unique<CallbackUciResponder>(
+            std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
+            std::bind(&Benchmark::OnInfo, this, std::placeholders::_1)),
+        MoveList(), start, std::move(stopper), false, option_dict, &cache,
+        nullptr);
 
     search->StartThreads(option_dict.Get<int>(kThreadsOptionId.GetId()));
 
     search->Wait();
 
-    auto end = std::chrono::steady_clock::now();
+    const auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> time = end - start;
     std::cout << "Benchmark final time " << time.count() << "s calculating "
               << search->GetTotalPlayouts() / time.count()

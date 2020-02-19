@@ -35,6 +35,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+
 #include "utils/exception.h"
 #include "utils/logging.h"
 #include "utils/string.h"
@@ -72,7 +73,7 @@ ParseCommand(const std::string& line) {
   // If empty line, return empty command.
   if (token.empty()) return {};
 
-  auto command = kKnownCommands.find(token);
+  const auto command = kKnownCommands.find(token);
   if (command == kKnownCommands.end()) {
     throw Exception("Unknown command: " + line);
   }
@@ -96,14 +97,14 @@ ParseCommand(const std::string& line) {
 std::string GetOrEmpty(
     const std::unordered_map<std::string, std::string>& params,
     const std::string& key) {
-  auto iter = params.find(key);
+  const auto iter = params.find(key);
   if (iter == params.end()) return {};
   return iter->second;
 }
 
 int GetNumeric(const std::unordered_map<std::string, std::string>& params,
                const std::string& key) {
-  auto iter = params.find(key);
+  const auto iter = params.find(key);
   if (iter == params.end()) {
     throw Exception("Unexpected error");
   }
@@ -156,7 +157,7 @@ bool UciLoop::DispatchCommand(
     if (ContainsKey(params, "fen") == ContainsKey(params, "startpos")) {
       throw Exception("Position requires either fen or startpos");
     }
-    std::vector<std::string> moves =
+    const std::vector<std::string> moves =
         StrSplitAtWhitespace(GetOrEmpty(params, "moves"));
     CmdPosition(GetOrEmpty(params, "fen"), moves);
   } else if (command == "go") {
@@ -248,6 +249,10 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
     if (info.time >= 0) res += " time " + std::to_string(info.time);
     if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
     if (info.score) res += " score cp " + std::to_string(*info.score);
+    if (info.wdl) {
+      res += " wdl " + std::to_string(info.wdl->w) + " " +
+             std::to_string(info.wdl->d) + " " + std::to_string(info.wdl->l);
+    }
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
     if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
     if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -45,40 +45,50 @@
 namespace lczero {
 
 namespace {
-const int kSmartPruningToleranceNodes = 300;
-const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 }  // namespace
 
-std::string SearchLimits::DebugString() const {
-  std::ostringstream ss;
-  ss << "visits:" << visits << " playouts:" << playouts << " depth:" << depth
-     << " infinite:" << infinite;
-  if (search_deadline) {
-    ss << " search_deadline:"
-       << FormatTime(SteadyClockToSystemClock(*search_deadline));
-  }
-  return ss.str();
-}
-
 Search::Search(const NodeTree& tree, Network* network,
-               BestMoveInfo::Callback best_move_callback,
-               ThinkingInfo::Callback info_callback, const SearchLimits& limits,
+               std::unique_ptr<UciResponder> uci_responder,
+               const MoveList& searchmoves,
+               std::chrono::steady_clock::time_point start_time,
+               std::unique_ptr<SearchStopper> stopper, bool infinite,
                const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb)
-    : ok_to_respond_bestmove_(!limits.infinite),
+    : ok_to_respond_bestmove_(!infinite),
+      stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       cache_(cache),
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
       network_(network),
-      limits_(limits),
-      start_time_(std::chrono::steady_clock::now()),
+      searchmoves_(searchmoves),
+      start_time_(start_time),
       initial_visits_(root_node_->GetN()),
-      best_move_callback_(best_move_callback),
-      info_callback_(info_callback),
-      params_(options) {}
+      uci_responder_(std::move(uci_responder)),
+      params_(options) {
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
+                             std::memory_order_release);
+  }
+  float strength_ratio =
+      options.Get<float>(SearchParams::kStrengthRatioId.GetId());
+  if (strength_ratio != 1.0f && !infinite) {
+    StoppersHints hints;
+    IterationStats stats;
+    hints.Reset();
+    PopulateCommonIterationStats(&stats);
+    if (!stopper_->ShouldStop(stats, &hints)) {
+      // A delay of 1 - strength_ratio^2 approximates a linear strength
+      // reduction.
+      int move_delay = hints.GetEstimatedRemainingTimeMs() *
+                       (1.0f - strength_ratio * strength_ratio);
+      LOGFILE << "Sleeping for " << move_delay << " ms.";
+      delay_ = std::chrono::milliseconds(move_delay);
+    }
+  }
+}
 
 namespace {
 void ApplyDirichletNoise(Node* node, float eps, double alpha) {
@@ -102,8 +112,12 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
-  auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
-  auto score_type = params_.GetScoreType();
+  const auto max_pv = params_.GetMultiPv();
+  const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv);
+  const auto score_type = params_.GetScoreType();
+  const auto per_pv_counters = params_.GetPerPvCounters();
+  const auto display_cache_usage = params_.GetDisplayCacheUsage();
+  const auto draw_score = GetDrawScore(false);
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -112,26 +126,53 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   common_info.seldepth = max_depth_;
   common_info.time = GetTimeSinceStart();
-  common_info.nodes = total_playouts_ + initial_visits_;
-  common_info.hashfull =
-      cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
-  common_info.nps =
-      common_info.time ? (total_playouts_ * 1000 / common_info.time) : 0;
+  if (!per_pv_counters) {
+    common_info.nodes = total_playouts_ + initial_visits_;
+  }
+  if (display_cache_usage) {
+    common_info.hashfull =
+        cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
+  }
+  if (nps_start_time_) {
+    const auto time_since_first_batch_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - *nps_start_time_)
+            .count();
+    if (time_since_first_batch_ms > 0) {
+      common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
+    }
+  }
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
+  const auto default_q = -root_node_->GetWL();
   for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    if (score_type == "centipawn") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+    const auto wl = edge.GetWL();
+    const auto d = edge.GetD();
+    const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
+    const auto q = edge.GetQ(default_q, draw_score);
+    if (score_type == "centipawn_with_drawscore") {
+      uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
+    } else if (score_type == "centipawn") {
+      uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(q, 14));
+    } else if (score_type == "centipawn_2018") {
+      uci_info.score = 290.680623072 * tan(1.548090806 * wl);
     } else if (score_type == "win_percentage") {
-      uci_info.score = edge.GetQ(0) * 5000 + 5000;
+      uci_info.score = wl * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = edge.GetQ(0) * 10000;
+      uci_info.score = q * 10000;
+    } else if (score_type == "W-L") {
+      uci_info.score = wl * 10000;
     }
-    if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
+    const int l = static_cast<int>(std::round(500.0 * (1.0 - wl - d)));
+    // Using 1000-w-l instead of 1000*d for D score so that W+D+L add up to
+    // 1000.0.
+    uci_info.wdl = ThinkingInfo::WDL{w, 1000 - w - l, l};
+    if (max_pv > 1) uci_info.multipv = multipv;
+    if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
     for (auto iter = edge; iter;
          iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
@@ -145,7 +186,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     last_outputted_info_edge_ = current_best_edge_.edge();
   }
 
-  info_callback_(uci_infos);
+  uci_responder_->OutputThinkingInfo(&uci_infos);
 }
 
 // Decides whether anything important changed in stats and new info should be
@@ -162,11 +203,14 @@ void Search::MaybeOutputInfo() {
        last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
            GetTimeSinceStart())) {
     SendUciInfo();
+    if (params_.GetLogLiveStats()) {
+      SendMovesStats();
+    }
     if (stop_.load(std::memory_order_acquire) && !ok_to_respond_bestmove_) {
-      ThinkingInfo info;
-      info.comment =
+      std::vector<ThinkingInfo> info(1);
+      info.back().comment =
           "WARNING: Search has reached limit and does not make any progress.";
-      info_callback_({info});
+      uci_responder_->OutputThinkingInfo(&info);
     }
   }
 }
@@ -177,48 +221,57 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
-int64_t Search::GetTimeToDeadline() const {
-  if (!limits_.search_deadline) return 0;
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             *limits_.search_deadline - std::chrono::steady_clock::now())
-      .count();
+// Root is depth 0, i.e. even depth.
+float Search::GetDrawScore(bool is_odd_depth) const {
+  return (is_odd_depth ? params_.GetOpponentDrawScore()
+                       : params_.GetSidetomoveDrawScore()) +
+         (is_odd_depth == played_history_.IsBlackToMove()
+              ? params_.GetWhiteDrawDelta()
+              : params_.GetBlackDrawDelta());
 }
 
 namespace {
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node) {
-  return params.GetFpuAbsolute()
-             ? params.GetFpuValue()
-             : ((is_root_node && params.GetNoise()) ||
-                !params.GetFpuReduction())
-                   ? -node->GetQ()
-                   : -node->GetQ() - params.GetFpuReduction() *
-                                         std::sqrt(node->GetVisitedPolicy());
+inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
+                    float draw_score) {
+  const auto value = params.GetFpuValue(is_root_node);
+  return params.GetFpuAbsolute(is_root_node)
+             ? value
+             : -node->GetQ(-draw_score) -
+                   value * std::sqrt(node->GetVisitedPolicy());
 }
 
-inline float ComputeCpuct(const SearchParams& params, uint32_t N) {
-  const float init = params.GetCpuct();
+inline float ComputeCpuct(const SearchParams& params, uint32_t N,
+                          bool is_root_node) {
+  const float init =
+      params.GetCpuct() + (is_root_node ? params.GetCpuctOffsetAtRoot() : 0.0f);
   const float k = params.GetCpuctFactor();
   const float base = params.GetCpuctBase();
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
 }  // namespace
 
-std::vector<std::string> Search::GetVerboseStats(Node* node,
-                                                 bool is_black_to_move) const {
-  const float fpu = GetFpu(params_, node, node == root_node_);
-  const float cpuct = ComputeCpuct(params_, node->GetN());
+std::vector<std::string> Search::GetVerboseStats(Node* node) const {
+  assert(node == root_node_ || node->GetParent() == root_node_);
+  const bool is_root = (node == root_node_);
+  const bool is_odd_depth = !is_root;
+  const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
+  const float draw_score = GetDrawScore(is_odd_depth);
+  const float fpu = GetFpu(params_, node, is_root, draw_score);
+  const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const bool logit_q = params_.GetLogitQ();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
-  std::sort(
-      edges.begin(), edges.end(),
-      [&fpu, &U_coeff](EdgeAndNode a, EdgeAndNode b) {
-        return std::forward_as_tuple(a.GetN(), a.GetQ(fpu) + a.GetU(U_coeff)) <
-               std::forward_as_tuple(b.GetN(), b.GetQ(fpu) + b.GetU(U_coeff));
-      });
+  std::sort(edges.begin(), edges.end(),
+            [&fpu, &U_coeff, &logit_q](EdgeAndNode a, EdgeAndNode b) {
+              return std::forward_as_tuple(
+                         a.GetN(), a.GetQ(fpu, logit_q) + a.GetU(U_coeff)) <
+                     std::forward_as_tuple(
+                         b.GetN(), b.GetQ(fpu, logit_q) + b.GetU(U_coeff));
+            });
 
   std::vector<std::string> infos;
   for (const auto& edge : edges) {
@@ -236,19 +289,25 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
         << "%) ";
 
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu)
+    oss << "(WL: " << std::setw(8) << std::setprecision(5) << edge.GetWL()
         << ") ";
+
+    oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
+        << ") ";
+
+    oss << "(Q: " << std::setw(8) << std::setprecision(5)
+        << edge.GetQ(fpu, draw_score) << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff) << ") ";
 
     oss << "(V: ";
-    optional<float> v;
+    std::optional<float> v;
     if (edge.IsTerminal()) {
-      v = edge.node()->GetQ();
+      v = edge.node()->GetQ(draw_score);
     } else {
       NNCacheLock nneval = GetCachedNNEval(edge.node());
       if (nneval) v = -nneval->q;
@@ -267,8 +326,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
 }
 
 void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
-  const bool is_black_to_move = played_history_.IsBlackToMove();
-  auto move_stats = GetVerboseStats(root_node_, is_black_to_move);
+  auto move_stats = GetVerboseStats(root_node_);
 
   if (params_.GetVerboseStats()) {
     std::vector<ThinkingInfo> infos;
@@ -278,7 +336,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
                      info.comment = line;
                      return info;
                    });
-    info_callback_(infos);
+    uci_responder_->OutputThinkingInfo(&infos);
   } else {
     LOGFILE << "=== Move stats:";
     for (const auto& line : move_stats) LOGFILE << line;
@@ -287,8 +345,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
     LOGFILE
         << "--- Opponent moves after: "
         << final_bestmove_.GetMove(played_history_.IsBlackToMove()).as_string();
-    for (const auto& line :
-         GetVerboseStats(final_bestmove_.node(), !is_black_to_move)) {
+    for (const auto& line : GetVerboseStats(final_bestmove_.node())) {
       LOGFILE << line;
     }
   }
@@ -305,12 +362,14 @@ NNCacheLock Search::GetCachedNNEval(Node* node) const {
   for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
     history.Append(*iter);
   }
-  auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
+  const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
   NNCacheLock nneval(cache_, hash);
   return nneval;
 }
 
-void Search::MaybeTriggerStop() {
+void Search::MaybeTriggerStop(const IterationStats& stats,
+                              StoppersHints* hints) {
+  hints->Reset();
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
   // Already responded bestmove, nothing to do here.
@@ -318,115 +377,42 @@ void Search::MaybeTriggerStop() {
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ == 0) return;
 
-  // If not yet stopped, try to stop for different reasons.
-  if (!stop_.load(std::memory_order_acquire)) {
-    // If smart pruning tells to stop (best move found), stop.
-    if (only_one_possible_move_left_) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: Only one move candidate left.";
-    }
-    // Stop if reached playouts limit.
-    if (limits_.playouts >= 0 && total_playouts_ >= limits_.playouts) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: Reached playouts limit: " << total_playouts_
-              << ">=" << limits_.playouts;
-    }
-    // Stop if reached visits limit.
-    if (limits_.visits >= 0 &&
-        total_playouts_ + initial_visits_ >= limits_.visits) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: Reached visits limit: "
-              << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
-    }
-    // Stop if reached time limit.
-    if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
-      LOGFILE << "Stopped search: Ran out of time.";
-      FireStopInternal();
-    }
-    // Stop if average depth reached requested depth.
-    if (limits_.depth >= 0 &&
-        cum_depth_ / (total_playouts_ ? total_playouts_ : 1) >=
-            static_cast<unsigned int>(limits_.depth)) {
-      FireStopInternal();
-      LOGFILE << "Stopped search: Reached depth.";
-    }
+  if (!stop_.load(std::memory_order_acquire) || !ok_to_respond_bestmove_) {
+    if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
   }
+
   // If we are the first to see that stop is needed.
   if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
       !bestmove_is_sent_) {
     SendUciInfo();
     EnsureBestMoveKnown();
     SendMovesStats();
-    best_move_callback_(
-        {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
-         final_pondermove_.GetMove(!played_history_.IsBlackToMove())});
+    BestMoveInfo info(
+        final_bestmove_.GetMove(played_history_.IsBlackToMove()),
+        final_pondermove_.GetMove(!played_history_.IsBlackToMove()));
+    uci_responder_->OutputBestMove(&info);
+    stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
   }
-}
 
-void Search::UpdateRemainingMoves() {
-  if (params_.GetSmartPruningFactor() <= 0.0f) return;
-  SharedMutex::Lock lock(nodes_mutex_);
-  remaining_playouts_ = std::numeric_limits<int>::max();
-  // Check for how many playouts there is time remaining.
-  if (limits_.search_deadline && !nps_start_time_) {
-    nps_start_time_ = std::chrono::steady_clock::now();
-  } else if (limits_.search_deadline) {
-    auto time_since_start =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - *nps_start_time_)
-            .count();
-    if (time_since_start > kSmartPruningToleranceMs) {
-      auto nps = 1000LL * (total_playouts_ + kSmartPruningToleranceNodes) /
-                     time_since_start +
-                 1;
-      int64_t remaining_time = GetTimeToDeadline();
-      // Put early_exit scaler here so calculation doesn't have to be done on
-      // every node.
-      int64_t remaining_playouts =
-          remaining_time * nps / params_.GetSmartPruningFactor() / 1000;
-      // Don't assign directly to remaining_playouts_ as overflow is possible.
-      if (remaining_playouts < remaining_playouts_)
-        remaining_playouts_ = remaining_playouts;
-    }
-  }
-  // Check how many visits are left.
-  if (limits_.visits >= 0) {
-    // Add kMiniBatchSize, as it's possible to exceed visits limit by that
-    // number.
-    auto remaining_visits = limits_.visits - total_playouts_ - initial_visits_ +
-                            params_.GetMiniBatchSize() - 1;
-
-    if (remaining_visits < remaining_playouts_)
-      remaining_playouts_ = remaining_visits;
-  }
-  if (limits_.playouts >= 0) {
-    // Add kMiniBatchSize, as it's possible to exceed visits limit by that
-    // number.
-    auto remaining_playouts =
-        limits_.visits - total_playouts_ + params_.GetMiniBatchSize() + 1;
-    if (remaining_playouts < remaining_playouts_)
-      remaining_playouts_ = remaining_playouts;
-  }
-  // Even if we exceeded limits, don't go crazy by not allowing any playouts.
-  if (remaining_playouts_ <= 1) remaining_playouts_ = 1;
-  // Since remaining_playouts_ has changed, the logic for selecting visited root
-  // nodes may also change. Use a 0 visit cancel score update to clear out any
-  // cached best edge.
+  // Use a 0 visit cancel score update to clear out any cached best edge, as
+  // at the next iteration remaining playouts may be different.
+  // TODO(crem) Is it really needed?
   root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
 // settings. So, somethimes, they may return results of different moves.
-float Search::GetBestEval() const {
+std::pair<float, float> Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  float parent_q = -root_node_->GetQ();
-  if (!root_node_->HasChildren()) return parent_q;
+  float parent_wl = -root_node_->GetWL();
+  float parent_d = root_node_->GetD();
+  if (!root_node_->HasChildren()) return {parent_wl, parent_d};
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
-  return best_edge.GetQ(parent_q);
+  return {best_edge.GetWL(), best_edge.GetD()};
 }
 
 std::pair<Move, Move> Search::GetBestMove() {
@@ -444,8 +430,8 @@ std::int64_t Search::GetTotalPlayouts() const {
 
 bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
   // Search moves overrides tablebase.
-  if (!limits_.searchmoves.empty()) {
-    *root_moves = limits_.searchmoves;
+  if (!searchmoves_.empty()) {
+    *root_moves = searchmoves_;
     return false;
   }
   auto board = played_history_.Last().GetBoard();
@@ -453,11 +439,21 @@ bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
       (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
     return false;
   }
-  return syzygy_tb_->root_probe(played_history_.Last(),
-                                params_.GetSyzygyFastPlay() ||
-                                played_history_.DidRepeatSinceLastZeroingMove(),
-                                root_moves) ||
+  return syzygy_tb_->root_probe(
+             played_history_.Last(),
+             params_.GetSyzygyFastPlay() ||
+                 played_history_.DidRepeatSinceLastZeroingMove(),
+             root_moves) ||
          syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
+}
+
+void Search::ResetBestMove() {
+  SharedMutex::Lock nodes_lock(nodes_mutex_);
+  Mutex::Lock lock(counters_mutex_);
+  bool old_sent = bestmove_is_sent_;
+  bestmove_is_sent_ = false;
+  EnsureBestMoveKnown();
+  bestmove_is_sent_ = old_sent;
 }
 
 // Computes the best move, maybe with temperature (according to the settings).
@@ -480,9 +476,8 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     }
   }
 
-  final_bestmove_ = temperature
-                        ? GetBestChildWithTemperature(root_node_, temperature)
-                        : GetBestChildNoTemperature(root_node_);
+  final_bestmove_ = temperature ? GetBestRootChildWithTemperature(temperature)
+                                : GetBestChildNoTemperature(root_node_);
 
   if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node());
@@ -497,11 +492,12 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
     PopulateRootMoveLimit(&root_limit);
   }
   // Best child is selected using the following criteria:
+  // * Is terminal win, e.g., checkmate.
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<bool, uint64_t, float, float, EdgeAndNode>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -509,15 +505,18 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+    const auto WL = edge.GetWL();
+    edges.emplace_back(edge.IsTerminal() && WL > 0.0f, edge.GetN(), WL,
+                       edge.GetP(), edge);
   }
-  auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
-                                                         : edges.end();
+  const auto middle = (static_cast<int>(edges.size()) > count)
+                          ? edges.begin() + count
+                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
 
   std::vector<EdgeAndNode> res;
   std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<3>(x); });
+                 [](const El& x) { return std::get<4>(x); });
   return res;
 }
 
@@ -527,44 +526,45 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
   return res.empty() ? EdgeAndNode() : res.front();
 }
 
-// Returns a child chosen according to weighted-by-temperature visit count.
-EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
-                                                float temperature) const {
+// Returns a child of a root chosen according to weighted-by-temperature visit
+// count.
+EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
+  // Root is at even depth.
+  const bool draw_score = GetDrawScore(/* is_odd_depth= */ false);
   MoveList root_limit;
-  if (parent == root_node_) {
-    PopulateRootMoveLimit(&root_limit);
-  }
+  PopulateRootMoveLimit(&root_limit);
 
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   float max_n = 0.0;
-  float offset = params_.GetTemperatureVisitOffset();
+  const float offset = params_.GetTemperatureVisitOffset();
   float max_eval = -1.0f;
-  const float fpu = GetFpu(params_, parent, parent == root_node_);
+  const float fpu =
+      GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
 
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
+  for (auto edge : root_node_->Edges()) {
+    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
+                                         edge.GetMove()) == root_limit.end()) {
       continue;
     }
-    if (edge.GetN() + offset > max_n) max_n = edge.GetN() + offset;
-    if (edge.GetQ(fpu) > max_eval) max_eval = edge.GetQ(fpu);
+    if (edge.GetN() + offset > max_n) {
+      max_n = edge.GetN() + offset;
+      max_eval = edge.GetQ(fpu, draw_score);
+    }
   }
 
   // No move had enough visits for temperature, so use default child criteria
-  if (max_n <= 0.0f) return GetBestChildNoTemperature(parent);
+  if (max_n <= 0.0f) return GetBestChildNoTemperature(root_node_);
 
   // TODO(crem) Simplify this code when samplers.h is merged.
   const float min_eval =
       max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
+  for (auto edge : root_node_->Edges()) {
+    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
+                                         edge.GetMove()) == root_limit.end()) {
       continue;
     }
-    if (edge.GetQ(fpu) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     sum += std::pow(
         std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
         1 / temperature);
@@ -572,18 +572,17 @@ EdgeAndNode Search::GetBestChildWithTemperature(Node* parent,
   }
   assert(sum);
 
-  float toss = Random::Get().GetFloat(cumulative_sums.back());
+  const float toss = Random::Get().GetFloat(cumulative_sums.back());
   int idx =
       std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
       cumulative_sums.begin();
 
-  for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
+  for (auto edge : root_node_->Edges()) {
+    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
+                                         edge.GetMove()) == root_limit.end()) {
       continue;
     }
-    if (edge.GetQ(fpu) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
@@ -603,6 +602,11 @@ void Search::StartThreads(size_t how_many) {
       worker.RunBlocking();
     });
   }
+  LOGFILE << "Search started. "
+          << std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - start_time_)
+                 .count()
+          << "ms already passed.";
 }
 
 void Search::RunBlocking(size_t threads) {
@@ -614,35 +618,53 @@ bool Search::IsSearchActive() const {
   return !stop_.load(std::memory_order_acquire);
 }
 
+void Search::PopulateCommonIterationStats(IterationStats* stats) {
+  stats->time_since_movestart = GetTimeSinceStart();
+
+  SharedMutex::SharedLock nodes_lock(nodes_mutex_);
+  if (!nps_start_time_ && total_playouts_ > 0) {
+    nps_start_time_ = std::chrono::steady_clock::now();
+  }
+  stats->total_nodes = total_playouts_ + initial_visits_;
+  stats->nodes_since_movestart = total_playouts_;
+  stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
+  stats->edge_n.clear();
+  for (const auto& edge : root_node_->Edges()) {
+    stats->edge_n.push_back(edge.GetN());
+  }
+}
+
 void Search::WatchdogThread() {
   LOGFILE << "Start a watchdog thread.";
+  StoppersHints hints;
+  IterationStats stats;
   while (true) {
-    MaybeTriggerStop();
+    hints.Reset();
+    PopulateCommonIterationStats(&stats);
+    MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
 
     using namespace std::chrono_literals;
-    constexpr auto kMaxWaitTime = std::chrono::milliseconds(100);
-    constexpr auto kMinWaitTime = std::chrono::milliseconds(1);
+    constexpr auto kMaxWaitTimeMs = 100;
+    constexpr auto kMinWaitTimeMs = 1;
 
     Mutex::Lock lock(counters_mutex_);
     // Only exit when bestmove is responded. It may happen that search threads
     // already all exited, and we need at least one thread that can do that.
     if (bestmove_is_sent_) break;
 
-    auto remaining_time = limits_.search_deadline
-                              ? std::chrono::milliseconds(GetTimeToDeadline())
-                              : kMaxWaitTime;
-    if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
-    if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
+    auto remaining_time = hints.GetEstimatedRemainingTimeMs();
+    if (remaining_time > kMaxWaitTimeMs) remaining_time = kMaxWaitTimeMs;
+    if (remaining_time < kMinWaitTimeMs) remaining_time = kMinWaitTimeMs;
     // There is no real need to have max wait time, and sometimes it's fine
     // to wait without timeout at all (e.g. in `go nodes` mode), but we
     // still limit wait time for exotic cases like when pc goes to sleep
     // mode during thinking.
     // Minimum wait time is there to prevent busy wait and other threads
     // starvation.
-    watchdog_cv_.wait_for(lock.get_raw(), remaining_time, [this]() {
-      return stop_.load(std::memory_order_acquire);
-    });
+    watchdog_cv_.wait_for(
+        lock.get_raw(), std::chrono::milliseconds(remaining_time),
+        [this]() { return stop_.load(std::memory_order_acquire); });
   }
   LOGFILE << "End a watchdog thread.";
 }
@@ -710,11 +732,33 @@ void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
   InitializeIteration(search_->network_->NewComputation());
 
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    while (true) {
+      // If search is stop, we've not gathered or done anything and we don't
+      // want to, so we can safely skip all below.
+      if (search_->stop_.load(std::memory_order_acquire)) return;
+      int available =
+          search_->pending_searchers_.load(std::memory_order_acquire);
+      if (available > 0 &&
+          search_->pending_searchers_.compare_exchange_weak(
+              available, available - 1, std::memory_order_acq_rel)) {
+        break;
+      }
+      // This is a hard spin lock to reduce latency but at the expense of busy
+      // wait cpu usage. If search worker count is large, this is probably a bad
+      // idea.
+    }
+  }
+
   // 2. Gather minibatch.
   GatherMinibatch();
 
   // 3. Prefetch into cache.
   MaybePrefetchIntoCache();
+
+  if (params_.GetMaxConcurrentSearchers() != 0) {
+    search_->pending_searchers_.fetch_add(1, std::memory_order_acq_rel);
+  }
 
   // 4. Run NN computation.
   RunNNComputation();
@@ -847,10 +891,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   // Fetch the current best root node visits for possible smart pruning.
-  int64_t best_node_n = search_->current_best_edge_.GetN();
+  const int64_t best_node_n = search_->current_best_edge_.GetN();
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
+  const float even_draw_score = search_->GetDrawScore(false);
+  const float odd_draw_score = search_->GetDrawScore(true);
   uint16_t depth = 0;
   bool node_already_updated = true;
 
@@ -877,12 +923,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
-    if (!node->HasChildren()) {
-      if (node->IsTerminal()) {
-        return NodeToProcess::TerminalHit(node, depth, 1);
-      } else {
-        return NodeToProcess::Extension(node, depth);
-      }
+    if (node->IsTerminal() || !node->HasChildren()) {
+      return NodeToProcess::Visit(node, depth);
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
     if (possible_shortcut_child) {
@@ -899,13 +941,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    const float cpuct = ComputeCpuct(params_, node->GetN());
-    float puct_mult =
+    const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
+    const float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
-    int possible_moves = 0;
-    const float fpu = GetFpu(params_, node, is_root_node);
+    // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
+    // the weirdness.
+    const float draw_score =
+        (depth % 2 == 0) ? odd_draw_score : even_draw_score;
+    const float fpu = GetFpu(params_, node, is_root_node, draw_score);
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -914,7 +959,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // To ensure we have at least one node to expand, always include
         // current best node.
         if (child != search_->current_best_edge_ &&
-            search_->remaining_playouts_ < best_node_n - child.GetN()) {
+            latest_time_manager_hints_.GetEstimatedRemainingPlayouts() <
+                best_node_n - child.GetN()) {
           continue;
         }
         // If root move filter exists, make sure move is in the list.
@@ -923,9 +969,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
                       child.GetMove()) == root_move_filter_.end()) {
           continue;
         }
-        ++possible_moves;
       }
-      float Q = child.GetQ(fpu);
+      const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
       const float score = child.GetU(puct_mult) + Q;
       if (score > best) {
         second_best = best;
@@ -939,8 +984,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
-      int estimated_visits_to_change_best =
-          best_edge.GetVisitsToReachU(second_best, puct_mult, fpu);
+      int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
+          second_best, puct_mult, fpu, params_.GetLogitQ());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
@@ -952,12 +997,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       second_best_edge.Reset();
     }
 
-    if (is_root_node && possible_moves <= 1 && !search_->limits_.infinite) {
-      // If there is only one move theoretically possible within remaining time,
-      // output it.
-      Mutex::Lock counters_lock(search_->counters_mutex_);
-      search_->only_one_possible_move_left_ = true;
-    }
     is_root_node = false;
   }
 }
@@ -1020,7 +1059,8 @@ void SearchWorker::ExtendNode(Node* node) {
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
-      WDLScore wdl = search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
+      const WDLScore wdl =
+          search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
       if (state != FAIL) {
@@ -1044,14 +1084,16 @@ void SearchWorker::ExtendNode(Node* node) {
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
-  auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
+  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) return true;
   } else {
     if (search_->cache_->ContainsKey(hash)) return true;
   }
-  auto planes = EncodePositionForNN(history_, 8, params_.GetHistoryFill());
+  auto planes =
+      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
+                          history_, 8, params_.GetHistoryFill());
 
   std::vector<uint16_t> moves;
 
@@ -1087,14 +1129,16 @@ void SearchWorker::MaybePrefetchIntoCache() {
       computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
-    PrefetchIntoCache(search_->root_node_, params_.GetMaxPrefetchBatch() -
-                                               computation_->GetCacheMisses());
+    PrefetchIntoCache(
+        search_->root_node_,
+        params_.GetMaxPrefetchBatch() - computation_->GetCacheMisses(), false);
   }
 }
 
 // Prefetches up to @budget nodes into cache. Returns number of nodes
 // prefetched.
-int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
+int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
+  const float draw_score = search_->GetDrawScore(is_odd_depth);
   if (budget <= 0) return 0;
 
   // We are in a leaf, which is not yet being processed.
@@ -1118,13 +1162,17 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
   // Populate all subnodes and their scores.
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
-  const float cpuct = ComputeCpuct(params_, node->GetN());
-  float puct_mult = cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float fpu = GetFpu(params_, node, node == search_->root_node_);
+  const float cpuct =
+      ComputeCpuct(params_, node->GetN(), node == search_->root_node_);
+  const float puct_mult =
+      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const float fpu =
+      GetFpu(params_, node, node == search_->root_node_, draw_score);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu), edge);
+    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score),
+                        edge);
   }
 
   size_t first_unsorted_index = 0;
@@ -1154,7 +1202,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-fpu);
+      const float q = edge.GetQ(-fpu, draw_score);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
@@ -1165,7 +1213,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget) {
       }
     }
     history_.Append(edge.GetMove());
-    const int budget_spent = PrefetchIntoCache(edge.node(), budget_to_spend);
+    const int budget_spent =
+        PrefetchIntoCache(edge.node(), budget_to_spend, !is_odd_depth);
     history_.Pop();
     budget -= budget_spent;
     total_budget_spent += budget_spent;
@@ -1194,35 +1243,45 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (!node_to_process->nn_queried) {
     // Terminal nodes don't involve the neural NetworkComputation, nor do
     // they require any further processing after value retrieval.
-    node_to_process->v = node->GetQ();
+    node_to_process->v = node->GetWL();
+    node_to_process->d = node->GetD();
     return;
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
   node_to_process->v = -computation_->GetQVal(idx_in_computation);
+  node_to_process->d = computation_->GetDVal(idx_in_computation);
   // ...and secondly, the policy data.
+  // Calculate maximum first.
+  float max_p = -std::numeric_limits<float>::infinity();
+  for (auto edge : node->Edges()) {
+    max_p =
+        std::max(max_p, computation_->GetPVal(idx_in_computation,
+                                              edge.GetMove().as_nn_index()));
+  }
   float total = 0.0;
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
-    if (params_.GetPolicySoftmaxTemp() != 1.0f) {
-      // Flush denormals to zero.
-      p = p < 1.17549435E-38
-              ? 0.0
-              : FastPow2(FastLog2(p) / params_.GetPolicySoftmaxTemp());
-    }
+    // Perform softmax and take into account policy softmax temperature T.
+    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
+    p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
+
+    // Note that p now lies in [0, 1], so it is safe to store it in compressed
+    // format. Normalization happens later.
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
     total += edge.edge()->GetP();
   }
   // Normalize P values to add up to 1.0.
   if (total > 0.0f) {
-    float scale = 1.0f / total;
+    const float scale = 1.0f / total;
     for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (params_.GetNoise() && node == search_->root_node_) {
-    ApplyDirichletNoise(node, 0.25, 0.3);
+  if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
+    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
+                        params_.GetNoiseAlpha());
   }
 }
 
@@ -1249,17 +1308,58 @@ void SearchWorker::DoBackupUpdateSingleNode(
     return;
   }
 
+  // For the first visit to a terminal, maybe convert ancestors to terminal too.
+  auto can_convert =
+      params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
+
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
-  for (Node* n = node; n != search_->root_node_->GetParent();
-       n = n->GetParent()) {
-    n->FinalizeScoreUpdate(v, node_to_process.multivisit);
+  float d = node_to_process.d;
+  int depth = 0;
+  for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
+    p = n->GetParent();
+
+    // Current node might have become terminal from some other descendant, so
+    // backup the rest of the way with more accurate values.
+    if (n->IsTerminal()) {
+      v = n->GetWL();
+      d = n->GetD();
+    }
+    n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
+                           d, node_to_process.multivisit);
+
+    // Nothing left to do without ancestors to update.
+    if (!p) break;
+
+    // Convert parents to terminals except the root or those already converted.
+    can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
+
+    // A non-winning terminal move needs all other moves to be similar.
+    auto all_losing = true;
+    if (can_convert && v <= 0.0f) {
+      for (const auto& edge : p->Edges()) {
+        const auto WL = edge.GetWL();
+        can_convert = can_convert && edge.IsTerminal() && WL <= 0.0f;
+        all_losing = all_losing && WL < 0.0f;
+      }
+    }
+
+    // Convert the parent to a terminal loss if at least one move is winning or
+    // to a terminal win if all moves are losing; otherwise there's a mix of
+    // draws and losing, so at best it's a draw.
+    if (can_convert) {
+      p->MakeTerminal(v > 0.0f ? GameResult::BLACK_WON
+                               : all_losing ? GameResult::WHITE_WON
+                                            : GameResult::DRAW);
+    }
+
     // Q will be flipped for opponent.
     v = -v;
+    depth++;
 
     // Update the stats.
     // Best move.
-    if (n->GetParent() == search_->root_node_ &&
+    if (p == search_->root_node_ &&
         search_->current_best_edge_.GetN() <= n->GetN()) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_);
@@ -1273,8 +1373,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
-  search_->UpdateRemainingMoves();  // Updates smart pruning counters.
-  search_->MaybeTriggerStop();
+  search_->PopulateCommonIterationStats(&iteration_stats_);
+  search_->MaybeTriggerStop(iteration_stats_, &latest_time_manager_hints_);
   search_->MaybeOutputInfo();
 
   // If this thread had no work, not even out of order, then sleep for some

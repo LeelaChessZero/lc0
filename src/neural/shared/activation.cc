@@ -22,6 +22,11 @@
 #include <cmath>
 
 namespace lczero {
+namespace {
+constexpr int kWidth = 8;
+constexpr int kHeight = 8;
+constexpr int kSquares = kWidth * kHeight;
+}  // namespace
 
 void SoftmaxActivation(const size_t size, const float* input, float* output) {
   auto alpha = *std::max_element(input, input + size);
@@ -34,6 +39,40 @@ void SoftmaxActivation(const size_t size, const float* input, float* output) {
   }
   for (size_t i = 0; i < size; i++) {
     output[i] = output[i] / denom;
+  }
+}
+
+void BiasResidualRelu(const size_t batch_size, const size_t channels,
+                 float* data, const float* biases,
+                 const float* eltwise,
+                 const bool relu) {
+  for (size_t i = 0; i < batch_size; i++) {
+    for (size_t c = 0; c < channels; ++c) {
+      auto bias = biases[c];
+
+      if (eltwise == nullptr) {
+        auto arr = &data[c * kSquares];
+        for (size_t b = 0; b < kSquares; b++) {
+          float val = arr[b] + bias;
+          if (relu) {
+            val = val > 0 ? val : 0;
+          }
+          arr[b] = val;
+        }
+      } else {
+        auto arr = &data[c * kSquares];
+        auto res = &eltwise[c * kSquares];
+        for (size_t b = 0; b < kSquares; b++) {
+          float val = res[b] + arr[b] + bias;
+          if (relu) {
+            val = val > 0 ? val : 0;
+          }
+          arr[b] = val;
+        }
+      }
+    }
+    data += channels * kSquares;
+    if (eltwise != nullptr) eltwise += channels * kSquares;
   }
 }
 }  // namespace lczero

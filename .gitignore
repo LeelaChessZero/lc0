@@ -8,3 +8,5 @@ subprojects/*
 !subprojects/*.wrap
 lc0.xcodeproj/
 *.swp
+.clang_complete
+src/.vs/

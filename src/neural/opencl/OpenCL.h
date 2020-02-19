@@ -1,19 +1,22 @@
 /*
-    This file is part of Leela Zero.
-    Copyright (C) 2017 Gian-Carlo Pascutto
+  Originally from the Leela Zero project.
+  Copyright (C) 2017 Gian-Carlo Pascutto
 
-    Leela Zero is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2018-2019 The LCZero Authors
 
-    Leela Zero is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
-    You should have received a copy of the GNU General Public License
-    along with Leela Zero.  If not, see <http://www.gnu.org/licenses/>.
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #pragma once
@@ -86,12 +89,10 @@ class OpenCL_Network {
   void push_input_convolution(unsigned int filter_size, unsigned int channels,
                               unsigned int outputs,
                               const std::vector<float>& weights,
-                              const std::vector<float>& means,
-                              const std::vector<float>& variances) {
+                              const std::vector<float>& biases) {
     size_t layer = get_layer_count();
     push_weights(layer, weights);
-    push_weights(layer, means);
-    push_weights(layer, variances);
+    push_weights(layer, biases);
     m_layers[layer].is_input_convolution = true;
     m_layers[layer].outputs = outputs;
     m_layers[layer].filter_size = filter_size;
@@ -100,18 +101,14 @@ class OpenCL_Network {
 
   void push_residual(unsigned int filter_size, unsigned int channels,
                      unsigned int outputs, const std::vector<float>& weights_1,
-                     const std::vector<float>& means_1,
-                     const std::vector<float>& variances_1,
+                     const std::vector<float>& biases_1,
                      const std::vector<float>& weights_2,
-                     const std::vector<float>& means_2,
-                     const std::vector<float>& variances_2) {
+                     const std::vector<float>& biases_2) {
     size_t layer = get_layer_count();
     push_weights(layer, weights_1);
-    push_weights(layer, means_1);
-    push_weights(layer, variances_1);
+    push_weights(layer, biases_1);
     push_weights(layer, weights_2);
-    push_weights(layer, means_2);
-    push_weights(layer, variances_2);
+    push_weights(layer, biases_2);
     m_layers[layer].is_residual_block = true;
     m_layers[layer].outputs = outputs;
     m_layers[layer].filter_size = filter_size;
@@ -137,14 +134,12 @@ class OpenCL_Network {
   void push_policy(unsigned int channels, unsigned int outputs,
                    unsigned int ip_in, unsigned int ip_out,
                    const std::vector<float>& weights,
-                   const std::vector<float>& means,
-                   const std::vector<float>& variances,
+                   const std::vector<float>& biases,
                    const std::vector<float>& fc_w,
                    const std::vector<float>& fc_b) {
     size_t layer = get_layer_count();
     push_weights(layer, weights);
-    push_weights(layer, means);
-    push_weights(layer, variances);
+    push_weights(layer, biases);
     push_weights(layer, fc_w);
     push_weights(layer, fc_b);
     m_layers[layer].is_policy = true;
@@ -154,19 +149,18 @@ class OpenCL_Network {
     m_layers[layer].ip_out_size = ip_out;
   }
 
-  void push_conv_policy(
-      unsigned int channels, unsigned int outputs, unsigned int ip_in,
-      unsigned int ip_out, const std::vector<float>& weights_1,
-      const std::vector<float>& means_1, const std::vector<float>& variances_1,
-      const std::vector<float>& weights_2, const std::vector<float>& means_2,
-      const std::vector<float>& variances_2, const std::vector<short>& indices) {
+  void push_conv_policy(unsigned int channels, unsigned int outputs,
+                        unsigned int ip_in, unsigned int ip_out,
+                        const std::vector<float>& weights_1,
+                        const std::vector<float>& biases_1,
+                        const std::vector<float>& weights_2,
+                        const std::vector<float>& biases_2,
+                        const std::vector<short>& indices) {
     size_t layer = get_layer_count();
     push_weights(layer, weights_1);
-    push_weights(layer, means_1);
-    push_weights(layer, variances_1);
+    push_weights(layer, biases_1);
     push_weights(layer, weights_2);
-    push_weights(layer, means_2);
-    push_weights(layer, variances_2);
+    push_weights(layer, biases_2);
     push_weights_short(layer, indices);
     m_layers[layer].is_conv_policy = true;
     m_layers[layer].outputs = outputs;
@@ -178,14 +172,12 @@ class OpenCL_Network {
   void push_value(unsigned int channels, unsigned int outputs,
                   unsigned int ip_in, unsigned int ip_out,
                   const std::vector<float>& weights,
-                  const std::vector<float>& means,
-                  const std::vector<float>& variances,
+                  const std::vector<float>& biases,
                   const std::vector<float>& fc_w,
                   const std::vector<float>& fc_b) {
     size_t layer = get_layer_count();
     push_weights(layer, weights);
-    push_weights(layer, means);
-    push_weights(layer, variances);
+    push_weights(layer, biases);
     push_weights(layer, fc_w);
     push_weights(layer, fc_b);
     m_layers[layer].is_value = true;

@@ -26,6 +26,7 @@
 */
 
 #include "chess/position.h"
+
 #include <cassert>
 
 namespace lczero {
@@ -34,7 +35,7 @@ Position::Position(const Position& parent, Move m)
     : no_capture_ply_(parent.no_capture_ply_ + 1),
       ply_count_(parent.ply_count_ + 1) {
   them_board_ = parent.us_board_;
-  bool capture = them_board_.ApplyMove(m);
+  const bool capture = them_board_.ApplyMove(m);
   us_board_ = them_board_;
   us_board_.Mirror();
   if (capture) no_capture_ply_ = 0;
@@ -49,22 +50,6 @@ Position::Position(const ChessBoard& board, int no_capture_ply, int game_ply)
 
 uint64_t Position::Hash() const {
   return HashCat({us_board_.Hash(), static_cast<unsigned long>(repetitions_)});
-}
-
-bool Position::CanCastle(Castling castling) const {
-  auto cast = us_board_.castlings();
-  switch (castling) {
-    case WE_CAN_OOO:
-      return cast.we_can_000();
-    case WE_CAN_OO:
-      return cast.we_can_00();
-    case THEY_CAN_OOO:
-      return cast.they_can_000();
-    case THEY_CAN_OO:
-      return cast.they_can_00();
-  }
-  assert(false);
-  return false;
 }
 
 std::string Position::DebugString() const { return us_board_.DebugString(); }

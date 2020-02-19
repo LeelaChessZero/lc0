@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,6 +27,8 @@
 
 #include "mcts/params.h"
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 namespace {
@@ -49,11 +51,18 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "When the engine cannot gather a large enough batch for immediate use, try "
     "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
+const OptionId SearchParams::kLogitQId{
+    "logit-q", "LogitQ",
+    "Apply logit to Q when determining Q+U best child. This makes the U term "
+    "less dominant when Q is near -1 or +1."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
+const OptionId SearchParams::kCpuctAtRootOffsetId{
+    "cpuct-root-offset", "CPuctRootOffset",
+    "cpuct_init value adjustment for the root node."};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
@@ -84,46 +93,54 @@ const OptionId SearchParams::kTemperatureWinpctCutoffId{
     "probability less than X than the best move) are not considered at all."};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
     "temp-visit-offset", "TempVisitOffset",
-    "Reduces visits by this value when picking a move with a temperature. When "
-    "the offset is less than number of visits for a particular move, that move "
-    "is not picked at all."};
+    "Adjusts visits by this value when picking a move with a temperature. If a "
+    "negative offset reduces visits for a particular move below zero, that "
+    "move is not picked. If no moves can be picked, no temperature is used."};
 const OptionId SearchParams::kNoiseId{
     "noise", "DirichletNoise",
     "Add Dirichlet noise to root node prior probabilities. This allows the "
     "engine to discover new ideas during training by exploring moves which are "
     "known to be bad. Not normally used during play.",
     'n'};
+const OptionId SearchParams::kNoiseEpsilonId{
+    "noise-epsilon", "DirichletNoiseEpsilon",
+    "Amount of Dirichlet noise to combine with root priors. This allows the "
+    "engine to discover new ideas during training by exploring moves which are "
+    "known to be bad. Not normally used during play."};
+const OptionId SearchParams::kNoiseAlphaId{
+    "noise-alpha", "DirichletNoiseAlpha",
+    "Alpha of Dirichlet noise to control the sharpness of move probabilities. "
+    "Larger values result in flatter / more evenly distributed values."};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
-    "Display Q, V, N, U and P values of every move candidate after each move."};
-const OptionId SearchParams::kSmartPruningFactorId{
-    "smart-pruning-factor", "SmartPruningFactor",
-    "Do not spend time on the moves which cannot become bestmove given the "
-    "remaining time to search. When no other move can overtake the current "
-    "best, the search stops, saving the time. Values greater than 1 stop less "
-    "promising moves from being considered even earlier. Values less than 1 "
-    "causes hopeless moves to still have some attention. When set to 0, smart "
-    "pruning is deactivated."};
+    "Display Q, V, N, U and P values of every move candidate after each move.",
+    'v'};
+const OptionId SearchParams::kLogLiveStatsId{
+    "log-live-stats", "LogLiveStats",
+    "Do VerboseMoveStats on every info update."};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
-    "How is an eval of unvisited node determined. \"reduction\" subtracts "
-    "--fpu-reduction value from the parent eval. \"absolute\" sets eval of "
-    "unvisited nodes to the value specified in --fpu-value."};
-// TODO(crem) Make FPU in "reduction" mode use fpu-value too. For now it's kept
-// for backwards compatibility.
-const OptionId SearchParams::kFpuReductionId{
-    "fpu-reduction", "FpuReduction",
-    "\"First Play Urgency\" reduction (used when FPU strategy is "
-    "\"reduction\"). Normally when a move has no visits, "
-    "it's eval is assumed to be equal to parent's eval. With non-zero FPU "
-    "reduction, eval of unvisited move is decreased by that value, "
-    "discouraging visits of unvisited moves, and saving those visits for "
-    "(hopefully) more promising moves."};
+    "How is an eval of unvisited node determined. \"First Play Urgency\" "
+    "changes search behavior to visit unvisited nodes earlier or later by "
+    "using a placeholder eval before checking the network. The value specified "
+    "with --fpu-value results in \"reduction\" subtracting that value from the "
+    "parent eval while \"absolute\" directly uses that value."};
 const OptionId SearchParams::kFpuValueId{
     "fpu-value", "FpuValue",
-    "\"First Play Urgency\" value. When FPU strategy is \"absolute\", value of "
-    "unvisited node is assumed to be equal to this value, and does not depend "
-    "on parent eval."};
+    "\"First Play Urgency\" value used to adjust unvisited node eval based on "
+    "--fpu-strategy."};
+const OptionId SearchParams::kFpuStrategyAtRootId{
+    "fpu-strategy-at-root", "FpuStrategyAtRoot",
+    "How is an eval of unvisited root children determined. Just like "
+    "--fpu-strategy except only at the root level and adjusts unvisited root "
+    "children eval with --fpu-value-at-root. In addition to matching the "
+    "strategies from --fpu-strategy, this can be \"same\" to disable the "
+    "special root behavior."};
+const OptionId SearchParams::kFpuValueAtRootId{
+    "fpu-value-at-root", "FpuValueAtRoot",
+    "\"First Play Urgency\" value used to adjust unvisited root children eval "
+    "based on --fpu-strategy-at-root. Has no effect if --fpu-strategy-at-root "
+    "is \"same\"."};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
     "Length of history, in half-moves, to include into the cache key. When "
@@ -146,6 +163,13 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "in the cache or is terminal, evaluate it right away without sending the "
     "batch to the NN. When off, this may only happen with the very first node "
     "of a batch; when on, this can happen with any node."};
+const OptionId SearchParams::kStickyEndgamesId{
+    "sticky-endgames", "StickyEndgames",
+    "When an end of game position is found during search, allow the eval of "
+    "the previous move's position to stick to something more accurate. For "
+    "example, if at least one move results in checkmate, then the position "
+    "should stick as checkmated. Similarly, if all moves are drawn or "
+    "checkmated, the position should stick as drawn or checkmate."};
 const OptionId SearchParams::kSyzygyFastPlayId{
     "syzygy-fast-play", "SyzygyFastPlay",
     "With DTZ tablebase files, only allow the network pick from winning moves "
@@ -154,6 +178,9 @@ const OptionId SearchParams::kMultiPvId{
     "multipv", "MultiPV",
     "Number of game play lines (principal variations) to show in UCI info "
     "output."};
+const OptionId SearchParams::kPerPvCountersId{
+    "per-pv-counters", "PerPVCounters",
+    "Show node counts per principal variation instead of total nodes in UCI."};
 const OptionId SearchParams::kScoreTypeId{
     "score-type", "ScoreType",
     "What to display as score. Either centipawns (the UCI default), win "
@@ -164,13 +191,42 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SearchParams::kShortSightednessId{
+    "short-sightedness", "ShortSightedness",
+    "Used to focus more on short term gains over long term."};
+const OptionId SearchParams::kDisplayCacheUsageId{
+    "display-cache-usage", "DisplayCacheUsage",
+    "Display cache fullness through UCI info `hash` section."};
+const OptionId SearchParams::kMaxConcurrentSearchersId{
+    "max-concurrent-searchers", "MaxConcurrentSearchers",
+    "If not 0, at most this many search workers can be gathering minibatches "
+    "at once."};
+const OptionId SearchParams::kDrawScoreSidetomoveId{
+    "draw-score-sidetomove", "DrawScoreSideToMove",
+    "Score of a drawn game, as seen by a player making the move."};
+const OptionId SearchParams::kDrawScoreOpponentId{
+    "draw-score-opponent", "DrawScoreOpponent",
+    "Score of a drawn game, as seen by the opponent."};
+const OptionId SearchParams::kDrawScoreWhiteId{
+    "draw-score-white", "DrawScoreWhite",
+    "Adjustment, added to a draw score of a white player."};
+const OptionId SearchParams::kDrawScoreBlackId{
+    "draw-score-black", "DrawScoreBlack",
+    "Adjustment, added to a draw score of a black player."};
+const OptionId SearchParams::kStrengthRatioId{
+    "strength-ratio", "StrengthRatio",
+    "An option to reduce engine strength. Works by delaying the search for a "
+    "portion of the allocated time. Set to zero for the minimum strength, one "
+    "for the maximum."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
+  options->Add<BoolOption>(kLogitQId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
+  options->Add<FloatOption>(kCpuctAtRootOffsetId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
@@ -178,48 +234,104 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
-  options->Add<FloatOption>(kTemperatureVisitOffsetId, -0.99999f, 1000.0f) =
+  options->Add<FloatOption>(kTemperatureVisitOffsetId, -1000.0f, 1000.0f) =
       0.0f;
   options->Add<BoolOption>(kNoiseId) = false;
+  options->Add<FloatOption>(kNoiseEpsilonId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kNoiseAlphaId, 0.0f, 10000000.0f) = 0.3f;
   options->Add<BoolOption>(kVerboseStatsId) = false;
-  options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) = 1.33f;
+  options->Add<BoolOption>(kLogLiveStatsId) = false;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
-  options->Add<FloatOption>(kFpuReductionId, -100.0f, 100.0f) = 1.2f;
-  options->Add<FloatOption>(kFpuValueId, -1.0f, 1.0f) = -1.0f;
+  options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
+  fpu_strategy.push_back("same");
+  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
+  options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
+  options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
-  std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
+  options->Add<BoolOption>(kPerPvCountersId) = false;
+  std::vector<std::string> score_type = {"centipawn",
+                                         "centipawn_with_drawscore",
+                                         "centipawn_2018",
+                                         "win_percentage",
+                                         "Q",
+                                         "W-L"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
+  options->Add<BoolOption>(kDisplayCacheUsageId) = false;
+  options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 0;
+  options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
+  options->Add<FloatOption>(kStrengthRatioId, 0.0f, 1.0f) = 1.0f;
+
+  options->HideOption(kNoiseEpsilonId);
+  options->HideOption(kNoiseAlphaId);
+  options->HideOption(kLogLiveStatsId);
+  options->HideOption(kDisplayCacheUsageId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
+      kLogitQ(options.Get<bool>(kLogitQId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
+      kCpuctAtRootOffset(options.Get<float>(kCpuctAtRootOffsetId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
-      kNoise(options.Get<bool>(kNoiseId.GetId())),
-      kSmartPruningFactor(options.Get<float>(kSmartPruningFactorId.GetId())),
+      kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
+                        ? 0.25f
+                        : options.Get<float>(kNoiseEpsilonId.GetId())),
+      kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
                    "absolute"),
-      kFpuReduction(options.Get<float>(kFpuReductionId.GetId())),
       kFpuValue(options.Get<float>(kFpuValueId.GetId())),
+      kFpuAbsoluteAtRoot(
+          (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
+           kFpuAbsolute) ||
+          options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "absolute"),
+      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId.GetId()) ==
+                              "same"
+                          ? kFpuValue
+                          : options.Get<float>(kFpuValueAtRootId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
+      kStickyEndgames(options.Get<bool>(kStickyEndgamesId.GetId())),
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())){
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
+      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
+      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())),
+      kMaxConcurrentSearchers(
+          options.Get<int>(kMaxConcurrentSearchersId.GetId())),
+      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId.GetId()) /
+                           100.0f},
+      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId.GetId()) /
+                         100.0f},
+      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
+      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f} {
+  if (kCpuct + kCpuctAtRootOffset < 0.0f) {
+    throw Exception("CPuct + CPuctRootOffset must be >= 0.");
+  }
+  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
+          std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
+      1.0f) {
+    throw Exception(
+        "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
+        "be <= 100");
+  }
 }
 
 }  // namespace lczero

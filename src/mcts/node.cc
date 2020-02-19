@@ -34,6 +34,7 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
@@ -173,7 +174,7 @@ std::string Edge::DebugString() const {
 EdgeList::EdgeList(MoveList moves)
     : edges_(std::make_unique<Edge[]>(moves.size())), size_(moves.size()) {
   auto* edge = edges_.get();
-  for (auto move : moves) edge++->SetMove(move);
+  for (const auto move : moves) edge++->SetMove(move);
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -211,7 +212,7 @@ std::string Node::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
       << " Index:" << index_ << " Child:" << child_.get()
-      << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
+      << " Sibling:" << sibling_.get() << " WL:" << wl_ << " N:" << n_
       << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
   return oss.str();
 }
@@ -219,11 +220,37 @@ std::string Node::DebugString() const {
 void Node::MakeTerminal(GameResult result) {
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
-    q_ = 0.0f;
+    wl_ = 0.0f;
+    d_ = 1.0f;
   } else if (result == GameResult::WHITE_WON) {
-    q_ = 1.0f;
+    wl_ = 1.0f;
+    d_ = 0.0f;
   } else if (result == GameResult::BLACK_WON) {
-    q_ = -1.0f;
+    wl_ = -1.0f;
+    d_ = 0.0f;
+  }
+}
+
+void Node::MakeNotTerminal() {
+  is_terminal_ = false;
+  n_ = 0;
+
+  // If we have edges, we've been extended (1 visit), so include children too.
+  if (edges_) {
+    n_++;
+    for (const auto& child : Edges()) {
+      const auto n = child.GetN();
+      if (n > 0) {
+        n_ += n;
+        // Flip Q for opponent.
+        wl_ += -child.GetWL() * n;
+        d_ += child.GetD() * n;
+      }
+    }
+
+    // Recompute with current eval (instead of network's) and children's eval.
+    wl_ /= n_;
+    d_ /= n_;
   }
 }
 
@@ -238,9 +265,11 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
   // Recompute Q.
-  q_ += multivisit * (v - q_) / (n_ + multivisit);
+  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
+  d_ += multivisit * (d - d_) / (n_ + multivisit);
+
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
@@ -297,37 +326,48 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 }
 }  // namespace
 
-V3TrainingData Node::GetV3TrainingData(
-    GameResult game_result, const PositionHistory& history,
-    FillEmptyHistory fill_empty_history) const {
-  V3TrainingData result;
+V4TrainingData Node::GetV4TrainingData(GameResult game_result,
+                                       const PositionHistory& history,
+                                       FillEmptyHistory fill_empty_history,
+                                       float best_q, float best_d) const {
+  V4TrainingData result;
 
   // Set version.
-  result.version = 3;
+  result.version = 4;
 
   // Populate probabilities.
-  float total_n = static_cast<float>(GetChildrenVisits());
+  auto total_n = GetChildrenVisits();
   // Prevent garbage/invalid training data from being uploaded to server.
-  if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
-  std::memset(result.probabilities, 0, sizeof(result.probabilities));
+  // It's possible to have N=0 when there is only one legal move in position
+  // (due to smart pruning).
+  if (total_n == 0 && GetNumEdges() != 1) {
+    throw Exception("Search generated invalid data!");
+  }
+  // Set illegal moves to have -1 probability.
+  std::fill(std::begin(result.probabilities), std::end(result.probabilities),
+            -1);
+  // Set moves probabilities according to their relative amount of visits.
   for (const auto& child : Edges()) {
     result.probabilities[child.edge()->GetMove().as_nn_index()] =
-        child.GetN() / total_n;
+        total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
   }
 
   // Populate planes.
-  InputPlanes planes = EncodePositionForNN(history, 8, fill_empty_history);
+  InputPlanes planes =
+      EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                          history, 8, fill_empty_history);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
 
   const auto& position = history.Last();
+  const auto& castlings = position.GetBoard().castlings();
   // Populate castlings.
-  result.castling_us_ooo = position.CanCastle(Position::WE_CAN_OOO) ? 1 : 0;
-  result.castling_us_oo = position.CanCastle(Position::WE_CAN_OO) ? 1 : 0;
-  result.castling_them_ooo = position.CanCastle(Position::THEY_CAN_OOO) ? 1 : 0;
-  result.castling_them_oo = position.CanCastle(Position::THEY_CAN_OO) ? 1 : 0;
+  result.castling_us_ooo = castlings.we_can_000() ? 1 : 0;
+  result.castling_us_oo = castlings.we_can_00() ? 1 : 0;
+  result.castling_them_ooo = castlings.they_can_000() ? 1 : 0;
+  result.castling_them_oo = castlings.they_can_00() ? 1 : 0;
 
   // Other params.
   result.side_to_move = position.IsBlackToMove() ? 1 : 0;
@@ -342,6 +382,14 @@ V3TrainingData Node::GetV3TrainingData(
   } else {
     result.result = 0;
   }
+
+  // Aggregate evaluation WL.
+  result.root_q = -GetWL();
+  result.best_q = best_q;
+
+  // Draw probability of WDL head.
+  result.root_d = GetD();
+  result.best_d = best_d;
 
   return result;
 }
@@ -362,14 +410,19 @@ std::string EdgeAndNode::DebugString() const {
 
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
+  const auto& board = HeadPosition().GetBoard();
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
-    if (n.GetMove() == move) {
+    if (board.IsSameMove(n.GetMove(), move)) {
       new_head = n.GetOrSpawnNode(current_head_);
+      // Ensure head is not terminal, so search can extend or visit children of
+      // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
+      if (new_head->IsTerminal()) new_head->MakeNotTerminal();
       break;
     }
   }
+  move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
@@ -415,10 +468,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  // Also, if the current_head_ is terminal, reset that as well to allow forced
-  // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
-
+  if (!seen_old_head) TrimTreeAtHead();
   return seen_old_head;
 }
 
