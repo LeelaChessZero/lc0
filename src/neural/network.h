@@ -69,6 +69,18 @@ class NetworkComputation {
   virtual ~NetworkComputation() {}
 };
 
+// The plan:
+// 1. Search must not look directly into any fields of NetworkFormat anymore.
+// 2. Backends populate NetworkCapabilities that show search how to use NN, both
+//    for input and output.
+// 3. Input part of NetworkCapabilities is just copy of InputFormat for now, and
+//    is likely to stay so (because search not knowing how to use NN is not very
+//    useful), but it's fine if it will change.
+// 4. On the other hand, output part of NetworkCapabilities is set of
+//    independent parameters (like WDL, moves left head etc), because search can
+//    look what's set and act accordingly. Backends may derive it from
+//    OutputFormat field or other places.
+
 struct NetworkCapabilities {
   pblczero::NetworkFormat::InputFormat input_format;
   // TODO expose information of whether GetDVal() is usable or always zero.

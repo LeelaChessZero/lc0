@@ -27,6 +27,8 @@
 
 #include "mcts/params.h"
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 namespace {
@@ -58,6 +60,9 @@ const OptionId SearchParams::kCpuctId{
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
+const OptionId SearchParams::kCpuctAtRootOffsetId{
+    "cpuct-root-offset", "CPuctRootOffset",
+    "cpuct_init value adjustment for the root node."};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
@@ -189,6 +194,25 @@ const OptionId SearchParams::kHistoryFillId{
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
+const OptionId SearchParams::kDisplayCacheUsageId{
+    "display-cache-usage", "DisplayCacheUsage",
+    "Display cache fullness through UCI info `hash` section."};
+const OptionId SearchParams::kMaxConcurrentSearchersId{
+    "max-concurrent-searchers", "MaxConcurrentSearchers",
+    "If not 0, at most this many search workers can be gathering minibatches "
+    "at once."};
+const OptionId SearchParams::kDrawScoreSidetomoveId{
+    "draw-score-sidetomove", "DrawScoreSideToMove",
+    "Score of a drawn game, as seen by a player making the move."};
+const OptionId SearchParams::kDrawScoreOpponentId{
+    "draw-score-opponent", "DrawScoreOpponent",
+    "Score of a drawn game, as seen by the opponent."};
+const OptionId SearchParams::kDrawScoreWhiteId{
+    "draw-score-white", "DrawScoreWhite",
+    "Adjustment, added to a draw score of a white player."};
+const OptionId SearchParams::kDrawScoreBlackId{
+    "draw-score-black", "DrawScoreBlack",
+    "Adjustment, added to a draw score of a black player."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -197,6 +221,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
+  options->Add<FloatOption>(kCpuctAtRootOffsetId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
@@ -226,22 +251,34 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   options->Add<BoolOption>(kPerPvCountersId) = false;
-  std::vector<std::string> score_type = {"centipawn", "centipawn_2018",
-                                         "win_percentage", "Q"};
+  std::vector<std::string> score_type = {"centipawn",
+                                         "centipawn_with_drawscore",
+                                         "centipawn_2018",
+                                         "win_percentage",
+                                         "Q",
+                                         "W-L"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
+  options->Add<BoolOption>(kDisplayCacheUsageId) = false;
+  options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 0;
+  options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
+  options->HideOption(kDisplayCacheUsageId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kLogitQ(options.Get<bool>(kLogitQId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
+      kCpuctAtRootOffset(options.Get<float>(kCpuctAtRootOffsetId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
       kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
@@ -269,6 +306,26 @@ SearchParams::SearchParams(const OptionsDict& options)
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
-      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())) {}
+      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
+      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())),
+      kMaxConcurrentSearchers(
+          options.Get<int>(kMaxConcurrentSearchersId.GetId())),
+      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId.GetId()) /
+                           100.0f},
+      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId.GetId()) /
+                         100.0f},
+      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
+      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f} {
+  if (kCpuct + kCpuctAtRootOffset < 0.0f) {
+    throw Exception("CPuct + CPuctRootOffset must be >= 0.");
+  }
+  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
+          std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
+      1.0f) {
+    throw Exception(
+        "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
+        "be <= 100");
+  }
+}
 
 }  // namespace lczero
