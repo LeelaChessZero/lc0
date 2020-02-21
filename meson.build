@@ -132,9 +132,11 @@ if host_machine.system() == 'windows'
   files += 'src/utils/filesystem.win32.cc'
 else
   files += 'src/utils/filesystem.posix.cc'
-  deps += [
-    cc.find_library('pthread'),
+  if host_machine.system() != 'android'
+    deps += [
+      cc.find_library('pthread'),
     ]
+  endif
 endif
 
 
