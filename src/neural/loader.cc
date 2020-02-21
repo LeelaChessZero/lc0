@@ -112,7 +112,10 @@ void FixOlderWeightsFile(WeightsFile* file) {
     net_builder.set_policy(nf::POLICY_CLASSICAL);
   }
 
+  // It's only possible to replace the particular field completely.
+  // So first replace network_format in format.
   format.set_network_format(net_builder.Build());
+  // Then replace format in WeightsFile.
   builder.set_format(format.Build());
   *file = builder.Build();
 }

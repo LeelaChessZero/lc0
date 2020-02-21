@@ -18,6 +18,7 @@
 
 namespace lczero {
 
+// Kind of bit_cast from C++20, but can convert from uint64_t to smaller types.
 template <class T>
 T kind_of_bit_cast(std::uint64_t from) {
   T to;
@@ -25,6 +26,7 @@ T kind_of_bit_cast(std::uint64_t from) {
   return to;
 }
 
+// Iterator for repeated proto fields.
 template <class T>
 class ProtoIterator {
  public:
@@ -104,9 +106,13 @@ class ProtoMessage {
   using Offsets = std::vector<FieldPos>;
   using FieldOffsets = std::map<int, Offsets>;
 
+  // Map from wire field_id to list of offsets and sizes inside data_.
   FieldOffsets offsets_;
-  std::string buf_owned_;
-  std::string_view buf_unowned_;
+  // When the class owns the proto, buffer_ contains it.
+  std::string buffer_;
+  // String slice of the proto. If owned, points to buffer_. If not owned,
+  // points to some external location.
+  std::string_view data_;
 };
 
 }  // namespace lczero

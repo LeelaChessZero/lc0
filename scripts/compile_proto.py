@@ -62,11 +62,17 @@ class Lexer:
         self.cur_offset = 0
 
     def Pick(self):
+        '''Picks the last token in queue. Doesn't advance the queue.'''
         if self.cur_token is None:
             self.cur_token = self.NextToken()
         return self.cur_token
 
     def Consume(self, expected_token, value=None, group=0):
+        '''Gets the token from the queue and advances the queue.
+
+        If @expected_token if of wrong type, or @value is not equal to regexes
+        @group, throws an error.
+        '''
         token, match = self.Pick()
         if expected_token != token:
             self.Error('Expected token type [%s]' % expected_token)
@@ -77,6 +83,10 @@ class Lexer:
         return match
 
     def NextToken(self):
+        '''Reads the stream and returns the next token.
+
+        (which is not whitespace or comment)
+        '''
         while True:
             token, match = self.NextTokenOrWhitespace()
             if token is None:
@@ -85,6 +95,7 @@ class Lexer:
                 return token, match
 
     def NextTokenOrWhitespace(self):
+        '''Reads the stream and returns the next token (possibly whitespace).'''
         for r, token in self.grammar:
             m = r.match(self.text, self.cur_offset)
             if m:
@@ -92,6 +103,7 @@ class Lexer:
         self.Error('Unexpected token')
 
     def Error(self, text):
+        '''Throws an error with context in the file read.'''
         line_start = self.text.rfind('\n', 0, self.cur_offset) + 1
         line_end = self.text.find('\n', line_start)
         sys.stderr.write('%s:\n' % text)
@@ -102,6 +114,7 @@ class Lexer:
 
 
 def ReadIdentifierPath(lexer):
+    '''Reads qualified identifier a.b.d into ['a', 'b', 'd'] list'''
     path = []
     while True:
         path.append(lexer.Consume('identifier').group(0))
@@ -111,6 +124,7 @@ def ReadIdentifierPath(lexer):
 
 
 def LookupType(name, stack):
+    '''Looks up the (possibly qualified) from the innermost scope first.'''
     for y in stack:
         for x in y:
             if not x.IsType():
@@ -121,6 +135,11 @@ def LookupType(name, stack):
                 else:
                     return LookupType(name[1:], [x.GetObjects()])
     raise ValueError("Cannot find type: %s." % '.'.join(name))
+
+
+# All *Parser classes have the following semantics:
+# * They are called with lexer as input to parse grammar from .proto file.
+# * The Generate() function writes relevant portion of .pb.h file.
 
 
 class ProtoTypeParser:
@@ -310,6 +329,7 @@ class ProtoEnumParser:
         return True
 
     def Generate(self, w):
+        # Protobuf enum is mapped directly to C++ enum.
         w.Write('enum %s {' % self.name)
         w.Indent()
         for key, value in self.values:
@@ -352,20 +372,7 @@ class ProtoMessageParser:
     def GetObjects(self):
         return self.objects
 
-    def Generate(self, w):
-        w.Write('class %s : public lczero::ProtoMessage {' % self.name)
-        w.Write(' public:')
-        w.Indent()
-        w.Write('%s() = default;' % (self.name))
-        w.Write('%s(const %s&) = default;' % (self.name, self.name))
-        w.Write('%s(%s&&) = default;' % (self.name, self.name))
-        w.Write('%s& operator=(const %s&) = default;' % (self.name, self.name))
-        w.Write('%s& operator=(%s&&) = default;' % (self.name, self.name))
-        w.Write(
-            'static %s CreateNotOwned(std::string_view s) { return %s(s); }' %
-            (self.name, self.name))
-        for x in self.objects:
-            x.Generate(w)
+    def GenerateBuilderClass(self, w):
         w.Write('class Builder : public lczero::ProtoMessage::Builder {')
         w.Write(' public:')
         w.Indent()
@@ -379,6 +386,26 @@ class ProtoMessageParser:
                 x.GenerateForBuilder(w)
         w.Unindent()
         w.Write('};')
+
+    def Generate(self, w):
+        # Protobuf message is a C++ class.
+        w.Write('class %s : public lczero::ProtoMessage {' % self.name)
+        w.Write(' public:')
+        w.Indent()
+        # Set of standard constructors.
+        w.Write('%s() = default;' % (self.name))
+        w.Write('%s(const %s&) = default;' % (self.name, self.name))
+        w.Write('%s(%s&&) = default;' % (self.name, self.name))
+        w.Write('%s& operator=(const %s&) = default;' % (self.name, self.name))
+        w.Write('%s& operator=(%s&&) = default;' % (self.name, self.name))
+        w.Write(
+            'static %s CreateNotOwned(std::string_view s) { return %s(s); }' %
+            (self.name, self.name))
+        # Writing fields, submessages and enums.
+        for x in self.objects:
+            x.Generate(w)
+        self.GenerateBuilderClass(w)
+        # Set of functions to bind builder with parser classes.
         w.Write('Builder AsBuilder() const {')
         w.Write('  return Builder(*this);')
         w.Write('}')
@@ -395,6 +422,7 @@ class ProtoMessageParser:
 
 
 class ProtoFileParser:
+    '''Root grammar of .proto file'''
     def __init__(self, lexer):
         self.package = None
         self.objects = []
@@ -442,6 +470,7 @@ class ProtoFileParser:
 
 
 class Writer:
+    '''A helper class for writing file line by line with indent.'''
     def __init__(self, fo):
         self.fo = fo
         self.indent = 0
@@ -457,6 +486,7 @@ class Writer:
 
 
 if __name__ == "__main__":
+    # Have the same flags as protoc has.
     parser = argparse.ArgumentParser(description="Compile protobuf files.")
     parser.add_argument('input', type=str)
     parser.add_argument('--proto_path', type=str)
