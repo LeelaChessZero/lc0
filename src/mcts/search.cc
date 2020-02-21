@@ -74,19 +74,13 @@ Search::Search(const NodeTree& tree, Network* network,
   }
   float strength_ratio =
       options.Get<float>(SearchParams::kStrengthRatioId.GetId());
-  if (strength_ratio != 1.0f && !infinite) {
-    StoppersHints hints;
-    IterationStats stats;
-    hints.Reset();
-    PopulateCommonIterationStats(&stats);
-    if (!stopper_->ShouldStop(stats, &hints)) {
-      // A delay of 1 - strength_ratio^2 approximates a linear strength
-      // reduction.
-      int move_delay = hints.GetEstimatedRemainingTimeMs() *
-                       (1.0f - strength_ratio * strength_ratio);
-      LOGFILE << "Sleeping for " << move_delay << " ms.";
-      delay_ = std::chrono::milliseconds(move_delay);
-    }
+  if (strength_ratio != 1.0f) {
+    // Factor to multiply execution time to get the delay to add, so that the
+    // execution time is strength_ratio^2 of the total. This was found to
+    // approximate linear strength scaling from strength_ratio 0 to 1.
+    delay_factor_ = 1.0f / (strength_ratio * strength_ratio +
+                            std::numeric_limits<float>::epsilon()) -
+                    1.0f;
   }
 }
 
@@ -644,7 +638,6 @@ void Search::WatchdogThread() {
     MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
 
-    using namespace std::chrono_literals;
     constexpr auto kMaxWaitTimeMs = 100;
     constexpr auto kMinWaitTimeMs = 1;
 
@@ -709,26 +702,9 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
-void SearchWorker::RunBlocking() {
-  if (search_->delay_) {
-    auto move_delay = *search_->delay_;
-    constexpr auto kMaxWaitTime = std::chrono::milliseconds(100);
-    while (move_delay > std::chrono::milliseconds::zero() &&
-           search_->IsSearchActive()) {
-      std::this_thread::sleep_for(std::min(move_delay, kMaxWaitTime));
-      move_delay -= kMaxWaitTime;
-    }
-  }
-
-  LOGFILE << "Started search thread.";
-  // A very early stop may arrive before this point, so the test is at the end
-  // to ensure at least one iteration runs before exiting.
-  do {
-    ExecuteOneIteration();
-  } while (search_->IsSearchActive());
-}
-
 void SearchWorker::ExecuteOneIteration() {
+  auto start = std::chrono::steady_clock::now();
+
   // 1. Initialize internal structures.
   InitializeIteration(search_->network_->NewComputation());
 
@@ -771,6 +747,18 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 7. Update the Search's status and progress information.
   UpdateCounters();
+
+  // If required, waste time for strength reduction.
+  if (search_->delay_factor_) {
+    auto move_delay = std::chrono::duration_cast<std::chrono::milliseconds>(
+        *search_->delay_factor_ * (std::chrono::steady_clock::now() - start));
+    using namespace std::chrono_literals;
+    constexpr auto kMaxWaitTime = 5ms;
+    while (move_delay > 0ms && search_->IsSearchActive()) {
+      std::this_thread::sleep_for(std::min(move_delay, kMaxWaitTime));
+      move_delay -= kMaxWaitTime;
+    }
+  }
 }
 
 // 1. Initialize internal structures.

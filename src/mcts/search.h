@@ -167,7 +167,7 @@ class Search {
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
-  std::optional<std::chrono::milliseconds> delay_;
+  std::optional<float> delay_factor_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
@@ -198,7 +198,20 @@ class SearchWorker {
       : search_(search), history_(search_->played_history_), params_(params) {}
 
   // Runs iterations while needed.
-  void RunBlocking();
+  void RunBlocking() {
+    LOGFILE << "Started search thread.";
+    try {
+      // A very early stop may arrive before this point, so the test is at the
+      // end to ensure at least one iteration runs before exiting.
+      do {
+        ExecuteOneIteration();
+      } while (search_->IsSearchActive());
+    } catch (std::exception& e) {
+      std::cerr << "Unhandled exception in worker thread: " << e.what()
+                << std::endl;
+      abort();
+    }
+  }
 
   // Does one full iteration of MCTS search:
   // 1. Initialize internal structures.

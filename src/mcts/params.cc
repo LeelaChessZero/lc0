@@ -216,8 +216,8 @@ const OptionId SearchParams::kDrawScoreBlackId{
 const OptionId SearchParams::kStrengthRatioId{
     "strength-ratio", "StrengthRatio",
     "An option to reduce engine strength. Works by delaying the search for a "
-    "portion of the allocated time. Set to zero for the minimum strength, one "
-    "for the maximum."};
+    "portion of the allocated time. Set to zero for minimum and one for "
+    "maximum strength, or anything in-between."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
