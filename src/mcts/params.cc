@@ -27,6 +27,8 @@
 
 #include "mcts/params.h"
 
+#include <algorithm>
+
 #include "utils/exception.h"
 
 namespace lczero {
