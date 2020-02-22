@@ -226,10 +226,9 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
                           bool is_root_node) {
-  const float init =
-      params.GetCpuct() + (is_root_node ? params.GetCpuctOffsetAtRoot() : 0.0f);
-  const float k = params.GetCpuctFactor();
-  const float base = params.GetCpuctBase();
+  const float init = params.GetCpuct(is_root_node);
+  const float k = params.GetCpuctFactor(is_root_node);
+  const float base = params.GetCpuctBase(is_root_node);
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
 }  // namespace
