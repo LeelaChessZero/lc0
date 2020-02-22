@@ -28,6 +28,9 @@ if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
     add_project_arguments('-march=native', language : 'cpp')
   endif
 endif
+if host_machine.system() == 'windows'
+  add_project_arguments('-DNOMINMAX', language : 'cpp')
+endif
 
 # Files to compile.
 deps = []
@@ -38,28 +41,13 @@ has_backends = false
 # Third party files.
 includes += include_directories('third_party', is_system: true)
 
-# Both protobuf and protoc must be the same version, so couple them together.
-protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
-if not protobuf_lib.found()
-  protobuf_dep = dependency('protobuf', required : false)
-else
-  protobuf_dep = protobuf_lib
-endif
-protoc = find_program('protoc', required : false)
-# For tensorflow skip system protobuf, chances are it will not work.
-if get_option('protobuf-3-6-0')
-  protobuf_dep = subproject('protobuf-3.6.0').get_variable('protobuf_dep')
-  protoc = subproject('protobuf-3.6.0').get_variable('protoc')
-elif not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
-  protobuf_dep = subproject('protobuf').get_variable('protobuf_dep')
-  protoc = subproject('protobuf').get_variable('protoc')
-elif protobuf_lib.found()
-  includes += include_directories(get_option('protobuf_include'))
-endif
-deps += protobuf_dep
-
-gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
-  arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+# Compiling protobufs.
+compile_proto = find_program('scripts/compile_proto.py')
+gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
+  arguments : [
+    '--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common',
+    '--cpp_out=@BUILD_DIR@',
+    '@INPUT@'])
 
 # Handle submodules.
 git = find_program('git', required: false)
@@ -79,8 +67,10 @@ if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
   endif
 endif
 
-pb_files = gen.process('libs/lczero-common/proto/net.proto',
-  preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+pb_files = [
+  'src/utils/protomessage.cc',
+  gen.process('libs/lczero-common/proto/net.proto')
+]
 files += pb_files
 
 # Extract git short revision.
@@ -546,7 +536,7 @@ if get_option('gtest')
   test('EncodePositionForNN', 
     executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
     include_directories: includes, link_with: lc0_lib,
-    dependencies: [gtest, protobuf_dep]
+    dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
 endif
