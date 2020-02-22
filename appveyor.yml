@@ -6,7 +6,7 @@ image:
 environment:
   matrix:
   - NAME: gpu-nvidia-cuda
-  - NAME: gpu-dx
+  - NAME: gpu-dx12
   - NAME: gpu-opencl
   - NAME: cpu-dnnl
   - NAME: cpu-openblas
@@ -18,7 +18,7 @@ install:
 - cmd: set BLAS=false
 - cmd: set GTEST=false
 - cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
-- cmd: IF %NAME%==gpu-dx set DX=true
+- cmd: IF %NAME%==gpu-dx12 set DX=true
 - cmd: IF %NAME%==gpu-opencl set OPENCL=true
 - cmd: IF %NAME%==cpu-dnnl set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set BLAS=true
