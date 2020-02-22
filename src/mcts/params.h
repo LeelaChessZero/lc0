@@ -102,6 +102,10 @@ class SearchParams {
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
+  float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
+  float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
+  float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
+  float GetBlackDrawDelta() const { return kDrawScoreBlack; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -140,6 +144,10 @@ class SearchParams {
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
+  static const OptionId kDrawScoreSidetomoveId;
+  static const OptionId kDrawScoreOpponentId;
+  static const OptionId kDrawScoreWhiteId;
+  static const OptionId kDrawScoreBlackId;
 
  private:
   const OptionsDict& options_;
@@ -148,7 +156,7 @@ class SearchParams {
   // reasons.
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
-  //            trivial search optimiations.
+  //            trivial search optimizations.
   const bool kLogitQ;
   const float kCpuct;
   const float kCpuctAtRootOffset;
@@ -172,6 +180,10 @@ class SearchParams {
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
+  const float kDrawScoreSidetomove;
+  const float kDrawScoreOpponent;
+  const float kDrawScoreWhite;
+  const float kDrawScoreBlack;
 };
 
 }  // namespace lczero

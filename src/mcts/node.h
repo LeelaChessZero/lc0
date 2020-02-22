@@ -32,6 +32,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
@@ -152,9 +153,10 @@ class Node {
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
+  float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetQ() const { return q_; }
+  float GetWL() const { return wl_; }
   float GetD() const { return d_; }
 
   // Returns whether the node is known to be draw/lose/win.
@@ -269,8 +271,9 @@ class Node {
   // subtree. For terminal nodes, eval is stored. This is from the perspective
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
-  float q_ = 0.0f;
-  // Averaged draw probability. Works similarly to Q, except that D is not
+  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  float wl_ = 0.0f;
+  // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
@@ -337,13 +340,15 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, bool logit_q = false) const {
+  float GetQ(float default_q, float draw_score, bool logit_q = false) const {
     return (node_ && node_->GetN() > 0)
                ?
                // Scale Q slightly to avoid logit(1) = infinity.
-               (logit_q ? FastLogit(0.9999999f * node_->GetQ()) : node_->GetQ())
+               (logit_q ? FastLogit(0.9999999f * node_->GetQ(draw_score))
+                        : node_->GetQ(draw_score))
                : default_q;
   }
+  float GetWL() const { return node_ ? node_->GetWL() : 0.0f; }
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
