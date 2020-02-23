@@ -158,8 +158,6 @@ else
     ]
 endif
 
-
-
 #############################################################################
 ## BACKENDS
 #############################################################################
@@ -168,26 +166,12 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## Tensorflow
   ## ~~~~~~~~~~
-  # Installed from https://github.com/FloopCZ/tensorflow_cc
   tensorflow_include = get_option('tensorflow_include')
-  tensorflow_libdir = get_option('tensorflow_libdir')
   tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_lib = cc.find_library('libtensorflow_cc',
-            dirs: tensorflow_libdir, required: false)
+  tf_tensorflow_cc_lib = dependency('tensorflow_cc', required: false)
 
-  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found()
-    includes += include_directories(
-      tensorflow_include,
-      tensorflow_include[0] + '/bazel-genfiles',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
-      is_system: true
-    )
-    deps += [tf_dl_lib, tf_tensorflow_lib]
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
+    deps += [tf_dl_lib, tf_tensorflow_cc_lib]
     files += 'src/neural/network_tf.cc'
     has_backends = true
   endif
@@ -196,26 +180,8 @@ if get_option('build_backends')
   ## ~~~~~~~~~~~~
   ## Tensorflow C
   ## ~~~~~~~~~~~~
-  # Installed from https://github.com/FloopCZ/tensorflow_cc
-  #tensorflow_include = '/home/crem/tmp/tensorflow/include/'
-  # tensorflow_libdir = get_option('tensorflow_libdir')
-  # tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_lib = cc.find_library('libtensorflow',
-              required: false)
-
+  tf_tensorflow_lib = dependency('tensorflow', required: false)
   if get_option('tensorflowv2')
-     includes += include_directories(
-       tensorflow_include,
-    #   tensorflow_include[0] + '/bazel-genfiles',
-    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
-    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
-    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
-    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
-    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
-    #   tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
-       is_system: true
-     )
-    #deps += [tf_dl_lib, tf_tensorflow_lib]
     deps += [tf_tensorflow_lib]
     files += 'src/neural/tensorflow/network_tensorflow.cc'
     has_backends = true
