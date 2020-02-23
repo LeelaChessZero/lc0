@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+
 #include "utils/weights_adapter.h"
 
 namespace lczero {

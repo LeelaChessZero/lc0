@@ -78,7 +78,7 @@ class RandomNetworkComputation : public NetworkComputation {
     return d;
   }
 
-  float GetMVal(int sample) const override {
+  float GetMVal(int /* sample */) const override {
     return 0.0f;
   }
 

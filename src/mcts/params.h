@@ -47,10 +47,13 @@ class SearchParams {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   bool GetLogitQ() const { return kLogitQ; }
-  float GetCpuct() const { return kCpuct; }
-  float GetCpuctOffsetAtRoot() const { return kCpuctAtRootOffset; }
-  float GetCpuctBase() const { return kCpuctBase; }
-  float GetCpuctFactor() const { return kCpuctFactor; }
+  float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
+  float GetCpuctBase(bool at_root) const {
+    return at_root ? kCpuctBaseAtRoot : kCpuctBase;
+  }
+  float GetCpuctFactor(bool at_root) const {
+    return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
+  }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -105,15 +108,22 @@ class SearchParams {
   float GetMovesLeftScale() const { return kMovesLeftScale; }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
+  float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
+  float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
+  float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
+  float GetBlackDrawDelta() const { return kDrawScoreBlack; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kLogitQId;
   static const OptionId kCpuctId;
-  static const OptionId kCpuctAtRootOffsetId;
+  static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
+  static const OptionId kCpuctBaseAtRootId;
   static const OptionId kCpuctFactorId;
+  static const OptionId kCpuctFactorAtRootId;
+  static const OptionId kRootHasOwnCpuctParamsId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
@@ -146,6 +156,10 @@ class SearchParams {
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
+  static const OptionId kDrawScoreSidetomoveId;
+  static const OptionId kDrawScoreOpponentId;
+  static const OptionId kDrawScoreWhiteId;
+  static const OptionId kDrawScoreBlackId;
 
  private:
   const OptionsDict& options_;
@@ -154,12 +168,14 @@ class SearchParams {
   // reasons.
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
-  //            trivial search optimiations.
+  //            trivial search optimizations.
   const bool kLogitQ;
   const float kCpuct;
-  const float kCpuctAtRootOffset;
+  const float kCpuctAtRoot;
   const float kCpuctBase;
+  const float kCpuctBaseAtRoot;
   const float kCpuctFactor;
+  const float kCpuctFactorAtRoot;
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
   const bool kFpuAbsolute;
@@ -181,6 +197,10 @@ class SearchParams {
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
+  const float kDrawScoreSidetomove;
+  const float kDrawScoreOpponent;
+  const float kDrawScoreWhite;
+  const float kDrawScoreBlack;
 };
 
 }  // namespace lczero

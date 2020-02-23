@@ -139,11 +139,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     auto best_eval = search_->GetBestEval();
     if (training) {
       // Append training data. The GameResult is later overwritten.
-      auto best_q = best_eval.first;
+      auto best_wl = best_eval.first;
       auto best_d = best_eval.second;
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV4TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(), best_q, best_d));
+          search_->GetParams().GetHistoryFill(), best_wl, best_d));
     }
 
     float eval = best_eval.first;
