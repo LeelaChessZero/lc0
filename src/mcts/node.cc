@@ -217,9 +217,9 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
-void Node::MakeTerminal(GameResult result, bool zero_depth) {
+void Node::MakeTerminal(GameResult result, bool game_ends) {
   is_terminal_ = true;
-  if (zero_depth) {
+  if (game_ends) {
     m_ = 0.0f;
   }
   if (result == GameResult::DRAW) {

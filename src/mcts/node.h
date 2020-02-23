@@ -163,7 +163,7 @@ class Node {
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result, bool zero_depth = true);
+  void MakeTerminal(GameResult result, bool game_ends = true);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
 
@@ -274,7 +274,7 @@ class Node {
   // Averaged draw probability. Works similarly to Q, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
-  // Estimated remaining moves
+  // Estimated remaining plies.
   float m_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;

@@ -80,8 +80,7 @@ class BlasComputation : public NetworkComputation {
     }
   }
 
-  float GetMVal(int sample) const override {
-    (void)sample;
+  float GetMVal(int /* sample */) const override {
     return 0.0f;
   }
 

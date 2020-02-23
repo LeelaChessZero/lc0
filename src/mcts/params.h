@@ -103,7 +103,6 @@ class SearchParams {
   float GetMovesLeftFactor() const { return kMovesLeftFactor; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
   float GetMovesLeftScale() const { return kMovesLeftScale; }
-  bool GetUseMovesLeft() const { return kUseMovesLeft; }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
 
@@ -144,7 +143,6 @@ class SearchParams {
   static const OptionId kMovesLeftFactorId;
   static const OptionId kMovesLeftThresholdId;
   static const OptionId kMovesLeftScaleId;
-  static const OptionId kUseMovesLeftId;
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
@@ -180,7 +178,6 @@ class SearchParams {
   const float kMovesLeftFactor;
   const float kMovesLeftThreshold;
   const float kMovesLeftScale;
-  const bool kUseMovesLeft;
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;

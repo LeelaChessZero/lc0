@@ -469,25 +469,10 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(FCMov1));
 
       auto FCMov2 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip2_mov_b.size(), 1, 1, false, true);
+          getLastLayer(), 1, 1, 1, true, true);
       FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov2));
-
-      auto softmaxMov =
-          std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
-      network_.emplace_back(std::move(softmaxMov));
-
-      std::vector<float> moves;
-      for(auto i = size_t{0}; i < weights.ip2_mov_b.size(); i++) {
-          moves.emplace_back(i);
-      }
-
-      auto FCMov3 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), 1, 1, 1, false, false);
-      FCMov3->LoadWeights(moves.data(), nullptr,
-                          scratch_mem_);
-      network_.emplace_back(std::move(FCMov3));
     }
     moves_left_out_ = getLastLayer();
 
@@ -676,16 +661,7 @@ class CudnnNetwork : public Network {
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // moves FC1
 
-      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // moves FC2
-
-      // Moves left softmax
-      network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);
-
-      // Moves left FC3
+      // Moves left FC2
       if (fp16) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,

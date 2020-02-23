@@ -140,11 +140,6 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
     net_format->set_moves_left(nf::MOVES_LEFT_NONE);
   }
 
-  if (net.format().network_format().moves_left() ==
-      pblczero::NetworkFormat::MOVES_LEFT_UNKNOWN) {
-    net_format->set_moves_left(nf::MOVES_LEFT_NONE);
-  }
-
   return net;
 }
 

@@ -258,11 +258,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node,
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
-    if (network_->GetCapabilities().moves_left
-          != pblczero::NetworkFormat::MOVES_LEFT_NONE) {
-        oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM(0.0f)
-            << ") ";
-    }
+    oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM(0.0f)
+        << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
@@ -844,18 +841,21 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
   // Fetch the current best root node visits for possible smart pruning.
   const int64_t best_node_n = search_->current_best_edge_.GetN();
-  // and Q for moves_left logic.
-  const float best_node_q = search_->current_best_edge_.GetQ(0);
+  // Q of the root node for moves left logic.
+  const float best_node_q = search_->current_best_edge_.GetQ(0.0f);
 
-  bool use_moves_left = moves_left_support_ && params_.GetUseMovesLeft();
-  int moves_left = 0;
-  float moves_threshold = params_.GetMovesLeftThreshold();
+  int moves_left_sign = 0;
+  float moves_left_q_threshold = params_.GetMovesLeftThreshold();
   float best_node_m = search_->current_best_edge_.GetM(0.0f);
 
-  if (best_node_q > moves_threshold) {
-    moves_left = -1;
-  } else if (best_node_q < -moves_threshold) {
-    moves_left = 1;
+  // Determine if score for longer moves should be added, subtracted or not
+  // used at all.
+  if (moves_left_support_) {
+    if (best_node_q > moves_left_q_threshold) {
+      moves_left_sign = -1;
+    } else if (best_node_q < -moves_left_q_threshold) {
+      moves_left_sign = 1;
+    }
   }
 
   // True on first iteration, false as we dive deeper.
@@ -930,18 +930,20 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
       float Q = child.GetQ(fpu, params_.GetLogitQ());
-      if (use_moves_left && moves_left != 0) {
+      float M = 0.0f;
+      if (moves_left_sign != 0) {
           const float max_moves_scale = params_.GetMovesLeftScale();
-          const float M = std::max(std::min(child.GetM(best_node_m) - best_node_m, max_moves_scale), -max_moves_scale) / max_moves_scale;
-          float m_factor = params_.GetMovesLeftFactor();
+          const float m_factor = params_.GetMovesLeftFactor();
+          // Normalizes and clips M to range [-1, 1] centered on best node M.
+          M = std::max(std::min(child.GetM(best_node_m) - best_node_m, max_moves_scale), -max_moves_scale) / max_moves_scale;
           // Inverted for opponent.
           if (depth % 2 == 0) {
-            m_factor = -m_factor;
+            moves_left_sign *= -1;
           }
-          Q += moves_left * m_factor * M;
+          M = moves_left_sign * m_factor * M;
       }
 
-      const float score = child.GetU(puct_mult) + Q;
+      const float score = child.GetU(puct_mult) + Q + M;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1276,8 +1278,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
     return;
   }
 
-  int depth_parity = history_.IsBlackToMove();
-
   // For the first visit to a terminal, maybe convert ancestors to terminal too.
   auto can_convert =
       params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
@@ -1328,11 +1328,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Q will be flipped for opponent.
     v = -v;
     depth++;
-
-    if (depth_parity) {
-        m = m + 1.00f;
-    }
-    depth_parity = !depth_parity;
+    m++;
 
     // Update the stats.
     // Best move.
