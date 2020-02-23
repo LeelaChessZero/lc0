@@ -16,7 +16,7 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
-        meson_version: '>=0.46')
+        meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
 if cc.get_id() == 'clang'
@@ -166,10 +166,9 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## Tensorflow
   ## ~~~~~~~~~~
-  tensorflow_include = get_option('tensorflow_include')
   tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_cc_lib = dependency('tensorflow_cc', required: false)
-
+  tf_tensorflow_cc_lib = dependency('tensorflow_cc',
+                                    required: false, include_type:'system')
   if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
     deps += [tf_dl_lib, tf_tensorflow_cc_lib]
     files += 'src/neural/network_tf.cc'
@@ -180,7 +179,8 @@ if get_option('build_backends')
   ## ~~~~~~~~~~~~
   ## Tensorflow C
   ## ~~~~~~~~~~~~
-  tf_tensorflow_lib = dependency('tensorflow', required: false)
+  tf_tensorflow_lib = dependency('tensorflow',
+                                 required: false, include_type:'system')
   if get_option('tensorflowv2')
     deps += [tf_tensorflow_lib]
     files += 'src/neural/tensorflow/network_tensorflow.cc'

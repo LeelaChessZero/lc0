@@ -58,20 +58,6 @@ Output MakeConst(const Scope& scope, TensorShape shape,
   return Const(scope, tensor);
 }
 
-Output MakeVals(const Scope& scope, TensorShape shape, float val) {
-  auto tensor = Tensor(DataType::DT_FLOAT, shape);
-  std::fill_n(tensor.flat<float>().data(), tensor.NumElements(), val);
-  return Const(scope, tensor);
-}
-
-Output Zeros(const Scope& scope, TensorShape shape) {
-  return MakeVals(scope, shape, 0.0f);
-}
-
-Output Ones(const Scope& scope, TensorShape shape) {
-  return MakeVals(scope, shape, 1.0f);
-}
-
 template <bool CPU>
 Output MakeConvBlock(const Scope& scope, Input input, int channels,
                      int input_channels, int output_channels,
@@ -84,27 +70,16 @@ Output MakeConvBlock(const Scope& scope, Input input, int channels,
       MakeConst(scope, {channels, channels, input_channels, output_channels},
                 weights.weights, {3, 2, 0, 1});
 
-  auto b_conv = MakeConst(scope, {output_channels}, weights.biases);
   auto conv2d = Conv2D(scope, input, w_conv, {1, 1, 1, 1}, "SAME",
                        Conv2D::DataFormat(kDataFormat).Dilations({1, 1, 1, 1}));
-
-  auto bn_means = MakeConst(scope, {output_channels}, weights.bn_means);
-  auto means = Sub(scope, bn_means, b_conv);
-
-  auto batch_norm =
-      FusedBatchNorm(
-          scope, conv2d, Ones(scope, {output_channels}),
-          Zeros(scope, {output_channels}), means,
-          MakeConst(scope, {output_channels}, weights.bn_stddivs),
-          FusedBatchNorm::DataFormat(kDataFormat)
-              .IsTraining(false)
-              .Epsilon(1.0000001e-5f))  // Cuda doesn't support eps <= 1e-5
-          .y;
+  auto b_conv = MakeConst(scope, {output_channels}, weights.biases);
+  Output conv_b =
+      BiasAdd(scope, conv2d, b_conv, BiasAdd::DataFormat(kDataFormat));
 
   if (mixin) {
-    batch_norm = Add(scope, batch_norm, *mixin);
+    conv_b = Add(scope, conv_b, *mixin);
   }
-  return Relu(scope, batch_norm);
+  return Relu(scope, conv_b);
 }
 
 template <bool CPU>
@@ -179,8 +154,7 @@ class TFNetwork : public Network {
                              std::vector<tensorflow::Tensor>* outputs) const;
 
   const NetworkCapabilities& GetCapabilities() const override {
-    static NetworkCapabilities capabilities;
-    return capabilities;
+    return capabilities_;
   }
 
  private:
@@ -190,6 +164,7 @@ class TFNetwork : public Network {
   std::unique_ptr<tensorflow::ops::Placeholder> input_;
   std::unique_ptr<tensorflow::Output> policy_head_;
   std::unique_ptr<tensorflow::Output> value_head_;
+  const NetworkCapabilities capabilities_;
 };
 
 template <bool CPU>
@@ -209,7 +184,7 @@ class TFNetworkComputation : public NetworkComputation {
   float GetQVal(int sample) const override {
     return output_[0].template matrix<float>()(sample, 0);
   }
-  float GetDVal(int sample) const override { return 0.0f; }
+  float GetDVal(int) const override { return 0.0f; }
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
@@ -273,7 +248,8 @@ void TFNetworkComputation<true>::PrepareInput() {
 template <bool CPU>
 TFNetwork<CPU>::TFNetwork(const WeightsFile& file,
                           const OptionsDict& /*options*/)
-    : scope_(Scope::NewRootScope()) {
+    : scope_(Scope::NewRootScope()),
+      capabilities_{file.format().network_format().input()} {
   const LegacyWeights weights(file.weights());
   tensorflow::SessionOptions session_options;
   if (CPU) (*session_options.config.mutable_device_count())["GPU"] = 0;
@@ -318,11 +294,8 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 template <bool CPU>
 std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
                                        const OptionsDict& options) {
-  // Tensorflow backend needs to be updated to use folded batch norms.
-  throw Exception("Tensorflow backend is not supported.");
-
   if (weights.format().network_format().network() !=
-      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+      pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
