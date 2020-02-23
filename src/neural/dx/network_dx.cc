@@ -24,6 +24,8 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#include "network_dx.h"
+
 #include <algorithm>
 #include <cassert>
 #include <functional>
@@ -33,15 +35,13 @@
 #include <vector>
 
 #include "layers_dx.h"
-#include "network_dx.h"
 #include "neural/shared/policy_map.h"
 #include "shader_wrapper.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
 namespace lczero {
-
-using namespace dx_backend;
+namespace dx_backend {
 
 uint64_t DxContext::FlushCL(ID3D12GraphicsCommandList4* cl) {
   if (!cl) cl = command_list_;
@@ -966,6 +966,7 @@ std::unique_ptr<Network> MakeDxNetwork(const WeightsFile& weights,
   return std::make_unique<DxNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("dx", MakeDxNetwork, 120)
+REGISTER_NETWORK("dx12", MakeDxNetwork, 120)
 
+}  // namespace dx_backend
 }  // namespace lczero

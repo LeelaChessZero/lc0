@@ -26,6 +26,7 @@
 */
 
 #include <fstream>
+#include <iostream>
 #include <sstream>
 
 #include "neural/factory.h"
