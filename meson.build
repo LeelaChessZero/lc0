@@ -25,7 +25,7 @@ if cc.get_id() == 'clang'
 endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   if get_option('buildtype') == 'release'
-    add_project_arguments('-march=native', language : 'cpp')
+    add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
   endif
 endif
 if cc.get_id() == 'msvc'
@@ -145,6 +145,7 @@ files += [
 ]
 includes += include_directories('src')
 
+deps += dependency('threads')
 
 #############################################################################
 ## Platform specific files
@@ -153,9 +154,6 @@ if host_machine.system() == 'windows'
   files += 'src/utils/filesystem.win32.cc'
 else
   files += 'src/utils/filesystem.posix.cc'
-  deps += [
-    cc.find_library('pthread'),
-    ]
 endif
 
 
