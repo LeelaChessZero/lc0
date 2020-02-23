@@ -12,6 +12,8 @@ environment:
   - NAME: cpu-openblas
 clone_folder: c:\projects\lc0
 install:
+- cmd: set APPVEYOR_REPO_TAG=true
+- cmd: set APPVEYOR_REPO_TAG_NAME=test
 - cmd: set CUDA=false
 - cmd: set DX=false
 - cmd: set OPENCL=false
