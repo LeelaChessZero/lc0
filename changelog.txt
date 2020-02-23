@@ -3,7 +3,7 @@
 
 * Introduced DirectX12 backend.
 * Optimized Cpuct/FPU parameters are now default.
-* There is now a separate set of CPuct parameters for a root node.
+* There is now a separate set of CPuct parameters for the root node.
 * Support of running selfplay games from an opening book.
 * It's possible to adjust draw score from 0 to something else.
 * There is a new --max-concurrent-seachers parameter (default is 1) which
