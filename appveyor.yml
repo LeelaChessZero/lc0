@@ -5,12 +5,13 @@ image:
 - Visual Studio 2017
 environment:
   matrix:
-  - NAME: gpu-nvidia-cuda
-  - NAME: gpu-dx12
-  - NAME: gpu-opencl
-  - NAME: cpu-dnnl
-  - NAME: cpu-openblas
+#  - NAME: gpu-nvidia-cuda
+#  - NAME: gpu-dx12
+#  - NAME: gpu-opencl
+#  - NAME: cpu-dnnl
+#  - NAME: cpu-openblas
   - NAME: android-aarch64
+  - NAME: android-armv7a
 clone_folder: c:\projects\lc0
 install:
 - cmd: set CUDA=false
@@ -20,6 +21,7 @@ install:
 - cmd: set GTEST=false
 - cmd: set ANDROID=false
 - cmd: IF %NAME%==android-aarch64 set ANDROID=true
+- cmd: IF %NAME%==android-armv7a set ANDROID=true
 - cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
 - cmd: IF %NAME%==gpu-dx12 set DX=true
 - cmd: IF %NAME%==gpu-opencl set OPENCL=true
@@ -46,6 +48,8 @@ install:
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: IF %NAME%==android-aarch64 C:\ProgramData\Microsoft\AndroidNDK64\android-ndk-r17\build\tools\make_standalone_toolchain.py --arch arm64 --api 21 --stl libc++ --install-dir \android-standalone-64
 - cmd: IF %NAME%==android-aarch64 set PATH=C:\android-standalone-64\bin;%PATH%
+- cmd: IF %NAME%==android-armv7a C:\ProgramData\Microsoft\AndroidNDK64\android-ndk-r17\build\tools\make_standalone_toolchain.py --arch arm --api 24 --stl libc++ --install-dir \android-standalone-32
+- cmd: IF %NAME%==android-armv7a set PATH=C:\android-standalone-32\bin;%PATH%
 - cmd: set PKG_FOLDER="C:\cache"
 - cmd: IF NOT EXIST c:\cache\testnet IF %ANDROID%==false IF %DX%==false appveyor DownloadFile http://api.lczero.org/get_network?sha=7170f639ba1cdc407283b8e52377283e36845b954788c6ada8897937637ef032 -Filename c:\cache\testnet
 - cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
@@ -65,6 +69,7 @@ before_build:
 - cmd: IF %DX%==true SET BUILD_BLAS=true
 - cmd: IF %ANDROID%==false meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Deigen=true -Ddx=%DX% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
 - cmd: IF %NAME%==android-aarch64 meson build --buildtype release -Dgtest=false -Deigen=true -Ddefault_library=static --cross-file cross-files/aarch64-linux-android_appveyor
+- cmd: IF %NAME%==android-armv7a meson build --buildtype release -Dgtest=false -Deigen=true -Ddefault_library=static --cross-file cross-files/armv7a-linux-android_appveyor
 build_script:
 - cmd: IF %ANDROID%==false call scripts\appveyor_win_build.cmd
 - cmd: cd build

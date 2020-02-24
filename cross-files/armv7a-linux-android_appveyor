@@ -1,0 +1,25 @@
+
+# For windows we need to call some .cmd files otherwise the version checks fail.
+
+[host_machine]
+system = 'android'
+cpu_family = 'arm'
+cpu = 'armv7a'
+endian = 'little'
+
+[properties]
+c_args = ['-fPIE', '-fPIC']
+cpp_args = ['-fPIE', '-fPIC']
+cpp_link_args = ['-llog', '-static-libstdc++', '-fPIE']
+c_link_args = ['-fPIE']
+
+[binaries]
+c = 'arm-linux-androideabi-clang.cmd'
+cpp = 'arm-linux-androideabi-clang++.cmd'
+ar = 'arm-linux-androideabi-ar'
+strip = 'arm-linux-androideabi-strip'
+ld = 'arm-linux-androideabi-ld'
+ranlib = 'arm-linux-androideabi-ranlib'
+as = 'arm-linux-androideabi-as'
+
+
