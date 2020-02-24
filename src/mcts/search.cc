@@ -861,11 +861,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   const int64_t best_node_n = search_->current_best_edge_.GetN();
   // Q of the root node for moves left logic. LogitQ is always disabled since
   // it's compared to non-logitQ threshold.
-  const float best_node_q = search_->current_best_edge_.GetQ(0.0f, false);
+  float best_node_q = search_->current_best_edge_.GetQ(0.0f, false);
 
   int moves_left_sign = 0;
   float moves_left_q_threshold = params_.GetMovesLeftThreshold();
-  float best_node_m = search_->current_best_edge_.GetM(0.0f);
+  float plies_left = search_->current_best_edge_.GetM(0.0f);
+  float next_plies_left = plies_left;
 
   // Determine if score for longer moves should be added, subtracted or not
   // used at all.
@@ -955,23 +956,27 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
       float M = 0.0f;
+      float this_node_m = 0.0f;
       if (moves_left_sign != 0) {
           const float max_moves_scale = params_.GetMovesLeftScale();
-          const float m_factor = params_.GetMovesLeftFactor();
+          float m_factor = moves_left_sign * params_.GetMovesLeftFactor();
+          this_node_m = child.GetM(plies_left);
           // Normalizes and clips M to range [-1, 1] centered on best node M.
-          M = std::max(std::min(child.GetM(best_node_m) - best_node_m, max_moves_scale), -max_moves_scale) / max_moves_scale;
+          M = std::max(std::min(this_node_m - plies_left, max_moves_scale), -max_moves_scale) / max_moves_scale;
           // Inverted for opponent.
           if (depth % 2 == 0) {
-            moves_left_sign *= -1;
+            m_factor *= -1;
           }
-          M = moves_left_sign * m_factor * M;
+          M = m_factor * M;
       }
 
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
       const float score = child.GetU(puct_mult) + Q + M;
       if (score > best) {
         second_best = best;
+        next_plies_left = plies_left;
         second_best_edge = best_edge;
+        best_node_q = Q;
         best = score;
         best_edge = child;
       } else if (score > second_best) {
@@ -980,6 +985,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
     }
 
+    // Turn of the moves left logic when threshold isn't met anymore.
+    if (std::abs(best_node_q) < moves_left_q_threshold) {
+      moves_left_sign = 0.0f;
+    }
+
+    plies_left = next_plies_left;
+    // Decrease plies left when descending into the tree.
+    if (plies_left > 0) {
+        plies_left--;
+    }
 
     if (second_best_edge) {
       int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
