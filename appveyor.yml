@@ -69,13 +69,14 @@ build_script:
 - cmd: IF %ANDROID%==false call scripts\appveyor_win_build.cmd
 - cmd: cd build
 - cmd: IF %ANDROID%==true ninja
+- cmd: IF %ANDROID%==true ren lc0 lc0-%NAME%
 - cmd: cd C:\projects\lc0
 after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %ANDROID%==false call scripts\appveyor_win_package.cmd
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
-  - path: build/lc0
+  - path: build/lc0-$(NAME)
     name: lc0-$(NAME)
   - path: /*.zip/
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
