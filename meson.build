@@ -145,6 +145,7 @@ files += [
 ]
 includes += include_directories('src')
 
+deps += dependency('threads')
 
 #############################################################################
 ## Platform specific files
@@ -153,9 +154,6 @@ if host_machine.system() == 'windows'
   files += 'src/utils/filesystem.win32.cc'
 else
   files += 'src/utils/filesystem.posix.cc'
-  deps += [
-    cc.find_library('pthread'),
-    ]
 endif
 
 
