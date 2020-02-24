@@ -5,22 +5,103 @@ image:
 - Visual Studio 2017
 environment:
   matrix:
-  - NAME: android
+  - NAME: gpu-nvidia-cuda
+  - NAME: gpu-dx12
+  - NAME: gpu-opencl
+  - NAME: cpu-dnnl
+  - NAME: cpu-openblas
+  - NAME: android-aarch64
 clone_folder: c:\projects\lc0
 install:
+- cmd: set APPVEYOR_REPO_TAG=true
+- cmd: set APPVEYOR_REPO_TAG_NAME=test
+- cmd: set CUDA=false
+- cmd: set DX=false
+- cmd: set OPENCL=false
+- cmd: set BLAS=false
+- cmd: set GTEST=false
+- cmd: set ANDROID=false
+- cmd: IF %NAME%==android-aarch64 set ANDROID=true
+- cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
+- cmd: IF %NAME%==gpu-dx12 set DX=true
+- cmd: IF %NAME%==gpu-opencl set OPENCL=true
+- cmd: IF %NAME%==cpu-dnnl set BLAS=true
+- cmd: IF %NAME%==cpu-openblas set BLAS=true
+- cmd: IF %NAME%==cpu-openblas set GTEST=true
+- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.1.1_cpu_vcomp appveyor DownloadFile https://github.com/intel/mkl-dnn/releases/download/v1.1.1/dnnl_win_1.1.1_cpu_vcomp.zip
+- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.1.1_cpu_vcomp 7z x dnnl_win_1.1.1_cpu_vcomp.zip -oC:\cache
+- cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
+- cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
+- cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
+- cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows appveyor DownloadFile https://sourceforge.net/projects/ispcmirror/files/v1.9.2/ispc-v1.9.2-windows.zip
+- cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows 7z x ispc-v1.9.2-windows.zip -oC:\cache
+- cmd: IF %BLAS%==true set PATH=C:\cache\ispc-v1.9.2-windows;%PATH%
+- cmd: set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0"
+- cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" set CUDA_INSTALL=1
+- cmd: IF DEFINED CUDA_INSTALL appveyor DownloadFile https://developer.nvidia.com/compute/cuda/10.0/Prod/network_installers/cuda_10.0.130_win10_network
+- cmd: IF DEFINED CUDA_INSTALL cuda_10.0.130_win10_network -s nvcc_10.0 cublas_dev_10.0 cublas_10.0 cudart_10.0
+- cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
+- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.4.2/cudnn-10.0-windows10-x64-v7.4.2.24.zip
+- cmd: IF %CUDA%==true IF NOT EXIST C:\cache\cuda 7z x cudnn-10.0-windows10-x64-v7.4.2.24.zip -oC:\cache
 - cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
 - cmd: pip3 install --upgrade meson
-- cmd: C:\ProgramData\Microsoft\AndroidNDK64\android-ndk-r17\build\tools\make_standalone_toolchain.py --arch arm64 --api 21 --stl libc++ --install-dir \android-standalone-64
-- cmd: set PATH=C:\android-standalone-64\bin;%PATH%
+- cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
+- cmd: IF %NAME%==android-aarch64 C:\ProgramData\Microsoft\AndroidNDK64\android-ndk-r17\build\tools\make_standalone_toolchain.py --arch arm64 --api 21 --stl libc++ --install-dir \android-standalone-64
+- cmd: IF %NAME%==android-aarch64 set PATH=C:\android-standalone-64\bin;%PATH%
+- cmd: set PKG_FOLDER="C:\cache"
+- cmd: IF NOT EXIST c:\cache\testnet appveyor DownloadFile http://api.lczero.org/get_network?sha=7170f639ba1cdc407283b8e52377283e36845b954788c6ada8897937637ef032 -Filename c:\cache\testnet
+- cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
+- cmd: IF %GTEST%==true cd C:\cache\syzygy
+- cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
+- cmd: IF %GTEST%==true IF NOT EXIST KQQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}{P,N,R,B,Q}vK.rtb{w,z}
+- cmd: IF %GTEST%==true IF NOT EXIST KQvKQ.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK{P,N,R,B,Q}.rtb{w,z}
 - cmd: cd C:\projects\lc0
+cache:
+  - C:\cache
+  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0'
+  - C:\projects\lc0\subprojects\packagecache
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: meson build --buildtype release -Dgtest=false -Deigen=true -Ddefault_library=static --cross-file cross-files/aarch64-linux-android
+- cmd: SET BUILD_BLAS=%BLAS%
+- cmd: IF %OPENCL%==true SET BUILD_BLAS=true
+- cmd: IF %DX%==true SET BUILD_BLAS=true
+- cmd: IF %ANDROID%==false meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Deigen=true -Ddx=%DX% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
+- cmd: IF %NAME%==android-aarch64 meson build --buildtype release -Dgtest=false -Deigen=true -Ddefault_library=static --cross-file cross-files/aarch64-linux-android_appveyor
 build_script:
+- cmd: IF %ANDROID%==false call scripts\appveyor_win_build.cmd
 - cmd: cd build
-- cmd: ninja
+- cmd: IF %ANDROID%==true ninja
+- cmd: cd C:\projects\lc0
+after_build:
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %ANDROID%==false call scripts\appveyor_win_package.cmd
 artifacts:
+  - path: build/lc0.exe
+    name: lc0-$(NAME)
   - path: build/lc0
     name: lc0-$(NAME)
-
-
+  - path: /*.zip/
+    name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
+  - path: build/lc0.pdb
+    name: lc0-debug-symbols
+deploy:
+  - provider: GitHub
+    artifact: /.*\.zip/
+    auth_token:
+      secure: cDBBHS9pbSEEe+Dt/kGjHCrSPqaTQuZsrvFETud2tfVwTTnm7JneWQLB1n6Z+L6/
+    on:
+      appveyor_repo_tag: true
+  - provider: GitHub
+    artifact: /lc0-android.*/
+    auth_token:
+      secure: cDBBHS9pbSEEe+Dt/kGjHCrSPqaTQuZsrvFETud2tfVwTTnm7JneWQLB1n6Z+L6/
+    on:
+      appveyor_repo_tag: true
+test_script:
+- cmd: cd build
+- cmd: IF %GTEST%==true xcopy /s /i C:\cache\syzygy syzygy
+- cmd: IF %GTEST%==true meson test --print-errorlogs
+- cmd: cd ..
+on_finish:
+- cmd: cd C:\projects\lc0\build
+- cmd: IF %GTEST%==true for %%a in (*.xml) do curl -F file=@%%a https://ci.appveyor.com/api/testresults/junit/%APPVEYOR_JOB_ID%
+- cmd: cd ..

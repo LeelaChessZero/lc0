@@ -1,9 +1,5 @@
 
-# Tested with Android NDK r19, default toolchain
-# Targeting API level 21
-
-# Set the toolchain path on your environment
-# export PATH="$HOME/.local/share/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+# For windows we need to call some .cmd files otherwise the version checks fail.
 
 [host_machine]
 system = 'android'
