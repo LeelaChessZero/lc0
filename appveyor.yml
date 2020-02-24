@@ -98,7 +98,7 @@ after_build:
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
-  - path: /*.zip/
+  - path: /lc0*.zip/
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
   - path: build/lc0.pdb
     name: lc0-debug-symbols
