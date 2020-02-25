@@ -261,7 +261,7 @@ class SearchWorker {
     float v;
     // Draw probability for NN's with WDL value head.
     float d;
-    // Estimated remaining moves left.
+    // Estimated remaining plies left.
     float m;
     int multivisit = 0;
     uint16_t depth;

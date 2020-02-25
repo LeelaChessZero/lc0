@@ -859,27 +859,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
   // Fetch the current best root node visits for possible smart pruning.
   const int64_t best_node_n = search_->current_best_edge_.GetN();
-  // Q of the root node for moves left logic. LogitQ is always disabled since
-  // it's compared to non-logitQ threshold.
-  float best_node_q = search_->current_best_edge_.GetQ(0.0f, false);
-
-  const float moves_left_q_threshold = params_.GetMovesLeftThreshold();
-  const float max_moves_scale = params_.GetMovesLeftScale();
-  const float m_factor = params_.GetMovesLeftFactor();
-  float moves_left_sign = 0;
-  float plies_left = search_->current_best_edge_.GetM(0.0f);
-  float next_plies_left = plies_left;
-
-  // Determine if score for longer moves should be added, subtracted or not
-  // used at all.
-  // Sign will be flipped before calculating the scores.
-  if (moves_left_support_) {
-    if (best_node_q > moves_left_q_threshold) {
-      moves_left_sign = 1.0f;
-    } else if (best_node_q < -moves_left_q_threshold) {
-      moves_left_sign = -1.0f;
-    }
-  }
 
   // True on first iteration, false as we dive deeper.
   bool is_root_node = true;
@@ -901,9 +880,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     best_edge.Reset();
     depth++;
-
-    // Inverted for opponent.
-    moves_left_sign = -moves_left_sign;
 
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
@@ -943,6 +919,27 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     const float draw_score =
         (depth % 2 == 0) ? odd_draw_score : even_draw_score;
     const float fpu = GetFpu(params_, node, is_root_node, draw_score);
+
+    const float parent_m = node->GetM();
+    float moves_left_sign = 0;
+
+    // Determine if score for longer moves should be added, subtracted or not
+    // used at all.
+    // Not enabled if NN doesn't have moves left head.
+    if (moves_left_support_) {
+      // Q of the parent node for moves left logic.
+      // Sign is opposite of the childs we are choosing next.
+      float node_q = node->GetQ(0.0f);
+      if (node_q > params_.GetMovesLeftThreshold()) {
+        // Parent node is winning, so this node is losing.
+        // Favour moves making the game longer.
+        moves_left_sign = 1.0f;
+      } else if (node_q < -params_.GetMovesLeftThreshold()) {
+        // Favour shorter moves.
+        moves_left_sign = -1.0f;
+      }
+    }
+
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -964,34 +961,25 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       float M = 0.0f;
       if (moves_left_sign != 0.0f) {
-          float this_node_m = child.GetM(plies_left);
-          // Normalizes and clips M to range [-1, 1] centered on `plies_left`.
-          M = std::max(std::min(this_node_m - plies_left, max_moves_scale), -max_moves_scale) / max_moves_scale;
-          M = moves_left_sign * m_factor * M;
+          const float m_scale = params_.GetMovesLeftScale();
+          float this_node_m = child.GetM(parent_m);
+          // Normalizes and clips M to range [-1, 1] centered on `parent_m`.
+          M = std::max(std::min(this_node_m - parent_m, m_scale), -m_scale)
+              / m_scale;
+          M = moves_left_sign * params_.GetMovesLeftFactor() * M;
       }
 
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
       const float score = child.GetU(puct_mult) + Q + M;
       if (score > best) {
         second_best = best;
-        next_plies_left = plies_left;
         second_best_edge = best_edge;
-        best_node_q = Q;
         best = score;
         best_edge = child;
       } else if (score > second_best) {
         second_best = score;
         second_best_edge = child;
       }
-    }
-
-    plies_left = next_plies_left;
-
-    // Turn of the moves left logic when the threshold isn't met anymore.
-    if (moves_left_sign == -1.0f && best_node_q < moves_left_q_threshold) {
-      moves_left_sign = 0.0f;
-    } else if (moves_left_sign == 1.0f && best_node_q > -moves_left_q_threshold) {
-      moves_left_sign = 0.0f;
     }
 
     if (second_best_edge) {
