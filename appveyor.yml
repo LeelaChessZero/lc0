@@ -92,13 +92,13 @@ deploy:
   - provider: GitHub
     artifact: /.*\.zip/
     auth_token:
-      secure: cDBBHS9pbSEEe+Dt/kGjHCrSPqaTQuZsrvFETud2tfVwTTnm7JneWQLB1n6Z+L6/
+      secure: USFAdwQKTXqOXQjCYQfzWvzRpUhvqJLBkN4hbOg+j876vDxGZHt9bMYayb5evePp
     on:
       appveyor_repo_tag: true
   - provider: GitHub
     artifact: /lc0-android.*/
     auth_token:
-      secure: cDBBHS9pbSEEe+Dt/kGjHCrSPqaTQuZsrvFETud2tfVwTTnm7JneWQLB1n6Z+L6/
+      secure: USFAdwQKTXqOXQjCYQfzWvzRpUhvqJLBkN4hbOg+j876vDxGZHt9bMYayb5evePp
     on:
       appveyor_repo_tag: true
 test_script:
