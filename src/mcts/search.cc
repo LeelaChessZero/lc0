@@ -863,18 +863,21 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   // it's compared to non-logitQ threshold.
   float best_node_q = search_->current_best_edge_.GetQ(0.0f, false);
 
-  int moves_left_sign = 0;
-  float moves_left_q_threshold = params_.GetMovesLeftThreshold();
+  const float moves_left_q_threshold = params_.GetMovesLeftThreshold();
+  const float max_moves_scale = params_.GetMovesLeftScale();
+  const float m_factor = params_.GetMovesLeftFactor();
+  float moves_left_sign = 0;
   float plies_left = search_->current_best_edge_.GetM(0.0f);
   float next_plies_left = plies_left;
 
   // Determine if score for longer moves should be added, subtracted or not
   // used at all.
+  // Sign will be flipped before calculating the scores.
   if (moves_left_support_) {
     if (best_node_q > moves_left_q_threshold) {
-      moves_left_sign = -1;
+      moves_left_sign = 1.0f;
     } else if (best_node_q < -moves_left_q_threshold) {
-      moves_left_sign = 1;
+      moves_left_sign = -1.0f;
     }
   }
 
@@ -898,6 +901,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     best_edge.Reset();
     depth++;
+
+    // Inverted for opponent.
+    moves_left_sign = -moves_left_sign;
+
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
@@ -956,18 +963,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
       float M = 0.0f;
-      float this_node_m = 0.0f;
-      if (moves_left_sign != 0) {
-          const float max_moves_scale = params_.GetMovesLeftScale();
-          float m_factor = moves_left_sign * params_.GetMovesLeftFactor();
-          this_node_m = child.GetM(plies_left);
-          // Normalizes and clips M to range [-1, 1] centered on best node M.
+      if (moves_left_sign != 0.0f) {
+          float this_node_m = child.GetM(plies_left);
+          // Normalizes and clips M to range [-1, 1] centered on `plies_left`.
           M = std::max(std::min(this_node_m - plies_left, max_moves_scale), -max_moves_scale) / max_moves_scale;
-          // Inverted for opponent.
-          if (depth % 2 == 0) {
-            m_factor *= -1;
-          }
-          M = m_factor * M;
+          M = moves_left_sign * m_factor * M;
       }
 
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
@@ -985,15 +985,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
     }
 
-    // Turn of the moves left logic when threshold isn't met anymore.
-    if (std::abs(best_node_q) < moves_left_q_threshold) {
-      moves_left_sign = 0.0f;
-    }
-
     plies_left = next_plies_left;
-    // Decrease plies left when descending into the tree.
-    if (plies_left > 0) {
-        plies_left--;
+
+    // Turn of the moves left logic when the threshold isn't met anymore.
+    if (moves_left_sign == -1.0f && best_node_q < moves_left_q_threshold) {
+      moves_left_sign = 0.0f;
+    } else if (moves_left_sign == 1.0f && best_node_q > -moves_left_q_threshold) {
+      moves_left_sign = 0.0f;
     }
 
     if (second_best_edge) {
