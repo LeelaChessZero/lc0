@@ -5,11 +5,11 @@ image:
 - Visual Studio 2017
 environment:
   matrix:
-#  - NAME: gpu-nvidia-cuda
-#  - NAME: gpu-dx12
-#  - NAME: gpu-opencl
-#  - NAME: cpu-dnnl
-#  - NAME: cpu-openblas
+  - NAME: gpu-nvidia-cuda
+  - NAME: gpu-dx12
+  - NAME: gpu-opencl
+  - NAME: cpu-dnnl
+  - NAME: cpu-openblas
   - NAME: android-aarch64
   - NAME: android-armv7a
 clone_folder: c:\projects\lc0
@@ -84,7 +84,7 @@ artifacts:
     name: lc0-$(NAME)
   - path: build/lc0-$(NAME)
     name: lc0-$(NAME)
-  - path: /*.zip/
+  - path: /lc0*.zip/
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
   - path: build/lc0.pdb
     name: lc0-debug-symbols
