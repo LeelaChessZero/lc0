@@ -42,7 +42,8 @@ install:
 - cmd: pip3 install --upgrade meson==0.51.2
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: set PKG_FOLDER="C:\cache"
-- cmd: IF NOT EXIST c:\cache\testnet appveyor DownloadFile http://training.lczero.org/get_network?sha=7170f639ba1cdc407283b8e52377283e36845b954788c6ada8897937637ef032 -Filename c:\cache\testnet
+- cmd: IF NOT EXIST c:\cache mkdir c:\cache
+- cmd: IF NOT EXIST c:\cache\591226.pb.gz appveyor DownloadFile http://training.lczero.org/get_network?sha=47e3f899519dc1bc95496a457b77730fce7b0b89b6187af5c01ecbbd02e88398 -Filename c:\cache\591226.pb.gz
 - cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
 - cmd: IF %GTEST%==true cd C:\cache\syzygy
 - cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
@@ -70,7 +71,7 @@ build_script:
 - cmd: IF %PGO%==true IF %OPENCL%==true copy C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
 - cmd: IF %PGO%==true IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll
 - cmd: IF %PGO%==true IF %CUDA%==true copy %PKG_FOLDER%\cuda\bin\cudnn64_7.dll
-- cmd: IF %PGO%==true lc0 benchmark --weights=c:\cache\testnet --backend=random --movetime=10000
+- cmd: IF %PGO%==true lc0 benchmark --weights=c:\cache\591226.pb.gz --backend=random --movetime=10000
 - cmd: cd ..
 - cmd: IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 after_build:
@@ -79,6 +80,7 @@ after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip client.exe
 - cmd: IF %APPVEYOR_REPO_TAG%==true type COPYING |more /P > dist\COPYING
 - cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\COPYING
+- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip c:\cache\591226.pb.gz
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-nodll.zip
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %NAME%==cpu-openblas 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\dnnl_win_1.1.1_cpu_vcomp\bin\dnnl.dll
