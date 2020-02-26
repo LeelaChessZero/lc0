@@ -219,6 +219,9 @@ std::string Node::DebugString() const {
 
 void Node::MakeTerminal(GameResult result, bool game_ends) {
   is_terminal_ = true;
+  // `game_ends` is used for true terminal nodes.
+  // Tablebase terminals and terminals converted because they are certain
+  // don't end the game.
   if (game_ends) {
     m_ = 0.0f;
   }
