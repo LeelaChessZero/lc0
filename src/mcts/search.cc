@@ -920,25 +920,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         (depth % 2 == 0) ? odd_draw_score : even_draw_score;
     const float fpu = GetFpu(params_, node, is_root_node, draw_score);
 
-    const float parent_m = node->GetM();
-    float moves_left_sign = 0;
-
-    // Determine if score for longer moves should be added, subtracted or not
-    // used at all.
-    // Not enabled if NN doesn't have moves left head.
-    if (moves_left_support_) {
-      // Q of the parent node for moves left logic.
-      // Sign is opposite of the childs we are choosing next.
-      float node_q = node->GetQ(0.0f);
-      if (node_q > params_.GetMovesLeftThreshold()) {
-        // Parent node is winning, so this node is losing.
-        // Favour moves making the game longer.
-        moves_left_sign = 1.0f;
-      } else if (node_q < -params_.GetMovesLeftThreshold()) {
-        // Favour shorter moves.
-        moves_left_sign = -1.0f;
-      }
-    }
+    const float node_q = node->GetQ(0.0f);
+    const bool do_moves_left_adjustment =
+        moves_left_support_ &&
+        (std::abs(node_q) > params_.GetMovesLeftThreshold());
 
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -959,14 +944,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           continue;
         }
       }
+
       float M = 0.0f;
-      if (moves_left_sign != 0.0f) {
+      if (do_moves_left_adjustment) {
         const float m_scale = params_.GetMovesLeftScale();
-        float this_node_m = child.GetM(parent_m);
-        // Normalizes and clips M to range [-1, 1] centered on `parent_m`.
-        M = std::max(std::min(this_node_m - parent_m, m_scale), -m_scale) /
-            m_scale;
-        M = moves_left_sign * params_.GetMovesLeftFactor() * M;
+        const float parent_m = node->GetM();
+        const float child_m = child.GetM(parent_m);
+        M = std::clamp(child_m - parent_m, -m_scale, m_scale) / m_scale *
+            std::copysign(params_.GetMovesLeftFactor(), node_q);
       }
 
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
