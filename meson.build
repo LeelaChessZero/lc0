@@ -106,6 +106,7 @@ files += [
   'src/engine.cc',
   'src/version.cc',
   'src/benchmark/benchmark.cc',
+  'src/benchmark/bbench.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
