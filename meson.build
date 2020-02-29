@@ -55,7 +55,7 @@ gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
 
 # Handle submodules.
 git = find_program('git', required: false)
-if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
+if run_command('scripts/checkdir.py', 'libs/lczero-common/proto').returncode() != 0
   if git.found()
     if run_command(git, 'status').returncode() == 0
       message('updating git submodule libs/lczero-common')
@@ -398,7 +398,7 @@ if get_option('build_backends')
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
     foreach d : get_option('cudnn_include')
-      if run_command('checkdir.py', d).returncode() == 0
+      if run_command('scripts/checkdir.py', d).returncode() == 0
         includes += include_directories(d)
       endif
     endforeach

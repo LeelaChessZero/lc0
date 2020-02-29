@@ -3,6 +3,7 @@ appveyor DownloadFile "https://ci.appveyor.com/api/projects/LeelaChessZero/lczer
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip client.exe
 type COPYING |more /P > dist\COPYING
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\COPYING
+7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip c:\cache\591226.pb.gz
 IF %CUDA%==true copy lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-nodll.zip
 IF %NAME%==cpu-openblas 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
 IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\dnnl_win_1.1.1_cpu_vcomp\bin\dnnl.dll
@@ -19,3 +20,4 @@ IF %CUDA%==true copy "%CUDA_PATH%\EULA.txt" dist\CUDA.txt
 IF %CUDA%==true copy "%PKG_FOLDER%\cuda\NVIDIA_SLA_cuDNN_Support.txt" dist\CUDNN.txt
 IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
 IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\CUDA.txt .\dist\CUDNN.txt
+IF EXIST lc0-%APPVEYOR_REPO_TAG_NAME%-windows-gpu-dx12.zip ren lc0-%APPVEYOR_REPO_TAG_NAME%-windows-gpu-dx12.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows10-gpu-dx12.zip

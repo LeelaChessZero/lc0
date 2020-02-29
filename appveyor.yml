@@ -53,7 +53,7 @@ install:
 - cmd: IF %NAME%==android-armv7a set PATH=C:\android-standalone-32\bin;%PATH%
 - cmd: IF %NAME%==android-armv7a sed "s/clang+*/&.cmd/" cross-files/armv7a-linux-android >crossfile
 - cmd: set PKG_FOLDER="C:\cache"
-- cmd: IF NOT EXIST c:\cache\testnet IF %ANDROID%==false IF %DX%==false appveyor DownloadFile http://api.lczero.org/get_network?sha=7170f639ba1cdc407283b8e52377283e36845b954788c6ada8897937637ef032 -Filename c:\cache\testnet
+- cmd: IF NOT EXIST c:\cache\591226.pb.gz IF %ANDROID%==false appveyor DownloadFile http://training.lczero.org/get_network?sha=47e3f899519dc1bc95496a457b77730fce7b0b89b6187af5c01ecbbd02e88398 -Filename c:\cache\591226.pb.gz
 - cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
 - cmd: IF %GTEST%==true cd C:\cache\syzygy
 - cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
