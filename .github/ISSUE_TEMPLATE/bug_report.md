@@ -16,7 +16,7 @@ Here is what to do with other types of questions:
 3. Running problems: ask in #help channel in our discord: https://discord.gg/pKujYxD
 
 
-If you are filling a bug report, please fill the fields below.
+If you are filing a bug report, please fill the fields below.
 Otherwise, feel free to remove this text and type a free-form issue as usual.
 
 BUG REPORT
@@ -38,6 +38,11 @@ Include Lc0 version/operating system/backend type.
 **Lc0 parameters**
 Command line, if not default.
 Include screenshot of configuration window, if using through GUI.
+
+**Hardware**
+* Number and model of GPUs that you use.
+* Amount of RAM in the system
+* Other specs (CPU etc) if it may be relevant
 
 **Lc0 logs**
 Please attach Lc0 logs. Here is how to produce them (e.g. for D:\logfile.txt):
