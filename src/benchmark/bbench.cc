@@ -84,7 +84,8 @@ void BackendBenchmark::Run() {
       std::chrono::duration<double> time = end - start;
       std::cout << "Benchmark batch size " << i
                 << " with inference average time "
-                << time.count() / batches * 1000 << "ms." << std::endl;
+                << time.count() / batches * 1000 << "ms - throughput "
+                << i * batches / time.count() << " nps." << std::endl;
     }
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;
