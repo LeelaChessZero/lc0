@@ -156,7 +156,7 @@ void TFV2NetworkComputation::ComputeBlocking() {
   // LOGFILE << policy_output_.Dump();
 }
 
-REGISTER_NETWORK("tensorflow-v2", MakeTFV2Network, 100000)
+REGISTER_NETWORK("tensorflow", MakeTFV2Network, 100000)
 
 }  // namespace
 }  // namespace lczero

@@ -316,8 +316,8 @@ std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
   return std::make_unique<TFNetwork<CPU>>(weights, options);
 }
 
-REGISTER_NETWORK("tensorflow-cpu", MakeTFNetwork<true>, 90)
-REGISTER_NETWORK("tensorflow", MakeTFNetwork<false>, 80)
+REGISTER_NETWORK("tensorflow-cc-cpu", MakeTFNetwork<true>, 90)
+REGISTER_NETWORK("tensorflow-cc", MakeTFNetwork<false>, 80)
 
 }  // namespace
 }  // namespace lczero

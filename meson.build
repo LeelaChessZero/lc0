@@ -169,7 +169,7 @@ if get_option('build_backends')
                                     required: false, include_type:'system')
   if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
     deps += [tf_dl_lib, tf_tensorflow_cc_lib]
-    files += 'src/neural/network_tf.cc'
+    files += 'src/neural/network_tf_cc.cc'
     has_backends = true
   endif
 
@@ -181,7 +181,7 @@ if get_option('build_backends')
                                  required: false, include_type:'system')
   if get_option('tensorflowv2')
     deps += [tf_tensorflow_lib]
-    files += 'src/neural/tensorflow/network_tensorflow.cc'
+    files += 'src/neural/tensorflow/network_tf.cc'
     has_backends = true
   endif
 
