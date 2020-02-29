@@ -110,8 +110,8 @@ struct InputsOutputs {
       ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_,
                                      maxBatchSize * sizeof(float),
                                      cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&op_moves_left_mem_gpu_, op_moves_left_mem_, 0));
+      ReportCUDAErrors(cudaHostGetDevicePointer(&op_moves_left_mem_gpu_,
+                                                op_moves_left_mem_, 0));
     }
   }
   ~InputsOutputs() {
@@ -143,7 +143,8 @@ class CudnnNetwork;
 template <typename DataType>
 class CudnnNetworkComputation : public NetworkComputation {
  public:
-  CudnnNetworkComputation(CudnnNetwork<DataType>* network, bool wdl, bool moves_left);
+  CudnnNetworkComputation(CudnnNetwork<DataType>* network, bool wdl,
+                          bool moves_left);
   ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
@@ -456,10 +457,10 @@ class CudnnNetwork : public Network {
                   pblczero::NetworkFormat::MOVES_LEFT_V1;
     if (moves_left_) {
       auto convMov = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.moves_left.biases.size(), 8, 8, 1, kNumFilters, true,
-          true);
-      convMov->LoadWeights(&weights.moves_left.weights[0], &weights.moves_left.biases[0],
-                           scratch_mem_);
+          resi_last_, weights.moves_left.biases.size(), 8, 8, 1, kNumFilters,
+          true, true);
+      convMov->LoadWeights(&weights.moves_left.weights[0],
+                           &weights.moves_left.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convMov));
 
       auto FCMov1 = std::make_unique<FCLayer<DataType>>(
@@ -468,8 +469,8 @@ class CudnnNetwork : public Network {
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov1));
 
-      auto FCMov2 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), 1, 1, 1, true, true);
+      auto FCMov2 = std::make_unique<FCLayer<DataType>>(getLastLayer(), 1, 1, 1,
+                                                        true, true);
       FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov2));
@@ -584,7 +585,7 @@ class CudnnNetwork : public Network {
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  //policy map layer  // POLICY output
+                            cublas_);  // policy map layer  // POLICY output
       }
     } else {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
@@ -665,10 +666,8 @@ class CudnnNetwork : public Network {
       if (fp16) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);
-        copyTypeConverted(opMov, (half*)(tensor_mem_[0]),
-                          batchSize);
+                            scratch_mem_, scratch_size_, cudnn_, cublas_);
+        copyTypeConverted(opMov, (half*)(tensor_mem_[0]), batchSize);
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opMov, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
@@ -721,13 +720,15 @@ class CudnnNetwork : public Network {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
-    return std::make_unique<CudnnNetworkComputation<DataType>>(this, wdl_, moves_left_);
+    return std::make_unique<CudnnNetworkComputation<DataType>>(this, wdl_,
+                                                               moves_left_);
   }
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_, moves_left_);
+      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
+                                             moves_left_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -894,9 +895,10 @@ std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
           pblczero::NetworkFormat::MOVES_LEFT_NONE &&
       weights.format().network_format().moves_left() !=
           pblczero::NetworkFormat::MOVES_LEFT_V1) {
-    throw Exception("Movest left head format " +
-                    std::to_string(weights.format().network_format().moves_left()) +
-                    " is not supported by CuDNN backend.");
+    throw Exception(
+        "Movest left head format " +
+        std::to_string(weights.format().network_format().moves_left()) +
+        " is not supported by CuDNN backend.");
   }
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }

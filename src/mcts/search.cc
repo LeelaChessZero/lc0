@@ -961,12 +961,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       float M = 0.0f;
       if (moves_left_sign != 0.0f) {
-          const float m_scale = params_.GetMovesLeftScale();
-          float this_node_m = child.GetM(parent_m);
-          // Normalizes and clips M to range [-1, 1] centered on `parent_m`.
-          M = std::max(std::min(this_node_m - parent_m, m_scale), -m_scale)
-              / m_scale;
-          M = moves_left_sign * params_.GetMovesLeftFactor() * M;
+        const float m_scale = params_.GetMovesLeftScale();
+        float this_node_m = child.GetM(parent_m);
+        // Normalizes and clips M to range [-1, 1] centered on `parent_m`.
+        M = std::max(std::min(this_node_m - parent_m, m_scale), -m_scale) /
+            m_scale;
+        M = moves_left_sign * params_.GetMovesLeftFactor() * M;
       }
 
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
@@ -1351,9 +1351,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // to a terminal win if all moves are losing; otherwise there's a mix of
     // draws and losing, so at best it's a draw.
     if (can_convert) {
-      p->MakeTerminal(v > 0.0f ? GameResult::BLACK_WON
-                               : all_losing ? GameResult::WHITE_WON
-                                            : GameResult::DRAW, false);
+      p->MakeTerminal(
+          v > 0.0f ? GameResult::BLACK_WON
+                   : all_losing ? GameResult::WHITE_WON : GameResult::DRAW,
+          false);
     }
 
     // Q will be flipped for opponent.
