@@ -26,7 +26,7 @@
 */
 
 #include "benchmark/benchmark.h"
-#include "benchmark/bbench.h"
+#include "benchmark/backendbench.h"
 #include "chess/board.h"
 #include "engine.h"
 #include "selfplay/loop.h"
@@ -60,7 +60,7 @@ int main(int argc, const char** argv) {
       // Benchmark mode.
       Benchmark benchmark;
       benchmark.Run();
-    } else if (CommandLine::ConsumeCommand("bbench")) {
+    } else if (CommandLine::ConsumeCommand("backendbench")) {
       // Backend Benchmark mode.
       BackendBenchmark benchmark;
       benchmark.Run();
