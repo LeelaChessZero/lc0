@@ -95,10 +95,11 @@ after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%PKG_FOLDER%\cuda\NVIDIA_SLA_cuDNN_Support.txt" dist\CUDNN.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\CUDA.txt .\dist\CUDNN.txt
+- cmd: IF EXIST lc0-%APPVEYOR_REPO_TAG_NAME%-windows-gpu-dx12.zip ren lc0-%APPVEYOR_REPO_TAG_NAME%-windows-gpu-dx12.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows10-gpu-dx12.zip
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
-  - path: /*.zip/
+  - path: /lc0*.zip/
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
   - path: build/lc0.pdb
     name: lc0-debug-symbols
