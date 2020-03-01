@@ -25,7 +25,7 @@ if cc.get_id() == 'clang'
 endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   if get_option('buildtype') == 'release'
-    add_project_arguments('-march=native', language : 'cpp')
+    add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
   endif
 endif
 if cc.get_id() == 'msvc'
@@ -55,7 +55,7 @@ gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
 
 # Handle submodules.
 git = find_program('git', required: false)
-if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
+if run_command('scripts/checkdir.py', 'libs/lczero-common/proto').returncode() != 0
   if git.found()
     if run_command(git, 'status').returncode() == 0
       message('updating git submodule libs/lczero-common')
@@ -105,6 +105,7 @@ message('Using build identifier "' + build_identifier + '".')
 files += [
   'src/engine.cc',
   'src/version.cc',
+  'src/benchmark/backendbench.cc',
   'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
@@ -145,6 +146,7 @@ files += [
 ]
 includes += include_directories('src')
 
+deps += dependency('threads')
 
 #############################################################################
 ## Platform specific files
@@ -153,9 +155,6 @@ if host_machine.system() == 'windows'
   files += 'src/utils/filesystem.win32.cc'
 else
   files += 'src/utils/filesystem.posix.cc'
-  deps += [
-    cc.find_library('pthread'),
-    ]
 endif
 
 
@@ -400,7 +399,7 @@ if get_option('build_backends')
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
     foreach d : get_option('cudnn_include')
-      if run_command('checkdir.py', d).returncode() == 0
+      if run_command('scripts/checkdir.py', d).returncode() == 0
         includes += include_directories(d)
       endif
     endforeach
