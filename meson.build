@@ -73,7 +73,8 @@ endif
 
 pb_files = [
   'src/utils/protomessage.cc',
-  gen.process('libs/lczero-common/proto/net.proto')
+  gen.process('libs/lczero-common/proto/net.proto',
+    preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 ]
 files += pb_files
 
