@@ -59,26 +59,45 @@ Output MakeConst(const Scope& scope, TensorShape shape,
 }
 
 template <bool CPU>
+Output SqueezeAndExcite(const Scope& scope, Input input, int channels,
+                        const LegacyWeights::SEunit& weights) {
+  const int se_channels = weights.b1.size();
+  // NCHW ("NHWC" for CPU case) format reduced to NC.
+  auto pooled = Mean(scope, input, CPU ? Input({1, 2}) : Input({2, 3}));
+  auto w1 = MakeConst(scope, {channels, se_channels}, weights.w1);
+  auto b1 = MakeConst(scope, {se_channels}, weights.b1);
+  auto fc1 = Add(scope, MatMul(scope, pooled, w1), b1);
+  auto relu = Relu(scope, fc1);
+  auto w2 = MakeConst(scope, {se_channels, 2 * channels}, weights.w2);
+  auto b2 = MakeConst(scope, {2 * channels}, weights.b2);
+  auto fc2 = Add(scope, MatMul(scope, relu, w2), b2);
+  auto reshape = Reshape(
+      scope, fc2,
+      CPU ? Input({-1, 1, 1, 2 * channels}) : Input({-1, 2 * channels, 1, 1}));
+  auto outputs = Split(scope, CPU ? 3 : 1, reshape, 2);
+  auto sigmoid = Sigmoid(scope, outputs[0]);
+  return Add(scope, Mul(scope, sigmoid, input), outputs[1]);
+}
+
+template <bool CPU>
 Output MakeConvBlock(const Scope& scope, Input input, int channels,
                      int input_channels, int output_channels,
                      const LegacyWeights::ConvBlock& weights,
+                     const LegacyWeights::SEunit* const seunit = nullptr,
                      Input* mixin = nullptr) {
   // CPU only supports "NHWC", while for GPU "NCHW" is better.
   const char* const kDataFormat = CPU ? "NHWC" : "NCHW";
-
   auto w_conv =
       MakeConst(scope, {channels, channels, input_channels, output_channels},
                 weights.weights, {3, 2, 0, 1});
-
   auto conv2d = Conv2D(scope, input, w_conv, {1, 1, 1, 1}, "SAME",
                        Conv2D::DataFormat(kDataFormat).Dilations({1, 1, 1, 1}));
   auto b_conv = MakeConst(scope, {output_channels}, weights.biases);
   Output conv_b =
       BiasAdd(scope, conv2d, b_conv, BiasAdd::DataFormat(kDataFormat));
-
-  if (mixin) {
-    conv_b = Add(scope, conv_b, *mixin);
-  }
+  if (seunit)
+    conv_b = SqueezeAndExcite<CPU>(scope, conv_b, output_channels, *seunit);
+  if (mixin) conv_b = Add(scope, conv_b, *mixin);
   return Relu(scope, conv_b);
 }
 
@@ -87,8 +106,9 @@ Output MakeResidualBlock(const Scope& scope, Input input, int channels,
                          const LegacyWeights::Residual& weights) {
   auto block1 =
       MakeConvBlock<CPU>(scope, input, 3, channels, channels, weights.conv1);
-  auto block2 = MakeConvBlock<CPU>(scope, block1, 3, channels, channels,
-                                   weights.conv2, &input);
+  auto block2 =
+      MakeConvBlock<CPU>(scope, block1, 3, channels, channels, weights.conv2,
+                         weights.has_se ? &weights.se : nullptr, &input);
   return block2;
 }
 
@@ -107,16 +127,20 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
   }
 
   // Policy head
-  auto conv_pol =
-      MakeConvBlock<CPU>(scope, flow, 1, filters, 32, weights.policy);
+  const int policy_conv_size = weights.policy.biases.size();
+  auto conv_pol = MakeConvBlock<CPU>(scope, flow, 1, filters, policy_conv_size,
+                                     weights.policy);
   if (CPU) {
     // conv_pol = Transpose(scope, conv_pol, {0, 3, 1, 2});
   }
-  conv_pol = Reshape(scope, conv_pol, Const(scope, {-1, 32 * 8 * 8}));
-  auto ip_pol_w =
-      CPU ? MakeConst(scope, {8, 8, 32, 1858}, weights.ip_pol_w, {3, 2, 0, 1})
-          : MakeConst(scope, {32, 8, 8, 1858}, weights.ip_pol_w, {3, 0, 1, 2});
-  ip_pol_w = Reshape(scope, ip_pol_w, Const(scope, {32 * 8 * 8, 1858}));
+  conv_pol =
+      Reshape(scope, conv_pol, Const(scope, {-1, policy_conv_size * 8 * 8}));
+  auto ip_pol_w = CPU ? MakeConst(scope, {8, 8, policy_conv_size, 1858},
+                                  weights.ip_pol_w, {3, 2, 0, 1})
+                      : MakeConst(scope, {policy_conv_size, 8, 8, 1858},
+                                  weights.ip_pol_w, {3, 0, 1, 2});
+  ip_pol_w =
+      Reshape(scope, ip_pol_w, Const(scope, {policy_conv_size * 8 * 8, 1858}));
   auto ip_pol_b = MakeConst(scope, {1858}, weights.ip_pol_b);
   auto policy_fc = Add(scope, MatMul(scope, conv_pol, ip_pol_w), ip_pol_b);
 
@@ -268,7 +292,6 @@ TFNetwork<CPU>::TFNetwork(const WeightsFile& file,
 
   auto output = MakeNetwork<CPU>(scope_, *input_, weights);
   CHECK(scope_.ok()) << scope_.status().ToString();
-
   policy_head_ = std::make_unique<Output>(output.first);
   value_head_ = std::make_unique<Output>(output.second);
 
@@ -295,7 +318,9 @@ template <bool CPU>
 std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
                                        const OptionsDict& options) {
   if (weights.format().network_format().network() !=
-      pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT) {
+          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
+      weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
