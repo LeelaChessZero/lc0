@@ -165,7 +165,7 @@ class Node {
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result, bool game_ends = true);
+  void MakeTerminal(GameResult result, float plies_left = 0.0f);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
 

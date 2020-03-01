@@ -1048,13 +1048,19 @@ void SearchWorker::ExtendNode(Node* node) {
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
       if (state != FAIL) {
+        // TB nodes don't have NN evaluation, assign M from parent node.
+        float m = 0.0f;
+        auto parent = node->GetParent();
+        if (parent) {
+          m = std::max(0.0f, parent->GetM() - 1.0f);
+        }
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON);
+          node->MakeTerminal(GameResult::BLACK_WON, m);
         } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON);
+          node->MakeTerminal(GameResult::WHITE_WON, m);
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW);
+          node->MakeTerminal(GameResult::DRAW, m);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
@@ -1324,11 +1330,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // A non-winning terminal move needs all other moves to be similar.
     auto all_losing = true;
+    float losing_m = 0.0f;
     if (can_convert && v <= 0.0f) {
       for (const auto& edge : p->Edges()) {
         const auto WL = edge.GetWL();
         can_convert = can_convert && edge.IsTerminal() && WL <= 0.0f;
+        if (!can_convert) break;
         all_losing = all_losing && WL < 0.0f;
+        losing_m = std::max(losing_m, edge.GetM(0.0f));
       }
     }
 
@@ -1336,10 +1345,15 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // to a terminal win if all moves are losing; otherwise there's a mix of
     // draws and losing, so at best it's a draw.
     if (can_convert) {
+      // Doesn't give the correct distance to mate because siblings are not
+      // considered but more accurate than doing nothing. This shouldn't
+      // underestimate the distance to mate since at worst we miss shorter
+      // moves.
+      float terminal_m = std::max(losing_m, m) + 1.0f;
       p->MakeTerminal(
           v > 0.0f ? GameResult::BLACK_WON
                    : all_losing ? GameResult::WHITE_WON : GameResult::DRAW,
-          false);
+          terminal_m);
     }
 
     // Q will be flipped for opponent.
