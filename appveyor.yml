@@ -49,9 +49,13 @@ install:
 - cmd: IF %NAME%==android-aarch64 C:\ProgramData\Microsoft\AndroidNDK64\android-ndk-r17\build\tools\make_standalone_toolchain.py --arch arm64 --api 21 --stl libc++ --install-dir \android-standalone-64
 - cmd: IF %NAME%==android-aarch64 set PATH=C:\android-standalone-64\bin;%PATH%
 - cmd: IF %NAME%==android-aarch64 sed "s/clang+*/&.cmd/" cross-files/aarch64-linux-android >crossfile
+- cmd: IF %NAME%==android-aarch64 IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8/openblas-android-aarch64.zip
+- cmd: IF %NAME%==android-aarch64 IF NOT EXIST C:\cache\OpenBLAS 7z x openblas-android-aarch64.zip -oC:\cache\OpenBLAS
 - cmd: IF %NAME%==android-armv7a C:\ProgramData\Microsoft\AndroidNDK64\android-ndk-r17\build\tools\make_standalone_toolchain.py --arch arm --api 24 --stl libc++ --install-dir \android-standalone-32
 - cmd: IF %NAME%==android-armv7a set PATH=C:\android-standalone-32\bin;%PATH%
 - cmd: IF %NAME%==android-armv7a sed "s/clang+*/&.cmd/" cross-files/armv7a-linux-android >crossfile
+- cmd: IF %NAME%==android-armv7a IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8/openblas-android-armv7a.zip
+- cmd: IF %NAME%==android-armv7a IF NOT EXIST C:\cache\OpenBLAS 7z x openblas-android-armv7a.zip -oC:\cache\OpenBLAS
 - cmd: set PKG_FOLDER="C:\cache"
 - cmd: IF NOT EXIST c:\cache\591226.pb.gz IF %ANDROID%==false appveyor DownloadFile http://training.lczero.org/get_network?sha=47e3f899519dc1bc95496a457b77730fce7b0b89b6187af5c01ecbbd02e88398 -Filename c:\cache\591226.pb.gz
 - cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
@@ -70,7 +74,7 @@ before_build:
 - cmd: IF %OPENCL%==true SET BUILD_BLAS=true
 - cmd: IF %DX%==true SET BUILD_BLAS=true
 - cmd: IF %ANDROID%==false meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Deigen=true -Ddx=%DX% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
-- cmd: IF %ANDROID%==true meson build --buildtype release -Dgtest=false -Deigen=true -Ddefault_library=static --cross-file crossfile
+- cmd: IF %ANDROID%==true meson build --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\%NAME%\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\%NAME%\lib" -Ddefault_library=static --cross-file crossfile
 build_script:
 - cmd: IF %ANDROID%==false call scripts\appveyor_win_build.cmd
 - cmd: cd build
