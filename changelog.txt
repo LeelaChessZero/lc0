@@ -1,4 +1,14 @@
-﻿v0.24.0-rc1 (2020-02-23)
+﻿v0.24.0-rc2 (2020-03-01)
+~~~~~~~~~~~
+
+* All releases are now bundled with network id591226 (and the file date is old 
+  enough so it has a lower priority than networks that you already may have
+  in your directory).
+* Added a 'backendbench' mode to benchmark NN evaluation performance without
+  search.
+* Android builds are added to the official releases.
+
+v0.24.0-rc1 (2020-02-23)
 ~~~~~~~~~~~
 
 * Introduced DirectX12 backend.
