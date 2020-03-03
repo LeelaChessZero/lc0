@@ -48,6 +48,71 @@ namespace lczero {
 namespace {
 const std::uint32_t kWeightMagic = 0x1c0;
 
+uint32_t read_le(const uint8_t *addr) {
+  return addr[0] + 256 * addr[1] + 65536 * addr[2] + 16777216 * addr[3];
+}
+
+std::string DecompressEmbedded(std::string str) {
+  constexpr int MOD_GZIP_ZLIB_WINDOWSIZE = 15;
+  constexpr uint8_t eocd_sig[12] = {0x50, 0x4b, 5, 6, 0, 0, 0, 0, 1, 0, 1, 0};
+  constexpr uint8_t header_sig[4] = {0x50, 0x4b, 3, 4};
+
+  const uint8_t *eocd_addr =
+      reinterpret_cast<uint8_t *>(str.data()) + str.size() - 22;
+  if (memcmp(eocd_addr, eocd_sig, sizeof(eocd_sig)) != 0) {
+    throw Exception("No embeded file detected.");
+  }
+
+  uint8_t *start_addr = reinterpret_cast<uint8_t *>(str.data()) + str.size() -
+                        22 - read_le(eocd_addr + 12) - read_le(eocd_addr + 16);
+
+  if (memcmp(start_addr, header_sig, sizeof(header_sig)) != 0) {
+    throw Exception("No embeded file header detected.");
+  }
+
+  z_stream zs;
+  memset(&zs, 0, sizeof(zs));
+
+  if (inflateInit2(&zs, MOD_GZIP_ZLIB_WINDOWSIZE + 16) != Z_OK) {
+    throw Exception("inflateInit failed while decompressing.");
+  }
+
+  uint32_t offsets = read_le(start_addr + 26);
+  zs.next_in = reinterpret_cast<Bytef *>(start_addr) + 30 + (offsets >> 16) +
+               (offsets & 0xffff);
+  zs.avail_in = read_le(start_addr + 18);
+
+  std::string filename =
+      std::string(reinterpret_cast<char *>(start_addr) + 30, offsets & 0xffff);
+  CERR << "Loading embedded weights file: " << filename;
+
+  int ret;
+  char outbuffer[32768];
+  std::string outstring;
+
+  do {
+    zs.next_out = reinterpret_cast<Bytef *>(outbuffer);
+    zs.avail_out = sizeof(outbuffer);
+
+    ret = inflate(&zs, 0);
+
+    if (outstring.size() < zs.total_out) {
+      outstring.append(outbuffer, zs.total_out - outstring.size());
+    }
+
+  } while (ret == Z_OK);
+
+  inflateEnd(&zs);
+
+  if (ret != Z_STREAM_END) {
+    std::ostringstream oss;
+    oss << "Exception during zlib decompression: (" << ret << ") " << zs.msg;
+    throw Exception(oss.str());
+  }
+
+  return outstring;
+}
+
 std::string DecompressGzip(const std::string& filename) {
   const int kStartingSize = 8 * 1024 * 1024;  // 8M
   std::string buffer;
@@ -74,6 +139,10 @@ std::string DecompressGzip(const std::string& filename) {
     }
   }
   gzclose(file);
+
+  if (filename == CommandLine::BinaryName()) {
+    return DecompressEmbedded(buffer);
+  }
 
   return buffer;
 }

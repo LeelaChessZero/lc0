@@ -29,6 +29,7 @@
 #include "neural/loader.h"
 
 #include <algorithm>
+#include "utils/commandline.h"
 #include "utils/logging.h"
 
 namespace lczero {
@@ -47,6 +48,7 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Exact parameters differ per backend.",
     'o'};
 const char* kAutoDiscover = "<autodiscover>";
+const char* kEmbed = "<embed>";
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
@@ -111,6 +113,9 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
+  }
+  else   if (net_path == kEmbed) {
+    net_path = CommandLine::BinaryName();
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
