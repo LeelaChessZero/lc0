@@ -61,7 +61,11 @@ NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
 }
 
 void NetworkFactory::PopulateOptions(OptionsParser* options) {
+#if defined(EMBED)
+  options->Add<StringOption>(NetworkFactory::kWeightsId) = kEmbed;
+#else
   options->Add<StringOption>(NetworkFactory::kWeightsId) = kAutoDiscover;
+#endif
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
