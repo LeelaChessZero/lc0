@@ -48,7 +48,7 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Exact parameters differ per backend.",
     'o'};
 const char* kAutoDiscover = "<autodiscover>";
-const char* kEmbed = "<embed>";
+const char* kEmbed = "<built in>";
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
