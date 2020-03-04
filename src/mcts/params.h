@@ -105,7 +105,7 @@ class SearchParams {
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
   float GetMovesLeftFactor() const { return kMovesLeftFactor; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
-  float GetMovesLeftScale() const { return kMovesLeftScale; }
+  float GetMovesLeftSlope() const { return kMovesLeftSlope; }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
@@ -152,7 +152,7 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMovesLeftFactorId;
   static const OptionId kMovesLeftThresholdId;
-  static const OptionId kMovesLeftScaleId;
+  static const OptionId kMovesLeftSlopeId;
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
@@ -193,7 +193,7 @@ class SearchParams {
   const int kMiniBatchSize;
   const float kMovesLeftFactor;
   const float kMovesLeftThreshold;
-  const float kMovesLeftScale;
+  const float kMovesLeftSlope;
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
