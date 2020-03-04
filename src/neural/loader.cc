@@ -120,7 +120,13 @@ std::string DecompressGzip(const std::string& filename) {
   int bytes_read = 0;
 
   // Read whole file into a buffer.
-  const gzFile file = gzopen(filename.c_str(), "rb");
+  gzFile file = gzopen(filename.c_str(), "rb");
+#ifdef _WIN32
+  if (!file && filename == CommandLine::BinaryName()) {
+    // Try again with a .exe suffix.
+    file = gzopen((filename + ".exe").c_str(), "rb");
+  }
+#endif
   if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
     const int sz =
