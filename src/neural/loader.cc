@@ -52,20 +52,31 @@ uint32_t read_le(const uint8_t *addr) {
   return addr[0] + 256 * addr[1] + 65536 * addr[2] + 16777216 * addr[3];
 }
 
+// Read a .zip file containing a network file (just stored, not compressed a
+// second time) that is appended at the end of the lc0 executable. Such a zip
+// file can be generated using, for example, "zip -0 zipfile.zip net.pb.gz",
+// "7z a -mx=0 zipfile.zip net.pb.gz" or the equivalent options of any other
+// compression utility.
+
 std::string DecompressEmbedded(std::string str) {
   constexpr int MOD_GZIP_ZLIB_WINDOWSIZE = 15;
   constexpr uint8_t eocd_sig[12] = {0x50, 0x4b, 5, 6, 0, 0, 0, 0, 1, 0, 1, 0};
   constexpr uint8_t header_sig[4] = {0x50, 0x4b, 3, 4};
 
-  const uint8_t *eocd_addr =
+  // Check if a zip file "end of central directory record" is there, 22 bytes
+  // before the file end.
+  uint8_t *eocd_addr =
       reinterpret_cast<uint8_t *>(str.data()) + str.size() - 22;
   if (memcmp(eocd_addr, eocd_sig, sizeof(eocd_sig)) != 0) {
     throw Exception("No embeded file detected.");
   }
 
-  uint8_t *start_addr = reinterpret_cast<uint8_t *>(str.data()) + str.size() -
-                        22 - read_le(eocd_addr + 12) - read_le(eocd_addr + 16);
+  // Find the start of the zip file by subtracting the "central directory" size
+  // and offset.
+  uint8_t *start_addr =
+      eocd_addr - read_le(eocd_addr + 12) - read_le(eocd_addr + 16);
 
+  // Check for a local file header.
   if (memcmp(start_addr, header_sig, sizeof(header_sig)) != 0) {
     throw Exception("No embeded file header detected.");
   }
@@ -77,6 +88,7 @@ std::string DecompressEmbedded(std::string str) {
     throw Exception("inflateInit failed while decompressing.");
   }
 
+  // Read the first file in the zip, should be a stored network file.
   uint32_t offsets = read_le(start_addr + 26);
   zs.next_in = reinterpret_cast<Bytef *>(start_addr) + 30 + (offsets >> 16) +
                (offsets & 0xffff);
