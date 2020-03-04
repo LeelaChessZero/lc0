@@ -117,8 +117,7 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
-  }
-  else   if (net_path == kEmbed) {
+  } else if (net_path == kEmbed) {
     net_path = CommandLine::BinaryName();
   } else {
     CERR << "Loading weights file from: " << net_path;
