@@ -206,8 +206,8 @@ const OptionId SearchParams::kHistoryFillId{
     "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SearchParams::kMovesLeftFactorId{
     "moves-left-factor", "MovesLeftFactor",
-    "Maximum bonus to add to the score of a node based on how much shorter/longer "
-    "it makes when winning/losing."};
+    "Maximum bonus to add to the score of a node based on how much "
+    "shorter/longer it makes the game when winning/losing."};
 const OptionId SearchParams::kMovesLeftThresholdId{
     "moves-left-threshold", "MovesLeftThreshold",
     "Absolute value of node Q needs to exceed this value before shorter wins "
