@@ -66,7 +66,7 @@ INLINE_FUNC realM MultiplyAddVector(realM cvec, const realM avec, const real bva
 // =================================================================================================
 
 // Merges the results in Cpm with the global array in Cgm.
-INLINE_FUNC void StoreResults(__global realM* cgm, realM cpm[NWI*MWI/VWM], const int kSizeM) {
+INLINE_FUNC void StoreResults(__global realM* cgm, realM* cpm, const int kSizeM) {
   #pragma unroll
   for (int _ni = 0; _ni < NWI; _ni += 1) {
     #pragma unroll
