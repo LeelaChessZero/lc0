@@ -30,6 +30,7 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <cstdio>
 #include <fstream>
@@ -48,10 +49,6 @@ namespace lczero {
 namespace {
 const std::uint32_t kWeightMagic = 0x1c0;
 
-uint32_t ReadLittleEndian(const uint8_t *addr) {
-  return addr[0] + 256 * addr[1] + 65536 * addr[2] + 16777216 * addr[3];
-}
-
 // Read a network file that is appended at the end of the lc0 executable,
 // followed by the network file size and a "Lc0!" magic.
 
@@ -59,12 +56,15 @@ std::string DecompressEmbedded(std::string str) {
   constexpr int MOD_GZIP_ZLIB_WINDOWSIZE = 15;
   constexpr char magic[4] = {'L', 'c', '0', '!'};
 
+  assert(str.size() >= 8);
   uint8_t *end_addr = reinterpret_cast<uint8_t *>(str.data()) + str.size() - 8;
   if (memcmp(end_addr + 4, magic, sizeof(magic)) != 0) {
     throw Exception("No embeded file detected.");
   }
 
-  uint32_t size = ReadLittleEndian(end_addr);
+  uint32_t size;
+  // We assume little endian, as we do in several other places.
+  memcpy(&size, end_addr, 4);
   uint8_t *start_addr = end_addr - size;
 
   z_stream zs;
@@ -114,12 +114,6 @@ std::string DecompressGzip(const std::string& filename) {
 
   // Read whole file into a buffer.
   gzFile file = gzopen(filename.c_str(), "rb");
-#ifdef _WIN32
-  if (!file && filename == CommandLine::BinaryName()) {
-    // Try again with a .exe suffix.
-    file = gzopen((filename + ".exe").c_str(), "rb");
-  }
-#endif
   if (!file) throw Exception("Cannot read weights from " + filename);
   while (true) {
     const int sz =
