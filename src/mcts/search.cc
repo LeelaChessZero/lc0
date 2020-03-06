@@ -1287,6 +1287,7 @@ void SearchWorker::DoBackupUpdate() {
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
   }
+  search_->total_batches_ += 1;
 }
 
 void SearchWorker::DoBackupUpdateSingleNode(
@@ -1371,7 +1372,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
-  search_->total_batches_ += 1;
   search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }  // namespace lczero
