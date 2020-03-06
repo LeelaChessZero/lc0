@@ -94,9 +94,9 @@ const OptionId kSmartPruningFactorId{
     "pruning is deactivated."};
 const OptionId kMinimumSmartPruningBatchesId{
     "smart-pruning-minimum-batches", "SmartPruningMinimumBatches",
-    "Only perform smart pruning after at least this many batches have been "
-    "evaluated. It may be useful to have this value greater than the number of "
-    "search threads in use."};
+    "Only allow smart pruning to stop search after at least this many batches "
+    "have been evaluated. It may be useful to have this value greater than the "
+    "number of search threads in use."};
 
 }  // namespace
 
