@@ -124,7 +124,7 @@ class KldGainStopper : public SearchStopper {
 // best move to potentially become the best one, stop the search.
 class SmartPruningStopper : public SearchStopper {
  public:
-  SmartPruningStopper(float smart_pruning_factor, int64_t minimum_batches_);
+  SmartPruningStopper(float smart_pruning_factor, int64_t minimum_batches);
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:

@@ -230,7 +230,8 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n
             << ". Difference is " << (largest_n - second_largest_n)
-            << ", so stopping the search.";
+            << ", so stopping the search after "
+            << stats.batches_since_movestart << " batches.";
 
     return true;
   }
