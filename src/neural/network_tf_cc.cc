@@ -59,6 +59,16 @@ Output MakeConst(const Scope& scope, TensorShape shape,
   return Const(scope, tensor);
 }
 
+Output MakeIntConst(const Scope& scope, TensorShape shape,
+                    const std::vector<int32_t>& values) {
+  auto tensor = Tensor(DataType::DT_INT32, shape);
+  CHECK_EQ(tensor.NumElements(), static_cast<int>(values.size()))
+      << shape.DebugString();
+  memcpy(tensor.flat<int32_t>().data(), values.data(),
+         values.size() * sizeof(values[0]));
+  return Const(scope, tensor);
+}
+
 template <bool CPU>
 Output SqueezeAndExcite(const Scope& scope, Input input, int channels,
                         const LegacyWeights::SEunit& weights) {
@@ -115,7 +125,7 @@ Output MakeResidualBlock(const Scope& scope, Input input, int channels,
 
 template <bool CPU>
 std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
-                                      const LegacyWeights& weights) {
+                                      const LegacyWeights& weights, bool wdl) {
   const int filters = weights.input.weights.size() / kInputPlanes / 9;
 
   // Input convolution.
@@ -138,7 +148,7 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
                            nullptr, nullptr, /* relu= */ false);
 
     // [1858 -> HWC or CHW]
-    std::vector<float> policy_map(1858 * 3);
+    std::vector<int> policy_map(1858 * 3);
     for (const auto& mapping : kConvPolicyMap) {
       if (mapping == -1) continue;
       const auto index = &mapping - kConvPolicyMap;
@@ -156,7 +166,7 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
         policy_map[3 * mapping + 2] = col;
       }
     }
-    auto mapping = MakeConst(scope, {1858, 3}, policy_map);
+    auto mapping = MakeIntConst(scope, {1858, 3}, policy_map);
     policy_head = GatherNd(scope, conv_pol, mapping);
 
   } else {
@@ -187,10 +197,18 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
   auto ip1_val_b = MakeConst(scope, {128}, weights.ip1_val_b);
   auto value_flow =
       Relu(scope, Add(scope, MatMul(scope, conv_val, ip1_val_w), ip1_val_b));
-  auto ip2_val_w = MakeConst(scope, {128, 1}, weights.ip2_val_w);
-  auto ip2_val_b = MakeConst(scope, {1}, weights.ip2_val_b);
-  auto value_head =
-      Tanh(scope, Add(scope, MatMul(scope, value_flow, ip2_val_w), ip2_val_b));
+  Output value_head;
+  if (wdl) {
+    auto ip2_val_w = MakeConst(scope, {128, 3}, weights.ip2_val_w);
+    auto ip2_val_b = MakeConst(scope, {3}, weights.ip2_val_b);
+    auto ip_fc = Add(scope, MatMul(scope, value_flow, ip2_val_w), ip2_val_b);
+    value_head = Softmax(scope, ip_fc);
+  } else {
+    auto ip2_val_w = MakeConst(scope, {128, 1}, weights.ip2_val_w);
+    auto ip2_val_b = MakeConst(scope, {1}, weights.ip2_val_b);
+    auto ip_fc = Add(scope, MatMul(scope, value_flow, ip2_val_w), ip2_val_b);
+    value_head = Tanh(scope, ip_fc);
+  }
 
   return {policy_head, value_head};
 }
@@ -201,7 +219,7 @@ class TFNetworkComputation;
 template <bool CPU>
 class TFNetwork : public Network {
  public:
-  TFNetwork(const WeightsFile& file, const OptionsDict& options);
+  TFNetwork(const WeightsFile& file, const OptionsDict& options, bool wdl);
 
   std::unique_ptr<NetworkComputation> NewComputation() override;
 
@@ -212,6 +230,8 @@ class TFNetwork : public Network {
     return capabilities_;
   }
 
+  bool IsWdl() const { return wdl_; }
+
  private:
   tensorflow::Scope scope_;
   std::unique_ptr<tensorflow::ClientSession> session_;
@@ -220,6 +240,7 @@ class TFNetwork : public Network {
   std::unique_ptr<tensorflow::Output> policy_head_;
   std::unique_ptr<tensorflow::Output> value_head_;
   const NetworkCapabilities capabilities_;
+  const bool wdl_;
 };
 
 template <bool CPU>
@@ -237,9 +258,22 @@ class TFNetworkComputation : public NetworkComputation {
 
   int GetBatchSize() const override { return raw_input_.size(); }
   float GetQVal(int sample) const override {
-    return output_[0].template matrix<float>()(sample, 0);
+    if (network_->IsWdl()) {
+      const auto w = output_[0].template matrix<float>()(sample, 0);
+      const auto l = output_[0].template matrix<float>()(sample, 2);
+      return w - l;
+    } else {
+      return output_[0].template matrix<float>()(sample, 0);
+    }
   }
-  float GetDVal(int) const override { return 0.0f; }
+  float GetDVal(int sample) const override {
+    if (network_->IsWdl()) {
+      const auto d = output_[0].template matrix<float>()(sample, 1);
+      return d;
+    } else {
+      return 0.0f;
+    }
+  }
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
@@ -303,10 +337,11 @@ void TFNetworkComputation<true>::PrepareInput() {
 
 template <bool CPU>
 TFNetwork<CPU>::TFNetwork(const WeightsFile& file,
-                          const OptionsDict& /*options*/)
+                          const OptionsDict& /*options*/, bool wdl)
     : scope_(Scope::NewRootScope()),
       capabilities_{file.format().network_format().input(),
-                    pblczero::NetworkFormat::MOVES_LEFT_NONE} {
+                    pblczero::NetworkFormat::MOVES_LEFT_NONE},
+      wdl_(wdl) {
   const LegacyWeights weights(file.weights());
   tensorflow::SessionOptions session_options;
   if (CPU) (*session_options.config.mutable_device_count())["GPU"] = 0;
@@ -323,7 +358,7 @@ TFNetwork<CPU>::TFNetwork(const WeightsFile& file,
         Placeholder::Shape({-1, kInputPlanes, 8, 8}));
   }
 
-  auto output = MakeNetwork<CPU>(scope_, *input_, weights);
+  auto output = MakeNetwork<CPU>(scope_, *input_, weights, wdl);
   CHECK(scope_.ok()) << scope_.status().ToString();
   policy_head_ = std::make_unique<Output>(output.first);
   value_head_ = std::make_unique<Output>(output.second);
@@ -368,12 +403,17 @@ std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
                     " is not supported by Tensorflow C++ backend.");
   }
   if (weights.format().network_format().value() !=
-      pblczero::NetworkFormat::VALUE_CLASSICAL) {
+          pblczero::NetworkFormat::VALUE_CLASSICAL &&
+      weights.format().network_format().value() !=
+          pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
                     std::to_string(weights.format().network_format().value()) +
                     " is not supported by Tensorflow C++ backend.");
   }
-  return std::make_unique<TFNetwork<CPU>>(weights, options);
+  return std::make_unique<TFNetwork<CPU>>(
+      weights, options,
+      weights.format().network_format().value() ==
+          pblczero::NetworkFormat::VALUE_WDL);
 }
 
 REGISTER_NETWORK("tensorflow-cc-cpu", MakeTFNetwork<true>, 90)
