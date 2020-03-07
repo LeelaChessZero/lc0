@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2019 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -148,27 +148,24 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
                            nullptr, nullptr, /* relu= */ false);
 
     // [1858 -> HWC or CHW]
-    std::vector<int> policy_map(1858 * 3);
+    std::vector<int> policy_map(1858);
     for (const auto& mapping : kConvPolicyMap) {
       if (mapping == -1) continue;
       const auto index = &mapping - kConvPolicyMap;
-      const auto direction = index / 73;
-      const auto square = index % 73;
+      const auto direction = index / 64;
+      const auto square = index % 64;
       const auto row = square / 8;
       const auto col = square % 8;
       if (CPU) {
-        policy_map[3 * mapping] = row;
-        policy_map[3 * mapping + 1] = col;
-        policy_map[3 * mapping + 2] = direction;
+        policy_map[mapping] = ((row * 8) + col) * 80 + direction;
       } else {
-        policy_map[3 * mapping] = direction;
-        policy_map[3 * mapping + 1] = row;
-        policy_map[3 * mapping + 2] = col;
+        policy_map[mapping] = ((direction * 8) + row) * 8 + col;
       }
     }
-    auto mapping = MakeIntConst(scope, {1858, 3}, policy_map);
-    policy_head = GatherNd(scope, conv_pol, mapping);
-
+    auto mapping = MakeIntConst(scope, {1858}, policy_map);
+    auto flattened_conv =
+        Reshape(scope, conv_pol, Const(scope, {-1, 80 * 8 * 8}));
+    policy_head = GatherV2(scope, flattened_conv, mapping, 1);
   } else {
     const int policy_conv_size = weights.policy.biases.size();
     auto conv_pol = MakeConvBlock<CPU>(scope, flow, 1, filters,

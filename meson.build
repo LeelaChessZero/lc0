@@ -142,7 +142,6 @@ files += [
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
   'src/utils/string.cc',
-  'src/utils/transpose.cc',
   'src/utils/weights_adapter.cc',
 ]
 includes += include_directories('src')
