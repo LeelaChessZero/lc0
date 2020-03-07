@@ -31,6 +31,7 @@
 
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
+#include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/optionsdict.h"
 #include "utils/transpose.h"
@@ -84,7 +85,7 @@ Output MakeConvBlock(const Scope& scope, Input input, int channels,
                      int input_channels, int output_channels,
                      const LegacyWeights::ConvBlock& weights,
                      const LegacyWeights::SEunit* const seunit = nullptr,
-                     Input* mixin = nullptr) {
+                     Input* mixin = nullptr, bool relu = true) {
   // CPU only supports "NHWC", while for GPU "NCHW" is better.
   const char* const kDataFormat = CPU ? "NHWC" : "NCHW";
   auto w_conv =
@@ -98,7 +99,7 @@ Output MakeConvBlock(const Scope& scope, Input input, int channels,
   if (seunit)
     conv_b = SqueezeAndExcite<CPU>(scope, conv_b, output_channels, *seunit);
   if (mixin) conv_b = Add(scope, conv_b, *mixin);
-  return Relu(scope, conv_b);
+  return relu ? Relu(scope, conv_b) : conv_b;
 }
 
 template <bool CPU>
@@ -127,22 +128,52 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
   }
 
   // Policy head
-  const int policy_conv_size = weights.policy.biases.size();
-  auto conv_pol = MakeConvBlock<CPU>(scope, flow, 1, filters, policy_conv_size,
-                                     weights.policy);
-  if (CPU) {
-    // conv_pol = Transpose(scope, conv_pol, {0, 3, 1, 2});
+  Output policy_head;
+  if (!weights.policy1.weights.empty()) {
+    // Conv policy head.
+    auto conv_pol1 =
+        MakeConvBlock<CPU>(scope, flow, 3, filters, filters, weights.policy1);
+    auto conv_pol =
+        MakeConvBlock<CPU>(scope, conv_pol1, 3, filters, 80, weights.policy,
+                           nullptr, nullptr, /* relu= */ false);
+
+    // [1858 -> HWC or CHW]
+    std::vector<float> policy_map(1858 * 3);
+    for (const auto& mapping : kConvPolicyMap) {
+      if (mapping == -1) continue;
+      const auto index = &mapping - kConvPolicyMap;
+      const auto direction = index / 73;
+      const auto square = index % 73;
+      const auto row = square / 8;
+      const auto col = square % 8;
+      if (CPU) {
+        policy_map[3 * mapping] = row;
+        policy_map[3 * mapping + 1] = col;
+        policy_map[3 * mapping + 2] = direction;
+      } else {
+        policy_map[3 * mapping] = direction;
+        policy_map[3 * mapping + 1] = row;
+        policy_map[3 * mapping + 2] = col;
+      }
+    }
+    auto mapping = MakeConst(scope, {1858, 3}, policy_map);
+    policy_head = GatherNd(scope, conv_pol, mapping);
+
+  } else {
+    const int policy_conv_size = weights.policy.biases.size();
+    auto conv_pol = MakeConvBlock<CPU>(scope, flow, 1, filters,
+                                       policy_conv_size, weights.policy);
+    conv_pol =
+        Reshape(scope, conv_pol, Const(scope, {-1, policy_conv_size * 8 * 8}));
+    auto ip_pol_w = CPU ? MakeConst(scope, {8, 8, policy_conv_size, 1858},
+                                    weights.ip_pol_w, {3, 2, 0, 1})
+                        : MakeConst(scope, {policy_conv_size, 8, 8, 1858},
+                                    weights.ip_pol_w, {3, 0, 1, 2});
+    ip_pol_w = Reshape(scope, ip_pol_w,
+                       Const(scope, {policy_conv_size * 8 * 8, 1858}));
+    auto ip_pol_b = MakeConst(scope, {1858}, weights.ip_pol_b);
+    policy_head = Add(scope, MatMul(scope, conv_pol, ip_pol_w), ip_pol_b);
   }
-  conv_pol =
-      Reshape(scope, conv_pol, Const(scope, {-1, policy_conv_size * 8 * 8}));
-  auto ip_pol_w = CPU ? MakeConst(scope, {8, 8, policy_conv_size, 1858},
-                                  weights.ip_pol_w, {3, 2, 0, 1})
-                      : MakeConst(scope, {policy_conv_size, 8, 8, 1858},
-                                  weights.ip_pol_w, {3, 0, 1, 2});
-  ip_pol_w =
-      Reshape(scope, ip_pol_w, Const(scope, {policy_conv_size * 8 * 8, 1858}));
-  auto ip_pol_b = MakeConst(scope, {1858}, weights.ip_pol_b);
-  auto policy_fc = Add(scope, MatMul(scope, conv_pol, ip_pol_w), ip_pol_b);
 
   // Value head
   auto conv_val =
@@ -161,7 +192,7 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
   auto value_head =
       Tanh(scope, Add(scope, MatMul(scope, value_flow, ip2_val_w), ip2_val_b));
 
-  return {policy_fc, value_head};
+  return {policy_head, value_head};
 }
 
 template <bool CPU>
@@ -326,19 +357,21 @@ std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
-        " is not supported by Tensorflow backend.");
+        " is not supported by Tensorflow C++ backend.");
   }
   if (weights.format().network_format().policy() !=
-      pblczero::NetworkFormat::POLICY_CLASSICAL) {
+          pblczero::NetworkFormat::POLICY_CLASSICAL &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
     throw Exception("Policy format " +
                     std::to_string(weights.format().network_format().policy()) +
-                    " is not supported by Tensorflow backend.");
+                    " is not supported by Tensorflow C++ backend.");
   }
   if (weights.format().network_format().value() !=
       pblczero::NetworkFormat::VALUE_CLASSICAL) {
     throw Exception("Value format " +
                     std::to_string(weights.format().network_format().value()) +
-                    " is not supported by Tensorflow backend.");
+                    " is not supported by Tensorflow C++ backend.");
   }
   return std::make_unique<TFNetwork<CPU>>(weights, options);
 }
