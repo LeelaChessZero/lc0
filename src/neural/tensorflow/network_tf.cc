@@ -69,6 +69,7 @@ class TFV2NetworkComputation : public NetworkComputation {
     float* buf = static_cast<float*>(policy_output_.GetBuffer());
     return buf[sample * 1858 + move_id];
   }
+  float GetMVal(int) const override { return 0.0f; }
 
  private:
   void PrepareInput();
@@ -81,7 +82,8 @@ class TFV2NetworkComputation : public NetworkComputation {
 class TFV2Network : public Network {
  public:
   TFV2Network(const WeightsFile& file, const OptionsDict&)
-      : capabilities_{file.format().network_format().input()} {
+      : capabilities_{file.format().network_format().input(),
+                      pblczero::NetworkFormat::MOVES_LEFT_NONE} {
     std::cout << "TensorFlow Version: " << TF_Version() << std::endl;
     graph_.ImportGraphDef(TFBuffer(LoadFile()));
     session_ = std::make_unique<TFSession>(graph_);

@@ -212,6 +212,7 @@ class TFNetworkComputation : public NetworkComputation {
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
+  float GetMVal(int) const override { return 0.0f; }
 
  private:
   void PrepareInput();
@@ -273,7 +274,8 @@ template <bool CPU>
 TFNetwork<CPU>::TFNetwork(const WeightsFile& file,
                           const OptionsDict& /*options*/)
     : scope_(Scope::NewRootScope()),
-      capabilities_{file.format().network_format().input()} {
+      capabilities_{file.format().network_format().input(),
+                    pblczero::NetworkFormat::MOVES_LEFT_NONE} {
   const LegacyWeights weights(file.weights());
   tensorflow::SessionOptions session_options;
   if (CPU) (*session_options.config.mutable_device_count())["GPU"] = 0;
