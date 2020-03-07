@@ -44,67 +44,14 @@
 #include "utils/logging.h"
 #include "version.h"
 
+#ifdef _WIN32
+#include <io.h>
+#endif
+
 namespace lczero {
 
 namespace {
 const std::uint32_t kWeightMagic = 0x1c0;
-
-// Read a network file that is appended at the end of the lc0 executable,
-// followed by the network file size and a "Lc0!" magic.
-
-std::string DecompressEmbedded(std::string str) {
-  constexpr int MOD_GZIP_ZLIB_WINDOWSIZE = 15;
-  constexpr char magic[4] = {'L', 'c', '0', '!'};
-
-  assert(str.size() >= 8);
-  uint8_t *end_addr = reinterpret_cast<uint8_t *>(str.data()) + str.size() - 8;
-  if (memcmp(end_addr + 4, magic, sizeof(magic)) != 0) {
-    throw Exception("No embeded file detected.");
-  }
-
-  uint32_t size;
-  // We assume little endian, as we do in several other places.
-  memcpy(&size, end_addr, 4);
-  uint8_t *start_addr = end_addr - size;
-
-  z_stream zs;
-  memset(&zs, 0, sizeof(zs));
-
-  if (inflateInit2(&zs, MOD_GZIP_ZLIB_WINDOWSIZE + 16) != Z_OK) {
-    throw Exception("inflateInit failed while decompressing.");
-  }
-
-  zs.next_in = reinterpret_cast<Bytef *>(start_addr);
-  zs.avail_in = size;
-
-  CERR << "Loading embedded weights file.";
-
-  int ret;
-  char outbuffer[32768];
-  std::string outstring;
-
-  do {
-    zs.next_out = reinterpret_cast<Bytef *>(outbuffer);
-    zs.avail_out = sizeof(outbuffer);
-
-    ret = inflate(&zs, 0);
-
-    if (outstring.size() < zs.total_out) {
-      outstring.append(outbuffer, zs.total_out - outstring.size());
-    }
-
-  } while (ret == Z_OK);
-
-  inflateEnd(&zs);
-
-  if (ret != Z_STREAM_END) {
-    std::ostringstream oss;
-    oss << "Exception during zlib decompression: (" << ret << ") " << zs.msg;
-    throw Exception(oss.str());
-  }
-
-  return outstring;
-}
 
 std::string DecompressGzip(const std::string& filename) {
   const int kStartingSize = 8 * 1024 * 1024;  // 8M
@@ -113,8 +60,27 @@ std::string DecompressGzip(const std::string& filename) {
   int bytes_read = 0;
 
   // Read whole file into a buffer.
-  gzFile file = gzopen(filename.c_str(), "rb");
-  if (!file) throw Exception("Cannot read weights from " + filename);
+  FILE* fp = fopen(filename.c_str(), "rb");
+  if (!fp) {
+    throw Exception("Cannot read weights from " + filename);
+  }
+  if (filename == CommandLine::BinaryName()) {
+    // The network file is appended at the end of the lc0 executable, followed
+    // by the network file size and a "Lc0!" (0x2130634c) magic.
+    int32_t size, magic;
+    if (fseek(fp, -8, SEEK_END) || fread(&size, 4, 1, fp) != 1 ||
+        fread(&magic, 4, 1, fp) != 1 || magic != 0x2130634c) {
+      fclose(fp);
+      throw Exception("No embedded file detected.");
+    }
+    fseek(fp, -size - 8, SEEK_END);
+  }
+  fflush(fp);
+  gzFile file = gzdopen(dup(fileno(fp)), "rb");
+  fclose(fp);
+  if (!file) {
+    throw Exception("Cannot process file " + filename);
+  }
   while (true) {
     const int sz =
         gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
@@ -132,10 +98,6 @@ std::string DecompressGzip(const std::string& filename) {
     }
   }
   gzclose(file);
-
-  if (filename == CommandLine::BinaryName()) {
-    return DecompressEmbedded(buffer);
-  }
 
   return buffer;
 }
