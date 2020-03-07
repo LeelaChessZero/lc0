@@ -502,6 +502,10 @@ if not get_option('pext')
   add_project_arguments('-DNO_PEXT', language : 'cpp')
 endif
 
+if get_option('embed')
+  add_project_arguments('-DEMBED', language : 'cpp')
+endif
+
 executable('lc0', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
