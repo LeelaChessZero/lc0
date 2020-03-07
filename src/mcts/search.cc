@@ -613,6 +613,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   }
   stats->total_nodes = total_playouts_ + initial_visits_;
   stats->nodes_since_movestart = total_playouts_;
+  stats->batches_since_movestart = total_batches_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
   for (const auto& edge : root_node_->Edges()) {
@@ -1286,6 +1287,7 @@ void SearchWorker::DoBackupUpdate() {
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
   }
+  search_->total_batches_ += 1;
 }
 
 void SearchWorker::DoBackupUpdateSingleNode(
