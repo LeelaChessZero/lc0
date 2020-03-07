@@ -174,19 +174,6 @@ if get_option('build_backends')
     has_backends = true
   endif
 
-
-  ## ~~~~~~~~~~~~
-  ## Tensorflow C
-  ## ~~~~~~~~~~~~
-  tf_tensorflow_lib = dependency('tensorflow',
-                                 required: false, include_type:'system')
-  if get_option('tensorflowv2')
-    deps += [tf_tensorflow_lib]
-    files += 'src/neural/tensorflow/network_tf.cc'
-    has_backends = true
-  endif
-
-
   ## ~~~~~
   ## Blas
   ## ~~~~~
