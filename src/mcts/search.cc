@@ -514,7 +514,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         auto GetEdgeRank = [](const EdgeAndNode& edge) {
           const auto wl = edge.GetWL();
-          if (!edge.IsTerminal() || wl) return kNonTerminal;
+          if (!edge.IsTerminal() || !wl) return kNonTerminal;
           if (edge.IsTbTerminal()) {
             return wl < 0.0 ? kTablebaseLoss : kTablebaseWin;
           }
@@ -524,7 +524,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         // If moves have different outcomes, prefer better outcome.
         const auto a_rank = GetEdgeRank(a);
         const auto b_rank = GetEdgeRank(b);
-        if (a_rank != b_rank) return a > b;
+        if (a_rank != b_rank) return a_rank > b_rank;
 
         // If both are terminal draws, try to make it shorter.
         if (a_rank == kNonTerminal && a.IsTerminal() && b.IsTerminal()) {
