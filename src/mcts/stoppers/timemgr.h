@@ -41,6 +41,7 @@ struct IterationStats {
   int64_t time_since_movestart = 0;
   int64_t total_nodes = 0;
   int64_t nodes_since_movestart = 0;
+  int64_t batches_since_movestart = 0;
   int average_depth = 0;
   std::vector<uint32_t> edge_n;
 };

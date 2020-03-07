@@ -74,7 +74,7 @@ endif
 pb_files = [
   'src/utils/protomessage.cc',
   gen.process('libs/lczero-common/proto/net.proto',
-      preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+    preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 ]
 files += pb_files
 
@@ -106,6 +106,7 @@ message('Using build identifier "' + build_identifier + '".')
 files += [
   'src/engine.cc',
   'src/version.cc',
+  'src/benchmark/backendbench.cc',
   'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',

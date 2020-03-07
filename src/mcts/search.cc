@@ -278,6 +278,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
         << ") ";
 
+    oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM(0.0f)
+        << ") ";
+
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
         << edge.GetQ(fpu, draw_score) << ") ";
 
@@ -610,6 +613,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   }
   stats->total_nodes = total_playouts_ + initial_visits_;
   stats->nodes_since_movestart = total_playouts_;
+  stats->batches_since_movestart = total_batches_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
   for (const auto& edge : root_node_->Edges()) {
@@ -877,6 +881,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     best_edge.Reset();
     depth++;
+
     // n_in_flight_ is incremented. If the method returns false, then there is
     // a search collision, and this node is already being expanded.
     if (!node->TryStartScoreUpdate()) {
@@ -915,6 +920,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     const float draw_score =
         (depth % 2 == 0) ? odd_draw_score : even_draw_score;
     const float fpu = GetFpu(params_, node, is_root_node, draw_score);
+
+    const float node_q = node->GetQ(0.0f);
+    const bool do_moves_left_adjustment =
+        moves_left_support_ &&
+        (std::abs(node_q) > params_.GetMovesLeftThreshold());
+
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -934,8 +945,18 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           continue;
         }
       }
+
+      float M = 0.0f;
+      if (do_moves_left_adjustment) {
+        const float m_scale = params_.GetMovesLeftScale();
+        const float parent_m = node->GetM();
+        const float child_m = child.GetM(parent_m);
+        M = std::clamp(child_m - parent_m, -m_scale, m_scale) / m_scale *
+            std::copysign(params_.GetMovesLeftFactor(), node_q);
+      }
+
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
-      const float score = child.GetU(puct_mult) + Q;
+      const float score = child.GetU(puct_mult) + Q + M;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1028,13 +1049,19 @@ void SearchWorker::ExtendNode(Node* node) {
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
       if (state != FAIL) {
+        // TB nodes don't have NN evaluation, assign M from parent node.
+        float m = 0.0f;
+        auto parent = node->GetParent();
+        if (parent) {
+          m = std::max(0.0f, parent->GetM() - 1.0f);
+        }
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON);
+          node->MakeTerminal(GameResult::BLACK_WON, m);
         } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON);
+          node->MakeTerminal(GameResult::WHITE_WON, m);
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW);
+          node->MakeTerminal(GameResult::DRAW, m);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
@@ -1209,12 +1236,14 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // they require any further processing after value retrieval.
     node_to_process->v = node->GetWL();
     node_to_process->d = node->GetD();
+    node_to_process->m = node->GetM();
     return;
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
   node_to_process->v = -computation_->GetQVal(idx_in_computation);
   node_to_process->d = computation_->GetDVal(idx_in_computation);
+  node_to_process->m = computation_->GetMVal(idx_in_computation);
   // ...and secondly, the policy data.
   // Calculate maximum first.
   float max_p = -std::numeric_limits<float>::infinity();
@@ -1258,6 +1287,7 @@ void SearchWorker::DoBackupUpdate() {
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
   }
+  search_->total_batches_ += 1;
 }
 
 void SearchWorker::DoBackupUpdateSingleNode(
@@ -1279,6 +1309,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
   float d = node_to_process.d;
+  float m = node_to_process.m;
   int depth = 0;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
@@ -1288,9 +1319,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (n->IsTerminal()) {
       v = n->GetWL();
       d = n->GetD();
+      m = n->GetM();
     }
     n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
-                           d, node_to_process.multivisit);
+                           d, m, node_to_process.multivisit);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
@@ -1300,11 +1332,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // A non-winning terminal move needs all other moves to be similar.
     auto all_losing = true;
+    float losing_m = 0.0f;
     if (can_convert && v <= 0.0f) {
       for (const auto& edge : p->Edges()) {
         const auto WL = edge.GetWL();
         can_convert = can_convert && edge.IsTerminal() && WL <= 0.0f;
+        if (!can_convert) break;
         all_losing = all_losing && WL < 0.0f;
+        losing_m = std::max(losing_m, edge.GetM(0.0f));
       }
     }
 
@@ -1312,14 +1347,21 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // to a terminal win if all moves are losing; otherwise there's a mix of
     // draws and losing, so at best it's a draw.
     if (can_convert) {
-      p->MakeTerminal(v > 0.0f ? GameResult::BLACK_WON
-                               : all_losing ? GameResult::WHITE_WON
-                                            : GameResult::DRAW);
+      // Doesn't give the correct distance to mate because siblings are not
+      // considered but more accurate than doing nothing. This shouldn't
+      // underestimate the distance to mate since at worst we miss shorter
+      // moves.
+      float terminal_m = std::max(losing_m, m) + 1.0f;
+      p->MakeTerminal(
+          v > 0.0f ? GameResult::BLACK_WON
+                   : all_losing ? GameResult::WHITE_WON : GameResult::DRAW,
+          terminal_m);
     }
 
     // Q will be flipped for opponent.
     v = -v;
     depth++;
+    m++;
 
     // Update the stats.
     // Best move.
