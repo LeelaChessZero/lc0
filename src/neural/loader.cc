@@ -46,6 +46,8 @@
 
 #ifdef _WIN32
 #include <io.h>
+#else
+#include <unistd.h>
 #endif
 
 namespace lczero {
@@ -65,8 +67,8 @@ std::string DecompressGzip(const std::string& filename) {
     throw Exception("Cannot read weights from " + filename);
   }
   if (filename == CommandLine::BinaryName()) {
-    // The network file is appended at the end of the lc0 executable, followed
-    // by the network file size and a "Lc0!" (0x2130634c) magic.
+    // The network file should be appended at the end of the lc0 executable,
+    // followed by the network file size and a "Lc0!" (0x2130634c) magic.
     int32_t size, magic;
     if (fseek(fp, -8, SEEK_END) || fread(&size, 4, 1, fp) != 1 ||
         fread(&magic, 4, 1, fp) != 1 || magic != 0x2130634c) {
