@@ -73,6 +73,7 @@ std::atomic<int> policy_bump(0);
 std::atomic<int> policy_nobump_total_hist[11];
 std::atomic<int> policy_bump_total_hist[11];
 std::atomic<int> policy_dtm_bump(0);
+std::atomic<int> gaviota_dtm_rescores(0);
 bool gaviotaEnabled = false;
 
 void DataAssert(bool check_result) {
@@ -131,6 +132,98 @@ void Validate(const std::vector<V4TrainingData>& fileContents,
     }
     history.Append(moves[i]);
   }
+}
+
+void gaviota_tb_probe_hard(const Position &pos, unsigned int &info, unsigned int &dtm) {
+    unsigned int wsq[17];
+    unsigned int bsq[17];
+    unsigned char wpc[17];
+    unsigned char bpc[17];
+
+    auto stm = pos.IsBlackToMove() ? tb_BLACK_TO_MOVE
+                                   : tb_WHITE_TO_MOVE;
+    auto& board = pos.IsBlackToMove() ? pos.GetThemBoard()
+                                      : pos.GetBoard();
+    auto epsq = tb_NOSQUARE;
+    for (auto sq : board.en_passant()) {
+      // Our internal representation stores en_passant 2 rows away
+      // from the actual sq.
+      if (sq.row() == 0) {
+        epsq = (TB_squares)(sq.as_int() + 16);
+      } else {
+        epsq = (TB_squares)(sq.as_int() - 16);
+      }
+    }
+    int idx = 0;
+    for (auto sq : board.our_king()) {
+      wsq[idx] = (TB_squares)sq.as_int();
+      wpc[idx] = tb_KING;
+      idx++;
+    }
+    for (auto sq : board.our_knights()) {
+      wsq[idx] = (TB_squares)sq.as_int();
+      wpc[idx] = tb_KNIGHT;
+      idx++;
+    }
+    for (auto sq : (board.ours() & board.queens())) {
+      wsq[idx] = (TB_squares)sq.as_int();
+      wpc[idx] = tb_QUEEN;
+      idx++;
+    }
+    for (auto sq : (board.ours() & board.rooks())) {
+      wsq[idx] = (TB_squares)sq.as_int();
+      wpc[idx] = tb_ROOK;
+      idx++;
+    }
+    for (auto sq : (board.ours() & board.bishops())) {
+      wsq[idx] = (TB_squares)sq.as_int();
+      wpc[idx] = tb_BISHOP;
+      idx++;
+    }
+    for (auto sq : (board.ours() & board.pawns())) {
+      wsq[idx] = (TB_squares)sq.as_int();
+      wpc[idx] = tb_PAWN;
+      idx++;
+    }
+    wsq[idx] = tb_NOSQUARE;
+    wpc[idx] = tb_NOPIECE;
+
+    idx = 0;
+    for (auto sq : board.their_king()) {
+      bsq[idx] = (TB_squares)sq.as_int();
+      bpc[idx] = tb_KING;
+      idx++;
+    }
+    for (auto sq : board.their_knights()) {
+      bsq[idx] = (TB_squares)sq.as_int();
+      bpc[idx] = tb_KNIGHT;
+      idx++;
+    }
+    for (auto sq : (board.theirs() & board.queens())) {
+      bsq[idx] = (TB_squares)sq.as_int();
+      bpc[idx] = tb_QUEEN;
+      idx++;
+    }
+    for (auto sq : (board.theirs() & board.rooks())) {
+      bsq[idx] = (TB_squares)sq.as_int();
+      bpc[idx] = tb_ROOK;
+      idx++;
+    }
+    for (auto sq : (board.theirs() & board.bishops())) {
+      bsq[idx] = (TB_squares)sq.as_int();
+      bpc[idx] = tb_BISHOP;
+      idx++;
+    }
+    for (auto sq : (board.theirs() & board.pawns())) {
+      bsq[idx] = (TB_squares)sq.as_int();
+      bpc[idx] = tb_PAWN;
+      idx++;
+    }
+    bsq[idx] = tb_NOSQUARE;
+    bpc[idx] = tb_NOPIECE;
+
+    tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info,
+                  &dtm);
 }
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
@@ -316,6 +409,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
         }
       }
+
       if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
         PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
                       PlanesFromTrainingData(fileContents[0]), &board,
@@ -345,98 +439,11 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               int mininum_dtm = 1000;
               // Only safe moves being considered, boost the smallest dtm
               // amongst them.
-              unsigned int wsq[17];
-              unsigned int bsq[17];
-              unsigned char wpc[17];
-              unsigned char bpc[17];
               for (auto& move : maybe_boost) {
                 Position next_pos = Position(history.Last(), move);
-                auto stm = next_pos.IsBlackToMove() ? tb_BLACK_TO_MOVE
-                                                    : tb_WHITE_TO_MOVE;
-                auto& board = next_pos.IsBlackToMove() ? next_pos.GetThemBoard()
-                                                       : next_pos.GetBoard();
-                auto epsq = tb_NOSQUARE;
-                for (auto sq : board.en_passant()) {
-                  // Our internal representation stores en_passant 2 rows away
-                  // from the actual sq.
-                  if (sq.row() == 0) {
-                    epsq = (TB_squares)(sq.as_int() + 16);
-                  } else {
-                    epsq = (TB_squares)(sq.as_int() - 16);
-                  }
-                }
-                int idx = 0;
-                for (auto sq : board.our_king()) {
-                  wsq[idx] = (TB_squares)sq.as_int();
-                  wpc[idx] = tb_KING;
-                  idx++;
-                }
-                for (auto sq : board.our_knights()) {
-                  wsq[idx] = (TB_squares)sq.as_int();
-                  wpc[idx] = tb_KNIGHT;
-                  idx++;
-                }
-                for (auto sq : (board.ours() & board.queens())) {
-                  wsq[idx] = (TB_squares)sq.as_int();
-                  wpc[idx] = tb_QUEEN;
-                  idx++;
-                }
-                for (auto sq : (board.ours() & board.rooks())) {
-                  wsq[idx] = (TB_squares)sq.as_int();
-                  wpc[idx] = tb_ROOK;
-                  idx++;
-                }
-                for (auto sq : (board.ours() & board.bishops())) {
-                  wsq[idx] = (TB_squares)sq.as_int();
-                  wpc[idx] = tb_BISHOP;
-                  idx++;
-                }
-                for (auto sq : (board.ours() & board.pawns())) {
-                  wsq[idx] = (TB_squares)sq.as_int();
-                  wpc[idx] = tb_PAWN;
-                  idx++;
-                }
-                wsq[idx] = tb_NOSQUARE;
-                wpc[idx] = tb_NOPIECE;
-
-                idx = 0;
-                for (auto sq : board.their_king()) {
-                  bsq[idx] = (TB_squares)sq.as_int();
-                  bpc[idx] = tb_KING;
-                  idx++;
-                }
-                for (auto sq : board.their_knights()) {
-                  bsq[idx] = (TB_squares)sq.as_int();
-                  bpc[idx] = tb_KNIGHT;
-                  idx++;
-                }
-                for (auto sq : (board.theirs() & board.queens())) {
-                  bsq[idx] = (TB_squares)sq.as_int();
-                  bpc[idx] = tb_QUEEN;
-                  idx++;
-                }
-                for (auto sq : (board.theirs() & board.rooks())) {
-                  bsq[idx] = (TB_squares)sq.as_int();
-                  bpc[idx] = tb_ROOK;
-                  idx++;
-                }
-                for (auto sq : (board.theirs() & board.bishops())) {
-                  bsq[idx] = (TB_squares)sq.as_int();
-                  bpc[idx] = tb_BISHOP;
-                  idx++;
-                }
-                for (auto sq : (board.theirs() & board.pawns())) {
-                  bsq[idx] = (TB_squares)sq.as_int();
-                  bpc[idx] = tb_PAWN;
-                  idx++;
-                }
-                bsq[idx] = tb_NOSQUARE;
-                bpc[idx] = tb_NOPIECE;
-
                 unsigned int info;
                 unsigned int dtm;
-                tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info,
-                              &dtm);
+                gaviota_tb_probe_hard(next_pos, info, dtm);
                 dtms.push_back(dtm);
                 if (dtm < mininum_dtm) mininum_dtm = dtm;
               }
@@ -495,40 +502,49 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
 
+      // Make move_count field plies_left for moves left head.
       int offset = 0;
+      bool all_draws = true;
       for (auto& chunk : fileContents) {
         chunk.move_count =
-            std::min(255, (int)(fileContents.size() - offset) / 2);
+            std::min(255, (int)(fileContents.size() - offset));
         offset++;
+        all_draws = all_draws && (chunk.result == 0);
       }
-      // Correct move_count using DTM. Since we don't actually have DTM, use DTZ
-      // for 3 piece no-pawn positions only.
-      PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                    PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                    &gameply);
-      history.Reset(board, rule50ply, gameply);
-      for (int i = 0; i < moves.size(); i++) {
-        history.Append(moves[i]);
-        const auto& board = history.Last().GetBoard();
-        if (board.castlings().no_legal_castle() &&
-            (board.ours() | board.theirs()).count() <= 3 &&
-            board.pawns().empty()) {
-          ProbeState state;
-          WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
-          // Only fail state means the WDL is wrong, probe_wdl may produce
-          // correct result with a stat other than OK.
-          if (state != FAIL) {
-            int8_t score_to_apply = 0;
-            if (wdl == WDL_WIN) {
-              score_to_apply = 1;
-            } else if (wdl == WDL_LOSS) {
-              score_to_apply = -1;
+
+      // Correct plies_left using Gaviota TBs for 5 piece and less positions.
+      if (gaviotaEnabled && !all_draws) {
+        PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                      PlanesFromTrainingData(fileContents[0]), &board,
+                      &rule50ply, &gameply);
+        history.Reset(board, rule50ply, gameply);
+        int last_rescore = 0;
+        for (int i = 0; i < moves.size(); i++) {
+          history.Append(moves[i]);
+          const auto& board = history.Last().GetBoard();
+
+          // Gaviota TBs don't have 50 move rule.
+          // Only consider positions that are not draw after rescoring.
+          if ((fileContents[i + 1].result != 0) &&
+              board.castlings().no_legal_castle() &&
+            (board.ours() | board.theirs()).count() <= 5) {
+
+            std::vector<int> dtms;
+            unsigned int info;
+            unsigned int dtm;
+            gaviota_tb_probe_hard(history.Last(), info, dtm);
+            if (info != tb_WMATE && info != tb_BMATE) {
+              // Not a win for either player.
+              continue;
             }
-            // No point updating for draws.
-            if (score_to_apply == 0) continue;
-            // Any repetitions in the history since last 50 ply makes it risky
-            // to assume dtz is still correct.
             int steps = history.Last().GetNoCaptureNoPawnPly();
+            if ((dtm + steps > 99) && (dtm <= fileContents[i + 1].move_count)) {
+              // Following DTM could trigger 50 move rule and the current
+              // move_count is more than DTM.
+              // If DTM is more than the current move_count then we can rescore
+              // using it since DTM50 is not shorter than DTM.
+              continue;
+            }
             bool no_reps = true;
             for (int i = 0; i < steps; i++) {
               // If game started from non-zero 50 move rule, this could
@@ -544,23 +560,87 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                 break;
               }
             }
-            if (no_reps) {
-              int depth = tablebase->probe_dtz(history.Last(), &state);
-              if (state != FAIL) {
-                // if depth == -1 this is wrong, since that is mate and the
-                // answer should be 0, but the move before depth is -2. Since
-                // data never contains mate position, ignore that discrepency.
-                int converted_ply_remaining = std::abs(depth);
-                // This should be able to be <= 99 safely, but I've not
-                // convinced myself thats true.
-                if (steps + std::abs(depth) < 99) {
-                  fileContents[i + 1].move_count =
-                      std::min(255, converted_ply_remaining / 2);
+            if (!no_reps) {
+              // There were repetitions. Do nothing since DTM path
+              // could trigger draw by repetition.
+              continue;
+            }
+            gaviota_dtm_rescores++;
+            int j;
+            for (j = i; j >= -1; j--) {
+              if (j <= last_rescore) {
+                break;
+              }
+              //std::cerr << j << " " << int(fileContents[j + 1].move_count) << " -> " << int(dtm + (i - j)) << std::endl;
+              fileContents[j + 1].move_count = std::min(255, int(dtm + (i - j)));
+            }
+            last_rescore = i;
+          }
+        }
+      }
+
+      // Correct move_count using DTZ for 3 piece no-pawn positions only.
+      // If Gaviota TBs are enabled no need to use syzygy.
+      if (!gaviotaEnabled && !all_draws) {
+        PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                      PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
+                      &gameply);
+        history.Reset(board, rule50ply, gameply);
+        for (int i = 0; i < moves.size(); i++) {
+          history.Append(moves[i]);
+          const auto& board = history.Last().GetBoard();
+          if (board.castlings().no_legal_castle() &&
+              (board.ours() | board.theirs()).count() <= 3 &&
+              board.pawns().empty()) {
+            ProbeState state;
+            WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+            // Only fail state means the WDL is wrong, probe_wdl may produce
+            // correct result with a stat other than OK.
+            if (state != FAIL) {
+              int8_t score_to_apply = 0;
+              if (wdl == WDL_WIN) {
+                score_to_apply = 1;
+              } else if (wdl == WDL_LOSS) {
+                score_to_apply = -1;
+              }
+              // No point updating for draws.
+              if (score_to_apply == 0) continue;
+              // Any repetitions in the history since last 50 ply makes it risky
+              // to assume dtz is still correct.
+              int steps = history.Last().GetNoCaptureNoPawnPly();
+              bool no_reps = true;
+              for (int i = 0; i < steps; i++) {
+                // If game started from non-zero 50 move rule, this could
+                // underflow. Only safe option is to assume there were repetitions
+                // before this point.
+                if (history.GetLength() - i - 1 < 0) {
+                  no_reps = false;
+                  break;
                 }
-                if (steps == 0) {
-                  for (int j = i; j >= 0; j--) {
-                    fileContents[j].move_count = std::min(
-                        255, (converted_ply_remaining + (i + 1 - j)) / 2);
+                if (history.GetPositionAt(history.GetLength() - i - 1)
+                        .GetRepetitions() != 0) {
+                  no_reps = false;
+                  break;
+                }
+              }
+              if (no_reps) {
+                int depth = tablebase->probe_dtz(history.Last(), &state);
+                if (state != FAIL) {
+                  // if depth == -1 this is wrong, since that is mate and the
+                  // answer should be 0, but the move before depth is -2. Since
+                  // data never contains mate position, ignore that discrepency.
+                  int converted_ply_remaining = std::abs(depth);
+                  // This should be able to be <= 99 safely, but I've not
+                  // convinced myself thats true.
+                  if (steps + std::abs(depth) < 99) {
+                    fileContents[i + 1].move_count =
+                        std::min(255, converted_ply_remaining);
+                  }
+                  if (steps == 0) {
+                    for (int j = i; j >= 0; j--) {
+                      fileContents[j].move_count = std::min(
+                          255, converted_ply_remaining + (i + 1 - j));
+                    }
                   }
                 }
               }
@@ -651,6 +731,8 @@ void RescoreLoop::RunLoop() {
     if (tb_availability() != 63) {
       std::cerr << "UNEXPECTED gaviota availability" << std::endl;
       return;
+    } else {
+      std::cerr << "Found Gaviota TBs" << std::endl;
     }
     gaviotaEnabled = true;
   }
@@ -726,6 +808,7 @@ void RescoreLoop::RunLoop() {
             << " W: " << orig_counts[2] << std::endl;
   std::cout << "After L: " << fixed_counts[0] << " D: " << fixed_counts[1]
             << " W: " << fixed_counts[2] << std::endl;
+  std::cout << "Gaviota DTM move_count rescores: " << gaviota_dtm_rescores << std::endl;
 }
 
 SelfPlayLoop::SelfPlayLoop() {}
