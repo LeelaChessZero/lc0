@@ -825,7 +825,7 @@ void SearchWorker::GatherMinibatch() {
   // If we had too many (kMiniBatchSize) nodes out of order, also interrupt the
   // iteration so that search can exit.
   while (minibatch_size < params_.GetMiniBatchSize() &&
-         number_out_of_order_ < params_.GetMiniBatchSize()) {
+         number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.

@@ -113,6 +113,8 @@ class SearchParams {
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
 
+  int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
+
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
@@ -160,6 +162,7 @@ class SearchParams {
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
+  static const OptionId kMaxOutOfOrderEvalsId;
 
  private:
   const OptionsDict& options_;
@@ -201,6 +204,7 @@ class SearchParams {
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
+  const int kMaxOutOfOrderEvals;
 };
 
 }  // namespace lczero
