@@ -26,6 +26,9 @@
 */
 
 #include "selfplay/loop.h"
+
+#include <optional>
+
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "selfplay/tournament.h"
@@ -825,8 +828,8 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
 
   // Initialize variables.
   float percentage = -1;
-  optional<float> elo;
-  optional<float> los;
+  std::optional<float> elo;
+  std::optional<float> los;
 
   // Only caculate percentage if any games at all (avoid divide by 0).
   if ((winp1 + losep1 + draws) > 0) {
@@ -852,11 +855,11 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   }
   if (elo) {
     oss << " Elo: " << std::fixed << std::setw(5) << std::setprecision(2)
-        << (elo.value_or(0.0f));
+        << (*elo);
   }
   if (los) {
     oss << " LOS: " << std::fixed << std::setw(5) << std::setprecision(2)
-        << (los.value_or(0.0f) * 100.0f) << "%";
+        << (*los * 100.0f) << "%";
   }
 
   oss << " P1-W: +" << info.results[0][0] << " -" << info.results[2][0] << " ="

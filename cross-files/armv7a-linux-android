@@ -1,0 +1,27 @@
+
+# Tested with Android NDK r18, standalone toolchain
+# Targeting API level 24
+#
+# First create the standalone toolchain:
+# ./make_standalone_toolchain.py --arch arm --api 24 --stl libc++ --install-dir android-standalone-32
+#
+# Then set the toolchain path on your environment:
+# export PATH="$HOME/.local/share/android-sdk/android-toolchains/android-standalone-32/bin:$PATH"
+
+[host_machine]
+system = 'android'
+cpu_family = 'arm'
+cpu = 'armv7a'
+endian = 'little'
+
+[properties]
+cpp_link_args = ['-llog', '-static-libstdc++']
+
+[binaries]
+c = 'arm-linux-androideabi-clang'
+cpp = 'arm-linux-androideabi-clang++'
+ar = 'arm-linux-androideabi-ar'
+strip = 'arm-linux-androideabi-strip'
+ld = 'arm-linux-androideabi-ld'
+ranlib = 'arm-linux-androideabi-ranlib'
+as = 'arm-linux-androideabi-as'

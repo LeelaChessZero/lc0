@@ -162,6 +162,10 @@ class OpenCLComputation : public NetworkComputation {
     }
   }
 
+  float GetMVal(int /* sample */) const override {
+    return 0.0f;
+  }
+
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
     return policies_[sample][move_id];
@@ -200,7 +204,8 @@ class OpenCLNetwork : public Network {
   virtual ~OpenCLNetwork(){};
 
   OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
-      : capabilities_{file.format().network_format().input()},
+      : capabilities_{file.format().network_format().input(),
+                      pblczero::NetworkFormat::MOVES_LEFT_NONE},
         weights_(file),
         params_(),
         opencl_(),

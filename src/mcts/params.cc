@@ -27,6 +27,10 @@
 
 #include "mcts/params.h"
 
+#include <algorithm>
+
+#include "utils/exception.h"
+
 namespace lczero {
 
 namespace {
@@ -58,12 +62,26 @@ const OptionId SearchParams::kCpuctId{
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
+const OptionId SearchParams::kCpuctAtRootId{
+    "cpuct-at-root", "CPuctAtRoot",
+    "cpuct_init constant from \"UCT search\" algorithm, for root node."};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
     "higher growth of Cpuct as number of node visits grows."};
+const OptionId SearchParams::kCpuctBaseAtRootId{
+    "cpuct-base-at-root", "CPuctBaseAtRoot",
+    "cpuct_base constant from \"UCT search\" algorithm, for root node."};
 const OptionId SearchParams::kCpuctFactorId{
     "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
+const OptionId SearchParams::kCpuctFactorAtRootId{
+    "cpuct-factor-at-root", "CPuctFactorAtRoot",
+    "Multiplier for the cpuct growth formula at root."};
+const OptionId SearchParams::kRootHasOwnCpuctParamsId{
+    "root-has-own-cpuct-params", "RootHasOwnCpuctParams",
+    "If enabled, cpuct parameters for root node are taken from *AtRoot "
+    "parameters. Otherwise, they are the same as for the rest of nodes. "
+    "Temporary flag for transition to a new version."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -186,9 +204,44 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SearchParams::kMovesLeftFactorId{
+    "moves-left-factor", "MovesLeftFactor",
+    "Bonus to add to the score of a node based on how much shorter/longer "
+    "it makes when winning/losing."};
+const OptionId SearchParams::kMovesLeftThresholdId{
+    "moves-left-threshold", "MovesLeftThreshold",
+    "Absolute value of node Q needs to exceed this value before shorter wins "
+    "or longer losses are considered."};
+const OptionId SearchParams::kMovesLeftScaleId{
+    "moves-left-scale", "MovesLeftScale",
+    "Controls how the bonus for shorter wins or longer losses is adjusted "
+    "based on how many moves the move is estimated to shorten/lengthen the "
+    "game. The move shortening/lengthening the game by this amount of plies "
+    "or more compared to the best node, gets the full MovesLeftFactor bonus "
+    "added. Moves shortening/lengthening by less amount of moves have bonus "
+    "scaled linearly."};
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
+const OptionId SearchParams::kDisplayCacheUsageId{
+    "display-cache-usage", "DisplayCacheUsage",
+    "Display cache fullness through UCI info `hash` section."};
+const OptionId SearchParams::kMaxConcurrentSearchersId{
+    "max-concurrent-searchers", "MaxConcurrentSearchers",
+    "If not 0, at most this many search workers can be gathering minibatches "
+    "at once."};
+const OptionId SearchParams::kDrawScoreSidetomoveId{
+    "draw-score-sidetomove", "DrawScoreSideToMove",
+    "Score of a drawn game, as seen by a player making the move."};
+const OptionId SearchParams::kDrawScoreOpponentId{
+    "draw-score-opponent", "DrawScoreOpponent",
+    "Score of a drawn game, as seen by the opponent."};
+const OptionId SearchParams::kDrawScoreWhiteId{
+    "draw-score-white", "DrawScoreWhite",
+    "Adjustment, added to a draw score of a white player."};
+const OptionId SearchParams::kDrawScoreBlackId{
+    "draw-score-black", "DrawScoreBlack",
+    "Adjustment, added to a draw score of a black player."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -196,9 +249,13 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
-  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 3.0f;
-  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 19652.0f;
-  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.0f;
+  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
+  options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
+  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
+  options->Add<FloatOption>(kCpuctBaseAtRootId, 1.0f, 1000000000.0f) = 18368.0f;
+  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.815f;
+  options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 2.815f;
+  options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
@@ -213,12 +270,12 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kLogLiveStatsId) = false;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
-  options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 1.2f;
+  options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 0.443f;
   fpu_strategy.push_back("same");
   options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
-  options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 2.2f;
+  options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.607f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
@@ -226,24 +283,51 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   options->Add<BoolOption>(kPerPvCountersId) = false;
-  std::vector<std::string> score_type = {"centipawn", "centipawn_2018",
-                                         "win_percentage", "Q"};
+  std::vector<std::string> score_type = {"centipawn",
+                                         "centipawn_with_drawscore",
+                                         "centipawn_2018",
+                                         "win_percentage",
+                                         "Q",
+                                         "W-L"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
+  options->Add<FloatOption>(kMovesLeftFactorId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kMovesLeftScaleId, 1.0f, 100.0f) = 10.0f;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
+  options->Add<BoolOption>(kDisplayCacheUsageId) = false;
+  options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
+  options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
+  options->HideOption(kDisplayCacheUsageId);
+  options->HideOption(kRootHasOwnCpuctParamsId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kLogitQ(options.Get<bool>(kLogitQId.GetId())),
       kCpuct(options.Get<float>(kCpuctId.GetId())),
+      kCpuctAtRoot(
+          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
+                                 ? kCpuctAtRootId.GetId()
+                                 : kCpuctId.GetId())),
       kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
+      kCpuctBaseAtRoot(
+          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
+                                 ? kCpuctBaseAtRootId.GetId()
+                                 : kCpuctBaseId.GetId())),
       kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
+      kCpuctFactorAtRoot(
+          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
+                                 ? kCpuctFactorAtRootId.GetId()
+                                 : kCpuctFactorId.GetId())),
       kNoiseEpsilon(options.Get<bool>(kNoiseId.GetId())
                         ? 0.25f
                         : options.Get<float>(kNoiseEpsilonId.GetId())),
@@ -269,6 +353,26 @@ SearchParams::SearchParams(const OptionsDict& options)
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
-      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())) {}
+      kMovesLeftFactor(options.Get<float>(kMovesLeftFactorId.GetId())),
+      kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId.GetId())),
+      kMovesLeftScale(options.Get<float>(kMovesLeftScaleId.GetId())),
+      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
+      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())),
+      kMaxConcurrentSearchers(
+          options.Get<int>(kMaxConcurrentSearchersId.GetId())),
+      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId.GetId()) /
+                           100.0f},
+      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId.GetId()) /
+                         100.0f},
+      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
+      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f} {
+  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
+          std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
+      1.0f) {
+    throw Exception(
+        "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
+        "be <= 100");
+  }
+}
 
 }  // namespace lczero
