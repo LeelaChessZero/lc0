@@ -1,4 +1,14 @@
-﻿v0.24.0-rc2 (2020-03-01)
+﻿v0.24.0-rc3 (2020-03-08)
+~~~~~~~~~~~
+
+* New parameter `--out-of-order-eval` to set maximum number out-of-order evals
+  per batch (was equal to the batch size before).
+* It's now possible to embed networks into the binary. It allows easier builds
+  of .apk for Android.
+* New parameter `--smart-pruning-minimum-batches` to only allow smart pruning
+  to stop after at least k batches, preventing insta-moves on slow backends.
+
+v0.24.0-rc2 (2020-03-01)
 ~~~~~~~~~~~
 
 * All releases are now bundled with network id591226 (and the file date is old 
