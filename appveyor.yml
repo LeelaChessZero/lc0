@@ -47,12 +47,12 @@ install:
 - cmd: IF %NAME%==android C:\ProgramData\Microsoft\AndroidNDK64\android-ndk-r17\build\tools\make_standalone_toolchain.py --arch arm64 --api 21 --stl libc++ --install-dir \android-standalone-64
 - cmd: IF %NAME%==android set PATH=C:\android-standalone-64\bin;%PATH%
 - cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/aarch64-linux-android >crossfile-aarch64
-- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8/openblas-android-aarch64.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8-2/openblas-android-aarch64.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 7z x openblas-android-aarch64.zip -oC:\cache\OpenBLAS
 - cmd: IF %NAME%==android C:\ProgramData\Microsoft\AndroidNDK64\android-ndk-r17\build\tools\make_standalone_toolchain.py --arch arm --api 21 --stl libc++ --install-dir \android-standalone-32
 - cmd: IF %NAME%==android set PATH=C:\android-standalone-32\bin;%PATH%
 - cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/armv7a-linux-android >crossfile-armv7a
-- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8/openblas-android-armv7a.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8-2/openblas-android-armv7a.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a 7z x openblas-android-armv7a.zip -oC:\cache\OpenBLAS
 - cmd: set PKG_FOLDER="C:\cache"
 - cmd: IF NOT EXIST c:\cache mkdir c:\cache
@@ -65,7 +65,7 @@ install:
 - cmd: IF %GTEST%==true IF NOT EXIST KQvKQ.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK{P,N,R,B,Q}.rtb{w,z}
 - cmd: cd C:\projects\lc0
 cache:
-  - C:\cache
+  - C:\cache -> appveyor.yml
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0'
   - C:\projects\lc0\subprojects\packagecache
 before_build:
