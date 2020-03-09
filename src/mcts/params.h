@@ -103,7 +103,7 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  float GetMovesLeftFactor() const { return kMovesLeftFactor; }
+  float GetMovesLeftMaxEffect() const { return kMovesLeftMaxEffect; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
   float GetMovesLeftSlope() const { return kMovesLeftSlope; }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
@@ -150,7 +150,7 @@ class SearchParams {
   static const OptionId kPerPvCountersId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
-  static const OptionId kMovesLeftFactorId;
+  static const OptionId kMovesLeftMaxEffectId;
   static const OptionId kMovesLeftThresholdId;
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kShortSightednessId;
@@ -191,7 +191,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
-  const float kMovesLeftFactor;
+  const float kMovesLeftMaxEffect;
   const float kMovesLeftThreshold;
   const float kMovesLeftSlope;
   const float kShortSightedness;
