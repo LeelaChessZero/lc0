@@ -1,9 +1,12 @@
 
 # Tested with Android NDK r18, standalone toolchain
-# Targeting API level 24
+# Targeting API level 21
+#
+# When targeting API levels < 24 must undef _FILE_OFFSET_BITS to addess this issue:
+# https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md
 #
 # First create the standalone toolchain:
-# ./make_standalone_toolchain.py --arch arm --api 24 --stl libc++ --install-dir android-standalone-32
+# ./make_standalone_toolchain.py --arch arm --api 21 --stl libc++ --install-dir android-standalone-32
 #
 # Then set the toolchain path on your environment:
 # export PATH="$HOME/.local/share/android-sdk/android-toolchains/android-standalone-32/bin:$PATH"
@@ -15,6 +18,7 @@ cpu = 'armv7a'
 endian = 'little'
 
 [properties]
+cpp_args = ['-U_FILE_OFFSET_BITS']
 cpp_link_args = ['-llog', '-static-libstdc++']
 
 [binaries]
