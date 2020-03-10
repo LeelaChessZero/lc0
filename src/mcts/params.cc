@@ -178,7 +178,8 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "of a batch; when on, this can happen with any node."};
 const OptionId SearchParams::kMaxOutOfOrderEvalsId{
     "max-out-of-order-evals", "MaxOutOfOrderEvals",
-    "Maximum number of out of order evals during gathering of a batch."};
+    "Maximum number of out of order evals during gathering of a batch relative "
+    "to the maximum batch size."};
 const OptionId SearchParams::kStickyEndgamesId{
     "sticky-endgames", "StickyEndgames",
     "When an end of game position is found during search, allow the eval of "
@@ -282,7 +283,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
-  options->Add<IntOption>(kMaxOutOfOrderEvalsId, 1, 10000) = 256;
+  options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 1.0f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
@@ -370,7 +371,9 @@ SearchParams::SearchParams(const OptionsDict& options)
                          100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f},
-      kMaxOutOfOrderEvals(options.Get<int>(kMaxOutOfOrderEvalsId.GetId())) {
+      kMaxOutOfOrderEvals(
+          std::max(1, int(options.Get<float>(kMaxOutOfOrderEvalsId.GetId()) *
+                          options.Get<int>(kMiniBatchSizeId.GetId())))) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
