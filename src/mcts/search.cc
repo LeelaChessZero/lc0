@@ -757,7 +757,7 @@ void SearchWorker::ExecuteOneIteration() {
     while (true) {
       // If search is stop, we've not gathered or done anything and we don't
       // want to, so we can safely skip all below.
-      if (search_->stop_.load(std::memory_order_acquire)) return;
+      if (search_->stop_.load(std::memory_order_acquire)) break;
       int available =
           search_->pending_searchers_.load(std::memory_order_acquire);
       if (available > 0 &&
