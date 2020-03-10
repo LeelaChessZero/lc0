@@ -42,6 +42,7 @@ const OptionId kThreadsOptionId{"threads", "Threads",
 const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
 const OptionId kMovetimeId{"movetime", "",
                            "Benchmark time allocation, in milliseconds."};
+const OptionId kFenId{"fen", "", "Benchmark position FEN."};
 const OptionId kNumPositionsId{"num-positions", "",
                                "The number of benchmark positions to test."};
 }  // namespace
@@ -55,6 +56,7 @@ void Benchmark::Run() {
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
   options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
+  options.Add<StringOption>(kFenId) = "";
   options.Add<IntOption>(kNumPositionsId, 1, 34) = 34;
 
   if (!options.ProcessAllFlags()) return;
@@ -66,19 +68,25 @@ void Benchmark::Run() {
 
     const int visits = option_dict.Get<int>(kNodesId.GetId());
     const int movetime = option_dict.Get<int>(kMovetimeId.GetId());
-    const int num_positions = option_dict.Get<int>(kNumPositionsId.GetId());
+    const std::string fen = option_dict.Get<std::string>(kFenId.GetId());
+    int num_positions = option_dict.Get<int>(kNumPositionsId.GetId());
 
     std::vector<std::double_t> times;
     std::vector<std::int64_t> playouts;
     std::uint64_t cnt = 1;
-    std::vector<std::string> testing_positions(positions.cbegin(), positions.cbegin() + num_positions);
+
+    if (fen.length() > 0) {
+      positions = {fen};
+      num_positions = 1;
+    }
+    std::vector<std::string> testing_positions(
+        positions.cbegin(), positions.cbegin() + num_positions);
 
     for (std::string position : testing_positions) {
-      std::cout << "\nPosition: " << cnt++ << "/"
-                << testing_positions.size() << " "
-                << position << std::endl;
+      std::cout << "\nPosition: " << cnt++ << "/" << testing_positions.size()
+                << " " << position << std::endl;
 
-	  auto stopper = std::make_unique<ChainedSearchStopper>();
+      auto stopper = std::make_unique<ChainedSearchStopper>();
       if (movetime > -1) {
         stopper->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
       }
@@ -89,7 +97,7 @@ void Benchmark::Run() {
       NNCache cache;
       cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId.GetId()));
 
-	  NodeTree tree;
+      NodeTree tree;
       tree.ResetToPosition(position, {});
 
       const auto start = std::chrono::steady_clock::now();
@@ -104,12 +112,14 @@ void Benchmark::Run() {
       search->Wait();
       const auto end = std::chrono::steady_clock::now();
 
-      const auto time = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+      const auto time =
+          std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
       times.push_back(time.count());
       playouts.push_back(search->GetTotalPlayouts());
     }
 
-    const auto total_playouts = std::accumulate(playouts.begin(), playouts.end(), 0);
+    const auto total_playouts =
+        std::accumulate(playouts.begin(), playouts.end(), 0);
     const auto total_time = std::accumulate(times.begin(), times.end(), 0);
     std::cout << "\n==========================="
               << "\nTotal time (ms) : " << total_time
