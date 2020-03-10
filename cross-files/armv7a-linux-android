@@ -2,8 +2,11 @@
 # Tested with Android NDK r18, standalone toolchain
 # Targeting API level 21
 #
-# When targeting API levels < 24 must undef _FILE_OFFSET_BITS to addess this issue:
-# https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md
+# When targeting API levels < 24 the build fails unless _FILE_OFFSET_BITS is unset.
+# Meson passes _FILE_OFFSET_BITS=64 but recent NDK toolchains have issues building
+# for 32-bit ABIs when such macro it set. Relevant links:
+#  https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md
+#  https://github.com/mesonbuild/meson/pull/2996#issuecomment-384045808
 #
 # First create the standalone toolchain:
 # ./make_standalone_toolchain.py --arch arm --api 21 --stl libc++ --install-dir android-standalone-32
