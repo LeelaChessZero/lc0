@@ -138,7 +138,11 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     const auto d = edge.GetD();
     const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
     const auto q = edge.GetQ(default_q, draw_score);
-    if (score_type == "centipawn_with_drawscore") {
+    if (edge.IsTerminal() && wl != 0.0f) {
+      uci_info.mate = std::copysign(
+          std::round(edge.GetM(0.0f)) / 2 + (edge.IsTbTerminal() ? 101 : 1),
+          wl);
+    } else if (score_type == "centipawn_with_drawscore") {
       uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
     } else if (score_type == "centipawn") {
       uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(q, 14));
@@ -478,32 +482,81 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
     PopulateRootMoveLimit(&root_limit);
   }
   // Best child is selected using the following criteria:
-  // * Is terminal win, e.g., checkmate.
+  // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<bool, uint64_t, float, float, EdgeAndNode>;
-  std::vector<El> edges;
+  std::vector<EdgeAndNode> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
             root_limit.end()) {
       continue;
     }
-    const auto WL = edge.GetWL();
-    edges.emplace_back(edge.IsTerminal() && WL > 0.0f, edge.GetN(), WL,
-                       edge.GetP(), edge);
+    edges.push_back(edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
                           : edges.end();
-  std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
+  std::partial_sort(
+      edges.begin(), middle, edges.end(), [](const auto& a, const auto& b) {
+        // The function returns "true" when a is preferred to b.
 
-  std::vector<EdgeAndNode> res;
-  std::transform(edges.begin(), middle, std::back_inserter(res),
-                 [](const El& x) { return std::get<4>(x); });
-  return res;
+        // Lists edge types from less desirable to more desirable.
+        enum EdgeRank {
+          kTerminalLoss,
+          kTablebaseLoss,
+          kNonTerminal,  // Non terminal or terminal draw.
+          kTablebaseWin,
+          kTerminalWin,
+        };
+
+        auto GetEdgeRank = [](const EdgeAndNode& edge) {
+          const auto wl = edge.GetWL();
+          if (!edge.IsTerminal() || !wl) return kNonTerminal;
+          if (edge.IsTbTerminal()) {
+            return wl < 0.0 ? kTablebaseLoss : kTablebaseWin;
+          }
+          return wl < 0.0 ? kTerminalLoss : kTerminalWin;
+        };
+
+        // If moves have different outcomes, prefer better outcome.
+        const auto a_rank = GetEdgeRank(a);
+        const auto b_rank = GetEdgeRank(b);
+        if (a_rank != b_rank) return a_rank > b_rank;
+
+        // If both are terminal draws, try to make it shorter.
+        if (a_rank == kNonTerminal && a.IsTerminal() && b.IsTerminal()) {
+          if (a.IsTbTerminal() != b.IsTbTerminal()) {
+            // Prefer non-tablebase draws.
+            return a.IsTbTerminal() < b.IsTbTerminal();
+          }
+          // Prefer shorter draws.
+          return a.GetM(0.0f) < b.GetM(0.0f);
+        }
+
+        // Neither is terminal, use standard rule.
+        if (a_rank == kNonTerminal) {
+          // Prefer largest playouts then eval then prior.
+          if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
+          if (a.GetWL() != b.GetWL()) return a.GetWL() > b.GetWL();
+          return a.GetP() > b.GetP();
+        }
+
+        // Both variants are winning, prefer shortest win.
+        if (a_rank > kNonTerminal) {
+          return a.GetM(0.0f) < b.GetM(0.0f);
+        }
+
+        // Both variants are losing, prefer longest losses.
+        return a.GetM(0.0f) > b.GetM(0.0f);
+      });
+
+  if (count < edges.size()) {
+    edges.resize(count);
+  }
+  return edges;
 }
 
 // Returns a child with most visits.
@@ -613,6 +666,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   }
   stats->total_nodes = total_playouts_ + initial_visits_;
   stats->nodes_since_movestart = total_playouts_;
+  stats->batches_since_movestart = total_batches_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
   for (const auto& edge : root_node_->Edges()) {
@@ -1056,11 +1110,13 @@ void SearchWorker::ExtendNode(Node* node) {
         }
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON, m);
+          node->MakeTerminal(GameResult::BLACK_WON, m,
+                             Node::Terminal::Tablebase);
         } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON, m);
+          node->MakeTerminal(GameResult::WHITE_WON, m,
+                             Node::Terminal::Tablebase);
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW, m);
+          node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
@@ -1286,6 +1342,7 @@ void SearchWorker::DoBackupUpdate() {
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
   }
+  search_->total_batches_ += 1;
 }
 
 void SearchWorker::DoBackupUpdateSingleNode(
@@ -1330,6 +1387,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // A non-winning terminal move needs all other moves to be similar.
     auto all_losing = true;
+    auto found_tb = n->IsTbTerminal();
     float losing_m = 0.0f;
     if (can_convert && v <= 0.0f) {
       for (const auto& edge : p->Edges()) {
@@ -1337,6 +1395,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
         can_convert = can_convert && edge.IsTerminal() && WL <= 0.0f;
         if (!can_convert) break;
         all_losing = all_losing && WL < 0.0f;
+        found_tb = found_tb || edge.IsTbTerminal();
         losing_m = std::max(losing_m, edge.GetM(0.0f));
       }
     }
@@ -1353,7 +1412,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       p->MakeTerminal(
           v > 0.0f ? GameResult::BLACK_WON
                    : all_losing ? GameResult::WHITE_WON : GameResult::DRAW,
-          terminal_m);
+          terminal_m,
+          found_tb ? Node::Terminal::Tablebase : Node::Terminal::Terminal);
     }
 
     // Q will be flipped for opponent.
