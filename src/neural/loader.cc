@@ -30,6 +30,7 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <cstdio>
 #include <fstream>
@@ -43,6 +44,12 @@
 #include "utils/logging.h"
 #include "version.h"
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace lczero {
 
 namespace {
@@ -55,8 +62,27 @@ std::string DecompressGzip(const std::string& filename) {
   int bytes_read = 0;
 
   // Read whole file into a buffer.
-  const gzFile file = gzopen(filename.c_str(), "rb");
-  if (!file) throw Exception("Cannot read weights from " + filename);
+  FILE* fp = fopen(filename.c_str(), "rb");
+  if (!fp) {
+    throw Exception("Cannot read weights from " + filename);
+  }
+  if (filename == CommandLine::BinaryName()) {
+    // The network file should be appended at the end of the lc0 executable,
+    // followed by the network file size and a "Lc0!" (0x2130634c) magic.
+    int32_t size, magic;
+    if (fseek(fp, -8, SEEK_END) || fread(&size, 4, 1, fp) != 1 ||
+        fread(&magic, 4, 1, fp) != 1 || magic != 0x2130634c) {
+      fclose(fp);
+      throw Exception("No embedded file detected.");
+    }
+    fseek(fp, -size - 8, SEEK_END);
+  }
+  fflush(fp);
+  gzFile file = gzdopen(dup(fileno(fp)), "rb");
+  fclose(fp);
+  if (!file) {
+    throw Exception("Cannot process file " + filename);
+  }
   while (true) {
     const int sz =
         gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);

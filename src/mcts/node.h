@@ -130,6 +130,8 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
+  enum class Terminal : uint8_t { NonTerminal, Terminal, Tablebase };
+
   // Takes pointer to a parent node and own index in a parent.
   Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
 
@@ -158,13 +160,16 @@ class Node {
   // for terminal nodes.
   float GetWL() const { return wl_; }
   float GetD() const { return d_; }
+  float GetM() const { return m_; }
 
   // Returns whether the node is known to be draw/lose/win.
-  bool IsTerminal() const { return is_terminal_; }
+  bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
+  bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result);
+  void MakeTerminal(GameResult result, float plies_left = 0.0f,
+                    Terminal type = Terminal::Terminal);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
 
@@ -180,7 +185,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, float d, int multivisit);
+  void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -276,6 +281,8 @@ class Node {
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
+  // Estimated remaining plies.
+  float m_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
@@ -294,7 +301,7 @@ class Node {
 
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
-  bool is_terminal_ = false;
+  Terminal terminal_type_ = Terminal::NonTerminal;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -314,7 +321,7 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
 #else
 static_assert(sizeof(Node) == 80, "Unexpected size of Node");
 #endif
@@ -333,8 +340,6 @@ class EdgeAndNode {
   bool operator!=(const EdgeAndNode& other) const {
     return edge_ != other.edge_;
   }
-  // Arbitrary ordering just to make it possible to use in tuples.
-  bool operator<(const EdgeAndNode& other) const { return edge_ < other.edge_; }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }
@@ -352,6 +357,9 @@ class EdgeAndNode {
   float GetD() const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
+  float GetM(float default_m) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
+  }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
@@ -359,6 +367,7 @@ class EdgeAndNode {
 
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
+  bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }

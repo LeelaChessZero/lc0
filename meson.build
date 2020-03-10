@@ -73,7 +73,8 @@ endif
 
 pb_files = [
   'src/utils/protomessage.cc',
-  gen.process('libs/lczero-common/proto/net.proto')
+  gen.process('libs/lczero-common/proto/net.proto',
+    preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
 ]
 files += pb_files
 
@@ -105,6 +106,7 @@ message('Using build identifier "' + build_identifier + '".')
 files += [
   'src/engine.cc',
   'src/version.cc',
+  'src/benchmark/backendbench.cc',
   'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
@@ -498,6 +500,10 @@ endif
 
 if not get_option('pext')
   add_project_arguments('-DNO_PEXT', language : 'cpp')
+endif
+
+if get_option('embed')
+  add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
 executable('lc0', 'src/main.cc',
