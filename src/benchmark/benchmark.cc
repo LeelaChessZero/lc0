@@ -25,9 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <numeric>
-
 #include "benchmark/benchmark.h"
+
+#include <numeric>
 
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
