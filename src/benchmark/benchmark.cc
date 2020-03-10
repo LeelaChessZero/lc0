@@ -42,7 +42,8 @@ const OptionId kThreadsOptionId{"threads", "Threads",
 const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
 const OptionId kMovetimeId{"movetime", "",
                            "Benchmark time allocation, in milliseconds."};
-const OptionId kStartingPosition{"starting-position", "", "Benchmark starting position FEN only."};
+const OptionId kNumPositionsId{"num-positions", "",
+                               "The number of benchmark positions to test."};
 }  // namespace
 
 void Benchmark::Run() {
@@ -54,7 +55,7 @@ void Benchmark::Run() {
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
   options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
-  options.Add<BoolOption>(kStartingPosition) = false;
+  options.Add<IntOption>(kNumPositionsId, 1, 34) = 34;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -65,16 +66,17 @@ void Benchmark::Run() {
 
     const int visits = option_dict.Get<int>(kNodesId.GetId());
     const int movetime = option_dict.Get<int>(kMovetimeId.GetId());
+    const int num_positions = option_dict.Get<int>(kNumPositionsId.GetId());
 
     std::vector<std::double_t> times;
     std::vector<std::int64_t> playouts;
     std::uint64_t cnt = 1;
+    std::vector<std::string> testing_positions(positions.cbegin(), positions.cbegin() + num_positions);
 
-	if (option_dict.Get<bool>(kStartingPosition.GetId())) {
-      positions = { ChessBoard::kStartposFen };
-    }
-    for (std::string position : positions) {
-      std::cout << "\nPosition: " << cnt++ << "/" << positions.size() << " " << position << std::endl;
+    for (std::string position : testing_positions) {
+      std::cout << "\nPosition: " << cnt++ << "/"
+                << testing_positions.size() << " "
+                << position << std::endl;
 
 	  auto stopper = std::make_unique<ChainedSearchStopper>();
       if (movetime > -1) {
@@ -90,7 +92,7 @@ void Benchmark::Run() {
 	  NodeTree tree;
       tree.ResetToPosition(position, {});
 
-	  const auto start = std::chrono::steady_clock::now();
+      const auto start = std::chrono::steady_clock::now();
       auto search = std::make_unique<Search>(
           tree, network.get(),
           std::make_unique<CallbackUciResponder>(
