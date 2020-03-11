@@ -756,8 +756,12 @@ void SearchWorker::ExecuteOneIteration() {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     while (true) {
       // If search is stop, we've not gathered or done anything and we don't
-      // want to, so we can safely skip all below.
-      if (search_->stop_.load(std::memory_order_acquire)) break;
+      // want to, so we can safely skip all below. But make sure we have done
+      // at least one iteration.
+      if (search_->stop_.load(std::memory_order_acquire) &&
+          search_->total_playouts_ > 0) {
+        return;
+      }
       int available =
           search_->pending_searchers_.load(std::memory_order_acquire);
       if (available > 0 &&
