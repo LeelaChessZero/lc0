@@ -358,7 +358,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   // Already responded bestmove, nothing to do here.
   if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
-  if (total_playouts_ == 0) return;
+  if (total_playouts_ + initial_visits_ == 0) return;
 
   if (!stop_.load(std::memory_order_acquire) || !ok_to_respond_bestmove_) {
     if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
@@ -700,8 +700,12 @@ void SearchWorker::ExecuteOneIteration() {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     while (true) {
       // If search is stop, we've not gathered or done anything and we don't
-      // want to, so we can safely skip all below.
-      if (search_->stop_.load(std::memory_order_acquire)) return;
+      // want to, so we can safely skip all below. But make sure we have done
+      // at least one iteration.
+      if (search_->stop_.load(std::memory_order_acquire) &&
+          search_->GetTotalPlayouts() + search_->initial_visits_ > 0) {
+        return;
+      }
       int available =
           search_->pending_searchers_.load(std::memory_order_acquire);
       if (available > 0 &&
