@@ -1,8 +1,18 @@
-﻿v0.24.0-rc3 (2020-03-08)
+﻿v0.24.0 (2020-03-11)
+~~~~~~~
+
+* New parameter `--max-out-of-order-evals-factor` replaces 
+  `--max-out-of-order-evals` that was introduced in v0.24.0-rc3 and provides
+  the factor to multiply the maximum batch size to set maximum number
+  out-of-order evals per batch. The default value of 1.0 keeps the behavior
+  of previous releases.
+* Bug fix for hangs with very early stop command from non-conforming UCI hosts.
+
+v0.24.0-rc3 (2020-03-08)
 ~~~~~~~~~~~
 
-* New parameter `--out-of-order-eval` to set maximum number out-of-order evals
-  per batch (was equal to the batch size before).
+* New parameter `--max-out-of-order-evals` to set maximum number out-of-order
+  evals per batch (was equal to the batch size before).
 * It's now possible to embed networks into the binary. It allows easier builds
   of .apk for Android.
 * New parameter `--smart-pruning-minimum-batches` to only allow smart pruning
