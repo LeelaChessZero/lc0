@@ -759,7 +759,7 @@ void SearchWorker::ExecuteOneIteration() {
       // want to, so we can safely skip all below. But make sure we have done
       // at least one iteration.
       if (search_->stop_.load(std::memory_order_acquire) &&
-          search_->total_playouts_ > 0) {
+          search_->GetTotalPlayouts() + search_->initial_visits_ > 0) {
         return;
       }
       int available =
