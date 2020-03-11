@@ -112,7 +112,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   auto defaults = options->GetMutableDefaultsOptions();
   defaults->Set<int>(SearchParams::kMiniBatchSizeId.GetId(), 32);
-  defaults->Set<int>(SearchParams::kMaxOutOfOrderEvalsId.GetId(), 32);
   defaults->Set<float>(SearchParams::kCpuctId.GetId(), 1.2f);
   defaults->Set<float>(SearchParams::kCpuctFactorId.GetId(), 0.0f);
   defaults->Set<float>(SearchParams::kPolicySoftmaxTempId.GetId(), 1.0f);
