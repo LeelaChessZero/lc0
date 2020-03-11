@@ -208,22 +208,20 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
-const OptionId SearchParams::kMovesLeftFactorId{
-    "moves-left-factor", "MovesLeftFactor",
-    "Bonus to add to the score of a node based on how much shorter/longer "
-    "it makes when winning/losing."};
+const OptionId SearchParams::kMovesLeftMaxEffectId{
+    "moves-left-max-effect", "MovesLeftMaxEffect",
+    "Maximum bonus to add to the score of a node based on how much "
+    "shorter/longer it makes the game when winning/losing."};
 const OptionId SearchParams::kMovesLeftThresholdId{
     "moves-left-threshold", "MovesLeftThreshold",
     "Absolute value of node Q needs to exceed this value before shorter wins "
     "or longer losses are considered."};
-const OptionId SearchParams::kMovesLeftScaleId{
-    "moves-left-scale", "MovesLeftScale",
+const OptionId SearchParams::kMovesLeftSlopeId{
+    "moves-left-slope", "MovesLeftSlope",
     "Controls how the bonus for shorter wins or longer losses is adjusted "
     "based on how many moves the move is estimated to shorten/lengthen the "
-    "game. The move shortening/lengthening the game by this amount of plies "
-    "or more compared to the best node, gets the full MovesLeftFactor bonus "
-    "added. Moves shortening/lengthening by less amount of moves have bonus "
-    "scaled linearly."};
+    "game. The move difference is multiplied with the slope and capped at "
+    "MovesLeftMaxEffect."};
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
@@ -297,9 +295,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<FloatOption>(kMovesLeftFactorId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kMovesLeftScaleId, 1.0f, 100.0f) = 10.0f;
+  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.001f;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
@@ -358,9 +356,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kHistoryFill(
           EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
-      kMovesLeftFactor(options.Get<float>(kMovesLeftFactorId.GetId())),
+      kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId.GetId())),
       kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId.GetId())),
-      kMovesLeftScale(options.Get<float>(kMovesLeftScaleId.GetId())),
+      kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId.GetId())),
       kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())),
       kMaxConcurrentSearchers(

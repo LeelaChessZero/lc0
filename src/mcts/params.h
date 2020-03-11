@@ -103,9 +103,9 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  float GetMovesLeftFactor() const { return kMovesLeftFactor; }
+  float GetMovesLeftMaxEffect() const { return kMovesLeftMaxEffect; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
-  float GetMovesLeftScale() const { return kMovesLeftScale; }
+  float GetMovesLeftSlope() const { return kMovesLeftSlope; }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
@@ -152,9 +152,9 @@ class SearchParams {
   static const OptionId kPerPvCountersId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
-  static const OptionId kMovesLeftFactorId;
+  static const OptionId kMovesLeftMaxEffectId;
   static const OptionId kMovesLeftThresholdId;
-  static const OptionId kMovesLeftScaleId;
+  static const OptionId kMovesLeftSlopeId;
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
@@ -194,9 +194,9 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
-  const float kMovesLeftFactor;
+  const float kMovesLeftMaxEffect;
   const float kMovesLeftThreshold;
-  const float kMovesLeftScale;
+  const float kMovesLeftSlope;
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;

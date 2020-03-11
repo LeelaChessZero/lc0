@@ -1005,11 +1005,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
       float M = 0.0f;
       if (do_moves_left_adjustment) {
-        const float m_scale = params_.GetMovesLeftScale();
+        const float m_slope = params_.GetMovesLeftSlope();
+        const float m_cap = params_.GetMovesLeftMaxEffect();
         const float parent_m = node->GetM();
         const float child_m = child.GetM(parent_m);
-        M = std::clamp(child_m - parent_m, -m_scale, m_scale) / m_scale *
-            std::copysign(params_.GetMovesLeftFactor(), node_q);
+        M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
+            std::copysign(1.0f, node_q);
       }
 
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
