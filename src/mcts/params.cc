@@ -177,9 +177,9 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "batch to the NN. When off, this may only happen with the very first node "
     "of a batch; when on, this can happen with any node."};
 const OptionId SearchParams::kMaxOutOfOrderEvalsId{
-    "max-out-of-order-evals", "MaxOutOfOrderEvals",
-    "Maximum number of out of order evals during gathering of a batch relative "
-    "to the maximum batch size."};
+    "max-out-of-order-evals-factor", "MaxOutOfOrderEvalsFactor",
+    "Maximum number of out of order evals during gathering of a batch is "
+    "calculated by multiplying the maximum batch size by this number."};
 const OptionId SearchParams::kStickyEndgamesId{
     "sticky-endgames", "StickyEndgames",
     "When an end of game position is found during search, allow the eval of "
