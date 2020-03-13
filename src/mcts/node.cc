@@ -210,15 +210,17 @@ Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
-      << " Index:" << index_ << " Child:" << child_.get()
-      << " Sibling:" << sibling_.get() << " WL:" << wl_ << " N:" << n_
-      << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
+  oss << " Term:" << static_cast<int>(terminal_type_) << " This:" << this
+      << " Parent:" << parent_ << " Index:" << index_
+      << " Child:" << child_.get() << " Sibling:" << sibling_.get()
+      << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " Edges:" << edges_.size();
   return oss.str();
 }
 
-void Node::MakeTerminal(GameResult result) {
-  is_terminal_ = true;
+void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
+  terminal_type_ = type;
+  m_ = plies_left;
   if (result == GameResult::DRAW) {
     wl_ = 0.0f;
     d_ = 1.0f;
@@ -232,7 +234,7 @@ void Node::MakeTerminal(GameResult result) {
 }
 
 void Node::MakeNotTerminal() {
-  is_terminal_ = false;
+  terminal_type_ = Terminal::NonTerminal;
   n_ = 0;
 
   // If we have edges, we've been extended (1 visit), so include children too.
@@ -265,10 +267,11 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
+  m_ += multivisit * (m - m_) / (n_ + multivisit);
 
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {

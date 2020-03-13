@@ -47,10 +47,13 @@ class SearchParams {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   bool GetLogitQ() const { return kLogitQ; }
-  float GetCpuct() const { return kCpuct; }
-  float GetCpuctOffsetAtRoot() const { return kCpuctAtRootOffset; }
-  float GetCpuctBase() const { return kCpuctBase; }
-  float GetCpuctFactor() const { return kCpuctFactor; }
+  float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
+  float GetCpuctBase(bool at_root) const {
+    return at_root ? kCpuctBaseAtRoot : kCpuctBase;
+  }
+  float GetCpuctFactor(bool at_root) const {
+    return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
+  }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
@@ -100,6 +103,9 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId.GetId());
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
+  float GetMovesLeftMaxEffect() const { return kMovesLeftMaxEffect; }
+  float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
+  float GetMovesLeftSlope() const { return kMovesLeftSlope; }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
@@ -107,14 +113,19 @@ class SearchParams {
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
 
+  int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
+
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kLogitQId;
   static const OptionId kCpuctId;
-  static const OptionId kCpuctAtRootOffsetId;
+  static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
+  static const OptionId kCpuctBaseAtRootId;
   static const OptionId kCpuctFactorId;
+  static const OptionId kCpuctFactorAtRootId;
+  static const OptionId kRootHasOwnCpuctParamsId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
@@ -141,6 +152,9 @@ class SearchParams {
   static const OptionId kPerPvCountersId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
+  static const OptionId kMovesLeftMaxEffectId;
+  static const OptionId kMovesLeftThresholdId;
+  static const OptionId kMovesLeftSlopeId;
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
@@ -148,6 +162,7 @@ class SearchParams {
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
+  static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kStrengthRatioId;
 
  private:
@@ -160,9 +175,11 @@ class SearchParams {
   //            trivial search optimizations.
   const bool kLogitQ;
   const float kCpuct;
-  const float kCpuctAtRootOffset;
+  const float kCpuctAtRoot;
   const float kCpuctBase;
+  const float kCpuctBaseAtRoot;
   const float kCpuctFactor;
+  const float kCpuctFactorAtRoot;
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
   const bool kFpuAbsolute;
@@ -178,6 +195,9 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const float kMovesLeftMaxEffect;
+  const float kMovesLeftThreshold;
+  const float kMovesLeftSlope;
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
@@ -185,6 +205,7 @@ class SearchParams {
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
+  const int kMaxOutOfOrderEvals;
 };
 
 }  // namespace lczero
