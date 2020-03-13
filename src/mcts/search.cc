@@ -553,7 +553,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         return a.GetM(0.0f) > b.GetM(0.0f);
       });
 
-  if (count < edges.size()) {
+  if (count < static_cast<int>(edges.size())) {
     edges.resize(count);
   }
   return edges;

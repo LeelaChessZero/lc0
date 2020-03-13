@@ -369,9 +369,10 @@ SearchParams::SearchParams(const OptionsDict& options)
                          100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f},
-      kMaxOutOfOrderEvals(
-          std::max(1, int(options.Get<float>(kMaxOutOfOrderEvalsId.GetId()) *
-                          options.Get<int>(kMiniBatchSizeId.GetId())))) {
+      kMaxOutOfOrderEvals(std::max(
+          1,
+          static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId.GetId()) *
+                           options.Get<int>(kMiniBatchSizeId.GetId())))) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
