@@ -170,7 +170,7 @@ void BlasComputation::ComputeBlocking() {
   const auto num_value_input_planes = weights_.value.biases.size();
   const auto num_policy_input_planes = weights_.policy.biases.size();
   const auto num_moves_input_planes = weights_.moves_left.biases.size();
-  const auto num_output_policy = size_t(kPolicyOutputs);
+  const auto num_output_policy = static_cast<size_t>(kPolicyOutputs);
   const auto output_channels = weights_.input.biases.size();
 
   // max_channels is the maximum number of input channels of any
@@ -202,7 +202,7 @@ void BlasComputation::ComputeBlocking() {
 
   // Allocate data for the whole batch.
   size_t max_fc_channels = std::max(
-      num_value_channels, std::max(num_output_policy, num_value_channels));
+      num_value_channels, std::max(num_output_policy, num_moves_channels));
   std::vector<float> output_fc(largest_batch_size * max_fc_channels);
 
   std::vector<float> res_buffer1(largest_batch_size * max_channels * kSquares);
