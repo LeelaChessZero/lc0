@@ -250,7 +250,7 @@ class CheckNetwork : public Network {
     OptionsDict& backend1_dict = dict1;
 
     OptionsDict dict2;
-    std::string backendName2 = "blas";
+    std::string backendName2 = "eigen";
     OptionsDict& backend2_dict = dict2;
 
     const std::string mode = options.GetOrDefault<std::string>("mode", "check");
