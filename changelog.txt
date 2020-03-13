@@ -1,4 +1,89 @@
-﻿v0.22.0-rc1 (2019-08-03)
+﻿v0.24.0-rc1 (2020-02-23)
+~~~~~~~~~~~
+
+* Introduced DirectX12 backend.
+* Optimized Cpuct/FPU parameters are now default.
+* There is now a separate set of CPuct parameters for the root node.
+* Support of running selfplay games from an opening book.
+* It's possible to adjust draw score from 0 to something else.
+* There is a new --max-concurrent-seachers parameter (default is 1) which
+  helps with thread congestion at the beginning of the search.
+* Cache fullness is not reported in UCI info line by default anymore.
+* Removed libproto dependency.
+
+v0.23.3 (2020-02-18)
+~~~~~~~
+
+* Fix a bug in time management which sometimes led to insta-moves in long time
+  control.
+
+v0.23.2 (2019-12-31)
+~~~~~~~
+
+* Fixed a bug where odd length openings had reversed training data results in
+  selfplay.
+* Fixed a bug where zero length training games could be generated due to
+  discard pile containing positions that were already considered end of game.
+* Add cudnn-auto backend.
+
+v0.23.1 (2019-12-03)
+~~~~~~~
+
+* Fixed a bug with Lc0 crashing sometimes during match phase of training game
+  generation.
+* Release packages now include CUDNN version without DLLs bundled.
+
+v0.23.0 (2019-12-01)
+~~~~~~~
+
+* Fixed the order of BLAS options so that Eigen is lower priority, to match
+  assumption in check_opencl patch introduced in v0.23.0-rc2.
+
+v0.23.0-rc2 (2019-11-27)
+~~~~~~~~~~~
+
+* Fixes in nps and time reporting during search.
+* Introduced DNNL BLAS build for modern CPUs in addition to OpenBLAS.
+* Build fixes on MacOS without OpenCL.
+* Fixed smart pruning and KLDGain trying to stop search in `go infinite` mode.
+* OpenCL package now has check_opencl tool to find computation behaves sanely.
+* Fixed a bug in interoperation of shortsighteness and certainty propagation.
+
+v0.23.0-rc1 (2019-11-21)
+~~~~~~~~~~~
+
+* Support for Fischer Random Chess (`UCI_Chess960` option to enable FRC-style
+  castling). Also added support for FRC-compatible weight files, but no training
+  code yet.
+* New option `--logit-q` (UCI: `LogitQ`). Changes subtree selection algorithm a
+  bit, possibly making it stronger (experimental, default off).
+* Lc0 now reports WDL score. To enable it, use `--show-wdl` command-line
+  argument or `UCI_ShowWdl` UCI option.
+* Added "Badgame split" mode during the training. After the engine makes
+  inferior move due to temperature, the game is branched and later the game is
+  replayed from the position of the branch.
+* Added experimental `--short-sightedness` (UCI: `ShortSightedness`) parameter.
+  Treats longer variations as more "drawish".
+* Lc0 can now open Fat Fritz weight files.
+* Time management code refactoring. No functional changes, but will make time
+  management changes easier.
+* Lc0 logo is now printed in red! \o/
+* Command line argument `-v` is now short for `--verbose-move-stats`.
+* Errors in `--backend-opts` parameter syntax are now reported.
+* The most basic version of "certainty propagation" feature (actually without
+  "propagation"). If the engine sees checkmate, it plays it!
+  (before it could play other good move).
+* Benchmark mode no longer supports smart pruning.
+* Various small changes: hidden options to control Dirichlet noise, floating
+  point optimizations, Better error reporting if there is exception in worker
+  thread, better error messages in CUDA backend.
+
+v0.22.0 (2019-08-05)
+~~~~~~~
+
+(no changes)
+
+v0.22.0-rc1 (2019-08-03)
 ~~~~~~~~~~~
 
 * Remove softmax calculation from backends and apply it after filtering for

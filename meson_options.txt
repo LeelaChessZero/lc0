@@ -3,11 +3,6 @@ option('tensorflow_include',
        value: ['/usr/local/include/tensorflow/'],
        description: 'Paths to tensorflow include directories')
 
-option('protobuf_include',
-       type: 'array',
-       value: ['/usr/local/include/'],
-       description: 'Paths to protobuf include directories')
-
 option('openblas_include',
        type: 'array',
        value: ['/usr/include/openblas/'],
@@ -23,11 +18,6 @@ option('tensorflow_libdir',
        value: ['/usr/local/lib/tensorflow_cc/'],
        description: 'Paths to tensorflow libraries')
 
-option('protobuf_libdir',
-       type: 'array',
-       value: ['/usr/lib/x86_64-linux-gnu/'],
-       description: 'Paths to protobuf libraries')
-
 option('openblas_libdirs',
        type: 'array',
        value: ['/usr/lib/'],
@@ -40,7 +30,7 @@ option('opencl_libdirs',
 
 option('cudnn_libdirs',
        type: 'array',
-       value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'],
+       value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/', '/usr/lib/cuda/lib64/'],
        description: 'Paths to Cuda/cudnn libraries')
 
 option('mkl_libdirs',
@@ -60,7 +50,7 @@ option('dnnl_dir',
 
 option('cudnn_include', 
        type: 'array',
-       value: ['/opt/cuda/include/', '/usr/local/cuda/include/'],
+       value: ['/opt/cuda/include/', '/usr/local/cuda/include/', '/usr/lib/cuda/include/'],
        description: 'Paths to cudnn include directory')
 
 option('build_backends',
@@ -92,6 +82,11 @@ option('opencl',
        type: 'boolean',
        value: true,
        description: 'Enable OpenCL backend')
+
+option('dx',
+       type: 'boolean',
+       value: true,
+       description: 'Enable DirectX12 backend')
 
 option('tensorflow',
        type: 'boolean',
@@ -133,7 +128,7 @@ option('gtest',
        value: true,
        description: 'Build gtest tests')
 
-option('protobuf-3-6-0',
+option('embed',
        type: 'boolean',
        value: false,
-       description: 'Use the protobuf 3.6.0 subproject')
+       description: 'Use embedded net by default')

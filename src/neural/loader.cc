@@ -27,11 +27,10 @@
 
 #include "neural/loader.h"
 
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <zlib.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <cstdio>
 #include <fstream>
@@ -45,6 +44,12 @@
 #include "utils/logging.h"
 #include "version.h"
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace lczero {
 
 namespace {
@@ -57,8 +62,27 @@ std::string DecompressGzip(const std::string& filename) {
   int bytes_read = 0;
 
   // Read whole file into a buffer.
-  const gzFile file = gzopen(filename.c_str(), "rb");
-  if (!file) throw Exception("Cannot read weights from " + filename);
+  FILE* fp = fopen(filename.c_str(), "rb");
+  if (!fp) {
+    throw Exception("Cannot read weights from " + filename);
+  }
+  if (filename == CommandLine::BinaryName()) {
+    // The network file should be appended at the end of the lc0 executable,
+    // followed by the network file size and a "Lc0!" (0x2130634c) magic.
+    int32_t size, magic;
+    if (fseek(fp, -8, SEEK_END) || fread(&size, 4, 1, fp) != 1 ||
+        fread(&magic, 4, 1, fp) != 1 || magic != 0x2130634c) {
+      fclose(fp);
+      throw Exception("No embedded file detected.");
+    }
+    fseek(fp, -size - 8, SEEK_END);
+  }
+  fflush(fp);
+  gzFile file = gzdopen(dup(fileno(fp)), "rb");
+  fclose(fp);
+  if (!file) {
+    throw Exception("Cannot process file " + filename);
+  }
   while (true) {
     const int sz =
         gzread(file, &buffer[bytes_read], buffer.size() - bytes_read);
@@ -80,21 +104,55 @@ std::string DecompressGzip(const std::string& filename) {
   return buffer;
 }
 
+void FixOlderWeightsFile(WeightsFile* file) {
+  using nf = pblczero::NetworkFormat;
+  auto network_format = file->format().network_format().network();
+  if (file->format().has_network_format() &&
+      network_format != nf::NETWORK_CLASSICAL &&
+      network_format != nf::NETWORK_SE) {
+    // Already in a new format, return unchanged.
+    return;
+  }
+
+  WeightsFile::Builder builder(*file);
+
+  auto format = file->format().AsBuilder();
+  auto net_builder = file->format().network_format().AsBuilder();
+
+  if (!file->format().has_network_format()) {
+    // Older protobufs don't have format definition.
+    net_builder.set_input(nf::INPUT_CLASSICAL_112_PLANE);
+    net_builder.set_output(nf::OUTPUT_CLASSICAL);
+    net_builder.set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
+    net_builder.set_value(nf::VALUE_CLASSICAL);
+    net_builder.set_policy(nf::POLICY_CLASSICAL);
+  } else if (network_format == pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+    // Populate policyFormat and valueFormat fields in old protobufs
+    // without these fields.
+    net_builder.set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
+    net_builder.set_value(nf::VALUE_CLASSICAL);
+    net_builder.set_policy(nf::POLICY_CLASSICAL);
+  } else if (network_format == pblczero::NetworkFormat::NETWORK_SE) {
+    net_builder.set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
+    net_builder.set_value(nf::VALUE_CLASSICAL);
+    net_builder.set_policy(nf::POLICY_CLASSICAL);
+  }
+
+  // It's only possible to replace the particular field completely.
+  // So first replace network_format in format.
+  format.set_network_format(net_builder.Build());
+  // Then replace format in WeightsFile.
+  builder.set_format(format.Build());
+  *file = builder.Build();
+}
+
 WeightsFile ParseWeightsProto(const std::string& buffer) {
   WeightsFile net;
-  using namespace google::protobuf::io;
-  using nf = pblczero::NetworkFormat;
+  net.ParseFromString(buffer);
 
-  ArrayInputStream raw_input_stream(buffer.data(), buffer.size());
-  CodedInputStream input_stream(&raw_input_stream);
-  // Set protobuf limit to 2GB, print warning at 500MB.
-  input_stream.SetTotalBytesLimit(2000 * 1000000, 500 * 1000000);
-
-  if (!net.ParseFromCodedStream(&input_stream))
-    throw Exception("Invalid weight file: parse error.");
-
-  if (net.magic() != kWeightMagic)
+  if (net.magic() != kWeightMagic) {
     throw Exception("Invalid weight file: bad header.");
+  }
 
   const auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
@@ -104,6 +162,8 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
                     net.min_version().patch());
 
+  FixOlderWeightsFile(&net);
+
   // Weights files with this signature are also compatible.
   if (net_ver != 0x5c99973 && net_ver > lc0_ver)
     throw Exception("Invalid weight file: lc0 version >= " + min_version +
@@ -111,34 +171,6 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
 
   if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
     throw Exception("Invalid weight file: unsupported encoding.");
-
-  // Older protobufs don't have format definition.
-  // Populate format fields with legacy (or "classical") formats.
-  if (!net.format().has_network_format()) {
-    auto net_format = net.mutable_format()->mutable_network_format();
-    net_format->set_input(nf::INPUT_CLASSICAL_112_PLANE);
-    net_format->set_output(nf::OUTPUT_CLASSICAL);
-    net_format->set_network(nf::NETWORK_CLASSICAL);
-  }
-
-  // Populate policyFormat and valueFormat fields in old protobufs
-  // without these fields.
-  if (net.format().network_format().network() ==
-      pblczero::NetworkFormat::NETWORK_CLASSICAL) {
-    auto net_format = net.mutable_format()->mutable_network_format();
-
-    net_format->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
-    net_format->set_value(nf::VALUE_CLASSICAL);
-    net_format->set_policy(nf::POLICY_CLASSICAL);
-
-  } else if (net.format().network_format().network() ==
-             pblczero::NetworkFormat::NETWORK_SE) {
-    auto net_format = net.mutable_format()->mutable_network_format();
-
-    net_format->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
-    net_format->set_value(nf::VALUE_CLASSICAL);
-    net_format->set_policy(nf::POLICY_CLASSICAL);
-  }
 
   return net;
 }

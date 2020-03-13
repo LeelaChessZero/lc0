@@ -97,6 +97,10 @@ class CheckComputation : public NetworkComputation {
     return work_comp_->GetDVal(sample);
   }
 
+  float GetMVal(int sample) const override {
+    return work_comp_->GetMVal(sample);
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return work_comp_->GetPVal(sample, move_id);
   }
@@ -297,8 +301,8 @@ class CheckNetwork : public Network {
       case kCheckOnly:
         CERR << std::scientific << std::setprecision(1)
              << "Check mode: check only with relative tolerance "
-             << params_.absolute_tolerance << ", absolute tolerance "
-             << params_.relative_tolerance << ".";
+             << params_.relative_tolerance << ", absolute tolerance "
+             << params_.absolute_tolerance << ".";
         break;
       case kErrorDisplay:
         CERR << "Check mode: error display.";
