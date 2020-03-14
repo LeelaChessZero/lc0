@@ -130,6 +130,8 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
+  enum class Terminal : uint8_t { NonTerminal, Terminal, Tablebase };
+
   // Takes pointer to a parent node and own index in a parent.
   Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
 
@@ -161,11 +163,13 @@ class Node {
   float GetM() const { return m_; }
 
   // Returns whether the node is known to be draw/lose/win.
-  bool IsTerminal() const { return is_terminal_; }
+  bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
+  bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
-  void MakeTerminal(GameResult result, float plies_left = 0.0f);
+  void MakeTerminal(GameResult result, float plies_left = 0.0f,
+                    Terminal type = Terminal::Terminal);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
 
@@ -297,7 +301,7 @@ class Node {
 
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
-  bool is_terminal_ = false;
+  Terminal terminal_type_ = Terminal::NonTerminal;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -336,8 +340,6 @@ class EdgeAndNode {
   bool operator!=(const EdgeAndNode& other) const {
     return edge_ != other.edge_;
   }
-  // Arbitrary ordering just to make it possible to use in tuples.
-  bool operator<(const EdgeAndNode& other) const { return edge_ < other.edge_; }
   bool HasNode() const { return node_ != nullptr; }
   Edge* edge() const { return edge_; }
   Node* node() const { return node_; }
@@ -365,6 +367,7 @@ class EdgeAndNode {
 
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
+  bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }

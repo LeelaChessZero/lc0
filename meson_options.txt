@@ -132,3 +132,8 @@ option('gtest',
        type: 'boolean',
        value: true,
        description: 'Build gtest tests')
+
+option('embed',
+       type: 'boolean',
+       value: false,
+       description: 'Use embedded net by default')

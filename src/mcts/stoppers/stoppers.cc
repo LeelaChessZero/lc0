@@ -177,8 +177,10 @@ const int kSmartPruningToleranceMs = 200;
 const int kSmartPruningToleranceNodes = 300;
 }  // namespace
 
-SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor)
-    : smart_pruning_factor_(smart_pruning_factor) {}
+SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor,
+                                         int64_t minimum_batches)
+    : smart_pruning_factor_(smart_pruning_factor),
+      minimum_batches_(minimum_batches) {}
 
 bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
                                      StoppersHints* hints) {
@@ -211,6 +213,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   // May overflow if (nps/smart_pruning_factor) > 180 000 000, but that's not
   // very realistic.
   hints->UpdateEstimatedRemainingRemainingPlayouts(remaining_playouts);
+  if (stats.batches_since_movestart < minimum_batches_) return false;
 
   uint32_t largest_n = 0;
   uint32_t second_largest_n = 0;
@@ -227,7 +230,8 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n
             << ". Difference is " << (largest_n - second_largest_n)
-            << ", so stopping the search.";
+            << ", so stopping the search after "
+            << stats.batches_since_movestart << " batches.";
 
     return true;
   }
