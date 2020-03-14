@@ -516,7 +516,7 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
 // count.
 EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   // Root is at even depth.
-  const bool draw_score = GetDrawScore(/* is_odd_depth= */ false);
+  const float draw_score = GetDrawScore(/* is_odd_depth= */ false);
   MoveList root_limit;
   PopulateRootMoveLimit(&root_limit);
 
@@ -969,7 +969,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     if (second_best_edge) {
       int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
-          second_best, puct_mult, fpu, params_.GetLogitQ());
+          second_best, puct_mult, fpu, even_draw_score, params_.GetLogitQ());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
