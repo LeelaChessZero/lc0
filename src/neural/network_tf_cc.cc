@@ -333,8 +333,8 @@ void TFNetworkComputation<true>::PrepareInput() {
 }  // namespace
 
 template <bool CPU>
-TFNetwork<CPU>::TFNetwork(const WeightsFile& file,
-                          const OptionsDict& /*options*/, bool wdl)
+TFNetwork<CPU>::TFNetwork(const WeightsFile& file, const OptionsDict& options,
+                          bool wdl)
     : scope_(Scope::NewRootScope()),
       capabilities_{file.format().network_format().input(),
                     pblczero::NetworkFormat::MOVES_LEFT_NONE},
@@ -359,6 +359,22 @@ TFNetwork<CPU>::TFNetwork(const WeightsFile& file,
   CHECK(scope_.ok()) << scope_.status().ToString();
   policy_head_ = std::make_unique<Output>(output.first);
   value_head_ = std::make_unique<Output>(output.second);
+
+  if (options.Exists<std::string>("dump-graphdef") ||
+      options.Exists<std::string>("dump-graphdef-txt")) {
+    GraphDef gdef;
+    CHECK(scope_.ToGraphDef(&gdef).ok());
+    if (options.Exists<std::string>("dump-graphdef")) {
+      std::ofstream f(options.Get<std::string>("dump-graphdef").c_str());
+      f.exceptions(std::ifstream::failbit);
+      f << gdef.SerializeAsString();
+    }
+    if (options.Exists<std::string>("dump-graphdef-txt")) {
+      std::ofstream f(options.Get<std::string>("dump-graphdef-txt").c_str());
+      f.exceptions(std::ifstream::failbit);
+      f << gdef.DebugString();
+    }
+  }
 
   // First request to tensorflow is slow (0.6s), so doing an empty request for
   // preheating.
