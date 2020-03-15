@@ -289,7 +289,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         << ") ";
 
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, draw_score, false) << ") ";
+        << edge.GetQ(fpu, draw_score, /* logit_q= */ false) << ") ";
 
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
@@ -591,7 +591,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     }
     if (edge.GetN() + offset > max_n) {
       max_n = edge.GetN() + offset;
-      max_eval = edge.GetQ(fpu, draw_score, false);
+      max_eval = edge.GetQ(fpu, draw_score, /* logit_q= */ false);
     }
   }
 
@@ -606,7 +606,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                                          edge.GetMove()) == root_limit.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score, false) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score, /* logit_q= */ false) < min_eval) continue;
     sum += std::pow(
         std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
         1 / temperature);
@@ -624,7 +624,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                                          edge.GetMove()) == root_limit.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score, false) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score, /* logit_q= */ false) < min_eval) continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
@@ -1226,8 +1226,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
-    scores.emplace_back(
-        -edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score, false), edge);
+    scores.emplace_back(-edge.GetU(puct_mult) -
+                            edge.GetQ(fpu, draw_score, /* logit_q= */ false),
+                        edge);
   }
 
   size_t first_unsorted_index = 0;
@@ -1258,7 +1259,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
       // TODO: As above - should this use logit_q if set?
-      const float q = edge.GetQ(-fpu, draw_score, false);
+      const float q = edge.GetQ(-fpu, draw_score, /* logit_q= */ false);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
