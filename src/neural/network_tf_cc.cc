@@ -152,14 +152,14 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
     for (const auto& mapping : kConvPolicyMap) {
       if (mapping == -1) continue;
       const auto index = &mapping - kConvPolicyMap;
-      const auto direction = index / 64;
+      const auto displacement = index / 64;
       const auto square = index % 64;
       const auto row = square / 8;
       const auto col = square % 8;
       if (CPU) {
-        policy_map[mapping] = ((row * 8) + col) * 80 + direction;
+        policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
       } else {
-        policy_map[mapping] = ((direction * 8) + row) * 8 + col;
+        policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
       }
     }
     auto mapping = MakeIntConst(scope, {1858}, policy_map);
