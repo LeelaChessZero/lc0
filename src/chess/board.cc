@@ -1113,7 +1113,7 @@ bool ChessBoard::HasMatingMaterial() const {
     // K v K, K+B v K, K+N v K.
     return false;
   }
-  if (!our_knights().empty() || !their_knights().empty()) {
+  if (!(knights().empty())) {
     return true;
   }
 

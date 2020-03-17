@@ -194,7 +194,7 @@ int count_pieces(const ChessBoard& pos, int type, bool theirs) {
     case BISHOP:
       return (all & pos.bishops()).count_few();
     case KNIGHT:
-      return (theirs ? pos.their_knights() : pos.our_knights()).count_few();
+      return (all & pos.knights()).count_few();
     case PAWN:
       return (all & pos.pawns()).count_few();
     default:
@@ -215,7 +215,7 @@ BitBoard pieces(const ChessBoard& pos, int type, bool theirs) {
     case BISHOP:
       return all & pos.bishops();
     case KNIGHT:
-      return theirs ? pos.their_knights() : pos.our_knights();
+      return all & pos.knights();
     case PAWN:
       return all & pos.pawns();
     default:
