@@ -49,7 +49,7 @@ class BoardSquare {
   BoardSquare(const std::string& str, bool black = false)
       : BoardSquare(black ? '8' - str[1] : str[1] - '1', str[0] - 'a') {}
   constexpr std::uint8_t as_int() const { return square_; }
-  constexpr std::uint8_t as_board() const { return 1ULL << square_; }
+  constexpr std::uint64_t as_board() const { return 1ULL << square_; }
   void set(int row, int col) { square_ = row * 8 + col; }
 
   // 0-based, bottom to top.
