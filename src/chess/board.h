@@ -192,8 +192,9 @@ class ChessBoard {
   BitBoard their_knights() const {
     return their_pieces_ - pawns() - their_king_ - rooks_ - bishops_;
   }
-  BitBoard our_king() const { return 1ull << our_king_.as_int(); }
-  BitBoard their_king() const { return 1ull << their_king_.as_int(); }
+  BitBoard kings() const {
+    return our_king_.as_board() | their_king_.as_board();
+  }
   const Castlings& castlings() const { return castlings_; }
   bool flipped() const { return flipped_; }
 
