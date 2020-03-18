@@ -64,6 +64,7 @@ class ChessBoard {
 
   static const char* kStartposFen;
   static const ChessBoard kStartposBoard;
+  static const BitBoard kPawnMask;
 
   // Sets position from FEN string.
   // If @no_capture_ply and @moves are not nullptr, they are filled with number
@@ -181,8 +182,8 @@ class ChessBoard {
 
   BitBoard ours() const { return our_pieces_; }
   BitBoard theirs() const { return their_pieces_; }
-  BitBoard pawns() const;
-  BitBoard en_passant() const;
+  BitBoard pawns() const { return pawns_ & kPawnMask; }
+  BitBoard en_passant() const { return pawns_ - kPawnMask; }
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
   BitBoard queens() const { return rooks_ & bishops_; }
