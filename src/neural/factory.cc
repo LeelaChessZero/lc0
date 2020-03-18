@@ -29,6 +29,7 @@
 #include "neural/loader.h"
 
 #include <algorithm>
+#include "utils/commandline.h"
 #include "utils/logging.h"
 
 namespace lczero {
@@ -47,6 +48,7 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Exact parameters differ per backend.",
     'o'};
 const char* kAutoDiscover = "<autodiscover>";
+const char* kEmbed = "<built in>";
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
@@ -59,7 +61,11 @@ NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
 }
 
 void NetworkFactory::PopulateOptions(OptionsParser* options) {
+#if defined(EMBED)
+  options->Add<StringOption>(NetworkFactory::kWeightsId) = kEmbed;
+#else
   options->Add<StringOption>(NetworkFactory::kWeightsId) = kAutoDiscover;
+#endif
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
@@ -111,6 +117,8 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
+  } else if (net_path == kEmbed) {
+    net_path = CommandLine::BinaryName();
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
@@ -119,7 +127,9 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
 
-  return NetworkFactory::Get()->Create(backend, weights, network_options);
+  auto ptr = NetworkFactory::Get()->Create(backend, weights, network_options);
+  network_options.CheckAllOptionsRead(backend);
+  return ptr;
 }
 
 }  // namespace lczero

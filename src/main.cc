@@ -26,40 +26,54 @@
 */
 
 #include "benchmark/benchmark.h"
+#include "benchmark/backendbench.h"
 #include "chess/board.h"
 #include "engine.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
+#include "utils/esc_codes.h"
 #include "utils/logging.h"
 #include "version.h"
 
 int main(int argc, const char** argv) {
-  LOGFILE << "Lc0 started.";
-  CERR << "       _";
-  CERR << "|   _ | |";
-  CERR << "|_ |_ |_| v" << GetVersionStr() << " built " << __DATE__;
   using namespace lczero;
+  EscCodes::Init();
+  LOGFILE << "Lc0 started.";
+  CERR << EscCodes::Bold() << EscCodes::Red() << "       _";
+  CERR << "|   _ | |";
+  CERR << "|_ |_ |_|" << EscCodes::Reset() << " v" << GetVersionStr()
+       << " built " << __DATE__;
 
-  InitializeMagicBitboards();
+  try {
+    InitializeMagicBitboards();
 
-  CommandLine::Init(argc, argv);
-  CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
-  CommandLine::RegisterMode("selfplay", "Play games with itself");
-  CommandLine::RegisterMode("benchmark", "Quick benchmark");
+    CommandLine::Init(argc, argv);
+    CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
+    CommandLine::RegisterMode("selfplay", "Play games with itself");
+    CommandLine::RegisterMode("benchmark", "Quick benchmark");
+    CommandLine::RegisterMode("backendbench", "Quick benchmark of backend only");
 
-  if (CommandLine::ConsumeCommand("selfplay")) {
-    // Selfplay mode.
-    SelfPlayLoop loop;
-    loop.RunLoop();
-  } else if (CommandLine::ConsumeCommand("benchmark")) {
-    // Benchmark mode.
-    Benchmark benchmark;
-    benchmark.Run();
-  } else {
-    // Consuming optional "uci" mode.
-    CommandLine::ConsumeCommand("uci");
-    // Ordinary UCI engine.
-    EngineLoop loop;
-    loop.RunLoop();
+    if (CommandLine::ConsumeCommand("selfplay")) {
+      // Selfplay mode.
+      SelfPlayLoop loop;
+      loop.RunLoop();
+    } else if (CommandLine::ConsumeCommand("benchmark")) {
+      // Benchmark mode.
+      Benchmark benchmark;
+      benchmark.Run();
+    } else if (CommandLine::ConsumeCommand("backendbench")) {
+      // Backend Benchmark mode.
+      BackendBenchmark benchmark;
+      benchmark.Run();
+    } else {
+      // Consuming optional "uci" mode.
+      CommandLine::ConsumeCommand("uci");
+      // Ordinary UCI engine.
+      EngineLoop loop;
+      loop.RunLoop();
+    }
+  } catch (std::exception& e) {
+    std::cerr << "Unhandled exception: " << e.what() << std::endl;
+    abort();
   }
 }
