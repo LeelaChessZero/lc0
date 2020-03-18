@@ -66,6 +66,7 @@ class NetworkComputation {
   virtual float GetDVal(int sample) const = 0;
   // Returns P value @move_id of @sample.
   virtual float GetPVal(int sample, int move_id) const = 0;
+  virtual float GetMVal(int sample) const = 0;
   virtual ~NetworkComputation() {}
 };
 
@@ -83,6 +84,7 @@ class NetworkComputation {
 
 struct NetworkCapabilities {
   pblczero::NetworkFormat::InputFormat input_format;
+  pblczero::NetworkFormat::MovesLeftFormat moves_left;
   // TODO expose information of whether GetDVal() is usable or always zero.
 
   // Combines capabilities by setting the most restrictive ones. May throw

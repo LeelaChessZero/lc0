@@ -190,6 +190,7 @@ class PonderResponseTransformer : public TransformingUciResponder {
     for (const auto& info : *infos) {
       if (info.multipv <= 1) {
         ponder_info = info;
+        if (ponder_info.mate) ponder_info.mate = -*ponder_info.mate;
         if (ponder_info.score) ponder_info.score = -*ponder_info.score;
         if (ponder_info.depth > 1) ponder_info.depth--;
         if (ponder_info.seldepth > 1) ponder_info.seldepth--;
