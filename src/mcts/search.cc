@@ -1038,7 +1038,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     if (second_best_edge) {
       int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
-          second_best, puct_mult, fpu, draw_score, params_.GetLogitQ(), scale);
+          second_best, puct_mult, fpu, draw_score, params_.GetLogitQ(), params_.GetLogitScale());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
@@ -1264,7 +1264,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      const float q = edge.GetQ(-fpu, draw_score, /*logit_q= */ false, scale);
+      const float q = edge.GetQ(-fpu, draw_score, /*logit_q= */ false, params_.GetLogitScale());
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
