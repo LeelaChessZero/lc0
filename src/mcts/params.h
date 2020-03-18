@@ -50,9 +50,13 @@ class SearchParams {
   }
   bool GetLogitQ() const { return kLogitQ; }
   float GetLogitScale() const { return kLogitScale; }
-  float GetCpuct() const { return kCpuct; }
-  float GetCpuctBase() const { return kCpuctBase; }
-  float GetCpuctFactor() const { return kCpuctFactor; }
+  float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
+  float GetCpuctBase(bool at_root) const {
+    return at_root ? kCpuctBaseAtRoot : kCpuctBase;
+  }
+  float GetCpuctFactor(bool at_root) const {
+    return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
+  }
   float GetTemperature() const {
     return options_.Get<float>(kTemperatureId.GetId());
   }
