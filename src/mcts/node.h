@@ -192,7 +192,7 @@ class Node {
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
-    Terminal type = Terminal::Terminal, const bool inflate_terminals);
+    Terminal type = Terminal::Terminal, const bool inflate_terminals = false);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
 
@@ -354,7 +354,7 @@ class Node {
 static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
 #else
 //static_assert(sizeof(Node) == 80, "Unexpected size of Node");
-static_assert(sizeof(Node) == 88, "Unexpected size of Node");
+static_assert(sizeof(Node) == 96, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -429,7 +429,7 @@ class EdgeAndNode {
   }
 
   int GetVisitsToReachU(float target_score, float numerator, float default_q,
-                        int betamcts_level, bool logit_q) const {
+                        float draw_score, bool logit_q, int betamcts_level) const {
     const auto q = GetQ(default_q, draw_score, logit_q, betamcts_level >= 2);
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = (betamcts_level >= 3 ? (int)GetNStartedBetamcts() : GetNStarted()) + 1;

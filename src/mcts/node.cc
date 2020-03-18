@@ -220,7 +220,7 @@ std::string Node::DebugString() const {
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type,
-                         const bool inflate_terminals=false) {
+                         const bool inflate_terminals) {
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {

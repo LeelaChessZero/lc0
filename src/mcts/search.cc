@@ -224,7 +224,7 @@ namespace {
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
-  const auto Q = (logit_q
+  const auto Q = (params.GetLogitQ()
         ? FastLogit(-node->GetQ(-draw_score, params.GetBetamctsLevel()>=2))
         : -node->GetQ(-draw_score, params.GetBetamctsLevel()>=2));
   return params.GetFpuAbsolute(is_root_node)
@@ -262,7 +262,6 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
-<<<<<<< HEAD
   if (params_.GetNewUEnabled()) {
   std::sort(
       edges.begin(), edges.end(),
@@ -304,7 +303,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         << "%) ";
 
     oss << "(Q: " << std::setw(8) << std::setprecision(5) << edge.GetQ(fpu,
-                           params_.GetBetamctsLevel()>=1)
+                   draw_score, /* logit_q= */ false, params_.GetBetamctsLevel()>=1)
         << ") ";
 
     oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
@@ -1281,8 +1280,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       cpuct * (params_.GetNewUEnabled() ?
           std::max(node->GetChildrenVisits(), 1u) :
           std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
-  const float fpu = GetFpu(params_, node,
-                node == search_->root_node_, draw_score, params_.GetLogitQ());
+  const float fpu = GetFpu(params_, node, node == search_->root_node_, draw_score);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
