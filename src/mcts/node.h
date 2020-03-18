@@ -337,9 +337,9 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, bool logit_q = false, float scale = 1.0f) const {
+  float GetQ(float default_q, float draw_score, bool logit_q, float scale = 1.0f) const {
     return (node_ && node_->GetN() > 0)
-               ? (logit_q ? FastLogit(scale * node_->GetQ())/scale : node_->GetQ())
+               ? (logit_q ? FastLogit(scale * node_->GetQ(draw_score))/scale : node_->GetQ(draw_score))
                : default_q;
   }
   float GetD() const {
