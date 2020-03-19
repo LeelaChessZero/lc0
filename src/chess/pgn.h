@@ -218,7 +218,7 @@ class PgnReader {
       } else if (p == 3) {
         searchBits = (board.bishops() & board.ours());
       } else if (p == 4) {
-        searchBits = board.our_knights();
+        searchBits = (board.knights() & board.ours());
       } else if (p == 5) {
         searchBits = (board.rooks() & board.ours());
       }
