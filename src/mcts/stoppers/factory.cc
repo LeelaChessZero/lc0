@@ -97,6 +97,9 @@ const OptionId kMinimumSmartPruningBatchesId{
     "Only allow smart pruning to stop search after at least this many batches "
     "have been evaluated. It may be useful to have this value greater than the "
     "number of search threads in use."};
+const OptionId kNodesAsPlayoutsId{
+    "nodes-as-playouts", "NodesAsPlayouts",
+    "Treat UCI `go nodes` command as referring to playouts instead of visits."};
 
 }  // namespace
 
@@ -114,6 +117,7 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
     options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
     options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
     options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
+    options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
 
     // Hide time curve options.
     options->HideOption(kTimeMidpointMoveId);
@@ -159,7 +163,11 @@ void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
 
   // "go nodes" stopper.
   if (params.nodes) {
-    stopper->AddStopper(std::make_unique<VisitsStopper>(*params.nodes));
+    if (options.Get<bool>(kNodesAsPlayoutsId.GetId())) {
+      stopper->AddStopper(std::make_unique<PlayoutsStopper>(*params.nodes));
+    } else {
+      stopper->AddStopper(std::make_unique<VisitsStopper>(*params.nodes));
+    }
   }
 
   // "go movetime" stopper.
