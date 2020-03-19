@@ -248,19 +248,20 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
+  const float april_factor = params_.GetAprilFactor();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff, &logit_q, &draw_score](EdgeAndNode a, EdgeAndNode b) {
+      [&fpu, &U_coeff, &logit_q, &draw_score, &april_factor](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
                    a.GetN(),
-                   a.GetQ(fpu, draw_score, logit_q) + a.GetU(U_coeff)) <
+                   a.GetQ(fpu, draw_score, logit_q) + a.GetU(U_coeff, april_factor)) <
                std::forward_as_tuple(
                    b.GetN(),
-                   b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff));
+                   b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff, april_factor));
       });
 
   std::vector<std::string> infos;
@@ -291,11 +292,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
         << edge.GetQ(fpu, draw_score, /* logit_q= */ false) << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, params_.GetAprilFactor())
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff, params_.GetAprilFactor()) << ") ";
 
     oss << "(V: ";
     std::optional<float> v;
@@ -1017,7 +1018,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
 
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
-      const float score = child.GetU(puct_mult) + Q + M;
+      const float score = child.GetU(puct_mult, params_.GetAprilFactor()) + Q + M;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1031,7 +1032,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     if (second_best_edge) {
       int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
-          second_best, puct_mult, fpu, draw_score, params_.GetLogitQ());
+          second_best, puct_mult, fpu, draw_score, params_.GetLogitQ(), params_.GetAprilFactor());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
@@ -1226,7 +1227,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult) -
+    scores.emplace_back(-edge.GetU(puct_mult, params_.GetAprilFactor()) -
                             edge.GetQ(fpu, draw_score, /* logit_q= */ false),
                         edge);
   }
@@ -1262,7 +1263,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       const float q = edge.GetQ(-fpu, draw_score, /* logit_q= */ false);
       if (next_score > q) {
         budget_to_spend =
-            std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
+            std::min(budget, int(edge.GetPApril(params_.GetAprilFactor()) * puct_mult / (next_score - q) -
                                  edge.GetNStarted()) +
                                  1);
       } else {

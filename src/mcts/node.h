@@ -371,24 +371,29 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
+  float GetPApril(float april_factor) const { return april_factor > 0.0
+      ? ( GetP() > 0.0f
+        ? 1.0f / (1.0f + (1.0f / GetP()) - FastExp(-april_factor * GetN()))
+        : 0.0f )
+      : GetP() ; }
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+  float GetU(float numerator, float april_factor) const {
+    return numerator * GetPApril(april_factor) / (1 + GetNStarted());
   }
 
   int GetVisitsToReachU(float target_score, float numerator, float default_q,
-                        float draw_score, bool logit_q) const {
+                        float draw_score, bool logit_q, float april_factor) const {
     const auto q = GetQ(default_q, draw_score, logit_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
     return std::max(
         1.0f,
-        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
+        std::min(std::floor(GetPApril(april_factor) * numerator / (target_score - q) - n1) + 1,
                  1e9f));
   }
 

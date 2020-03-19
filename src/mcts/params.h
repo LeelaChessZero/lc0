@@ -47,6 +47,7 @@ class SearchParams {
     return options_.Get<int>(kMaxPrefetchBatchId.GetId());
   }
   bool GetLogitQ() const { return kLogitQ; }
+  float GetAprilFactor() const { return kAprilFactor; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
@@ -119,6 +120,7 @@ class SearchParams {
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kLogitQId;
+  static const OptionId kAprilFactorId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
@@ -173,6 +175,7 @@ class SearchParams {
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimizations.
   const bool kLogitQ;
+  const float kAprilFactor;
   const float kCpuct;
   const float kCpuctAtRoot;
   const float kCpuctBase;
