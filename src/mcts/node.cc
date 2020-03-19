@@ -272,7 +272,8 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit, float policy_temperature, float policy_temp_decay) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit, 
+    float policy_temperature, float policy_temp_decay) {
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
@@ -287,13 +288,16 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit, float 
 
   // Update the policies of children _if_ the difference is nontrivial
   // Take power only when the difference is nontrivial to minimize error
-  // On a test with P = 0.2 and 0.5, visits = 2m, limiting pow calls
+  // On a test with P = 0.2 and 0.5, visits = 2m, limiting pow calls with 
+  // distance from 1 > 0.0001
   // brings us to 4 decimal places accuracy compared to the correct answer
   // (correct answer = one pow call with the proper scaling exponent).
 
   
-  double old_policy_temp = policy_temperature / (policy_temperature - policy_temp_decay * log2(1 + n_last_temp_));
-  double exponent = old_policy_temp / (policy_temperature - policy_temp_decay * log2(1 + n_));
+  double old_policy_temp = policy_temperature - 
+      policy_temp_decay * log2(1 + n_last_temp_);
+  double exponent = old_policy_temp / (policy_temperature - 
+      policy_temp_decay * log2(1 + n_));
 
   if (abs(exponent - 1.0) > 0.001) {
     int num_edges = GetNumEdges();
