@@ -164,6 +164,11 @@ const OptionId SearchParams::kPolicySoftmaxTempId{
     "policy-softmax-temp", "PolicyTemperature",
     "Policy softmax temperature. Higher values make priors of move candidates "
     "closer to each other, widening the search."};
+const OptionId SearchParams::kPolicyTempDecayId{
+    "policy-temp-decay", "PolicyTemperatureDecay",
+    "Policy softmax temperature decay. Positive values make temperature "
+    "smaller as visits increase, negative values make it larger. Bigger "
+    "magnitude means there is a stronger effect."};
 const OptionId SearchParams::kMaxCollisionVisitsId{
     "max-collision-visits", "MaxCollisionVisits",
     "Total allowed node collision visits, per batch."};
@@ -278,6 +283,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.607f;
+  options->Add<FloatOption>(kPolicyTempDecayId, -10.0f, 10.0f) = 0.0f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
@@ -348,6 +354,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                           : options.Get<float>(kFpuValueAtRootId.GetId())),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
+      kPolicyTempDecay(options.Get<float>(kPolicyTempDecayId.GetId())),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),

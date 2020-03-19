@@ -986,6 +986,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         moves_left_support_ &&
         (std::abs(node_q) > params_.GetMovesLeftThreshold());
 
+    
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -1319,6 +1320,10 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                               edge.GetMove().as_nn_index()));
   }
   float total = 0.0;
+
+  float* values = new float[node->GetNumEdges()];
+
+  int counter = 0;
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
@@ -1326,17 +1331,23 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
+    values[counter++] = p;
+    total += p;
+
+    /*
     // Note that p now lies in [0, 1], so it is safe to store it in compressed
     // format. Normalization happens later.
     edge.edge()->SetP(p);
     // Edge::SetP does some rounding, so only add to the total after rounding.
-    total += edge.edge()->GetP();
+    total += edge.edge()->GetP();*/
   }
+  counter = 0;
+  
   // Normalize P values to add up to 1.0.
   if (total > 0.0f) {
-    const float scale = 1.0f / total;
-    for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
+    for (auto edge : node->Edges()) edge.edge()->SetP(values[counter++] / total);
   }
+  delete[] values;
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
@@ -1388,7 +1399,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = n->GetM();
     }
     n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
-                           d, m, node_to_process.multivisit);
+                           d, m, node_to_process.multivisit, 
+                           params_.GetPolicySoftmaxTemp(), 
+                           params_.GetPolicyTempDecay());
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
