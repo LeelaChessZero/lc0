@@ -207,7 +207,7 @@ BitBoard pieces(const ChessBoard& pos, int type, bool theirs) {
   const BitBoard all = theirs ? pos.theirs() : pos.ours();
   switch (type) {
     case KING:
-      return theirs ? pos.their_king() : pos.our_king();
+      return all & pos.kings();
     case QUEEN:
       return all & pos.queens();
     case ROOK:
@@ -1321,8 +1321,7 @@ class SyzygyTablebaseImpl {
     const Key key = calc_key_from_position(pos);
 
     // Test for KvK
-    if (type == WDL && pos.ours() == pos.our_king() &&
-        pos.theirs() == pos.their_king()) {
+    if (type == WDL && (pos.ours() | pos.theirs()) == pos.kings()) {
       return 0;
     }
 
