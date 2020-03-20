@@ -60,7 +60,7 @@ const OptionId SearchParams::kLogitQId{
 const OptionId SearchParams::kAprilFactorId{
     "april-factor", "AprilFactor",
     "Decides how fast Policies will increase with number of Visits. "
-    "Using CPuctFactor = 0 is recommended."};
+    "Using CPuctFactor = 0 and CPuctFactorAtRoot = 0 is recommended."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
