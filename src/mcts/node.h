@@ -373,7 +373,7 @@ class EdgeAndNode {
   float GetP() const { return edge_->GetP(); }
   float GetPApril(float april_factor) const { return april_factor > 0.0
       ? ( GetP() > 0.0f
-        ? 1.0f / (1.0f + (1.0f / GetP()) * FastExp(-april_factor * GetN()))
+        ? 1.0f / (1.0f + (1.0f / GetP() - 1.0f) * FastExp(-april_factor * GetN()))
         : 0.0f )
       : GetP() ; }
   Move GetMove(bool flip = false) const {
