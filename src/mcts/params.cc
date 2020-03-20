@@ -59,7 +59,8 @@ const OptionId SearchParams::kLogitQId{
     "less dominant when Q is near -1 or +1."};
 const OptionId SearchParams::kAprilFactorId{
     "april-factor", "AprilFactor",
-    "Decides how fast Policies will increase with number of Visits."};
+    "Decides how fast Policies will increase with number of Visits. "
+    "Using CPuctFactor = 0 is recommended."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -254,7 +255,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
-  options->Add<FloatOption>(kAprilFactorId, 0.0f, 10.0f) = 0.001f;
+  options->Add<FloatOption>(kAprilFactorId, 0.0f, 1.0f) = 0.003f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
