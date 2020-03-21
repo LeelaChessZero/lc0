@@ -10,7 +10,7 @@ environment:
   - NAME: gpu-opencl
   - NAME: cpu-dnnl
   - NAME: cpu-openblas
-  - NAME: android
+#  - NAME: android
 clone_folder: c:\projects\lc0
 install:
 - cmd: set CUDA=false
