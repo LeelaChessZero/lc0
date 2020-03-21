@@ -194,7 +194,7 @@ int count_pieces(const ChessBoard& pos, int type, bool theirs) {
     case BISHOP:
       return (all & pos.bishops()).count_few();
     case KNIGHT:
-      return (theirs ? pos.their_knights() : pos.our_knights()).count_few();
+      return (all & pos.knights()).count_few();
     case PAWN:
       return (all & pos.pawns()).count_few();
     default:
@@ -207,7 +207,7 @@ BitBoard pieces(const ChessBoard& pos, int type, bool theirs) {
   const BitBoard all = theirs ? pos.theirs() : pos.ours();
   switch (type) {
     case KING:
-      return theirs ? pos.their_king() : pos.our_king();
+      return all & pos.kings();
     case QUEEN:
       return all & pos.queens();
     case ROOK:
@@ -215,7 +215,7 @@ BitBoard pieces(const ChessBoard& pos, int type, bool theirs) {
     case BISHOP:
       return all & pos.bishops();
     case KNIGHT:
-      return theirs ? pos.their_knights() : pos.our_knights();
+      return all & pos.knights();
     case PAWN:
       return all & pos.pawns();
     default:
@@ -1321,8 +1321,7 @@ class SyzygyTablebaseImpl {
     const Key key = calc_key_from_position(pos);
 
     // Test for KvK
-    if (type == WDL && pos.ours() == pos.our_king() &&
-        pos.theirs() == pos.their_king()) {
+    if (type == WDL && (pos.ours() | pos.theirs()) == pos.kings()) {
       return 0;
     }
 

@@ -64,6 +64,7 @@ class ChessBoard {
 
   static const char* kStartposFen;
   static const ChessBoard kStartposBoard;
+  static const BitBoard kPawnMask;
 
   // Sets position from FEN string.
   // If @no_capture_ply and @moves are not nullptr, they are filled with number
@@ -192,19 +193,18 @@ class ChessBoard {
 
   BitBoard ours() const { return our_pieces_; }
   BitBoard theirs() const { return their_pieces_; }
-  BitBoard pawns() const;
-  BitBoard en_passant() const;
+  BitBoard pawns() const { return pawns_ & kPawnMask; }
+  BitBoard en_passant() const { return pawns_ - kPawnMask; }
   BitBoard bishops() const { return bishops_ - rooks_; }
   BitBoard rooks() const { return rooks_ - bishops_; }
   BitBoard queens() const { return rooks_ & bishops_; }
-  BitBoard our_knights() const {
-    return our_pieces_ - pawns() - our_king_ - rooks_ - bishops_;
+  BitBoard knights() const {
+    return (our_pieces_ | their_pieces_) - pawns() - our_king_ - their_king_ -
+           rooks_ - bishops_;
   }
-  BitBoard their_knights() const {
-    return their_pieces_ - pawns() - their_king_ - rooks_ - bishops_;
+  BitBoard kings() const {
+    return our_king_.as_board() | their_king_.as_board();
   }
-  BitBoard our_king() const { return 1ull << our_king_.as_int(); }
-  BitBoard their_king() const { return 1ull << their_king_.as_int(); }
   const Castlings& castlings() const { return castlings_; }
   bool flipped() const { return flipped_; }
 
