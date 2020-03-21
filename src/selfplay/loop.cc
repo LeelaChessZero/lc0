@@ -155,12 +155,12 @@ void gaviota_tb_probe_hard(const Position &pos, unsigned int &info, unsigned int
       }
     }
     int idx = 0;
-    for (auto sq : board.our_king()) {
+    for (auto sq : (board.ours() & board.kings())) {
       wsq[idx] = (TB_squares)sq.as_int();
       wpc[idx] = tb_KING;
       idx++;
     }
-    for (auto sq : board.our_knights()) {
+    for (auto sq : (board.ours() & board.knights())) {
       wsq[idx] = (TB_squares)sq.as_int();
       wpc[idx] = tb_KNIGHT;
       idx++;
@@ -189,12 +189,12 @@ void gaviota_tb_probe_hard(const Position &pos, unsigned int &info, unsigned int
     wpc[idx] = tb_NOPIECE;
 
     idx = 0;
-    for (auto sq : board.their_king()) {
+    for (auto sq : (board.theirs() & board.kings())) {
       bsq[idx] = (TB_squares)sq.as_int();
       bpc[idx] = tb_KING;
       idx++;
     }
-    for (auto sq : board.their_knights()) {
+    for (auto sq : (board.theirs() & board.knights())) {
       bsq[idx] = (TB_squares)sq.as_int();
       bpc[idx] = tb_KNIGHT;
       idx++;
