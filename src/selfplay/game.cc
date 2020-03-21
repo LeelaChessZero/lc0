@@ -136,14 +136,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
-    auto best_eval = search_->GetBestEval();
+    const auto best_eval_with_m = search_->GetBestEval();
+    const auto best_eval = best_eval_with_m.first;
     if (training) {
       // Append training data. The GameResult is later overwritten.
-      auto best_wl = best_eval.first;
-      auto best_d = best_eval.second;
-      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV4TrainingData(
+      const auto best_wl = best_eval.first;
+      const auto best_d = best_eval.second;
+      const auto best_m = best_eval_with_m.second;
+      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV5TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(), best_wl, best_d));
+          search_->GetParams().GetHistoryFill(),
+          pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE, best_wl, best_d,
+          best_m));
     }
 
     float eval = best_eval.first;
@@ -271,6 +275,10 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
+  if (training_data_.empty()) return;
+  // Base estimate off of best_m.  If needed external processing can use a
+  // different approach.
+  float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
   for (auto chunk : training_data_) {
     const bool black_to_move = chunk.side_to_move;
     if (game_result_ == GameResult::WHITE_WON) {
@@ -280,6 +288,8 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
     } else {
       chunk.result = 0;
     }
+    chunk.plies_left = m_estimate;
+    m_estimate -= 1.0f;
     writer->WriteChunk(chunk);
   }
 }
