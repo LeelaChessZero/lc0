@@ -79,7 +79,7 @@ void dumpTensor(void *memory, int elements, char *message, bool fp16 = false)
 #endif
 
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl) {
+  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -106,6 +106,13 @@ struct InputsOutputs {
                                    cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
+    if (moves_left) {
+      ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_,
+                                     maxBatchSize * sizeof(float),
+                                     cudaHostAllocMapped));
+      ReportCUDAErrors(cudaHostGetDevicePointer(&op_moves_left_mem_gpu_,
+                                                op_moves_left_mem_, 0));
+    }
   }
   ~InputsOutputs() {
     ReportCUDAErrors(cudaFreeHost(input_masks_mem_));
@@ -118,11 +125,13 @@ struct InputsOutputs {
   float* input_val_mem_;
   float* op_policy_mem_;
   float* op_value_mem_;
+  float* op_moves_left_mem_;
 
   // GPU pointers for the above allocations.
   uint64_t* input_masks_mem_gpu_;
   float* input_val_mem_gpu_;
   float* op_value_mem_gpu_;
+  float* op_moves_left_mem_gpu_;
 
   // This is a seperate copy.
   float* op_policy_mem_gpu_;
@@ -134,7 +143,8 @@ class CudnnNetwork;
 template <typename DataType>
 class CudnnNetworkComputation : public NetworkComputation {
  public:
-  CudnnNetworkComputation(CudnnNetwork<DataType>* network, bool wdl);
+  CudnnNetworkComputation(CudnnNetwork<DataType>* network, bool wdl,
+                          bool moves_left);
   ~CudnnNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
@@ -180,11 +190,19 @@ class CudnnNetworkComputation : public NetworkComputation {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
 
+  float GetMVal(int sample) const override {
+    if (moves_left_) {
+      return inputs_outputs_->op_moves_left_mem_[sample];
+    }
+    return 0.0f;
+  }
+
  private:
   // Memory holding inputs, outputs.
   std::unique_ptr<InputsOutputs> inputs_outputs_;
   int batch_size_;
   bool wdl_;
+  bool moves_left_;
 
   CudnnNetwork<DataType>* network_;
 };
@@ -193,7 +211,8 @@ template <typename DataType>
 class CudnnNetwork : public Network {
  public:
   CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
-      : capabilities_{file.format().network_format().input()} {
+      : capabilities_{file.format().network_format().input(),
+                      file.format().network_format().moves_left()} {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
@@ -433,6 +452,31 @@ class CudnnNetwork : public Network {
     }
     value_out_ = getLastLayer();
 
+    // Moves left head
+    moves_left_ = file.format().network_format().moves_left() ==
+                  pblczero::NetworkFormat::MOVES_LEFT_V1;
+    if (moves_left_) {
+      auto convMov = std::make_unique<ConvLayer<DataType>>(
+          resi_last_, weights.moves_left.biases.size(), 8, 8, 1, kNumFilters,
+          true, true);
+      convMov->LoadWeights(&weights.moves_left.weights[0],
+                           &weights.moves_left.biases[0], scratch_mem_);
+      network_.emplace_back(std::move(convMov));
+
+      auto FCMov1 = std::make_unique<FCLayer<DataType>>(
+          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, true);
+      FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0],
+                          scratch_mem_);
+      network_.emplace_back(std::move(FCMov1));
+
+      auto FCMov2 = std::make_unique<FCLayer<DataType>>(getLastLayer(), 1, 1, 1,
+                                                        true, true);
+      FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0],
+                          scratch_mem_);
+      network_.emplace_back(std::move(FCMov2));
+    }
+    moves_left_out_ = getLastLayer();
+
     // 3. Allocate GPU memory for running the network:
     //    - three buffers of max size are enough (one to hold input, second to
     //      hold output and third to hold skip connection's input).
@@ -489,6 +533,7 @@ class CudnnNetwork : public Network {
 
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;
+    float* opMov = io->op_moves_left_mem_gpu_;
 
     int l = 0;
     // Input.
@@ -540,7 +585,7 @@ class CudnnNetwork : public Network {
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  //policy map layer  // POLICY output
+                            cublas_);  // policy map layer  // POLICY output
       }
     } else {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
@@ -576,37 +621,60 @@ class CudnnNetwork : public Network {
                         cublas_);  // value FC1
 
     if (wdl_) {
-      network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
+      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // value FC2    // VALUE
 
       // Value softmax
       if (fp16) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // value FC2
-        copyTypeConverted(opVal, (half*)(tensor_mem_[0]),
+        copyTypeConverted(opVal, (half*)(tensor_mem_[1]),
                           3 * batchSize);  // VALUE
       } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[2],
+        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[0],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // value FC2    // VALUE
       }
     } else {
       if (fp16) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // value FC2
-
-        copyTypeConverted(opVal, (half*)(tensor_mem_[2]), batchSize);  // VALUE
+        copyTypeConverted(opVal, (half*)(tensor_mem_[0]), batchSize);  // VALUE
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // value FC2    // VALUE
       }
     }
+
+    if (moves_left_) {
+      // Moves left head
+      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_,
+                          cublas_);  // moves conv
+
+      network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_,
+                          cublas_);  // moves FC1
+
+      // Moves left FC2
+      if (fp16) {
+        // TODO: consider fusing the bias-add of FC2 with format conversion.
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_, cublas_);
+        copyTypeConverted(opMov, (half*)(tensor_mem_[0]), batchSize);
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opMov, tensor_mem_[1],
+                            nullptr, scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);
+      }
+    }
+
     ReportCUDAErrors(cudaDeviceSynchronize());
 
 #ifdef DEBUG_RAW_NPS
@@ -652,13 +720,15 @@ class CudnnNetwork : public Network {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
-    return std::make_unique<CudnnNetworkComputation<DataType>>(this, wdl_);
+    return std::make_unique<CudnnNetworkComputation<DataType>>(this, wdl_,
+                                                               moves_left_);
   }
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_);
+      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
+                                             moves_left_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -675,7 +745,7 @@ class CudnnNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false); }
+  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false, false); }
 
  private:
   const NetworkCapabilities capabilities_;
@@ -684,6 +754,7 @@ class CudnnNetwork : public Network {
   int gpu_id_;
   int max_batch_size_;
   bool wdl_;
+  bool moves_left_;
 
   bool nhwc_;  // do we want to use nhwc layout (fastest with fp16 with tensor
                // cores)
@@ -701,6 +772,7 @@ class CudnnNetwork : public Network {
   BaseLayer<DataType>* resi_last_;
   BaseLayer<DataType>* policy_out_;
   BaseLayer<DataType>* value_out_;
+  BaseLayer<DataType>* moves_left_out_;
 
   DataType* tensor_mem_[3];
   void* scratch_mem_;
@@ -775,8 +847,8 @@ class CudnnNetwork : public Network {
 
 template <typename DataType>
 CudnnNetworkComputation<DataType>::CudnnNetworkComputation(
-    CudnnNetwork<DataType>* network, bool wdl)
-    : wdl_(wdl), network_(network) {
+    CudnnNetwork<DataType>* network, bool wdl, bool moves_left)
+    : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
   inputs_outputs_ = network_->GetInputsOutputs();
 }
@@ -818,6 +890,15 @@ std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
     throw Exception("Value format " +
                     std::to_string(weights.format().network_format().value()) +
                     " is not supported by CuDNN backend.");
+  }
+  if (weights.format().network_format().moves_left() !=
+          pblczero::NetworkFormat::MOVES_LEFT_NONE &&
+      weights.format().network_format().moves_left() !=
+          pblczero::NetworkFormat::MOVES_LEFT_V1) {
+    throw Exception(
+        "Movest left head format " +
+        std::to_string(weights.format().network_format().moves_left()) +
+        " is not supported by CuDNN backend.");
   }
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }

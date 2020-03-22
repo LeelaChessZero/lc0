@@ -28,6 +28,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <shared_mutex>
 #include <thread>
 
@@ -41,7 +42,6 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
-#include "utils/optional.h"
 
 namespace lczero {
 
@@ -77,11 +77,16 @@ class Search {
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove();
+
+  struct BestEval {
+    float wl;
+    float d;
+    float ml;
+  };
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  // Returns pair {Q, D}.
-  std::pair<float, float> GetBestEval() const;
+  BestEval GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
@@ -101,8 +106,7 @@ class Search {
   EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
   std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
                                                         int count) const;
-  EdgeAndNode GetBestChildWithTemperature(Node* parent,
-                                          float temperature) const;
+  EdgeAndNode GetBestRootChildWithTemperature(float temperature) const;
 
   int64_t GetTimeSinceStart() const;
   void MaybeTriggerStop(const IterationStats& stats, StoppersHints* hints);
@@ -126,11 +130,16 @@ class Search {
   void PopulateCommonIterationStats(IterationStats* stats);
 
   // Returns verbose information about given node, as vector of strings.
-  std::vector<std::string> GetVerboseStats(Node* node,
-                                           bool is_black_to_move) const;
+  // Node can only be root or ponder (depth 1).
+  std::vector<std::string> GetVerboseStats(Node* node) const;
 
   // Returns NN eval for a given node from cache, if that node is cached.
   NNCacheLock GetCachedNNEval(Node* node) const;
+
+  // Returns the draw score at the root of the search. At odd depth pass true to
+  // the value of @is_odd_depth to change the sign of the draw score.
+  // Depth of a root node is 0 (even number).
+  float GetDrawScore(bool is_odd_depth) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -169,12 +178,15 @@ class Search {
   Edge* last_outputted_info_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
+  int64_t total_batches_ GUARDED_BY(nodes_mutex_) = 0;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
-  // Cummulative depth of all paths taken in PickNodetoExtend.
+  // Cumulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
-  optional<std::chrono::steady_clock::time_point> nps_start_time_;
+  std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
   std::atomic<int> tb_hits_{0};
+
+  std::atomic<int> pending_searchers_{0};
 
   std::unique_ptr<UciResponder> uci_responder_;
   const SearchParams params_;
@@ -188,7 +200,11 @@ class Search {
 class SearchWorker {
  public:
   SearchWorker(Search* search, const SearchParams& params)
-      : search_(search), history_(search_->played_history_), params_(params) {}
+      : search_(search),
+        history_(search_->played_history_),
+        params_(params),
+        moves_left_support_(search_->network_->GetCapabilities().moves_left !=
+                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {}
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -251,8 +267,10 @@ class SearchWorker {
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
-    // Draw probability for NN's with WDL value head
+    // Draw probability for NN's with WDL value head.
     float d;
+    // Estimated remaining plies left.
+    float m;
     int multivisit = 0;
     uint16_t depth;
     bool nn_queried = false;
@@ -278,7 +296,7 @@ class SearchWorker {
   NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node);
   bool AddNodeToComputation(Node* node, bool add_if_cached);
-  int PrefetchIntoCache(Node* node, int budget);
+  int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
@@ -294,6 +312,7 @@ class SearchWorker {
   int number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
+  const bool moves_left_support_;
   IterationStats iteration_stats_;
   StoppersHints latest_time_manager_hints_;
 };

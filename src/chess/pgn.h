@@ -31,6 +31,7 @@
 
 #include "chess/bitboard.h"
 #include "chess/board.h"
+#include "utils/logging.h"
 
 namespace lczero {
 
@@ -48,8 +49,8 @@ class PgnReader {
       }
       // Handle braced comments.
       int cur_offset = 0;
-      while (in_comment && line.find('}', cur_offset) != std::string::npos ||
-             !in_comment && line.find('{', cur_offset) != std::string::npos) {
+      while ((in_comment && line.find('}', cur_offset) != std::string::npos) ||
+             (!in_comment && line.find('{', cur_offset) != std::string::npos)) {
         if (in_comment && line.find('}', cur_offset) != std::string::npos) {
           line = line.substr(0, cur_offset) +
                  line.substr(line.find('}', cur_offset) + 1);
@@ -77,7 +78,7 @@ class PgnReader {
         const auto idx = word.find('.');
         if (idx != std::string::npos) {
           bool all_nums = true;
-          for (int i = 0; i < idx; i++) {
+          for (size_t i = 0; i < idx; i++) {
             if (word[i] < '0' || word[i] > '9') {
               all_nums = false;
               break;
@@ -131,14 +132,14 @@ class PgnReader {
       default:
         // 0 and 1 are pawn and king, which are not legal promotions, other
         // numbers don't correspond to a known piece type.
-        std::cerr << "Unexpected promotion!!" << std::endl;
+        CERR << "Unexpected promotion!!";
         throw Exception("Trying to create a move with illegal promotion.");
     }
   }
 
   Move SanToMove(const std::string& san, const ChessBoard& board) {
     int p = 0;
-    int idx = 0;
+    size_t idx = 0;
     if (san[0] == 'K') {
       p = 1;
     } else if (san[0] == 'Q') {
@@ -211,13 +212,13 @@ class PgnReader {
       if (p == 0) {
         searchBits = (board.pawns() & board.ours());
       } else if (p == 1) {
-        searchBits = board.our_king();
+        searchBits = (board.kings() & board.ours());
       } else if (p == 2) {
         searchBits = (board.queens() & board.ours());
       } else if (p == 3) {
         searchBits = (board.bishops() & board.ours());
       } else if (p == 4) {
-        searchBits = board.our_knights();
+        searchBits = (board.knights() & board.ours());
       } else if (p == 5) {
         searchBits = (board.rooks() & board.ours());
       }
@@ -233,14 +234,14 @@ class PgnReader {
           continue;
         }
         if (pc1 != -1) {
-          std::cerr << "Ambiguous!!" << std::endl;
+          CERR << "Ambiguous!!";
           throw Exception("Opening book move seems ambiguous.");
         }
         pr1 = sq.row();
         pc1 = sq.col();
       }
       if (pc1 == -1) {
-        std::cerr << "No Match!!" << std::endl;
+        CERR << "No Match!!";
         throw Exception("Opening book move seems illegal.");
       }
       r1 = pr1;

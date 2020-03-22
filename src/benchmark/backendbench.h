@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -29,25 +29,11 @@
 
 namespace lczero {
 
-// Very poor-man implementation of std::optional. It literally cannot do
-// anything, but it's enough for our use case.
-template <class T>
-class optional {
+class BackendBenchmark {
  public:
-  operator bool() const { return has_value_; }
-  constexpr const T& operator*() const& { return value_; }
-  constexpr const T* operator->() const& { return &value_; }
-  optional<T>& operator=(const T& value) {
-    value_ = value;
-    has_value_ = true;
-    return *this;
-  }
-  void reset() { has_value_ = false; }
-  T value_or(const T& def) const { return has_value_ ? value_ : def; }
+  BackendBenchmark() = default;
 
- private:
-  T value_;
-  bool has_value_ = false;
+  void Run();
 };
 
 }  // namespace lczero

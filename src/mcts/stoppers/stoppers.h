@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "mcts/node.h"
@@ -123,13 +124,14 @@ class KldGainStopper : public SearchStopper {
 // best move to potentially become the best one, stop the search.
 class SmartPruningStopper : public SearchStopper {
  public:
-  SmartPruningStopper(float smart_pruning_factor);
+  SmartPruningStopper(float smart_pruning_factor, int64_t minimum_batches);
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const double smart_pruning_factor_;
+  const int64_t minimum_batches_;
   Mutex mutex_;
-  optional<int64_t> first_eval_time_ GUARDED_BY(mutex_);
+  std::optional<int64_t> first_eval_time_ GUARDED_BY(mutex_);
 };
 
 }  // namespace lczero

@@ -27,6 +27,7 @@
 
 #include <iterator>
 #include <vector>
+
 #include "proto/net.pb.h"
 
 namespace lczero {
@@ -71,7 +72,7 @@ class LayerAdapter {
     const uint16_t* data_ = nullptr;
   };
 
-  LayerAdapter(const pblczero::Weights_Layer& layer);
+  LayerAdapter(const pblczero::Weights::Layer& layer);
   std::vector<float> as_vector() const;
   size_t size() const { return size_; }
   float operator[](size_t idx) const { return begin()[idx]; }

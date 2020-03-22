@@ -1,4 +1,39 @@
-﻿v0.23.0 (2019-12-01)
+﻿v0.24.0-rc1 (2020-02-23)
+~~~~~~~~~~~
+
+* Introduced DirectX12 backend.
+* Optimized Cpuct/FPU parameters are now default.
+* There is now a separate set of CPuct parameters for the root node.
+* Support of running selfplay games from an opening book.
+* It's possible to adjust draw score from 0 to something else.
+* There is a new --max-concurrent-seachers parameter (default is 1) which
+  helps with thread congestion at the beginning of the search.
+* Cache fullness is not reported in UCI info line by default anymore.
+* Removed libproto dependency.
+
+v0.23.3 (2020-02-18)
+~~~~~~~
+
+* Fix a bug in time management which sometimes led to insta-moves in long time
+  control.
+
+v0.23.2 (2019-12-31)
+~~~~~~~
+
+* Fixed a bug where odd length openings had reversed training data results in
+  selfplay.
+* Fixed a bug where zero length training games could be generated due to
+  discard pile containing positions that were already considered end of game.
+* Add cudnn-auto backend.
+
+v0.23.1 (2019-12-03)
+~~~~~~~
+
+* Fixed a bug with Lc0 crashing sometimes during match phase of training game
+  generation.
+* Release packages now include CUDNN version without DLLs bundled.
+
+v0.23.0 (2019-12-01)
 ~~~~~~~
 
 * Fixed the order of BLAS options so that Eigen is lower priority, to match

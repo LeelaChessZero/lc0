@@ -29,8 +29,6 @@
 
 #include <algorithm>
 
-#include "utils/optional.h"
-
 namespace lczero {
 
 namespace {
@@ -71,12 +69,12 @@ InputPlanes EncodePositionForNN(
         // h-side (kingside) castling right.
         const auto& cast = board.castlings();
         result[kAuxPlaneBase + 0].mask =
-            ((cast.we_can_000() ? ChessBoard::A1 : 0) |
-             (cast.they_can_000() ? ChessBoard::A8 : 0))
+            ((cast.we_can_000() ? BoardSquare(ChessBoard::A1).as_board() : 0) |
+             (cast.they_can_000() ? BoardSquare(ChessBoard::A8).as_board() : 0))
             << cast.queenside_rook();
         result[kAuxPlaneBase + 1].mask =
-            ((cast.we_can_00() ? ChessBoard::A1 : 0) |
-             (cast.they_can_00() ? ChessBoard::A8 : 0))
+            ((cast.we_can_00() ? BoardSquare(ChessBoard::A1).as_board() : 0) |
+             (cast.they_can_00() ? BoardSquare(ChessBoard::A8).as_board() : 0))
             << cast.kingside_rook();
         break;
       }
@@ -109,18 +107,18 @@ InputPlanes EncodePositionForNN(
 
     const int base = i * kPlanesPerBoard;
     result[base + 0].mask = (board.ours() & board.pawns()).as_int();
-    result[base + 1].mask = (board.our_knights()).as_int();
+    result[base + 1].mask = (board.ours() & board.knights()).as_int();
     result[base + 2].mask = (board.ours() & board.bishops()).as_int();
     result[base + 3].mask = (board.ours() & board.rooks()).as_int();
     result[base + 4].mask = (board.ours() & board.queens()).as_int();
-    result[base + 5].mask = (board.our_king()).as_int();
+    result[base + 5].mask = (board.ours() & board.kings()).as_int();
 
     result[base + 6].mask = (board.theirs() & board.pawns()).as_int();
-    result[base + 7].mask = (board.their_knights()).as_int();
+    result[base + 7].mask = (board.theirs() & board.knights()).as_int();
     result[base + 8].mask = (board.theirs() & board.bishops()).as_int();
     result[base + 9].mask = (board.theirs() & board.rooks()).as_int();
     result[base + 10].mask = (board.theirs() & board.queens()).as_int();
-    result[base + 11].mask = (board.their_king()).as_int();
+    result[base + 11].mask = (board.theirs() & board.kings()).as_int();
 
     const int repetitions = position.GetRepetitions();
     if (repetitions >= 1) result[base + 12].SetAll();
