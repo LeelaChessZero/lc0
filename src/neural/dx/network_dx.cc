@@ -816,8 +816,8 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
     network_[l++]->Eval(batch_size, io->op_moves_left_mem_gpu_, tensor_mem_[1],
                         DXAlloc(), DXAlloc(), DXAlloc(), cl);
 
-    dx_context_.DumpTensor("After moves left fc2", io->op_moves_left_mem_gpu_, 8,
-                           fp16_);
+    dx_context_.DumpTensor("After moves left fc2", io->op_moves_left_mem_gpu_,
+                           8, fp16_);
   }
 
   //-----------------------------------///---------------------------------------
@@ -888,7 +888,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
       // Un-pad moves left output.
       for (int i = 0; i < batch_size; i++)
         memcpy(io->op_moves_left_mem_final_ + i,
-               io->op_moves_left_mem_ + kNumOutputValuePadded8 * i,
+               io->op_moves_left_mem_ + kNumOutputMovesLeftPadded8 * i,
                sizeof(float));
     }
   }
