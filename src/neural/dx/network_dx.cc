@@ -782,14 +782,14 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
 
   // value FC1.
   network_[l++]->Eval(batch_size, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
-                      tensor_mem_[2], tensor_mem_[3], cl);
+                      DXAlloc(), DXAlloc(), cl);
   dx_context_.UavBarrier(cl);
 
   dx_context_.DumpTensor("After value fc1", tensor_mem_[1], 128, fp16_);
 
   // value FC2.
   network_[l++]->Eval(batch_size, io->op_value_mem_gpu_, tensor_mem_[1],
-                      DXAlloc(), tensor_mem_[2], tensor_mem_[3], cl);
+                      DXAlloc(), DXAlloc(), DXAlloc(), cl);
 
   dx_context_.DumpTensor("After value fc2", io->op_value_mem_gpu_, 8, fp16_);
 
@@ -807,16 +807,16 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
 
     // Moves left FC1.
     network_[l++]->Eval(batch_size, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
-                        tensor_mem_[2], tensor_mem_[3], cl);
+                        DXAlloc(), DXAlloc(), cl);
     dx_context_.UavBarrier(cl);
 
     dx_context_.DumpTensor("After moves left fc1", tensor_mem_[1], 512, fp16_);
 
     // Moves left FC2.
     network_[l++]->Eval(batch_size, io->op_moves_left_mem_gpu_, tensor_mem_[1],
-                        DXAlloc(), tensor_mem_[2], tensor_mem_[3], cl);
+                        DXAlloc(), DXAlloc(), DXAlloc(), cl);
 
-    dx_context_.DumpTensor("After moves left fc2", io->op_value_mem_gpu_, 8,
+    dx_context_.DumpTensor("After moves left fc2", io->op_moves_left_mem_gpu_, 8,
                            fp16_);
   }
 
