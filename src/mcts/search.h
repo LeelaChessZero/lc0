@@ -77,11 +77,16 @@ class Search {
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove();
+
+  struct BestEval {
+    float wl;
+    float d;
+    float ml;
+  };
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  // Returns nested pair {{Q, D}, M}.
-  std::pair<std::pair<float, float>, float> GetBestEval() const;
+  BestEval GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
