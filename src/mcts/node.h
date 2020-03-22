@@ -38,6 +38,7 @@
 #include "chess/position.h"
 #include "neural/encoder.h"
 #include "neural/writer.h"
+#include "proto/net.pb.h"
 #include "utils/fastmath.h"
 #include "utils/mutex.h"
 
@@ -215,10 +216,11 @@ class Node {
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
 
-  V4TrainingData GetV4TrainingData(GameResult result,
-                                   const PositionHistory& history,
-                                   FillEmptyHistory fill_empty_history,
-                                   float best_q, float best_d) const;
+  V5TrainingData GetV5TrainingData(
+      GameResult result, const PositionHistory& history,
+      FillEmptyHistory fill_empty_history,
+      pblczero::NetworkFormat::InputFormat input_format, float best_q,
+      float best_d, float best_m) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -345,7 +347,7 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score, bool logit_q = false) const {
+  float GetQ(float default_q, float draw_score, bool logit_q) const {
     return (node_ && node_->GetN() > 0)
                ?
                // Scale Q slightly to avoid logit(1) = infinity.
@@ -382,8 +384,8 @@ class EdgeAndNode {
   }
 
   int GetVisitsToReachU(float target_score, float numerator, float default_q,
-                        bool logit_q) const {
-    const auto q = GetQ(default_q, logit_q);
+                        float draw_score, bool logit_q) const {
+    const auto q = GetQ(default_q, draw_score, logit_q);
     if (q >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
     return std::max(
