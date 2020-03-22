@@ -591,7 +591,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   moves_left_ = file.format().network_format().moves_left() ==
                 pblczero::NetworkFormat::MOVES_LEFT_V1;
   if (moves_left_) {
-    // 1x1 convolution, val_channels output filters
+    // 1x1 convolution, moves_left biases output filters
     auto convMov = std::make_unique<ConvLayer>(
         fp16_, nullptr, nullptr, &dx_context_, resi_last,
         weights.moves_left.biases.size(), 8, 8, 1, kNumFilters, true, true);
@@ -616,10 +616,10 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     std::vector<float> tempWeight(kNumOutputMovesLeftPadded8 *
                                   weights.ip2_mov_w.size() /
                                   weights.ip2_mov_b.size());
-    memcpy(tempBias.data(), weights.ip2_mov_w.data(),
+    memcpy(tempBias.data(), weights.ip2_mov_b.data(),
            weights.ip2_mov_b.size() * sizeof(float));
     memcpy(tempWeight.data(), weights.ip2_mov_w.data(),
-           weights.ip2_mov_b.size() * sizeof(float));
+           weights.ip2_mov_w.size() * sizeof(float));
     FCMov2->LoadWeights(tempWeight.data(), tempBias.data(), &dx_context_);
     network_.emplace_back(std::move(FCMov2));
   }
