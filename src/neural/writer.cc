@@ -48,22 +48,39 @@ uint64_t ReverseBitsInBytes(uint64_t v) {
 
 InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
   InputPlanes result;
-  if (data.input_format !=
-      pblczero::NetworkFormat::InputFormat::INPUT_CLASSICAL_112_PLANE) {
-    throw Exception("FRC input variant not yet supported.");
-  }
   for (int i = 0; i < 104; i++) {
     result.emplace_back();
     result.back().mask = ReverseBitsInBytes(data.planes[i]);
   }
-  result.emplace_back();
-  result.back().mask = data.castling_us_ooo != 0 ? ~0LL : 0LL;
-  result.emplace_back();
-  result.back().mask = data.castling_us_oo != 0 ? ~0LL : 0LL;
-  result.emplace_back();
-  result.back().mask = data.castling_them_ooo != 0 ? ~0LL : 0LL;
-  result.emplace_back();
-  result.back().mask = data.castling_them_oo != 0 ? ~0LL : 0LL;
+  switch (data.input_format) {
+    case pblczero::NetworkFormat::InputFormat::INPUT_CLASSICAL_112_PLANE: {
+      result.emplace_back();
+      result.back().mask = data.castling_us_ooo != 0 ? ~0LL : 0LL;
+      result.emplace_back();
+      result.back().mask = data.castling_us_oo != 0 ? ~0LL : 0LL;
+      result.emplace_back();
+      result.back().mask = data.castling_them_ooo != 0 ? ~0LL : 0LL;
+      result.emplace_back();
+      result.back().mask = data.castling_them_oo != 0 ? ~0LL : 0LL;
+      break;
+    }
+    case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE: {
+      result.emplace_back();
+      result.back().mask = data.castling_us_ooo | (static_cast<uint64_t>(data.castling_them_ooo) << 56);
+      result.emplace_back();
+      result.back().mask =
+          data.castling_us_oo |
+          (static_cast<uint64_t>(data.castling_them_oo) << 56);
+      // 2 empty planes in this format.
+      result.emplace_back();
+      result.emplace_back();
+      break;
+    }
+
+    default:
+      throw Exception("Unsupported input plane encoding " +
+                      std::to_string(data.input_format));
+  }
   result.emplace_back();
   result.back().mask = data.side_to_move != 0 ? ~0LL : 0LL;
   result.emplace_back();

@@ -63,22 +63,50 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
   auto queenTheirs = BitBoard(planes[10].mask);
   auto kingTheirs = BitBoard(planes[11].mask);
   ChessBoard::Castlings castlings;
-  if (input_format == pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE) {
-    if (planes[kAuxPlaneBase + 0].mask != 0) {
-      castlings.set_we_can_000();
+  switch (input_format) {
+    case pblczero::NetworkFormat::InputFormat::INPUT_CLASSICAL_112_PLANE: {
+      if (planes[kAuxPlaneBase + 0].mask != 0) {
+        castlings.set_we_can_000();
+      }
+      if (planes[kAuxPlaneBase + 1].mask != 0) {
+        castlings.set_we_can_00();
+      }
+      if (planes[kAuxPlaneBase + 2].mask != 0) {
+        castlings.set_they_can_000();
+      }
+      if (planes[kAuxPlaneBase + 3].mask != 0) {
+        castlings.set_they_can_00();
+      }
     }
-    if (planes[kAuxPlaneBase + 1].mask != 0) {
-      castlings.set_we_can_00();
+    case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE: {
+      auto queenside = 0;
+      auto kingside = 7;
+      if (planes[kAuxPlaneBase + 0].mask != 0) {
+        auto mask = planes[kAuxPlaneBase + 0].mask;
+        queenside = GetLowestBit((mask >> 56) | mask);
+        if ((mask & 0xFFLL) != 0) {
+          castlings.set_we_can_000();
+        }
+        if (mask >> 56 != 0) {
+          castlings.set_they_can_000();
+        }
+      }
+      if (planes[kAuxPlaneBase + 1].mask != 0) {
+        auto mask = planes[kAuxPlaneBase + 1].mask;
+        kingside = GetLowestBit((mask >> 56) | mask);
+        if ((mask & 0xFFLL) != 0) {
+          castlings.set_we_can_00();
+        }
+        if (mask >> 56 != 0) {
+          castlings.set_they_can_00();
+        }
+      }
+      castlings.SetRookPositions(queenside, kingside);
     }
-    if (planes[kAuxPlaneBase + 2].mask != 0) {
-      castlings.set_they_can_000();
-    }
-    if (planes[kAuxPlaneBase + 3].mask != 0) {
-      castlings.set_they_can_00();
-    }
-  } else {
-    // TODO: support.
-    throw Exception("New castling format not supported yet.");
+
+    default:
+      throw Exception("Unsupported input plane encoding " +
+                      std::to_string(input_format));
   }
   std::string fen;
   if (planes[kAuxPlaneBase + 4].mask != 0) {

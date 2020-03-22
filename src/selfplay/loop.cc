@@ -85,6 +85,10 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
 
   for (int i = 0; i < fileContents.size(); i++) {
     auto& data = fileContents[i];
+    DataAssert(data.input_format ==
+                   pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE ||
+               data.input_format ==
+                   pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE);
     DataAssert(data.best_d >= 0.0f && data.best_d <= 1.0f);
     DataAssert(data.root_d >= 0.0f && data.root_d <= 1.0f);
     DataAssert(data.best_q >= -1.0f && data.best_q <= 1.0f);
@@ -120,9 +124,10 @@ void Validate(const std::vector<V5TrainingData>& fileContents,
   int rule50ply;
   int gameply;
   ChessBoard board;
-  PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                &gameply);
+  auto input_format = static_cast<pblczero::NetworkFormat::InputFormat>(
+      fileContents[0].input_format);
+  PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]), &board,
+                &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
   for (int i = 0; i < moves.size(); i++) {
     if (!(fileContents[i].probabilities[moves[i].as_nn_index()] >= 0.0f)) {
@@ -257,9 +262,10 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       int rule50ply;
       int gameply;
       ChessBoard board;
-      PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                    PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                    &gameply);
+      auto input_format = static_cast<pblczero::NetworkFormat::InputFormat>(
+          fileContents[0].input_format);
+      PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                    &board, &rule50ply, &gameply);
       history.Reset(board, rule50ply, gameply);
       int last_rescore = -1;
       orig_counts[fileContents[0].result + 1]++;
@@ -312,9 +318,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
         }
       }
-      PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                    PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                    &gameply);
+      PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                    &board, &rule50ply, &gameply);
       history.Reset(board, rule50ply, gameply);
       for (int i = 0; i < moves.size(); i++) {
         history.Append(moves[i]);
@@ -413,9 +418,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       }
 
       if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
-        PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                      PlanesFromTrainingData(fileContents[0]), &board,
-                      &rule50ply, &gameply);
+        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                      &board, &rule50ply, &gameply);
         history.Reset(board, rule50ply, gameply);
         int move_index = 0;
         for (auto& chunk : fileContents) {
@@ -520,9 +524,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 
       // Correct plies_left using Gaviota TBs for 5 piece and less positions.
       if (gaviotaEnabled && !all_draws) {
-        PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                      PlanesFromTrainingData(fileContents[0]), &board,
-                      &rule50ply, &gameply);
+        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                      &board, &rule50ply, &gameply);
         history.Reset(board, rule50ply, gameply);
         int last_rescore = 0;
         for (int i = 0; i < moves.size(); i++) {
@@ -588,9 +591,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       // Correct move_count using DTZ for 3 piece no-pawn positions only.
       // If Gaviota TBs are enabled no need to use syzygy.
       if (!gaviotaEnabled && !all_draws) {
-        PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                      PlanesFromTrainingData(fileContents[0]), &board,
-                      &rule50ply, &gameply);
+        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                      &board, &rule50ply, &gameply);
         history.Reset(board, rule50ply, gameply);
         for (int i = 0; i < moves.size(); i++) {
           history.Append(moves[i]);
