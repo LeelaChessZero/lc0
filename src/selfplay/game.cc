@@ -142,10 +142,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       const auto best_wl = best_eval.wl;
       const auto best_d = best_eval.d;
       const auto best_m = best_eval.ml;
+      const auto input_format =
+          options_[idx].network->GetCapabilities().input_format;
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV5TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(),
-          pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE, best_wl, best_d,
+          search_->GetParams().GetHistoryFill(), input_format, best_wl, best_d,
           best_m));
     }
 
