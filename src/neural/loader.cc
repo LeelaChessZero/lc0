@@ -114,36 +114,25 @@ void FixOlderWeightsFile(WeightsFile* file) {
     return;
   }
 
-  WeightsFile::Builder builder(*file);
-
-  auto format = file->format().AsBuilder();
-  auto net_builder = file->format().network_format().AsBuilder();
-
+  auto* net = file->mutable_format()->mutable_network_format();
   if (!file->format().has_network_format()) {
     // Older protobufs don't have format definition.
-    net_builder.set_input(nf::INPUT_CLASSICAL_112_PLANE);
-    net_builder.set_output(nf::OUTPUT_CLASSICAL);
-    net_builder.set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
-    net_builder.set_value(nf::VALUE_CLASSICAL);
-    net_builder.set_policy(nf::POLICY_CLASSICAL);
+    net->set_input(nf::INPUT_CLASSICAL_112_PLANE);
+    net->set_output(nf::OUTPUT_CLASSICAL);
+    net->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
+    net->set_value(nf::VALUE_CLASSICAL);
+    net->set_policy(nf::POLICY_CLASSICAL);
   } else if (network_format == pblczero::NetworkFormat::NETWORK_CLASSICAL) {
     // Populate policyFormat and valueFormat fields in old protobufs
     // without these fields.
-    net_builder.set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
-    net_builder.set_value(nf::VALUE_CLASSICAL);
-    net_builder.set_policy(nf::POLICY_CLASSICAL);
+    net->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
+    net->set_value(nf::VALUE_CLASSICAL);
+    net->set_policy(nf::POLICY_CLASSICAL);
   } else if (network_format == pblczero::NetworkFormat::NETWORK_SE) {
-    net_builder.set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
-    net_builder.set_value(nf::VALUE_CLASSICAL);
-    net_builder.set_policy(nf::POLICY_CLASSICAL);
+    net->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
+    net->set_value(nf::VALUE_CLASSICAL);
+    net->set_policy(nf::POLICY_CLASSICAL);
   }
-
-  // It's only possible to replace the particular field completely.
-  // So first replace network_format in format.
-  format.set_network_format(net_builder.Build());
-  // Then replace format in WeightsFile.
-  builder.set_format(format.Build());
-  *file = builder.Build();
 }
 
 WeightsFile ParseWeightsProto(const std::string& buffer) {
