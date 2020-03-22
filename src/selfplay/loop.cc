@@ -80,7 +80,7 @@ void DataAssert(bool check_result) {
   if (!check_result) throw Exception("Range Violation");
 }
 
-void Validate(const std::vector<V4TrainingData>& fileContents) {
+void Validate(const std::vector<V5TrainingData>& fileContents) {
   if (fileContents.empty()) throw Exception("Empty File");
 
   for (int i = 0; i < fileContents.size(); i++) {
@@ -89,6 +89,9 @@ void Validate(const std::vector<V4TrainingData>& fileContents) {
     DataAssert(data.root_d >= 0.0f && data.root_d <= 1.0f);
     DataAssert(data.best_q >= -1.0f && data.best_q <= 1.0f);
     DataAssert(data.root_q >= -1.0f && data.root_q <= 1.0f);
+    DataAssert(data.root_m >= 0.0f);
+    DataAssert(data.best_m >= 0.0f);
+    DataAssert(data.plies_left >= 0.0f);
     DataAssert(data.castling_them_oo >= 0 && data.castling_them_oo <= 1);
     DataAssert(data.castling_them_ooo >= 0 && data.castling_them_ooo <= 1);
     DataAssert(data.castling_us_oo >= 0 && data.castling_us_oo <= 1);
@@ -99,7 +102,8 @@ void Validate(const std::vector<V4TrainingData>& fileContents) {
     float sum = 0.0f;
     for (int j = 0; j < sizeof(data.probabilities) / sizeof(float); j++) {
       float prob = data.probabilities[j];
-      DataAssert(prob >= 0.0f && prob <= 1.0f || prob == -1.0f || std::isnan(prob));
+      DataAssert(prob >= 0.0f && prob <= 1.0f || prob == -1.0f ||
+                 std::isnan(prob));
       if (prob >= 0.0f) {
         sum += prob;
       }
@@ -110,7 +114,7 @@ void Validate(const std::vector<V4TrainingData>& fileContents) {
   }
 }
 
-void Validate(const std::vector<V4TrainingData>& fileContents,
+void Validate(const std::vector<V5TrainingData>& fileContents,
               const MoveList& moves) {
   PositionHistory history;
   int rule50ply;
@@ -134,96 +138,94 @@ void Validate(const std::vector<V4TrainingData>& fileContents,
   }
 }
 
-void gaviota_tb_probe_hard(const Position &pos, unsigned int &info, unsigned int &dtm) {
-    unsigned int wsq[17];
-    unsigned int bsq[17];
-    unsigned char wpc[17];
-    unsigned char bpc[17];
+void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
+                           unsigned int& dtm) {
+  unsigned int wsq[17];
+  unsigned int bsq[17];
+  unsigned char wpc[17];
+  unsigned char bpc[17];
 
-    auto stm = pos.IsBlackToMove() ? tb_BLACK_TO_MOVE
-                                   : tb_WHITE_TO_MOVE;
-    auto& board = pos.IsBlackToMove() ? pos.GetThemBoard()
-                                      : pos.GetBoard();
-    auto epsq = tb_NOSQUARE;
-    for (auto sq : board.en_passant()) {
-      // Our internal representation stores en_passant 2 rows away
-      // from the actual sq.
-      if (sq.row() == 0) {
-        epsq = (TB_squares)(sq.as_int() + 16);
-      } else {
-        epsq = (TB_squares)(sq.as_int() - 16);
-      }
+  auto stm = pos.IsBlackToMove() ? tb_BLACK_TO_MOVE : tb_WHITE_TO_MOVE;
+  auto& board = pos.IsBlackToMove() ? pos.GetThemBoard() : pos.GetBoard();
+  auto epsq = tb_NOSQUARE;
+  for (auto sq : board.en_passant()) {
+    // Our internal representation stores en_passant 2 rows away
+    // from the actual sq.
+    if (sq.row() == 0) {
+      epsq = (TB_squares)(sq.as_int() + 16);
+    } else {
+      epsq = (TB_squares)(sq.as_int() - 16);
     }
-    int idx = 0;
-    for (auto sq : (board.ours() & board.kings())) {
-      wsq[idx] = (TB_squares)sq.as_int();
-      wpc[idx] = tb_KING;
-      idx++;
-    }
-    for (auto sq : (board.ours() & board.knights())) {
-      wsq[idx] = (TB_squares)sq.as_int();
-      wpc[idx] = tb_KNIGHT;
-      idx++;
-    }
-    for (auto sq : (board.ours() & board.queens())) {
-      wsq[idx] = (TB_squares)sq.as_int();
-      wpc[idx] = tb_QUEEN;
-      idx++;
-    }
-    for (auto sq : (board.ours() & board.rooks())) {
-      wsq[idx] = (TB_squares)sq.as_int();
-      wpc[idx] = tb_ROOK;
-      idx++;
-    }
-    for (auto sq : (board.ours() & board.bishops())) {
-      wsq[idx] = (TB_squares)sq.as_int();
-      wpc[idx] = tb_BISHOP;
-      idx++;
-    }
-    for (auto sq : (board.ours() & board.pawns())) {
-      wsq[idx] = (TB_squares)sq.as_int();
-      wpc[idx] = tb_PAWN;
-      idx++;
-    }
-    wsq[idx] = tb_NOSQUARE;
-    wpc[idx] = tb_NOPIECE;
+  }
+  int idx = 0;
+  for (auto sq : (board.ours() & board.kings())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_KING;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.knights())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_KNIGHT;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.queens())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_QUEEN;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.rooks())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_ROOK;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.bishops())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_BISHOP;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.pawns())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_PAWN;
+    idx++;
+  }
+  wsq[idx] = tb_NOSQUARE;
+  wpc[idx] = tb_NOPIECE;
 
-    idx = 0;
-    for (auto sq : (board.theirs() & board.kings())) {
-      bsq[idx] = (TB_squares)sq.as_int();
-      bpc[idx] = tb_KING;
-      idx++;
-    }
-    for (auto sq : (board.theirs() & board.knights())) {
-      bsq[idx] = (TB_squares)sq.as_int();
-      bpc[idx] = tb_KNIGHT;
-      idx++;
-    }
-    for (auto sq : (board.theirs() & board.queens())) {
-      bsq[idx] = (TB_squares)sq.as_int();
-      bpc[idx] = tb_QUEEN;
-      idx++;
-    }
-    for (auto sq : (board.theirs() & board.rooks())) {
-      bsq[idx] = (TB_squares)sq.as_int();
-      bpc[idx] = tb_ROOK;
-      idx++;
-    }
-    for (auto sq : (board.theirs() & board.bishops())) {
-      bsq[idx] = (TB_squares)sq.as_int();
-      bpc[idx] = tb_BISHOP;
-      idx++;
-    }
-    for (auto sq : (board.theirs() & board.pawns())) {
-      bsq[idx] = (TB_squares)sq.as_int();
-      bpc[idx] = tb_PAWN;
-      idx++;
-    }
-    bsq[idx] = tb_NOSQUARE;
-    bpc[idx] = tb_NOPIECE;
+  idx = 0;
+  for (auto sq : (board.theirs() & board.kings())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_KING;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.knights())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_KNIGHT;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.queens())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_QUEEN;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.rooks())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_ROOK;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.bishops())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_BISHOP;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.pawns())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_PAWN;
+    idx++;
+  }
+  bsq[idx] = tb_NOSQUARE;
+  bpc[idx] = tb_NOPIECE;
 
-    tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info,
-                  &dtm);
+  tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info, &dtm);
 }
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
@@ -233,8 +235,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
   {
     try {
       TrainingDataReader reader(file);
-      std::vector<V4TrainingData> fileContents;
-      V4TrainingData data;
+      std::vector<V5TrainingData> fileContents;
+      V5TrainingData data;
       while (reader.ReadChunk(&data)) {
         fileContents.push_back(data);
       }
@@ -506,8 +508,12 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       int offset = 0;
       bool all_draws = true;
       for (auto& chunk : fileContents) {
-        chunk.move_count =
-            std::min(255, (int)(fileContents.size() - offset));
+        // plies_left can't be 0 for real v5 data, so if it is 0 it must be a v4
+        // conversion, and we should populate it ourselves with a better
+        // starting estimate.
+        if (chunk.plies_left == 0.0f) {
+          chunk.plies_left = (int)(fileContents.size() - offset);
+        }
         offset++;
         all_draws = all_draws && (chunk.result == 0);
       }
@@ -527,8 +533,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           // Only consider positions that are not draw after rescoring.
           if ((fileContents[i + 1].result != 0) &&
               board.castlings().no_legal_castle() &&
-            (board.ours() | board.theirs()).count() <= 5) {
-
+              (board.ours() | board.theirs()).count() <= 5) {
             std::vector<int> dtms;
             unsigned int info;
             unsigned int dtm;
@@ -538,7 +543,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               continue;
             }
             int steps = history.Last().GetNoCaptureNoPawnPly();
-            if ((dtm + steps > 99) && (dtm <= fileContents[i + 1].move_count)) {
+            if ((dtm + steps > 99) && (dtm <= fileContents[i + 1].plies_left)) {
               // Following DTM could trigger 50 move rule and the current
               // move_count is more than DTM.
               // If DTM is more than the current move_count then we can rescore
@@ -571,8 +576,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               if (j <= last_rescore) {
                 break;
               }
-              //std::cerr << j << " " << int(fileContents[j + 1].move_count) << " -> " << int(dtm + (i - j)) << std::endl;
-              fileContents[j + 1].move_count = std::min(255, int(dtm + (i - j)));
+              // std::cerr << j << " " << int(fileContents[j + 1].move_count) <<
+              // " -> " << int(dtm + (i - j)) << std::endl;
+              fileContents[j + 1].plies_left = int(dtm + (i - j));
             }
             last_rescore = i;
           }
@@ -583,8 +589,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       // If Gaviota TBs are enabled no need to use syzygy.
       if (!gaviotaEnabled && !all_draws) {
         PopulateBoard(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                      PlanesFromTrainingData(fileContents[0]), &board, &rule50ply,
-                      &gameply);
+                      PlanesFromTrainingData(fileContents[0]), &board,
+                      &rule50ply, &gameply);
         history.Reset(board, rule50ply, gameply);
         for (int i = 0; i < moves.size(); i++) {
           history.Append(moves[i]);
@@ -611,8 +617,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               bool no_reps = true;
               for (int i = 0; i < steps; i++) {
                 // If game started from non-zero 50 move rule, this could
-                // underflow. Only safe option is to assume there were repetitions
-                // before this point.
+                // underflow. Only safe option is to assume there were
+                // repetitions before this point.
                 if (history.GetLength() - i - 1 < 0) {
                   no_reps = false;
                   break;
@@ -633,13 +639,12 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                   // This should be able to be <= 99 safely, but I've not
                   // convinced myself thats true.
                   if (steps + std::abs(depth) < 99) {
-                    fileContents[i + 1].move_count =
-                        std::min(255, converted_ply_remaining);
+                    fileContents[i + 1].plies_left = converted_ply_remaining;
                   }
                   if (steps == 0) {
                     for (int j = i; j >= 0; j--) {
-                      fileContents[j].move_count = std::min(
-                          255, converted_ply_remaining + (i + 1 - j));
+                      fileContents[j].plies_left =
+                          converted_ply_remaining + (i + 1 - j);
                     }
                   }
                 }
@@ -808,7 +813,8 @@ void RescoreLoop::RunLoop() {
             << " W: " << orig_counts[2] << std::endl;
   std::cout << "After L: " << fixed_counts[0] << " D: " << fixed_counts[1]
             << " W: " << fixed_counts[2] << std::endl;
-  std::cout << "Gaviota DTM move_count rescores: " << gaviota_dtm_rescores << std::endl;
+  std::cout << "Gaviota DTM move_count rescores: " << gaviota_dtm_rescores
+            << std::endl;
 }
 
 SelfPlayLoop::SelfPlayLoop() {}
