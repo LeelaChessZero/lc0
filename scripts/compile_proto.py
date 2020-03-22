@@ -303,7 +303,7 @@ class ProtoFieldParser:
             else:
                 w.Write("%s %s() const { return %s_; }" %
                         (cpp_type, name, name))
-                w.Write("void set_%s(const %s& val) {" % (name, cpp_type))
+                w.Write("void set_%s(%s val) {" % (name, cpp_type))
                 w.Indent()
                 w.Write("has_%s_ = true;" % name)
                 w.Write("%s_ = val;" % name)
