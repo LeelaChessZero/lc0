@@ -288,8 +288,12 @@ class ProtoFieldParser:
                 w.Unindent()
                 w.Write("}")
             else:
-                w.Write("void set_%s(const %s& val) { %s_ = val;}" %
-                        (name, cpp_type, name))
+                w.Write("void set_%s(const %s& val) {" % (name, cpp_type))
+                w.Indent()
+                w.Write("has_%s_ = true;" % name)
+                w.Write("%s_ = val;" % name)
+                w.Unindent()
+                w.Write("}")
 
     def GenerateVariable(self, w):
         name = self.name.group(0)
