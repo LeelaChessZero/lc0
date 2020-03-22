@@ -29,15 +29,19 @@ class ProtoMessage {
  protected:
   template <class To, class From>
   static To bit_cast(From from) {
-    To to;
-    std::memcpy(&to, &from, sizeof(to));
-    return to;
+    if constexpr (std::is_same_v<From, To>) {
+      return from;
+    } else {
+      To to;
+      std::memcpy(&to, &from, sizeof(to));
+      return to;
+    }
   }
 
  private:
   virtual void SetVarInt(int /* field_id */, uint64_t /* value */) {}
-  virtual void SetInt64(int /* field_id */, const uint64_t* /* value */) {}
-  virtual void SetInt32(int /* field_id */, const uint32_t* /* value */) {}
+  virtual void SetInt64(int /* field_id */, uint64_t /* value */) {}
+  virtual void SetInt32(int /* field_id */, uint32_t /* value */) {}
   virtual void SetString(int /* field_id */, std::string_view /* value */) {}
 };
 

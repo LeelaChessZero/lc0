@@ -26,10 +26,11 @@ FIXED32_TYPES = {
     'float': 'float',
 }
 BYTES_TYPES = {
-    'string': 'std::string',
-    'bytes': 'std::string',
+    'string': 'std::string_view',
+    'bytes': 'std::string_view',
 }
 ZIGZAG_TYPES = set(['sint32', 'sint64'])
+FLOAT_TYPES = set(['float', 'double'])
 
 TYPES = {**VARINT_TYPES, **FIXED32_TYPES, **FIXED64_TYPES, **BYTES_TYPES}
 
@@ -166,6 +167,12 @@ class ProtoTypeParser:
         else:
             return '::'.join(self.name)
 
+    def GetVariableCppType(self):
+        if self.IsBytesType():
+            return 'std::string'
+        else:
+            return self.GetCppType()
+
     def IsVarintType(self):
         return self.typetype == 'enum' or (self.typetype == 'basic'
                                            and self.name in VARINT_TYPES)
@@ -176,6 +183,9 @@ class ProtoTypeParser:
 
     def IsBytesType(self):
         return self.typetype == 'basic' and self.name in BYTES_TYPES
+
+    def IsFloatType(self):
+        return self.typetype == 'basic' and self.name in FLOAT_TYPES
 
     def GetWireType(self):
         if self.typetype == 'basic':
@@ -247,14 +257,17 @@ class ProtoFieldParser:
             val_val = 'UnZigZag(val)' if self.type.IsZigzag() else 'val'
             val = 'static_cast<%s>(%s)' % (cpp_type, val_val)
         elif self.type.IsFixedType():
-            val = 'bit_cast<%s>(*val)' % cpp_type
+            if self.type.IsFloatType():
+                val = 'bit_cast<%s>(val)' % cpp_type
+            else:
+                val = 'static_cast<%s>(val)' % cpp_type
         elif self.type.IsBytesType():
             val = 'val'
 
         if self.category == 'repeated':
             return '%s_.push_back(%s)' % (name, val)
         else:
-            return '%s_ = %s' % (name, val)
+            return 'set_%s(%s)' % (name, val)
 
     def GenerateCaseClause(self, w):
         w.Write('case %d: %s; break;' % (self.number, self.GetParser()))
@@ -278,9 +291,9 @@ class ProtoFieldParser:
                     (cpp_type, name, name))
         else:
             w.Write("bool has_%s() const { return has_%s_; }" % (name, name))
-            w.Write("const %s& %s() const { return %s_; }" %
-                    (cpp_type, name, name))
             if self.type.IsMessage():
+                w.Write("const %s& %s() const { return %s_; }" %
+                        (cpp_type, name, name))
                 w.Write("%s* mutable_%s() {" % (cpp_type, name))
                 w.Indent()
                 w.Write('has_%s_ = true;' % (name))
@@ -288,6 +301,8 @@ class ProtoFieldParser:
                 w.Unindent()
                 w.Write("}")
             else:
+                w.Write("%s %s() const { return %s_; }" %
+                        (cpp_type, name, name))
                 w.Write("void set_%s(const %s& val) {" % (name, cpp_type))
                 w.Indent()
                 w.Write("has_%s_ = true;" % name)
@@ -297,7 +312,7 @@ class ProtoFieldParser:
 
     def GenerateVariable(self, w):
         name = self.name.group(0)
-        cpp_type = self.type.GetCppType()
+        cpp_type = self.type.GetVariableCppType()
         if self.category == 'repeated':
             w.Write("std::vector<%s> %s_;" % (cpp_type, name))
         else:
@@ -387,9 +402,9 @@ class ProtoMessageParser:
         fname = {0: 'SetVarInt', 1: 'SetInt64', 2: 'SetString', 5: 'SetInt32'}
         tname = {
             0: 'std::uint64_t',
-            1: 'const std::uint64_t*',
+            1: 'std::uint64_t',
             2: 'std::string_view',
-            5: 'const std::uint32_t*'
+            5: 'std::uint32_t'
         }
         w.Write('void %s(int field_id, %s val) override {' %
                 (fname[wire_id], tname[wire_id]))
