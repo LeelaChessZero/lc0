@@ -980,7 +980,9 @@ void DxNetworkComputation::ComputeBlocking() {
 InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* dx_context,
                                  bool wdl, bool moves_left, bool policy_map,
                                  bool fp16)
-    : uses_policy_map_(policy_map), needs_reset_(false), moves_left_(moves_left) {
+    : uses_policy_map_(policy_map),
+      needs_reset_(false),
+      moves_left_(moves_left) {
   // CPU accesses on Default heap doesn't work.
   // GPU accesses on Upload heap works.
   dx_context->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
@@ -1018,8 +1020,8 @@ InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* dx_context,
       op_value_mem_gpu_.resource->Map(0, nullptr, (void**)&op_value_mem_));
 
   if (moves_left) {
-    ReportDxErrors(
-        op_moves_left_mem_gpu_.resource->Map(0, nullptr, (void**)&op_moves_left_mem_));
+    ReportDxErrors(op_moves_left_mem_gpu_.resource->Map(
+        0, nullptr, (void**)&op_moves_left_mem_));
   }
 
   // When policy map is enabled, GPU writes directly to the final policy output.
