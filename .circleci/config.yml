@@ -34,7 +34,7 @@ jobs:
           name: Build GCC
           command: |
             cd build-gcc
-            ninja
+            ninja -v
       - run:
           command: cp build-clang/lc0 /tmp/lc0-clang
       - run:
