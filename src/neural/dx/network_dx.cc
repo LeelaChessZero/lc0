@@ -551,8 +551,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
     // 1x1 convolution, val_channels output filters
     auto convVal = std::make_unique<ConvLayer>(
-        fp16_, nullptr, nullptr, &dx_context_, resi_last, val_channels, 8,
-        8, 1, kNumFilters, true, true);
+        fp16_, nullptr, nullptr, &dx_context_, resi_last, val_channels, 8, 8, 1,
+        kNumFilters, true, true);
     convVal->LoadWeights(&weights.value.weights[0], &weights.value.biases[0],
                          &dx_context_);
     network_.emplace_back(std::move(convVal));
