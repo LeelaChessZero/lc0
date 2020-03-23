@@ -30,6 +30,7 @@ BYTES_TYPES = {
     'bytes': 'std::string_view',
 }
 ZIGZAG_TYPES = set(['sint32', 'sint64'])
+FLOAT_TYPES = set(['float', 'double'])
 
 TYPES = {**VARINT_TYPES, **FIXED32_TYPES, **FIXED64_TYPES, **BYTES_TYPES}
 
@@ -166,6 +167,26 @@ class ProtoTypeParser:
         else:
             return '::'.join(self.name)
 
+    def GetVariableCppType(self):
+        if self.IsBytesType():
+            return 'std::string'
+        else:
+            return self.GetCppType()
+
+    def IsVarintType(self):
+        return self.typetype == 'enum' or (self.typetype == 'basic'
+                                           and self.name in VARINT_TYPES)
+
+    def IsFixedType(self):
+        return self.typetype == 'basic' and (self.name in FIXED64_TYPES
+                                             or self.name in FIXED32_TYPES)
+
+    def IsBytesType(self):
+        return self.typetype == 'basic' and self.name in BYTES_TYPES
+
+    def IsFloatType(self):
+        return self.typetype == 'basic' and self.name in FLOAT_TYPES
+
     def GetWireType(self):
         if self.typetype == 'basic':
             if self.name in VARINT_TYPES:
@@ -184,28 +205,8 @@ class ProtoTypeParser:
         else:
             raise ValueError('Unknown typetype %s' % self.typetype)
 
-    def DecodeFunction(self, wire_id, index):
-        if self.typetype == 'basic':
-            if self.name == 'double':
-                return 'GetDoubleVal(%d, %s)' % (wire_id, index)
-            if self.name == 'float':
-                return 'GetFloatVal(%d, %s)' % (wire_id, index)
-            if self.name in VARINT_TYPES:
-                return 'GetVarintVal(%d, %s)' % (wire_id, index)
-            if self.name in FIXED64_TYPES:
-                return 'GetFixed64Val(%d, %s)' % (wire_id, index)
-            if self.name in BYTES_TYPES:
-                return 'GetBytesVal(%d, %s)' % (wire_id, index)
-            if self.name in FIXED32_TYPES:
-                return 'GetFixed32Val(%d, %s)' % (wire_id, index)
-            raise ValueError('Unknown type %s' % self.name)
-        elif self.typetype == 'enum':
-            return 'GetVarintVal(%d, %s)' % (wire_id, index)
-        elif self.typetype == 'message':
-            return '%s::CreateNotOwned(GetBytesVal(%d, %s))' % (
-                self.GetCppType(), wire_id, index)
-        else:
-            raise ValueError('Unknown typetype %s' % self.typetype)
+    def IsMessage(self):
+        return self.typetype == 'message'
 
     def IsIntegralType(self):
         if self.typetype == 'basic':
@@ -242,64 +243,82 @@ class ProtoFieldParser:
     def IsType(self):
         return False
 
-    def Generate(self, w):
+    def GetParser(self):
         name = self.name.group(0)
-        index = 'i' if self.category == 'repeated' else 'kLast'
-        wire_id = self.number * 8 + self.type.GetWireType()
-        func_body = self.type.DecodeFunction(wire_id, index)
+        if self.type.IsMessage():
+            if self.category == 'repeated':
+                return 'add_%s()->MergeFromString(val)' % name
+            else:
+                return 'mutable_%s()->MergeFromString(val)' % name
+
         cpp_type = self.type.GetCppType()
-        if self.type.IsZigzag():
-            func_body = 'UnZigZag(%s)' % func_body
-        if self.type.IsIntegralType():
-            func_body = 'lczero::kind_of_bit_cast<%s>(%s)' % (
-                self.type.GetCppType(), func_body)
+        val = 'NOT IMPLEMENTED!'
+        if self.type.IsVarintType():
+            val_val = 'UnZigZag(val)' if self.type.IsZigzag() else 'val'
+            val = 'static_cast<%s>(%s)' % (cpp_type, val_val)
+        elif self.type.IsFixedType():
+            if self.type.IsFloatType():
+                val = 'bit_cast<%s>(val)' % cpp_type
+            else:
+                val = 'static_cast<%s>(val)' % cpp_type
+        elif self.type.IsBytesType():
+            val = 'val'
 
         if self.category == 'repeated':
-            w.Write('size_t %s_size() const { return WireFieldCount(%d); }' % (
-                name,
-                wire_id,
-            ))
-            w.Write('%s %s(size_t i) const { return %s; }' % (
-                cpp_type,
-                name,
-                func_body,
-            ))
-            w.Write('lczero::ProtoIterator<%s> %s() const {' %
-                    (cpp_type, name))
-            w.Write('  return lczero::ProtoIterator<%s>(%s_size(), '
-                    '[this](size_t i) {' % (cpp_type, name))
-            w.Write('    return %s;' % func_body)
-            w.Write('  });')
-            w.Write('}')
-
+            return '%s_.push_back(%s)' % (name, val)
         else:
-            w.Write('bool has_%s() const { return WireFieldCount(%d) > 0; }' %
-                    (
-                        name,
-                        wire_id,
-                    ))
-            w.Write('%s %s() const { return %s; }' % (
-                cpp_type,
-                name,
-                func_body,
-            ))
+            return 'set_%s(%s)' % (name, val)
 
-    def GenerateForBuilder(self, w):
+    def GenerateCaseClause(self, w):
+        w.Write('case %d: %s; break;' % (self.number, self.GetParser()))
+
+    def GenerateClear(self, w):
         name = self.name.group(0)
-        repeated = self.category == 'repeated'
-        wire_id = self.number * 8 + self.type.GetWireType()
-        # w.Write('void clear_%s() { WireFieldClear(%d); }' % (name, wire_id))
-        if repeated:
-            pass
+        if self.category == 'repeated':
+            w.Write('%s_.clear();' % name)
         else:
-            if self.type.typetype == 'enum':
-                w.Write('void set_%s(%s val) { WireFieldSetVarint'
-                        '(%d, static_cast<std::uint64_t>(val)); }' %
-                        (name, self.type.GetCppType(), wire_id))
-            if self.type.typetype == 'message':
-                w.Write('void set_%s(const %s& val) { WireFieldSetMessage'
-                        '(%d, val); }' %
-                        (name, self.type.GetCppType(), wire_id))
+            w.Write('has_%s_ = false;' % name)
+            w.Write('%s_ = {};' % name)
+
+    def GenerateFunctions(self, w):
+        name = self.name.group(0)
+        cpp_type = self.type.GetCppType()
+        if self.category == 'repeated':
+            if self.type.IsMessage():
+                w.Write("%s* add_%s() { return &%s_.emplace_back(); }" %
+                        (cpp_type, name, name))
+            w.Write("const std::vector<%s>& %s() const { return %s_; }" %
+                    (cpp_type, name, name))
+        else:
+            w.Write("bool has_%s() const { return has_%s_; }" % (name, name))
+            if self.type.IsMessage():
+                w.Write("const %s& %s() const { return %s_; }" %
+                        (cpp_type, name, name))
+                w.Write("%s* mutable_%s() {" % (cpp_type, name))
+                w.Indent()
+                w.Write('has_%s_ = true;' % (name))
+                w.Write('return &%s_;' % name)
+                w.Unindent()
+                w.Write("}")
+            else:
+                w.Write("%s %s() const { return %s_; }" %
+                        (cpp_type, name, name))
+                w.Write("void set_%s(%s val) {" % (name, cpp_type))
+                w.Indent()
+                w.Write("has_%s_ = true;" % name)
+                w.Write("%s_ = val;" % name)
+                w.Unindent()
+                w.Write("}")
+
+    def GenerateVariable(self, w):
+        name = self.name.group(0)
+        cpp_type = self.type.GetVariableCppType()
+        if self.category == 'repeated':
+            w.Write("std::vector<%s> %s_;" % (cpp_type, name))
+        else:
+            w.Write("bool has_%s_{};" % (name))
+            w.Write("%s %s_{};" % (cpp_type, name))
+        return
 
 
 class ProtoEnumParser:
@@ -339,8 +358,9 @@ class ProtoEnumParser:
 
 
 class ProtoMessageParser:
-    def __init__(self, lexer, object_stack):
-        self.objects = []
+    def __init__(self, lexer, type_stack):
+        self.types = []
+        self.fields = []
         lexer.Consume('message')
         self.name = lexer.Consume('identifier').group(0)
         lexer.Consume('{')
@@ -349,13 +369,13 @@ class ProtoMessageParser:
             if token == '}':
                 break
             elif token == 'message':
-                self.objects.append(
-                    ProtoMessageParser(lexer, [self.objects, *object_stack]))
+                self.types.append(
+                    ProtoMessageParser(lexer, [self.types, *type_stack]))
             elif token == 'enum':
-                self.objects.append(ProtoEnumParser(lexer))
+                self.types.append(ProtoEnumParser(lexer))
             elif token in ['repeated', 'optional', 'required']:
-                self.objects.append(
-                    ProtoFieldParser(lexer, [self.objects, *object_stack]))
+                self.fields.append(
+                    ProtoFieldParser(lexer, [self.types, *type_stack]))
             else:
                 lexer.Error('Expected field or type')
         lexer.Consume('}')
@@ -369,54 +389,62 @@ class ProtoMessageParser:
     def IsType(self):
         return True
 
-    def GetObjects(self):
+    def GetTypes(self):
         return self.objects
 
-    def GenerateBuilderClass(self, w):
-        w.Write('class Builder : public lczero::ProtoMessage::Builder {')
-        w.Write(' public:')
+    def GetFieldsGruppedByWireType(self):
+        type_to_fields = {}
+        for x in self.fields:
+            type_to_fields.setdefault(x.type.GetWireType(), []).append(x)
+        return type_to_fields
+
+    def WriteFieldParser(self, w, wire_id, fields):
+        fname = {0: 'SetVarInt', 1: 'SetInt64', 2: 'SetString', 5: 'SetInt32'}
+        tname = {
+            0: 'std::uint64_t',
+            1: 'std::uint64_t',
+            2: 'std::string_view',
+            5: 'std::uint32_t'
+        }
+        w.Write('void %s(int field_id, %s val) override {' %
+                (fname[wire_id], tname[wire_id]))
         w.Indent()
-        w.Write(
-            'Builder(const %s& msg) : lczero::ProtoMessage::Builder(msg) {}' %
-            self.name)
-        w.Write('%s Build() const { return %s(*this); }' %
-                (self.name, self.name))
-        for x in self.objects:
-            if not x.IsType():
-                x.GenerateForBuilder(w)
+        w.Write('switch (field_id) {')
+        w.Indent()
+        for field in fields:
+            field.GenerateCaseClause(w)
         w.Unindent()
-        w.Write('};')
+        w.Write('}')
+        w.Unindent()
+        w.Write('}')
 
     def Generate(self, w):
         # Protobuf message is a C++ class.
         w.Write('class %s : public lczero::ProtoMessage {' % self.name)
         w.Write(' public:')
         w.Indent()
-        # Set of standard constructors.
-        w.Write('%s() = default;' % (self.name))
-        w.Write('%s(const %s&) = default;' % (self.name, self.name))
-        w.Write('%s(%s&&) = default;' % (self.name, self.name))
-        w.Write('%s& operator=(const %s&) = default;' % (self.name, self.name))
-        w.Write('%s& operator=(%s&&) = default;' % (self.name, self.name))
-        w.Write(
-            'static %s CreateNotOwned(std::string_view s) { return %s(s); }' %
-            (self.name, self.name))
-        # Writing fields, submessages and enums.
-        for x in self.objects:
+        # Writing submessages and enums.
+        for x in self.types:
             x.Generate(w)
-        self.GenerateBuilderClass(w)
-        # Set of functions to bind builder with parser classes.
-        w.Write('Builder AsBuilder() const {')
-        w.Write('  return Builder(*this);')
+        for x in self.fields:
+            w.Write('')
+            x.GenerateFunctions(w)
+        w.Write('')
+        w.Write('void Clear() override {')
+        w.Indent()
+        for x in self.fields:
+            x.GenerateClear(w)
+        w.Unindent()
         w.Write('}')
         w.Unindent()
+        w.Write('')
         w.Write(' private:')
         w.Indent()
-        w.Write('%s(std::string_view str) : lczero::ProtoMessage(str) {}' %
-                (self.name))
-        w.Write(
-            '%s(const Builder& builder) : lczero::ProtoMessage(builder) {}' %
-            (self.name))
+        for k, v in self.GetFieldsGruppedByWireType().items():
+            self.WriteFieldParser(w, k, v)
+        w.Write('')
+        for x in self.fields:
+            x.GenerateVariable(w)
         w.Unindent()
         w.Write('};')
 
@@ -482,7 +510,10 @@ class Writer:
         self.indent -= 2
 
     def Write(self, text):
-        self.fo.write(' ' * self.indent + text + '\n')
+        if text:
+            self.fo.write(' ' * self.indent + text + '\n')
+        else:
+            self.fo.write('\n')
 
 
 if __name__ == "__main__":
