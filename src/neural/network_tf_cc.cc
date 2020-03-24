@@ -427,8 +427,7 @@ tensorflow::Status TFNetwork<CPU>::Compute(tensorflow::Tensor& input,
                                            std::vector<Tensor>* outputs) const {
   std::vector<Output> fetch_outputs = {*value_head_, *policy_head_};
   if (IsMlh()) fetch_outputs.push_back(*moves_left_head_);
-  return session_->Run({{*input_, input}}, fetch_outputs,
-                       outputs);
+  return session_->Run({{*input_, input}}, fetch_outputs, outputs);
 }
 
 template <bool CPU>
