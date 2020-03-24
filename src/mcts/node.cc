@@ -294,18 +294,18 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
   // (correct answer = one pow call with the proper scaling exponent).
 
   
-  double old_policy_temp = policy_temperature - 
-      policy_temp_decay * log2(1 + n_last_temp_);
-  double exponent = old_policy_temp / (policy_temperature - 
-      policy_temp_decay * log2(1 + n_));
+  float old_policy_temp = policy_temperature - 
+      policy_temp_decay * log2f(1 + n_last_temp_);
+  float exponent = old_policy_temp / (policy_temperature - 
+      policy_temp_decay * log2f(1 + n_));
 
-  if (abs(exponent - 1.0) > 0.001) {
+  if (abs(exponent - 1.0f) > 0.001f) {
     int num_edges = GetNumEdges();
     float* values = new float[num_edges];
     float total = 0.0f;
     int counter = 0;
     for (auto& child : Edges()) {
-      double new_p = pow(child.GetP(), exponent);
+      float new_p = powf(child.GetP(), exponent);
       values[counter++] = new_p;
       total += new_p;
     }
