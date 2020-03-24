@@ -107,15 +107,15 @@ std::string DecompressGzip(const std::string& filename) {
 void FixOlderWeightsFile(WeightsFile* file) {
   using nf = pblczero::NetworkFormat;
   auto network_format = file->format().network_format().network();
-  if (file->format().has_network_format() &&
-      network_format != nf::NETWORK_CLASSICAL &&
+  const auto has_network_format = file->format().has_network_format();
+  if (has_network_format && network_format != nf::NETWORK_CLASSICAL &&
       network_format != nf::NETWORK_SE) {
     // Already in a new format, return unchanged.
     return;
   }
 
   auto* net = file->mutable_format()->mutable_network_format();
-  if (!file->format().has_network_format()) {
+  if (!has_network_format) {
     // Older protobufs don't have format definition.
     net->set_input(nf::INPUT_CLASSICAL_112_PLANE);
     net->set_output(nf::OUTPUT_CLASSICAL);
