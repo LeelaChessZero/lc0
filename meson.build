@@ -16,7 +16,7 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
-        meson_version: '>=0.52')
+        meson_version: '>=0.52.1')
 
 cc = meson.get_compiler('cpp')
 if cc.get_id() == 'clang'
@@ -165,11 +165,43 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## Tensorflow
   ## ~~~~~~~~~~
-  tf_dl_lib = cc.find_library('dl', required: false)
   tf_tensorflow_cc_lib = dependency('tensorflow_cc',
                                     required: false, include_type:'system')
-  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
-    deps += [tf_dl_lib, tf_tensorflow_cc_lib]
+
+  if not tf_tensorflow_cc_lib.found()
+    tensorflow_include = get_option('tensorflow_include')
+    tensorflow_libdir = get_option('tensorflow_libdir')
+
+    tf_tensorflow_cc = cc.find_library('tensorflow_cc', dirs: tensorflow_libdir, required: false)
+    tf_protobuf = cc.find_library('protobuf',dirs: tensorflow_libdir, required: false)
+    tf_protobuf_lite = cc.find_library('protobuf_lite',dirs: tensorflow_libdir, required: false)
+
+    if tf_tensorflow_cc.found() and tf_protobuf.found()
+      tf_include_dirs = [
+        tensorflow_include,
+        tensorflow_include + '/src',
+        tensorflow_include + '/bazel-genfiles',
+        tensorflow_include + '/tensorflow/contrib/makefile/downloads/absl',
+        tensorflow_include + '/tensorflow/contrib/makefile/downloads/eigen',
+        tensorflow_include + '/tensorflow/contrib/makefile/gen/protobuf-host/include'
+      ]
+      tf_includes = []
+
+      foreach d : tf_include_dirs
+        if run_command('scripts/checkdir.py', d).returncode() == 0
+          tf_includes += include_directories(d, is_system: true)
+        endif
+      endforeach
+
+      tf_tensorflow_cc_lib = declare_dependency(
+        dependencies: [tf_tensorflow_cc, tf_protobuf, tf_protobuf_lite ],
+        include_directories: tf_includes
+      )
+    endif
+  endif
+
+  if get_option('tensorflow') and tf_tensorflow_cc_lib.found()
+    deps += tf_tensorflow_cc_lib
     files += 'src/neural/network_tf_cc.cc'
     has_backends = true
   endif
