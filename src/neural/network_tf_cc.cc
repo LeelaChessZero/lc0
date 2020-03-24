@@ -124,8 +124,9 @@ Output MakeResidualBlock(const Scope& scope, Input input, int channels,
 }
 
 template <bool CPU>
-std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
-                                      const LegacyWeights& weights, bool wdl) {
+std::tuple<Output, Output, Output> MakeNetwork(const Scope& scope, Input input,
+                                               const LegacyWeights& weights,
+                                               bool wdl, bool moves_left) {
   const int filters = weights.input.weights.size() / kInputPlanes / 9;
 
   // Input convolution.
@@ -207,7 +208,33 @@ std::pair<Output, Output> MakeNetwork(const Scope& scope, Input input,
     value_head = Tanh(scope, ip_fc);
   }
 
-  return {policy_head, value_head};
+  // Moves left head
+  Output moves_left_head;
+  if (moves_left) {
+    const int mlh_channels = weights.moves_left.biases.size();
+    auto conv_mov = MakeConvBlock<CPU>(scope, flow, 1, filters, mlh_channels,
+                                       weights.moves_left);
+    conv_mov =
+        Reshape(scope, conv_mov, Const(scope, {-1, mlh_channels * 8 * 8}));
+
+    const int mlh_fc1_outputs = weights.ip1_mov_b.size();
+    auto ip1_mov_w =
+        CPU ? MakeConst(scope, {8, 8, mlh_channels, mlh_fc1_outputs},
+                        weights.ip1_mov_w, {3, 2, 0, 1})
+            : MakeConst(scope, {mlh_channels, 8, 8, mlh_fc1_outputs},
+                        weights.ip1_mov_w, {3, 0, 1, 2});
+    ip1_mov_w = Reshape(scope, ip1_mov_w,
+                        Const(scope, {mlh_channels * 8 * 8, mlh_fc1_outputs}));
+    auto ip1_mov_b = MakeConst(scope, {mlh_fc1_outputs}, weights.ip1_mov_b);
+    auto mov_flow =
+        Relu(scope, Add(scope, MatMul(scope, conv_mov, ip1_mov_w), ip1_mov_b));
+    auto ip2_mov_w = MakeConst(scope, {mlh_fc1_outputs, 1}, weights.ip2_mov_w);
+    auto ip2_mov_b = MakeConst(scope, {1}, weights.ip2_mov_b);
+    auto ip_fc = Add(scope, MatMul(scope, mov_flow, ip2_mov_w), ip2_mov_b);
+    moves_left_head = Relu(scope, ip_fc);
+  }
+
+  return {policy_head, value_head, moves_left_head};
 }
 
 template <bool CPU>
@@ -229,6 +256,10 @@ class TFNetwork : public Network {
 
   bool IsWdl() const { return wdl_; }
 
+  bool IsMlh() const {
+    return capabilities_.moves_left == pblczero::NetworkFormat::MOVES_LEFT_V1;
+  }
+
  private:
   tensorflow::Scope scope_;
   std::unique_ptr<tensorflow::ClientSession> session_;
@@ -236,6 +267,7 @@ class TFNetwork : public Network {
   std::unique_ptr<tensorflow::ops::Placeholder> input_;
   std::unique_ptr<tensorflow::Output> policy_head_;
   std::unique_ptr<tensorflow::Output> value_head_;
+  std::unique_ptr<tensorflow::Output> moves_left_head_;
   const NetworkCapabilities capabilities_;
   const bool wdl_;
 };
@@ -274,7 +306,13 @@ class TFNetworkComputation : public NetworkComputation {
   float GetPVal(int sample, int move_id) const override {
     return output_[1].template matrix<float>()(sample, move_id);
   }
-  float GetMVal(int) const override { return 0.0f; }
+  float GetMVal(int sample) const override {
+    if (network_->IsMlh()) {
+      return output_[2].template matrix<float>()(sample, 0);
+    } else {
+      return 0.0f;
+    }
+  }
 
  private:
   void PrepareInput();
@@ -337,7 +375,7 @@ TFNetwork<CPU>::TFNetwork(const WeightsFile& file, const OptionsDict& options,
                           bool wdl)
     : scope_(Scope::NewRootScope()),
       capabilities_{file.format().network_format().input(),
-                    pblczero::NetworkFormat::MOVES_LEFT_NONE},
+                    file.format().network_format().moves_left()},
       wdl_(wdl) {
   const LegacyWeights weights(file.weights());
   tensorflow::SessionOptions session_options;
@@ -355,10 +393,11 @@ TFNetwork<CPU>::TFNetwork(const WeightsFile& file, const OptionsDict& options,
         Placeholder::Shape({-1, kInputPlanes, 8, 8}));
   }
 
-  auto output = MakeNetwork<CPU>(scope_, *input_, weights, wdl);
+  auto output = MakeNetwork<CPU>(scope_, *input_, weights, wdl, IsMlh());
   CHECK(scope_.ok()) << scope_.status().ToString();
-  policy_head_ = std::make_unique<Output>(output.first);
-  value_head_ = std::make_unique<Output>(output.second);
+  policy_head_ = std::make_unique<Output>(std::get<0>(output));
+  value_head_ = std::make_unique<Output>(std::get<1>(output));
+  moves_left_head_ = std::make_unique<Output>(std::get<2>(output));
 
   if (options.Exists<std::string>("dump-graphdef") ||
       options.Exists<std::string>("dump-graphdef-txt")) {
@@ -386,7 +425,9 @@ TFNetwork<CPU>::TFNetwork(const WeightsFile& file, const OptionsDict& options,
 template <bool CPU>
 tensorflow::Status TFNetwork<CPU>::Compute(tensorflow::Tensor& input,
                                            std::vector<Tensor>* outputs) const {
-  return session_->Run({{*input_, input}}, {*value_head_, *policy_head_},
+  std::vector<Output> fetch_outputs = {*value_head_, *policy_head_};
+  if (IsMlh()) fetch_outputs.push_back(*moves_left_head_);
+  return session_->Run({{*input_, input}}, fetch_outputs,
                        outputs);
 }
 
