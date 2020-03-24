@@ -45,24 +45,33 @@ class OpenCLNetwork;
 struct OpenCLWeights {
   const std::vector<float> ip2_val_w;
   const std::vector<float> ip2_val_b;
+  const std::vector<float> ip2_mov_w;
+  const std::vector<float> ip2_mov_b;
   const size_t num_output_policies = 1858;
   const size_t num_value_channels;
+  const size_t num_moves_channels;
 
   OpenCLWeights(const WeightsFile& file)
       : ip2_val_w(LayerAdapter(file.weights().ip2_val_w()).as_vector()),
         ip2_val_b(LayerAdapter(file.weights().ip2_val_b()).as_vector()),
-        num_value_channels(LayerAdapter(file.weights().ip1_val_b()).size()) {}
+        ip2_mov_w(LayerAdapter(file.weights().ip2_mov_w()).as_vector()),
+        ip2_mov_b(LayerAdapter(file.weights().ip2_mov_b()).as_vector()),
+        num_value_channels(LayerAdapter(file.weights().ip1_val_b()).size()),
+        num_moves_channels(LayerAdapter(file.weights().ip1_mov_b()).size()) {}
 };
 
 class OpenCLComputation : public NetworkComputation {
  public:
   OpenCLComputation(const OpenCL_Network& opencl_net,
-                    const OpenCLWeights& weights, const bool wdl)
+                    const OpenCLWeights& weights, const bool wdl,
+                    const bool moves_left)
       : opencl_net_(opencl_net),
         weights_(weights),
         policies_(),
         q_values_(),
-        wdl_(wdl) {
+        m_values_(),
+        wdl_(wdl),
+        moves_left_(moves_left) {
     buffers_ = opencl_net.acquire_buffers();
   }
 
@@ -82,6 +91,7 @@ class OpenCLComputation : public NetworkComputation {
 
     const auto num_output_policies = weights_.num_output_policies;
     const auto num_value_channels = weights_.num_value_channels;
+    const auto num_moves_channels = weights_.num_moves_channels;
 
     // Typically
     // input_channels = 112
@@ -90,6 +100,7 @@ class OpenCLComputation : public NetworkComputation {
 
     std::vector<float> output_pol(largest_batch_size * num_output_policies);
     std::vector<float> output_val(largest_batch_size * num_value_channels);
+    std::vector<float> output_mov(largest_batch_size * num_moves_channels);
     std::vector<float> input_data(largest_batch_size * kInputPlanes * kSquares);
 
     for (size_t i = 0; i < plane_count; i += largest_batch_size) {
@@ -98,7 +109,8 @@ class OpenCLComputation : public NetworkComputation {
         EncodePlanes(planes_[i + j], &input_data[j * kSquares * kInputPlanes]);
       }
 
-      buffers_->forward(input_data, output_pol, output_val, batch_size);
+      buffers_->forward(input_data, output_pol, output_val, output_mov,
+                        batch_size);
 
       for (size_t j = 0; j < batch_size; j++) {
         std::vector<float> policy(num_output_policies);
@@ -135,6 +147,16 @@ class OpenCLComputation : public NetworkComputation {
 
           q_values_.emplace_back(std::tanh(winrate));
         }
+
+        if (moves_left_) {
+          auto m = weights_.ip2_mov_b[0];
+          auto ptr_weights = weights_.ip2_mov_w.data();
+          auto ptr_outputs = &output_mov[j * num_moves_channels];
+          for (size_t i = 0; i < num_moves_channels; i++)
+            m += ptr_weights[i] * std::max(0.0f, ptr_outputs[i]);
+
+          m_values_.emplace_back(std::max(0.0f, m));
+        }
       }
     }
   }
@@ -162,8 +184,13 @@ class OpenCLComputation : public NetworkComputation {
     }
   }
 
-  float GetMVal(int /* sample */) const override {
-    return 0.0f;
+  float GetMVal(int sample) const override {
+    if (moves_left_) {
+      auto d = m_values_[sample];
+      return d;
+    } else {
+      return 0.0f;
+    }
   }
 
   // Returns P value @move_id of @sample.
@@ -185,9 +212,11 @@ class OpenCLComputation : public NetworkComputation {
 
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
+  std::vector<float> m_values_;
 
   std::unique_ptr<OpenCLBuffers> buffers_;
   bool wdl_;
+  bool moves_left_;
 };
 
 void OpenCLComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
@@ -205,7 +234,7 @@ class OpenCLNetwork : public Network {
 
   OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
-                      pblczero::NetworkFormat::MOVES_LEFT_NONE},
+                      file.format().network_format().moves_left()},
         weights_(file),
         params_(),
         opencl_(),
@@ -221,6 +250,9 @@ class OpenCLNetwork : public Network {
 
     wdl_ = file.format().network_format().output() ==
            pblczero::NetworkFormat::OUTPUT_WDL;
+
+    moves_left_ = file.format().network_format().moves_left() ==
+                  pblczero::NetworkFormat::MOVES_LEFT_V1;
 
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));
@@ -241,9 +273,11 @@ class OpenCLNetwork : public Network {
     const auto residual_blocks = weights.residual.size();
 
     const auto num_value_input_planes = weights.value.biases.size();
+    const auto num_moves_input_planes = weights.moves_left.biases.size();
     const auto num_policy_input_planes = weights.policy.biases.size();
     const auto num_output_policy = kPolicyOutputs;
     const auto num_value_channels = weights.ip1_val_b.size();
+    const auto num_moves_channels = weights.ip1_mov_b.size();
 
     // Typically
     // input_channels = 112
@@ -350,11 +384,20 @@ class OpenCLNetwork : public Network {
                            weights.value.biases, weights.ip1_val_w,
                            weights.ip1_val_b);
 
+    if (moves_left_) {
+      opencl_net_.push_moves_left(
+          channels, num_moves_input_planes,
+          num_moves_input_planes * width * height, num_moves_channels,
+          weights.moves_left.weights, weights.moves_left.biases,
+          weights.ip1_mov_w, weights.ip1_mov_b);
+    }
+
     opencl_net_.setMaxMatchSize(max_batch_size_);
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<OpenCLComputation>(opencl_net_, weights_, wdl_);
+    return std::make_unique<OpenCLComputation>(opencl_net_, weights_, wdl_,
+                                               moves_left_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -372,6 +415,7 @@ class OpenCLNetwork : public Network {
   OpenCL opencl_;
   OpenCL_Network opencl_net_;
   bool wdl_;
+  bool moves_left_;
 };
 
 std::unique_ptr<Network> MakeOpenCLNetwork(const WeightsFile& weights,
