@@ -25,6 +25,10 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+// Hack around c++ version incompatibility.
+#include <absl/base/config.h>
+#undef ABSL_HAVE_STD_STRING_VIEW
+
 #include <tensorflow/cc/client/client_session.h>
 #include <tensorflow/cc/ops/standard_ops.h>
 #include <tensorflow/core/framework/tensor.h>
