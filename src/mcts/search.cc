@@ -1321,8 +1321,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   float total = 0.0;
 
-  float* values = new float[node->GetNumEdges()];
-
   int counter = 0;
   for (auto edge : node->Edges()) {
     float p =
@@ -1331,7 +1329,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
-    values[counter++] = p;
+    intermediate[counter++] = p;
     total += p;
 
     /*
@@ -1345,9 +1343,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   
   // Normalize P values to add up to 1.0.
   if (total > 0.0f) {
-    for (auto edge : node->Edges()) edge.edge()->SetP(values[counter++] / total);
+    for (auto edge : node->Edges()) edge.edge()->SetP(intermediate[counter++] / total);
   }
-  delete[] values;
+
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
@@ -1401,7 +1399,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
                            d, m, node_to_process.multivisit, 
                            params_.GetPolicySoftmaxTemp(), 
-                           params_.GetPolicyTempDecay());
+                           params_.GetPolicyTempDecay(), intermediate);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;

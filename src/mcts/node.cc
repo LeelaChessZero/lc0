@@ -273,7 +273,7 @@ void Node::CancelScoreUpdate(int multivisit) {
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit, 
-    float policy_temperature, float policy_temp_decay) {
+    float policy_temperature, float policy_temp_decay, float intermediate[]) {
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
@@ -300,26 +300,22 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
       policy_temp_decay * log2f(1 + n_));
 
   if (abs(exponent - 1.0f) > 0.001f) {
-    int num_edges = GetNumEdges();
-    float* values = new float[num_edges];
     float total = 0.0f;
     int counter = 0;
     for (auto& child : Edges()) {
       float new_p = powf(child.GetP(), exponent);
-      values[counter++] = new_p;
+      intermediate[counter++] = new_p;
       total += new_p;
     }
 
     counter = 0;
     if (total > 0.0f) {
       for (auto& child : Edges()) {
-        child.SetP(values[counter++] / total);
+        child.SetP(intermediate[counter++] / total);
       }  
     }
     
-
     n_last_temp_ = n_;
-    delete[] values;
   }
   
 
