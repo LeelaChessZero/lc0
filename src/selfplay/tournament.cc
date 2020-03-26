@@ -127,7 +127,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
                              "multiplexing");
   defaults->Set<bool>(SearchParams::kStickyEndgamesId.GetId(), false);
   defaults->Set<bool>(SearchParams::kLogitQId.GetId(), false);
-  defaults->Set<bool>(SearchParams::kRootHasOwnCpuctParamsId.GetId(), false);
 }
 
 SelfPlayTournament::SelfPlayTournament(
