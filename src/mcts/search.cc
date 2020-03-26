@@ -514,7 +514,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                           ? edges.begin() + count
                           : edges.end();
   std::partial_sort(
-      edges.begin(), middle, edges.end(), [](const auto& a, const auto& b) {
+      edges.begin(), middle, edges.end(),
+      [draw_score](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
 
         // Lists edge types from less desirable to more desirable.
