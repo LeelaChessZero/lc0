@@ -77,6 +77,7 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
       if (planes[kAuxPlaneBase + 3].mask != 0) {
         castlings.set_they_can_00();
       }
+      break;
     }
     case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE: {
       auto queenside = 0;
@@ -102,6 +103,7 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
         }
       }
       castlings.SetRookPositions(queenside, kingside);
+      break;
     }
 
     default:
