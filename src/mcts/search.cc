@@ -129,13 +129,14 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
-  const auto default_q = -root_node_->GetWL();
+  const auto default_q = -root_node_->GetQ(-draw_score);
+  const auto default_wl = -root_node_->GetWL();
   const auto default_d = root_node_->GetD();
   for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto wl = edge.GetWL(default_q);
+    const auto wl = edge.GetWL(default_wl);
     const auto d = edge.GetD(default_d);
     const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
     const auto q = edge.GetQ(default_q, draw_score, /* logit_q= */ false);
@@ -490,6 +491,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
   }
+  // Assume this function is only ever called with root or immediate child of
+  // root.
+  const bool is_odd_depth = parent != root_node_;
+  const float draw_score = GetDrawScore(is_odd_depth);
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
@@ -554,8 +559,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
           // Default doesn't matter here so long as they are the same as either
           // both are N==0 (thus we're comparing equal defaults) or N!=0 and
           // default isn't used.
-          if (a.GetWL(0.0f) != b.GetWL(0.0f)) {
-            return a.GetWL(0.0f) > b.GetWL(0.0f);
+          if (a.GetQ(0.0f, draw_score, false) !=
+              b.GetQ(0.0f, draw_score, false)) {
+            return a.GetQ(0.0f, draw_score, false) >
+                   b.GetQ(0.0f, draw_score, false);
           }
           return a.GetP() > b.GetP();
         }
