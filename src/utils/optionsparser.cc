@@ -409,12 +409,14 @@ IntOption::IntOption(const OptionId& id, int min, int max)
     : Option(id), min_(min), max_(max) {}
 
 void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
+  ValidateIntString(value);
   SetVal(dict, std::stoi(value));
 }
 
 bool IntOption::ProcessLongFlag(const std::string& flag,
                                 const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
+    ValidateIntString(value);
     SetVal(dict, std::stoi(value));
     return true;
   }
@@ -424,6 +426,7 @@ bool IntOption::ProcessLongFlag(const std::string& flag,
 bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                           OptionsDict* dict) {
   if (flag == GetShortFlag()) {
+    ValidateIntString(value);
     SetVal(dict, std::stoi(value));
     return true;
   }
@@ -458,6 +461,19 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
     throw Exception(buf.str());
   }
   dict->Set<ValueType>(GetId(), val);
+}
+
+void IntOption::ValidateIntString(const std::string& val) {
+  const int base = 10;
+  char *end;
+  errno = 0;
+  std::strtol(val.c_str(), &end, base);
+  if (errno == ERANGE) {
+    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
+  }
+  if (val.length() == 0 || *end != '\0') {
+    throw Exception("Flag '--" + GetLongFlag() + "' value is invalid.");
+  }
 }
 
 /////////////////////////////////////////////////////////////////

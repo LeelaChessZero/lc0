@@ -189,6 +189,7 @@ class IntOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
+  void ValidateIntString(const std::string& val);
 
   int min_;
   int max_;
