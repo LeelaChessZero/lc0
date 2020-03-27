@@ -1014,11 +1014,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const float m_cap = params_.GetMovesLeftMaxEffect();
         const float parent_m = node->GetM();
         const float child_m = child.GetM(parent_m);
-        M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) * node_q;
+        M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap);
       }
 
       const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
-      const float score = child.GetU(puct_mult) + Q + M;
+      const float score = child.GetU(puct_mult) + Q * (1.0f + M);
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
