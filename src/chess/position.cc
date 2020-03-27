@@ -54,6 +54,12 @@ uint64_t Position::Hash() const {
 
 std::string Position::DebugString() const { return us_board_.DebugString(); }
 
+GameResult operator-(const GameResult& res) {
+  return res == GameResult::BLACK_WON
+             ? GameResult::WHITE_WON
+             : res == GameResult::WHITE_WON ? GameResult::BLACK_WON : res;
+}
+
 GameResult PositionHistory::ComputeGameResult() const {
   const auto& board = Last().GetBoard();
   auto legal_moves = board.GenerateLegalMoves();
