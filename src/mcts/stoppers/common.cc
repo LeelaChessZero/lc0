@@ -102,7 +102,7 @@ namespace {
 // Stoppers for uci mode only.
 void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
                                const OptionsDict& options,
-                               const GoParams& params) {
+                               const GoParams& params, int64_t move_overhead) {
   const bool infinite = params.infinite || params.ponder;
 
   // RAM limit watching stopper.
@@ -120,7 +120,8 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
 
   // "go movetime" stopper.
   if (params.movetime && !infinite) {
-    stopper->AddStopper(std::make_unique<TimeLimitStopper>(*params.movetime));
+    stopper->AddStopper(
+        std::make_unique<TimeLimitStopper>(*params.movetime - move_overhead));
   }
 
   // "go depth" stopper.
@@ -135,8 +136,10 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
 class CommonTimeManager : public TimeManager {
  public:
   CommonTimeManager(std::unique_ptr<TimeManager> child_mgr,
-                    const OptionsDict& options)
-      : child_mgr_(std::move(child_mgr)), options_(options) {}
+                    const OptionsDict& options, int64_t move_overhead)
+      : child_mgr_(std::move(child_mgr)),
+        options_(options),
+        move_overhead_(move_overhead) {}
 
  private:
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
@@ -144,19 +147,22 @@ class CommonTimeManager : public TimeManager {
     auto result = std::make_unique<ChainedSearchStopper>();
     if (child_mgr_)
       result->AddStopper(child_mgr_->GetStopper(params, position));
-    PopulateCommonUciStoppers(result.get(), options_, params);
+    PopulateCommonUciStoppers(result.get(), options_, params, move_overhead_);
     return result;
   }
 
   const std::unique_ptr<TimeManager> child_mgr_;
   const OptionsDict& options_;
+  const int64_t move_overhead_;
 };
 
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeCommonTimeManager(
-    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options) {
-  return std::make_unique<CommonTimeManager>(std::move(child_manager), options);
+    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
+    int64_t move_overhead) {
+  return std::make_unique<CommonTimeManager>(std::move(child_manager), options,
+                                             move_overhead);
 }
 
 }  // namespace lczero

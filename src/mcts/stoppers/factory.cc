@@ -76,7 +76,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   }
   tm_options.CheckAllOptionsRead("");
 
-  return MakeCommonTimeManager(std::move(time_manager), options);
+  return MakeCommonTimeManager(std::move(time_manager), options, move_overhead);
 }
 
 }  // namespace lczero

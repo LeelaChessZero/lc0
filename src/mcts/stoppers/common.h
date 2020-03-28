@@ -45,6 +45,7 @@ void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
                                const OptionsDict& options);
 
 std::unique_ptr<TimeManager> MakeCommonTimeManager(
-    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options);
+    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
+    int64_t move_overhead);
 
 }  // namespace lczero
