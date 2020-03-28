@@ -33,6 +33,9 @@
 
 namespace lczero {
 
+enum class RunType { kUci, kSelfplay };
+void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
+
 // Option ID for a cache size. It's used from multiple places and there's no
 // really nice place to declare, so let it be here.
 extern const OptionId kNNCacheSizeId;
@@ -41,24 +44,7 @@ extern const OptionId kNNCacheSizeId;
 void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
                                const OptionsDict& options);
 
-void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
-                               const OptionsDict& options,
-                               const GoParams& params);
-
-enum class RunType { kUci, kSelfplay };
-void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
-
-class LegacyTimeManager : public TimeManager {
- public:
-  std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const Position& position) override;
-
- private:
-  std::unique_ptr<SearchStopper> CreateTimeManagementStopper(
-      const OptionsDict& options, const GoParams& params,
-      const Position& position);
-  // No need to be atomic as only one thread will update it.
-  int64_t time_spared_ms_ = 0;
-};
+std::unique_ptr<TimeManager> MakeCommonTimeManager(
+    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options);
 
 }  // namespace lczero

@@ -30,16 +30,11 @@
 #include <optional>
 
 #include "factory.h"
+#include "mcts/stoppers/legacy.h"
 #include "mcts/stoppers/stoppers.h"
 #include "utils/exception.h"
 
 namespace lczero {
-
-const OptionId kNNCacheSizeId{
-    "nncache", "NNCacheSize",
-    "Number of positions to store in a memory cache. A large cache can speed "
-    "up searching, but takes memory."};
-
 namespace {
 
 const OptionId kMoveOverheadId{
@@ -60,20 +55,28 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   }
 }
 
-std::unique_ptr<TimeManager> MakeTimeManager() {
+std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
-  const std::string time_manager_config =
-      options.Get<std::string>(kTimeManagerId);
-  const auto managers = options.ListSubdicts();
 
+  OptionsDict tm_options;
+  tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
+  const auto managers = tm_options.ListSubdicts();
+
+  std::unique_ptr<TimeManager> time_manager;
   if (managers.size() != 1) {
     throw Exception("Exactly one time manager should be specified, " +
                     std::to_string(managers.size()) + " specified instead.");
   }
-  if (manager[0] == "legacy") {
-  } else {
-    throw Exception("Unknown time manager: [" + manager[0] + "]");
+  if (managers[0] == "legacy") {
+    time_manager =
+        MakeLegacyTimeManager(move_overhead, tm_options.GetSubdict("legacy"));
   }
+  if (!time_manager) {
+    throw Exception("Unknown time manager: [" + managers[0] + "]");
+  }
+  tm_options.CheckAllOptionsRead("");
+
+  return MakeCommonTimeManager(std::move(time_manager), options);
 }
 
 }  // namespace lczero

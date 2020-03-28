@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "mcts/stoppers/stoppers.h"
+
 namespace lczero {
 
 namespace {
@@ -39,6 +41,28 @@ class LegacyStopper : public TimeLimitStopper {
 
  private:
   int64_t* const time_piggy_bank_;
+};
+
+class LegacyTimeManager : public TimeManager {
+ public:
+  LegacyTimeManager(int64_t move_overhead, const OptionsDict& params)
+      : move_overhead_(move_overhead),
+        slowmover_(params.GetOrDefault<float>("slowmover", 1.0f)),
+        time_curve_midpoint_(
+            params.GetOrDefault<float>("midpoint-move", 51.5f)),
+        time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
+        spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)) {}
+  std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
+                                            const Position& position) override;
+
+ private:
+  const int64_t move_overhead_;
+  const float slowmover_;
+  const float time_curve_midpoint_;
+  const float time_curve_steepness_;
+  const float spend_saved_time_;
+  // No need to be atomic as only one thread will update it.
+  int64_t time_spared_ms_ = 0;
 };
 
 float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
@@ -59,29 +83,18 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
          move;
 }
 
-void LegacyTimeManager::ResetGame() { time_spared_ms_ = 0; }
-
-std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
-    const OptionsDict& options, const GoParams& params,
-    const Position& position) {
+std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
+    const GoParams& params, const Position& position) {
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
-  const int64_t move_overhead = options.Get<int>(kMoveOverheadId.GetId());
   const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
   const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
-  // How to scale moves time.
-  const float slowmover = options.Get<float>(kSlowMoverId.GetId());
-  const float time_curve_midpoint =
-      options.Get<float>(kTimeMidpointMoveId.GetId());
-  const float time_curve_steepness =
-      options.Get<float>(kTimeSteepnessId.GetId());
-
   float movestogo = ComputeEstimatedMovesToGo(
-      position.GetGamePly(), time_curve_midpoint, time_curve_steepness);
+      position.GetGamePly(), time_curve_midpoint_, time_curve_steepness_);
 
   // If the number of moves remaining until the time control are less than
   // the estimated number of moves left in the game, then use the number of
@@ -94,14 +107,13 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
 
   // Total time, including increments, until time control.
   auto total_moves_time =
-      std::max(0.0f, *time + increment * (movestogo - 1) - move_overhead);
+      std::max(0.0f, *time + increment * (movestogo - 1) - move_overhead_);
 
   // If there is time spared from previous searches, the `time_to_squander` part
   // of it will be used immediately, remove that from planning.
   int time_to_squander = 0;
   if (time_spared_ms_ > 0) {
-    time_to_squander =
-        time_spared_ms_ * options.Get<float>(kSpendSavedTimeId.GetId());
+    time_to_squander = time_spared_ms_ * spend_saved_time_;
     time_spared_ms_ -= time_to_squander;
     total_moves_time -= time_to_squander;
   }
@@ -112,37 +124,30 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
   constexpr int kSmartPruningToleranceMs = 200;
-  if (slowmover < 1.0 ||
-      this_move_time * slowmover > kSmartPruningToleranceMs) {
-    this_move_time *= slowmover;
+  if (slowmover_ < 1.0 ||
+      this_move_time * slowmover_ > kSmartPruningToleranceMs) {
+    this_move_time *= slowmover_;
     // If time is planned to be overused because of slowmover, remove excess
     // of that time from spared time.
-    time_spared_ms_ -= this_move_time * (slowmover - 1);
+    time_spared_ms_ -= this_move_time * (slowmover_ - 1);
   }
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
           << time_to_squander << "ms to squander). Remaining time " << *time
-          << "ms(-" << move_overhead << "ms overhead)";
+          << "ms(-" << move_overhead_ << "ms overhead)";
   // Use `time_to_squander` time immediately.
   this_move_time += time_to_squander;
 
   // Make sure we don't exceed current time limit with what we calculated.
   auto deadline =
-      std::min(static_cast<int64_t>(this_move_time), *time - move_overhead);
+      std::min(static_cast<int64_t>(this_move_time), *time - move_overhead_);
   return std::make_unique<LegacyStopper>(deadline, &time_spared_ms_);
 }
 
-std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
-    const OptionsDict& options, const GoParams& params,
-    const Position& position) {
-  auto result = std::make_unique<ChainedSearchStopper>();
-
-  // Time management stopper.
-  result->AddStopper(CreateTimeManagementStopper(options, params, position));
-  // All the standard stoppers (go nodes, RAM limit, smart pruning, etc).
-  PopulateStoppers(result.get(), options, params);
-  return result;
-}
-
 }  // namespace
+
+std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
+                                                   const OptionsDict& params) {
+  return std::make_unique<LegacyTimeManager>(move_overhead, params);
+}
 }  // namespace lczero

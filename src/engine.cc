@@ -73,9 +73,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
-    : options_(options), uci_responder_(std::move(uci_responder)) {
-  CreateFreshTimeManager();
-}
+    : options_(options), uci_responder_(std::move(uci_responder)) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
