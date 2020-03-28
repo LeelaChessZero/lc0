@@ -93,14 +93,19 @@ int CompareTransposing(uint64_t value, int initial_transform) {
 }
 
 int ChooseTransform(const ChessBoard& board) {
+  // If there are any castling options no transform is valid.
+  // Even using FRC rules, king and queen side castle moves are not symmetrical.
+  if (!board.castlings().no_legal_castle()) {
+    return 0;
+  }
   auto our_king = (board.kings() & board.ours()).as_int();
   int transform = 0;
   if ((our_king & 0x7777777777777777LL) != 0) {
     transform |= 1;
     our_king = ReverseBitsInBytes(our_king);
   }
-  // If there are any pawns or castling options only horizontal flip is valid.
-  if (board.pawns().as_int() != 0 || !board.castlings().no_legal_castle()) {
+  // If there are any pawns only horizontal flip is valid.
+  if (board.pawns().as_int() != 0) {
     return transform;
   }
   if ((our_king & 0xFFFFFFFF00000000LL) != 0) {
@@ -178,10 +183,13 @@ InputPlanes EncodePositionForNN(
   InputPlanes result(kAuxPlaneBase + 8);
 
   int transform = 0;
-  // Canonicalization format needs to stop early to avoid applying transform in history across incompatible transitions.  It is also more canonical since history before these points is not relevant to the final result.
+  // Canonicalization format needs to stop early to avoid applying transform in
+  // history across incompatible transitions.  It is also more canonical since
+  // history before these points is not relevant to the final result.
   bool stop_early =
       input_format == pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION;
-  // When stopping early, we want to know if castlings has changed, so capture it for the first board.
+  // When stopping early, we want to know if castlings has changed, so capture
+  // it for the first board.
   ChessBoard::Castlings castlings;
   {
     const ChessBoard& board = history.Last().GetBoard();
@@ -208,8 +216,8 @@ InputPlanes EncodePositionForNN(
 
       case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE:
       case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION: {
-          // - Plane 104 for positions of rooks (both white and black) which
-          // have
+        // - Plane 104 for positions of rooks (both white and black) which
+        // have
         // a-side (queenside) castling right.
         // - Plane 105 for positions of rooks (both white and black) which have
         // h-side (kingside) castling right.
@@ -252,7 +260,8 @@ InputPlanes EncodePositionForNN(
         flip ? position.GetThemBoard() : position.GetBoard();
     // Castling changes can't be repeated, so we can stop early.
     if (stop_early && board.castlings().as_int() != castlings.as_int()) break;
-    // Enpassants can't be repeated, but we do need to always send the current position.
+    // Enpassants can't be repeated, but we do need to always send the current
+    // position.
     if (stop_early && history_idx != history.GetLength() - 1 &&
         !board.en_passant().empty()) {
       break;
@@ -295,7 +304,8 @@ InputPlanes EncodePositionForNN(
       }
     }
     if (history_idx > 0) flip = !flip;
-    // If no capture no pawn is 0, the previous was start of game, capture or pawn push, so no need to go back further if stopping early.
+    // If no capture no pawn is 0, the previous was start of game, capture or
+    // pawn push, so no need to go back further if stopping early.
     if (stop_early && position.GetNoCaptureNoPawnPly() == 0) break;
   }
   if (transform != 0) {
@@ -313,10 +323,6 @@ InputPlanes EncodePositionForNN(
         v = TransposeBitsInBytes(v);
       }
       result[i].mask = v;
-    }
-    // TODO: is this the right thing to do?
-    if ((transform & 1) != 0) {
-      std::swap(result[kAuxPlaneBase + 0].mask, result[kAuxPlaneBase + 1].mask);
     }
   }
 
