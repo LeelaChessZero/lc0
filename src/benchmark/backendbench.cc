@@ -75,7 +75,7 @@ void BackendBenchmark::Run() {
         for (int k = 0; k < i; k++) {
           computation->AddInput(EncodePositionForNN(
               network->GetCapabilities().input_format,
-              tree.GetPositionHistory(), 8, FillEmptyHistory::ALWAYS));
+              tree.GetPositionHistory(), 8, FillEmptyHistory::ALWAYS, nullptr));
         }
         computation->ComputeBlocking();
       }

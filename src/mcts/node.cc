@@ -358,12 +358,14 @@ V5TrainingData Node::GetV5TrainingData(
   }
 
   // Populate planes.
+  int transform;
   InputPlanes planes =
-      EncodePositionForNN(input_format, history, 8, fill_empty_history);
+      EncodePositionForNN(input_format, history, 8, fill_empty_history, &transform);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
+  // TODO: apply transform to probabilities.
 
   const auto& position = history.Last();
   const auto& castlings = position.GetBoard().castlings();
@@ -383,7 +385,16 @@ V5TrainingData Node::GetV5TrainingData(
   result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
   // Other params.
-  result.side_to_move = position.IsBlackToMove() ? 1 : 0;
+  if (input_format ==
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    // TODO: check if a shift is needed or just mask.
+    result.side_to_move = position.GetBoard().en_passant().as_int() & 0xFF;
+    if ((transform & 1) != 0) {
+      result.side_to_move = ReverseBitsInBytes(result.side_to_move);
+    }
+  } else {
+    result.side_to_move = position.IsBlackToMove() ? 1 : 0;
+  }
   result.deprecated_move_count = 0;
   result.rule50_count = position.GetNoCaptureNoPawnPly();
 

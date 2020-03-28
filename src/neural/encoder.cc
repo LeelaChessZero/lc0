@@ -179,7 +179,7 @@ int ChooseTransform(const ChessBoard& board) {
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history) {
+    FillEmptyHistory fill_empty_history, int* transform_out) {
   InputPlanes result(kAuxPlaneBase + 8);
 
   int transform = 0;
@@ -325,7 +325,7 @@ InputPlanes EncodePositionForNN(
       result[i].mask = v;
     }
   }
-
+  if (transform_out) *transform_out = transform;
   return result;
 }
 
