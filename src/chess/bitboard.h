@@ -261,7 +261,9 @@ class Move {
   uint16_t as_packed_int() const;
 
   // 0 .. 1857, to use in neural networks.
-  uint16_t as_nn_index() const;
+  // Transform is a bit field which describes a transform to be applied to the
+  // the move before converting it to an index.
+  uint16_t as_nn_index(int transform) const;
 
   explicit operator bool() const { return data_ != 0; }
   bool operator==(const Move& other) { return data_ == other.data_; }

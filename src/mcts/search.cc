@@ -271,7 +271,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << std::left << std::setw(5)
         << edge.GetMove(is_black_to_move).as_string();
 
-    oss << " (" << std::setw(4) << edge.GetMove().as_nn_index() << ")";
+    // TODO: should this be displaying transformed index?
+    oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
 
     oss << " N: " << std::right << std::setw(7) << edge.GetN() << " (+"
         << std::setw(2) << edge.GetNInFlight() << ") ";
@@ -1141,7 +1142,8 @@ void SearchWorker::ExtendNode(Node* node) {
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out) {
+bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
+                                        int* transform_out) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   // TODO: cache hits need to know the transform as well.
@@ -1160,7 +1162,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached, int* tra
     // Legal moves are known, use them.
     moves.reserve(node->GetNumEdges());
     for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index());
+      moves.emplace_back(edge.GetMove().as_nn_index(*transform_out));
     }
   } else {
     // Cache pseudolegal moves. A bit of a waste, but faster.
@@ -1169,7 +1171,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached, int* tra
     moves.reserve(pseudolegal_moves.size());
     for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
          iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index());
+      moves.emplace_back(iter->as_nn_index(*transform_out));
     }
   }
 
@@ -1319,14 +1321,16 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // Calculate maximum first.
   float max_p = -std::numeric_limits<float>::infinity();
   for (auto edge : node->Edges()) {
-    max_p =
-        std::max(max_p, computation_->GetPVal(idx_in_computation,
-                                              edge.GetMove().as_nn_index()));
+    max_p = std::max(max_p, computation_->GetPVal(
+                                idx_in_computation,
+                                edge.GetMove().as_nn_index(
+                                    node_to_process->probability_transform)));
   }
   float total = 0.0;
   for (auto edge : node->Edges()) {
-    float p =
-        computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
+    float p = computation_->GetPVal(
+        idx_in_computation,
+        edge.GetMove().as_nn_index(node_to_process->probability_transform));
     // Perform softmax and take into account policy softmax temperature T.
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());

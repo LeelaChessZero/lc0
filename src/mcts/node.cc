@@ -340,6 +340,15 @@ V5TrainingData Node::GetV5TrainingData(
   result.version = 5;
   result.input_format = input_format;
 
+  // Populate planes.
+  int transform;
+  InputPlanes planes = EncodePositionForNN(input_format, history, 8,
+                                           fill_empty_history, &transform);
+  int plane_idx = 0;
+  for (auto& plane : result.planes) {
+    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
+  }
+
   // Populate probabilities.
   auto total_n = GetChildrenVisits();
   // Prevent garbage/invalid training data from being uploaded to server.
@@ -353,19 +362,9 @@ V5TrainingData Node::GetV5TrainingData(
             -1);
   // Set moves probabilities according to their relative amount of visits.
   for (const auto& child : Edges()) {
-    result.probabilities[child.edge()->GetMove().as_nn_index()] =
+    result.probabilities[child.edge()->GetMove().as_nn_index(transform)] =
         total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
   }
-
-  // Populate planes.
-  int transform;
-  InputPlanes planes =
-      EncodePositionForNN(input_format, history, 8, fill_empty_history, &transform);
-  int plane_idx = 0;
-  for (auto& plane : result.planes) {
-    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
-  }
-  // TODO: apply transform to probabilities.
 
   const auto& position = history.Last();
   const auto& castlings = position.GetBoard().castlings();
