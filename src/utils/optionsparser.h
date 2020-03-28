@@ -31,7 +31,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <charconv>
 #include "utils/exception.h"
 #include "utils/optionsdict.h"
 
@@ -190,8 +189,7 @@ class IntOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
-  int ValidateIntString(const std::string& val);
-
+  
   int min_;
   int max_;
 };
