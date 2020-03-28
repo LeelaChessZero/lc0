@@ -1148,20 +1148,25 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) {
-      *transform_out = TransformForPosition(
-          search_->network_->GetCapabilities().input_format, history_);
+      if (transform_out) {
+        *transform_out = TransformForPosition(
+            search_->network_->GetCapabilities().input_format, history_);
+      }
       return true;
     }
   } else {
     if (search_->cache_->ContainsKey(hash)) {
-      *transform_out = TransformForPosition(
-          search_->network_->GetCapabilities().input_format, history_);
+      if (transform_out) {
+        *transform_out = TransformForPosition(
+            search_->network_->GetCapabilities().input_format, history_);
+      }
       return true;
     }
   }
+  int transform;
   auto planes =
       EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), transform_out);
+                          history_, 8, params_.GetHistoryFill(), &transform);
 
   std::vector<uint16_t> moves;
 
@@ -1169,7 +1174,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
     // Legal moves are known, use them.
     moves.reserve(node->GetNumEdges());
     for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(*transform_out));
+      moves.emplace_back(edge.GetMove().as_nn_index(transform));
     }
   } else {
     // Cache pseudolegal moves. A bit of a waste, but faster.
@@ -1178,11 +1183,12 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
     moves.reserve(pseudolegal_moves.size());
     for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
          iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(*transform_out));
+      moves.emplace_back(iter->as_nn_index(transform));
     }
   }
 
   computation_->AddInput(hash, std::move(planes), std::move(moves));
+  if (transform_out) *transform_out = transform;
   return false;
 }
 
