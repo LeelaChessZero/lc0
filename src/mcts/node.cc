@@ -391,10 +391,13 @@ V5TrainingData Node::GetV5TrainingData(
     if ((transform & 1) != 0) {
       result.side_to_move = ReverseBitsInBytes(result.side_to_move);
     }
+    // Send transform in deprecated move count so rescorer can reverse it to
+    // calculate the actual move list from the input data.
+    result.deprecated_move_count = transform;
   } else {
     result.side_to_move = position.IsBlackToMove() ? 1 : 0;
+    result.deprecated_move_count = 0;
   }
-  result.deprecated_move_count = 0;
   result.rule50_count = position.GetNoCaptureNoPawnPly();
 
   // Game result.
