@@ -29,11 +29,6 @@
 
 #include <algorithm>
 
-#if not defined(NO_PEXT)
-// Include header for pext instruction.
-#include <immintrin.h>
-#endif
-
 namespace lczero {
 
 namespace {
@@ -61,32 +56,6 @@ uint64_t TransposeBitsInBytes(uint64_t v) {
   v = (v & 0xF0F0F0F000000000ULL) >> 36 | (v & 0x000000000F0F0F0FULL) << 36 |
       (v & 0x0F0F0F0FF0F0F0F0ULL);
   return v;
-  // Other options for this calculation...
-#if defined(NO_PEXT)
-  uint64_t r = 0;
-  for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 8; j++) {
-      int dest_bit = i * 8 + j;
-      int source_bit = 63 - (j * 8 + i);
-      r |= (v & (1LL << source_bit)) << (dest_bit - source_bit);
-    }
-  }
-  return r;
-#else
-  uint64_t r = 0;
-  r |= _pext_u64(v, 0x0101010101010101ULL) << 56;
-  r |= _pext_u64(v, 0x0202020202020202ULL) << 48;
-  r |= _pext_u64(v, 0x0404040404040404ULL) << 40;
-  r |= _pext_u64(v, 0x0808080808080808ULL) << 32;
-  r |= _pext_u64(v, 0x1010101010101010ULL) << 24;
-  r |= _pext_u64(v, 0x2020202020202020ULL) << 16;
-  r |= _pext_u64(v, 0x4040404040404040ULL) << 8;
-  r |= _pext_u64(v, 0x8080808080808080ULL);
-  // pext has high row as high col, but we want high row to end up in low col so
-  // reverse the bits in bytes.
-  r = ReverseBitsInBytes(r);
-  return r;
-#endif
 }
 
 int CompareTransposing(uint64_t value, int initial_transform) {
