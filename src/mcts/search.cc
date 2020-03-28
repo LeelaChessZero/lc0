@@ -1214,7 +1214,15 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetRepetitions() >= 2) {
+    const auto repetitions = history_.Last().GetRepetitions();
+    const auto parent = node->GetParent();
+    // Treat two-fold repetitions as draw to help focus search on other moves,
+    // but avoid playing into a losing two-fold thinking it will end the game.
+    if (params_.GetTwoFoldDraw() && repetitions == 1 &&
+        parent != search_->root_node_) {
+      node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
+      return;
+    } else if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
@@ -1232,7 +1240,6 @@ void SearchWorker::ExtendNode(Node* node) {
       if (state != FAIL) {
         // TB nodes don't have NN evaluation, assign M from parent node.
         float m = 0.0f;
-        auto parent = node->GetParent();
         if (parent) {
           m = std::max(0.0f, parent->GetM() - 1.0f);
         }

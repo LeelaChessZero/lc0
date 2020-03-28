@@ -239,6 +239,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 }
 
 void Node::MakeNotTerminal() {
+  SetBounds(GameResult::BLACK_WON, GameResult::WHITE_WON);
   terminal_type_ = Terminal::NonTerminal;
   n_ = 0;
 
@@ -523,6 +524,16 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
   if (!seen_old_head) TrimTreeAtHead();
+  // When reusing the tree, the new head might have some two-fold terminals that
+  // don't actually end the game, so make them regular nodes to extend.
+  else if (current_head_->HasChildren()) {
+    for (const auto& child : current_head_->Edges()) {
+      const auto node = child.node();
+      if (node && node->terminal_type_ == Node::Terminal::TwoFold) {
+        node->MakeNotTerminal();
+      }
+    }
+  }
   return seen_old_head;
 }
 
