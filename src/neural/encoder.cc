@@ -54,8 +54,16 @@ uint64_t ReverseBytesInBytes(uint64_t v) {
 }
 // Transpose across the diagonal connecting H1 to to A8.
 uint64_t TransposeBitsInBytes(uint64_t v) {
-  uint64_t r = 0;
+  v = (v & 0xAA00AA00AA00AA00ULL) >> 9 | (v & 0x0055005500550055ULL) << 9 |
+      (v & 0x55AA55AA55AA55AAULL);
+  v = (v & 0xCCCC0000CCCC0000ULL) >> 18 | (v & 0x0000333300003333ULL) << 18 |
+      (v & 0x3333CCCC3333CCCCULL);
+  v = (v & 0xF0F0F0F000000000ULL) >> 36 | (v & 0x000000000F0F0F0FULL) << 36 |
+      (v & 0x0F0F0F0FF0F0F0F0ULL);
+  return v;
+  // Other options for this calculation...
 #if defined(NO_PEXT)
+  uint64_t r = 0;
   for (int i = 0; i < 8; i++) {
     for (int j = 0; j < 8; j++) {
       int dest_bit = i * 8 + j;
@@ -63,20 +71,22 @@ uint64_t TransposeBitsInBytes(uint64_t v) {
       r |= (v & (1LL << source_bit)) << (dest_bit - source_bit);
     }
   }
+  return r;
 #else
-  r |= _pext_u64(v, 0x0101010101010101LL) << 56;
-  r |= _pext_u64(v, 0x0202020202020202LL) << 48;
-  r |= _pext_u64(v, 0x0404040404040404LL) << 40;
-  r |= _pext_u64(v, 0x0808080808080808LL) << 32;
-  r |= _pext_u64(v, 0x1010101010101010LL) << 24;
-  r |= _pext_u64(v, 0x2020202020202020LL) << 16;
-  r |= _pext_u64(v, 0x4040404040404040LL) << 8;
-  r |= _pext_u64(v, 0x8080808080808080LL);
+  uint64_t r = 0;
+  r |= _pext_u64(v, 0x0101010101010101ULL) << 56;
+  r |= _pext_u64(v, 0x0202020202020202ULL) << 48;
+  r |= _pext_u64(v, 0x0404040404040404ULL) << 40;
+  r |= _pext_u64(v, 0x0808080808080808ULL) << 32;
+  r |= _pext_u64(v, 0x1010101010101010ULL) << 24;
+  r |= _pext_u64(v, 0x2020202020202020ULL) << 16;
+  r |= _pext_u64(v, 0x4040404040404040ULL) << 8;
+  r |= _pext_u64(v, 0x8080808080808080ULL);
   // pext has high row as high col, but we want high row to end up in low col so
   // reverse the bits in bytes.
   r = ReverseBitsInBytes(r);
-#endif
   return r;
+#endif
 }
 
 int CompareTransposing(uint64_t value, int initial_transform) {
