@@ -77,6 +77,8 @@ const OptionId SearchParams::kCpuctFactorId{
 const OptionId SearchParams::kCpuctFactorAtRootId{
     "cpuct-factor-at-root", "CPuctFactorAtRoot",
     "Multiplier for the cpuct growth formula at root."};
+// Remove this option after 0.25 has been made mandatory in training and the
+// training server stops sending it.
 const OptionId SearchParams::kRootHasOwnCpuctParamsId{
     "root-has-own-cpuct-params", "RootHasOwnCpuctParams",
     "If enabled, cpuct parameters for root node are taken from *AtRoot "
