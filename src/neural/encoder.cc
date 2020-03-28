@@ -54,8 +54,8 @@ uint64_t ReverseBytesInBytes(uint64_t v) {
 }
 // Transpose across the diagonal connecting H1 to to A8.
 uint64_t TransposeBitsInBytes(uint64_t v) {
-#if defined(NO_PEXT)
   uint64_t r = 0;
+#if defined(NO_PEXT)
   for (int i = 0; i < 8; i++) {
     for (int j = 0; j < 8; j++) {
       int dest_bit = i * 8 + j;
