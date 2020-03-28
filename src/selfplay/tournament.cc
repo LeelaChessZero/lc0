@@ -119,6 +119,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(SearchParams::kMaxCollisionEventsId, 1);
   defaults->Set<int>(SearchParams::kCacheHistoryLengthId, 7);
   defaults->Set<bool>(SearchParams::kOutOfOrderEvalId, false);
+  defaults->Set<bool>(SearchParams::kTwoFoldDrawId, false);
   defaults->Set<float>(SearchParams::kTemperatureId, 1.0f);
   defaults->Set<float>(SearchParams::kNoiseEpsilonId, 0.25f);
   defaults->Set<float>(SearchParams::kFpuValueId, 0.0f);

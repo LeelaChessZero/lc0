@@ -131,7 +131,7 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
-  enum class Terminal : uint8_t { NonTerminal, Terminal, Tablebase };
+  enum class Terminal : uint8_t { NonTerminal, Terminal, Tablebase, TwoFold };
 
   // Takes pointer to a parent node and own index in a parent.
   Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
@@ -166,6 +166,7 @@ class Node {
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
+  bool IsTwoFold() const { return terminal_type_ == Terminal::TwoFold; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
@@ -372,6 +373,7 @@ class EdgeAndNode {
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
   bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
+  bool IsTwoFold() const { return node_ ? node_->IsTwoFold() : false; }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }

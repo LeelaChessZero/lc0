@@ -494,6 +494,13 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
   if (!seen_old_head) TrimTreeAtHead();
+  // When reusing the tree, the new head might have some two-fold terminals that
+  // don't actually end the game, so make them regular nodes to extend.
+  else if (current_head_->HasChildren()) {
+    for (const auto& child : current_head_->Edges()) {
+      if (child.IsTwoFold()) child.node()->MakeNotTerminal();
+    }
+  }
   return seen_old_head;
 }
 
