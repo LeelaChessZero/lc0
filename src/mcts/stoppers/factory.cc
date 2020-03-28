@@ -61,9 +61,9 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
 }
 
 std::unique_ptr<TimeManager> MakeTimeManager() {
-  const int64_t move_overhead = options.Get<int>(kMoveOverheadId.GetId());
+  const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
   const std::string time_manager_config =
-      options.Get<std::string>(kTimeManagerId.GetId());
+      options.Get<std::string>(kTimeManagerId);
   const auto managers = options.ListSubdicts();
 
   if (managers.size() != 1) {
