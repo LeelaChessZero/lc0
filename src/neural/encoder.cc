@@ -29,12 +29,146 @@
 
 #include <algorithm>
 
+#if not defined(NO_PEXT)
+// Include header for pext instruction.
+#include <immintrin.h>
+#endif
+
 namespace lczero {
 
 namespace {
 const int kMoveHistory = 8;
 const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
+uint64_t ReverseBitsInBytes(uint64_t v) {
+  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
+  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
+  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
+  return v;
+}
+uint64_t ReverseBytesInBytes(uint64_t v) {
+  v = (v & 0x00000000FFFFFFFF) << 32 | (v & 0xFFFFFFFF00000000) >> 32;
+  v = (v & 0x0000FFFF0000FFFF) << 16 | (v & 0xFFFF0000FFFF0000) >> 16;
+  v = (v & 0x00FF00FF00FF00FF) << 8 | (v & 0xFF00FF00FF00FF00) >> 8;
+  return v;
+}
+// Transpose across the diagonal connecting H1 to to A8.
+uint64_t TransposeBitsInBytes(uint64_t v) {
+#if defined(NO_PEXT)
+  uint64_t r = 0;
+  for (int i = 0; i < 8; i++) {
+    for (int j = 0; j < 8; j++) {
+      int dest_bit = i * 8 + j;
+      int source_bit = 63 - (j * 8 + i);
+      r |= (v & (1LL << source_bit)) << (dest_bit - source_bit);
+    }
+  }
+#else
+  r |= _pext_u64(v, 0x0101010101010101LL) << 56;
+  r |= _pext_u64(v, 0x0202020202020202LL) << 48;
+  r |= _pext_u64(v, 0x0404040404040404LL) << 40;
+  r |= _pext_u64(v, 0x0808080808080808LL) << 32;
+  r |= _pext_u64(v, 0x1010101010101010LL) << 24;
+  r |= _pext_u64(v, 0x2020202020202020LL) << 16;
+  r |= _pext_u64(v, 0x4040404040404040LL) << 8;
+  r |= _pext_u64(v, 0x8080808080808080LL);
+  // pext has high row as high col, but we want high row to end up in low col so
+  // reverse the bits in bytes.
+  r = ReverseBitsInBytes(r);
+#endif
+  return r;
+}
+
+int CompareTransposing(uint64_t value, int initial_transform) {
+  if ((initial_transform & 1) != 0) {
+    value = ReverseBitsInBytes(value);
+  }
+  if ((initial_transform & 2) != 0) {
+    value = ReverseBytesInBytes(value);
+  }
+  auto alternative = TransposeBitsInBytes(value);
+  if (value < alternative) return -1;
+  if (value > alternative) return 1;
+  return 0;
+}
+
+int ChooseTransform(const ChessBoard& board) {
+  auto our_king = (board.kings() & board.ours()).as_int();
+  int transform = 0;
+  if ((our_king & 0x7777777777777777LL) != 0) {
+    transform |= 1;
+    our_king = ReverseBitsInBytes(our_king);
+  }
+  // If there are any pawns or castling options only horizontal flip is valid.
+  if (board.pawns().as_int() != 0 || !board.castlings().no_legal_castle()) {
+    return transform;
+  }
+  if ((our_king & 0xFFFFFFFF00000000LL) != 0) {
+    transform |= 2;
+    our_king = ReverseBytesInBytes(our_king);
+  }
+  // Our king is now always in bottom right quadrant.
+  // Transpose for king in top right triangle, or if on diagonal whichever has
+  // the smaller integer value for each test scenario.
+  if ((our_king & 0xE0C08000LL) != 0) {
+    transform |= 4;
+  } else if ((our_king & 0x10204080LL) != 0) {
+    auto outcome =
+        CompareTransposing((board.ours() | board.theirs()).as_int(), transform);
+    if (outcome == -1) {
+      return transform;
+    }
+    if (outcome == 1) {
+      return transform | 4;
+    }
+    outcome = CompareTransposing(board.ours().as_int(), transform);
+    if (outcome == -1) {
+      return transform;
+    }
+    if (outcome == 1) {
+      return transform | 4;
+    }
+    outcome = CompareTransposing(board.kings().as_int(), transform);
+    if (outcome == -1) {
+      return transform;
+    }
+    if (outcome == 1) {
+      return transform | 4;
+    }
+    outcome = CompareTransposing(board.queens().as_int(), transform);
+    if (outcome == -1) {
+      return transform;
+    }
+    if (outcome == 1) {
+      return transform | 4;
+    }
+    outcome = CompareTransposing(board.rooks().as_int(), transform);
+    if (outcome == -1) {
+      return transform;
+    }
+    if (outcome == 1) {
+      return transform | 4;
+    }
+    outcome = CompareTransposing(board.knights().as_int(), transform);
+    if (outcome == -1) {
+      return transform;
+    }
+    if (outcome == 1) {
+      return transform | 4;
+    }
+    outcome = CompareTransposing(board.bishops().as_int(), transform);
+    if (outcome == -1) {
+      return transform;
+    }
+    if (outcome == 1) {
+      return transform | 4;
+    }
+    // If all piece types are symmetrical and ours is symmetrical and
+    // ours+theirs is symmetrical, everything is symmetrical, so transpose is a
+    // no-op.
+  }
+  return transform;
+}
 }  // namespace
 
 InputPlanes EncodePositionForNN(
@@ -43,9 +177,19 @@ InputPlanes EncodePositionForNN(
     FillEmptyHistory fill_empty_history) {
   InputPlanes result(kAuxPlaneBase + 8);
 
+  int transform = 0;
+  // Canonicalization format needs to stop early to avoid applying transform in history across incompatible transitions.  It is also more canonical since history before these points is not relevant to the final result.
+  bool stop_early =
+      input_format == pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION;
+  // When stopping early, we want to know if castlings has changed, so capture it for the first board.
+  ChessBoard::Castlings castlings;
   {
     const ChessBoard& board = history.Last().GetBoard();
     const bool we_are_black = board.flipped();
+    if (input_format ==
+        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+      transform = ChooseTransform(board);
+    }
     switch (input_format) {
       case pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE: {
         // "Legacy" input planes with:
@@ -62,8 +206,10 @@ InputPlanes EncodePositionForNN(
         break;
       }
 
-      case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE: {
-        // - Plane 104 for positions of rooks (both white and black) which have
+      case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE:
+      case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION: {
+          // - Plane 104 for positions of rooks (both white and black) which
+          // have
         // a-side (queenside) castling right.
         // - Plane 105 for positions of rooks (both white and black) which have
         // h-side (kingside) castling right.
@@ -78,18 +224,24 @@ InputPlanes EncodePositionForNN(
             << cast.kingside_rook();
         break;
       }
-
       default:
         throw Exception("Unsupported input plane encoding " +
                         std::to_string(input_format));
     };
-    if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
+    if (input_format ==
+        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+      result[kAuxPlaneBase + 4].mask = board.en_passant().as_int();
+    } else {
+      if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
+    }
     result[kAuxPlaneBase + 5].Fill(history.Last().GetNoCaptureNoPawnPly());
     // Plane kAuxPlaneBase + 6 used to be movecount plane, now it's all zeros.
     // Plane kAuxPlaneBase + 7 is all ones to help NN find board edges.
     result[kAuxPlaneBase + 7].SetAll();
+    if (stop_early) {
+      castlings = board.castlings();
+    }
   }
-
   bool flip = false;
   int history_idx = history.GetLength() - 1;
   for (int i = 0; i < std::min(history_planes, kMoveHistory);
@@ -98,6 +250,13 @@ InputPlanes EncodePositionForNN(
         history.GetPositionAt(history_idx < 0 ? 0 : history_idx);
     const ChessBoard& board =
         flip ? position.GetThemBoard() : position.GetBoard();
+    // Castling changes can't be repeated, so we can stop early.
+    if (stop_early && board.castlings().as_int() != castlings.as_int()) break;
+    // Enpassants can't be repeated, but we do need to always send the current position.
+    if (stop_early && history_idx != history.GetLength() - 1 &&
+        !board.en_passant().empty()) {
+      break;
+    }
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
     // Board may be flipped so compare with position.GetBoard().
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
@@ -136,6 +295,29 @@ InputPlanes EncodePositionForNN(
       }
     }
     if (history_idx > 0) flip = !flip;
+    // If no capture no pawn is 0, the previous was start of game, capture or pawn push, so no need to go back further if stopping early.
+    if (stop_early && position.GetNoCaptureNoPawnPly() == 0) break;
+  }
+  if (transform != 0) {
+    // Transform all masks.
+    for (int i = 0; i <= kAuxPlaneBase + 4; i++) {
+      auto v = result[i].mask;
+      if (v == 0 || v == ~0ULL) continue;
+      if ((transform & 1) != 0) {
+        v = ReverseBitsInBytes(v);
+      }
+      if ((transform & 2) != 0) {
+        v = ReverseBytesInBytes(v);
+      }
+      if ((transform & 4) != 0) {
+        v = TransposeBitsInBytes(v);
+      }
+      result[i].mask = v;
+    }
+    // TODO: is this the right thing to do?
+    if ((transform & 1) != 0) {
+      std::swap(result[kAuxPlaneBase + 0].mask, result[kAuxPlaneBase + 1].mask);
+    }
   }
 
   return result;
