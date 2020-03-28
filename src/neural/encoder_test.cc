@@ -32,7 +32,7 @@ TEST(EncodePositionForNN, EncodeStartPosition) {
 
   InputPlanes encoded_planes =
       EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                          history, 8, FillEmptyHistory::NO);
+                          history, 8, FillEmptyHistory::NO, nullptr);
 
   InputPlane our_pawns_plane = encoded_planes[0];
   auto our_pawns_mask = 0ull;
@@ -108,7 +108,7 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
 
   InputPlanes encoded_planes =
       EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                          history, 8, FillEmptyHistory::NO);
+                          history, 8, FillEmptyHistory::NO, nullptr);
 
   InputPlane we_are_black_plane = encoded_planes[13 * 8 + 4];
   EXPECT_EQ(we_are_black_plane.mask, kAllSquaresMask);
@@ -123,7 +123,7 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
 
   encoded_planes =
       EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-                          history, 8, FillEmptyHistory::NO);
+                          history, 8, FillEmptyHistory::NO, nullptr);
 
   we_are_black_plane = encoded_planes[13 * 8 + 4];
   EXPECT_EQ(we_are_black_plane.mask, 0ull);
