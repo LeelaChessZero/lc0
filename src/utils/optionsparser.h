@@ -167,6 +167,7 @@ class IntOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
+  int ValidateIntString(const std::string& val) const;
   
   int min_;
   int max_;
@@ -188,7 +189,7 @@ class FloatOption : public OptionsParser::Option {
                                  OptionsDict* dict) override;
 
   ValueType GetVal(const OptionsDict&) const;
-  void SetVal(OptionsDict* dict, const ValueType& val) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;  
 
   float min_;
   float max_;
