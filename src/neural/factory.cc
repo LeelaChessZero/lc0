@@ -26,9 +26,10 @@
 */
 
 #include "neural/factory.h"
-#include "neural/loader.h"
 
 #include <algorithm>
+
+#include "neural/loader.h"
 #include "utils/commandline.h"
 #include "utils/logging.h"
 
@@ -98,9 +99,9 @@ std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
 
 NetworkFactory::BackendConfiguration::BackendConfiguration(
     const OptionsDict& options)
-    : weights_path(options.Get<std::string>(kWeightsId.GetId())),
-      backend(options.Get<std::string>(kBackendId.GetId())),
-      backend_options(options.Get<std::string>(kBackendOptionsId.GetId())) {}
+    : weights_path(options.Get<std::string>(kWeightsId)),
+      backend(options.Get<std::string>(kBackendId)),
+      backend_options(options.Get<std::string>(kBackendOptionsId)) {}
 
 bool NetworkFactory::BackendConfiguration::operator==(
     const BackendConfiguration& other) const {
@@ -110,10 +111,10 @@ bool NetworkFactory::BackendConfiguration::operator==(
 
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
-  std::string net_path = options.Get<std::string>(kWeightsId.GetId());
-  const std::string backend = options.Get<std::string>(kBackendId.GetId());
+  std::string net_path = options.Get<std::string>(kWeightsId);
+  const std::string backend = options.Get<std::string>(kBackendId);
   const std::string backend_options =
-      options.Get<std::string>(kBackendOptionsId.GetId());
+      options.Get<std::string>(kBackendOptionsId);
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();

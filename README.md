@@ -168,6 +168,7 @@ cd ..
 
 ```
 pip3 install meson
+pip3 install ninja
 ```
 
 3. Install clang

@@ -49,6 +49,8 @@ const char* ChessBoard::kStartposFen =
 
 const ChessBoard ChessBoard::kStartposBoard(ChessBoard::kStartposFen);
 
+const BitBoard ChessBoard::kPawnMask = 0x00FFFFFFFFFFFF00ULL;
+
 void ChessBoard::Clear() {
   std::memset(reinterpret_cast<void*>(this), 0, sizeof(ChessBoard));
 }
@@ -68,8 +70,6 @@ void ChessBoard::Mirror() {
 }
 
 namespace {
-static const BitBoard kPawnMask = 0x00FFFFFFFFFFFF00ULL;
-
 static const std::pair<int, int> kKingMoves[] = {
     {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
 
@@ -426,10 +426,6 @@ void InitializeMagicBitboards() {
   BuildAttacksTable(bishop_magic_params, bishop_attacks_table,
                     kBishopDirections);
 }
-
-BitBoard ChessBoard::pawns() const { return pawns_ & kPawnMask; }
-
-BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
@@ -1113,7 +1109,7 @@ bool ChessBoard::HasMatingMaterial() const {
     // K v K, K+B v K, K+N v K.
     return false;
   }
-  if (!our_knights().empty() || !their_knights().empty()) {
+  if (!(knights().empty())) {
     return true;
   }
 
