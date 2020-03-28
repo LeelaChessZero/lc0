@@ -492,7 +492,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
     PopulateRootMoveLimit(&root_limit);
   }
   // Assume this function is only ever called with root or immediate child of
-  // root.
+  // root to avoid traversing to get depth.
+  assert(parent == root_node_ || parent->GetParent() == root_node_);
   const bool is_odd_depth = parent != root_node_;
   const float draw_score = GetDrawScore(is_odd_depth);
   // Best child is selected using the following criteria:
