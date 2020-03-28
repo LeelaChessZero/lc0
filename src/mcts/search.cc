@@ -1146,11 +1146,18 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
                                         int* transform_out) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
-  // TODO: cache hits need to know the transform as well.
   if (add_if_cached) {
-    if (computation_->AddInputByHash(hash)) return true;
+    if (computation_->AddInputByHash(hash)) {
+      *transform_out = TransformForPosition(
+          search_->network_->GetCapabilities().input_format, history_);
+      return true;
+    }
   } else {
-    if (search_->cache_->ContainsKey(hash)) return true;
+    if (search_->cache_->ContainsKey(hash)) {
+      *transform_out = TransformForPosition(
+          search_->network_->GetCapabilities().input_format, history_);
+      return true;
+    }
   }
   auto planes =
       EncodePositionForNN(search_->network_->GetCapabilities().input_format,

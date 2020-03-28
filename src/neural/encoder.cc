@@ -155,6 +155,16 @@ int ChooseTransform(const ChessBoard& board) {
 }
 }  // namespace
 
+int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format, const PositionHistory& history) {
+  if (input_format !=
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    return 0;
+  }
+  const ChessBoard& board = history.Last().GetBoard();
+  return ChooseTransform(board);
+}
+
+
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, int history_planes,
