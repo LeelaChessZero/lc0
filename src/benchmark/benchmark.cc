@@ -62,13 +62,13 @@ void Benchmark::Run() {
     auto network = NetworkFactory::LoadNetwork(option_dict);
 
     NodeTree tree;
-    tree.ResetToPosition(option_dict.Get<std::string>(kFenId.GetId()), {});
+    tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
 
     NNCache cache;
-    cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId.GetId()));
+    cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId));
 
-    int visits = option_dict.Get<int>(kNodesId.GetId());
-    const int movetime = option_dict.Get<int>(kMovetimeId.GetId());
+    int visits = option_dict.Get<int>(kNodesId);
+    const int movetime = option_dict.Get<int>(kMovetimeId);
 
     auto stopper = std::make_unique<ChainedSearchStopper>();
     if (movetime > -1) {
@@ -87,7 +87,7 @@ void Benchmark::Run() {
         MoveList(), start, std::move(stopper), false, option_dict, &cache,
         nullptr);
 
-    search->StartThreads(option_dict.Get<int>(kThreadsOptionId.GetId()));
+    search->StartThreads(option_dict.Get<int>(kThreadsOptionId));
 
     search->Wait();
 

@@ -308,62 +308,52 @@ void SearchParams::Populate(OptionsParser* options) {
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
-      kLogitQ(options.Get<bool>(kLogitQId.GetId())),
-      kCpuct(options.Get<float>(kCpuctId.GetId())),
-      kCpuctAtRoot(
-          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
-                                 ? kCpuctAtRootId.GetId()
-                                 : kCpuctId.GetId())),
-      kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
-      kCpuctBaseAtRoot(
-          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
-                                 ? kCpuctBaseAtRootId.GetId()
-                                 : kCpuctBaseId.GetId())),
-      kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
-      kCpuctFactorAtRoot(
-          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
-                                 ? kCpuctFactorAtRootId.GetId()
-                                 : kCpuctFactorId.GetId())),
-      kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId.GetId())),
-      kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
-      kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
-                   "absolute"),
-      kFpuValue(options.Get<float>(kFpuValueId.GetId())),
+      kLogitQ(options.Get<bool>(kLogitQId)),
+      kCpuct(options.Get<float>(kCpuctId)),
+      kCpuctAtRoot(options.Get<float>(
+          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
+                                                      : kCpuctId)),
+      kCpuctBase(options.Get<float>(kCpuctBaseId)),
+      kCpuctBaseAtRoot(options.Get<float>(
+          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctBaseAtRootId
+                                                      : kCpuctBaseId)),
+      kCpuctFactor(options.Get<float>(kCpuctFactorId)),
+      kCpuctFactorAtRoot(options.Get<float>(
+          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
+                                                      : kCpuctFactorId)),
+      kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId)),
+      kNoiseAlpha(options.Get<float>(kNoiseAlphaId)),
+      kFpuAbsolute(options.Get<std::string>(kFpuStrategyId) == "absolute"),
+      kFpuValue(options.Get<float>(kFpuValueId)),
       kFpuAbsoluteAtRoot(
-          (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
+          (options.Get<std::string>(kFpuStrategyAtRootId) == "same" &&
            kFpuAbsolute) ||
-          options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "absolute"),
-      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId.GetId()) ==
-                              "same"
+          options.Get<std::string>(kFpuStrategyAtRootId) == "absolute"),
+      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId) == "same"
                           ? kFpuValue
-                          : options.Get<float>(kFpuValueAtRootId.GetId())),
-      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
-      kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
-      kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
-      kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
-      kStickyEndgames(options.Get<bool>(kStickyEndgamesId.GetId())),
-      kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
-      kHistoryFill(
-          EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
-      kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId.GetId())),
-      kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId.GetId())),
-      kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId.GetId())),
-      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
-      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())),
-      kMaxConcurrentSearchers(
-          options.Get<int>(kMaxConcurrentSearchersId.GetId())),
-      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId.GetId()) /
-                           100.0f},
-      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId.GetId()) /
-                         100.0f},
-      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
-      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f},
+                          : options.Get<float>(kFpuValueAtRootId)),
+      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId)),
+      kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId)),
+      kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId)),
+      kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId)),
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId)),
+      kStickyEndgames(options.Get<bool>(kStickyEndgamesId)),
+      kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId)),
+      kHistoryFill(EncodeHistoryFill(options.Get<std::string>(kHistoryFillId))),
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId)),
+      kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId)),
+      kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId)),
+      kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId)),
+      kShortSightedness(options.Get<float>(kShortSightednessId)),
+      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
+      kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
+      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
+      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
+      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
+      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
       kMaxOutOfOrderEvals(std::max(
-          1,
-          static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId.GetId()) *
-                           options.Get<int>(kMiniBatchSizeId.GetId())))) {
+          1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
+                              options.Get<int>(kMiniBatchSizeId)))) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
