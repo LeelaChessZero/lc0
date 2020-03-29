@@ -803,6 +803,9 @@ void SearchWorker::ExecuteOneIteration() {
   // 2. Gather minibatch.
   GatherMinibatch();
 
+  // 2b. Remove any excess collisions.
+  ClearExcessCollisions();
+
   // 3. Prefetch into cache.
   MaybePrefetchIntoCache();
 
@@ -907,6 +910,14 @@ void SearchWorker::GatherMinibatch() {
     }
     // Check for stop at the end so we have at least one node.
     if (search_->stop_.load(std::memory_order_acquire)) return;
+  }
+}
+
+void SearchWorker::ClearExcessCollisions() {
+  while (!minibatch_.empty() && minibatch_.back().IsCollision()) {
+    SharedMutex::Lock lock(search_->nodes_mutex_);
+    DoBackupUpdateSingleNode(minibatch_.back());
+    minibatch_.pop_back();
   }
 }
 

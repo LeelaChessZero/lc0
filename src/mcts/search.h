@@ -240,6 +240,9 @@ class SearchWorker {
   // 2. Gather minibatch.
   void GatherMinibatch();
 
+  // 2b. Ensure we don't have any excess collisions in the batch.
+  void ClearExcessCollisions();
+
   // 3. Prefetch into cache.
   void MaybePrefetchIntoCache();
 
