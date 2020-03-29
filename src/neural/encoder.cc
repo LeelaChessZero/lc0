@@ -35,28 +35,6 @@ namespace {
 const int kMoveHistory = 8;
 const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
-uint64_t ReverseBitsInBytes(uint64_t v) {
-  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
-  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
-  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
-  return v;
-}
-uint64_t ReverseBytesInBytes(uint64_t v) {
-  v = (v & 0x00000000FFFFFFFF) << 32 | (v & 0xFFFFFFFF00000000) >> 32;
-  v = (v & 0x0000FFFF0000FFFF) << 16 | (v & 0xFFFF0000FFFF0000) >> 16;
-  v = (v & 0x00FF00FF00FF00FF) << 8 | (v & 0xFF00FF00FF00FF00) >> 8;
-  return v;
-}
-// Transpose across the diagonal connecting H1 to to A8.
-uint64_t TransposeBitsInBytes(uint64_t v) {
-  v = (v & 0xAA00AA00AA00AA00ULL) >> 9 | (v & 0x0055005500550055ULL) << 9 |
-      (v & 0x55AA55AA55AA55AAULL);
-  v = (v & 0xCCCC0000CCCC0000ULL) >> 18 | (v & 0x0000333300003333ULL) << 18 |
-      (v & 0x3333CCCC3333CCCCULL);
-  v = (v & 0xF0F0F0F000000000ULL) >> 36 | (v & 0x000000000F0F0F0FULL) << 36 |
-      (v & 0x0F0F0F0FF0F0F0F0ULL);
-  return v;
-}
 
 int CompareTransposing(uint64_t value, int initial_transform) {
   if ((initial_transform & 1) != 0) {

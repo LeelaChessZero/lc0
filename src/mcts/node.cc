@@ -319,16 +319,6 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   child_ = std::move(saved_node);
 }
 
-namespace {
-// Reverse bits in every byte of a number
-uint64_t ReverseBitsInBytes(uint64_t v) {
-  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
-  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
-  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
-  return v;
-}
-}  // namespace
-
 V5TrainingData Node::GetV5TrainingData(
     GameResult game_result, const PositionHistory& history,
     FillEmptyHistory fill_empty_history,

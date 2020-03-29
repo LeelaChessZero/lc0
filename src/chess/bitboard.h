@@ -166,12 +166,7 @@ class BitBoard {
 
   // Flips black and white side of a board.
   void Mirror() {
-    board_ = (board_ & 0x00000000FFFFFFFF) << 32 |
-             (board_ & 0xFFFFFFFF00000000) >> 32;
-    board_ = (board_ & 0x0000FFFF0000FFFF) << 16 |
-             (board_ & 0xFFFF0000FFFF0000) >> 16;
-    board_ =
-        (board_ & 0x00FF00FF00FF00FF) << 8 | (board_ & 0xFF00FF00FF00FF00) >> 8;
+    board_ = ReverseBytesInBytes(board_);
   }
 
   bool operator==(const BitBoard& other) const {
