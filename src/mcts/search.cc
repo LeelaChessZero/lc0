@@ -97,7 +97,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   const auto max_pv = params_.GetMultiPv();
-  const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv);
+  const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
   const auto per_pv_counters = params_.GetPerPvCounters();
   const auto display_cache_usage = params_.GetDisplayCacheUsage();
@@ -164,10 +164,12 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     if (max_pv > 1) uci_info.multipv = multipv;
     if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
+    int depth = 0;
     for (auto iter = edge; iter;
-         iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
+         iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
       uci_info.pv.push_back(iter.GetMove(flip));
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+      depth += 1;
     }
   }
 
@@ -410,7 +412,7 @@ Search::BestEval Search::GetBestEval() const {
   float parent_d = root_node_->GetD();
   float parent_m = root_node_->GetM();
   if (!root_node_->HasChildren()) return {parent_wl, parent_d, parent_m};
-  EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
+  EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
   return {best_edge.GetWL(parent_wl), best_edge.GetD(parent_d),
           best_edge.GetM(parent_m - 1) + 1};
 }
@@ -477,24 +479,22 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   }
 
   final_bestmove_ = temperature ? GetBestRootChildWithTemperature(temperature)
-                                : GetBestChildNoTemperature(root_node_);
+                                : GetBestChildNoTemperature(root_node_, 0);
 
   if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
-    final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node());
+    final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node(), 1);
   }
 }
 
 // Returns @count children with most visits.
 std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
-                                                              int count) const {
+                                                              int count,
+                                                              int depth) const {
   MoveList root_limit;
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
   }
-  // Assume this function is only ever called with root or immediate child of
-  // root to avoid traversing to get depth.
-  assert(parent == root_node_ || parent->GetParent() == root_node_);
-  const bool is_odd_depth = parent != root_node_;
+  const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
@@ -585,8 +585,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 }
 
 // Returns a child with most visits.
-EdgeAndNode Search::GetBestChildNoTemperature(Node* parent) const {
-  auto res = GetBestChildrenNoTemperature(parent, 1);
+EdgeAndNode Search::GetBestChildNoTemperature(Node* parent, int depth) const {
+  auto res = GetBestChildrenNoTemperature(parent, 1, depth);
   return res.empty() ? EdgeAndNode() : res.front();
 }
 
@@ -618,7 +618,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   }
 
   // No move had enough visits for temperature, so use default child criteria
-  if (max_n <= 0.0f) return GetBestChildNoTemperature(root_node_);
+  if (max_n <= 0.0f) return GetBestChildNoTemperature(root_node_, 0);
 
   // TODO(crem) Simplify this code when samplers.h is merged.
   const float min_eval =
@@ -1462,7 +1462,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (p == search_->root_node_ &&
         search_->current_best_edge_.GetN() <= n->GetN()) {
       search_->current_best_edge_ =
-          search_->GetBestChildNoTemperature(search_->root_node_);
+          search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
