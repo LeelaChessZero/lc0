@@ -126,7 +126,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<std::string>(NetworkFactory::kBackendId, "multiplexing");
   defaults->Set<bool>(SearchParams::kStickyEndgamesId, false);
   defaults->Set<bool>(SearchParams::kLogitQId, false);
-  defaults->Set<bool>(SearchParams::kRootHasOwnCpuctParamsId, false);
 }
 
 SelfPlayTournament::SelfPlayTournament(

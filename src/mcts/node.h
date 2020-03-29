@@ -358,9 +358,11 @@ class EdgeAndNode {
                         : node_->GetQ(draw_score))
                : default_q;
   }
-  float GetWL() const { return node_ ? node_->GetWL() : 0.0f; }
-  float GetD() const {
-    return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
+  float GetWL(float default_wl) const {
+    return node_ ? node_->GetWL() : default_wl;
+  }
+  float GetD(float default_d) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetD() : default_d;
   }
   float GetM(float default_m) const {
     return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
@@ -387,17 +389,18 @@ class EdgeAndNode {
     return numerator * GetP() / (1 + GetNStarted());
   }
 
-  int GetVisitsToReachU(float target_score, float numerator, float default_q,
-                        float draw_score, bool logit_q) const {
-    const auto q = GetQ(default_q, draw_score, logit_q);
-    if (q >= target_score) return std::numeric_limits<int>::max();
+  int GetVisitsToReachU(float target_score, float numerator,
+                        float score_without_u) const {
+    if (score_without_u >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
 
     // Ignore the policyTempDecay here.
-    return std::max(
-        1.0f,
-        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
-                 1e9f));
+    return std::max(1.0f,
+                    std::min(std::floor(GetP() * numerator /
+                                            (target_score - score_without_u) -
+                                        n1) +
+                                 1,
+                             1e9f));
   }
 
   std::string DebugString() const;
