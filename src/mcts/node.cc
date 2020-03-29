@@ -245,8 +245,9 @@ void Node::MakeNotTerminal() {
       if (n > 0) {
         n_ += n;
         // Flip Q for opponent.
-        wl_ += -child.GetWL() * n;
-        d_ += child.GetD() * n;
+        // Default values don't matter as n is > 0.
+        wl_ += -child.GetWL(0.0f) * n;
+        d_ += child.GetD(0.0f) * n;
       }
     }
 
