@@ -57,7 +57,7 @@ int ChooseTransform(const ChessBoard& board) {
   }
   auto our_king = (board.kings() & board.ours()).as_int();
   int transform = 0;
-  if ((our_king & 0x7777777777777777LL) != 0) {
+  if ((our_king & 0x0F0F0F0F0F0F0F0FULL) != 0) {
     transform |= 1;
     our_king = ReverseBitsInBytes(our_king);
   }
@@ -65,16 +65,16 @@ int ChooseTransform(const ChessBoard& board) {
   if (board.pawns().as_int() != 0) {
     return transform;
   }
-  if ((our_king & 0xFFFFFFFF00000000LL) != 0) {
+  if ((our_king & 0xFFFFFFFF00000000ULL) != 0) {
     transform |= 2;
     our_king = ReverseBytesInBytes(our_king);
   }
   // Our king is now always in bottom right quadrant.
   // Transpose for king in top right triangle, or if on diagonal whichever has
   // the smaller integer value for each test scenario.
-  if ((our_king & 0xE0C08000LL) != 0) {
+  if ((our_king & 0xE0C08000ULL) != 0) {
     transform |= 4;
-  } else if ((our_king & 0x10204080LL) != 0) {
+  } else if ((our_king & 0x10204080ULL) != 0) {
     auto outcome =
         CompareTransposing((board.ours() | board.theirs()).as_int(), transform);
     if (outcome == -1) {

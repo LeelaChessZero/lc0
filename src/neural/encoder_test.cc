@@ -396,6 +396,117 @@ TEST(EncodePositionForNN, EncodeEndGameFormat3) {
   EXPECT_EQ(their_king_plane.value, 1.0f);
 }
 
+TEST(EncodePositionForNN, EncodeEnpassantFormat3) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen(ChessBoard::kStartposFen);
+  history.Reset(board, 0, 1);
+  // Move to en passant.
+  history.Append(Move("e2e4", false));
+  history.Append(Move("g2g3", false));
+  history.Append(Move("e4e5", false));
+  history.Append(Move("f2f4", false));
+
+  InputPlanes encoded_planes = EncodePositionForNN(
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
+      FillEmptyHistory::NO, nullptr);
+
+  InputPlane enpassant_plane = encoded_planes[13 * 8 + 4];
+  EXPECT_EQ(enpassant_plane.mask, 1ull << 61);
+
+  // Pawn move, no history.
+  for (int i = 0; i < 7; i++) {
+    for (int j = 0; j < 13; j++) {
+      InputPlane zeroed_history = encoded_planes[13 + i * 13 + j];
+      EXPECT_EQ(zeroed_history.mask, 0ull);
+    }
+  }
+
+  // Boring move.
+  history.Append(Move("g1f3", false));
+
+  encoded_planes = EncodePositionForNN(
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
+      FillEmptyHistory::NO, nullptr);
+
+  // No more en passant bit.
+  enpassant_plane = encoded_planes[13 * 8 + 4];
+  EXPECT_EQ(enpassant_plane.mask, 0ull);
+
+  // Previous was en passant, no history.
+  for (int i = 0; i < 7; i++) {
+    for (int j = 0; j < 13; j++) {
+      InputPlane zeroed_history = encoded_planes[13 + i * 13 + j];
+      EXPECT_EQ(zeroed_history.mask, 0ull);
+    }
+  }
+
+  // Another boring move.
+  history.Append(Move("g1f3", false));
+
+  encoded_planes = EncodePositionForNN(
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
+      FillEmptyHistory::NO, nullptr);
+
+  // Should be one plane of history.
+  for (int i = 0; i < 7; i++) {
+    for (int j = 0; j < 13; j++) {
+      InputPlane zeroed_history = encoded_planes[13 + i * 13 + j];
+      // 13th plane of first layer is repeats and there are none, so it should
+      // be empty.
+      if (i == 0 && j < 12) {
+        EXPECT_NE(zeroed_history.mask, 0ull);
+      } else {
+        EXPECT_EQ(zeroed_history.mask, 0ull);
+      }
+    }
+  }
+}
+
+TEST(EncodePositionForNN, EncodeEarlyGameFlipFormat3) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen(ChessBoard::kStartposFen);
+  history.Reset(board, 0, 1);
+  // Move to break castling and king offside.
+  history.Append(Move("e2e4", false));
+  history.Append(Move("e2e4", false));
+  history.Append(Move("e1e2", false));
+  history.Append(Move("e1e2", false));
+  history.Append(Move("e2d3", false));
+  // Their king offside, but not ours.
+
+  int transform;
+  InputPlanes encoded_planes = EncodePositionForNN(
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
+      FillEmptyHistory::NO, &transform);
+
+  EXPECT_EQ(transform, 0);
+
+  InputPlane our_king_plane = encoded_planes[5];
+  EXPECT_EQ(our_king_plane.mask, 1ull << 12);
+  EXPECT_EQ(our_king_plane.value, 1.0f);
+  InputPlane their_king_plane = encoded_planes[11];
+  EXPECT_EQ(their_king_plane.mask, 1ull << 43);
+  EXPECT_EQ(their_king_plane.value, 1.0f);
+
+  history.Append(Move("e2e3", false));
+
+  // Our king offside, but theirs is not.
+  encoded_planes = EncodePositionForNN(
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
+      FillEmptyHistory::NO, &transform);
+
+  EXPECT_EQ(transform, 1);
+
+  our_king_plane = encoded_planes[5];
+  EXPECT_EQ(our_king_plane.mask, 1ull << 20);
+  EXPECT_EQ(our_king_plane.value, 1.0f);
+  their_king_plane = encoded_planes[11];
+  EXPECT_EQ(their_king_plane.mask, 1ull << 43);
+  EXPECT_EQ(their_king_plane.value, 1.0f);
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
