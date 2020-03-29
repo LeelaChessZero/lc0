@@ -189,7 +189,7 @@ class FloatOption : public OptionsParser::Option {
                                  OptionsDict* dict) override;
 
   ValueType GetVal(const OptionsDict&) const;
-  void SetVal(OptionsDict* dict, const ValueType& val) const;  
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
 
   float min_;
   float max_;

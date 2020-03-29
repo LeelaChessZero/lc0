@@ -466,7 +466,7 @@ int IntOption::ValidateIntString(const std::string& val) const {
   auto [ptr, err] = std::from_chars(val.data(), end, result);  
   if (err == std::errc::invalid_argument) {
     throw Exception("Flag '--" + GetLongFlag() + "' has an invalid format.");
-  } else if(err == std::errc::result_out_of_range) {
+  } else if (err == std::errc::result_out_of_range) {
     throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
   } else if (ptr != end) {
     throw Exception("Flag '--" + GetLongFlag() + "' has trailing characters.");
