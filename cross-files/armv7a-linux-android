@@ -1,18 +1,9 @@
 
-# Tested with Android NDK r18, standalone toolchain
+# Tested with Android NDK r19c, default toolchain
 # Targeting API level 21
-#
-# When targeting API levels < 24 the build fails unless _FILE_OFFSET_BITS is unset.
-# Meson passes _FILE_OFFSET_BITS=64 but recent NDK toolchains have issues building
-# for 32-bit ABIs when such macro it set. Relevant links:
-#  https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md
-#  https://github.com/mesonbuild/meson/pull/2996#issuecomment-384045808
-#
-# First create the standalone toolchain:
-# ./make_standalone_toolchain.py --arch arm --api 21 --stl libc++ --install-dir android-standalone-32
-#
-# Then set the toolchain path on your environment:
-# export PATH="$HOME/.local/share/android-sdk/android-toolchains/android-standalone-32/bin:$PATH"
+
+# Set the toolchain path on your environment
+# export PATH="$HOME/.local/share/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
 
 [host_machine]
 system = 'android'
@@ -25,8 +16,8 @@ cpp_args = ['-U_FILE_OFFSET_BITS']
 cpp_link_args = ['-llog', '-static-libstdc++']
 
 [binaries]
-c = 'arm-linux-androideabi-clang'
-cpp = 'arm-linux-androideabi-clang++'
+c = 'armv7a-linux-androideabi21-clang'
+cpp = 'armv7a-linux-androideabi-clang++'
 ar = 'arm-linux-androideabi-ar'
 strip = 'arm-linux-androideabi-strip'
 ld = 'arm-linux-androideabi-ld'
