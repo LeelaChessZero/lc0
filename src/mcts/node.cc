@@ -376,8 +376,7 @@ V5TrainingData Node::GetV5TrainingData(
   // Other params.
   if (input_format ==
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
-    // TODO: check if a shift is needed or just mask.
-    result.side_to_move = position.GetBoard().en_passant().as_int() & 0xFF;
+    result.side_to_move = position.GetBoard().en_passant().as_int() >> 56;
     if ((transform & 1) != 0) {
       result.side_to_move = ReverseBitsInBytes(result.side_to_move);
     }
