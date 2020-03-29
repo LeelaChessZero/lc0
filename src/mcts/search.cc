@@ -996,6 +996,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     const float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
+    float best_without_u = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
     // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
     // the weirdness.
@@ -1044,6 +1045,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         second_best = best;
         second_best_edge = best_edge;
         best = score;
+        best_without_u = Q + M;
         best_edge = child;
       } else if (score > second_best) {
         second_best = score;
@@ -1052,8 +1054,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
 
     if (second_best_edge) {
-      int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
-          second_best, puct_mult, fpu, draw_score, params_.GetLogitQ());
+      int estimated_visits_to_change_best =
+          best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u);
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
