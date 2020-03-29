@@ -334,8 +334,7 @@ uint16_t Move::as_packed_int() const {
   }
 }
 
-uint16_t Move::as_nn_index(int transform) const
-{
+uint16_t Move::as_nn_index(int transform) const {
   if (transform == 0) {
     return kMoveToIdx[as_packed_int()];
   }
