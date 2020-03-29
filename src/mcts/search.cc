@@ -996,8 +996,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     const float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
     float best = std::numeric_limits<float>::lowest();
+    float best_without_u = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
-    float best_without_u = 0.0f;
     // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
     // the weirdness.
     const float draw_score =
