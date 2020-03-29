@@ -97,7 +97,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   const auto max_pv = params_.GetMultiPv();
-  const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv);
+  const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
   const auto per_pv_counters = params_.GetPerPvCounters();
   const auto display_cache_usage = params_.GetDisplayCacheUsage();
@@ -488,7 +488,8 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 
 // Returns @count children with most visits.
 std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
-                                                              int count, int depth) const {
+                                                              int count,
+                                                              int depth) const {
   MoveList root_limit;
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
