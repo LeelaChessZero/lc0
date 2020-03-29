@@ -354,6 +354,48 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounterFormat3) {
   EXPECT_EQ(fifty_move_counter_plane.value, 2.0f);
 }
 
+TEST(EncodePositionForNN, EncodeEndGameFormat1) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen("3r4/4k3/8/1K6/8/8/8/8 w - - 0 1");
+  history.Reset(board, 0, 1);
+
+  int transform;
+  InputPlanes encoded_planes =
+      EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                          history, 8, FillEmptyHistory::NO, &transform);
+
+  EXPECT_EQ(transform, 0);
+
+  InputPlane our_king_plane = encoded_planes[5];
+  EXPECT_EQ(our_king_plane.mask, 1ull << 33);
+  EXPECT_EQ(our_king_plane.value, 1.0f);
+  InputPlane their_king_plane = encoded_planes[11];
+  EXPECT_EQ(their_king_plane.mask, 1ull << 52);
+  EXPECT_EQ(their_king_plane.value, 1.0f);
+}
+
+TEST(EncodePositionForNN, EncodeEndGameFormat3) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen("3r4/4k3/8/1K6/8/8/8/8 w - - 0 1");
+  history.Reset(board, 0, 1);
+
+  int transform;
+  InputPlanes encoded_planes = EncodePositionForNN(
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
+      FillEmptyHistory::NO, &transform);
+
+  EXPECT_EQ(transform, 7);
+
+  InputPlane our_king_plane = encoded_planes[5];
+  EXPECT_EQ(our_king_plane.mask, 1ull << 12);
+  EXPECT_EQ(our_king_plane.value, 1.0f);
+  InputPlane their_king_plane = encoded_planes[11];
+  EXPECT_EQ(their_king_plane.mask, 1ull << 38);
+  EXPECT_EQ(their_king_plane.value, 1.0f);
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
