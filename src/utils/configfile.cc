@@ -25,11 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "utils/configfile.h"
+
 #include <fstream>
 #include <sstream>
 
 #include "utils/commandline.h"
-#include "utils/configfile.h"
 #include "utils/logging.h"
 #include "utils/optionsparser.h"
 #include "utils/string.h"
@@ -101,8 +102,7 @@ bool ConfigFile::ParseFile(const std::string& filename,
 
   // Check to see if we are using the default config file or not.
   OptionsDict dict = options->GetOptionsDict();
-  const bool using_default_config =
-      dict.IsDefault<std::string>(kConfigFileId.GetId());
+  const bool using_default_config = dict.IsDefault<std::string>(kConfigFileId);
 
   if (!input.is_open()) {
     // It is okay if we cannot open the default file since it is normal

@@ -52,7 +52,7 @@ void SelfPlayLoop::RunLoop() {
   options_.Add<BoolOption>(kInteractiveId) = false;
 
   if (!options_.ProcessAllFlags()) return;
-  if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
+  if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
     UciLoop::RunLoop();
   } else {
     // Send id before starting tournament to allow wrapping client to know
