@@ -165,9 +165,7 @@ class BitBoard {
   bool intersects(const BitBoard& other) const { return board_ & other.board_; }
 
   // Flips black and white side of a board.
-  void Mirror() {
-    board_ = ReverseBytesInBytes(board_);
-  }
+  void Mirror() { board_ = ReverseBytesInBytes(board_); }
 
   bool operator==(const BitBoard& other) const {
     return board_ == other.board_;
