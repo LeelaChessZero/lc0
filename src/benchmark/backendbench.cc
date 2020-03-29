@@ -62,10 +62,10 @@ void BackendBenchmark::Run() {
     auto network = NetworkFactory::LoadNetwork(option_dict);
 
     NodeTree tree;
-    tree.ResetToPosition(option_dict.Get<std::string>(kFenId.GetId()), {});
-    const int batches = option_dict.Get<int>(kBatchesId.GetId());
+    tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
+    const int batches = option_dict.Get<int>(kBatchesId);
 
-    for (int i = 1; i <= option_dict.Get<int>(kMaxBatchSizeId.GetId()); i++) {
+    for (int i = 1; i <= option_dict.Get<int>(kMaxBatchSizeId); i++) {
       const auto start = std::chrono::steady_clock::now();
       // TODO: support threads not equal to 1 to be able to more sensibly test
       // multiplexing backend.

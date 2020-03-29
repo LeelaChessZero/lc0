@@ -129,13 +129,15 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
-  const auto default_q = -root_node_->GetWL();
+  const auto default_q = -root_node_->GetQ(-draw_score);
+  const auto default_wl = -root_node_->GetWL();
+  const auto default_d = root_node_->GetD();
   for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto wl = edge.GetWL();
-    const auto d = edge.GetD();
+    const auto wl = edge.GetWL(default_wl);
+    const auto d = edge.GetD(default_d);
     const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
     const auto q = edge.GetQ(default_q, draw_score, /* logit_q= */ false);
     if (edge.IsTerminal() && wl != 0.0f) {
@@ -280,12 +282,15 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
         << "%) ";
 
-    oss << "(WL: " << std::setw(8) << std::setprecision(5) << edge.GetWL()
+    // Default value here assumes user knows to ignore this field when N is 0.
+    oss << "(WL: " << std::setw(8) << std::setprecision(5) << edge.GetWL(0.0f)
         << ") ";
 
-    oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD()
+    // Default value here assumes user knows to ignore this field when N is 0.
+    oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD(0.0f)
         << ") ";
 
+    // Default value here assumes user knows to ignore this field when N is 0.
     oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM(0.0f)
         << ") ";
 
@@ -407,7 +412,7 @@ Search::BestEval Search::GetBestEval() const {
   float parent_m = root_node_->GetM();
   if (!root_node_->HasChildren()) return {parent_wl, parent_d, parent_m};
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_);
-  return {best_edge.GetWL(), best_edge.GetD(),
+  return {best_edge.GetWL(parent_wl), best_edge.GetD(parent_d),
           best_edge.GetM(parent_m - 1) + 1};
 }
 
@@ -487,6 +492,11 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   if (parent == root_node_) {
     PopulateRootMoveLimit(&root_limit);
   }
+  // Assume this function is only ever called with root or immediate child of
+  // root to avoid traversing to get depth.
+  assert(parent == root_node_ || parent->GetParent() == root_node_);
+  const bool is_odd_depth = parent != root_node_;
+  const float draw_score = GetDrawScore(is_odd_depth);
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
@@ -506,7 +516,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                           ? edges.begin() + count
                           : edges.end();
   std::partial_sort(
-      edges.begin(), middle, edges.end(), [](const auto& a, const auto& b) {
+      edges.begin(), middle, edges.end(),
+      [draw_score](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
 
         // Lists edge types from less desirable to more desirable.
@@ -519,7 +530,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         };
 
         auto GetEdgeRank = [](const EdgeAndNode& edge) {
-          const auto wl = edge.GetWL();
+          // This default isn't used as wl only checked for case edge is
+          // terminal.
+          const auto wl = edge.GetWL(0.0f);
           if (!edge.IsTerminal() || !wl) return kNonTerminal;
           if (edge.IsTbTerminal()) {
             return wl < 0.0 ? kTablebaseLoss : kTablebaseWin;
@@ -546,7 +559,14 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         if (a_rank == kNonTerminal) {
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
-          if (a.GetWL() != b.GetWL()) return a.GetWL() > b.GetWL();
+          // Default doesn't matter here so long as they are the same as either
+          // both are N==0 (thus we're comparing equal defaults) or N!=0 and
+          // default isn't used.
+          if (a.GetQ(0.0f, draw_score, false) !=
+              b.GetQ(0.0f, draw_score, false)) {
+            return a.GetQ(0.0f, draw_score, false) >
+                   b.GetQ(0.0f, draw_score, false);
+          }
           return a.GetP() > b.GetP();
         }
 
@@ -1424,7 +1444,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     float losing_m = 0.0f;
     if (can_convert && v <= 0.0f) {
       for (const auto& edge : p->Edges()) {
-        const auto WL = edge.GetWL();
+        // Default_wl doesn't matter as WL is only used if IsTerminal is true.
+        const auto WL = edge.GetWL(0.0f);
         can_convert = can_convert && edge.IsTerminal() && WL <= 0.0f;
         if (!can_convert) break;
         all_losing = all_losing && WL < 0.0f;

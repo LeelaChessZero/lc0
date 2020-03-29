@@ -355,9 +355,11 @@ class EdgeAndNode {
                         : node_->GetQ(draw_score))
                : default_q;
   }
-  float GetWL() const { return node_ ? node_->GetWL() : 0.0f; }
-  float GetD() const {
-    return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
+  float GetWL(float default_wl) const {
+    return node_ ? node_->GetWL() : default_wl;
+  }
+  float GetD(float default_d) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetD() : default_d;
   }
   float GetM(float default_m) const {
     return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
