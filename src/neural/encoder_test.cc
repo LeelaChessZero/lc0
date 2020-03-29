@@ -396,6 +396,30 @@ TEST(EncodePositionForNN, EncodeEndGameFormat3) {
   EXPECT_EQ(their_king_plane.value, 1.0f);
 }
 
+TEST(EncodePositionForNN, EncodeEndGameKingOnDiagonalFormat3) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen("3r4/4k3/2K5/8/8/8/8/8 w - - 0 1");
+  history.Reset(board, 0, 1);
+
+  int transform;
+  InputPlanes encoded_planes = EncodePositionForNN(
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
+      FillEmptyHistory::NO, &transform);
+
+  // After mirroring transforms, our king is on diagonal and other pieces are
+  // all below the diagonal, so transposing will increase the value of ours |
+  // theirs.
+  EXPECT_EQ(transform, 3);
+
+  InputPlane our_king_plane = encoded_planes[5];
+  EXPECT_EQ(our_king_plane.mask, 1ull << 21);
+  EXPECT_EQ(our_king_plane.value, 1.0f);
+  InputPlane their_king_plane = encoded_planes[11];
+  EXPECT_EQ(their_king_plane.mask, 1ull << 11);
+  EXPECT_EQ(their_king_plane.value, 1.0f);
+}
+
 TEST(EncodePositionForNN, EncodeEnpassantFormat3) {
   ChessBoard board;
   PositionHistory history;
