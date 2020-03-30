@@ -1411,6 +1411,7 @@ void SearchWorker::DoBackupUpdate() {
       node->CancelScoreUpdate(entry.second);
     }
   }
+  search_->shared_collisions_.clear();
   search_->total_batches_ += 1;
 }
 
