@@ -813,6 +813,9 @@ void SearchWorker::ExecuteOneIteration() {
   // 2. Gather minibatch.
   GatherMinibatch();
 
+  // 2b. Collect collisions.
+  CollectCollisions();
+
   // 3. Prefetch into cache.
   MaybePrefetchIntoCache();
 
