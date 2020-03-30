@@ -188,6 +188,9 @@ class Search {
 
   std::atomic<int> pending_searchers_{0};
 
+  std::vector<std::pair<Node*, int>> shared_collisions_
+      GUARDED_BY(nodes_mutex_);
+
   std::unique_ptr<UciResponder> uci_responder_;
   const SearchParams params_;
 
@@ -239,6 +242,9 @@ class SearchWorker {
 
   // 2. Gather minibatch.
   void GatherMinibatch();
+
+  // 2b. Copy collisions into shared_collisions_.
+  void CollectCollisions();
 
   // 3. Prefetch into cache.
   void MaybePrefetchIntoCache();
