@@ -767,6 +767,16 @@ void Search::Wait() {
 Search::~Search() {
   Abort();
   Wait();
+  {
+    SharedMutex::Lock lock(nodes_mutex_);
+    for (auto& entry : shared_collisions_) {
+      Node* node = entry.first;
+      for (node = node->GetParent(); node != root_node_->GetParent();
+           node = node->GetParent()) {
+        node->CancelScoreUpdate(entry.second);
+      }
+    }
+  }
   LOGFILE << "Search destroyed.";
 }
 
