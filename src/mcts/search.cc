@@ -764,18 +764,23 @@ void Search::Wait() {
   }
 }
 
+void Search::CancelSharedCollisions() REQUIRES(nodes_mutex_) {
+  for (auto& entry : shared_collisions_) {
+    Node* node = entry.first;
+    for (node = node->GetParent(); node != root_node_->GetParent();
+         node = node->GetParent()) {
+      node->CancelScoreUpdate(entry.second);
+    }
+  }
+  shared_collisions_.clear();
+}
+
 Search::~Search() {
   Abort();
   Wait();
   {
     SharedMutex::Lock lock(nodes_mutex_);
-    for (auto& entry : shared_collisions_) {
-      Node* node = entry.first;
-      for (node = node->GetParent(); node != root_node_->GetParent();
-           node = node->GetParent()) {
-        node->CancelScoreUpdate(entry.second);
-      }
-    }
+    CancelSharedCollisions();
   }
   LOGFILE << "Search destroyed.";
 }
@@ -1407,14 +1412,7 @@ void SearchWorker::DoBackupUpdate() {
     }
   }
   if (!work_done) return;
-  for (auto& entry : search_->shared_collisions_) {
-    Node* node = entry.first;
-    for (node = node->GetParent(); node != search_->root_node_->GetParent();
-         node = node->GetParent()) {
-      node->CancelScoreUpdate(entry.second);
-    }
-  }
-  search_->shared_collisions_.clear();
+  search_->CancelSharedCollisions();
   search_->total_batches_ += 1;
 }
 
