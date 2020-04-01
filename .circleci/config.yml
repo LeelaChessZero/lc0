@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: danieluranga/leela_chess_zero-lc0_ubuntu_builder:0.0.4
+      - image: danieluranga/leela_chess_zero-lc0_ubuntu_builder:0.0.7
     steps:
       - checkout
       - run:
@@ -11,15 +11,34 @@ jobs:
             git submodule init
             git submodule update --remote
       - run:
-          name: Build clang version
-          command: CC=clang-6.0 CXX=clang++-6.0 ./build.sh
+          name: Create Meson build dirs
+          command: mkdir build-gcc && mkdir build-clang
       - run:
-          command: cp build/release/lc0 /tmp/lc0-clang
+          name: Meson Clang
+          environment:
+            CC: clang
+            CXX: clang++
+          command: meson build-clang
       - run:
-          name: Build g++ version
-          command: ./build.sh
+          name: Meson GCC
+          environment:
+            CC: gcc-8
+            CXX: g++-8
+          command: meson build-gcc
       - run:
-          command: cp build/release/lc0 /tmp/lc0-g++
+          name: Build Clang
+          command: |
+            cd build-clang
+            ninja
+      - run:
+          name: Build GCC
+          command: |
+            cd build-gcc
+            ninja -j 4
+      - run:
+          command: cp build-clang/lc0 /tmp/lc0-clang
+      - run:
+          command: cp build-gcc/lc0 /tmp/lc0-g++
       - store_artifacts:
           path: /tmp/lc0-clang
           destination: lc0-ubuntu-18-04-clang
