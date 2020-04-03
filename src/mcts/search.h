@@ -77,11 +77,16 @@ class Search {
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove();
+
+  struct BestEval {
+    float wl;
+    float d;
+    float ml;
+  };
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  // Returns pair {Q, D}.
-  std::pair<float, float> GetBestEval() const;
+  BestEval GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
@@ -98,9 +103,9 @@ class Search {
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
-  EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
-  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
-                                                        int count) const;
+  EdgeAndNode GetBestChildNoTemperature(Node* parent, int depth) const;
+  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent, int count,
+                                                        int depth) const;
   EdgeAndNode GetBestRootChildWithTemperature(float temperature) const;
 
   int64_t GetTimeSinceStart() const;

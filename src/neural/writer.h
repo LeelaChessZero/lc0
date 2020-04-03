@@ -35,8 +35,9 @@ namespace lczero {
 
 #pragma pack(push, 1)
 
-struct V4TrainingData {
+struct V5TrainingData {
   uint32_t version;
+  uint32_t input_format;
   float probabilities[1858];
   uint64_t planes[104];
   uint8_t castling_us_ooo;
@@ -45,14 +46,17 @@ struct V4TrainingData {
   uint8_t castling_them_oo;
   uint8_t side_to_move;
   uint8_t rule50_count;
-  uint8_t move_count;
+  uint8_t deprecated_move_count;  // left in to keep 8 int8 fields.
   int8_t result;
   float root_q;
   float best_q;
   float root_d;
   float best_d;
+  float root_m;      // In plies.
+  float best_m;      // In plies.
+  float plies_left;  // This is the training target for MLH.
 } PACKED_STRUCT;
-static_assert(sizeof(V4TrainingData) == 8292, "Wrong struct size");
+static_assert(sizeof(V5TrainingData) == 8308, "Wrong struct size");
 
 #pragma pack(pop)
 
@@ -67,7 +71,7 @@ class TrainingDataWriter {
   }
 
   // Writes a chunk.
-  void WriteChunk(const V4TrainingData& data);
+  void WriteChunk(const V5TrainingData& data);
 
   // Flushes file and closes it.
   void Finalize();

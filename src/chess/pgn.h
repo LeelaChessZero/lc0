@@ -212,13 +212,13 @@ class PgnReader {
       if (p == 0) {
         searchBits = (board.pawns() & board.ours());
       } else if (p == 1) {
-        searchBits = board.our_king();
+        searchBits = (board.kings() & board.ours());
       } else if (p == 2) {
         searchBits = (board.queens() & board.ours());
       } else if (p == 3) {
         searchBits = (board.bishops() & board.ours());
       } else if (p == 4) {
-        searchBits = board.our_knights();
+        searchBits = (board.knights() & board.ours());
       } else if (p == 5) {
         searchBits = (board.rooks() & board.ours());
       }
