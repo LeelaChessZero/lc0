@@ -73,7 +73,7 @@ Search::Search(const NodeTree& tree, Network* network,
                              std::memory_order_release);
   }
   float strength_ratio =
-      options.Get<float>(SearchParams::kStrengthRatioId.GetId());
+      options.Get<float>(SearchParams::kStrengthRatioId);
   if (strength_ratio != 1.0f) {
     // Factor to multiply execution time to get the delay to add, so that the
     // execution time is strength_ratio^2 of the total. This was found to
