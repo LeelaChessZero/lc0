@@ -161,7 +161,7 @@ void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
 
   // "go nodes" stopper.
   if (params.nodes) {
-    if (options.Get<bool>(kNodesAsPlayoutsId.GetId())) {
+    if (options.Get<bool>(kNodesAsPlayoutsId)) {
       stopper->AddStopper(std::make_unique<PlayoutsStopper>(*params.nodes));
     } else {
       stopper->AddStopper(std::make_unique<VisitsStopper>(*params.nodes));
