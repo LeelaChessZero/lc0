@@ -122,6 +122,7 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
     // Hide time curve options.
     options->HideOption(kTimeMidpointMoveId);
     options->HideOption(kTimeSteepnessId);
+    options->HideOption(kNodesAsPlayoutsId);
   }
 }
 
