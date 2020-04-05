@@ -16,9 +16,16 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
-        meson_version: '>=0.46')
+        meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
+
+if not cc.has_header('optional') or not cc.has_header('string_view')
+    error('Lc0 requires a compiler supporting C++17, for example g++ v7.0, ' +
+          'clang v4.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
+          'later.')
+endif
+
 if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
@@ -142,7 +149,6 @@ files += [
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
   'src/utils/string.cc',
-  'src/utils/transpose.cc',
   'src/utils/weights_adapter.cc',
 ]
 includes += include_directories('src')
@@ -158,8 +164,6 @@ else
   files += 'src/utils/filesystem.posix.cc'
 endif
 
-
-
 #############################################################################
 ## BACKENDS
 #############################################################################
@@ -168,30 +172,14 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## Tensorflow
   ## ~~~~~~~~~~
-  # Installed from https://github.com/FloopCZ/tensorflow_cc
-  tensorflow_include = get_option('tensorflow_include')
-  tensorflow_libdir = get_option('tensorflow_libdir')
   tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_lib = cc.find_library('libtensorflow_cc',
-            dirs: tensorflow_libdir, required: false)
-
-  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found()
-    includes += include_directories(
-      tensorflow_include,
-      tensorflow_include[0] + '/bazel-genfiles',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
-      is_system: true
-    )
-    deps += [tf_dl_lib, tf_tensorflow_lib]
-    files += 'src/neural/network_tf.cc'
+  tf_tensorflow_cc_lib = dependency('tensorflow_cc',
+                                    required: false, include_type:'system')
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
+    deps += [tf_dl_lib, tf_tensorflow_cc_lib]
+    files += 'src/neural/network_tf_cc.cc'
     has_backends = true
   endif
-
 
   ## ~~~~~
   ## Blas

@@ -374,7 +374,7 @@ void DxContext::ScheduleUpload(DXAlloc alloc, const void* data, size_t size) {
 DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     : dx_context_(options),
       capabilities_{file.format().network_format().input(),
-                    pblczero::NetworkFormat::MOVES_LEFT_NONE} {
+                    file.format().network_format().moves_left()} {
   LegacyWeights weights(file.weights());
 
   has_conv_policy_ = file.format().network_format().policy() ==
@@ -551,8 +551,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
     // 1x1 convolution, val_channels output filters
     auto convVal = std::make_unique<ConvLayer>(
-        fp16_, nullptr, nullptr, &dx_context_, getLastLayer(), val_channels, 8,
-        8, 1, kNumFilters, true, true);
+        fp16_, nullptr, nullptr, &dx_context_, resi_last, val_channels, 8, 8, 1,
+        kNumFilters, true, true);
     convVal->LoadWeights(&weights.value.weights[0], &weights.value.biases[0],
                          &dx_context_);
     network_.emplace_back(std::move(convVal));
@@ -585,6 +585,43 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
            weights.ip2_val_w.size() * sizeof(float));
     FCVal2->LoadWeights(tempWeight.data(), tempBias.data(), &dx_context_);
     network_.emplace_back(std::move(FCVal2));
+  }
+
+  // Moves left head
+  moves_left_ = file.format().network_format().moves_left() ==
+                pblczero::NetworkFormat::MOVES_LEFT_V1;
+  if (moves_left_) {
+    // 1x1 convolution, moves_left biases output filters
+    auto convMov = std::make_unique<ConvLayer>(
+        fp16_, nullptr, nullptr, &dx_context_, resi_last,
+        weights.moves_left.biases.size(), 8, 8, 1, kNumFilters, true, true);
+    convMov->LoadWeights(&weights.moves_left.weights[0],
+                         &weights.moves_left.biases[0], &dx_context_);
+    network_.emplace_back(std::move(convMov));
+
+    // Bias and relu activation.
+    auto FCMov1 = std::make_unique<FCLayer>(fp16_, &dx_context_, getLastLayer(),
+                                            (int)weights.ip1_mov_b.size(), 1, 1,
+                                            true, true, false);
+    FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0],
+                        &dx_context_);
+    network_.emplace_back(std::move(FCMov1));
+
+    // Fully connected layer with Bias and relu.
+    auto FCMov2 = std::make_unique<FCLayer>(fp16_, &dx_context_, getLastLayer(),
+                                            kNumOutputMovesLeftPadded8, 1, 1,
+                                            true, true, false);
+    // Pad up the weights
+    std::vector<float> tempBias(kNumOutputMovesLeftPadded8);
+    std::vector<float> tempWeight(kNumOutputMovesLeftPadded8 *
+                                  weights.ip2_mov_w.size() /
+                                  weights.ip2_mov_b.size());
+    memcpy(tempBias.data(), weights.ip2_mov_b.data(),
+           weights.ip2_mov_b.size() * sizeof(float));
+    memcpy(tempWeight.data(), weights.ip2_mov_w.data(),
+           weights.ip2_mov_w.size() * sizeof(float));
+    FCMov2->LoadWeights(tempWeight.data(), tempBias.data(), &dx_context_);
+    network_.emplace_back(std::move(FCMov2));
   }
 
   dx_context_.FlushAndWait();
@@ -745,16 +782,43 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
 
   // value FC1.
   network_[l++]->Eval(batch_size, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
-                      tensor_mem_[2], tensor_mem_[3], cl);
+                      DXAlloc(), DXAlloc(), cl);
   dx_context_.UavBarrier(cl);
 
   dx_context_.DumpTensor("After value fc1", tensor_mem_[1], 128, fp16_);
 
   // value FC2.
   network_[l++]->Eval(batch_size, io->op_value_mem_gpu_, tensor_mem_[1],
-                      DXAlloc(), tensor_mem_[2], tensor_mem_[3], cl);
+                      DXAlloc(), DXAlloc(), DXAlloc(), cl);
 
   dx_context_.DumpTensor("After value fc2", io->op_value_mem_gpu_, 8, fp16_);
+
+  //-----------------------------------///---------------------------------------
+
+  // Moves left head.
+  if (moves_left_) {
+    // Moves left conv.
+    network_[l++]->Eval(batch_size, tensor_mem_[0], tensor_mem_[2], DXAlloc(),
+                        tensor_mem_[1], tensor_mem_[3], cl);
+    dx_context_.UavBarrier(cl);
+
+    dx_context_.DumpTensor("After moves left conv", tensor_mem_[0], 1024,
+                           fp16_);
+
+    // Moves left FC1.
+    network_[l++]->Eval(batch_size, tensor_mem_[1], tensor_mem_[0], DXAlloc(),
+                        DXAlloc(), DXAlloc(), cl);
+    dx_context_.UavBarrier(cl);
+
+    dx_context_.DumpTensor("After moves left fc1", tensor_mem_[1], 512, fp16_);
+
+    // Moves left FC2.
+    network_[l++]->Eval(batch_size, io->op_moves_left_mem_gpu_, tensor_mem_[1],
+                        DXAlloc(), DXAlloc(), DXAlloc(), cl);
+
+    dx_context_.DumpTensor("After moves left fc2", io->op_moves_left_mem_gpu_,
+                           8, fp16_);
+  }
 
   //-----------------------------------///---------------------------------------
 #ifdef DEBUG_DUMP_PER_LAYER_DATA
@@ -795,7 +859,14 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
       for (int i = 0; i < val_vector_size; i++)
         io->op_value_mem_final_[n * val_vector_size + i] =
             FP16toFP32(padded_val_fp16[n * kNumOutputValuePadded8 + i]);
-
+    if (moves_left_) {
+      // Moves left:
+      // Un-pad moves left output, converting it to fp32.
+      dx_half* padded_moves_left_fp16 = (dx_half*)io->op_moves_left_mem_;
+      for (int n = 0; n < batch_size; n++)
+        io->op_moves_left_mem_final_[n] =
+            FP16toFP32(padded_moves_left_fp16[n * kNumOutputMovesLeftPadded8]);
+    }
   } else {
     // Policy:
     // Un-pad policy output.
@@ -812,6 +883,14 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
       memcpy(io->op_value_mem_final_ + val_vector_size * i,
              io->op_value_mem_ + kNumOutputValuePadded8 * i,
              val_vector_size * sizeof(float));
+    if (moves_left_) {
+      // Moves left:
+      // Un-pad moves left output.
+      for (int i = 0; i < batch_size; i++)
+        memcpy(io->op_moves_left_mem_final_ + i,
+               io->op_moves_left_mem_ + kNumOutputMovesLeftPadded8 * i,
+               sizeof(float));
+    }
   }
 
   // Softmax on value head for wdl enabled networks.
@@ -845,14 +924,15 @@ DxNetwork::~DxNetwork() {
 }
 
 std::unique_ptr<NetworkComputation> DxNetwork::NewComputation() {
-  return std::make_unique<DxNetworkComputation>(this, has_wdl_);
+  return std::make_unique<DxNetworkComputation>(this, has_wdl_, moves_left_);
 }
 
 std::unique_ptr<InputsOutputsDx> DxNetwork::GetInputsOutputs() {
   std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
   if (free_inputs_outputs_.empty()) {
     return std::make_unique<InputsOutputsDx>(max_batch_size_, &dx_context_,
-                                             has_wdl_, has_conv_policy_, fp16_);
+                                             has_wdl_, moves_left_,
+                                             has_conv_policy_, fp16_);
   } else {
     std::unique_ptr<InputsOutputsDx> resource =
         std::move(free_inputs_outputs_.front());
@@ -867,8 +947,9 @@ void DxNetwork::ReleaseInputsOutputs(
   free_inputs_outputs_.push_back(std::move(resource));
 }
 
-DxNetworkComputation::DxNetworkComputation(DxNetwork* network, bool wdl)
-    : network_(network), wdl_(wdl) {
+DxNetworkComputation::DxNetworkComputation(DxNetwork* network, bool wdl,
+                                           bool moves_left)
+    : network_(network), wdl_(wdl), moves_left_(moves_left) {
   batch_size_ = 0;
   inputs_outputs_ = network_->GetInputsOutputs();
 }
@@ -897,8 +978,11 @@ void DxNetworkComputation::ComputeBlocking() {
 }
 
 InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* dx_context,
-                                 bool wdl, bool policy_map, bool fp16)
-    : uses_policy_map_(policy_map), needs_reset_(false) {
+                                 bool wdl, bool moves_left, bool policy_map,
+                                 bool fp16)
+    : uses_policy_map_(policy_map),
+      needs_reset_(false),
+      moves_left_(moves_left) {
   // CPU accesses on Default heap doesn't work.
   // GPU accesses on Upload heap works.
   dx_context->CreateAlloc(maxBatchSize * kInputPlanes * sizeof(uint64_t),
@@ -917,6 +1001,12 @@ InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* dx_context,
   dx_context->CreateAlloc(maxBatchSize * kNumOutputValuePadded8 * sizeof(float),
                           D3D12_HEAP_TYPE_CUSTOM, op_value_mem_gpu_, fp16);
 
+  if (moves_left) {
+    dx_context->CreateAlloc(
+        maxBatchSize * kNumOutputMovesLeftPadded8 * sizeof(float),
+        D3D12_HEAP_TYPE_CUSTOM, op_moves_left_mem_gpu_, fp16);
+  }
+
   ReportDxErrors(input_masks_mem_gpu_.resource->Map(0, nullptr,
                                                     (void**)&input_masks_mem_));
 
@@ -929,12 +1019,18 @@ InputsOutputsDx::InputsOutputsDx(int maxBatchSize, DxContext* dx_context,
   ReportDxErrors(
       op_value_mem_gpu_.resource->Map(0, nullptr, (void**)&op_value_mem_));
 
+  if (moves_left) {
+    ReportDxErrors(op_moves_left_mem_gpu_.resource->Map(
+        0, nullptr, (void**)&op_moves_left_mem_));
+  }
+
   // When policy map is enabled, GPU writes directly to the final policy output.
   if (uses_policy_map_)
     op_policy_mem_final_ = op_policy_mem_;
   else
     op_policy_mem_final_ = new float[maxBatchSize * kNumOutputPolicy];
   op_value_mem_final_ = new float[maxBatchSize * (wdl ? 3 : 1)];
+  if (moves_left) op_moves_left_mem_final_ = new float[maxBatchSize];
 
   ReportDxErrors(dx_context->getDevice()->CreateCommandAllocator(
       D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocator_)));
@@ -949,17 +1045,24 @@ InputsOutputsDx::~InputsOutputsDx() {
   input_val_mem_gpu_.resource->Unmap(0, nullptr);
   op_policy_mem_gpu_.resource->Unmap(0, nullptr);
   op_value_mem_gpu_.resource->Unmap(0, nullptr);
+  if (moves_left_) {
+    op_moves_left_mem_gpu_.resource->Unmap(0, nullptr);
+  }
 
   input_masks_mem_gpu_.resource->Release();
   input_val_mem_gpu_.resource->Release();
   op_policy_mem_gpu_.resource->Release();
   op_value_mem_gpu_.resource->Release();
+  if (moves_left_) {
+    op_moves_left_mem_gpu_.resource->Release();
+  }
 
   command_allocator_->Release();
   command_list_->Release();
 
   if (!uses_policy_map_) delete[] op_policy_mem_final_;
   delete[] op_value_mem_final_;
+  if (moves_left_) delete[] op_moves_left_mem_final_;
 }
 
 std::unique_ptr<Network> MakeDxNetwork(const WeightsFile& weights,
