@@ -19,6 +19,13 @@ project('lc0', 'cpp',
         meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
+
+if not cc.has_header('optional') or not cc.has_header('string_view')
+    error('Lc0 requires a compiler supporting C++17, for example g++ v7.0, ' +
+          'clang v4.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
+          'later.')
+endif
+
 if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
