@@ -1029,6 +1029,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
 
+      const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
       float M = 0.0f;
       if (do_moves_left_adjustment) {
         const float m_slope = params_.GetMovesLeftSlope();
@@ -1036,14 +1037,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const float parent_m = node->GetM();
         const float child_m = child.GetM(parent_m);
         M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
-            std::copysign(1.0f, node_q);
+            std::copysign(1.0f, -Q);
         const float a = params_.GetMovesLeftConstantFactor();
         const float b = params_.GetMovesLeftScaledFactor();
         const float c = params_.GetMovesLeftQuadraticFactor();
-        M *= a + b * std::abs(node_q) + c * node_q * node_q;
+        M *= a + b * std::abs(Q) + c * Q * Q;
       }
 
-      const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
       const float score = child.GetU(puct_mult) + Q + M;
       if (score > best) {
         second_best = best;
