@@ -97,6 +97,9 @@ const OptionId kMinimumSmartPruningBatchesId{
     "Only allow smart pruning to stop search after at least this many batches "
     "have been evaluated. It may be useful to have this value greater than the "
     "number of search threads in use."};
+const OptionId kNodesAsPlayoutsId{
+    "nodes-as-playouts", "NodesAsPlayouts",
+    "Treat UCI `go nodes` command as referring to playouts instead of visits."};
 
 }  // namespace
 
@@ -114,10 +117,12 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
     options->Add<FloatOption>(kTimeMidpointMoveId, 1.0f, 100.0f) = 51.5f;
     options->Add<FloatOption>(kTimeSteepnessId, 1.0f, 100.0f) = 7.0f;
     options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 1.0f;
+    options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
 
     // Hide time curve options.
     options->HideOption(kTimeMidpointMoveId);
     options->HideOption(kTimeSteepnessId);
+    options->HideOption(kNodesAsPlayoutsId);
   }
 }
 
@@ -125,20 +130,17 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
 void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
                                const OptionsDict& options) {
   // KLD gain.
-  const auto min_kld_gain =
-      options.Get<float>(kMinimumKLDGainPerNodeId.GetId());
+  const auto min_kld_gain = options.Get<float>(kMinimumKLDGainPerNodeId);
   if (min_kld_gain > 0.0f) {
     stopper->AddStopper(std::make_unique<KldGainStopper>(
-        min_kld_gain, options.Get<int>(kKLDGainAverageIntervalId.GetId())));
+        min_kld_gain, options.Get<int>(kKLDGainAverageIntervalId)));
   }
 
   // Should be last in the chain.
-  const auto smart_pruning_factor =
-      options.Get<float>(kSmartPruningFactorId.GetId());
+  const auto smart_pruning_factor = options.Get<float>(kSmartPruningFactorId);
   if (smart_pruning_factor > 0.0f) {
     stopper->AddStopper(std::make_unique<SmartPruningStopper>(
-        smart_pruning_factor,
-        options.Get<int>(kMinimumSmartPruningBatchesId.GetId())));
+        smart_pruning_factor, options.Get<int>(kMinimumSmartPruningBatchesId)));
   }
 }
 
@@ -147,11 +149,11 @@ namespace {
 void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
                       const GoParams& params) {
   const bool infinite = params.infinite || params.ponder;
-  const int64_t move_overhead = options.Get<int>(kMoveOverheadId.GetId());
+  const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
   // RAM limit watching stopper.
-  const auto cache_size_mb = options.Get<int>(kNNCacheSizeId.GetId());
-  const int ram_limit = options.Get<int>(kRamLimitMbId.GetId());
+  const auto cache_size_mb = options.Get<int>(kNNCacheSizeId);
+  const int ram_limit = options.Get<int>(kRamLimitMbId);
   if (ram_limit) {
     stopper->AddStopper(
         std::make_unique<MemoryWatchingStopper>(cache_size_mb, ram_limit));
@@ -159,7 +161,11 @@ void PopulateStoppers(ChainedSearchStopper* stopper, const OptionsDict& options,
 
   // "go nodes" stopper.
   if (params.nodes) {
-    stopper->AddStopper(std::make_unique<VisitsStopper>(*params.nodes));
+    if (options.Get<bool>(kNodesAsPlayoutsId)) {
+      stopper->AddStopper(std::make_unique<PlayoutsStopper>(*params.nodes));
+    } else {
+      stopper->AddStopper(std::make_unique<VisitsStopper>(*params.nodes));
+    }
   }
 
   // "go movetime" stopper.
@@ -237,16 +243,14 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
-  const int64_t move_overhead = options.Get<int>(kMoveOverheadId.GetId());
+  const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
   const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
   const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
   // How to scale moves time.
-  const float slowmover = options.Get<float>(kSlowMoverId.GetId());
-  const float time_curve_midpoint =
-      options.Get<float>(kTimeMidpointMoveId.GetId());
-  const float time_curve_steepness =
-      options.Get<float>(kTimeSteepnessId.GetId());
+  const float slowmover = options.Get<float>(kSlowMoverId);
+  const float time_curve_midpoint = options.Get<float>(kTimeMidpointMoveId);
+  const float time_curve_steepness = options.Get<float>(kTimeSteepnessId);
 
   float movestogo = ComputeEstimatedMovesToGo(
       position.GetGamePly(), time_curve_midpoint, time_curve_steepness);
@@ -268,8 +272,7 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::CreateTimeManagementStopper(
   // of it will be used immediately, remove that from planning.
   int time_to_squander = 0;
   if (time_spared_ms_ > 0) {
-    time_to_squander =
-        time_spared_ms_ * options.Get<float>(kSpendSavedTimeId.GetId());
+    time_to_squander = time_spared_ms_ * options.Get<float>(kSpendSavedTimeId);
     time_spared_ms_ -= time_to_squander;
     total_moves_time -= time_to_squander;
   }

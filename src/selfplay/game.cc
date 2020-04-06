@@ -71,8 +71,8 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
                            bool shared_tree, const MoveList& opening)
     : options_{player1, player2},
-      chess960_{player1.uci_options->Get<bool>(kUciChess960.GetId()) ||
-                player2.uci_options->Get<bool>(kUciChess960.GetId())} {
+      chess960_{player1.uci_options->Get<bool>(kUciChess960) ||
+                player2.uci_options->Get<bool>(kUciChess960)} {
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
 
@@ -101,7 +101,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
-    if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
+    if (!options_[idx].uci_options->Get<bool>(kReuseTreeId)) {
       tree_[idx]->TrimTreeAtHead();
     }
 
@@ -161,11 +161,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
     if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
-                                            kResignEarliestMoveId.GetId())) {
+                                            kResignEarliestMoveId)) {
       const float resignpct =
-          options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
-          100;
-      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+          options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
+      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
         auto threshold = 1.0f - resignpct;
         if (best_w > threshold) {
           game_result_ =
@@ -206,8 +205,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       // If 'best move' is less than allowed visits and not max visits,
       // discard it and try again.
       if (cur_n == max_n ||
-          static_cast<int>(cur_n) >= options_[idx].uci_options->Get<int>(
-                                         kMinimumAllowedVistsId.GetId())) {
+          static_cast<int>(cur_n) >=
+              options_[idx].uci_options->Get<int>(kMinimumAllowedVistsId)) {
         break;
       }
       PositionHistory history_copy = tree_[idx]->GetPositionHistory();
@@ -254,7 +253,7 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
   // TODO: This assumes both players have the same resign style.
   // Supporting otherwise involves mixing the meaning of worst.
-  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId)) {
     if (game_result_ == GameResult::WHITE_WON) {
       return std::max(max_eval_[1], max_eval_[2]);
     } else if (game_result_ == GameResult::BLACK_WON) {
