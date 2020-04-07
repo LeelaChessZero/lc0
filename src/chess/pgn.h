@@ -56,7 +56,12 @@ class PgnReader {
           Flush();
           started = false;
         }
-        if (line.find("[FEN \"", 0) == 0) {
+        auto uc_line = line;
+        std::transform(
+            uc_line.begin(), uc_line.end(), uc_line.begin(),
+            [](unsigned char c) { return std::toupper(c); }  // correct
+        );
+        if (uc_line.find("[FEN \"", 0) == 0) {
           auto start_trimmed = line.substr(6);
           cur_startpos_ = start_trimmed.substr(0, start_trimmed.find('"'));
           // Some 'opening books' omit the last 2 fields, so there is only 3 space delimiters.
