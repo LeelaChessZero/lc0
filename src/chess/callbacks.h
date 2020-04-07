@@ -102,6 +102,8 @@ struct GameInfo {
   GameResult game_result = GameResult::UNDECIDED;
   // Name of the file with training data.
   std::string training_filename;
+  // Initial fen of the game.
+  std::string initial_fen;
   // Game moves.
   std::vector<Move> moves;
   // Ply within moves that the game actually started.
