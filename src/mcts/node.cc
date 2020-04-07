@@ -365,7 +365,9 @@ V5TrainingData Node::GetV5TrainingData(
   uint8_t queen_side = 1;
   uint8_t king_side = 1;
   // If frc trained, send the bit mask representing rook position.
-  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE) {
+  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
     queen_side <<= castlings.queenside_rook();
     king_side <<= castlings.kingside_rook();
   }
