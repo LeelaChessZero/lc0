@@ -239,7 +239,8 @@ class CheckNetwork : public Network {
   static constexpr double kDefaultAbsoluteTolerance = 1e-5;
   static constexpr double kDefaultRelativeTolerance = 1e-4;
 
-  CheckNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  CheckNetwork(const std::optional<WeightsFile>& weights,
+               const OptionsDict& options) {
     params_.mode = kDefaultMode;
     params_.absolute_tolerance = kDefaultAbsoluteTolerance;
     params_.relative_tolerance = kDefaultRelativeTolerance;
@@ -343,12 +344,8 @@ class CheckNetwork : public Network {
   NetworkCapabilities capabilities_;
 };
 
-std::unique_ptr<Network> MakeCheckNetwork(const std::optional<WeightsFile>& w,
-                                          const OptionsDict& options) {
-  if (!w) {
-    throw Exception("The check backend requires a network file.");
-  }
-  const WeightsFile& weights = *w;
+std::unique_ptr<Network> MakeCheckNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<CheckNetwork>(weights, options);
 }
 

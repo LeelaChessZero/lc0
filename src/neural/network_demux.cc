@@ -102,7 +102,8 @@ class DemuxingComputation : public NetworkComputation {
 
 class DemuxingNetwork : public Network {
  public:
-  DemuxingNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  DemuxingNetwork(const std::optional<WeightsFile>& weights,
+                  const OptionsDict& options) {
     minimum_split_size_ = options.GetOrDefault<int>("minimum-split-size", 0);
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
@@ -117,7 +118,8 @@ class DemuxingNetwork : public Network {
     }
   }
 
-  void AddBackend(const std::string& name, const WeightsFile& weights,
+  void AddBackend(const std::string& name,
+                  const std::optional<WeightsFile>& weights,
                   const OptionsDict& opts) {
     const int nn_threads = opts.GetOrDefault<int>("threads", 1);
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
@@ -236,11 +238,7 @@ void DemuxingComputation::ComputeBlocking() {
 }
 
 std::unique_ptr<Network> MakeDemuxingNetwork(
-    const std::optional<WeightsFile>& w, const OptionsDict& options) {
-  if (!w) {
-    throw Exception("The demux backend requires a network file.");
-  }
-  const WeightsFile& weights = *w;
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<DemuxingNetwork>(weights, options);
 }
 
