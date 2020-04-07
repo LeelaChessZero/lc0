@@ -58,6 +58,7 @@ class PgnReader {
         if (line.find("[FEN \"", 0) == 0) {
           auto start_trimmed = line.substr(6);
           cur_startpos_ = start_trimmed.substr(0, start_trimmed.find('"'));
+          cur_board_.SetFromFen(cur_startpos_);
         }
         continue;
       }
