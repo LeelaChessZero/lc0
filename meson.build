@@ -187,8 +187,6 @@ if get_option('build_backends')
 
   shared_files = []
 
-  has_blas = false
-
   accelerate_lib = dependency('Accelerate', required: false)
 
   mkl_libdirs = get_option('mkl_libdirs')
@@ -208,23 +206,21 @@ if get_option('build_backends')
 
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
-      add_project_arguments('-DUSE_MKL', language : 'cpp')
+      add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
-      has_blas = true
 
     elif get_option('dnnl') and dnnl_lib.found()
-      add_project_arguments('-DUSE_DNNL', language : 'cpp')
+      add_project_arguments(['-DUSE_DNNL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('dnnl_dir') + '/include')
       deps += [ dnnl_lib, dependency('openmp', required:true) ]
-      has_blas = true
 
     elif get_option('accelerate') and accelerate_lib.found()
       deps += [ accelerate_lib ]
-      has_blas = true
+      add_project_arguments('-DUSE_BLAS', language : 'cpp')
 
     elif get_option('openblas') and openblas_lib.found()
-      add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+      add_project_arguments(['-DUSE_OPENBLAS', '-DUSE_BLAS'], language : 'cpp')
 
       required_openblas_header = 'openblas_config.h'
       if not cc.has_header(required_openblas_header)
@@ -244,17 +240,14 @@ if get_option('build_backends')
       endif
 
       deps += [ openblas_lib ]
-      has_blas = true
 
-    elif get_option('eigen')
-      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
-      has_blas = true
-      deps += subproject('eigen').get_variable('eigen_dep')
     endif
+
+    deps += subproject('eigen').get_variable('eigen_dep')
 
     ispc = find_program('ispc', required: false)
     ispc_extra_args = []
-    if has_blas and get_option('ispc') and ispc.found()
+    if get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
@@ -285,10 +278,6 @@ if get_option('build_backends')
                      + ispc_extra_args
       )
     endif
-
-  endif
-
-  if get_option('blas') and has_blas
 
     blas_files = [
     'src/neural/blas/convolution1.cc',
