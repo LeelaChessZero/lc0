@@ -8,8 +8,9 @@
    the `README`(https://github.com/LeelaChessZero/lc0/blob/master/README.md).
 
 2. GPU users with nVIDIA cards (and "compute capability" 3.0 or higher) can build with CUDA/CuDNN.
-*  Install [CUDA](https://developer.nvidia.com/cuda-zone) (v10.0 is fine) and then
-*  install [cuDNN](https://developer.nvidia.com/cudnn).
+*  Install [CUDA](https://developer.nvidia.com/cuda-zone) (v10.0 is fine for Visual Studio 2017, newer is
+   needed for Visual Studio 2019) and then
+*  install the appropriate [cuDNN](https://developer.nvidia.com/cudnn).
 
 3. GPU users with recent Windows 10 installations can build with DirectX 12, this only requires updated
    SDK headers (that may already be available in Visual Studio).

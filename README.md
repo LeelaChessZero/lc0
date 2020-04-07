@@ -113,10 +113,10 @@ to run latest releases of lc0 and the client inside a Docker container.
 
 ### Windows
 
-Here are the instructions for CUDA/CuDNN, for other options see `windows-build.md`.
+Here are the brief instructions for CUDA/CuDNN, for details and other options see `windows-build.md`.
 
 0. Install Microsoft Visual Studio (2017 or later)
-1. Install [CUDA](https://developer.nvidia.com/cuda-zone) (v10.0 is fine)
+1. Install [CUDA](https://developer.nvidia.com/cuda-zone)
 2. Install [cuDNN](https://developer.nvidia.com/cudnn).
 3. Install Python3
 4. Install Meson: `pip3 install --upgrade meson`
