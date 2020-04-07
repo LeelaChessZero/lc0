@@ -77,11 +77,16 @@ class Search {
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove();
+
+  struct BestEval {
+    float wl;
+    float d;
+    float ml;
+  };
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  // Returns pair {Q, D}.
-  std::pair<float, float> GetBestEval() const;
+  BestEval GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
@@ -98,9 +103,9 @@ class Search {
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
-  EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
-  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
-                                                        int count) const;
+  EdgeAndNode GetBestChildNoTemperature(Node* parent, int depth) const;
+  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent, int count,
+                                                        int depth) const;
   EdgeAndNode GetBestRootChildWithTemperature(float temperature) const;
 
   int64_t GetTimeSinceStart() const;
@@ -135,6 +140,9 @@ class Search {
   // the value of @is_odd_depth to change the sign of the draw score.
   // Depth of a root node is 0 (even number).
   float GetDrawScore(bool is_odd_depth) const;
+
+  // Ensure that all shared collisions are cancelled and clear them out.
+  void CancelSharedCollisions();
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -182,6 +190,9 @@ class Search {
   std::atomic<int> tb_hits_{0};
 
   std::atomic<int> pending_searchers_{0};
+
+  std::vector<std::pair<Node*, int>> shared_collisions_
+      GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
   const SearchParams params_;
@@ -234,6 +245,9 @@ class SearchWorker {
 
   // 2. Gather minibatch.
   void GatherMinibatch();
+
+  // 2b. Copy collisions into shared_collisions_.
+  void CollectCollisions();
 
   // 3. Prefetch into cache.
   void MaybePrefetchIntoCache();

@@ -66,10 +66,10 @@ void Benchmark::Run() {
 
     auto network = NetworkFactory::LoadNetwork(option_dict);
 
-    const int visits = option_dict.Get<int>(kNodesId.GetId());
-    const int movetime = option_dict.Get<int>(kMovetimeId.GetId());
-    const std::string fen = option_dict.Get<std::string>(kFenId.GetId());
-    int num_positions = option_dict.Get<int>(kNumPositionsId.GetId());
+    const int visits = option_dict.Get<int>(kNodesId);
+    const int movetime = option_dict.Get<int>(kMovetimeId);
+    const std::string fen = option_dict.Get<std::string>(kFenId);
+    int num_positions = option_dict.Get<int>(kNumPositionsId);
 
     std::vector<std::double_t> times;
     std::vector<std::int64_t> playouts;
@@ -95,7 +95,7 @@ void Benchmark::Run() {
       }
 
       NNCache cache;
-      cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId.GetId()));
+      cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId));
 
       NodeTree tree;
       tree.ResetToPosition(position, {});
@@ -108,7 +108,7 @@ void Benchmark::Run() {
               std::bind(&Benchmark::OnInfo, this, std::placeholders::_1)),
           MoveList(), start, std::move(stopper), false, option_dict, &cache,
           nullptr);
-      search->StartThreads(option_dict.Get<int>(kThreadsOptionId.GetId()));
+      search->StartThreads(option_dict.Get<int>(kThreadsOptionId));
       search->Wait();
       const auto end = std::chrono::steady_clock::now();
 

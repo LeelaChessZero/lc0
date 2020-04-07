@@ -2,6 +2,7 @@ SET PGO=false
 IF %APPVEYOR_REPO_TAG%==true IF %DX%==false SET PGO=true
 IF %PGO%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGInstrument /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+IF ERRORLEVEL 1 EXIT
 cd build
 IF %NAME%==cpu-openblas copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
 IF %NAME%==cpu-dnnl copy C:\cache\dnnl_win_1.1.1_cpu_vcomp\bin\dnnl.dll
