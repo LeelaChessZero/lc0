@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <fstream>
 
 #include "chess/bitboard.h"
