@@ -282,7 +282,7 @@ class PgnReader {
 
   ChessBoard cur_board_{ChessBoard::kStartposFen};
   MoveList cur_game_;
-  std::string cur_startpos_;
+  std::string cur_startpos_ = ChessBoard::kStartposFen;
   std::vector<Opening> games_;
 };
 
