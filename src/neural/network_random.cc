@@ -107,9 +107,12 @@ class RandomNetwork : public Network {
       : delay_ms_(options.GetOrDefault<int>("delay", 0)),
         seed_(options.GetOrDefault<int>("seed", 0)),
         uniform_mode_(options.GetOrDefault<bool>("uniform", false)),
-        capabilities_{static_cast<pblczero::NetworkFormat::InputFormat>(
-                          options.GetOrDefault<int>("input_mode", 1)),
-                      pblczero::NetworkFormat::MOVES_LEFT_NONE} {}
+        capabilities_{
+            static_cast<pblczero::NetworkFormat::InputFormat>(
+                options.GetOrDefault<int>(
+                    "input_mode",
+                    pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE)),
+            pblczero::NetworkFormat::MOVES_LEFT_NONE} {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_,
                                                       uniform_mode_);
