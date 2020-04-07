@@ -78,9 +78,7 @@ class RandomNetworkComputation : public NetworkComputation {
     return d;
   }
 
-  float GetMVal(int /* sample */) const override {
-    return 0.0f;
-  }
+  float GetMVal(int /* sample */) const override { return 0.0f; }
 
   float GetPVal(int sample, int move_id) const override {
     if (uniform_mode_) return 1.0f;
@@ -108,7 +106,13 @@ class RandomNetwork : public Network {
   RandomNetwork(const OptionsDict& options)
       : delay_ms_(options.GetOrDefault<int>("delay", 0)),
         seed_(options.GetOrDefault<int>("seed", 0)),
-        uniform_mode_(options.GetOrDefault<bool>("uniform", false)) {}
+        uniform_mode_(options.GetOrDefault<bool>("uniform", false)),
+        capabilities_{
+            static_cast<pblczero::NetworkFormat::InputFormat>(
+                options.GetOrDefault<int>(
+                    "input_mode",
+                    pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE)),
+            pblczero::NetworkFormat::MOVES_LEFT_NONE} {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_,
                                                       uniform_mode_);
@@ -123,8 +127,7 @@ class RandomNetwork : public Network {
   bool uniform_mode_ = false;
   NetworkCapabilities capabilities_{
       pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-      pblczero::NetworkFormat::MOVES_LEFT_NONE
-  };
+      pblczero::NetworkFormat::MOVES_LEFT_NONE};
 };
 }  // namespace
 
