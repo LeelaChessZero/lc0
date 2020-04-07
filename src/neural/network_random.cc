@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -128,8 +128,8 @@ class RandomNetwork : public Network {
 };
 }  // namespace
 
-std::unique_ptr<Network> MakeRandomNetwork(const WeightsFile& /*weights*/,
-                                           const OptionsDict& options) {
+std::unique_ptr<Network> MakeRandomNetwork(
+    const std::optional<WeightsFile>& /*weights*/, const OptionsDict& options) {
   return std::make_unique<RandomNetwork>(options);
 }
 

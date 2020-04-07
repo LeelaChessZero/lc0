@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -82,8 +82,12 @@ class RoundRobinNetwork : public Network {
   NetworkCapabilities capabilities_;
 };
 
-std::unique_ptr<Network> MakeRoundRobinNetwork(const WeightsFile& weights,
-                                               const OptionsDict& options) {
+std::unique_ptr<Network> MakeRoundRobinNetwork(
+    const std::optional<WeightsFile>& w, const OptionsDict& options) {
+  if (!w) {
+    throw Exception("The roundrobin backend requires a network file.");
+  }
+  const WeightsFile& weights = *w;
   return std::make_unique<RoundRobinNetwork>(weights, options);
 }
 

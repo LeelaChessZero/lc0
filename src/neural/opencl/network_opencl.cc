@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018-2019 The LCZero Authors
+ Copyright (C) 2018-2020 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -418,8 +418,12 @@ class OpenCLNetwork : public Network {
   bool moves_left_;
 };
 
-std::unique_ptr<Network> MakeOpenCLNetwork(const WeightsFile& weights,
+std::unique_ptr<Network> MakeOpenCLNetwork(const std::optional<WeightsFile>& w,
                                            const OptionsDict& options) {
+  if (!w) {
+    throw Exception("The opencl backend requires a network file.");
+  }
+  const WeightsFile& weights = *w;
   if (weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=

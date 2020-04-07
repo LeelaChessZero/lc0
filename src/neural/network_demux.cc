@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -235,8 +235,12 @@ void DemuxingComputation::ComputeBlocking() {
   dataready_cv_.wait(lock, [this]() { return dataready_ == 0; });
 }
 
-std::unique_ptr<Network> MakeDemuxingNetwork(const WeightsFile& weights,
-                                             const OptionsDict& options) {
+std::unique_ptr<Network> MakeDemuxingNetwork(
+    const std::optional<WeightsFile>& w, const OptionsDict& options) {
+  if (!w) {
+    throw Exception("The demux backend requires a network file.");
+  }
+  const WeightsFile& weights = *w;
   return std::make_unique<DemuxingNetwork>(weights, options);
 }
 

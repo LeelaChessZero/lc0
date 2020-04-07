@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018-2019 The LCZero Authors
+ Copyright (C) 2018-2020 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -515,8 +515,13 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 }
 
 template <bool use_eigen>
-std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
+std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& options) {
+  if (!w) {
+    throw Exception("The " + std::string(use_eigen ? "eigen" : "blas") +
+                    " backend requires a network file.");
+  }
+  const WeightsFile& weights = *w;
   if (weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=

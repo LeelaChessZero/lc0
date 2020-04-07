@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -85,9 +85,9 @@ std::vector<std::string> NetworkFactory::GetBackendsList() const {
   return result;
 }
 
-std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
-                                                const WeightsFile& weights,
-                                                const OptionsDict& options) {
+std::unique_ptr<Network> NetworkFactory::Create(
+    const std::string& network, const std::optional<WeightsFile>& weights,
+    const OptionsDict& options) {
   CERR << "Creating backend [" << network << "]...";
   for (const auto& factory : factories_) {
     if (factory.name == network) {
@@ -123,7 +123,10 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
-  const WeightsFile weights = LoadWeightsFromFile(net_path);
+  std::optional<WeightsFile> weights;
+  if (!net_path.empty()) {
+    weights = LoadWeightsFromFile(net_path);
+  }
 
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
