@@ -64,7 +64,8 @@ class PgnReader {
         if (uc_line.find("[FEN \"", 0) == 0) {
           auto start_trimmed = line.substr(6);
           cur_startpos_ = start_trimmed.substr(0, start_trimmed.find('"'));
-          // Some 'opening books' omit the last 2 fields, so there is only 3 space delimiters.
+          // Some 'opening books' omit the last 2 fields, so there is only 3
+          // space delimiters.
           if (std::count(cur_startpos_.begin(), cur_startpos_.end(), ' ') ==
               3) {
             cur_startpos_ += " 0 1";
