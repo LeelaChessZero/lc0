@@ -76,56 +76,27 @@ int ChooseTransform(const ChessBoard& board) {
   if ((our_king & 0xE0C08000ULL) != 0) {
     transform |= Transpose;
   } else if ((our_king & 0x10204080ULL) != 0) {
-    auto outcome =
-        CompareTransposing(board.ours() | board.theirs(), transform);
-    if (outcome == -1) {
-      return transform;
-    }
-    if (outcome == 1) {
-      return transform | Transpose;
-    }
+    auto outcome = CompareTransposing(board.ours() | board.theirs(), transform);
+    if (outcome == -1) return transform;
+    if (outcome == 1) return transform | Transpose;
     outcome = CompareTransposing(board.ours(), transform);
-    if (outcome == -1) {
-      return transform;
-    }
-    if (outcome == 1) {
-      return transform | Transpose;
-    }
+    if (outcome == -1) return transform;
+    if (outcome == 1) return transform | Transpose;
     outcome = CompareTransposing(board.kings(), transform);
-    if (outcome == -1) {
-      return transform;
-    }
-    if (outcome == 1) {
-      return transform | Transpose;
-    }
+    if (outcome == -1) return transform;
+    if (outcome == 1) return transform | Transpose;
     outcome = CompareTransposing(board.queens(), transform);
-    if (outcome == -1) {
-      return transform;
-    }
-    if (outcome == 1) {
-      return transform | Transpose;
-    }
+    if (outcome == -1) return transform;
+    if (outcome == 1) return transform | Transpose;
     outcome = CompareTransposing(board.rooks(), transform);
-    if (outcome == -1) {
-      return transform;
-    }
-    if (outcome == 1) {
-      return transform | Transpose;
-    }
+    if (outcome == -1) return transform;
+    if (outcome == 1) return transform | Transpose;
     outcome = CompareTransposing(board.knights(), transform);
-    if (outcome == -1) {
-      return transform;
-    }
-    if (outcome == 1) {
-      return transform | Transpose;
-    }
+    if (outcome == -1) return transform;
+    if (outcome == 1) return transform | Transpose;
     outcome = CompareTransposing(board.bishops(), transform);
-    if (outcome == -1) {
-      return transform;
-    }
-    if (outcome == 1) {
-      return transform | Transpose;
-    }
+    if (outcome == -1) return transform;
+    if (outcome == 1) return transform | Transpose;
     // If all piece types are symmetrical and ours is symmetrical and
     // ours+theirs is symmetrical, everything is symmetrical, so transpose is a
     // no-op.
