@@ -89,14 +89,14 @@ Make sure that `~/.local/bin` is in your `PATH` environment variable. You can no
 
 #### Ubuntu 16.04
 
-For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before performing the steps above:
+For Ubuntu 16.04 you need the latest version of meson, ninja and also gcc-8.0 before performing the steps above:
 
-    wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-    sudo apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main'
+    sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install clang-6.0 ninja-build protobuf-compiler libprotobuf-dev
+    sudo apt-get install gcc-8 g++-8 protobuf-compiler libprotobuf-dev
     pip3 install meson --user
-    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
+    pip3 install ninja --user
+    CC=gcc-8 CXX=g++-8 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
 
