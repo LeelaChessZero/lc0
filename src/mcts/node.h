@@ -385,15 +385,16 @@ class EdgeAndNode {
     return numerator * GetP() / (1 + GetNStarted());
   }
 
-  int GetVisitsToReachU(float target_score, float numerator, float default_q,
-                        float draw_score, bool logit_q) const {
-    const auto q = GetQ(default_q, draw_score, logit_q);
-    if (q >= target_score) return std::numeric_limits<int>::max();
+  int GetVisitsToReachU(float target_score, float numerator,
+                        float score_without_u) const {
+    if (score_without_u >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
-    return std::max(
-        1.0f,
-        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
-                 1e9f));
+    return std::max(1.0f,
+                    std::min(std::floor(GetP() * numerator /
+                                            (target_score - score_without_u) -
+                                        n1) +
+                                 1,
+                             1e9f));
   }
 
   std::string DebugString() const;

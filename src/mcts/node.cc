@@ -318,7 +318,7 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Make saved node the only child. (kills previous siblings).
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
-  edges_ = EdgeList();  // Clear edges list.
+  if (!child_) edges_ = EdgeList();  // Clear edges list.
 }
 
 V5TrainingData Node::GetV5TrainingData(
