@@ -36,7 +36,8 @@ const int kMoveHistory = 8;
 const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 
-int CompareTransposing(uint64_t value, int initial_transform) {
+int CompareTransposing(BitBoard board, int initial_transform) {
+  uint64_t value = board.as_int();
   if ((initial_transform & Flip) != 0) {
     value = ReverseBitsInBytes(value);
   }
@@ -76,49 +77,49 @@ int ChooseTransform(const ChessBoard& board) {
     transform |= Transpose;
   } else if ((our_king & 0x10204080ULL) != 0) {
     auto outcome =
-        CompareTransposing((board.ours() | board.theirs()).as_int(), transform);
+        CompareTransposing(board.ours() | board.theirs(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
       return transform | Transpose;
     }
-    outcome = CompareTransposing(board.ours().as_int(), transform);
+    outcome = CompareTransposing(board.ours(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
       return transform | Transpose;
     }
-    outcome = CompareTransposing(board.kings().as_int(), transform);
+    outcome = CompareTransposing(board.kings(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
       return transform | Transpose;
     }
-    outcome = CompareTransposing(board.queens().as_int(), transform);
+    outcome = CompareTransposing(board.queens(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
       return transform | Transpose;
     }
-    outcome = CompareTransposing(board.rooks().as_int(), transform);
+    outcome = CompareTransposing(board.rooks(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
       return transform | Transpose;
     }
-    outcome = CompareTransposing(board.knights().as_int(), transform);
+    outcome = CompareTransposing(board.knights(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
       return transform | Transpose;
     }
-    outcome = CompareTransposing(board.bishops().as_int(), transform);
+    outcome = CompareTransposing(board.bishops(), transform);
     if (outcome == -1) {
       return transform;
     }
