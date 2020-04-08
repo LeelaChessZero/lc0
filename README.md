@@ -34,9 +34,11 @@ Having successfully acquired Lc0 via either of these methods, proceed to the bui
 
 Building should be easier now than it was in the past. Please report any problems you have.
 
-Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as the required libraries `protobuf` and `zlib`. (`gtest` is optionally used for the test suite.) If your system already has those two libraries installed, they will be used; otherwise Meson will generate its own copy of the two (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
+Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as the required `zlib`. (`gtest` is optionally used for the test suite.) If your system already has this library installed, they will be used; otherwise Meson will generate its own copy of the two (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
 
-Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's MKL. For GPUs, OpenCL and CUDA+cudnn are supported.
+Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's DNNL or MKL. For GPUs, OpenCL and CUDA+cudnn are supported, while DX-12 can be used in Windows 10 with latest drivers.
+
+Finally, lc0 requires a compiler supporting C++17. Minimal versions seem to be g++ v8.0, clang v4.0 (with C++17 stdlib) or Visual Studio 2017.
 
 Given those basics, the OS and backend specific instructions are below.
 
