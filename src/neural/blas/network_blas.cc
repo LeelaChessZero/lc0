@@ -33,9 +33,7 @@
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
 
-#ifdef USE_EIGEN
 #include <Eigen/Core>
-#endif
 
 #ifdef USE_DNNL
 #include <omp.h>
@@ -44,6 +42,7 @@
 namespace lczero {
 namespace {
 
+template <bool use_eigen>
 class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
@@ -116,15 +115,16 @@ class BlasComputation : public NetworkComputation {
   bool conv_policy_;
 };
 
+template <bool use_eigen>
 class BlasNetwork : public Network {
  public:
   BlasNetwork(const WeightsFile& weights, const OptionsDict& options);
   virtual ~BlasNetwork(){};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<BlasComputation>(weights_, max_batch_size_, wdl_,
-                                             moves_left_, conv_policy_,
-                                             blas_cores_);
+    return std::make_unique<BlasComputation<use_eigen>>(
+        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
+        blas_cores_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -144,10 +144,10 @@ class BlasNetwork : public Network {
   int blas_cores_;
 };
 
-BlasComputation::BlasComputation(const LegacyWeights& weights,
-                                 const size_t max_batch_size, const bool wdl,
-                                 const bool moves_left, const bool conv_policy,
-                                 const int blas_cores)
+template <bool use_eigen>
+BlasComputation<use_eigen>::BlasComputation(
+    const LegacyWeights& weights, const size_t max_batch_size, const bool wdl,
+    const bool moves_left, const bool conv_policy, const int blas_cores)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
@@ -163,7 +163,8 @@ BlasComputation::BlasComputation(const LegacyWeights& weights,
 #endif
 }
 
-void BlasComputation::ComputeBlocking() {
+template <bool use_eigen>
+void BlasComputation<use_eigen>::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
   const auto num_value_channels = weights_.ip1_val_b.size();
   const auto num_moves_channels = weights_.ip1_mov_b.size();
@@ -211,8 +212,8 @@ void BlasComputation::ComputeBlocking() {
   std::vector<float> res_buffer3(largest_batch_size * output_channels *
                                  kSquares);
 
-  WinogradConvolution3 convolve3(largest_batch_size, max_channels,
-                                 max_output_channels);
+  WinogradConvolution3<use_eigen> convolve3(largest_batch_size, max_channels,
+                                            max_output_channels);
 
   size_t max_head_planes =
       std::max(num_policy_input_planes,
@@ -268,9 +269,9 @@ void BlasComputation::ComputeBlocking() {
         std::swap(conv_out, conv_in);
 
         auto se_fc_outputs = se.b1.size();
-        ApplySEUnit(batch_size, output_channels, se_fc_outputs, conv_in, res,
-                    se.w1.data(), se.b1.data(), se.w2.data(), se.b2.data(),
-                    conv_out);
+        ApplySEUnit<use_eigen>(batch_size, output_channels, se_fc_outputs,
+                               conv_in, res, se.w1.data(), se.b1.data(),
+                               se.w2.data(), se.b2.data(), conv_out);
       } else {
         BiasResidualRelu(batch_size, output_channels, &conv_out[0],
                          conv2.biases.data(), res);
@@ -305,14 +306,14 @@ void BlasComputation::ComputeBlocking() {
       }
 
     } else {
-      Convolution1::Forward(batch_size, output_channels,
-                            num_policy_input_planes, conv_out,
-                            weights_.policy.weights.data(), head_buffer.data());
+      Convolution1<use_eigen>::Forward(
+          batch_size, output_channels, num_policy_input_planes, conv_out,
+          weights_.policy.weights.data(), head_buffer.data());
 
       BiasResidualRelu(batch_size, num_policy_input_planes, &head_buffer[0],
                        weights_.policy.biases.data());
 
-      FullyConnectedLayer::Forward1D(
+      FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_policy_input_planes * kSquares, num_output_policy,
           head_buffer.data(), weights_.ip_pol_w.data(),
           weights_.ip_pol_b.data(),
@@ -330,14 +331,14 @@ void BlasComputation::ComputeBlocking() {
     }
 
     // Value head
-    Convolution1::Forward(batch_size, output_channels, num_value_input_planes,
-                          conv_out, weights_.value.weights.data(),
-                          head_buffer.data());
+    Convolution1<use_eigen>::Forward(
+        batch_size, output_channels, num_value_input_planes, conv_out,
+        weights_.value.weights.data(), head_buffer.data());
 
     BiasResidualRelu(batch_size, num_value_input_planes, &head_buffer[0],
                      weights_.value.biases.data());
 
-    FullyConnectedLayer::Forward1D(
+    FullyConnectedLayer<use_eigen>::Forward1D(
         batch_size, num_value_input_planes * kSquares, num_value_channels,
         head_buffer.data(), weights_.ip1_val_w.data(),
         weights_.ip1_val_b.data(),
@@ -347,7 +348,7 @@ void BlasComputation::ComputeBlocking() {
     // Now get the score
     if (wdl_) {
       std::vector<float> wdl(3 * batch_size);
-      FullyConnectedLayer::Forward1D(
+      FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_value_channels, 3, output_fc.data(),
           weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
           false,  // Relu Off
@@ -363,7 +364,7 @@ void BlasComputation::ComputeBlocking() {
       }
     } else {
       for (size_t j = 0; j < batch_size; j++) {
-        double winrate = FullyConnectedLayer::Forward0D(
+        double winrate = FullyConnectedLayer<use_eigen>::Forward0D(
                              num_value_channels, weights_.ip2_val_w.data(),
                              &output_fc[j * num_value_channels]) +
                          weights_.ip2_val_b[0];
@@ -372,14 +373,14 @@ void BlasComputation::ComputeBlocking() {
       }
     }
     if (moves_left_) {
-      Convolution1::Forward(batch_size, output_channels, num_moves_input_planes,
-                            conv_out, weights_.moves_left.weights.data(),
-                            head_buffer.data());
+      Convolution1<use_eigen>::Forward(
+          batch_size, output_channels, num_moves_input_planes, conv_out,
+          weights_.moves_left.weights.data(), head_buffer.data());
 
       BiasResidualRelu(batch_size, num_moves_input_planes, &head_buffer[0],
                        weights_.moves_left.biases.data());
 
-      FullyConnectedLayer::Forward1D(
+      FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_moves_input_planes * kSquares, num_moves_channels,
           head_buffer.data(), weights_.ip1_mov_w.data(),
           weights_.ip1_mov_b.data(),
@@ -387,7 +388,7 @@ void BlasComputation::ComputeBlocking() {
           output_fc.data());
 
       std::vector<float> output_moves_left(batch_size);
-      FullyConnectedLayer::Forward1D(
+      FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_moves_channels, 1, output_fc.data(),
           weights_.ip2_mov_w.data(), weights_.ip2_mov_b.data(),
           true,  // Relu On
@@ -400,7 +401,9 @@ void BlasComputation::ComputeBlocking() {
   }
 }
 
-void BlasComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
+template <bool use_eigen>
+void BlasComputation<use_eigen>::EncodePlanes(const InputPlanes& sample,
+                                              float* buffer) {
   for (const InputPlane& plane : sample) {
     const float value = plane.value;
     for (auto i = 0; i < kSquares; i++)
@@ -408,13 +411,16 @@ void BlasComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
   }
 }
 
-BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
+template <bool use_eigen>
+BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
+                                    const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()},
       weights_(file.weights()) {
-#ifndef USE_EIGEN
-  blas_cores_ = options.GetOrDefault<int>("blas_cores", 1);
-#endif
+  if (!use_eigen) {
+    blas_cores_ = options.GetOrDefault<int>("blas_cores", 1);
+  }
+
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
@@ -456,57 +462,59 @@ BlasNetwork::BlasNetwork(const WeightsFile& file, const OptionsDict& options)
                                                        pol_channels, channels);
   }
 
-#ifdef USE_EIGEN
-  CERR << "Using Eigen version " << EIGEN_WORLD_VERSION << "."
-       << EIGEN_MAJOR_VERSION << "." << EIGEN_MINOR_VERSION;
-#endif
-
+  if (use_eigen) {
+    CERR << "Using Eigen version " << EIGEN_WORLD_VERSION << "."
+         << EIGEN_MAJOR_VERSION << "." << EIGEN_MINOR_VERSION;
+    CERR << "Eigen max batch size is " << max_batch_size_ << ".";
+  } else {
 #ifdef USE_OPENBLAS
-  int num_procs = openblas_get_num_procs();
-  blas_cores_ = std::min(num_procs, blas_cores_);
-  openblas_set_num_threads(blas_cores_);
-  const char* core_name = openblas_get_corename();
-  const char* config = openblas_get_config();
-  CERR << "BLAS vendor: OpenBLAS.";
-  CERR << "OpenBLAS [" << config << "].";
-  CERR << "OpenBLAS found " << num_procs << " " << core_name << " core(s).";
-  CERR << "OpenBLAS using " << blas_cores_ << " core(s) for this backend.";
+    int num_procs = openblas_get_num_procs();
+    blas_cores_ = std::min(num_procs, blas_cores_);
+    openblas_set_num_threads(blas_cores_);
+    const char* core_name = openblas_get_corename();
+    const char* config = openblas_get_config();
+    CERR << "BLAS vendor: OpenBLAS.";
+    CERR << "OpenBLAS [" << config << "].";
+    CERR << "OpenBLAS found " << num_procs << " " << core_name << " core(s).";
+    CERR << "OpenBLAS using " << blas_cores_ << " core(s) for this backend.";
 #endif
 
 #ifdef USE_MKL
-  int max_procs = mkl_get_max_threads();
-  blas_cores_ = std::min(max_procs, blas_cores_);
-  mkl_set_num_threads(blas_cores_);
-  CERR << "BLAS vendor: MKL.";
-  constexpr int len = 256;
-  char versionbuf[len];
-  mkl_get_version_string(versionbuf, len);
-  CERR << "MKL " << versionbuf << ".";
-  MKLVersion version;
-  mkl_get_version(&version);
-  CERR << "MKL platform: " << version.Platform
-       << ", processor: " << version.Processor << ".";
-  CERR << "MKL can use up to " << max_procs << " thread(s).";
-  CERR << "MKL using " << blas_cores_ << " thread(s) for this backend.";
+    int max_procs = mkl_get_max_threads();
+    blas_cores_ = std::min(max_procs, blas_cores_);
+    mkl_set_num_threads(blas_cores_);
+    CERR << "BLAS vendor: MKL.";
+    constexpr int len = 256;
+    char versionbuf[len];
+    mkl_get_version_string(versionbuf, len);
+    CERR << "MKL " << versionbuf << ".";
+    MKLVersion version;
+    mkl_get_version(&version);
+    CERR << "MKL platform: " << version.Platform
+         << ", processor: " << version.Processor << ".";
+    CERR << "MKL can use up to " << max_procs << " thread(s).";
+    CERR << "MKL using " << blas_cores_ << " thread(s) for this backend.";
 #endif
 
 #ifdef USE_DNNL
-  int max_procs = omp_get_max_threads();
-  blas_cores_ = std::min(max_procs, blas_cores_);
-  const dnnl_version_t* ver = dnnl_version();
-  CERR << "BLAS functions from DNNL version " << ver->major << "." << ver->minor
-       << "." << ver->patch;
-  CERR << "DNNL using up to " << blas_cores_ << " core(s) per search thread";
+    int max_procs = omp_get_max_threads();
+    blas_cores_ = std::min(max_procs, blas_cores_);
+    const dnnl_version_t* ver = dnnl_version();
+    CERR << "BLAS functions from DNNL version " << ver->major << "."
+         << ver->minor << "." << ver->patch;
+    CERR << "DNNL using up to " << blas_cores_ << " core(s) per search thread";
 #endif
 
 #ifdef USE_ACCELERATE
-  CERR << "BLAS vendor: Apple vecLib.";
-  CERR << "Apple vecLib ignores blas_cores (" << blas_cores_ << ") parameter.";
+    CERR << "BLAS vendor: Apple vecLib.";
+    CERR << "Apple vecLib ignores blas_cores (" << blas_cores_
+         << ") parameter.";
 #endif
-
-  CERR << "BLAS max batch size is " << max_batch_size_ << ".";
+    CERR << "BLAS max batch size is " << max_batch_size_ << ".";
+  }
 }
 
+template <bool use_eigen>
 std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                                          const OptionsDict& options) {
   if (weights.format().network_format().network() !=
@@ -534,10 +542,13 @@ std::unique_ptr<Network> MakeBlasNetwork(const WeightsFile& weights,
                     std::to_string(weights.format().network_format().value()) +
                     " is not supported by BLAS backend.");
   }
-  return std::make_unique<BlasNetwork>(weights, options);
+  return std::make_unique<BlasNetwork<use_eigen>>(weights, options);
 }
 
-REGISTER_NETWORK("blas", MakeBlasNetwork, 50)
+#ifdef USE_BLAS
+REGISTER_NETWORK("blas", MakeBlasNetwork<false>, 50)
+#endif
+REGISTER_NETWORK("eigen", MakeBlasNetwork<true>, 49)
 
 }  // namespace
 }  // namespace lczero

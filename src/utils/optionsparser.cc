@@ -30,7 +30,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
-
+#include <charconv>
 #include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
@@ -409,13 +409,13 @@ IntOption::IntOption(const OptionId& id, int min, int max)
     : Option(id), min_(min), max_(max) {}
 
 void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stoi(value));
+  SetVal(dict, ValidateIntString(value));
 }
 
 bool IntOption::ProcessLongFlag(const std::string& flag,
                                 const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    SetVal(dict, std::stoi(value));
+    SetVal(dict, ValidateIntString(value));
     return true;
   }
   return false;
@@ -424,7 +424,7 @@ bool IntOption::ProcessLongFlag(const std::string& flag,
 bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                           OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    SetVal(dict, std::stoi(value));
+    SetVal(dict, ValidateIntString(value));
     return true;
   }
   return false;
@@ -458,6 +458,21 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
     throw Exception(buf.str());
   }
   dict->Set<ValueType>(GetId(), val);
+}
+
+int IntOption::ValidateIntString(const std::string& val) const {
+  int result;
+  const auto end = val.data() + val.size();
+  auto [ptr, err] = std::from_chars(val.data(), end, result);  
+  if (err == std::errc::invalid_argument) {
+    throw Exception("Flag '--" + GetLongFlag() + "' has an invalid format.");
+  } else if (err == std::errc::result_out_of_range) {
+    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
+  } else if (ptr != end) {
+    throw Exception("Flag '--" + GetLongFlag() + "' has trailing characters.");
+  } else {
+    return result;
+  }
 }
 
 /////////////////////////////////////////////////////////////////
