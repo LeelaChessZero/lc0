@@ -37,7 +37,7 @@ namespace lczero {
 // Populates UCI/command line flags with time management options.
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
 
-// DO NOT SUBMIT write comment
+// Creates a new time manager for a new search.
 std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& dict);
 
 }  // namespace lczero
