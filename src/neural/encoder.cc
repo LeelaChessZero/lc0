@@ -37,10 +37,10 @@ const int kPlanesPerBoard = 13;
 const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 
 int CompareTransposing(uint64_t value, int initial_transform) {
-  if ((initial_transform & 1) != 0) {
+  if ((initial_transform & Flip) != 0) {
     value = ReverseBitsInBytes(value);
   }
-  if ((initial_transform & 2) != 0) {
+  if ((initial_transform & Mirror) != 0) {
     value = ReverseBytesInBytes(value);
   }
   auto alternative = TransposeBitsInBytes(value);
@@ -56,9 +56,9 @@ int ChooseTransform(const ChessBoard& board) {
     return 0;
   }
   auto our_king = (board.kings() & board.ours()).as_int();
-  int transform = 0;
+  int transform = NoTransform;
   if ((our_king & 0x0F0F0F0F0F0F0F0FULL) != 0) {
-    transform |= 1;
+    transform |= Flip;
     our_king = ReverseBitsInBytes(our_king);
   }
   // If there are any pawns only horizontal flip is valid.
@@ -66,14 +66,14 @@ int ChooseTransform(const ChessBoard& board) {
     return transform;
   }
   if ((our_king & 0xFFFFFFFF00000000ULL) != 0) {
-    transform |= 2;
+    transform |= Mirror;
     our_king = ReverseBytesInBytes(our_king);
   }
   // Our king is now always in bottom right quadrant.
   // Transpose for king in top right triangle, or if on diagonal whichever has
   // the smaller integer value for each test scenario.
   if ((our_king & 0xE0C08000ULL) != 0) {
-    transform |= 4;
+    transform |= Transpose;
   } else if ((our_king & 0x10204080ULL) != 0) {
     auto outcome =
         CompareTransposing((board.ours() | board.theirs()).as_int(), transform);
@@ -81,49 +81,49 @@ int ChooseTransform(const ChessBoard& board) {
       return transform;
     }
     if (outcome == 1) {
-      return transform | 4;
+      return transform | Transpose;
     }
     outcome = CompareTransposing(board.ours().as_int(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
-      return transform | 4;
+      return transform | Transpose;
     }
     outcome = CompareTransposing(board.kings().as_int(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
-      return transform | 4;
+      return transform | Transpose;
     }
     outcome = CompareTransposing(board.queens().as_int(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
-      return transform | 4;
+      return transform | Transpose;
     }
     outcome = CompareTransposing(board.rooks().as_int(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
-      return transform | 4;
+      return transform | Transpose;
     }
     outcome = CompareTransposing(board.knights().as_int(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
-      return transform | 4;
+      return transform | Transpose;
     }
     outcome = CompareTransposing(board.bishops().as_int(), transform);
     if (outcome == -1) {
       return transform;
     }
     if (outcome == 1) {
-      return transform | 4;
+      return transform | Transpose;
     }
     // If all piece types are symmetrical and ours is symmetrical and
     // ours+theirs is symmetrical, everything is symmetrical, so transpose is a
@@ -275,18 +275,18 @@ InputPlanes EncodePositionForNN(
     // pawn push, so no need to go back further if stopping early.
     if (stop_early && position.GetNoCaptureNoPawnPly() == 0) break;
   }
-  if (transform != 0) {
+  if (transform != NoTransform) {
     // Transform all masks.
     for (int i = 0; i <= kAuxPlaneBase + 4; i++) {
       auto v = result[i].mask;
       if (v == 0 || v == ~0ULL) continue;
-      if ((transform & 1) != 0) {
+      if ((transform & Flip) != 0) {
         v = ReverseBitsInBytes(v);
       }
-      if ((transform & 2) != 0) {
+      if ((transform & Mirror) != 0) {
         v = ReverseBytesInBytes(v);
       }
-      if ((transform & 4) != 0) {
+      if ((transform & Transpose) != 0) {
         v = TransposeBitsInBytes(v);
       }
       result[i].mask = v;

@@ -365,7 +365,7 @@ TEST(EncodePositionForNN, EncodeEndGameFormat1) {
       EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
                           history, 8, FillEmptyHistory::NO, &transform);
 
-  EXPECT_EQ(transform, 0);
+  EXPECT_EQ(transform, NoTransform);
 
   InputPlane our_king_plane = encoded_planes[5];
   EXPECT_EQ(our_king_plane.mask, 1ull << 33);
@@ -386,7 +386,7 @@ TEST(EncodePositionForNN, EncodeEndGameFormat3) {
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
       FillEmptyHistory::NO, &transform);
 
-  EXPECT_EQ(transform, 7);
+  EXPECT_EQ(transform, Flip | Mirror | Transpose);
 
   InputPlane our_king_plane = encoded_planes[5];
   EXPECT_EQ(our_king_plane.mask, 1ull << 12);
@@ -410,7 +410,7 @@ TEST(EncodePositionForNN, EncodeEndGameKingOnDiagonalFormat3) {
   // After mirroring transforms, our king is on diagonal and other pieces are
   // all below the diagonal, so transposing will increase the value of ours |
   // theirs.
-  EXPECT_EQ(transform, 3);
+  EXPECT_EQ(transform, Flip | Mirror);
 
   InputPlane our_king_plane = encoded_planes[5];
   EXPECT_EQ(our_king_plane.mask, 1ull << 21);
@@ -505,7 +505,7 @@ TEST(EncodePositionForNN, EncodeEarlyGameFlipFormat3) {
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
       FillEmptyHistory::NO, &transform);
 
-  EXPECT_EQ(transform, 0);
+  EXPECT_EQ(transform, NoTransform);
 
   InputPlane our_king_plane = encoded_planes[5];
   EXPECT_EQ(our_king_plane.mask, 1ull << 12);
@@ -521,7 +521,7 @@ TEST(EncodePositionForNN, EncodeEarlyGameFlipFormat3) {
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
       FillEmptyHistory::NO, &transform);
 
-  EXPECT_EQ(transform, 1);
+  EXPECT_EQ(transform, Flip);
 
   our_king_plane = encoded_planes[5];
   EXPECT_EQ(our_king_plane.mask, 1ull << 20);

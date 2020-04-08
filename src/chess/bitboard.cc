@@ -283,13 +283,13 @@ const int kQueenCastleIndex =
     kMoveToIdx[BoardSquare("e1").as_int() * 64 + BoardSquare("a1").as_int()];
 
 BoardSquare Transform(BoardSquare sq, int transform) {
-  if ((transform & 1) != 0) {
+  if ((transform & Flip) != 0) {
     sq.set(sq.row(), 7 - sq.col());
   }
-  if ((transform & 2) != 0) {
+  if ((transform & Mirror) != 0) {
     sq.set(7 - sq.row(), sq.col());
   }
-  if ((transform & 4) != 0) {
+  if ((transform & Transpose) != 0) {
     sq.set(7 - sq.col(), 7 - sq.row());
   }
   return sq;
