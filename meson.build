@@ -20,8 +20,8 @@ project('lc0', 'cpp',
 
 cc = meson.get_compiler('cpp')
 
-if not cc.has_header('optional') or not cc.has_header('string_view')
-    error('Lc0 requires a compiler supporting C++17, for example g++ v7.0, ' +
+if not cc.has_header('optional') or not cc.has_header('string_view') or not cc.has_header('charconv')
+    error('Lc0 requires a compiler supporting C++17, for example g++ v8.0, ' +
           'clang v4.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
           'later.')
 endif

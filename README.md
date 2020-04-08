@@ -80,9 +80,9 @@ in ("Deep Learning").
 
 #### Ubuntu 18.04
 
-For Ubuntu 18.04 you need the latest version of meson and clang-6.0 before performing the steps above:
+For Ubuntu 18.04 you need the latest version of meson, g++-8 and clang-6.0 before performing the steps above:
 
-    sudo apt-get install clang-6.0 ninja-build pkg-config protobuf-compiler libprotobuf-dev meson
+    sudo apt-get install gcc-8 g++-8 clang-6.0 ninja-build pkg-config protobuf-compiler libprotobuf-dev meson
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
