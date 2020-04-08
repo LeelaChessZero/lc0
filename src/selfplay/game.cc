@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "mcts/stoppers/common.h"
 #include "mcts/stoppers/factory.h"
 #include "mcts/stoppers/stoppers.h"
 #include "neural/writer.h"

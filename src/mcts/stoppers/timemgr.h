@@ -30,6 +30,7 @@
 #include <chrono>
 #include <memory>
 #include <vector>
+
 #include "chess/uciloop.h"
 #include "utils/optionsdict.h"
 
@@ -87,10 +88,8 @@ class SearchStopper {
 class TimeManager {
  public:
   virtual ~TimeManager() = default;
-  virtual void ResetGame() = 0;
   virtual std::unique_ptr<SearchStopper> GetStopper(
-      const OptionsDict& options, const GoParams& params,
-      const Position& position) = 0;
+      const GoParams& params, const Position& position) = 0;
 };
 
 }  // namespace lczero

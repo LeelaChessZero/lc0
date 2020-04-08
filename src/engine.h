@@ -80,6 +80,7 @@ class EngineController {
   void SetupPosition(const std::string& fen,
                      const std::vector<std::string>& moves);
   void ResetMoveTimer();
+  void CreateFreshTimeManager();
 
   const OptionsDict& options_;
 
