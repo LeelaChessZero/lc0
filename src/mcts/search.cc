@@ -1373,13 +1373,34 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                               edge.GetMove().as_nn_index()));
   }
   float total = 0.0;
+  
+  // determine current position and exercise all moves
+  Node* root_node = search_->root_node_;
+  Node* walknode = node;
+  std::vector<Move> moves;
+  for (; walknode != root_node; walknode = walknode->GetParent()) {
+    moves.push_back(walknode->GetOwnEdge()->GetMove());
+  }
+  Position rootPosition = history_.Last();
+  ChessBoard board = rootPosition.GetBoard();
+  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
+    board.ApplyMove(*iter);
+  }
+    
   for (auto edge : node->Edges()) {
     float p =
         computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
+    
+    // Boost p if it is a check move
+    ChessBoard boardmove = board;
+    boardmove.ApplyMove(edge.GetMove());
+    if (boardmove.IsUnderCheck()) {
+      p = p + 1;
+    }
+
     // Perform softmax and take into account policy softmax temperature T.
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
-
     // Note that p now lies in [0, 1], so it is safe to store it in compressed
     // format. Normalization happens later.
     edge.edge()->SetP(p);
