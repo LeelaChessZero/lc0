@@ -38,7 +38,7 @@ Aside from the git submodule, lc0 requires the Meson build system and at least o
 
 Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's DNNL or MKL. For GPUs, OpenCL and CUDA+cudnn are supported, while DX-12 can be used in Windows 10 with latest drivers.
 
-Finally, lc0 requires a compiler supporting C++17. Minimal versions seem to be g++ v8.0, clang v4.0 (with C++17 stdlib) or Visual Studio 2017.
+Finally, lc0 requires a compiler supporting C++17. Minimal versions seem to be g++ v8.0, clang v5.0 (with C++17 stdlib) or Visual Studio 2017.
 
 Given those basics, the OS and backend specific instructions are below.
 
@@ -84,7 +84,7 @@ in ("Deep Learning").
 
 For Ubuntu 18.04 you need the latest version of meson, g++-8 and clang-6.0 before performing the steps above:
 
-    sudo apt-get install gcc-8 g++-8 clang-6.0 ninja-build pkg-config protobuf-compiler libprotobuf-dev meson
+    sudo apt-get install gcc-8 g++-8 clang-6.0 ninja-build pkg-config meson
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
@@ -95,13 +95,17 @@ For Ubuntu 16.04 you need the latest version of meson, ninja and also gcc-8.0 be
 
     sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install gcc-8 g++-8 protobuf-compiler libprotobuf-dev
+    sudo apt-get install gcc-8 g++-8
     pip3 install meson --user
     pip3 install ninja --user
     CC=gcc-8 CXX=g++-8 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
 
+If you want to build with clang-6.0 you still need g++-8 for the library. Replace the last line above with:
+
+    sudo apt-get install clang-6.0
+    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 #### openSUSE (all versions)
 
