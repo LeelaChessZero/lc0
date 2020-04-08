@@ -381,7 +381,7 @@ V5TrainingData Node::GetV5TrainingData(
   if (input_format ==
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
     result.side_to_move = position.GetBoard().en_passant().as_int() >> 56;
-    if ((transform & Flip) != 0) {
+    if ((transform & FlipTransform) != 0) {
       result.side_to_move = ReverseBitsInBytes(result.side_to_move);
     }
     // Send transform in deprecated move count so rescorer can reverse it to

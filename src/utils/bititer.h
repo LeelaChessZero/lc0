@@ -55,11 +55,11 @@ inline unsigned long GetLowestBit(std::uint64_t value) {
 enum BoardTransform {
   NoTransform = 0,
   // Horizontal mirror, ReverseBitsInBytes
-  Flip = 1,
+  FlipTransform = 1,
   // Vertical mirror, ReverseBytesInBytes
-  Mirror = 2,
+  MirrorTransform = 2,
   // Diagonal transpose A1 to H8, TransposeBitsInBytes.
-  Transpose = 4,
+  TransposeTransform = 4,
 };
 
 inline uint64_t ReverseBitsInBytes(uint64_t v) {
