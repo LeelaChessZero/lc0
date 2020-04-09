@@ -19,23 +19,23 @@
 #include "neural/blas/convolution1.h"
 #include "neural/blas/blas.h"
 
-#ifdef USE_EIGEN
 #include <Eigen/Dense>
-#endif
 
 namespace lczero {
-#ifdef USE_EIGEN
 template <typename T>
 using EigenMatrixMap =
     Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
 template <typename T>
 using ConstEigenMatrixMap =
     Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
-#endif
 
-void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
-                           const size_t output_channels, const float* input,
-                           const float* weights, float* output) {
+#ifdef USE_BLAS
+template <>
+void Convolution1<false>::Forward(const size_t batch_size,
+                                  const size_t input_channels,
+                                  const size_t output_channels,
+                                  const float* input, const float* weights,
+                                  float* output) {
   for (size_t i = 0; i < batch_size; i++) {
     // C←αAB + βC
     // M Number of rows in matrices A and C.
@@ -56,7 +56,6 @@ void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
 
     const float* batch_input = input + i * kSquares * input_channels;
     float* batch_output = output + i * kSquares * output_channels;
-#ifndef USE_EIGEN
     cblas_sgemm(CblasRowMajor,         // Row major formar
                 CblasNoTrans,          // A not transposed
                 CblasNoTrans,          // B not transposed
@@ -71,12 +70,23 @@ void Convolution1::Forward(const size_t batch_size, const size_t input_channels,
                 0.0f,                  // beta
                 batch_output,          // C
                 kSquares);             // ldc, leading rank of B
-#else
+  }
+}
+#endif
+
+template <>
+void Convolution1<true>::Forward(const size_t batch_size,
+                                 const size_t input_channels,
+                                 const size_t output_channels,
+                                 const float* input, const float* weights,
+                                 float* output) {
+  for (size_t i = 0; i < batch_size; i++) {
+    const float* batch_input = input + i * kSquares * input_channels;
+    float* batch_output = output + i * kSquares * output_channels;
     auto C_mat = EigenMatrixMap<float>(batch_output, kSquares, output_channels);
     C_mat.noalias() =
         ConstEigenMatrixMap<float>(batch_input, kSquares, input_channels) *
         ConstEigenMatrixMap<float>(weights, input_channels, output_channels);
-#endif
   }
 }
 

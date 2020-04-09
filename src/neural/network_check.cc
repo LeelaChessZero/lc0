@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2020 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -239,7 +239,8 @@ class CheckNetwork : public Network {
   static constexpr double kDefaultAbsoluteTolerance = 1e-5;
   static constexpr double kDefaultRelativeTolerance = 1e-4;
 
-  CheckNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  CheckNetwork(const std::optional<WeightsFile>& weights,
+               const OptionsDict& options) {
     params_.mode = kDefaultMode;
     params_.absolute_tolerance = kDefaultAbsoluteTolerance;
     params_.relative_tolerance = kDefaultRelativeTolerance;
@@ -250,7 +251,7 @@ class CheckNetwork : public Network {
     OptionsDict& backend1_dict = dict1;
 
     OptionsDict dict2;
-    std::string backendName2 = "blas";
+    std::string backendName2 = "eigen";
     OptionsDict& backend2_dict = dict2;
 
     const std::string mode = options.GetOrDefault<std::string>("mode", "check");
@@ -343,8 +344,8 @@ class CheckNetwork : public Network {
   NetworkCapabilities capabilities_;
 };
 
-std::unique_ptr<Network> MakeCheckNetwork(const WeightsFile& weights,
-                                          const OptionsDict& options) {
+std::unique_ptr<Network> MakeCheckNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<CheckNetwork>(weights, options);
 }
 

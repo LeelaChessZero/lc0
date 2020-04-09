@@ -765,9 +765,24 @@ void Search::Wait() {
   }
 }
 
+void Search::CancelSharedCollisions() REQUIRES(nodes_mutex_) {
+  for (auto& entry : shared_collisions_) {
+    Node* node = entry.first;
+    for (node = node->GetParent(); node != root_node_->GetParent();
+         node = node->GetParent()) {
+      node->CancelScoreUpdate(entry.second);
+    }
+  }
+  shared_collisions_.clear();
+}
+
 Search::~Search() {
   Abort();
   Wait();
+  {
+    SharedMutex::Lock lock(nodes_mutex_);
+    CancelSharedCollisions();
+  }
   LOGFILE << "Search destroyed.";
 }
 
@@ -803,6 +818,9 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 2. Gather minibatch.
   GatherMinibatch();
+
+  // 2b. Collect collisions.
+  CollectCollisions();
 
   // 3. Prefetch into cache.
   MaybePrefetchIntoCache();
@@ -1032,6 +1050,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
 
+      const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
       float M = 0.0f;
       if (do_moves_left_adjustment) {
         const float m_slope = params_.GetMovesLeftSlope();
@@ -1039,10 +1058,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const float parent_m = node->GetM();
         const float child_m = child.GetM(parent_m);
         M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
-            std::copysign(1.0f, node_q);
+            std::copysign(1.0f, -Q);
+        const float a = params_.GetMovesLeftConstantFactor();
+        const float b = params_.GetMovesLeftScaledFactor();
+        const float c = params_.GetMovesLeftQuadraticFactor();
+        M *= a + b * std::abs(Q) + c * Q * Q;
       }
 
-      const float Q = child.GetQ(fpu, draw_score, params_.GetLogitQ());
       const float score = child.GetU(puct_mult) + Q + M;
       if (score > best) {
         second_best = best;
@@ -1212,6 +1234,18 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
   computation_->AddInput(hash, std::move(planes), std::move(moves));
   if (transform_out) *transform_out = transform;
   return false;
+}
+
+// 2b. Copy collisions into shared collisions.
+void SearchWorker::CollectCollisions() {
+  SharedMutex::Lock lock(search_->nodes_mutex_);
+
+  for (const NodeToProcess& node_to_process : minibatch_) {
+    if (node_to_process.IsCollision()) {
+      search_->shared_collisions_.emplace_back(node_to_process.node,
+                                               node_to_process.multivisit);
+    }
+  }
 }
 
 // 3. Prefetch into cache.
@@ -1394,9 +1428,15 @@ void SearchWorker::DoBackupUpdate() {
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
+  bool work_done = number_out_of_order_ > 0;
   for (const NodeToProcess& node_to_process : minibatch_) {
     DoBackupUpdateSingleNode(node_to_process);
+    if (!node_to_process.IsCollision()) {
+      work_done = true;
+    }
   }
+  if (!work_done) return;
+  search_->CancelSharedCollisions();
   search_->total_batches_ += 1;
 }
 
@@ -1404,11 +1444,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
   Node* node = node_to_process.node;
   if (node_to_process.IsCollision()) {
-    // If it was a collision, just undo counters.
-    for (node = node->GetParent(); node != search_->root_node_->GetParent();
-         node = node->GetParent()) {
-      node->CancelScoreUpdate(node_to_process.multivisit);
-    }
+    // Collisions are handled via shared_collisions instead.
     return;
   }
 
