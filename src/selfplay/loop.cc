@@ -29,13 +29,12 @@
 
 #include <optional>
 
+#include "gaviotatb/gtb-probe.h"
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
 #include "utils/filesystem.h"
-
-#include "gaviotatb/gtb-probe.h"
 
 namespace lczero {
 
@@ -718,14 +717,14 @@ void RescoreLoop::RunLoop() {
 
   if (!options_.ProcessAllFlags()) return;
   SyzygyTablebase tablebase;
-  if (!tablebase.init(options_.GetOptionsDict().Get<std::string>(
-          kSyzygyTablebaseId.GetId())) ||
+  if (!tablebase.init(
+          options_.GetOptionsDict().Get<std::string>(kSyzygyTablebaseId)) ||
       tablebase.max_cardinality() < 3) {
     std::cerr << "FAILED TO LOAD SYZYGY" << std::endl;
     return;
   }
   auto dtmPaths =
-      options_.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId.GetId());
+      options_.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId);
   if (dtmPaths.size() != 0) {
     std::stringstream path_string_stream(dtmPaths);
     std::string path;
@@ -744,7 +743,7 @@ void RescoreLoop::RunLoop() {
     gaviotaEnabled = true;
   }
   auto inputDir =
-      options_.GetOptionsDict().Get<std::string>(kInputDirId.GetId());
+      options_.GetOptionsDict().Get<std::string>(kInputDirId);
   auto files = GetFileList(inputDir);
   if (files.size() == 0) {
     std::cerr << "No files to process" << std::endl;
@@ -754,8 +753,8 @@ void RescoreLoop::RunLoop() {
     files[i] = inputDir + "/" + files[i];
   }
   float dtz_boost =
-      options_.GetOptionsDict().Get<float>(kMinDTZBoostId.GetId());
-  int threads = options_.GetOptionsDict().Get<int>(kThreadsId.GetId());
+      options_.GetOptionsDict().Get<float>(kMinDTZBoostId);
+  int threads = options_.GetOptionsDict().Get<int>(kThreadsId);
   if (threads > 1) {
     std::vector<std::thread> threads_;
     int offset = 0;
@@ -766,9 +765,9 @@ void RescoreLoop::RunLoop() {
                              dtz_boost]() {
         ProcessFiles(
             files, &tablebase,
-            options_.GetOptionsDict().Get<std::string>(kOutputDirId.GetId()),
-            options_.GetOptionsDict().Get<float>(kTempId.GetId()),
-            options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()),
+            options_.GetOptionsDict().Get<std::string>(kOutputDirId),
+            options_.GetOptionsDict().Get<float>(kTempId),
+            options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
             dtz_boost, offset_val, threads);
       });
     }
@@ -779,9 +778,9 @@ void RescoreLoop::RunLoop() {
   } else {
     ProcessFiles(
         files, &tablebase,
-        options_.GetOptionsDict().Get<std::string>(kOutputDirId.GetId()),
-        options_.GetOptionsDict().Get<float>(kTempId.GetId()),
-        options_.GetOptionsDict().Get<float>(kDistributionOffsetId.GetId()),
+        options_.GetOptionsDict().Get<std::string>(kOutputDirId),
+        options_.GetOptionsDict().Get<float>(kTempId),
+        options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
         dtz_boost, 0, 1);
   }
   std::cout << "Games processed: " << games << std::endl;
