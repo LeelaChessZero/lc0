@@ -382,8 +382,7 @@ class EdgeAndNode {
     return ( april_factor > 0.0 )
       ? ( psa > 0.0f
         ? 1.0f / ( 1.0f + (1.0f / psa - 1.0f) /
-          ( (1.0f + april_factor * visits) *
-           (1.0f + 0.01f * april_factor * visits_parent) ) )
+          ( (1.0f + april_factor * (visits + 0.001f visits_parent) ) ) )
         : 0.0f )
       : psa ; }
   Move GetMove(bool flip = false) const {
