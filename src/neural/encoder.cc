@@ -158,7 +158,8 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
       }
       break;
     }
-    case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE: {
+    case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE:
+    case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION: {
       auto queenside = 0;
       auto kingside = 7;
       if (planes[kAuxPlaneBase + 0].mask != 0) {
@@ -190,7 +191,13 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
                       std::to_string(input_format));
   }
   std::string fen;
-  if (planes[kAuxPlaneBase + 4].mask != 0) {
+  // Canonical input has no sense of side to move, so we should simply assume
+  // the starting position is always white.
+  bool black_to_move =
+      input_format !=
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION &&
+      planes[kAuxPlaneBase + 4].mask != 0;
+  if (black_to_move) {
     // Flip to white perspective rather than side to move perspective.
     std::swap(pawnsOurs, pawnsTheirs);
     std::swap(knightsOurs, knightsTheirs);
@@ -255,29 +262,40 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     if (row > 0) fen += "/";
   }
   fen += " ";
-  fen += (planes[kAuxPlaneBase + 4].mask != 0) ? "b" : "w";
+  fen += black_to_move ? "b" : "w";
   fen += " ";
   fen += castlings.as_string();
   fen += " ";
-  auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
-  // If no pawns then 2 pawns, history isn't filled properly and we shouldn't
-  // try and infer enpassant.
-  if (pawndiff.count() == 2 && planes[kPlanesPerBoard + 6].mask != 0) {
-    auto from =
-        SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
-    auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
-    if (from.col() != to.col() || std::abs(from.row() - to.row()) != 2) {
+  if (input_format ==
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    // Canonical format helpfully has the en passant details ready for us.
+    if (planes[kAuxPlaneBase + 4].mask == 0) {
       fen += "-";
     } else {
-      // TODO: Ensure enpassant is legal rather than setting it blindly?
-      // Doesn't matter for rescoring use case as only legal moves will be
-      // performed afterwards.
-      fen +=
-          BoardSquare((planes[kAuxPlaneBase + 4].mask != 0) ? 2 : 5, to.col())
-              .as_string();
+      int col = GetLowestBit(planes[kAuxPlaneBase + 4].mask >> 56);
+      fen += BoardSquare(5, col).as_string();
     }
   } else {
-    fen += "-";
+    auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
+    // If no pawns then 2 pawns, history isn't filled properly and we shouldn't
+    // try and infer enpassant.
+    if (pawndiff.count() == 2 && planes[kPlanesPerBoard + 6].mask != 0) {
+      auto from =
+          SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
+      auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
+      if (from.col() != to.col() || std::abs(from.row() - to.row()) != 2) {
+        fen += "-";
+      } else {
+        // TODO: Ensure enpassant is legal rather than setting it blindly?
+        // Doesn't matter for rescoring use case as only legal moves will be
+        // performed afterwards.
+        fen +=
+            BoardSquare((planes[kAuxPlaneBase + 4].mask != 0) ? 2 : 5, to.col())
+                .as_string();
+      }
+    } else {
+      fen += "-";
+    }
   }
   fen += " ";
   fen += std::to_string((int)planes[kAuxPlaneBase + 5].value);

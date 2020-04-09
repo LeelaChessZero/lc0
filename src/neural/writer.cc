@@ -30,21 +30,14 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+
+#include "utils/bititer.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
 #include "utils/random.h"
 
 namespace lczero {
-namespace {
-// Reverse bits in every byte of a number
-uint64_t ReverseBitsInBytes(uint64_t v) {
-  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
-  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
-  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
-  return v;
-}
-}  // namespace
 
 InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
   InputPlanes result;
@@ -64,13 +57,15 @@ InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
       result.back().mask = data.castling_them_oo != 0 ? ~0LL : 0LL;
       break;
     }
-    case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE: {
-      result.emplace_back();
-      result.back().mask = data.castling_us_ooo | (static_cast<uint64_t>(data.castling_them_ooo) << 56);
+    case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE:
+    case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION: {
       result.emplace_back();
       result.back().mask =
-          data.castling_us_oo |
-          (static_cast<uint64_t>(data.castling_them_oo) << 56);
+          data.castling_us_ooo |
+          (static_cast<uint64_t>(data.castling_them_ooo) << 56);
+      result.emplace_back();
+      result.back().mask = data.castling_us_oo |
+                           (static_cast<uint64_t>(data.castling_them_oo) << 56);
       // 2 empty planes in this format.
       result.emplace_back();
       result.emplace_back();
@@ -82,7 +77,12 @@ InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
                       std::to_string(data.input_format));
   }
   result.emplace_back();
-  result.back().mask = data.side_to_move != 0 ? ~0LL : 0LL;
+  if (data.input_format ==
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    result.back().mask = static_cast<uint64_t>(data.side_to_move) << 56;
+  } else {
+    result.back().mask = data.side_to_move != 0 ? ~0LL : 0LL;
+  }
   result.emplace_back();
   result.back().Fill(data.rule50_count);
   result.emplace_back();
@@ -90,6 +90,26 @@ InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
   result.emplace_back();
   // All ones plane.
   result.back().SetAll();
+  if (data.input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION &&
+      data.deprecated_move_count != 0) {
+    // Undo transformation here as it makes the calling code simpler.
+    int transform = data.deprecated_move_count;
+    for (int i = 0; i <= result.size(); i++) {
+      auto v = result[i].mask;
+      if (v == 0 || v == ~0ULL) continue;
+      if ((transform & TransposeTransform) != 0) {
+        v = TransposeBitsInBytes(v);
+      }
+      if ((transform & MirrorTransform) != 0) {
+        v = ReverseBytesInBytes(v);
+      }
+      if ((transform & FlipTransform) != 0) {
+        v = ReverseBitsInBytes(v);
+      }
+      result[i].mask = v;
+    }
+  }
   return result;
 }
 
