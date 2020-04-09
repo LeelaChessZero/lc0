@@ -376,14 +376,16 @@ class EdgeAndNode {
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
   float GetPApril(float april_factor) const {
-    return ((april_factor > 0.0) && (GetN() > 0))
-      ? ( GetP() > 0.0f
-//          linear growth effect:
-//        ? 1.0f / (1.0f + (1.0f / GetP() - 1.0f) * FastExp(-april_factor * GetN()))
-//          logarithmic growth effect:
-        ? 1.0f / (1.0f + (1.0f / GetP() - 1.0f) / (1.0f + april_factor * GetN()))
+    auto visits = GetN();
+    auto visits_parent = node_ ? node_->GetParent()->GetN() : 0;
+    auto psa = GetP();
+    return ( april_factor > 0.0 )
+      ? ( psa > 0.0f
+        ? 1.0f / ( 1.0f + (1.0f / psa - 1.0f) /
+          ( (1.0f + april_factor * visits) *
+           (1.0f + 0.01f * april_factor * visits_parent) ) )
         : 0.0f )
-      : GetP() ; }
+      : psa ; }
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
