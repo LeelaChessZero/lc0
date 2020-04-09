@@ -1,4 +1,71 @@
-﻿v0.24.0-rc1 (2020-02-23)
+﻿v0.25.0-rc1 (2020-04-09)
+~~~~~~~
+
+* Now requires a c++17 supporting compilation environment to build.
+* Support for Moves Left Head based networks. Includes options to adjust search
+  to favour shorter/longer wins/losses based on the moves left head output.
+* Mate score reporting is now possible, and move selection will prefer shorter
+  mates over longer ones when they are proven.
+* Training now outputs v5 format data. This passes the moves left information
+  back to training. This also includes support for multiple sub formats, 
+  including the existing standard, a new variant which can encode FRC960
+  castling, and also a further extension of that which tries to make training
+  data cannonical, so there aren't multiple positions that are trivially
+  equivalent with different network inputs.
+* Benchmark now includes a suite of 34 positions to test by default instead of
+  just start position.
+* Tensorflow backend works once more, almost just as hard to compile as it used
+  to be though.
+* `--noise` flag is gone, use `--noise-epsilon=0.25` to get the old behavior.
+* Some bug fixes related to drawscore.
+* Selfplay mode now defaults to the same value as match play for 
+  `--root-has-own-cpuct-params` (true).
+* Some advanced time management parameters are now accessed via the new 
+  `--time-manager` parameter instead of individual parameters.
+* Windows build script has been modernized.
+* Separate Eigen backend option for CPU.
+* Random backend no longer requires a network.
+* Random backend supports producing training data of any input format sub type.
+* Integer parameters now give better error messages when given invalid values.
+
+v0.24.1 (2020-03-15)
+~~~~~~~
+
+* Fix issues where logitq was being passed as drawscore and logitq wasn't 
+  passed to some GetQ calls. Causing major performance issues when either 
+  setting was non-default.
+
+v0.24.0 (2020-03-11)
+~~~~~~~
+
+* New parameter `--max-out-of-order-evals-factor` replaces 
+  `--max-out-of-order-evals` that was introduced in v0.24.0-rc3 and provides
+  the factor to multiply the maximum batch size to set maximum number
+  out-of-order evals per batch. The default value of 1.0 keeps the behavior
+  of previous releases.
+* Bug fix for hangs with very early stop command from non-conforming UCI hosts.
+
+v0.24.0-rc3 (2020-03-08)
+~~~~~~~~~~~
+
+* New parameter `--max-out-of-order-evals` to set maximum number out-of-order
+  evals per batch (was equal to the batch size before).
+* It's now possible to embed networks into the binary. It allows easier builds
+  of .apk for Android.
+* New parameter `--smart-pruning-minimum-batches` to only allow smart pruning
+  to stop after at least k batches, preventing insta-moves on slow backends.
+
+v0.24.0-rc2 (2020-03-01)
+~~~~~~~~~~~
+
+* All releases are now bundled with network id591226 (and the file date is old 
+  enough so it has a lower priority than networks that you already may have
+  in your directory).
+* Added a 'backendbench' mode to benchmark NN evaluation performance without
+  search.
+* Android builds are added to the official releases.
+
+v0.24.0-rc1 (2020-02-23)
 ~~~~~~~~~~~
 
 * Introduced DirectX12 backend.

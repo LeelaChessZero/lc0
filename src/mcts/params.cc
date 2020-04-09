@@ -222,6 +222,18 @@ const OptionId SearchParams::kMovesLeftSlopeId{
     "based on how many moves the move is estimated to shorten/lengthen the "
     "game. The move difference is multiplied with the slope and capped at "
     "MovesLeftMaxEffect."};
+const OptionId SearchParams::kMovesLeftConstantFactorId{
+    "moves-left-constant-factor", "MovesLeftConstantFactor",
+    "A simple multiplier to the moves left effect, can be set to 0 to only use "
+    "an effect scaled by Q."};
+const OptionId SearchParams::kMovesLeftScaledFactorId{
+    "moves-left-scaled-factor", "MovesLeftScaledFactor",
+    "A factor which is multiplied by the absolute Q of parent node and the "
+    "base moves left effect."};
+const OptionId SearchParams::kMovesLeftQuadraticFactorId{
+    "moves-left-quadratic-factor", "MovesLeftQuadraticFactor",
+    "A factor which is multiplied by the square of Q of parent node and the "
+    "base moves left effect."};
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
@@ -298,6 +310,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.001f;
+  options->Add<FloatOption>(kMovesLeftConstantFactorId, 0.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kMovesLeftScaledFactorId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
@@ -311,6 +326,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kLogLiveStatsId);
   options->HideOption(kDisplayCacheUsageId);
   options->HideOption(kRootHasOwnCpuctParamsId);
+  options->HideOption(kMovesLeftConstantFactorId);
+  options->HideOption(kMovesLeftScaledFactorId);
+  options->HideOption(kMovesLeftQuadraticFactorId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -352,6 +370,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId)),
       kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId)),
       kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId)),
+      kMovesLeftConstantFactor(options.Get<float>(kMovesLeftConstantFactorId)),
+      kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
+      kMovesLeftQuadraticFactor(options.Get<float>(kMovesLeftQuadraticFactorId)),
       kShortSightedness(options.Get<float>(kShortSightednessId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
