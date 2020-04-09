@@ -160,6 +160,8 @@ Now download the lc0 source, if you haven't already done so, following the instr
 
 ### Raspberry Pi
 
+You'll need to be running the latest raspbian "buster".
+
 1. Install OpenBLAS
 
 ```
@@ -177,17 +179,10 @@ pip3 install meson
 pip3 install ninja
 ```
 
-3. Install clang
+3. Install compiler and standard libraries
 
 ```
-wget http://releases.llvm.org/6.0.0/clang+llvm-6.0.0-armv7a-linux-gnueabihf.tar.xz
-tar -xf clang+llvm-6.0.0-armv7a-linux-gnueabihf.tar.xz
-rm clang+llvm-6.0.0-armv7a-linux-gnueabihf.tar.xz
-mv clang+llvm-6.0.0-armv7a-linux-gnueabihf clang_6.0.0
-sudo mv clang_6.0.0 /usr/local
-echo 'export PATH=/usr/local/clang_6.0.0/bin:~/.local/bin:$PATH' >> .bashrc
-echo 'export LD_LIBRARY_PATH=/usr/local/clang_6.0.0/lib:$LD_LIBRARY_PATH' >> .bashrc
-source .bashrc
+sudo apt install clang-6.0 gcc-8 g++-8
 ```
 
 4. Clone lc0 and compile
@@ -196,7 +191,7 @@ source .bashrc
 git clone https://github.com/LeelaChessZero/lc0.git
 cd lc0
 git submodule update --init --recursive
-CC=clang CXX=clang++ ./build.sh -Ddefault_library=static
+CC=clang-6.0 CXX=clang++-6.0 ./build.sh -Ddefault_library=static
 ```
 
 5. The resulting binary will be in build/release
