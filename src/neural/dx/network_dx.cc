@@ -1065,8 +1065,12 @@ InputsOutputsDx::~InputsOutputsDx() {
   if (moves_left_) delete[] op_moves_left_mem_final_;
 }
 
-std::unique_ptr<Network> MakeDxNetwork(const WeightsFile& weights,
+std::unique_ptr<Network> MakeDxNetwork(const std::optional<WeightsFile>& w,
                                        const OptionsDict& options) {
+  if (!w) {
+    throw Exception("The dx12 backend requires a network file.");
+  }
+  const WeightsFile& weights = *w;
   return std::make_unique<DxNetwork>(weights, options);
 }
 

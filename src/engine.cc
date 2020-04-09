@@ -73,9 +73,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
-    : options_(options),
-      uci_responder_(std::move(uci_responder)),
-      time_manager_(MakeLegacyTimeManager()) {}
+    : options_(options), uci_responder_(std::move(uci_responder)) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -144,7 +142,7 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  time_manager_->ResetGame();
+  CreateFreshTimeManager();
   current_position_.reset();
   UpdateFromUciOptions();
 }
@@ -171,7 +169,11 @@ void EngineController::SetupPosition(
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   const bool is_same_game = tree_->ResetToPosition(fen, moves);
-  if (!is_same_game) time_manager_->ResetGame();
+  if (!is_same_game) CreateFreshTimeManager();
+}
+
+void EngineController::CreateFreshTimeManager() {
+  time_manager_ = MakeTimeManager(options_);
 }
 
 namespace {
@@ -249,8 +251,7 @@ void EngineController::Go(const GoParams& params) {
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
-  auto stopper =
-      time_manager_->GetStopper(options_, params, tree_->HeadPosition());
+  auto stopper = time_manager_->GetStopper(params, tree_->HeadPosition());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
