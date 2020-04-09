@@ -245,8 +245,9 @@ void Node::MakeNotTerminal() {
       if (n > 0) {
         n_ += n;
         // Flip Q for opponent.
-        wl_ += -child.GetWL() * n;
-        d_ += child.GetD() * n;
+        // Default values don't matter as n is > 0.
+        wl_ += -child.GetWL(0.0f) * n;
+        d_ += child.GetD(0.0f) * n;
       }
     }
 
@@ -317,6 +318,7 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Make saved node the only child. (kills previous siblings).
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
+  if (!child_) edges_ = EdgeList();  // Clear edges list.
 }
 
 namespace {

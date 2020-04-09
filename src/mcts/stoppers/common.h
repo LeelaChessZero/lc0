@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2020 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,37 +27,25 @@
 
 #pragma once
 
-#include <vector>
+#include "mcts/stoppers/stoppers.h"
+#include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
-// Transposes flattened tensor from @from into @to. @to must have space for
-// from.size() elements.
-// @dims -- Dimensions of @from tensor. For example, {120, 60, 3, 3}
-// @order -- New-to-old dimension index mapping. For example {3, 2, 0, 1}
-template <class T>
-void TransposeTensor(const std::vector<int>& dims, std::vector<int> order,
-                     const std::vector<T> from, T* to) {
-  if (order.empty()) {
-    for (size_t i = 0; i < dims.size(); ++i)
-      order.push_back(dims.size() - i - 1);
-  }
-  std::vector<int> cur_idx(dims.size());
-  for (size_t _ = 0; _ < from.size(); ++_) {
-    size_t from_idx = 0;
-    for (int i : order) {
-      from_idx *= dims[i];
-      from_idx += cur_idx[i];
-    }
-    *to++ = from[from_idx];
-    for (int i = static_cast<int>(dims.size()) - 1; i >= 0; --i) {
-      if (++cur_idx[i] == dims[i]) {
-        cur_idx[i] = 0;
-      } else {
-        break;
-      }
-    }
-  }
-}
+enum class RunType { kUci, kSelfplay };
+void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
+
+// Option ID for a cache size. It's used from multiple places and there's no
+// really nice place to declare, so let it be here.
+extern const OptionId kNNCacheSizeId;
+
+// Populates KLDGain and SmartPruning stoppers.
+void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
+                               const OptionsDict& options);
+
+std::unique_ptr<TimeManager> MakeCommonTimeManager(
+    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
+    int64_t move_overhead);
 
 }  // namespace lczero

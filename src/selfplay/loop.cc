@@ -832,7 +832,7 @@ void SelfPlayLoop::RunLoop() {
   options_.Add<BoolOption>(kInteractiveId) = false;
 
   if (!options_.ProcessAllFlags()) return;
-  if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
+  if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
     UciLoop::RunLoop();
   } else {
     // Send id before starting tournament to allow wrapping client to know
@@ -901,6 +901,10 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   if (!info.moves.empty()) {
     res += " moves";
     for (const auto& move : info.moves) res += " " + move.as_string();
+  }
+  if (!info.initial_fen.empty() &&
+      info.initial_fen != ChessBoard::kStartposFen) {
+    res += " from_fen " + info.initial_fen;
   }
   responses.push_back(res);
   SendResponses(responses);
