@@ -129,7 +129,8 @@ void Validate(const std::vector<V5TrainingData>& fileContents,
                 &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
   for (int i = 0; i < moves.size(); i++) {
-    if (!(fileContents[i].probabilities[moves[i].as_nn_index()] >= 0.0f)) {
+    int transform = TransformForPosition(input_format, history);
+    if (!(fileContents[i].probabilities[moves[i].as_nn_index(transform)] >= 0.0f)) {
       std::cerr << "Illegal move: " << moves[i].as_string() << std::endl;
       throw Exception("Move performed is marked illegal in probabilities.");
     }
@@ -465,8 +466,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                 policy_dtm_bump++;
               }
             }
+            int transform = TransformForPosition(input_format, history);
             for (auto& move : to_boost) {
-              boost_probs[move.as_nn_index()] = true;
+              boost_probs[move.as_nn_index(transform)] = true;
             }
             boost_count = to_boost.size();
           }
