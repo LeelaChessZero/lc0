@@ -45,6 +45,16 @@ BoardSquare SingleSquare(BitBoard input) {
   assert(false);
   return BoardSquare();
 }
+BitBoard MaskDiffWithMirror(const InputPlane& cur, const InputPlane& prev) {
+  auto to_mirror = BitBoard(prev.mask);
+  to_mirror.Mirror();
+  return BitBoard(cur.mask ^ to_mirror.as_int());
+}
+BoardSquare OldPosition(const InputPlane& prev, BitBoard mask_diff) {
+  auto to_mirror = BitBoard(prev.mask);
+  to_mirror.Mirror();
+  return SingleSquare(to_mirror & mask_diff);
+}
 }  // namespace
 
 void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
@@ -312,13 +322,12 @@ InputPlanes EncodePositionForNN(
   return result;
 }
 
-Move DecodeMoveFromInput(const InputPlanes& planes) {
-  auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
-  auto knightdiff = BitBoard(planes[7].mask ^ planes[kPlanesPerBoard + 7].mask);
-  auto bishopdiff = BitBoard(planes[8].mask ^ planes[kPlanesPerBoard + 8].mask);
-  auto rookdiff = BitBoard(planes[9].mask ^ planes[kPlanesPerBoard + 9].mask);
-  auto queendiff =
-      BitBoard(planes[10].mask ^ planes[kPlanesPerBoard + 10].mask);
+Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
+  auto pawndiff = MaskDiffWithMirror(planes[6], prior[0]);
+  auto knightdiff = MaskDiffWithMirror(planes[7], prior[1]);
+  auto bishopdiff = MaskDiffWithMirror(planes[8], prior[2]);
+  auto rookdiff = MaskDiffWithMirror(planes[9], prior[3]);
+  auto queendiff = MaskDiffWithMirror(planes[10], prior[4]);
   // Handle Promotion.
   if (pawndiff.count() == 1) {
     auto from = SingleSquare(pawndiff);
@@ -342,48 +351,40 @@ Move DecodeMoveFromInput(const InputPlanes& planes) {
     return Move();
   }
   // check king first as castling moves both king and rook.
-  auto kingdiff = BitBoard(planes[11].mask ^ planes[kPlanesPerBoard + 11].mask);
+  auto kingdiff = MaskDiffWithMirror(planes[11], prior[5]);
   if (kingdiff.count() == 2) {
     if (rookdiff.count() == 2) {
       // TODO: Fix this properly for full 960 support.
-      auto from =
-          SingleSquare(planes[kPlanesPerBoard + 11].mask & kingdiff.as_int());
-      auto to =
-          SingleSquare(planes[kPlanesPerBoard + 9].mask & rookdiff.as_int());
+      auto from = OldPosition(prior[5], kingdiff);
+      auto to = OldPosition(prior[3], rookdiff);
       return Move(from, to);
     }
-    auto from =
-        SingleSquare(planes[kPlanesPerBoard + 11].mask & kingdiff.as_int());
+    auto from = OldPosition(prior[5], kingdiff);
     auto to = SingleSquare(planes[11].mask & kingdiff.as_int());
     return Move(from, to);
   }
   if (queendiff.count() == 2) {
-    auto from =
-        SingleSquare(planes[kPlanesPerBoard + 10].mask & queendiff.as_int());
+    auto from = OldPosition(prior[4], queendiff);
     auto to = SingleSquare(planes[10].mask & queendiff.as_int());
     return Move(from, to);
   }
   if (rookdiff.count() == 2) {
-    auto from =
-        SingleSquare(planes[kPlanesPerBoard + 9].mask & rookdiff.as_int());
+    auto from = OldPosition(prior[3], rookdiff);
     auto to = SingleSquare(planes[9].mask & rookdiff.as_int());
     return Move(from, to);
   }
   if (bishopdiff.count() == 2) {
-    auto from =
-        SingleSquare(planes[kPlanesPerBoard + 8].mask & bishopdiff.as_int());
+    auto from = OldPosition(prior[2], bishopdiff);
     auto to = SingleSquare(planes[8].mask & bishopdiff.as_int());
     return Move(from, to);
   }
   if (knightdiff.count() == 2) {
-    auto from =
-        SingleSquare(planes[kPlanesPerBoard + 7].mask & knightdiff.as_int());
+    auto from = OldPosition(prior[1], knightdiff);
     auto to = SingleSquare(planes[7].mask & knightdiff.as_int());
     return Move(from, to);
   }
   if (pawndiff.count() == 2) {
-    auto from =
-        SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
+    auto from = OldPosition(prior[0], pawndiff);
     auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
     return Move(from, to);
   }

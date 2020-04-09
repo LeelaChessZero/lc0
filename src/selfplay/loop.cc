@@ -248,7 +248,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       MoveList moves;
       for (int i = 1; i < fileContents.size(); i++) {
         moves.push_back(
-            DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i])));
+            DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i]),
+                                PlanesFromTrainingData(fileContents[i-1])));
         // All moves decoded are from the point of view of the side after the
         // move so need to mirror them all to be applicable to apply to the
         // position before.

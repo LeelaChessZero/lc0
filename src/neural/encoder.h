@@ -35,10 +35,10 @@ namespace lczero {
 
 enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
 
-// Decodes the move that led to current position using the current and last ply
-// in input planes. Move is from the perspective of the current position to move
+// Decodes the move that led to current position using the current and previous
+// input planes. Move is from the perspective of the current position to move
 // player, so will need flipping if it is to be applied to the prior position.
-Move DecodeMoveFromInput(const InputPlanes& planes);
+Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prev);
 
 // Decodes the current position into a board, rule50 and gameply.
 void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
