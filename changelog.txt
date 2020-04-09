@@ -20,6 +20,8 @@
 * Some bug fixes related to drawscore.
 * Selfplay mode now defaults to the same value as match play for 
   `--root-has-own-cpuct-params` (true).
+* Some advanced time management parameters are now accessed via the new 
+  `--time-manager` parameter instead of individual parameters.
 * Windows build script has been modernized.
 * Separate Eigen backend option for CPU.
 * Random backend no longer requires a network.
