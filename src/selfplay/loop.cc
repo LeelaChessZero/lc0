@@ -87,7 +87,9 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
     DataAssert(data.input_format ==
                    pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE ||
                data.input_format ==
-                   pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE);
+                   pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
+               data.input_format ==
+                   pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION);
     DataAssert(data.best_d >= 0.0f && data.best_d <= 1.0f);
     DataAssert(data.root_d >= 0.0f && data.root_d <= 1.0f);
     DataAssert(data.best_q >= -1.0f && data.best_q <= 1.0f);
@@ -95,11 +97,28 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
     DataAssert(data.root_m >= 0.0f);
     DataAssert(data.best_m >= 0.0f);
     DataAssert(data.plies_left >= 0.0f);
-    DataAssert(data.castling_them_oo >= 0 && data.castling_them_oo <= 1);
-    DataAssert(data.castling_them_ooo >= 0 && data.castling_them_ooo <= 1);
-    DataAssert(data.castling_us_oo >= 0 && data.castling_us_oo <= 1);
-    DataAssert(data.castling_us_ooo >= 0 && data.castling_us_ooo <= 1);
-    DataAssert(data.side_to_move >= 0 && data.side_to_move <= 1);
+    switch (data.input_format) {
+      case pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE:
+        DataAssert(data.castling_them_oo >= 0 && data.castling_them_oo <= 1);
+        DataAssert(data.castling_them_ooo >= 0 && data.castling_them_ooo <= 1);
+        DataAssert(data.castling_us_oo >= 0 && data.castling_us_oo <= 1);
+        DataAssert(data.castling_us_ooo >= 0 && data.castling_us_ooo <= 1);
+        break;
+      default:
+        // Verifiy at most one bit set.
+        DataAssert((data.castling_them_oo & (data.castling_them_oo - 1)) == 0);
+        DataAssert((data.castling_them_ooo & (data.castling_them_ooo - 1)) ==
+                   0);
+        DataAssert((data.castling_us_oo & (data.castling_us_oo - 1)) == 0);
+        DataAssert((data.castling_us_ooo & (data.castling_us_ooo - 1)) == 0);
+    }
+    if (data.input_format ==
+        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+      // At most one en-passant bit.
+      DataAssert((data.side_to_move & (data.side_to_move - 1)) == 0);
+    } else {
+      DataAssert(data.side_to_move >= 0 && data.side_to_move <= 1);
+    }
     DataAssert(data.result >= -1 && data.result <= 1);
     DataAssert(data.rule50_count >= 0 && data.rule50_count <= 100);
     float sum = 0.0f;
@@ -130,7 +149,8 @@ void Validate(const std::vector<V5TrainingData>& fileContents,
   history.Reset(board, rule50ply, gameply);
   for (int i = 0; i < moves.size(); i++) {
     int transform = TransformForPosition(input_format, history);
-    if (!(fileContents[i].probabilities[moves[i].as_nn_index(transform)] >= 0.0f)) {
+    if (!(fileContents[i].probabilities[moves[i].as_nn_index(transform)] >=
+          0.0f)) {
       std::cerr << "Illegal move: " << moves[i].as_string() << std::endl;
       throw Exception("Move performed is marked illegal in probabilities.");
     }
@@ -250,7 +270,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       for (int i = 1; i < fileContents.size(); i++) {
         moves.push_back(
             DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i]),
-                                PlanesFromTrainingData(fileContents[i-1])));
+                                PlanesFromTrainingData(fileContents[i - 1])));
         // All moves decoded are from the point of view of the side after the
         // move so need to mirror them all to be applicable to apply to the
         // position before.
@@ -745,8 +765,7 @@ void RescoreLoop::RunLoop() {
     }
     gaviotaEnabled = true;
   }
-  auto inputDir =
-      options_.GetOptionsDict().Get<std::string>(kInputDirId);
+  auto inputDir = options_.GetOptionsDict().Get<std::string>(kInputDirId);
   auto files = GetFileList(inputDir);
   if (files.size() == 0) {
     std::cerr << "No files to process" << std::endl;
@@ -755,8 +774,7 @@ void RescoreLoop::RunLoop() {
   for (int i = 0; i < files.size(); i++) {
     files[i] = inputDir + "/" + files[i];
   }
-  float dtz_boost =
-      options_.GetOptionsDict().Get<float>(kMinDTZBoostId);
+  float dtz_boost = options_.GetOptionsDict().Get<float>(kMinDTZBoostId);
   int threads = options_.GetOptionsDict().Get<int>(kThreadsId);
   if (threads > 1) {
     std::vector<std::thread> threads_;
@@ -764,27 +782,26 @@ void RescoreLoop::RunLoop() {
     while (threads_.size() < threads) {
       int offset_val = offset;
       offset++;
-      threads_.emplace_back([this, offset_val, files, &tablebase, threads,
-                             dtz_boost]() {
-        ProcessFiles(
-            files, &tablebase,
-            options_.GetOptionsDict().Get<std::string>(kOutputDirId),
-            options_.GetOptionsDict().Get<float>(kTempId),
-            options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
-            dtz_boost, offset_val, threads);
-      });
+      threads_.emplace_back(
+          [this, offset_val, files, &tablebase, threads, dtz_boost]() {
+            ProcessFiles(
+                files, &tablebase,
+                options_.GetOptionsDict().Get<std::string>(kOutputDirId),
+                options_.GetOptionsDict().Get<float>(kTempId),
+                options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
+                dtz_boost, offset_val, threads);
+          });
     }
     for (int i = 0; i < threads_.size(); i++) {
       threads_[i].join();
     }
 
   } else {
-    ProcessFiles(
-        files, &tablebase,
-        options_.GetOptionsDict().Get<std::string>(kOutputDirId),
-        options_.GetOptionsDict().Get<float>(kTempId),
-        options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
-        dtz_boost, 0, 1);
+    ProcessFiles(files, &tablebase,
+                 options_.GetOptionsDict().Get<std::string>(kOutputDirId),
+                 options_.GetOptionsDict().Get<float>(kTempId),
+                 options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
+                 dtz_boost, 0, 1);
   }
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;
