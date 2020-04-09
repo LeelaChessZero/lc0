@@ -285,6 +285,7 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
+    int probability_transform = 0;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count) {
@@ -304,7 +305,7 @@ class SearchWorker {
 
   NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node);
-  bool AddNodeToComputation(Node* node, bool add_if_cached);
+  bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              int idx_in_computation);

@@ -45,10 +45,14 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
                    InputPlanes planes, ChessBoard* board, int* rule50,
                    int* gameply);
 
+// Returns the transform that would be used in EncodePositionForNN.
+int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
+                         const PositionHistory& history);
+
 // Encodes the last position in history for the neural network request.
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history);
+    FillEmptyHistory fill_empty_history, int* transform_out);
 
 }  // namespace lczero

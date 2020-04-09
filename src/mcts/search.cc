@@ -275,7 +275,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << std::left << std::setw(5)
         << edge.GetMove(is_black_to_move).as_string();
 
-    oss << " (" << std::setw(4) << edge.GetMove().as_nn_index() << ")";
+    // TODO: should this be displaying transformed index?
+    oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
 
     oss << " N: " << std::right << std::setw(7) << edge.GetN() << " (+"
         << std::setw(2) << edge.GetNInFlight() << ") ";
@@ -901,7 +902,9 @@ void SearchWorker::GatherMinibatch() {
       // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        picked_node.is_cache_hit = AddNodeToComputation(node, true);
+        int transform;
+        picked_node.is_cache_hit = AddNodeToComputation(node, true, &transform);
+        picked_node.probability_transform = transform;
       }
     }
 
@@ -1185,17 +1188,31 @@ void SearchWorker::ExtendNode(Node* node) {
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
+bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
+                                        int* transform_out) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
-    if (computation_->AddInputByHash(hash)) return true;
+    if (computation_->AddInputByHash(hash)) {
+      if (transform_out) {
+        *transform_out = TransformForPosition(
+            search_->network_->GetCapabilities().input_format, history_);
+      }
+      return true;
+    }
   } else {
-    if (search_->cache_->ContainsKey(hash)) return true;
+    if (search_->cache_->ContainsKey(hash)) {
+      if (transform_out) {
+        *transform_out = TransformForPosition(
+            search_->network_->GetCapabilities().input_format, history_);
+      }
+      return true;
+    }
   }
+  int transform;
   auto planes =
       EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill());
+                          history_, 8, params_.GetHistoryFill(), &transform);
 
   std::vector<uint16_t> moves;
 
@@ -1203,7 +1220,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
     // Legal moves are known, use them.
     moves.reserve(node->GetNumEdges());
     for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index());
+      moves.emplace_back(edge.GetMove().as_nn_index(transform));
     }
   } else {
     // Cache pseudolegal moves. A bit of a waste, but faster.
@@ -1212,11 +1229,12 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
     moves.reserve(pseudolegal_moves.size());
     for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
          iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index());
+      moves.emplace_back(iter->as_nn_index(transform));
     }
   }
 
   computation_->AddInput(hash, std::move(planes), std::move(moves));
+  if (transform_out) *transform_out = transform;
   return false;
 }
 
@@ -1257,7 +1275,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false)) {
+    if (AddNodeToComputation(node, false, nullptr)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
@@ -1374,14 +1392,16 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // Calculate maximum first.
   float max_p = -std::numeric_limits<float>::infinity();
   for (auto edge : node->Edges()) {
-    max_p =
-        std::max(max_p, computation_->GetPVal(idx_in_computation,
-                                              edge.GetMove().as_nn_index()));
+    max_p = std::max(max_p, computation_->GetPVal(
+                                idx_in_computation,
+                                edge.GetMove().as_nn_index(
+                                    node_to_process->probability_transform)));
   }
   float total = 0.0;
   for (auto edge : node->Edges()) {
-    float p =
-        computation_->GetPVal(idx_in_computation, edge.GetMove().as_nn_index());
+    float p = computation_->GetPVal(
+        idx_in_computation,
+        edge.GetMove().as_nn_index(node_to_process->probability_transform));
     // Perform softmax and take into account policy softmax temperature T.
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
