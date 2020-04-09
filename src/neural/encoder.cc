@@ -500,13 +500,25 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
   auto kingdiff = MaskDiffWithMirror(planes[11], prior[5]);
   if (kingdiff.count() == 2) {
     if (rookdiff.count() == 2) {
-      // TODO: Fix this properly for full 960 support.
       auto from = OldPosition(prior[5], kingdiff);
       auto to = OldPosition(prior[3], rookdiff);
       return Move(from, to);
     }
     auto from = OldPosition(prior[5], kingdiff);
     auto to = SingleSquare(planes[11].mask & kingdiff.as_int());
+    if (std::abs(from.col() - to.col()) > 1) {
+      // Chess 960 castling can leave the rook in place, but the king has moved
+      // from one side of the rook to the other - thus has gone at least 2
+      // squares, which is impossible for a normal king move. Can't work out the
+      // rook location from rookdiff since its empty, but it is known given the
+      // direction of the king movement and the knowledge that the rook hasn't
+      // moved.
+      if (from.col() > to.col()) {
+        to = BoardSquare(from.row(), to.col() + 1);
+      } else {
+        to = BoardSquare(from.row(), to.col() - 1);
+      }
+    }
     return Move(from, to);
   }
   if (queendiff.count() == 2) {
@@ -517,6 +529,18 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
   if (rookdiff.count() == 2) {
     auto from = OldPosition(prior[3], rookdiff);
     auto to = SingleSquare(planes[9].mask & rookdiff.as_int());
+    // Only one king, so we can simply grab its current location directly.
+    auto kingpos = SingleSquare(planes[11].mask);
+    if (from.row() == kingpos.row() && to.row() == kingpos.row() &&
+        (from.col() < kingpos.col() && to.col() > kingpos.col() ||
+         from.col() > kingpos.col() && to.col() < kingpos.col())) {
+      // If the king hasn't moved, this could still be a chess 960 castling move
+      // if the rook has passed through the king.
+      // Destination of the castling move is where the rook started.
+      to = from;
+      // And since the king didn't move it forms the start position.
+      from = kingpos;
+    }
     return Move(from, to);
   }
   if (bishopdiff.count() == 2) {
