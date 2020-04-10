@@ -29,6 +29,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "chess/uciloop.h"
@@ -61,10 +62,13 @@ class StoppersHints {
   int64_t GetEstimatedRemainingTimeMs() const;
   void UpdateEstimatedRemainingRemainingPlayouts(int64_t v);
   int64_t GetEstimatedRemainingPlayouts() const;
+  void UpdateEstimatedNps(float v);
+  std::optional<float> GetEstimatedNps() const;
 
  private:
   int64_t remaining_time_ms_;
   int64_t remaining_playouts_;
+  std::optional<float> estimated_nps_;
 };
 
 // Interface for search stopper.

@@ -203,7 +203,9 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
   const auto nodes = stats.nodes_since_movestart + kSmartPruningToleranceNodes;
   const auto time = stats.time_since_movestart - *first_eval_time_;
-  const auto nps = 1000LL * nodes / time + 1;
+  // If nps is populated by someone who knows better, use it. Otherwise use the
+  // value calculated here.
+  const auto nps = hints->GetEstimatedNps().value_or(1000LL * nodes / time + 1);
 
   const double remaining_time_s = hints->GetEstimatedRemainingTimeMs() / 1000.0;
   const auto remaining_playouts =
