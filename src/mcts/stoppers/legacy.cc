@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "mcts/stoppers/legacy.h"
+
 #include "mcts/stoppers/stoppers.h"
 
 namespace lczero {

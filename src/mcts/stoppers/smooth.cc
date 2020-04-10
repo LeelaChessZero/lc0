@@ -25,14 +25,35 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include "mcts/stoppers/smooth.h"
 
-#include "mcts/stoppers/timemgr.h"
-#include "utils/optionsdict.h"
+#include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
 
-std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params);
+class Params {
+ public:
+  // Which fraction of the tree is reuse after a full move. Initial guess.
+  float initial_tree_reuse() const;
+  // Do not allow tree reuse expectation to go above this value.
+  float max_tree_reuse() const;
+  // Number of moves needed to update tree reuse estimation halfway.
+  float tree_reuse_halfupdate_moves() const;
+  // Initial NPS guess.
+  float initial_nps() const;
+  // Number of seconds to update nps estimation halfway.
+  float nps_halfupdate_seconds() const;
+  // Fraction of the budgeted time the engine uses, initial estimation.
+  float initial_smartpruning_timeuse() const;
+  // Number of moves to update timeuse estimation halfway.
+  float smartpruning_timeuse_halfupdate_moves() const;
+  // Fraction of a total available move time that is allowed to use.
+  float max_time_spend_fraction() const;
+
+ private:
+};
+
+std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
+                                                   const OptionsDict& params) {}
 
 }  // namespace lczero
