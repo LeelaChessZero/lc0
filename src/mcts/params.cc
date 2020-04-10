@@ -295,6 +295,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kPerPvCountersId) = false;
   std::vector<std::string> score_type = {"centipawn",
                                          "centipawn_with_drawscore",
+                                         "centipawn_2019",
                                          "centipawn_2018",
                                          "win_percentage",
                                          "Q",
