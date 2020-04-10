@@ -82,9 +82,9 @@ in ("Deep Learning").
 
 #### Ubuntu 18.04
 
-For Ubuntu 18.04 you need the latest version of meson, g++-8 and clang-6.0 before performing the steps above:
+For Ubuntu 18.04 you need the latest version of meson, libstdc++-8-dev, and clang-6.0 before performing the steps above:
 
-    sudo apt-get install gcc-8 g++-8 clang-6.0 ninja-build pkg-config
+    sudo apt-get install libstdc++-8-dev clang-6.0 ninja-build pkg-config
     pip3 install meson --user
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
