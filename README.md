@@ -182,7 +182,7 @@ pip3 install ninja
 3. Install compiler and standard libraries
 
 ```
-sudo apt install clang-6.0 gcc-8 g++-8
+sudo apt install clang-6.0 libstdc++-8-dev
 ```
 
 4. Clone lc0 and compile
