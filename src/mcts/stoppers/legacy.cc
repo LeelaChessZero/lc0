@@ -55,7 +55,7 @@ class LegacyTimeManager : public TimeManager {
         time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
         spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const Position& position) override;
+                                            const NodeTree& tree) override;
 
  private:
   const int64_t move_overhead_;
@@ -86,7 +86,8 @@ float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
 }
 
 std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
-    const GoParams& params, const Position& position) {
+    const GoParams& params, const NodeTree& tree) {
+  const Position& position = tree.HeadPosition();
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   // If no time limit is given, don't stop on this condition.

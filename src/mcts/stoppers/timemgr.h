@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "chess/uciloop.h"
+#include "mcts/node.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
@@ -88,8 +89,8 @@ class SearchStopper {
 class TimeManager {
  public:
   virtual ~TimeManager() = default;
-  virtual std::unique_ptr<SearchStopper> GetStopper(
-      const GoParams& params, const Position& position) = 0;
+  virtual std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
+                                                    const NodeTree& tree) = 0;
 };
 
 }  // namespace lczero
