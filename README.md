@@ -92,21 +92,17 @@ Make sure that `~/.local/bin` is in your `PATH` environment variable. You can no
 
 #### Ubuntu 16.04
 
-For Ubuntu 16.04 you need the latest version of meson, ninja and also gcc-8.0 before performing the steps above:
+For Ubuntu 16.04 you need the latest version of meson, ninja, clang-6.0, and libstdc++-8:
 
+    wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+    sudo apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main'
     sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install gcc-8 g++-8
-    pip3 install meson --user
-    pip3 install ninja --user
-    CC=gcc-8 CXX=g++-8 INSTALL_PREFIX=~/.local ./build.sh
+    sudo apt-get install clang-6.0 libstdc++-8-dev
+    pip3 install meson ninja --user
+    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
-
-If you want to build with clang-6.0 you still need g++-8 for the library. Replace the last line above with:
-
-    sudo apt-get install clang-6.0
-    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 #### openSUSE (all versions)
 
