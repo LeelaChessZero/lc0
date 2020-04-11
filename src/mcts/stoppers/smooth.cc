@@ -27,6 +27,9 @@
 
 #include "mcts/stoppers/smooth.h"
 
+#include <functional>
+
+#include "mcts/stoppers/legacy.h"
 #include "mcts/stoppers/stoppers.h"
 #include "utils/mutex.h"
 
@@ -35,39 +38,94 @@ namespace {
 
 class Params {
  public:
-  Params(const OptionsDict& /* params */, int64_t /* move_overhead */) {}
+  Params(const OptionsDict& /* params */, int64_t move_overhead);
+
+  using MovesLeftEstimator = std::function<float(const NodeTree&)>;
 
   // Which fraction of the tree is reuse after a full move. Initial guess.
-  float initial_tree_reuse() const { return 0.5f; }
+  float initial_tree_reuse() const { return initial_tree_reuse_; }
   // Do not allow tree reuse expectation to go above this value.
-  float max_tree_reuse() const { return 0.7f; }
+  float max_tree_reuse() const { return max_tree_reuse_; }
   // Number of moves needed to update tree reuse estimation halfway.
-  float tree_reuse_halfupdate_moves() const { return 4.0f; }
+  float tree_reuse_halfupdate_moves() const {
+    return tree_reuse_halfupdate_moves_;
+  }
   // Initial NPS guess.
-  float initial_nps() const { return 20000.0f; }
+  float initial_nps() const { return initial_nps_; }
   // Number of seconds to update nps estimation halfway.
-  float nps_halfupdate_seconds() const { return 5.0f; }
+  float nps_halfupdate_seconds() const { return nps_halfupdate_seconds_; }
   // Fraction of the budgeted time the engine uses, initial estimation.
-  float initial_smartpruning_timeuse() const { return 0.7f; }
+  float initial_smartpruning_timeuse() const {
+    return initial_smartpruning_timeuse_;
+  }
   // Do not allow timeuse estimation to fall below this.
-  float min_smartpruning_timeuse() const { return 0.3f; }
+  float min_smartpruning_timeuse() const { return min_smartpruning_timeuse_; }
   // Number of moves to update timeuse estimation halfway.
-  float smartpruning_timeuse_halfupdate_moves() const { return 10.0f; }
+  float smartpruning_timeuse_halfupdate_moves() const {
+    return smartpruning_timeuse_halfupdate_moves_;
+  }
   // Fraction of a total available move time that is allowed to use for a single
   // move.
-  float max_single_move_time_fraction() const { return 0.5f; }
-
-  int64_t move_overhead_ms() const;
+  float max_single_move_time_fraction() const {
+    return max_single_move_time_fraction_;
+  }
+  // Move overhead.
+  int64_t move_overhead_ms() const { return move_overhead_ms_; }
+  // Returns a function function that estimates remaining moves.
+  MovesLeftEstimator moves_left_estimator() const {
+    return moves_left_estimator_;
+  }
 
  private:
+  const int64_t move_overhead_ms_;
+  const float initial_tree_reuse_;
+  const float max_tree_reuse_;
+  const float tree_reuse_halfupdate_moves_;
+  const float initial_nps_;
+  const float nps_halfupdate_seconds_;
+  const float initial_smartpruning_timeuse_;
+  const float min_smartpruning_timeuse_;
+  const float smartpruning_timeuse_halfupdate_moves_;
+  const float max_single_move_time_fraction_;
+  const MovesLeftEstimator moves_left_estimator_;
 };
 
-// Returns the updated value of @from, towards @to by the number of halves equal
-// to number of @steps in @value.
-// E.g. if value=1*step, returns (from+to)/2,
-// if value=2*step, return (1*from + 3*to)/4,
-// if value=3*step, return (1*from + 7*to)/7,
-// if value=0, returns from.
+Params::MovesLeftEstimator CreateMovesLeftEstimator(const OptionsDict& params) {
+  // The only estimator we have now is MLE-legacy (Moves left estimator).
+  const OptionsDict& mle_dict = params.HasSubdict("mle-legacy")
+                                    ? params.GetSubdict("mle-legacy")
+                                    : params;
+  return [midpoint = mle_dict.GetOrDefault<float>("midpoint", 51.5f),
+          steepness = mle_dict.GetOrDefault<float>("steepness", 7.0f)](
+             const NodeTree& tree) {
+    const auto ply = tree.HeadPosition().GetGamePly();
+    return ComputeEstimatedMovesToGo(ply, midpoint, steepness);
+  };
+}
+
+Params::Params(const OptionsDict& params, int64_t move_overhead)
+    : move_overhead_ms_(move_overhead),
+      initial_tree_reuse_(params.GetOrDefault<float>("init-tree-reuse", 0.5f)),
+      max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.7f)),
+      tree_reuse_halfupdate_moves_(
+          params.GetOrDefault<float>("tree-reuse-update-rate", 4.0f)),
+      initial_nps_(params.GetOrDefault<float>("init-nps", 20000.0f)),
+      nps_halfupdate_seconds_(
+          params.GetOrDefault<float>("nps-update-rate", 5.0f)),
+      initial_smartpruning_timeuse_(
+          params.GetOrDefault<float>("init-timeuse", 0.7f)),
+      min_smartpruning_timeuse_(
+          params.GetOrDefault<float>("min-timeuse", 0.3f)),
+      smartpruning_timeuse_halfupdate_moves_(
+          params.GetOrDefault<float>("timeuse-update-rate", 10.0f)),
+      max_single_move_time_fraction_(
+          params.GetOrDefault<float>("max-move-budget", 0.3f)),
+      moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
+
+// Returns the updated value of @from, towards @to by the number of halves
+// equal to number of @steps in @value. E.g. if value=1*step, returns
+// (from+to)/2, if value=2*step, return (1*from + 3*to)/4, if
+// value=3*step, return (1*from + 7*to)/7, if value=0, returns from.
 float ExponentialDecay(float from, float to, float step, float value) {
   return to - (to - from) * std::pow(0.5f, value / step);
 }
@@ -79,6 +137,9 @@ class SmoothStopper : public TimeLimitStopper {
   SmoothStopper(int64_t deadline_ms, SmoothTimeManager* manager);
 
  private:
+  bool ShouldStop(const IterationStats& stats, StoppersHints* hints) override;
+  void OnSearchDone(const IterationStats& stats) override;
+
   SmoothTimeManager* const manager_;
 };
 
@@ -86,6 +147,38 @@ class SmoothTimeManager : public TimeManager {
  public:
   SmoothTimeManager(int64_t move_overhead, const OptionsDict& params)
       : params_(params, move_overhead) {}
+
+  float UpdateNps(int64_t time_since_movestart_ms,
+                  int64_t nodes_since_movestart) {
+    Mutex::Lock lock(mutex_);
+    if (time_since_movestart_ms >= last_time_) return nps_;
+    const float nps = 1000.0f * nodes_since_movestart / time_since_movestart_ms;
+    nps_ = ExponentialDecay(nps_, nps, params_.nps_halfupdate_seconds(),
+                            (time_since_movestart_ms - last_time_) / 1000.0f);
+    last_time_ = time_since_movestart_ms;
+    return nps_;
+  }
+
+  void UpdateEndOfMoveStats(int64_t total_move_time, int64_t total_nodes) {
+    Mutex::Lock lock(mutex_);
+    // Update time_use estimation.
+    const float this_move_time_use = total_move_time / move_budgeted_time_ms_;
+    timeuse_ = ExponentialDecay(timeuse_, this_move_time_use,
+                                params_.smartpruning_timeuse_halfupdate_moves(),
+                                total_move_time / last_expected_movetime_ms_);
+    if (timeuse_ < params_.min_smartpruning_timeuse()) {
+      timeuse_ = params_.min_smartpruning_timeuse();
+    }
+    // Remember final number of nodes for tree reuse estimation.
+    last_move_final_nodes_ = total_nodes;
+
+    LOGFILE << "Updating endmove stats. actual_move_time=" << total_move_time
+            << "ms, budgeted_move_time=" << move_budgeted_time_ms_
+            << "ms (ratio=" << this_move_time_use
+            << "). New time_use=" << timeuse_
+            << ", update_rate=" << total_move_time / last_expected_movetime_ms_
+            << " (expected_move_time=" << last_expected_movetime_ms_ << "ms).";
+  }
 
  private:
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
@@ -104,10 +197,10 @@ class SmoothTimeManager : public TimeManager {
       UpdateTreeReuseFactor(current_nodes);
     }
 
-    last_time_ = 0.0f;
+    last_time_ = 0;
 
     // Get remaining moves estimation.
-    float remaining_moves = GetRemainingMoves();
+    float remaining_moves = params_.moves_left_estimator()(tree);
 
     // If the number of moves remaining until the time control are less than
     // the estimated number of moves left in the game, then use the number of
@@ -122,19 +215,20 @@ class SmoothTimeManager : public TimeManager {
     const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
     // Total time, including increments, until time control.
-    auto total_remaining_ms =
+    const auto total_remaining_ms =
         std::max(0.0f, *time + increment * (remaining_moves - 1) -
                            params_.move_overhead_ms());
 
     // Total remaining nodes that we'll have chance to compute in a game.
-    float remaining_game_nodes = total_remaining_ms * nps_ / 1000.0f;
+    const float remaining_game_nodes = total_remaining_ms * nps_ / 1000.0f;
     // Total (fresh) nodes, in average, to processed per move.
-    float avg_nodes_per_move = remaining_game_nodes / remaining_moves;
+    const float avg_nodes_per_move = remaining_game_nodes / remaining_moves;
     // As some part of a tree is usually reused, we can aim to a larger target.
-    float nodes_per_move_including_reuse =
+    const float nodes_per_move_including_reuse =
         avg_nodes_per_move / (1.0f - tree_reuse_);
     // Subtract what we already have, and get what we need to compute.
-    float move_estimate_nodes = nodes_per_move_including_reuse - current_nodes;
+    const float move_estimate_nodes =
+        nodes_per_move_including_reuse - current_nodes;
     // This is what time we think will be really spent thinking.
     last_expected_movetime_ms_ = move_estimate_nodes / nps_ * 1000.0f;
     // This is what is the actual budget as we hope that the search will be
@@ -146,21 +240,38 @@ class SmoothTimeManager : public TimeManager {
       move_budgeted_time_ms_ = *time * params_.max_single_move_time_fraction();
     }
 
+    LOGFILE << "time_budget=" << move_budgeted_time_ms_
+            << "ms, expected_move_time=" << last_expected_movetime_ms_
+            << "ms, timeuse=" << timeuse_
+            << "ms, expected_total_nodes=" << nodes_per_move_including_reuse
+            << "(new=" << move_estimate_nodes << " + reused=" << current_nodes
+            << "), avg_total_nodes_per_move=" << nodes_per_move_including_reuse
+            << "(fresh=" << avg_nodes_per_move << ", reuse_rate=" << tree_reuse_
+            << "), remaining_game_nodes=" << remaining_game_nodes
+            << ", remaining_moves=" << remaining_moves
+            << ", total_remaining_ms=" << total_remaining_ms
+            << ", nps=" << nps_;
+
     return std::make_unique<SmoothStopper>(move_budgeted_time_ms_, this);
   }
 
   void UpdateTreeReuseFactor(int64_t new_move_nodes) REQUIRES(mutex_) {
-    tree_reuse_ = ExponentialDecay(
-        tree_reuse_,
-        static_cast<float>(new_move_nodes) / last_move_final_nodes_,
-        last_time_ / last_expected_movetime_ms_,
-        params_.tree_reuse_halfupdate_moves());
+    const float this_move_tree_reuse =
+        static_cast<float>(new_move_nodes) / last_move_final_nodes_;
+    tree_reuse_ = ExponentialDecay(tree_reuse_, this_move_tree_reuse,
+                                   last_time_ / last_expected_movetime_ms_,
+                                   params_.tree_reuse_halfupdate_moves());
     if (tree_reuse_ > params_.max_tree_reuse()) {
       tree_reuse_ = params_.max_tree_reuse();
     }
+    LOGFILE << "Updating tree reuse. last_move_nodes=" << last_move_final_nodes_
+            << ", this_move_nodes=" << new_move_nodes
+            << " (tree_reuse=" << this_move_tree_reuse
+            << "). avg_tree_reuse=" << tree_reuse_
+            << ", update_rate=" << (last_time_ / last_expected_movetime_ms_)
+            << " (expected_move_time=" << last_expected_movetime_ms_
+            << "ms, actual_move_time=" << last_time_ << "ms)";
   }
-
-  float GetRemainingMoves() const { return -4; }  // DO NOT SUBMIT
 
   const Params params_;
 
@@ -186,16 +297,20 @@ class SmoothTimeManager : public TimeManager {
   float last_expected_movetime_ms_ GUARDED_BY(mutex_) = 0.0f;
 };
 
-/*class SmoothStopper : public TimeLimitStopper {
-  SmoothStopper(SmoothTimeManager* manager);
-
- private:
-  SmoothTimeManager* const manager_;
-};
-*/
-
 SmoothStopper::SmoothStopper(int64_t deadline_ms, SmoothTimeManager* manager)
     : TimeLimitStopper(deadline_ms), manager_(manager) {}
+
+bool SmoothStopper::ShouldStop(const IterationStats& stats,
+                               StoppersHints* hints) {
+  const auto nps = manager_->UpdateNps(stats.time_since_movestart,
+                                       stats.nodes_since_movestart);
+  hints->UpdateEstimatedNps(nps);
+  return TimeLimitStopper::ShouldStop(stats, hints);
+}
+
+void SmoothStopper::OnSearchDone(const IterationStats& stats) {
+  manager_->UpdateEndOfMoveStats(stats.time_since_movestart, stats.total_nodes);
+}
 
 }  // namespace
 

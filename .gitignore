@@ -2,6 +2,7 @@
 *.swp
 .clang_complete
 .DS_Store
+.clangd/
 build/
 compile_commands.json
 CUDA_NN/

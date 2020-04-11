@@ -31,6 +31,24 @@
 
 namespace lczero {
 
+float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
+  // An analysis of chess games shows that the distribution of game lengths
+  // looks like a log-logistic distribution. The mean residual time function
+  // calculates how many more moves are expected in the game given that we are
+  // at the current ply. Given that this function can be expensive to compute,
+  // we calculate the median residual time function instead. This is derived and
+  // shown to be similar to the mean residual time in "Some Useful Properties of
+  // Log-Logistic Random Variables for Health Care Simulations" (Clark &
+  // El-Taha, 2015).
+  // midpoint: The median length of games.
+  // steepness: How quickly the function drops off from its maximum value,
+  // around the midpoint.
+  const float move = ply / 2.0f;
+  return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
+                             1 / steepness) -
+         move;
+}
+
 namespace {
 
 class LegacyStopper : public TimeLimitStopper {
@@ -66,24 +84,6 @@ class LegacyTimeManager : public TimeManager {
   // No need to be atomic as only one thread will update it.
   int64_t time_spared_ms_ = 0;
 };
-
-float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
-  // An analysis of chess games shows that the distribution of game lengths
-  // looks like a log-logistic distribution. The mean residual time function
-  // calculates how many more moves are expected in the game given that we are
-  // at the current ply. Given that this function can be expensive to compute,
-  // we calculate the median residual time function instead. This is derived and
-  // shown to be similar to the mean residual time in "Some Useful Properties of
-  // Log-Logistic Random Variables for Health Care Simulations" (Clark &
-  // El-Taha, 2015).
-  // midpoint: The median length of games.
-  // steepness: How quickly the function drops off from its maximum value,
-  // around the midpoint.
-  const float move = ply / 2.0f;
-  return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
-                             1 / steepness) -
-         move;
-}
 
 std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
     const GoParams& params, const NodeTree& tree) {
