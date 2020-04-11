@@ -161,11 +161,14 @@ class SmoothTimeManager : public TimeManager {
 
   void UpdateEndOfMoveStats(int64_t total_move_time, int64_t total_nodes) {
     Mutex::Lock lock(mutex_);
+    // How different was this move from an average move
+    const float this_move_time_fraction =
+        avg_ms_per_move_ <= 0.0f ? 0.0f : total_move_time / avg_ms_per_move_;
     // Update time_use estimation.
     const float this_move_time_use = total_move_time / move_budgeted_time_ms_;
     timeuse_ = ExponentialDecay(timeuse_, this_move_time_use,
                                 params_.smartpruning_timeuse_halfupdate_moves(),
-                                total_move_time / last_expected_movetime_ms_);
+                                this_move_time_fraction);
     if (timeuse_ < params_.min_smartpruning_timeuse()) {
       timeuse_ = params_.min_smartpruning_timeuse();
     }
@@ -176,8 +179,8 @@ class SmoothTimeManager : public TimeManager {
             << "ms, budgeted_move_time=" << move_budgeted_time_ms_
             << "ms (ratio=" << this_move_time_use
             << "). New time_use=" << timeuse_
-            << ", update_rate=" << total_move_time / last_expected_movetime_ms_
-            << " (expected_move_time=" << last_expected_movetime_ms_ << "ms).";
+            << ", update_rate=" << this_move_time_fraction
+            << " (avg_move_time=" << avg_ms_per_move_ << "ms).";
   }
 
  private:
@@ -193,7 +196,7 @@ class SmoothTimeManager : public TimeManager {
     Mutex::Lock lock(mutex_);
 
     const auto current_nodes = tree.GetCurrentHead()->GetN();
-    if (last_move_final_nodes_ && last_time_ && last_expected_movetime_ms_) {
+    if (last_move_final_nodes_ && last_time_ && avg_ms_per_move_ >= 0.0f) {
       UpdateTreeReuseFactor(current_nodes);
     }
 
@@ -223,6 +226,8 @@ class SmoothTimeManager : public TimeManager {
     const float remaining_game_nodes = total_remaining_ms * nps_ / 1000.0f;
     // Total (fresh) nodes, in average, to processed per move.
     const float avg_nodes_per_move = remaining_game_nodes / remaining_moves;
+    // Average time that will be spent per move.
+    avg_ms_per_move_ = total_remaining_ms / remaining_moves;
     // As some part of a tree is usually reused, we can aim to a larger target.
     const float nodes_per_move_including_reuse =
         avg_nodes_per_move / (1.0f - tree_reuse_);
@@ -230,10 +235,11 @@ class SmoothTimeManager : public TimeManager {
     const float move_estimate_nodes =
         nodes_per_move_including_reuse - current_nodes;
     // This is what time we think will be really spent thinking.
-    last_expected_movetime_ms_ = move_estimate_nodes / nps_ * 1000.0f;
+    const float last_expected_movetime_ms =
+        move_estimate_nodes / nps_ * 1000.0f;
     // This is what is the actual budget as we hope that the search will be
     // shorter due to smart pruning.
-    move_budgeted_time_ms_ = last_expected_movetime_ms_ / timeuse_;
+    move_budgeted_time_ms_ = last_expected_movetime_ms / timeuse_;
 
     if (move_budgeted_time_ms_ >
         *time * params_.max_single_move_time_fraction()) {
@@ -256,10 +262,14 @@ class SmoothTimeManager : public TimeManager {
   }
 
   void UpdateTreeReuseFactor(int64_t new_move_nodes) REQUIRES(mutex_) {
+    // How different was this move from an average move
+    const float this_move_time_fraction =
+        avg_ms_per_move_ <= 0.0f ? 0.0f : last_time_ / avg_ms_per_move_;
+
     const float this_move_tree_reuse =
         static_cast<float>(new_move_nodes) / last_move_final_nodes_;
     tree_reuse_ = ExponentialDecay(tree_reuse_, this_move_tree_reuse,
-                                   last_time_ / last_expected_movetime_ms_,
+                                   this_move_time_fraction,
                                    params_.tree_reuse_halfupdate_moves());
     if (tree_reuse_ > params_.max_tree_reuse()) {
       tree_reuse_ = params_.max_tree_reuse();
@@ -268,8 +278,8 @@ class SmoothTimeManager : public TimeManager {
             << ", this_move_nodes=" << new_move_nodes
             << " (tree_reuse=" << this_move_tree_reuse
             << "). avg_tree_reuse=" << tree_reuse_
-            << ", update_rate=" << (last_time_ / last_expected_movetime_ms_)
-            << " (expected_move_time=" << last_expected_movetime_ms_
+            << ", update_rate=" << this_move_time_fraction
+            << " (avg_move_time=" << avg_ms_per_move_
             << "ms, actual_move_time=" << last_time_ << "ms)";
   }
 
@@ -283,6 +293,9 @@ class SmoothTimeManager : public TimeManager {
   // Fraction of a budgeted time usually used.
   float timeuse_ GUARDED_BY(mutex_) = params_.initial_smartpruning_timeuse();
 
+  // Average amount of time per move. Used to compute ratio for timeuse and
+  // tree reuse updates.
+  float avg_ms_per_move_ GUARDED_BY(mutex_) = 0.0f;
   // Total amount of time budgeted for the current move. Used to update timeuse_
   // when the move ends.
   float move_budgeted_time_ms_ GUARDED_BY(mutex_) = 0.0f;
