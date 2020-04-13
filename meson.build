@@ -132,6 +132,7 @@ files += [
   'src/mcts/stoppers/factory.cc',
   'src/mcts/stoppers/legacy.cc',
   'src/mcts/stoppers/smooth.cc',
+  'src/mcts/stoppers/alphazero.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
   'src/neural/cache.cc',
