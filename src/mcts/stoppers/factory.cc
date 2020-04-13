@@ -43,29 +43,26 @@ const OptionId kMoveOverheadId{
     "Amount of time, in milliseconds, that the engine subtracts from it's "
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
-const OptionId kTimeManagerId{"time-manager", "TimeManager",
-                              "Name and config of atime manager."};
-const OptionId kAlphazeroTimeManagerId{"alphazero", "Alphazero",
-    "Makes the engine use AlphaZero time. The alphazero engine always "
+const OptionId kTimeManagerId{
+    "time-manager", "TimeManager",
+    "Name and config of atime manager. "
+    "Default is 'legacy'. "
+    "Optional time manager is 'alphazero' "
+    "'alphazero' Makes the engine use AlphaZero time. The alphazero engine always "
     "budgeted 5 percent of total time left for the first upcoming move, "
-    "thereby "
-    "gradually taking less time for each consecutive move in the game.."};
-const OptionId kAlphazeroTimeValueId{
-    "alphazero-time-value", "AlphazeroTimeValue",
-    "Remaining time is divided by this value. Default value of 20 uses "
-    "alphazero time."
+    "Remaining time is divided by value `alphazero-time-value`. "
+    "Default value of 20 uses (all time / 20 = 5%) 5 percent of all remaining time. "
     "Lower values will spend more time in beginning of game, higher values "
-    "will save more time"
-    "for later in the game"};
+    "will save more time for later in the game." 
+    "Configure as `--time-manager=alphazero(alphazero-time-value=10) "
+    "to go to (all time / 10 = 10%) ten percent of all remaining time per move"};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   PopulateCommonStopperOptions(for_what, options);
   if (for_what == RunType::kUci) {
     options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-    options->Add<FloatOption>(kAlphazeroTimeValueId, 2.0f, 100.0f) = 20.0f;
     options->Add<StringOption>(kTimeManagerId) = "legacy";
-    options->Add<StringOption>(kAlphazeroTimeManagerId) = "alphazero";
   }
 }
 
@@ -86,7 +83,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   if (managers[0] == "legacy") {
     time_manager =
         MakeLegacyTimeManager(move_overhead, tm_options.GetSubdict("legacy"));
-  } else if (managers[0] == options.Get<std::string>(kAlphazeroTimeManagerId)) {
+  } else if (managers[0] == "alphazero") {
     time_manager = MakeAlphazeroTimeManager(move_overhead,
                                             tm_options.GetSubdict("alphazero"));
   }
