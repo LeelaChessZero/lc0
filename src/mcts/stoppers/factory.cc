@@ -31,6 +31,7 @@
 
 #include "factory.h"
 #include "mcts/stoppers/legacy.h"
+#include "mcts/stoppers/alphazero.h"
 #include "mcts/stoppers/stoppers.h"
 #include "utils/exception.h"
 
@@ -44,14 +45,27 @@ const OptionId kMoveOverheadId{
     "communication, etc)."};
 const OptionId kTimeManagerId{"time-manager", "TimeManager",
                               "Name and config of atime manager."};
-
+const OptionId kAlphazeroTimeManagerId{"alphazero", "Alphazero",
+    "Makes the engine use AlphaZero time. The alphazero engine always "
+    "budgeted 5 percent of total time left for the first upcoming move, "
+    "thereby "
+    "gradually taking less time for each consecutive move in the game.."};
+const OptionId kAlphazeroTimeValueId{
+    "alphazero-time-value", "AlphazeroTimeValue",
+    "Remaining time is divided by this value. Default value of 20 uses "
+    "alphazero time."
+    "Lower values will spend more time in beginning of game, higher values "
+    "will save more time"
+    "for later in the game"};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   PopulateCommonStopperOptions(for_what, options);
   if (for_what == RunType::kUci) {
     options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
+    options->Add<FloatOption>(kAlphazeroTimeValueId, 2.0f, 100.0f) = 20.0f;
     options->Add<StringOption>(kTimeManagerId) = "legacy";
+    options->Add<StringOption>(kAlphazeroTimeManagerId) = "alphazero";
   }
 }
 
@@ -60,6 +74,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
 
   OptionsDict tm_options;
   tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
+  
   const auto managers = tm_options.ListSubdicts();
 
   std::unique_ptr<TimeManager> time_manager;
@@ -67,10 +82,15 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
     throw Exception("Exactly one time manager should be specified, " +
                     std::to_string(managers.size()) + " specified instead.");
   }
+  
   if (managers[0] == "legacy") {
     time_manager =
         MakeLegacyTimeManager(move_overhead, tm_options.GetSubdict("legacy"));
+  } else if (managers[0] == options.Get<std::string>(kAlphazeroTimeManagerId)) {
+    time_manager = MakeAlphazeroTimeManager(move_overhead,
+                                            tm_options.GetSubdict("alphazero"));
   }
+  
   if (!time_manager) {
     throw Exception("Unknown time manager: [" + managers[0] + "]");
   }
