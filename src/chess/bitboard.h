@@ -165,14 +165,7 @@ class BitBoard {
   bool intersects(const BitBoard& other) const { return board_ & other.board_; }
 
   // Flips black and white side of a board.
-  void Mirror() {
-    board_ = (board_ & 0x00000000FFFFFFFF) << 32 |
-             (board_ & 0xFFFFFFFF00000000) >> 32;
-    board_ = (board_ & 0x0000FFFF0000FFFF) << 16 |
-             (board_ & 0xFFFF0000FFFF0000) >> 16;
-    board_ =
-        (board_ & 0x00FF00FF00FF00FF) << 8 | (board_ & 0xFF00FF00FF00FF00) >> 8;
-  }
+  void Mirror() { board_ = ReverseBytesInBytes(board_); }
 
   bool operator==(const BitBoard& other) const {
     return board_ == other.board_;
@@ -261,7 +254,9 @@ class Move {
   uint16_t as_packed_int() const;
 
   // 0 .. 1857, to use in neural networks.
-  uint16_t as_nn_index() const;
+  // Transform is a bit field which describes a transform to be applied to the
+  // the move before converting it to an index.
+  uint16_t as_nn_index(int transform) const;
 
   explicit operator bool() const { return data_ != 0; }
   bool operator==(const Move& other) { return data_ == other.data_; }

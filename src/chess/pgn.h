@@ -27,13 +27,21 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 
 #include "chess/bitboard.h"
 #include "chess/board.h"
+#include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
+
+struct Opening {
+  std::string start_fen = ChessBoard::kStartposFen;
+  MoveList moves;
+};
 
 class PgnReader {
  public:
@@ -41,12 +49,35 @@ class PgnReader {
     std::ifstream file(filepath);
     std::string line;
     bool in_comment = false;
+    bool started = false;
     while (std::getline(file, line)) {
       // TODO: support line breaks in tags to ensure they are properly ignored.
       if (line.empty() || line[0] == '[') {
-        Flush();
+        if (started) {
+          Flush();
+          started = false;
+        }
+        auto uc_line = line;
+        std::transform(
+            uc_line.begin(), uc_line.end(), uc_line.begin(),
+            [](unsigned char c) { return std::toupper(c); }  // correct
+        );
+        if (uc_line.find("[FEN \"", 0) == 0) {
+          auto start_trimmed = line.substr(6);
+          cur_startpos_ = start_trimmed.substr(0, start_trimmed.find('"'));
+          // Some 'opening books' omit the last 2 fields, so there is only 3
+          // space delimiters.
+          if (std::count(cur_startpos_.begin(), cur_startpos_.end(), ' ') ==
+              3) {
+            cur_startpos_ += " 0 1";
+          }
+          cur_board_.SetFromFen(cur_startpos_);
+        }
         continue;
       }
+      // Must have at least one non-tag non-empty line in order to be considered
+      // a game.
+      started = true;
       // Handle braced comments.
       int cur_offset = 0;
       while ((in_comment && line.find('}', cur_offset) != std::string::npos) ||
@@ -104,17 +135,19 @@ class PgnReader {
         cur_board_.Mirror();
       }
     }
-    Flush();
+    if (started) {
+      Flush();
+    }
   }
-  std::vector<MoveList> GetGames() const { return games_; }
-  std::vector<MoveList>&& ReleaseGames() { return std::move(games_); }
+  std::vector<Opening> GetGames() const { return games_; }
+  std::vector<Opening>&& ReleaseGames() { return std::move(games_); }
 
  private:
   void Flush() {
-    if (cur_game_.empty()) return;
-    games_.push_back(cur_game_);
+    games_.push_back({cur_startpos_, cur_game_});
     cur_game_.clear();
     cur_board_.SetFromFen(ChessBoard::kStartposFen);
+    cur_startpos_ = ChessBoard::kStartposFen;
   }
 
   Move::Promotion PieceToPromotion(int p) {
@@ -257,7 +290,8 @@ class PgnReader {
 
   ChessBoard cur_board_{ChessBoard::kStartposFen};
   MoveList cur_game_;
-  std::vector<MoveList> games_;
+  std::string cur_startpos_ = ChessBoard::kStartposFen;
+  std::vector<Opening> games_;
 };
 
 }  // namespace lczero

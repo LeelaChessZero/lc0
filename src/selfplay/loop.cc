@@ -122,6 +122,10 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
     res += " moves";
     for (const auto& move : info.moves) res += " " + move.as_string();
   }
+  if (!info.initial_fen.empty() &&
+      info.initial_fen != ChessBoard::kStartposFen) {
+    res += " from_fen " + info.initial_fen;
+  }
   responses.push_back(res);
   SendResponses(responses);
 }

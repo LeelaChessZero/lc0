@@ -141,6 +141,9 @@ class Search {
   // Depth of a root node is 0 (even number).
   float GetDrawScore(bool is_odd_depth) const;
 
+  // Ensure that all shared collisions are cancelled and clear them out.
+  void CancelSharedCollisions();
+
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};
@@ -187,6 +190,9 @@ class Search {
   std::atomic<int> tb_hits_{0};
 
   std::atomic<int> pending_searchers_{0};
+
+  std::vector<std::pair<Node*, int>> shared_collisions_
+      GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
   const SearchParams params_;
@@ -240,6 +246,9 @@ class SearchWorker {
   // 2. Gather minibatch.
   void GatherMinibatch();
 
+  // 2b. Copy collisions into shared_collisions_.
+  void CollectCollisions();
+
   // 3. Prefetch into cache.
   void MaybePrefetchIntoCache();
 
@@ -276,6 +285,7 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
+    int probability_transform = 0;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count) {
@@ -295,7 +305,7 @@ class SearchWorker {
 
   NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node);
-  bool AddNodeToComputation(Node* node, bool add_if_cached);
+  bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              int idx_in_computation);

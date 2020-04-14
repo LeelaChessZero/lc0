@@ -97,6 +97,11 @@ class SearchParams {
   float GetMovesLeftMaxEffect() const { return kMovesLeftMaxEffect; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
   float GetMovesLeftSlope() const { return kMovesLeftSlope; }
+  float GetMovesLeftConstantFactor() const { return kMovesLeftConstantFactor; }
+  float GetMovesLeftScaledFactor() const { return kMovesLeftScaledFactor; }
+  float GetMovesLeftQuadraticFactor() const {
+    return kMovesLeftQuadraticFactor;
+  }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
@@ -145,6 +150,9 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMovesLeftMaxEffectId;
   static const OptionId kMovesLeftThresholdId;
+  static const OptionId kMovesLeftConstantFactorId;
+  static const OptionId kMovesLeftScaledFactorId;
+  static const OptionId kMovesLeftQuadraticFactorId;
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
@@ -189,6 +197,9 @@ class SearchParams {
   const float kMovesLeftMaxEffect;
   const float kMovesLeftThreshold;
   const float kMovesLeftSlope;
+  const float kMovesLeftConstantFactor;
+  const float kMovesLeftScaledFactor;
+  const float kMovesLeftQuadraticFactor;
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;

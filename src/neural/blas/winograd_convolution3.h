@@ -34,6 +34,7 @@ namespace lczero {
 // https://ai.intel.com/winograd-2/
 
 // Convolution 3x3 using the Winograd algorithm
+template <bool use_eigen>
 class WinogradConvolution3 {
  public:
   // The instance will allocate memory resources for the

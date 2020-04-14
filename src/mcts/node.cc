@@ -361,16 +361,6 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   if (!child_) edges_ = EdgeList();  // Clear edges list.
 }
 
-namespace {
-// Reverse bits in every byte of a number
-uint64_t ReverseBitsInBytes(uint64_t v) {
-  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
-  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
-  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
-  return v;
-}
-}  // namespace
-
 V5TrainingData Node::GetV5TrainingData(
     GameResult game_result, const PositionHistory& history,
     FillEmptyHistory fill_empty_history,
@@ -381,6 +371,15 @@ V5TrainingData Node::GetV5TrainingData(
   // Set version.
   result.version = 5;
   result.input_format = input_format;
+
+  // Populate planes.
+  int transform;
+  InputPlanes planes = EncodePositionForNN(input_format, history, 8,
+                                           fill_empty_history, &transform);
+  int plane_idx = 0;
+  for (auto& plane : result.planes) {
+    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
+  }
 
   // Populate probabilities.
   auto total_n = GetChildrenVisits();
@@ -395,16 +394,8 @@ V5TrainingData Node::GetV5TrainingData(
             -1);
   // Set moves probabilities according to their relative amount of visits.
   for (const auto& child : Edges()) {
-    result.probabilities[child.edge()->GetMove().as_nn_index()] =
+    result.probabilities[child.edge()->GetMove().as_nn_index(transform)] =
         total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
-  }
-
-  // Populate planes.
-  InputPlanes planes =
-      EncodePositionForNN(input_format, history, 8, fill_empty_history);
-  int plane_idx = 0;
-  for (auto& plane : result.planes) {
-    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
 
   const auto& position = history.Last();
@@ -414,7 +405,9 @@ V5TrainingData Node::GetV5TrainingData(
   uint8_t queen_side = 1;
   uint8_t king_side = 1;
   // If frc trained, send the bit mask representing rook position.
-  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE) {
+  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
     queen_side <<= castlings.queenside_rook();
     king_side <<= castlings.kingside_rook();
   }
@@ -425,8 +418,19 @@ V5TrainingData Node::GetV5TrainingData(
   result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
   // Other params.
-  result.side_to_move = position.IsBlackToMove() ? 1 : 0;
-  result.deprecated_move_count = 0;
+  if (input_format ==
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    result.side_to_move = position.GetBoard().en_passant().as_int() >> 56;
+    if ((transform & FlipTransform) != 0) {
+      result.side_to_move = ReverseBitsInBytes(result.side_to_move);
+    }
+    // Send transform in deprecated move count so rescorer can reverse it to
+    // calculate the actual move list from the input data.
+    result.deprecated_move_count = transform;
+  } else {
+    result.side_to_move = position.IsBlackToMove() ? 1 : 0;
+    result.deprecated_move_count = 0;
+  }
   result.rule50_count = position.GetNoCaptureNoPawnPly();
 
   // Game result.
