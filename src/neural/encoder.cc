@@ -191,20 +191,31 @@ InputPlanes EncodePositionForNN(
   }
   bool flip = false;
   int history_idx = history.GetLength() - 1;
+  bool fill_as_prev = false;
   for (int i = 0; i < std::min(history_planes, kMoveHistory);
        ++i, --history_idx) {
+    const Position& position_init =
+        history.GetPositionAt(history_idx < 0 ? 0 : history_idx);
+    const ChessBoard& board_init =
+        flip ? position_init.GetThemBoard() : position_init.GetBoard();
+    // Castling changes can't be repeated, so we can stop early.
+    if (stop_early && board_init.castlings().as_int() != castlings.as_int()) {
+      fill_as_prev = true;
+    }
+    // Enpassants can't be repeated, but we do need to always send the current
+    // position.
+    if (stop_early && history_idx != history.GetLength() - 1 &&
+        !board_init.en_passant().empty()) {
+      fill_as_prev = true;
+    }
+    if (fill_as_prev) {
+      history_idx++;
+      if (history_idx != 0) flip = !flip;
+    }
     const Position& position =
         history.GetPositionAt(history_idx < 0 ? 0 : history_idx);
     const ChessBoard& board =
         flip ? position.GetThemBoard() : position.GetBoard();
-    // Castling changes can't be repeated, so we can stop early.
-    if (stop_early && board.castlings().as_int() != castlings.as_int()) break;
-    // Enpassants can't be repeated, but we do need to always send the current
-    // position.
-    if (stop_early && history_idx != history.GetLength() - 1 &&
-        !board.en_passant().empty()) {
-      break;
-    }
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
     // Board may be flipped so compare with position.GetBoard().
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
@@ -245,7 +256,9 @@ InputPlanes EncodePositionForNN(
     if (history_idx > 0) flip = !flip;
     // If no capture no pawn is 0, the previous was start of game, capture or
     // pawn push, so no need to go back further if stopping early.
-    if (stop_early && position.GetNoCaptureNoPawnPly() == 0) break;
+    if (stop_early && position.GetNoCaptureNoPawnPly() == 0) {
+      fill_as_prev = true;
+    }
   }
   if (transform != NoTransform) {
     // Transform all masks.
