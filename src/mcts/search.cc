@@ -1407,21 +1407,14 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
-    intermediate[counter++] = p;
+    intermediate_[counter++] = p;
     total += p;
-
-    /*
-    // Note that p now lies in [0, 1], so it is safe to store it in compressed
-    // format. Normalization happens later.
-    edge.edge()->SetP(p);
-    // Edge::SetP does some rounding, so only add to the total after rounding.
-    total += edge.edge()->GetP();*/
   }
   counter = 0;
   
   // Normalize P values to add up to 1.0.
   if (total > 0.0f) {
-    for (auto edge : node->Edges()) edge.edge()->SetP(intermediate[counter++] / total);
+    for (auto edge : node->Edges()) edge.edge()->SetP(intermediate_[counter++] / total);
   }
 
   // Add Dirichlet noise if enabled and at root.
@@ -1479,7 +1472,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
                            d, m, node_to_process.multivisit, 
                            params_.GetPolicySoftmaxTemp(), 
-                           params_.GetPolicyTempDecay(), intermediate);
+                           params_.GetPolicyTempDecay(), intermediate_);
 
     // Nothing left to do without ancestors to update.
     if (!p) break;

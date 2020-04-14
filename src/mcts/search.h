@@ -330,7 +330,7 @@ class SearchWorker {
   // https://lichess.org/blog/Wqa7GiAAAOIpBLoY/
   //     developer-update-275-improved-game-compression
   // there are never more than 256 valid legal moves in any legal position.
-  float intermediate[256];
+  float intermediate_[256];
 };
 
 }  // namespace lczero
