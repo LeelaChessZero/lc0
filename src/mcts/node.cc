@@ -391,7 +391,7 @@ V5TrainingData Node::GetV5TrainingData(
     result.side_to_move = position.IsBlackToMove() ? 1 : 0;
     result.deprecated_move_count = 0;
   }
-  result.rule50_count = position.GetNoCaptureNoPawnPly();
+  result.rule50_count = position.GetRule50Ply();
 
   // Game result.
   if (game_result == GameResult::WHITE_WON) {
