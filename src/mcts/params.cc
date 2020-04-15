@@ -77,6 +77,8 @@ const OptionId SearchParams::kCpuctFactorId{
 const OptionId SearchParams::kCpuctFactorAtRootId{
     "cpuct-factor-at-root", "CPuctFactorAtRoot",
     "Multiplier for the cpuct growth formula at root."};
+// Remove this option after 0.25 has been made mandatory in training and the
+// training server stops sending it.
 const OptionId SearchParams::kRootHasOwnCpuctParamsId{
     "root-has-own-cpuct-params", "RootHasOwnCpuctParams",
     "If enabled, cpuct parameters for root node are taken from *AtRoot "
@@ -216,6 +218,18 @@ const OptionId SearchParams::kMovesLeftSlopeId{
     "based on how many moves the move is estimated to shorten/lengthen the "
     "game. The move difference is multiplied with the slope and capped at "
     "MovesLeftMaxEffect."};
+const OptionId SearchParams::kMovesLeftConstantFactorId{
+    "moves-left-constant-factor", "MovesLeftConstantFactor",
+    "A simple multiplier to the moves left effect, can be set to 0 to only use "
+    "an effect scaled by Q."};
+const OptionId SearchParams::kMovesLeftScaledFactorId{
+    "moves-left-scaled-factor", "MovesLeftScaledFactor",
+    "A factor which is multiplied by the absolute Q of parent node and the "
+    "base moves left effect."};
+const OptionId SearchParams::kMovesLeftQuadraticFactorId{
+    "moves-left-quadratic-factor", "MovesLeftQuadraticFactor",
+    "A factor which is multiplied by the square of Q of parent node and the "
+    "base moves left effect."};
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
@@ -271,7 +285,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.607f;
-  options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
+  options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 1.0f;
@@ -291,6 +305,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.001f;
+  options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kMovesLeftScaledFactorId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
@@ -304,66 +321,62 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kLogLiveStatsId);
   options->HideOption(kDisplayCacheUsageId);
   options->HideOption(kRootHasOwnCpuctParamsId);
+  options->HideOption(kMovesLeftConstantFactorId);
+  options->HideOption(kMovesLeftScaledFactorId);
+  options->HideOption(kMovesLeftQuadraticFactorId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
-      kLogitQ(options.Get<bool>(kLogitQId.GetId())),
-      kCpuct(options.Get<float>(kCpuctId.GetId())),
-      kCpuctAtRoot(
-          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
-                                 ? kCpuctAtRootId.GetId()
-                                 : kCpuctId.GetId())),
-      kCpuctBase(options.Get<float>(kCpuctBaseId.GetId())),
-      kCpuctBaseAtRoot(
-          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
-                                 ? kCpuctBaseAtRootId.GetId()
-                                 : kCpuctBaseId.GetId())),
-      kCpuctFactor(options.Get<float>(kCpuctFactorId.GetId())),
-      kCpuctFactorAtRoot(
-          options.Get<float>(options.Get<bool>(kRootHasOwnCpuctParamsId.GetId())
-                                 ? kCpuctFactorAtRootId.GetId()
-                                 : kCpuctFactorId.GetId())),
-      kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId.GetId())),
-      kNoiseAlpha(options.Get<float>(kNoiseAlphaId.GetId())),
-      kFpuAbsolute(options.Get<std::string>(kFpuStrategyId.GetId()) ==
-                   "absolute"),
-      kFpuValue(options.Get<float>(kFpuValueId.GetId())),
+      kLogitQ(options.Get<bool>(kLogitQId)),
+      kCpuct(options.Get<float>(kCpuctId)),
+      kCpuctAtRoot(options.Get<float>(
+          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
+                                                      : kCpuctId)),
+      kCpuctBase(options.Get<float>(kCpuctBaseId)),
+      kCpuctBaseAtRoot(options.Get<float>(
+          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctBaseAtRootId
+                                                      : kCpuctBaseId)),
+      kCpuctFactor(options.Get<float>(kCpuctFactorId)),
+      kCpuctFactorAtRoot(options.Get<float>(
+          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
+                                                      : kCpuctFactorId)),
+      kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId)),
+      kNoiseAlpha(options.Get<float>(kNoiseAlphaId)),
+      kFpuAbsolute(options.Get<std::string>(kFpuStrategyId) == "absolute"),
+      kFpuValue(options.Get<float>(kFpuValueId)),
       kFpuAbsoluteAtRoot(
-          (options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "same" &&
+          (options.Get<std::string>(kFpuStrategyAtRootId) == "same" &&
            kFpuAbsolute) ||
-          options.Get<std::string>(kFpuStrategyAtRootId.GetId()) == "absolute"),
-      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId.GetId()) ==
-                              "same"
+          options.Get<std::string>(kFpuStrategyAtRootId) == "absolute"),
+      kFpuValueAtRoot(options.Get<std::string>(kFpuStrategyAtRootId) == "same"
                           ? kFpuValue
-                          : options.Get<float>(kFpuValueAtRootId.GetId())),
-      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId.GetId())),
-      kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId.GetId())),
-      kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId.GetId())),
-      kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId.GetId())),
-      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId.GetId())),
-      kStickyEndgames(options.Get<bool>(kStickyEndgamesId.GetId())),
-      kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId.GetId())),
-      kHistoryFill(
-          EncodeHistoryFill(options.Get<std::string>(kHistoryFillId.GetId()))),
-      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId.GetId())),
-      kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId.GetId())),
-      kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId.GetId())),
-      kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId.GetId())),
-      kShortSightedness(options.Get<float>(kShortSightednessId.GetId())),
-      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId.GetId())),
-      kMaxConcurrentSearchers(
-          options.Get<int>(kMaxConcurrentSearchersId.GetId())),
-      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId.GetId()) /
-                           100.0f},
-      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId.GetId()) /
-                         100.0f},
-      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId.GetId()) / 100.0f},
-      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId.GetId()) / 100.0f},
+                          : options.Get<float>(kFpuValueAtRootId)),
+      kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId)),
+      kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId)),
+      kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId)),
+      kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId)),
+      kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId)),
+      kStickyEndgames(options.Get<bool>(kStickyEndgamesId)),
+      kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId)),
+      kHistoryFill(EncodeHistoryFill(options.Get<std::string>(kHistoryFillId))),
+      kMiniBatchSize(options.Get<int>(kMiniBatchSizeId)),
+      kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId)),
+      kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId)),
+      kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId)),
+      kMovesLeftConstantFactor(options.Get<float>(kMovesLeftConstantFactorId)),
+      kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
+      kMovesLeftQuadraticFactor(options.Get<float>(kMovesLeftQuadraticFactorId)),
+      kShortSightedness(options.Get<float>(kShortSightednessId)),
+      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
+      kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
+      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
+      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
+      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
+      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
       kMaxOutOfOrderEvals(std::max(
-          1,
-          static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId.GetId()) *
-                           options.Get<int>(kMiniBatchSizeId.GetId())))) {
+          1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
+                              options.Get<int>(kMiniBatchSizeId)))) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

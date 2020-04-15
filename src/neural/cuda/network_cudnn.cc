@@ -864,8 +864,15 @@ void CudnnNetworkComputation<DataType>::ComputeBlocking() {
 }
 
 template <typename DataType>
-std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
+std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
                                           const OptionsDict& options) {
+  if (!w) {
+    throw Exception(
+        "The cudnn" +
+        std::string(std::is_same<half, DataType>::value ? "-fp16" : "") +
+        " backend requires a network file.");
+  }
+  const WeightsFile& weights = *w;
   if (weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
@@ -903,8 +910,8 @@ std::unique_ptr<Network> MakeCudnnNetwork(const WeightsFile& weights,
   return std::make_unique<CudnnNetwork<DataType>>(weights, options);
 }
 
-std::unique_ptr<Network> MakeCudnnNetworkAuto(const WeightsFile& weights,
-                                              const OptionsDict& options) {
+std::unique_ptr<Network> MakeCudnnNetworkAuto(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
   // No error checking here, this will be repeated later.

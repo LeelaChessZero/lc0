@@ -19,6 +19,13 @@ project('lc0', 'cpp',
         meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
+
+if not cc.has_header('optional') or not cc.has_header('string_view') or not cc.has_header('charconv')
+    error('Lc0 requires a compiler supporting C++17, for example g++ v8.0, ' +
+          'clang v5.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
+          'later.')
+endif
+
 if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
@@ -115,7 +122,9 @@ files += [
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/stoppers/common.cc',
   'src/mcts/stoppers/factory.cc',
+  'src/mcts/stoppers/legacy.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
   'src/neural/cache.cc',
@@ -180,8 +189,6 @@ if get_option('build_backends')
 
   shared_files = []
 
-  has_blas = false
-
   accelerate_lib = dependency('Accelerate', required: false)
 
   mkl_libdirs = get_option('mkl_libdirs')
@@ -201,23 +208,21 @@ if get_option('build_backends')
 
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
-      add_project_arguments('-DUSE_MKL', language : 'cpp')
+      add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
-      has_blas = true
 
     elif get_option('dnnl') and dnnl_lib.found()
-      add_project_arguments('-DUSE_DNNL', language : 'cpp')
+      add_project_arguments(['-DUSE_DNNL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('dnnl_dir') + '/include')
       deps += [ dnnl_lib, dependency('openmp', required:true) ]
-      has_blas = true
 
     elif get_option('accelerate') and accelerate_lib.found()
       deps += [ accelerate_lib ]
-      has_blas = true
+      add_project_arguments('-DUSE_BLAS', language : 'cpp')
 
     elif get_option('openblas') and openblas_lib.found()
-      add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+      add_project_arguments(['-DUSE_OPENBLAS', '-DUSE_BLAS'], language : 'cpp')
 
       required_openblas_header = 'openblas_config.h'
       if not cc.has_header(required_openblas_header)
@@ -237,17 +242,14 @@ if get_option('build_backends')
       endif
 
       deps += [ openblas_lib ]
-      has_blas = true
 
-    elif get_option('eigen')
-      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
-      has_blas = true
-      deps += subproject('eigen').get_variable('eigen_dep')
     endif
+
+    deps += subproject('eigen').get_variable('eigen_dep')
 
     ispc = find_program('ispc', required: false)
     ispc_extra_args = []
-    if has_blas and get_option('ispc') and ispc.found()
+    if get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
@@ -278,10 +280,6 @@ if get_option('build_backends')
                      + ispc_extra_args
       )
     endif
-
-  endif
-
-  if get_option('blas') and has_blas
 
     blas_files = [
     'src/neural/blas/convolution1.cc',
@@ -316,7 +314,7 @@ if get_option('build_backends')
   opencl_libdirs = get_option('opencl_libdirs')
   opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: false)
 
-  opencl_framework=dependency('OpenCL', required: false)
+  opencl_framework=dependency('OpenCL', method: 'extraframework', required: false)
   if opencl_framework.found()
       opencl_dep = [ opencl_framework ]
       has_opencl = true

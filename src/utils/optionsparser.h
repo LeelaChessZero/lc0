@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,33 +31,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+
 #include "utils/exception.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
-
-struct OptionId {
-  OptionId(const char* long_flag = "", const char* uci_option = "",
-           const char* help_text = "", const char short_flag = '\0')
-      : long_flag(long_flag),
-        uci_option(uci_option),
-        help_text(help_text),
-        short_flag(short_flag) {}
-
-  OptionId(const OptionId& other) = delete;
-
-  const char* const long_flag;
-  const char* const uci_option;
-  const char* const help_text;
-  const char short_flag;
-
-  // Returns Option's own address as string.
-  // TODO(crem) Generalize OptionsDict to have a version which has OptionId*
-  //            as keys instead of std::string.
-  std::string GetId() const {
-    return std::to_string(reinterpret_cast<intptr_t>(this));
-  }
-};
 
 class OptionsParser {
  public:
@@ -71,7 +49,7 @@ class OptionsParser {
     virtual void SetValue(const std::string& value, OptionsDict* dict) = 0;
 
    protected:
-    std::string GetId() const { return id_.GetId(); }
+    const OptionId& GetId() const { return id_; }
     std::string GetUciOption() const { return id_.uci_option; }
     std::string GetHelpText() const { return id_.help_text; }
     std::string GetLongFlag() const { return id_.long_flag; }
@@ -146,7 +124,7 @@ class OptionsParser {
   // Returns an option based by its uci name.
   Option* FindOptionByUciName(const std::string& name) const;
   // Returns an option based by its id.
-  Option* FindOptionById(const std::string& name) const;
+  Option* FindOptionById(const OptionId& id) const;
 
   std::vector<std::unique_ptr<Option>> options_;
   OptionsDict defaults_;
@@ -189,7 +167,8 @@ class IntOption : public OptionsParser::Option {
 
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
-
+  int ValidateIntString(const std::string& val) const;
+  
   int min_;
   int max_;
 };

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -37,7 +37,8 @@ namespace {
 
 class RoundRobinNetwork : public Network {
  public:
-  RoundRobinNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  RoundRobinNetwork(const std::optional<WeightsFile>& weights,
+                    const OptionsDict& options) {
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
       // If options are empty, or multiplexer configured in root object,
@@ -51,7 +52,8 @@ class RoundRobinNetwork : public Network {
     }
   }
 
-  void AddBackend(const std::string& name, const WeightsFile& weights,
+  void AddBackend(const std::string& name,
+                  const std::optional<WeightsFile>& weights,
                   const OptionsDict& opts) {
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
 
@@ -82,8 +84,8 @@ class RoundRobinNetwork : public Network {
   NetworkCapabilities capabilities_;
 };
 
-std::unique_ptr<Network> MakeRoundRobinNetwork(const WeightsFile& weights,
-                                               const OptionsDict& options) {
+std::unique_ptr<Network> MakeRoundRobinNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<RoundRobinNetwork>(weights, options);
 }
 

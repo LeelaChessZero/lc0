@@ -44,7 +44,7 @@ class SearchParams {
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
   int GetMaxPrefetchBatch() const {
-    return options_.Get<int>(kMaxPrefetchBatchId.GetId());
+    return options_.Get<int>(kMaxPrefetchBatchId);
   }
   bool GetLogitQ() const { return kLogitQ; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
@@ -54,33 +54,25 @@ class SearchParams {
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
-  float GetTemperature() const {
-    return options_.Get<float>(kTemperatureId.GetId());
-  }
+  float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
-    return options_.Get<float>(kTemperatureVisitOffsetId.GetId());
+    return options_.Get<float>(kTemperatureVisitOffsetId);
   }
-  int GetTempDecayMoves() const {
-    return options_.Get<int>(kTempDecayMovesId.GetId());
-  }
+  int GetTempDecayMoves() const { return options_.Get<int>(kTempDecayMovesId); }
   int GetTemperatureCutoffMove() const {
-    return options_.Get<int>(kTemperatureCutoffMoveId.GetId());
+    return options_.Get<int>(kTemperatureCutoffMoveId);
   }
   float GetTemperatureEndgame() const {
-    return options_.Get<float>(kTemperatureEndgameId.GetId());
+    return options_.Get<float>(kTemperatureEndgameId);
   }
   float GetTemperatureWinpctCutoff() const {
-    return options_.Get<float>(kTemperatureWinpctCutoffId.GetId());
+    return options_.Get<float>(kTemperatureWinpctCutoffId);
   }
 
   float GetNoiseEpsilon() const { return kNoiseEpsilon; }
   float GetNoiseAlpha() const { return kNoiseAlpha; }
-  bool GetVerboseStats() const {
-    return options_.Get<bool>(kVerboseStatsId.GetId());
-  }
-  bool GetLogLiveStats() const {
-    return options_.Get<bool>(kLogLiveStatsId.GetId());
-  }
+  bool GetVerboseStats() const { return options_.Get<bool>(kVerboseStatsId); }
+  bool GetLogLiveStats() const { return options_.Get<bool>(kLogLiveStatsId); }
   bool GetFpuAbsolute(bool at_root) const {
     return at_root ? kFpuAbsoluteAtRoot : kFpuAbsolute;
   }
@@ -95,17 +87,20 @@ class SearchParams {
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   bool GetStickyEndgames() const { return kStickyEndgames; }
   bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
-  int GetMultiPv() const { return options_.Get<int>(kMultiPvId.GetId()); }
-  bool GetPerPvCounters() const {
-    return options_.Get<bool>(kPerPvCountersId.GetId());
-  }
+  int GetMultiPv() const { return options_.Get<int>(kMultiPvId); }
+  bool GetPerPvCounters() const { return options_.Get<bool>(kPerPvCountersId); }
   std::string GetScoreType() const {
-    return options_.Get<std::string>(kScoreTypeId.GetId());
+    return options_.Get<std::string>(kScoreTypeId);
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
   float GetMovesLeftMaxEffect() const { return kMovesLeftMaxEffect; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
   float GetMovesLeftSlope() const { return kMovesLeftSlope; }
+  float GetMovesLeftConstantFactor() const { return kMovesLeftConstantFactor; }
+  float GetMovesLeftScaledFactor() const { return kMovesLeftScaledFactor; }
+  float GetMovesLeftQuadraticFactor() const {
+    return kMovesLeftQuadraticFactor;
+  }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
@@ -153,6 +148,9 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMovesLeftMaxEffectId;
   static const OptionId kMovesLeftThresholdId;
+  static const OptionId kMovesLeftConstantFactorId;
+  static const OptionId kMovesLeftScaledFactorId;
+  static const OptionId kMovesLeftQuadraticFactorId;
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
@@ -196,6 +194,9 @@ class SearchParams {
   const float kMovesLeftMaxEffect;
   const float kMovesLeftThreshold;
   const float kMovesLeftSlope;
+  const float kMovesLeftConstantFactor;
+  const float kMovesLeftScaledFactor;
+  const float kMovesLeftQuadraticFactor;
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
