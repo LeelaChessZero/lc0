@@ -1057,12 +1057,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const float m_cap = params_.GetMovesLeftMaxEffect();
         const float parent_m = node->GetM();
         const float child_m = child.GetM(parent_m);
-        M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
-            std::copysign(1.0f, -Q);
         const float a = params_.GetMovesLeftConstantFactor();
         const float b = params_.GetMovesLeftScaledFactor();
         const float c = params_.GetMovesLeftQuadraticFactor();
-        M *= a + b * std::abs(Q) + c * Q * Q;
+        M = std::clamp(
+           m_slope * (child_m - parent_m) * (a + b * std::abs(Q) + c * Q * Q),
+          -m_cap, m_cap) * std::copysign(1.0f, -Q);
       }
 
       const float score = child.GetU(puct_mult) + Q + M;
