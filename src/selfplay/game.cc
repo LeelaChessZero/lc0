@@ -284,8 +284,7 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
     bool black_to_move = chunk.side_to_move_or_enpassant;
     if (chunk.input_format ==
         pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
-      black_to_move =
-          (chunk.deprecated_move_count_or_invariance_info & (1u << 7)) != 0;
+      black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
     }
     if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;

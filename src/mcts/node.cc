@@ -388,11 +388,11 @@ V5TrainingData Node::GetV5TrainingData(
     }
     // Send transform in deprecated move count so rescorer can reverse it to
     // calculate the actual move list from the input data.
-    result.deprecated_move_count_or_invariance_info =
+    result.invariance_info =
         transform | (position.IsBlackToMove() ? (1u << 7) : 0u);
   } else {
     result.side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
-    result.deprecated_move_count_or_invariance_info = 0;
+    result.invariance_info = 0;
   }
   result.rule50_count = position.GetNoCaptureNoPawnPly();
 
