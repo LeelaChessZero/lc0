@@ -52,7 +52,8 @@ struct V5TrainingData {
   // For input type 3 contains a bit field indicating the transform that was
   // used and the original side to move info.
   // Side to move is in the top bit, transform in the lower bits.
-  uint8_t deprecated_move_count_or_invariance_info;
+  // In versions prior to v5 this spot contained an unused move count field.
+  uint8_t invariance_info;
   int8_t result;
   float root_q;
   float best_q;
