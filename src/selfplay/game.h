@@ -126,7 +126,7 @@ class PolicySelfPlayGames {
  public:
   // Player options may point to the same network/cache/etc.
   PolicySelfPlayGames(PlayerOptions player1, PlayerOptions player2,
-                      const std::vector<MoveList>& openings,
+                      const std::vector<Opening>& openings,
                       SyzygyTablebase* syzygy_tb);
 
   // Starts the games and blocks until all games are finished.

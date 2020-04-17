@@ -71,16 +71,16 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 
 PolicySelfPlayGames::PolicySelfPlayGames(PlayerOptions player1,
                                          PlayerOptions player2,
-                                         const std::vector<MoveList>& openings,
+                                         const std::vector<Opening>& openings,
                                          SyzygyTablebase* syzygy_tb)
     : options_{player1, player2}, syzygy_tb_(syzygy_tb) {
   trees_.reserve(openings.size());
   for (auto opening : openings) {
     trees_.push_back(std::make_shared<NodeTree>());
-    trees_.back()->ResetToPosition(ChessBoard::kStartposFen, {});
+    trees_.back()->ResetToPosition(opening.start_fen, {});
     results_.push_back(GameResult::UNDECIDED);
 
-    for (Move m : opening) {
+    for (Move m : opening.moves) {
       trees_.back()->MakeMove(m);
     }
   }
@@ -142,6 +142,7 @@ void PolicySelfPlayGames::Play() {
     if (all_done) break;
     const int idx = blacks_move ? 1 : 0;
     auto comp = options_[idx].network->NewComputation();
+    std::vector<int> transforms;
     for (int i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] != GameResult::UNDECIDED) {
@@ -151,8 +152,13 @@ void PolicySelfPlayGames::Play() {
       const auto& board = tree->GetPositionHistory().Last().GetBoard();
       auto legal_moves = board.GenerateLegalMoves();
       tree->GetCurrentHead()->CreateEdges(legal_moves);
-      auto planes = EncodePositionForNN(tree->GetPositionHistory(), 8,
-                                        FillEmptyHistory::FEN_ONLY);
+      int transform;
+      auto planes = EncodePositionForNN(
+          options_[idx].network->GetCapabilities()
+                                  .input_format, tree->GetPositionHistory(),
+                              8,
+                                        FillEmptyHistory::FEN_ONLY, &transform);
+      transforms.push_back(transform);
       comp->AddInput(std::move(planes));
     }
     comp->ComputeBlocking();
@@ -166,7 +172,7 @@ void PolicySelfPlayGames::Play() {
       Move best;
       float max_p = std::numeric_limits<float>::lowest();
       for (auto edge : tree->GetCurrentHead()->Edges()) {
-        float p = comp->GetPVal(comp_idx, edge.GetMove().as_nn_index());
+        float p = comp->GetPVal(comp_idx, edge.GetMove().as_nn_index(transforms[i]));
         if (p >= max_p) {
           max_p = p;
           best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
@@ -194,10 +200,6 @@ SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
     tree_[1]->ResetToPosition(orig_fen_, {});
   }
   for (Move m : opening.moves) {
-    tree_[0]->MakeMove(m);
-    if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
-  }
-  for (Move m : opening) {
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
   }

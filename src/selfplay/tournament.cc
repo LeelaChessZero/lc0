@@ -167,7 +167,7 @@ SelfPlayTournament::SelfPlayTournament(
       kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)),
           kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId)),
           kTournamentResultsFile(
-              options.Get<std::string>(kTournamentResultsFileId))) {
+              options.Get<std::string>(kTournamentResultsFileId)) {
   std::string book = options.Get<std::string>(kOpeningsFileId);
   if (!book.empty()) {
     PgnReader book_reader;
@@ -187,7 +187,7 @@ SelfPlayTournament::SelfPlayTournament(
     first_game_black_ = Random::Get().GetBool();
   }
 
-  std::string tb_paths = options.Get<std::string>(kSyzygyTablebaseId.GetId());
+  std::string tb_paths = options.Get<std::string>(kSyzygyTablebaseId);
   if (!tb_paths.empty()) {
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
     CERR << "Loading Syzygy tablebases from " << tb_paths;
@@ -396,7 +396,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 }
 
 void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
-  std::vector<MoveList> openings;
+  std::vector<Opening> openings;
   openings.reserve(game_count / 2);
   int opening_basis = game_id / 2;
   for (int i = 0; i < game_count / 2; i++) {
@@ -574,9 +574,9 @@ void SelfPlayTournament::SaveResults() {
   if (kTournamentResultsFile.empty()) return;
   std::ofstream output(kTournamentResultsFile, std::ios_base::app);
   auto p1name =
-      player_options_[0].Get<std::string>(NetworkFactory::kWeightsId.GetId());
+      player_options_[0].Get<std::string>(NetworkFactory::kWeightsId);
   auto p2name =
-      player_options_[1].Get<std::string>(NetworkFactory::kWeightsId.GetId());
+      player_options_[1].Get<std::string>(NetworkFactory::kWeightsId);
 
   output << std::endl;
   output << "[White \"" << p1name << "\"]" << std::endl;
