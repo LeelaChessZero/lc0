@@ -49,6 +49,7 @@ class BoardSquare {
   BoardSquare(const std::string& str, bool black = false)
       : BoardSquare(black ? '8' - str[1] : str[1] - '1', str[0] - 'a') {}
   constexpr std::uint8_t as_int() const { return square_; }
+  constexpr std::uint64_t as_board() const { return 1ULL << square_; }
   void set(int row, int col) { square_ = row * 8 + col; }
 
   // 0-based, bottom to top.
@@ -164,14 +165,7 @@ class BitBoard {
   bool intersects(const BitBoard& other) const { return board_ & other.board_; }
 
   // Flips black and white side of a board.
-  void Mirror() {
-    board_ = (board_ & 0x00000000FFFFFFFF) << 32 |
-             (board_ & 0xFFFFFFFF00000000) >> 32;
-    board_ = (board_ & 0x0000FFFF0000FFFF) << 16 |
-             (board_ & 0xFFFF0000FFFF0000) >> 16;
-    board_ =
-        (board_ & 0x00FF00FF00FF00FF) << 8 | (board_ & 0xFF00FF00FF00FF00) >> 8;
-  }
+  void Mirror() { board_ = ReverseBytesInBytes(board_); }
 
   bool operator==(const BitBoard& other) const {
     return board_ == other.board_;
@@ -221,7 +215,7 @@ class BitBoard {
 
   // Returns bitboard with one bit reset.
   friend BitBoard operator-(const BitBoard& a, const BoardSquare& b) {
-    return {a.board_ & ~(1ULL << b.as_int())};
+    return {a.board_ & ~b.as_board()};
   }
 
   // Returns difference (bitwise AND-NOT) of two boards.
@@ -237,9 +231,9 @@ class Move {
  public:
   enum class Promotion : std::uint8_t { None, Queen, Rook, Bishop, Knight };
   Move() = default;
-  Move(BoardSquare from, BoardSquare to)
+  constexpr Move(BoardSquare from, BoardSquare to)
       : data_(to.as_int() + (from.as_int() << 6)) {}
-  Move(BoardSquare from, BoardSquare to, Promotion promotion)
+  constexpr Move(BoardSquare from, BoardSquare to, Promotion promotion)
       : data_(to.as_int() + (from.as_int() << 6) +
               (static_cast<uint8_t>(promotion) << 12)) {}
   Move(const std::string& str, bool black = false);
@@ -248,8 +242,6 @@ class Move {
   BoardSquare to() const { return BoardSquare(data_ & kToMask); }
   BoardSquare from() const { return BoardSquare((data_ & kFromMask) >> 6); }
   Promotion promotion() const { return Promotion((data_ & kPromoMask) >> 12); }
-  bool castling() const { return (data_ & kCastleMask) != 0; }
-  void SetCastling() { data_ |= kCastleMask; }
 
   void SetTo(BoardSquare to) { data_ = (data_ & ~kToMask) | to.as_int(); }
   void SetFrom(BoardSquare from) {
@@ -262,17 +254,12 @@ class Move {
   uint16_t as_packed_int() const;
 
   // 0 .. 1857, to use in neural networks.
-  uint16_t as_nn_index() const;
+  // Transform is a bit field which describes a transform to be applied to the
+  // the move before converting it to an index.
+  uint16_t as_nn_index(int transform) const;
 
-  // We ignore the castling bit, because UCI's `position moves ...` commands
-  // specify squares and promotions, but NOT whether or not a move is castling.
-  // NodeTree::MakeMove and all Move::Move constructors are thus so ignorant.
-  bool operator==(const Move& other) const {
-    return (data_ | kCastleMask) == (other.data_ | kCastleMask);
-  }
-
-  bool operator!=(const Move& other) const { return !operator==(other); }
-  operator bool() const { return data_ != 0; }
+  explicit operator bool() const { return data_ != 0; }
+  bool operator==(const Move& other) { return data_ == other.data_; }
 
   void Mirror() { data_ ^= 0b111000111000; }
 
@@ -300,13 +287,11 @@ class Move {
   // bits 0..5 "to"-square
   // bits 6..11 "from"-square
   // bits 12..14 promotion value
-  // bit 15 whether move is a castling
 
   enum Masks : uint16_t {
     kToMask = 0b0000000000111111,
     kFromMask = 0b0000111111000000,
     kPromoMask = 0b0111000000000000,
-    kCastleMask = 0b1000000000000000,
   };
 };
 

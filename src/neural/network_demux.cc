@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,11 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/factory.h"
-
 #include <condition_variable>
 #include <queue>
 #include <thread>
+
+#include "neural/factory.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -56,6 +56,12 @@ class DemuxingComputation : public NetworkComputation {
     int idx = sample / partial_size_;
     int offset = sample % partial_size_;
     return parents_[idx]->GetDVal(offset);
+  }
+
+  float GetMVal(int sample) const override {
+    int idx = sample / partial_size_;
+    int offset = sample % partial_size_;
+    return parents_[idx]->GetMVal(offset);
   }
 
   float GetPVal(int sample, int move_id) const override {
@@ -96,7 +102,8 @@ class DemuxingComputation : public NetworkComputation {
 
 class DemuxingNetwork : public Network {
  public:
-  DemuxingNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  DemuxingNetwork(const std::optional<WeightsFile>& weights,
+                  const OptionsDict& options) {
     minimum_split_size_ = options.GetOrDefault<int>("minimum-split-size", 0);
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
@@ -111,13 +118,20 @@ class DemuxingNetwork : public Network {
     }
   }
 
-  void AddBackend(const std::string& name, const WeightsFile& weights,
+  void AddBackend(const std::string& name,
+                  const std::optional<WeightsFile>& weights,
                   const OptionsDict& opts) {
     const int nn_threads = opts.GetOrDefault<int>("threads", 1);
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
+
+    if (networks_.size() == 1) {
+      capabilities_ = networks_.back()->GetCapabilities();
+    } else {
+      capabilities_.Merge(networks_.back()->GetCapabilities());
+    }
 
     for (int i = 0; i < nn_threads; ++i) {
       threads_.emplace_back([this]() { Worker(); });
@@ -126,6 +140,10 @@ class DemuxingNetwork : public Network {
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<DemuxingComputation>(this);
+  }
+
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
   }
 
   void Enqueue(DemuxingComputation* computation) {
@@ -190,6 +208,7 @@ class DemuxingNetwork : public Network {
   }
 
   std::vector<std::unique_ptr<Network>> networks_;
+  NetworkCapabilities capabilities_;
   std::queue<DemuxingComputation*> queue_;
   int minimum_split_size_ = 0;
   std::atomic<long long> counter_;
@@ -218,8 +237,8 @@ void DemuxingComputation::ComputeBlocking() {
   dataready_cv_.wait(lock, [this]() { return dataready_ == 0; });
 }
 
-std::unique_ptr<Network> MakeDemuxingNetwork(const WeightsFile& weights,
-                                             const OptionsDict& options) {
+std::unique_ptr<Network> MakeDemuxingNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<DemuxingNetwork>(weights, options);
 }
 

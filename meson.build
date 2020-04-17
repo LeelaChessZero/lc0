@@ -1,5 +1,5 @@
 # This file is part of Leela Chess Zero.
-# Copyright (C) 2018-2019 The LCZero Authors
+# Copyright (C) 2018-2020 The LCZero Authors
 #
 # Leela Chess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,21 +15,32 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++14', 'b_ndebug=if-release'],
-        meson_version: '>=0.45')
+        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
+        meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
+
+if not cc.has_header('optional') or not cc.has_header('string_view') or not cc.has_header('charconv')
+    error('Lc0 requires a compiler supporting C++17, for example g++ v8.0, ' +
+          'clang v5.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
+          'later.')
+endif
+
 if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
-  add_project_arguments('-Wextra', language : 'cpp')
-  add_project_arguments('-pedantic', language : 'cpp')
-
   if get_option('buildtype') == 'release'
-    add_project_arguments('-march=native', language : 'cpp')
+    add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
   endif
+endif
+if cc.get_id() == 'msvc'
+  # Silence some zlib warnings.
+  add_global_arguments('/wd4131', '/wd4267', '/wd4127', '/wd4244', '/wd4245', language : 'c')
+endif
+if host_machine.system() == 'windows'
+  add_project_arguments('-DNOMINMAX', language : 'cpp')
 endif
 
 # Files to compile.
@@ -41,34 +52,17 @@ has_backends = false
 # Third party files.
 includes += include_directories('third_party', is_system: true)
 
-# Both protobuf and protoc must be the same version, so couple them together.
-protobuf_lib = cc.find_library('libprotobuf', dirs : get_option('protobuf_libdir'), required : false)
-if not protobuf_lib.found()
-  protobuf_dep = dependency('protobuf', required : false)
-else
-  protobuf_dep = protobuf_lib
-endif
-protoc = find_program('protoc', required : false)
-# For tensorflow skip system protobuf, chances are it will not work.
-if get_option('protobuf-3-6-0')
-  deps += subproject('protobuf-3.6.0').get_variable('protobuf_dep')
-  protoc = subproject('protobuf-3.6.0').get_variable('protoc')
-elif not protobuf_dep.found() or not protoc.found() or get_option('tensorflow')
-  deps += subproject('protobuf').get_variable('protobuf_dep')
-  protoc = subproject('protobuf').get_variable('protoc')
-else
-  deps += protobuf_dep
-  if protobuf_lib.found()
-    includes += include_directories(get_option('protobuf_include'))
-  endif
-endif
-
-gen = generator(protoc, output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
-  arguments : ['--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common', '--cpp_out=@BUILD_DIR@', '@INPUT@'])
+# Compiling protobufs.
+compile_proto = find_program('scripts/compile_proto.py')
+gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
+  arguments : [
+    '--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common',
+    '--cpp_out=@BUILD_DIR@',
+    '@INPUT@'])
 
 # Handle submodules.
 git = find_program('git', required: false)
-if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
+if run_command('scripts/checkdir.py', 'libs/lczero-common/proto').returncode() != 0
   if git.found()
     if run_command(git, 'status').returncode() == 0
       message('updating git submodule libs/lczero-common')
@@ -84,9 +78,13 @@ if run_command('checkdir.py', 'libs/lczero-common/proto').returncode() != 0
   endif
 endif
 
-files += gen.process('libs/lczero-common/proto/net.proto',
-  preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
-  
+pb_files = [
+  'src/utils/protomessage.cc',
+  gen.process('libs/lczero-common/proto/net.proto',
+    preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+]
+files += pb_files
+
 # Extract git short revision.
 short_rev = 'unknown'
 if git.found()
@@ -115,6 +113,7 @@ message('Using build identifier "' + build_identifier + '".')
 files += [
   'src/engine.cc',
   'src/version.cc',
+  'src/benchmark/backendbench.cc',
   'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
@@ -123,6 +122,11 @@ files += [
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/stoppers/common.cc',
+  'src/mcts/stoppers/factory.cc',
+  'src/mcts/stoppers/legacy.cc',
+  'src/mcts/stoppers/stoppers.cc',
+  'src/mcts/stoppers/timemgr.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
@@ -133,7 +137,6 @@ files += [
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
   'src/neural/network_rr.cc',
-  'src/neural/network_st_batch.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
@@ -141,17 +144,18 @@ files += [
   'src/syzygy/syzygy.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
+  'src/utils/esc_codes.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
   'src/utils/string.cc',
-  'src/utils/transpose.cc',
   'src/utils/weights_adapter.cc',
 ]
 includes += include_directories('src')
 
+deps += dependency('threads')
 
 #############################################################################
 ## Platform specific files
@@ -160,12 +164,7 @@ if host_machine.system() == 'windows'
   files += 'src/utils/filesystem.win32.cc'
 else
   files += 'src/utils/filesystem.posix.cc'
-  deps += [
-    cc.find_library('pthread'),
-    ]
 endif
-
-
 
 #############################################################################
 ## BACKENDS
@@ -175,38 +174,20 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## Tensorflow
   ## ~~~~~~~~~~
-  # Installed from https://github.com/FloopCZ/tensorflow_cc
-  tensorflow_include = get_option('tensorflow_include')
-  tensorflow_libdir = get_option('tensorflow_libdir')
   tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_lib = cc.find_library('libtensorflow_cc',
-            dirs: tensorflow_libdir, required: false)
-
-  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found()
-    includes += include_directories(
-      tensorflow_include,
-      tensorflow_include[0] + '/bazel-genfiles',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
-      is_system: true
-    )
-    deps += [tf_dl_lib, tf_tensorflow_lib]
-    files += 'src/neural/network_tf.cc'
+  tf_tensorflow_cc_lib = dependency('tensorflow_cc',
+                                    required: false, include_type:'system')
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
+    deps += [tf_dl_lib, tf_tensorflow_cc_lib]
+    files += 'src/neural/network_tf_cc.cc'
     has_backends = true
   endif
-
 
   ## ~~~~~
   ## Blas
   ## ~~~~~
 
   shared_files = []
-
-  has_blas = false
 
   accelerate_lib = dependency('Accelerate', required: false)
 
@@ -216,6 +197,9 @@ if get_option('build_backends')
     mkl_lib = cc.find_library('mklml', dirs: mkl_libdirs, required: false)
   endif
 
+  dnnl_libdirs = get_option('dnnl_dir') + '/lib'
+  dnnl_lib = cc.find_library('dnnl', dirs: dnnl_libdirs, required: false)
+
   openblas_libdirs = get_option('openblas_libdirs')
   openblas_lib = cc.find_library('openblas.dll', dirs: openblas_libdirs, required: false)
   if not openblas_lib.found()
@@ -223,23 +207,22 @@ if get_option('build_backends')
   endif
 
   if get_option('blas')
-    if get_option('eigen')
-      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
-      has_blas = true
-      deps += subproject('eigen').get_variable('eigen_dep')
-
-    elif get_option('mkl') and mkl_lib.found()
-      add_project_arguments('-DUSE_MKL', language : 'cpp')
+    if get_option('mkl') and mkl_lib.found()
+      add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
-      has_blas = true
+
+    elif get_option('dnnl') and dnnl_lib.found()
+      add_project_arguments(['-DUSE_DNNL', '-DUSE_BLAS'], language : 'cpp')
+      includes += include_directories(get_option('dnnl_dir') + '/include')
+      deps += [ dnnl_lib, dependency('openmp', required:true) ]
 
     elif get_option('accelerate') and accelerate_lib.found()
       deps += [ accelerate_lib ]
-      has_blas = true
+      add_project_arguments('-DUSE_BLAS', language : 'cpp')
 
     elif get_option('openblas') and openblas_lib.found()
-      add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+      add_project_arguments(['-DUSE_OPENBLAS', '-DUSE_BLAS'], language : 'cpp')
 
       required_openblas_header = 'openblas_config.h'
       if not cc.has_header(required_openblas_header)
@@ -259,12 +242,14 @@ if get_option('build_backends')
       endif
 
       deps += [ openblas_lib ]
-      has_blas = true
+
     endif
+
+    deps += subproject('eigen').get_variable('eigen_dep')
 
     ispc = find_program('ispc', required: false)
     ispc_extra_args = []
-    if has_blas and get_option('ispc') and ispc.found()
+    if get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
@@ -295,10 +280,6 @@ if get_option('build_backends')
                      + ispc_extra_args
       )
     endif
-
-  endif
-
-  if get_option('blas') and has_blas
 
     blas_files = [
     'src/neural/blas/convolution1.cc',
@@ -333,14 +314,13 @@ if get_option('build_backends')
   opencl_libdirs = get_option('opencl_libdirs')
   opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: false)
 
-  opencl_framework=dependency('OpenCL', required: false)
+  opencl_framework=dependency('OpenCL', method: 'extraframework', required: false)
   if opencl_framework.found()
-      deps += [ opencl_framework ]
+      opencl_dep = [ opencl_framework ]
       has_opencl = true
 
   elif opencl_lib.found() and cc.has_header('CL/opencl.h', args: '-I' + get_option('opencl_include'))
-
-      deps += [ opencl_lib ]
+      opencl_dep = [ opencl_lib ]
       has_opencl = true
 
   endif
@@ -362,6 +342,7 @@ if get_option('build_backends')
     if not opencl_framework.found()
       includes += include_directories(get_option('opencl_include'))
     endif
+    deps += opencl_dep
     files += opencl_files
     has_backends = true
 
@@ -398,7 +379,7 @@ if get_option('build_backends')
   if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dnn, cu_dart]
     foreach d : get_option('cudnn_include')
-      if run_command('checkdir.py', d).returncode() == 0
+      if run_command('scripts/checkdir.py', d).returncode() == 0
         includes += include_directories(d)
       endif
     endforeach
@@ -433,6 +414,30 @@ if get_option('build_backends')
     files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])
     has_backends = true
   endif
+  
+  ## ~~~~~~~~
+  ## DirectX
+  ## ~~~~~~~~
+  
+  # we should always be able to build DirectX12 backend on windows platform  
+  if host_machine.system() == 'windows' and get_option('dx')
+    dx_d3d12 = cc.find_library('d3d12')
+    dx_dxgi = cc.find_library('dxgi')
+  
+    dx_files = [
+      'src/neural/dx/network_dx.cc',
+      'src/neural/dx/shader_wrapper.cc',
+      'src/neural/dx/layers_dx.cc',
+      'src/neural/dx/fp16_utils.cc',
+    ]
+    files += dx_files
+    deps += [dx_d3d12, dx_dxgi]
+
+    subdir('src/neural/dx/shaders')
+
+    has_backends = true
+  endif  
+ 
 
 endif # if get_option('build_backends')
 
@@ -476,6 +481,10 @@ if not get_option('pext')
   add_project_arguments('-DNO_PEXT', language : 'cpp')
 endif
 
+if get_option('embed')
+  add_project_arguments('-DEMBED', language : 'cpp')
+endif
+
 executable('lc0', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
@@ -504,7 +513,7 @@ if get_option('gtest')
   test('OptionsParserTest',
     executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
-  ), timeout: 90)
+  ), args: '--gtest_output=xml:optionsparser.xml', timeout: 90)
 
   test('SyzygyTest',
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
@@ -512,8 +521,9 @@ if get_option('gtest')
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
   test('EncodePositionForNN', 
-    executable('encoder_test', 'src/neural/encoder_test.cc',
-    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+    executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib,
+    dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
 endif

@@ -28,6 +28,8 @@
 #pragma once
 
 #include <list>
+
+#include "chess/pgn.h"
 #include "selfplay/game.h"
 #include "utils/mutex.h"
 #include "utils/optionsdict.h"
@@ -39,8 +41,8 @@ namespace lczero {
 class SelfPlayTournament {
  public:
   SelfPlayTournament(const OptionsDict& options,
-                     BestMoveInfo::Callback best_move_info,
-                     ThinkingInfo::Callback thinking_info,
+                     CallbackUciResponder::BestMoveCallback best_move_info,
+                     CallbackUciResponder::ThinkingCallback thinking_info,
                      GameInfo::Callback game_info,
                      TournamentInfo::Callback tournament_info);
 
@@ -74,11 +76,12 @@ class SelfPlayTournament {
   Mutex mutex_;
   // Whether first game will be black for player1.
   bool first_game_black_ GUARDED_BY(mutex_) = false;
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_ GUARDED_BY(mutex_);
+  std::vector<Opening> discard_pile_ GUARDED_BY(mutex_);
   // Number of games which already started.
   int games_count_ GUARDED_BY(mutex_) = 0;
   bool abort_ GUARDED_BY(mutex_) = false;
-  std::vector<MoveList> openings_ GUARDED_BY(mutex_);
-  std::unique_ptr<SyzygyTablebase> syzygy_tb_ GUARDED_BY(mutex_);
+  std::vector<Opening> openings_ GUARDED_BY(mutex_);
   // Games in progress. Exposed here to be able to abort them in case if
   // Abort(). Stored as list and not vector so that threads can keep iterators
   // to them and not worry that it becomes invalid.
@@ -96,8 +99,8 @@ class SelfPlayTournament {
   const OptionsDict player_options_[2];
   SelfPlayLimits search_limits_[2];
 
-  BestMoveInfo::Callback best_move_callback_;
-  ThinkingInfo::Callback info_callback_;
+  CallbackUciResponder::BestMoveCallback best_move_callback_;
+  CallbackUciResponder::ThinkingCallback info_callback_;
   GameInfo::Callback game_callback_;
   TournamentInfo::Callback tournament_callback_;
   const int kThreads[2];
@@ -108,6 +111,7 @@ class SelfPlayTournament {
   const float kResignPlaythrough;
   const int kPolicyGamesSize;
   const std::string kTournamentResultsFile;
+  const float kDiscardedStartChance;
 };
 
 }  // namespace lczero

@@ -1,13 +1,3 @@
-option('tensorflow_include', 
-       type: 'array',
-       value: ['/usr/local/include/tensorflow/'],
-       description: 'Paths to tensorflow include directories')
-
-option('protobuf_include',
-       type: 'array',
-       value: ['/usr/local/include/'],
-       description: 'Paths to protobuf include directories')
-
 option('openblas_include',
        type: 'array',
        value: ['/usr/include/openblas/'],
@@ -17,16 +7,6 @@ option('opencl_include',
        type: 'string',
        value: '/usr/include/',
        description: 'Path to OpenCL include directory')
-
-option('tensorflow_libdir',
-       type: 'array',
-       value: ['/usr/local/lib/tensorflow_cc/'],
-       description: 'Paths to tensorflow libraries')
-
-option('protobuf_libdir',
-       type: 'array',
-       value: ['/usr/lib/x86_64-linux-gnu/'],
-       description: 'Paths to protobuf libraries')
 
 option('openblas_libdirs',
        type: 'array',
@@ -40,7 +20,7 @@ option('opencl_libdirs',
 
 option('cudnn_libdirs',
        type: 'array',
-       value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/'],
+       value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/', '/usr/lib/cuda/lib64/'],
        description: 'Paths to Cuda/cudnn libraries')
 
 option('mkl_libdirs',
@@ -53,9 +33,14 @@ option('mkl_include',
        value: ['/opt/intel/mkl/include'],
        description: 'Paths to MKL libraries')
 
+option('dnnl_dir',
+       type: 'string',
+       value: '',
+       description: 'Paths to DNNL install directory')
+
 option('cudnn_include', 
        type: 'array',
-       value: ['/opt/cuda/include/', '/usr/local/cuda/include/'],
+       value: ['/opt/cuda/include/', '/usr/local/cuda/include/', '/usr/lib/cuda/include/'],
        description: 'Paths to cudnn include directory')
 
 option('build_backends',
@@ -88,6 +73,11 @@ option('opencl',
        value: true,
        description: 'Enable OpenCL backend')
 
+option('dx',
+       type: 'boolean',
+       value: true,
+       description: 'Enable DirectX12 backend')
+
 option('tensorflow',
        type: 'boolean',
        value: false,
@@ -103,10 +93,10 @@ option('mkl',
        value: true,
        description: 'Enable MKL BLAS support')
 
-option('eigen',
+option('dnnl',
        type: 'boolean',
        value: false,
-       description: 'Use EIGEN as a BLAS alternative')
+       description: 'Enable DNNL BLAS support')
 
 option('accelerate',
        type: 'boolean',
@@ -128,7 +118,7 @@ option('gtest',
        value: true,
        description: 'Build gtest tests')
 
-option('protobuf-3-6-0',
+option('embed',
        type: 'boolean',
        value: false,
-       description: 'Use the protobuf 3.6.0 subproject')
+       description: 'Use embedded net by default')

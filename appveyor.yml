@@ -6,20 +6,30 @@ image:
 environment:
   matrix:
   - NAME: gpu-nvidia-cuda
+  - NAME: gpu-dx12
   - NAME: gpu-opencl
+  - NAME: cpu-dnnl
   - NAME: cpu-openblas
+  - NAME: android
 clone_folder: c:\projects\lc0
 install:
 - cmd: set CUDA=false
+- cmd: set DX=false
 - cmd: set OPENCL=false
 - cmd: set BLAS=false
 - cmd: set GTEST=false
+- cmd: set ANDROID=false
+- cmd: IF %NAME%==android set ANDROID=true
 - cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
+- cmd: IF %NAME%==gpu-dx12 set DX=true
 - cmd: IF %NAME%==gpu-opencl set OPENCL=true
+- cmd: IF %NAME%==cpu-dnnl set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set GTEST=true
-- cmd: IF %BLAS%==true IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
-- cmd: IF %BLAS%==true IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
+- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.1.1_cpu_vcomp appveyor DownloadFile https://github.com/intel/mkl-dnn/releases/download/v1.1.1/dnnl_win_1.1.1_cpu_vcomp.zip
+- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.1.1_cpu_vcomp 7z x dnnl_win_1.1.1_cpu_vcomp.zip -oC:\cache
+- cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
+- cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
 - cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows appveyor DownloadFile https://sourceforge.net/projects/ispcmirror/files/v1.9.2/ispc-v1.9.2-windows.zip
 - cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows 7z x ispc-v1.9.2-windows.zip -oC:\cache
@@ -34,14 +44,19 @@ install:
 - cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
 - cmd: pip3 install --upgrade meson
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
+- cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64 appveyor DownloadFile https://dl.google.com/android/repository/android-ndk-r19c-windows-x86_64.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64 7z x android-ndk-r19c-windows-x86_64.zip -oC:\ndk
+- cmd: IF %NAME%==android set PATH=C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64\bin;%PATH%
+- cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/aarch64-linux-android >crossfile-aarch64
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8-2/openblas-android-aarch64.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 7z x openblas-android-aarch64.zip -oC:\cache\OpenBLAS
+- cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/armv7a-linux-android >crossfile-armv7a
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8-2/openblas-android-armv7a.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a 7z x openblas-android-armv7a.zip -oC:\cache\OpenBLAS
 - cmd: set PKG_FOLDER="C:\cache"
-- cmd: IF NOT EXIST c:\cache\protobuf\ git clone -b v3.5.1 --single-branch --depth 1 https://github.com/google/protobuf.git
-- cmd: IF NOT EXIST c:\cache\protobuf\ mkdir protobuf\build_msvc
-- cmd: IF NOT EXIST c:\cache\protobuf\ cd protobuf\build_msvc
-- cmd: IF NOT EXIST c:\cache\protobuf\ cmake -G "Visual Studio 15 2017 Win64" -Dprotobuf_BUILD_SHARED_LIBS=NO -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=c:/cache/protobuf ../cmake
-- cmd: IF NOT EXIST c:\cache\protobuf\ msbuild INSTALL.vcxproj /p:Configuration=Release /p:Platform=x64 /m
-- cmd: set PATH=c:\cache\protobuf\bin;%PATH%
-- cmd: IF NOT EXIST c:\cache\testnet appveyor DownloadFile http://lczero.org/get_network?sha=7170f639ba1cdc407283b8e52377283e36845b954788c6ada8897937637ef032 -Filename c:\cache\testnet
+- cmd: IF NOT EXIST c:\cache mkdir c:\cache
+- cmd: IF NOT EXIST c:\cache\591226.pb.gz appveyor DownloadFile http://training.lczero.org/get_network?sha=47e3f899519dc1bc95496a457b77730fce7b0b89b6187af5c01ecbbd02e88398 -Filename c:\cache\591226.pb.gz
+- cmd: touch -t 201801010000.00 c:\cache\591226.pb.gz
 - cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
 - cmd: IF %GTEST%==true cd C:\cache\syzygy
 - cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
@@ -52,52 +67,57 @@ cache:
   - C:\cache -> appveyor.yml
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0'
   - C:\projects\lc0\subprojects\packagecache
+  - C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BLAS% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dprotobuf_include="%PKG_FOLDER%\protobuf\include" -Dprotobuf_libdir="%PKG_FOLDER%\protobuf\lib" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
+- cmd: SET BUILD_BLAS=%BLAS%
+- cmd: IF %OPENCL%==true SET BUILD_BLAS=true
+- cmd: IF %DX%==true SET BUILD_BLAS=true
+- cmd: SET EMBED=false
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %ANDROID%==true SET EMBED=true
+- cmd: IF %ANDROID%==false meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDA% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%PKG_FOLDER%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%PKG_FOLDER%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\dnnl_win_1.1.1_cpu_vcomp" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static
+- cmd: IF %ANDROID%==true meson arm64-v8a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-aarch64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-aarch64\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-aarch64
+- cmd: IF %ANDROID%==true meson armeabi-v7a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-armv7a\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-armv7a\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-armv7a
 build_script:
-- cmd: IF %APPVEYOR_REPO_TAG%==false msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=true /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
-- cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGInstrument /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
-- cmd: cd build
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %BLAS%==true copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %OPENCL%==true copy C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy %PKG_FOLDER%\cuda\bin\cudnn64_7.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true lc0 benchmark --weights=c:\cache\testnet --backend=random --movetime=10000
-- cmd: cd ..
-- cmd: IF %APPVEYOR_REPO_TAG%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+- cmd: IF %ANDROID%==false call scripts\appveyor_win_build.cmd
+- cmd: IF %ANDROID%==true call scripts\appveyor_android_build.cmd
+- cmd: cd C:\projects\lc0
 after_build:
-- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
-- cmd: IF %APPVEYOR_REPO_TAG%==true appveyor DownloadFile "https://ci.appveyor.com/api/projects/LeelaChessZero/lczero-client/artifacts/client.exe?branch=release&pr=false&job=Environment%%3A%%20NAME%%3D.exe%%2C%%20GOOS%%3Dwindows"
-- cmd: IF %APPVEYOR_REPO_TAG%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip client.exe
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %BLAS%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_100.dll" "%CUDA_PATH%\bin\cublas64_100.dll"
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%PKG_FOLDER%\cuda\bin\cudnn64_7.dll"
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type COPYING |more /P > dist\COPYING
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%CUDA_PATH%\EULA.txt" dist\CUDA.txt
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true copy "%PKG_FOLDER%\cuda\NVIDIA_SLA_cuDNN_Support.txt" dist\CUDNN.txt
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
-- cmd: IF %APPVEYOR_REPO_TAG%==true IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\COPYING .\dist\CUDA.txt .\dist\CUDNN.txt
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %ANDROID%==false call scripts\appveyor_win_package.cmd
+- cmd: IF %APPVEYOR_REPO_TAG%==true IF %ANDROID%==true call scripts\appveyor_android_package.cmd
+- cmd: cd C:\projects\lc0
 artifacts:
   - path: build/lc0.exe
     name: lc0-$(NAME)
-  - path: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
+  - path: arm64-v8a/lc0
+    name: lc0-android-arm64-v8a
+  - path: armeabi-v7a/lc0
+    name: lc0-android-armeabi-v7a
+  - path: /lc0*.zip/
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME)-zip
+  - path: build/lc0.pdb
+    name: lc0-debug-symbols
+  - path: /lc0*.apk/
+    name: lc0-$(APPVEYOR_REPO_TAG_NAME)-android-apk
 deploy:
   - provider: GitHub
-    artifact: lc0-$(APPVEYOR_REPO_TAG_NAME)-windows-$(NAME).zip
+    artifact: /.*\.zip/
+    auth_token:
+      secure: USFAdwQKTXqOXQjCYQfzWvzRpUhvqJLBkN4hbOg+j876vDxGZHt9bMYayb5evePp
+    on:
+      appveyor_repo_tag: true
+  - provider: GitHub
+    artifact: /.*\.apk/
     auth_token:
       secure: USFAdwQKTXqOXQjCYQfzWvzRpUhvqJLBkN4hbOg+j876vDxGZHt9bMYayb5evePp
     on:
       appveyor_repo_tag: true
 test_script:
-- cmd: cd build
-- cmd: IF %GTEST%==true copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
+- cmd: IF %GTEST%==true cd build
 - cmd: IF %GTEST%==true xcopy /s /i C:\cache\syzygy syzygy
 - cmd: IF %GTEST%==true meson test --print-errorlogs
-- cmd: cd ..
+- cmd: cd C:\projects\lc0
 on_finish:
-- cmd: cd build
+- cmd: IF %GTEST%==true cd C:\projects\lc0\build
 - cmd: IF %GTEST%==true for %%a in (*.xml) do curl -F file=@%%a https://ci.appveyor.com/api/testresults/junit/%APPVEYOR_JOB_ID%
-- cmd: cd ..
+- cmd: cd C:\projects\lc0

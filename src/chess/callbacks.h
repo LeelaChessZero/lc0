@@ -28,11 +28,13 @@
 #pragma once
 
 #include <functional>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
+
 #include "chess/bitboard.h"
 #include "chess/position.h"
-#include "utils/optional.h"
 
 namespace lczero {
 
@@ -48,9 +50,7 @@ struct BestMoveInfo {
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player, if known.
-  optional<bool> is_black;
-
-  using Callback = std::function<void(const BestMoveInfo&)>;
+  std::optional<bool> is_black;
 };
 
 // Is sent during the search.
@@ -67,8 +67,17 @@ struct ThinkingInfo {
   int nps = -1;
   // Hash fullness * 1000
   int hashfull = -1;
+  // Moves to mate.
+  std::optional<int> mate;
   // Win in centipawns.
-  optional<int> score;
+  std::optional<int> score;
+  // Win/Draw/Lose probability * 1000.
+  struct WDL {
+    int w;
+    int d;
+    int l;
+  };
+  std::optional<WDL> wdl;
   // Number of successful TB probes (not the same as playouts ending in TB hit).
   int tb_hits = -1;
   // Best line found. Moves are from perspective of white player.
@@ -84,9 +93,7 @@ struct ThinkingInfo {
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player, if known.
-  optional<bool> is_black;
-
-  using Callback = std::function<void(const std::vector<ThinkingInfo>&)>;
+  std::optional<bool> is_black;
 };
 
 // Is sent when a single game is finished.
@@ -95,16 +102,20 @@ struct GameInfo {
   GameResult game_result = GameResult::UNDECIDED;
   // Name of the file with training data.
   std::string training_filename;
+  // Initial fen of the game.
+  std::string initial_fen;
   // Game moves.
   std::vector<Move> moves;
+  // Ply within moves that the game actually started.
+  int play_start_ply;
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player1, if known.
-  optional<bool> is_black;
+  std::optional<bool> is_black;
   // Minimum resign threshold which would have resulted in a false positive
   // if resign had of been enabled.
   // Only provided if the game wasn't played with resign enabled.
-  optional<float> min_false_positive_threshold;
+  std::optional<float> min_false_positive_threshold;
 
   using Callback = std::function<void(const GameInfo&)>;
 };
@@ -117,9 +128,114 @@ struct TournamentInfo {
   // Player1's [win/draw/lose] as [white/black].
   // e.g. results[2][1] is how many times player 1 lost as black.
   int results[3][2] = {{0, 0}, {0, 0}, {0, 0}};
-  using Callback = std::function<void(const TournamentInfo&)>;
   int move_count_ = 0;
   uint64_t nodes_total_ = 0;
+
+  using Callback = std::function<void(const TournamentInfo&)>;
+};
+
+// A class which knows how to output UCI responses.
+class UciResponder {
+ public:
+  virtual ~UciResponder() = default;
+  virtual void OutputBestMove(BestMoveInfo* info) = 0;
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) = 0;
+};
+
+// The responder which calls callbacks. Used for easier transition from old
+// code.
+class CallbackUciResponder : public UciResponder {
+ public:
+  using ThinkingCallback =
+      std::function<void(const std::vector<ThinkingInfo>&)>;
+  using BestMoveCallback = std::function<void(const BestMoveInfo&)>;
+
+  CallbackUciResponder(BestMoveCallback bestmove, ThinkingCallback info)
+      : bestmove_callback_(bestmove), info_callback_(info) {}
+
+  void OutputBestMove(BestMoveInfo* info) { bestmove_callback_(*info); }
+  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+    info_callback_(*infos);
+  }
+
+ private:
+  const BestMoveCallback bestmove_callback_;
+  const ThinkingCallback info_callback_;
+};
+
+// The responnder which doesn't own the parent. Used to transition from old code
+// where we need to create a copy.
+class NonOwningUciRespondForwarder : public UciResponder {
+ public:
+  NonOwningUciRespondForwarder(UciResponder* parent) : parent_(parent) {}
+  virtual void OutputBestMove(BestMoveInfo* info) {
+    parent_->OutputBestMove(info);
+  }
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+    parent_->OutputThinkingInfo(infos);
+  }
+
+ private:
+  UciResponder* const parent_;
+};
+
+// Base class for uci response transformations.
+class TransformingUciResponder : public UciResponder {
+ public:
+  TransformingUciResponder(std::unique_ptr<UciResponder> parent)
+      : parent_(std::move(parent)) {}
+
+  virtual void TransformBestMove(BestMoveInfo*) {}
+  virtual void TransformThinkingInfo(std::vector<ThinkingInfo>*) {}
+
+ private:
+  virtual void OutputBestMove(BestMoveInfo* info) {
+    TransformBestMove(info);
+    parent_->OutputBestMove(info);
+  }
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+    TransformThinkingInfo(infos);
+    parent_->OutputThinkingInfo(infos);
+  }
+  std::unique_ptr<UciResponder> parent_;
+};
+
+class WDLResponseFilter : public TransformingUciResponder {
+  using TransformingUciResponder::TransformingUciResponder;
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    for (auto& info : *infos) info.wdl.reset();
+  }
+};
+
+// Remaps FRC castling to legacy castling.
+class Chess960Transformer : public TransformingUciResponder {
+ public:
+  Chess960Transformer(std::unique_ptr<UciResponder> parent,
+                      ChessBoard head_board)
+      : TransformingUciResponder(std::move(parent)), head_board_(head_board) {}
+
+ private:
+  void TransformBestMove(BestMoveInfo* best_move) override {
+    std::vector<Move> moves({best_move->bestmove, best_move->ponder});
+    ConvertToLegacyCastling(head_board_, &moves);
+    best_move->bestmove = moves[0];
+    best_move->ponder = moves[1];
+  }
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    for (auto& x : *infos) ConvertToLegacyCastling(head_board_, &x.pv);
+  }
+  static void ConvertToLegacyCastling(ChessBoard pos,
+                                      std::vector<Move>* moves) {
+    for (auto& move : *moves) {
+      if (pos.flipped()) move.Mirror();
+      move = pos.GetLegacyMove(move);
+      pos.ApplyMove(move);
+      if (pos.flipped()) move.Mirror();
+      pos.Mirror();
+    }
+  }
+
+  const ChessBoard head_board_;
 };
 
 }  // namespace lczero

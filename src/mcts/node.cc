@@ -34,6 +34,7 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
@@ -209,29 +210,31 @@ Edge* Node::GetOwnEdge() const { return GetParent()->GetEdgeToNode(this); }
 
 std::string Node::DebugString() const {
   std::ostringstream oss;
-  oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
-      << " Index:" << index_ << " Child:" << child_.get()
-      << " Sibling:" << sibling_.get() << " Q:" << q_ << " N:" << n_
-      << " N_:" << n_in_flight_ << " Edges:" << edges_.size();
+  oss << " Term:" << static_cast<int>(terminal_type_) << " This:" << this
+      << " Parent:" << parent_ << " Index:" << index_
+      << " Child:" << child_.get() << " Sibling:" << sibling_.get()
+      << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " Edges:" << edges_.size();
   return oss.str();
 }
 
-void Node::MakeTerminal(GameResult result) {
-  is_terminal_ = true;
+void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
+  terminal_type_ = type;
+  m_ = plies_left;
   if (result == GameResult::DRAW) {
-    q_ = 0.0f;
+    wl_ = 0.0f;
     d_ = 1.0f;
   } else if (result == GameResult::WHITE_WON) {
-    q_ = 1.0f;
+    wl_ = 1.0f;
     d_ = 0.0f;
   } else if (result == GameResult::BLACK_WON) {
-    q_ = -1.0f;
+    wl_ = -1.0f;
     d_ = 0.0f;
   }
 }
 
 void Node::MakeNotTerminal() {
-  is_terminal_ = false;
+  terminal_type_ = Terminal::NonTerminal;
   n_ = 0;
 
   // If we have edges, we've been extended (1 visit), so include children too.
@@ -242,13 +245,14 @@ void Node::MakeNotTerminal() {
       if (n > 0) {
         n_ += n;
         // Flip Q for opponent.
-        q_ += -child.GetQ(0.0f) * n;
-        d_ += child.GetD() * n;
+        // Default values don't matter as n is > 0.
+        wl_ += -child.GetWL(0.0f) * n;
+        d_ += child.GetD(0.0f) * n;
       }
     }
 
     // Recompute with current eval (instead of network's) and children's eval.
-    q_ /= n_;
+    wl_ /= n_;
     d_ /= n_;
   }
 }
@@ -264,10 +268,11 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.
-  q_ += multivisit * (v - q_) / (n_ + multivisit);
+  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
+  m_ += multivisit * (m - m_) / (n_ + multivisit);
 
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
@@ -313,56 +318,82 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Make saved node the only child. (kills previous siblings).
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
+  if (!child_) edges_ = EdgeList();  // Clear edges list.
 }
 
-namespace {
-// Reverse bits in every byte of a number
-uint64_t ReverseBitsInBytes(uint64_t v) {
-  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
-  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
-  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
-  return v;
-}
-}  // namespace
-
-V4TrainingData Node::GetV4TrainingData(GameResult game_result,
-                                       const PositionHistory& history,
-                                       FillEmptyHistory fill_empty_history,
-                                       float best_q, float best_d) const {
-  V4TrainingData result;
+V5TrainingData Node::GetV5TrainingData(
+    GameResult game_result, const PositionHistory& history,
+    FillEmptyHistory fill_empty_history,
+    pblczero::NetworkFormat::InputFormat input_format, float best_q,
+    float best_d, float best_m) const {
+  V5TrainingData result;
 
   // Set version.
-  result.version = 4;
-
-  // Populate probabilities.
-  const float total_n = static_cast<float>(GetChildrenVisits());
-  // Prevent garbage/invalid training data from being uploaded to server.
-  if (total_n <= 0.0f) throw Exception("Search generated invalid data!");
-  // Set illegal moves to have -1 probability.
-  std::fill(std::begin(result.probabilities), std::end(result.probabilities), -1);
-  // Set moves probabilities according to their relative amount of visits.
-  for (const auto& child : Edges()) {
-    result.probabilities[child.edge()->GetMove().as_nn_index()] =
-        child.GetN() / total_n;
-  }
+  result.version = 5;
+  result.input_format = input_format;
 
   // Populate planes.
-  InputPlanes planes = EncodePositionForNN(history, 8, fill_empty_history);
+  int transform;
+  InputPlanes planes = EncodePositionForNN(input_format, history, 8,
+                                           fill_empty_history, &transform);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
 
+  // Populate probabilities.
+  auto total_n = GetChildrenVisits();
+  // Prevent garbage/invalid training data from being uploaded to server.
+  // It's possible to have N=0 when there is only one legal move in position
+  // (due to smart pruning).
+  if (total_n == 0 && GetNumEdges() != 1) {
+    throw Exception("Search generated invalid data!");
+  }
+  // Set illegal moves to have -1 probability.
+  std::fill(std::begin(result.probabilities), std::end(result.probabilities),
+            -1);
+  // Set moves probabilities according to their relative amount of visits.
+  for (const auto& child : Edges()) {
+    result.probabilities[child.edge()->GetMove().as_nn_index(transform)] =
+        total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
+  }
+
   const auto& position = history.Last();
+  const auto& castlings = position.GetBoard().castlings();
   // Populate castlings.
-  result.castling_us_ooo = position.CanCastle(Position::WE_CAN_OOO) ? 1 : 0;
-  result.castling_us_oo = position.CanCastle(Position::WE_CAN_OO) ? 1 : 0;
-  result.castling_them_ooo = position.CanCastle(Position::THEY_CAN_OOO) ? 1 : 0;
-  result.castling_them_oo = position.CanCastle(Position::THEY_CAN_OO) ? 1 : 0;
+  // For non-frc trained nets, just send 1 like we used to.
+  uint8_t queen_side = 1;
+  uint8_t king_side = 1;
+  // If frc trained, send the bit mask representing rook position.
+  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    queen_side <<= castlings.queenside_rook();
+    king_side <<= castlings.kingside_rook();
+  }
+
+  result.castling_us_ooo = castlings.we_can_000() ? queen_side : 0;
+  result.castling_us_oo = castlings.we_can_00() ? king_side : 0;
+  result.castling_them_ooo = castlings.they_can_000() ? queen_side : 0;
+  result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
   // Other params.
-  result.side_to_move = position.IsBlackToMove() ? 1 : 0;
-  result.move_count = 0;
+  if (input_format ==
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    result.side_to_move_or_enpassant =
+        position.GetBoard().en_passant().as_int() >> 56;
+    if ((transform & FlipTransform) != 0) {
+      result.side_to_move_or_enpassant =
+          ReverseBitsInBytes(result.side_to_move_or_enpassant);
+    }
+    // Send transform in deprecated move count so rescorer can reverse it to
+    // calculate the actual move list from the input data.
+    result.invariance_info =
+        transform | (position.IsBlackToMove() ? (1u << 7) : 0u);
+  } else {
+    result.side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
+    result.invariance_info = 0;
+  }
   result.rule50_count = position.GetNoCaptureNoPawnPly();
 
   // Game result.
@@ -374,13 +405,19 @@ V4TrainingData Node::GetV4TrainingData(GameResult game_result,
     result.result = 0;
   }
 
-  // Aggregate evaluation Q.
-  result.root_q = -GetQ();
+  // Aggregate evaluation WL.
+  result.root_q = -GetWL();
   result.best_q = best_q;
 
   // Draw probability of WDL head.
   result.root_d = GetD();
   result.best_d = best_d;
+
+  result.root_m = GetM();
+  result.best_m = best_m;
+
+  // Unknown here - will be filled in once the full data has been collected.
+  result.plies_left = 0;
 
   return result;
 }
@@ -401,10 +438,11 @@ std::string EdgeAndNode::DebugString() const {
 
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
+  const auto& board = HeadPosition().GetBoard();
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
-    if (n.GetMove() == move) {
+    if (board.IsSameMove(n.GetMove(), move)) {
       new_head = n.GetOrSpawnNode(current_head_);
       // Ensure head is not terminal, so search can extend or visit children of
       // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
@@ -412,6 +450,7 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
+  move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);

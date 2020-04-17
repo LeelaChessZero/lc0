@@ -1,4 +1,156 @@
-﻿v0.22.0-rc1 (2019-08-03)
+﻿v0.25.0-rc1 (2020-04-09)
+~~~~~~~
+
+* Now requires a c++17 supporting compilation environment to build.
+* Support for Moves Left Head based networks. Includes options to adjust search
+  to favour shorter/longer wins/losses based on the moves left head output.
+* Mate score reporting is now possible, and move selection will prefer shorter
+  mates over longer ones when they are proven.
+* Training now outputs v5 format data. This passes the moves left information
+  back to training. This also includes support for multiple sub formats, 
+  including the existing standard, a new variant which can encode FRC960
+  castling, and also a further extension of that which tries to make training
+  data cannonical, so there aren't multiple positions that are trivially
+  equivalent with different network inputs.
+* Benchmark now includes a suite of 34 positions to test by default instead of
+  just start position.
+* Tensorflow backend works once more, almost just as hard to compile as it used
+  to be though.
+* `--noise` flag is gone, use `--noise-epsilon=0.25` to get the old behavior.
+* Some bug fixes related to drawscore.
+* Selfplay mode now defaults to the same value as match play for 
+  `--root-has-own-cpuct-params` (true).
+* Some advanced time management parameters are now accessed via the new 
+  `--time-manager` parameter instead of individual parameters.
+* Windows build script has been modernized.
+* Separate Eigen backend option for CPU.
+* Random backend no longer requires a network.
+* Random backend supports producing training data of any input format sub type.
+* Integer parameters now give better error messages when given invalid values.
+
+v0.24.1 (2020-03-15)
+~~~~~~~
+
+* Fix issues where logitq was being passed as drawscore and logitq wasn't 
+  passed to some GetQ calls. Causing major performance issues when either 
+  setting was non-default.
+
+v0.24.0 (2020-03-11)
+~~~~~~~
+
+* New parameter `--max-out-of-order-evals-factor` replaces 
+  `--max-out-of-order-evals` that was introduced in v0.24.0-rc3 and provides
+  the factor to multiply the maximum batch size to set maximum number
+  out-of-order evals per batch. The default value of 1.0 keeps the behavior
+  of previous releases.
+* Bug fix for hangs with very early stop command from non-conforming UCI hosts.
+
+v0.24.0-rc3 (2020-03-08)
+~~~~~~~~~~~
+
+* New parameter `--max-out-of-order-evals` to set maximum number out-of-order
+  evals per batch (was equal to the batch size before).
+* It's now possible to embed networks into the binary. It allows easier builds
+  of .apk for Android.
+* New parameter `--smart-pruning-minimum-batches` to only allow smart pruning
+  to stop after at least k batches, preventing insta-moves on slow backends.
+
+v0.24.0-rc2 (2020-03-01)
+~~~~~~~~~~~
+
+* All releases are now bundled with network id591226 (and the file date is old 
+  enough so it has a lower priority than networks that you already may have
+  in your directory).
+* Added a 'backendbench' mode to benchmark NN evaluation performance without
+  search.
+* Android builds are added to the official releases.
+
+v0.24.0-rc1 (2020-02-23)
+~~~~~~~~~~~
+
+* Introduced DirectX12 backend.
+* Optimized Cpuct/FPU parameters are now default.
+* There is now a separate set of CPuct parameters for the root node.
+* Support of running selfplay games from an opening book.
+* It's possible to adjust draw score from 0 to something else.
+* There is a new --max-concurrent-seachers parameter (default is 1) which
+  helps with thread congestion at the beginning of the search.
+* Cache fullness is not reported in UCI info line by default anymore.
+* Removed libproto dependency.
+
+v0.23.3 (2020-02-18)
+~~~~~~~
+
+* Fix a bug in time management which sometimes led to insta-moves in long time
+  control.
+
+v0.23.2 (2019-12-31)
+~~~~~~~
+
+* Fixed a bug where odd length openings had reversed training data results in
+  selfplay.
+* Fixed a bug where zero length training games could be generated due to
+  discard pile containing positions that were already considered end of game.
+* Add cudnn-auto backend.
+
+v0.23.1 (2019-12-03)
+~~~~~~~
+
+* Fixed a bug with Lc0 crashing sometimes during match phase of training game
+  generation.
+* Release packages now include CUDNN version without DLLs bundled.
+
+v0.23.0 (2019-12-01)
+~~~~~~~
+
+* Fixed the order of BLAS options so that Eigen is lower priority, to match
+  assumption in check_opencl patch introduced in v0.23.0-rc2.
+
+v0.23.0-rc2 (2019-11-27)
+~~~~~~~~~~~
+
+* Fixes in nps and time reporting during search.
+* Introduced DNNL BLAS build for modern CPUs in addition to OpenBLAS.
+* Build fixes on MacOS without OpenCL.
+* Fixed smart pruning and KLDGain trying to stop search in `go infinite` mode.
+* OpenCL package now has check_opencl tool to find computation behaves sanely.
+* Fixed a bug in interoperation of shortsighteness and certainty propagation.
+
+v0.23.0-rc1 (2019-11-21)
+~~~~~~~~~~~
+
+* Support for Fischer Random Chess (`UCI_Chess960` option to enable FRC-style
+  castling). Also added support for FRC-compatible weight files, but no training
+  code yet.
+* New option `--logit-q` (UCI: `LogitQ`). Changes subtree selection algorithm a
+  bit, possibly making it stronger (experimental, default off).
+* Lc0 now reports WDL score. To enable it, use `--show-wdl` command-line
+  argument or `UCI_ShowWdl` UCI option.
+* Added "Badgame split" mode during the training. After the engine makes
+  inferior move due to temperature, the game is branched and later the game is
+  replayed from the position of the branch.
+* Added experimental `--short-sightedness` (UCI: `ShortSightedness`) parameter.
+  Treats longer variations as more "drawish".
+* Lc0 can now open Fat Fritz weight files.
+* Time management code refactoring. No functional changes, but will make time
+  management changes easier.
+* Lc0 logo is now printed in red! \o/
+* Command line argument `-v` is now short for `--verbose-move-stats`.
+* Errors in `--backend-opts` parameter syntax are now reported.
+* The most basic version of "certainty propagation" feature (actually without
+  "propagation"). If the engine sees checkmate, it plays it!
+  (before it could play other good move).
+* Benchmark mode no longer supports smart pruning.
+* Various small changes: hidden options to control Dirichlet noise, floating
+  point optimizations, Better error reporting if there is exception in worker
+  thread, better error messages in CUDA backend.
+
+v0.22.0 (2019-08-05)
+~~~~~~~
+
+(no changes)
+
+v0.22.0-rc1 (2019-08-03)
 ~~~~~~~~~~~
 
 * Remove softmax calculation from backends and apply it after filtering for
