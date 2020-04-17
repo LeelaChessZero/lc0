@@ -434,6 +434,8 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
       game_info.is_black = false;
       game_info.game_id = game_id + 2 * i;
       game_info.moves = game1->GetMoves(i);
+      game_info.initial_fen = openings[i].start_fen;
+      game_info.play_start_ply = openings[i].moves.size();
       game_callback_(game_info);
 
       // Update tournament stats.
@@ -454,6 +456,8 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
       game_info.is_black = true;
       game_info.game_id = game_id + 2 * i + 1;
       game_info.moves = game2->GetMoves(i);
+      game_info.initial_fen = openings[i].start_fen;
+      game_info.play_start_ply = openings[i].moves.size();
       game_callback_(game_info);
 
       // Update tournament stats.

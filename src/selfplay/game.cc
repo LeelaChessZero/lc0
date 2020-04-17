@@ -143,6 +143,7 @@ void PolicySelfPlayGames::Play() {
     const int idx = blacks_move ? 1 : 0;
     auto comp = options_[idx].network->NewComputation();
     std::vector<int> transforms;
+    transforms.reserve(trees_.size());
     for (int i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] != GameResult::UNDECIDED) {
@@ -157,7 +158,7 @@ void PolicySelfPlayGames::Play() {
           options_[idx].network->GetCapabilities().input_format,
           tree->GetPositionHistory(), 8, FillEmptyHistory::FEN_ONLY,
           &transform);
-      transforms.push_back(transform);
+      transforms[i] = transform;
       comp->AddInput(std::move(planes));
     }
     comp->ComputeBlocking();
