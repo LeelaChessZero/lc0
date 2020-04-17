@@ -28,6 +28,7 @@
 #include "mcts/stoppers/smooth.h"
 
 #include <functional>
+#include <iomanip>
 
 #include "mcts/stoppers/legacy.h"
 #include "mcts/stoppers/stoppers.h"
@@ -103,15 +104,15 @@ Params::MovesLeftEstimator CreateMovesLeftEstimator(const OptionsDict& params) {
 Params::Params(const OptionsDict& params, int64_t move_overhead)
     : move_overhead_ms_(move_overhead),
       initial_tree_reuse_(params.GetOrDefault<float>("init-tree-reuse", 0.5f)),
-      max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.7f)),
+      max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.8f)),
       tree_reuse_halfupdate_moves_(
           params.GetOrDefault<float>("tree-reuse-update-rate", 3.0f)),
       nps_halfupdate_seconds_(
           params.GetOrDefault<float>("nps-update-rate", 5.0f)),
       initial_smartpruning_timeuse_(
-          params.GetOrDefault<float>("init-timeuse", 0.7f)),
+          params.GetOrDefault<float>("init-timeuse", 0.5f)),
       min_smartpruning_timeuse_(
-          params.GetOrDefault<float>("min-timeuse", 0.3f)),
+          params.GetOrDefault<float>("min-timeuse", 0.2f)),
       smartpruning_timeuse_halfupdate_moves_(
           params.GetOrDefault<float>("timeuse-update-rate", 3.0f)),
       max_single_move_time_fraction_(
@@ -179,7 +180,8 @@ class SmoothTimeManager : public TimeManager {
     // Remember final number of nodes for tree reuse estimation.
     last_move_final_nodes_ = total_nodes;
 
-    LOGFILE << "Updating endmove stats. actual_move_time=" << total_move_time
+    LOGFILE << std::fixed
+            << "Updating endmove stats. actual_move_time=" << total_move_time
             << "ms, allocated_move_time=" << move_allocated_time_ms_
             << "ms (ratio=" << this_move_time_use
             << "), expected_move_time=" << expected_move_time
@@ -250,7 +252,7 @@ class SmoothTimeManager : public TimeManager {
       move_allocated_time_ms_ = *time * params_.max_single_move_time_fraction();
     }
 
-    LOGFILE << "allocated_move_time=" << move_allocated_time_ms_
+    LOGFILE << std::fixed << "allocated_move_time=" << move_allocated_time_ms_
             << "ms, expected_move_time=" << expected_movetime_ms
             << "ms, timeuse=" << timeuse_
             << ", expected_total_nodes=" << nodes_per_move_including_reuse
@@ -278,7 +280,8 @@ class SmoothTimeManager : public TimeManager {
     if (tree_reuse_ > params_.max_tree_reuse()) {
       tree_reuse_ = params_.max_tree_reuse();
     }
-    LOGFILE << "Updating tree reuse. last_move_nodes=" << last_move_final_nodes_
+    LOGFILE << std::fixed
+            << "Updating tree reuse. last_move_nodes=" << last_move_final_nodes_
             << ", this_move_nodes=" << new_move_nodes
             << " (tree_reuse=" << this_move_tree_reuse
             << "). avg_tree_reuse=" << tree_reuse_
