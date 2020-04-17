@@ -151,7 +151,7 @@ class SmoothTimeManager : public TimeManager {
   float UpdateNps(int64_t time_since_movestart_ms,
                   int64_t nodes_since_movestart) {
     Mutex::Lock lock(mutex_);
-    if (time_since_movestart_ms >= last_time_) return nps_;
+    if (time_since_movestart_ms <= last_time_) return nps_;
     const float nps = 1000.0f * nodes_since_movestart / time_since_movestart_ms;
     nps_ = ExponentialDecay(nps_, nps, params_.nps_halfupdate_seconds(),
                             (time_since_movestart_ms - last_time_) / 1000.0f);
@@ -235,21 +235,20 @@ class SmoothTimeManager : public TimeManager {
     const float move_estimate_nodes =
         nodes_per_move_including_reuse - current_nodes;
     // This is what time we think will be really spent thinking.
-    const float last_expected_movetime_ms =
-        move_estimate_nodes / nps_ * 1000.0f;
+    const float expected_movetime_ms = move_estimate_nodes / nps_ * 1000.0f;
     // This is what is the actual budget as we hope that the search will be
     // shorter due to smart pruning.
-    move_budgeted_time_ms_ = last_expected_movetime_ms / timeuse_;
+    move_budgeted_time_ms_ = expected_movetime_ms / timeuse_;
 
     if (move_budgeted_time_ms_ >
         *time * params_.max_single_move_time_fraction()) {
       move_budgeted_time_ms_ = *time * params_.max_single_move_time_fraction();
     }
 
-    LOGFILE << "time_budget=" << move_budgeted_time_ms_
-            << "ms, expected_move_time=" << last_expected_movetime_ms_
+    LOGFILE << "allocated_move_time=" << move_budgeted_time_ms_
+            << "ms, expected_move_time=" << expected_movetime_ms
             << "ms, timeuse=" << timeuse_
-            << "ms, expected_total_nodes=" << nodes_per_move_including_reuse
+            << ", expected_total_nodes=" << nodes_per_move_including_reuse
             << "(new=" << move_estimate_nodes << " + reused=" << current_nodes
             << "), avg_total_nodes_per_move=" << nodes_per_move_including_reuse
             << "(fresh=" << avg_nodes_per_move << ", reuse_rate=" << tree_reuse_
@@ -315,7 +314,7 @@ SmoothStopper::SmoothStopper(int64_t deadline_ms, SmoothTimeManager* manager)
 
 bool SmoothStopper::ShouldStop(const IterationStats& stats,
                                StoppersHints* hints) {
-  const auto nps = manager_->UpdateNps(stats.time_since_movestart,
+  const auto nps = manager_->UpdateNps(stats.time_since_first_batch,
                                        stats.nodes_since_movestart);
   hints->UpdateEstimatedNps(nps);
   return TimeLimitStopper::ShouldStop(stats, hints);
