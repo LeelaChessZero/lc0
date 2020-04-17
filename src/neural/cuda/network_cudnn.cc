@@ -505,6 +505,7 @@ class CudnnNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
+    if (batchSize < 4) batchSize = 4;
     std::lock_guard<std::mutex> lock(lock_);
 
 #ifdef DEBUG_RAW_NPS
