@@ -305,9 +305,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.001f;
-  options->Add<FloatOption>(kMovesLeftConstantFactorId, 0.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kMovesLeftScaledFactorId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kMovesLeftScaledFactorId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
