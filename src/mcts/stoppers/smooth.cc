@@ -113,7 +113,7 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
       min_smartpruning_timeuse_(
           params.GetOrDefault<float>("min-timeuse", 0.3f)),
       smartpruning_timeuse_halfupdate_moves_(
-          params.GetOrDefault<float>("timeuse-update-rate", 10.0f)),
+          params.GetOrDefault<float>("timeuse-update-rate", 3.0f)),
       max_single_move_time_fraction_(
           params.GetOrDefault<float>("max-move-budget", 0.3f)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
