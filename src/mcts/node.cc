@@ -394,7 +394,7 @@ V5TrainingData Node::GetV5TrainingData(
     result.side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
     result.invariance_info = 0;
   }
-  result.rule50_count = position.GetNoCaptureNoPawnPly();
+  result.rule50_count = position.GetRule50Ply();
 
   // Game result.
   if (game_result == GameResult::WHITE_WON) {
@@ -471,7 +471,9 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   int no_capture_ply;
   int full_moves;
   starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
+  if (gamebegin_node_ &&
+      (history_.Starting().GetBoard() != starting_board ||
+       history_.Starting().GetNoCaptureNoPawnPly() != no_capture_ply)) {
     // Completely different position.
     DeallocateTree();
   }
