@@ -120,8 +120,8 @@ void PolicySelfPlayGames::Play() {
             // correct result with a stat other than OK.
             if (state != FAIL) {
               if (wdl == WDL_WIN) {
-                results_[i] =
-                    tb_side_black ? GameResult::BLACK_WON : GameResult::WHITE_WON;
+                results_[i] = tb_side_black ? GameResult::BLACK_WON
+                                            : GameResult::WHITE_WON;
               } else if (wdl == WDL_LOSS) {
                 results_[i] = tb_side_black ? GameResult::WHITE_WON
                                             : GameResult::BLACK_WON;
@@ -154,10 +154,9 @@ void PolicySelfPlayGames::Play() {
       tree->GetCurrentHead()->CreateEdges(legal_moves);
       int transform;
       auto planes = EncodePositionForNN(
-          options_[idx].network->GetCapabilities()
-                                  .input_format, tree->GetPositionHistory(),
-                              8,
-                                        FillEmptyHistory::FEN_ONLY, &transform);
+          options_[idx].network->GetCapabilities().input_format,
+          tree->GetPositionHistory(), 8, FillEmptyHistory::FEN_ONLY,
+          &transform);
       transforms.push_back(transform);
       comp->AddInput(std::move(planes));
     }
@@ -172,7 +171,8 @@ void PolicySelfPlayGames::Play() {
       Move best;
       float max_p = std::numeric_limits<float>::lowest();
       for (auto edge : tree->GetCurrentHead()->Edges()) {
-        float p = comp->GetPVal(comp_idx, edge.GetMove().as_nn_index(transforms[i]));
+        float p =
+            comp->GetPVal(comp_idx, edge.GetMove().as_nn_index(transforms[i]));
         if (p >= max_p) {
           max_p = p;
           best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());

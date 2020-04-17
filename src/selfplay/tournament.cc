@@ -27,6 +27,8 @@
 
 #include "selfplay/tournament.h"
 
+#include <fstream>
+
 #include "chess/pgn.h"
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
@@ -34,8 +36,6 @@
 #include "selfplay/game.h"
 #include "utils/optionsparser.h"
 #include "utils/random.h"
-
-#include <fstream>
 
 namespace lczero {
 namespace {
@@ -165,9 +165,9 @@ SelfPlayTournament::SelfPlayTournament(
       kTraining(options.Get<bool>(kTrainingId)),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId)),
       kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)),
-          kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId)),
-          kTournamentResultsFile(
-              options.Get<std::string>(kTournamentResultsFileId)) {
+      kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId)),
+      kTournamentResultsFile(
+          options.Get<std::string>(kTournamentResultsFileId)) {
   std::string book = options.Get<std::string>(kOpeningsFileId);
   if (!book.empty()) {
     PgnReader book_reader;
@@ -400,6 +400,7 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
   openings.reserve(game_count / 2);
   int opening_basis = game_id / 2;
   for (int i = 0; i < game_count / 2; i++) {
+    // TODO: modulo?
     if (opening_basis + i < openings_.size()) {
       openings.push_back(openings_[opening_basis + i]);
     } else {
@@ -476,15 +477,9 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      /*
-bool mirrored = player_options_[0].Get<bool>(kOpeningsMirroredId);
-if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
-(kTotalGames == -2 && !openings_.empty() &&
-games_count_ >=
-  static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)))
-break;
-game_id = games_count_++;
-*/
+      if (!player_options_[0].Get<bool>(kOpeningsMirroredId)) {
+        throw Exception("This binary only supports mirrored mode.");
+      }
       int to_take = 1;
       int max_take = 1;
       if (kPolicyGamesSize > 0) {
@@ -573,10 +568,8 @@ SelfPlayTournament::~SelfPlayTournament() {
 void SelfPlayTournament::SaveResults() {
   if (kTournamentResultsFile.empty()) return;
   std::ofstream output(kTournamentResultsFile, std::ios_base::app);
-  auto p1name =
-      player_options_[0].Get<std::string>(NetworkFactory::kWeightsId);
-  auto p2name =
-      player_options_[1].Get<std::string>(NetworkFactory::kWeightsId);
+  auto p1name = player_options_[0].Get<std::string>(NetworkFactory::kWeightsId);
+  auto p2name = player_options_[1].Get<std::string>(NetworkFactory::kWeightsId);
 
   output << std::endl;
   output << "[White \"" << p1name << "\"]" << std::endl;
