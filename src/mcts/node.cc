@@ -471,7 +471,9 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   int no_capture_ply;
   int full_moves;
   starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
+  if (gamebegin_node_ &&
+      (history_.Starting().GetBoard() != starting_board ||
+       history_.Starting().GetNoCaptureNoPawnPly() != no_capture_ply)) {
     // Completely different position.
     DeallocateTree();
   }
