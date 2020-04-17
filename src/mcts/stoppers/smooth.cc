@@ -50,11 +50,9 @@ class Params {
   float tree_reuse_halfupdate_moves() const {
     return tree_reuse_halfupdate_moves_;
   }
-  // Initial NPS guess.
-  float initial_nps() const { return initial_nps_; }
   // Number of seconds to update nps estimation halfway.
   float nps_halfupdate_seconds() const { return nps_halfupdate_seconds_; }
-  // Fraction of the budgeted time the engine uses, initial estimation.
+  // Fraction of the allocated time the engine uses, initial estimation.
   float initial_smartpruning_timeuse() const {
     return initial_smartpruning_timeuse_;
   }
@@ -81,7 +79,6 @@ class Params {
   const float initial_tree_reuse_;
   const float max_tree_reuse_;
   const float tree_reuse_halfupdate_moves_;
-  const float initial_nps_;
   const float nps_halfupdate_seconds_;
   const float initial_smartpruning_timeuse_;
   const float min_smartpruning_timeuse_;
@@ -109,7 +106,6 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
       max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.7f)),
       tree_reuse_halfupdate_moves_(
           params.GetOrDefault<float>("tree-reuse-update-rate", 4.0f)),
-      initial_nps_(params.GetOrDefault<float>("init-nps", 20000.0f)),
       nps_halfupdate_seconds_(
           params.GetOrDefault<float>("nps-update-rate", 5.0f)),
       initial_smartpruning_timeuse_(
@@ -151,21 +147,29 @@ class SmoothTimeManager : public TimeManager {
   float UpdateNps(int64_t time_since_movestart_ms,
                   int64_t nodes_since_movestart) {
     Mutex::Lock lock(mutex_);
-    if (time_since_movestart_ms <= last_time_) return nps_;
-    const float nps = 1000.0f * nodes_since_movestart / time_since_movestart_ms;
-    nps_ = ExponentialDecay(nps_, nps, params_.nps_halfupdate_seconds(),
-                            (time_since_movestart_ms - last_time_) / 1000.0f);
+    if (nps_is_reliable_ && time_since_movestart_ms <= last_time_) {
+      const float nps =
+          1000.0f * nodes_since_movestart / time_since_movestart_ms;
+      nps_ = ExponentialDecay(nps_, nps, params_.nps_halfupdate_seconds(),
+                              (time_since_movestart_ms - last_time_) / 1000.0f);
+    } else if (time_since_movestart_ms > 0) {
+      nps_ = 1000.0f * nodes_since_movestart / time_since_movestart_ms;
+    }
     last_time_ = time_since_movestart_ms;
     return nps_;
   }
 
   void UpdateEndOfMoveStats(int64_t total_move_time, int64_t total_nodes) {
     Mutex::Lock lock(mutex_);
+    // Whatever is in nps_ after the first move, is truth now.
+    nps_is_reliable_ = true;
     // How different was this move from an average move
     const float this_move_time_fraction =
         avg_ms_per_move_ <= 0.0f ? 0.0f : total_move_time / avg_ms_per_move_;
     // Update time_use estimation.
-    const float this_move_time_use = total_move_time / move_budgeted_time_ms_;
+    const float this_move_time_use = total_move_time / move_allocated_time_ms_;
+    // Recompute expected move time for logging.
+    const float expected_move_time = move_allocated_time_ms_ * timeuse_;
     timeuse_ = ExponentialDecay(timeuse_, this_move_time_use,
                                 params_.smartpruning_timeuse_halfupdate_moves(),
                                 this_move_time_fraction);
@@ -176,9 +180,10 @@ class SmoothTimeManager : public TimeManager {
     last_move_final_nodes_ = total_nodes;
 
     LOGFILE << "Updating endmove stats. actual_move_time=" << total_move_time
-            << "ms, budgeted_move_time=" << move_budgeted_time_ms_
+            << "ms, allocated_move_time=" << move_allocated_time_ms_
             << "ms (ratio=" << this_move_time_use
-            << "). New time_use=" << timeuse_
+            << "), expected_move_time=" << expected_move_time
+            << "ms. New time_use=" << timeuse_
             << ", update_rate=" << this_move_time_fraction
             << " (avg_move_time=" << avg_ms_per_move_ << "ms).";
   }
@@ -238,14 +243,14 @@ class SmoothTimeManager : public TimeManager {
     const float expected_movetime_ms = move_estimate_nodes / nps_ * 1000.0f;
     // This is what is the actual budget as we hope that the search will be
     // shorter due to smart pruning.
-    move_budgeted_time_ms_ = expected_movetime_ms / timeuse_;
+    move_allocated_time_ms_ = expected_movetime_ms / timeuse_;
 
-    if (move_budgeted_time_ms_ >
+    if (move_allocated_time_ms_ >
         *time * params_.max_single_move_time_fraction()) {
-      move_budgeted_time_ms_ = *time * params_.max_single_move_time_fraction();
+      move_allocated_time_ms_ = *time * params_.max_single_move_time_fraction();
     }
 
-    LOGFILE << "allocated_move_time=" << move_budgeted_time_ms_
+    LOGFILE << "allocated_move_time=" << move_allocated_time_ms_
             << "ms, expected_move_time=" << expected_movetime_ms
             << "ms, timeuse=" << timeuse_
             << ", expected_total_nodes=" << nodes_per_move_including_reuse
@@ -257,7 +262,7 @@ class SmoothTimeManager : public TimeManager {
             << ", total_remaining_ms=" << total_remaining_ms
             << ", nps=" << nps_;
 
-    return std::make_unique<SmoothStopper>(move_budgeted_time_ms_, this);
+    return std::make_unique<SmoothStopper>(move_allocated_time_ms_, this);
   }
 
   void UpdateTreeReuseFactor(int64_t new_move_nodes) REQUIRES(mutex_) {
@@ -288,16 +293,18 @@ class SmoothTimeManager : public TimeManager {
   // Fraction of a tree which usually survives a full move (and is reused).
   float tree_reuse_ GUARDED_BY(mutex_) = params_.initial_tree_reuse();
   // Current NPS estimation.
-  float nps_ GUARDED_BY(mutex_) = params_.initial_nps();
-  // Fraction of a budgeted time usually used.
+  float nps_ GUARDED_BY(mutex_) = 20000.0f;
+  // NPS is unreliable until the end of the first move.
+  bool nps_is_reliable_ GUARDED_BY(mutex_) = false;
+  // Fraction of a allocated time usually used.
   float timeuse_ GUARDED_BY(mutex_) = params_.initial_smartpruning_timeuse();
 
   // Average amount of time per move. Used to compute ratio for timeuse and
   // tree reuse updates.
   float avg_ms_per_move_ GUARDED_BY(mutex_) = 0.0f;
-  // Total amount of time budgeted for the current move. Used to update timeuse_
-  // when the move ends.
-  float move_budgeted_time_ms_ GUARDED_BY(mutex_) = 0.0f;
+  // Total amount of time allocated for the current move. Used to update
+  // timeuse_ when the move ends.
+  float move_allocated_time_ms_ GUARDED_BY(mutex_) = 0.0f;
   // Total amount of nodes in the end of the previous search. Used to compute
   // tree reuse factor when a new search starts.
   int64_t last_move_final_nodes_ GUARDED_BY(mutex_) = 0;
