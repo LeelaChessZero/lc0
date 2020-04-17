@@ -105,7 +105,7 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
       initial_tree_reuse_(params.GetOrDefault<float>("init-tree-reuse", 0.5f)),
       max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.7f)),
       tree_reuse_halfupdate_moves_(
-          params.GetOrDefault<float>("tree-reuse-update-rate", 4.0f)),
+          params.GetOrDefault<float>("tree-reuse-update-rate", 3.0f)),
       nps_halfupdate_seconds_(
           params.GetOrDefault<float>("nps-update-rate", 5.0f)),
       initial_smartpruning_timeuse_(
@@ -273,8 +273,8 @@ class SmoothTimeManager : public TimeManager {
     const float this_move_tree_reuse =
         static_cast<float>(new_move_nodes) / last_move_final_nodes_;
     tree_reuse_ = ExponentialDecay(tree_reuse_, this_move_tree_reuse,
-                                   this_move_time_fraction,
-                                   params_.tree_reuse_halfupdate_moves());
+                                   params_.tree_reuse_halfupdate_moves(),
+                                   this_move_time_fraction);
     if (tree_reuse_ > params_.max_tree_reuse()) {
       tree_reuse_ = params_.max_tree_reuse();
     }
