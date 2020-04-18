@@ -16,9 +16,16 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
-        meson_version: '>=0.46')
+        meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
+
+if not cc.has_header('optional') or not cc.has_header('string_view') or not cc.has_header('charconv')
+    error('Lc0 requires a compiler supporting C++17, for example g++ v8.0, ' +
+          'clang v5.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
+          'later.')
+endif
+
 if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
@@ -115,7 +122,9 @@ files += [
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/stoppers/common.cc',
   'src/mcts/stoppers/factory.cc',
+  'src/mcts/stoppers/legacy.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
   'src/neural/cache.cc',
@@ -142,7 +151,6 @@ files += [
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
   'src/utils/string.cc',
-  'src/utils/transpose.cc',
   'src/utils/weights_adapter.cc',
 ]
 includes += include_directories('src')
@@ -158,8 +166,6 @@ else
   files += 'src/utils/filesystem.posix.cc'
 endif
 
-
-
 #############################################################################
 ## BACKENDS
 #############################################################################
@@ -168,38 +174,20 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## Tensorflow
   ## ~~~~~~~~~~
-  # Installed from https://github.com/FloopCZ/tensorflow_cc
-  tensorflow_include = get_option('tensorflow_include')
-  tensorflow_libdir = get_option('tensorflow_libdir')
   tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_lib = cc.find_library('libtensorflow_cc',
-            dirs: tensorflow_libdir, required: false)
-
-  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found()
-    includes += include_directories(
-      tensorflow_include,
-      tensorflow_include[0] + '/bazel-genfiles',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
-      is_system: true
-    )
-    deps += [tf_dl_lib, tf_tensorflow_lib]
-    files += 'src/neural/network_tf.cc'
+  tf_tensorflow_cc_lib = dependency('tensorflow_cc',
+                                    required: false, include_type:'system')
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
+    deps += [tf_dl_lib, tf_tensorflow_cc_lib]
+    files += 'src/neural/network_tf_cc.cc'
     has_backends = true
   endif
-
 
   ## ~~~~~
   ## Blas
   ## ~~~~~
 
   shared_files = []
-
-  has_blas = false
 
   accelerate_lib = dependency('Accelerate', required: false)
 
@@ -220,23 +208,21 @@ if get_option('build_backends')
 
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
-      add_project_arguments('-DUSE_MKL', language : 'cpp')
+      add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
-      has_blas = true
 
     elif get_option('dnnl') and dnnl_lib.found()
-      add_project_arguments('-DUSE_DNNL', language : 'cpp')
+      add_project_arguments(['-DUSE_DNNL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('dnnl_dir') + '/include')
       deps += [ dnnl_lib, dependency('openmp', required:true) ]
-      has_blas = true
 
     elif get_option('accelerate') and accelerate_lib.found()
       deps += [ accelerate_lib ]
-      has_blas = true
+      add_project_arguments('-DUSE_BLAS', language : 'cpp')
 
     elif get_option('openblas') and openblas_lib.found()
-      add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+      add_project_arguments(['-DUSE_OPENBLAS', '-DUSE_BLAS'], language : 'cpp')
 
       required_openblas_header = 'openblas_config.h'
       if not cc.has_header(required_openblas_header)
@@ -256,17 +242,14 @@ if get_option('build_backends')
       endif
 
       deps += [ openblas_lib ]
-      has_blas = true
 
-    elif get_option('eigen')
-      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
-      has_blas = true
-      deps += subproject('eigen').get_variable('eigen_dep')
     endif
+
+    deps += subproject('eigen').get_variable('eigen_dep')
 
     ispc = find_program('ispc', required: false)
     ispc_extra_args = []
-    if has_blas and get_option('ispc') and ispc.found()
+    if get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
@@ -297,10 +280,6 @@ if get_option('build_backends')
                      + ispc_extra_args
       )
     endif
-
-  endif
-
-  if get_option('blas') and has_blas
 
     blas_files = [
     'src/neural/blas/convolution1.cc',
@@ -335,7 +314,7 @@ if get_option('build_backends')
   opencl_libdirs = get_option('opencl_libdirs')
   opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: false)
 
-  opencl_framework=dependency('OpenCL', required: false)
+  opencl_framework=dependency('OpenCL', method: 'extraframework', required: false)
   if opencl_framework.found()
       opencl_dep = [ opencl_framework ]
       has_opencl = true

@@ -214,11 +214,14 @@ std::string Node::DebugString() const {
       << " Parent:" << parent_ << " Index:" << index_
       << " Child:" << child_.get() << " Sibling:" << sibling_.get()
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " Edges:" << edges_.size();
+      << " Edges:" << edges_.size()
+      << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
+      << static_cast<int>(upper_bound_) - 2;
   return oss.str();
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
+  SetBounds(result, result);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -245,8 +248,9 @@ void Node::MakeNotTerminal() {
       if (n > 0) {
         n_ += n;
         // Flip Q for opponent.
-        wl_ += -child.GetWL() * n;
-        d_ += child.GetD() * n;
+        // Default values don't matter as n is > 0.
+        wl_ += -child.GetWL(0.0f) * n;
+        d_ += child.GetD(0.0f) * n;
       }
     }
 
@@ -254,6 +258,11 @@ void Node::MakeNotTerminal() {
     wl_ /= n_;
     d_ /= n_;
   }
+}
+
+void Node::SetBounds(GameResult lower, GameResult upper) {
+  lower_bound_ = lower;
+  upper_bound_ = upper;
 }
 
 bool Node::TryStartScoreUpdate() {
@@ -317,17 +326,8 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Make saved node the only child. (kills previous siblings).
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
+  if (!child_) edges_ = EdgeList();  // Clear edges list.
 }
-
-namespace {
-// Reverse bits in every byte of a number
-uint64_t ReverseBitsInBytes(uint64_t v) {
-  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
-  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
-  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
-  return v;
-}
-}  // namespace
 
 V5TrainingData Node::GetV5TrainingData(
     GameResult game_result, const PositionHistory& history,
@@ -339,6 +339,15 @@ V5TrainingData Node::GetV5TrainingData(
   // Set version.
   result.version = 5;
   result.input_format = input_format;
+
+  // Populate planes.
+  int transform;
+  InputPlanes planes = EncodePositionForNN(input_format, history, 8,
+                                           fill_empty_history, &transform);
+  int plane_idx = 0;
+  for (auto& plane : result.planes) {
+    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
+  }
 
   // Populate probabilities.
   auto total_n = GetChildrenVisits();
@@ -353,16 +362,8 @@ V5TrainingData Node::GetV5TrainingData(
             -1);
   // Set moves probabilities according to their relative amount of visits.
   for (const auto& child : Edges()) {
-    result.probabilities[child.edge()->GetMove().as_nn_index()] =
+    result.probabilities[child.edge()->GetMove().as_nn_index(transform)] =
         total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
-  }
-
-  // Populate planes.
-  InputPlanes planes =
-      EncodePositionForNN(input_format, history, 8, fill_empty_history);
-  int plane_idx = 0;
-  for (auto& plane : result.planes) {
-    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
 
   const auto& position = history.Last();
@@ -372,7 +373,9 @@ V5TrainingData Node::GetV5TrainingData(
   uint8_t queen_side = 1;
   uint8_t king_side = 1;
   // If frc trained, send the bit mask representing rook position.
-  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE) {
+  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
     queen_side <<= castlings.queenside_rook();
     king_side <<= castlings.kingside_rook();
   }
@@ -383,9 +386,23 @@ V5TrainingData Node::GetV5TrainingData(
   result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
   // Other params.
-  result.side_to_move = position.IsBlackToMove() ? 1 : 0;
-  result.deprecated_move_count = 0;
-  result.rule50_count = position.GetNoCaptureNoPawnPly();
+  if (input_format ==
+      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    result.side_to_move_or_enpassant =
+        position.GetBoard().en_passant().as_int() >> 56;
+    if ((transform & FlipTransform) != 0) {
+      result.side_to_move_or_enpassant =
+          ReverseBitsInBytes(result.side_to_move_or_enpassant);
+    }
+    // Send transform in deprecated move count so rescorer can reverse it to
+    // calculate the actual move list from the input data.
+    result.invariance_info =
+        transform | (position.IsBlackToMove() ? (1u << 7) : 0u);
+  } else {
+    result.side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
+    result.invariance_info = 0;
+  }
+  result.rule50_count = position.GetRule50Ply();
 
   // Game result.
   if (game_result == GameResult::WHITE_WON) {
@@ -462,7 +479,9 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   int no_capture_ply;
   int full_moves;
   starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
+  if (gamebegin_node_ &&
+      (history_.Starting().GetBoard() != starting_board ||
+       history_.Starting().GetRule50Ply() != no_capture_ply)) {
     // Completely different position.
     DeallocateTree();
   }

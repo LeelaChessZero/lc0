@@ -34,9 +34,11 @@ Having successfully acquired Lc0 via either of these methods, proceed to the bui
 
 Building should be easier now than it was in the past. Please report any problems you have.
 
-Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as the required libraries `protobuf` and `zlib`. (`gtest` is optionally used for the test suite.) If your system already has those two libraries installed, they will be used; otherwise Meson will generate its own copy of the two (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
+Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as the required `zlib`. (`gtest` is optionally used for the test suite.) If your system already has this library installed, they will be used; otherwise Meson will generate its own copy of the two (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
 
-Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's MKL. For GPUs, OpenCL and CUDA+cudnn are supported.
+Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's DNNL or MKL. For GPUs, OpenCL and CUDA+cudnn are supported, while DX-12 can be used in Windows 10 with latest drivers.
+
+Finally, lc0 requires a compiler supporting C++17. Minimal versions seem to be g++ v8.0, clang v5.0 (with C++17 stdlib) or Visual Studio 2017.
 
 Given those basics, the OS and backend specific instructions are below.
 
@@ -80,26 +82,31 @@ in ("Deep Learning").
 
 #### Ubuntu 18.04
 
-For Ubuntu 18.04 you need the latest version of meson and clang-6.0 before performing the steps above:
+For Ubuntu 18.04 you need the latest version of meson, g++-8 and clang-6.0 before performing the steps above:
 
-    sudo apt-get install clang-6.0 ninja-build pkg-config protobuf-compiler libprotobuf-dev meson
+    sudo apt-get install gcc-8 g++-8 clang-6.0 ninja-build pkg-config
+    pip3 install meson --user
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
 
 #### Ubuntu 16.04
 
-For Ubuntu 16.04 you need the latest version of meson and clang-6.0 before performing the steps above:
+For Ubuntu 16.04 you need the latest version of meson, ninja and also gcc-8.0 before performing the steps above:
 
-    wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-    sudo apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main'
+    sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install clang-6.0 ninja-build protobuf-compiler libprotobuf-dev
+    sudo apt-get install gcc-8 g++-8
     pip3 install meson --user
-    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
+    pip3 install ninja --user
+    CC=gcc-8 CXX=g++-8 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
 
+If you want to build with clang-6.0 you still need g++-8 for the library. Replace the last line above with:
+
+    sudo apt-get install clang-6.0
+    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 #### openSUSE (all versions)
 
@@ -113,24 +120,23 @@ to run latest releases of lc0 and the client inside a Docker container.
 
 ### Windows
 
-0. Install Microsoft Visual Studio
-1. Install [CUDA](https://developer.nvidia.com/cuda-zone) (v9.2 is fine)
+Here are the brief instructions for CUDA/CuDNN, for details and other options see `windows-build.md`.
+
+0. Install Microsoft Visual Studio (2017 or later)
+1. Install [CUDA](https://developer.nvidia.com/cuda-zone)
 2. Install [cuDNN](https://developer.nvidia.com/cudnn).
 3. Install Python3
 4. Install Meson: `pip3 install --upgrade meson`
-5. Edit `build-cuda.cmd`:
+5. Edit `build.cmd`:
 
-* If you use MSVS other than 2015 (or if it's installed into non-standard location):
-    * `C:\Program Files (x86)\Microsoft Visual Studio 14.0\` replace 14.0 with your version
-    * `--backend 2015` replace 2015 with your version
-* `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.2\lib\x64` replace with your CUDA path
-* `C:\dev\cuDNN\` replace with your cuDNN directory
+* Set `CUDA_PATH` with your CUDA directory
+* Set `CUDNN_PATH` with your cuDNN directory (may be the same with CUDA_PATH)
 
-6. Run `build-cuda.cmd`. It will generate MSVS project and pause.
+6. Run `build.cmd`. It will ask permission to delete the build directory, then generate MSVS project and pause.
 
 Then either:
 
-7. Hit <Enter> to build it.
+7. Hit `Enter` to build it.
 8. Resulting binary will be `build/lc0.exe`
 
 Or.
@@ -168,6 +174,7 @@ cd ..
 
 ```
 pip3 install meson
+pip3 install ninja
 ```
 
 3. Install clang

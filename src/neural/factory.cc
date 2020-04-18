@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,9 +26,10 @@
 */
 
 #include "neural/factory.h"
-#include "neural/loader.h"
 
 #include <algorithm>
+
+#include "neural/loader.h"
 #include "utils/commandline.h"
 #include "utils/logging.h"
 
@@ -84,9 +85,9 @@ std::vector<std::string> NetworkFactory::GetBackendsList() const {
   return result;
 }
 
-std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
-                                                const WeightsFile& weights,
-                                                const OptionsDict& options) {
+std::unique_ptr<Network> NetworkFactory::Create(
+    const std::string& network, const std::optional<WeightsFile>& weights,
+    const OptionsDict& options) {
   CERR << "Creating backend [" << network << "]...";
   for (const auto& factory : factories_) {
     if (factory.name == network) {
@@ -98,9 +99,9 @@ std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
 
 NetworkFactory::BackendConfiguration::BackendConfiguration(
     const OptionsDict& options)
-    : weights_path(options.Get<std::string>(kWeightsId.GetId())),
-      backend(options.Get<std::string>(kBackendId.GetId())),
-      backend_options(options.Get<std::string>(kBackendOptionsId.GetId())) {}
+    : weights_path(options.Get<std::string>(kWeightsId)),
+      backend(options.Get<std::string>(kBackendId)),
+      backend_options(options.Get<std::string>(kBackendOptionsId)) {}
 
 bool NetworkFactory::BackendConfiguration::operator==(
     const BackendConfiguration& other) const {
@@ -110,10 +111,10 @@ bool NetworkFactory::BackendConfiguration::operator==(
 
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
-  std::string net_path = options.Get<std::string>(kWeightsId.GetId());
-  const std::string backend = options.Get<std::string>(kBackendId.GetId());
+  std::string net_path = options.Get<std::string>(kWeightsId);
+  const std::string backend = options.Get<std::string>(kBackendId);
   const std::string backend_options =
-      options.Get<std::string>(kBackendOptionsId.GetId());
+      options.Get<std::string>(kBackendOptionsId);
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
@@ -122,7 +123,10 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
-  const WeightsFile weights = LoadWeightsFromFile(net_path);
+  std::optional<WeightsFile> weights;
+  if (!net_path.empty()) {
+    weights = LoadWeightsFromFile(net_path);
+  }
 
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);

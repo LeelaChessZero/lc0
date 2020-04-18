@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "mcts/stoppers/common.h"
 #include "mcts/stoppers/factory.h"
 #include "mcts/stoppers/stoppers.h"
 #include "neural/writer.h"
@@ -69,20 +70,21 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree, const MoveList& opening)
+                           bool shared_tree, const Opening& opening)
     : options_{player1, player2},
-      chess960_{player1.uci_options->Get<bool>(kUciChess960.GetId()) ||
-                player2.uci_options->Get<bool>(kUciChess960.GetId())} {
+      chess960_{player1.uci_options->Get<bool>(kUciChess960) ||
+                player2.uci_options->Get<bool>(kUciChess960)} {
+  orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
-  tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
+  tree_[0]->ResetToPosition(orig_fen_, {});
 
   if (shared_tree) {
     tree_[1] = tree_[0];
   } else {
     tree_[1] = std::make_shared<NodeTree>();
-    tree_[1]->ResetToPosition(ChessBoard::kStartposFen, {});
+    tree_[1]->ResetToPosition(orig_fen_, {});
   }
-  for (Move m : opening) {
+  for (Move m : opening.moves) {
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
   }
@@ -101,7 +103,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
-    if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
+    if (!options_[idx].uci_options->Get<bool>(kReuseTreeId)) {
       tree_[idx]->TrimTreeAtHead();
     }
 
@@ -161,11 +163,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
     if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
-                                            kResignEarliestMoveId.GetId())) {
+                                            kResignEarliestMoveId)) {
       const float resignpct =
-          options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
-          100;
-      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+          options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
+      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
         auto threshold = 1.0f - resignpct;
         if (best_w > threshold) {
           game_result_ =
@@ -206,8 +207,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       // If 'best move' is less than allowed visits and not max visits,
       // discard it and try again.
       if (cur_n == max_n ||
-          static_cast<int>(cur_n) >= options_[idx].uci_options->Get<int>(
-                                         kMinimumAllowedVistsId.GetId())) {
+          static_cast<int>(cur_n) >=
+              options_[idx].uci_options->Get<int>(kMinimumAllowedVistsId)) {
         break;
       }
       PositionHistory history_copy = tree_[idx]->GetPositionHistory();
@@ -220,7 +221,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       if (history_copy.ComputeGameResult() == GameResult::UNDECIDED) {
         auto move_list_to_discard = GetMoves();
         move_list_to_discard.push_back(move);
-        options_[idx].discarded_callback(move_list_to_discard);
+        options_[idx].discarded_callback({orig_fen_, move_list_to_discard});
       }
       search_->ResetBestMove();
     }
@@ -254,7 +255,7 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
   // TODO: This assumes both players have the same resign style.
   // Supporting otherwise involves mixing the meaning of worst.
-  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId)) {
     if (game_result_ == GameResult::WHITE_WON) {
       return std::max(max_eval_[1], max_eval_[2]);
     } else if (game_result_ == GameResult::BLACK_WON) {
@@ -280,7 +281,11 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   // different approach.
   float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
   for (auto chunk : training_data_) {
-    const bool black_to_move = chunk.side_to_move;
+    bool black_to_move = chunk.side_to_move_or_enpassant;
+    if (chunk.input_format ==
+        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+      black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
+    }
     if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;
     } else if (game_result_ == GameResult::BLACK_WON) {
