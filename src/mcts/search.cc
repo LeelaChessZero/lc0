@@ -489,6 +489,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
       temperature *= static_cast<float>
         (decay_start_move + decay_moves - moves) / decay_moves;
     }
+    // don't allow temperature to decay below endgame temperature
     if (temperature < params_.GetTemperatureEndgame()) {
       temperature = params_.GetTemperatureEndgame();
     }
