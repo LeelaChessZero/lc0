@@ -969,7 +969,7 @@ MoveList ChessBoard::GenerateLegalMoves() const {
   return result;
 }
 
-void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
+void ChessBoard::SetFromFen(const std::string& fen, int* rule50_ply,
                             int* moves) {
   Clear();
   int row = 7;
@@ -980,10 +980,10 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
   string who_to_move;
   string castlings;
   string en_passant;
-  int no_capture_halfmoves;
+  int rule50_halfmoves;
   int total_moves;
   fen_str >> board >> who_to_move >> castlings >> en_passant >>
-      no_capture_halfmoves >> total_moves;
+      rule50_halfmoves >> total_moves;
 
   if (!fen_str) throw Exception("Bad fen string: " + fen);
 
@@ -1096,7 +1096,7 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
   if (who_to_move == "b" || who_to_move == "B") {
     Mirror();
   }
-  if (no_capture_ply) *no_capture_ply = no_capture_halfmoves;
+  if (rule50_ply) *rule50_ply = rule50_halfmoves;
   if (moves) *moves = total_moves;
 }
 
