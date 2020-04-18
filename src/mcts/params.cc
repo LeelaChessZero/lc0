@@ -91,9 +91,14 @@ const OptionId SearchParams::kTemperatureId{
     "while making the move."};
 const OptionId SearchParams::kTempDecayMovesId{
     "tempdecay-moves", "TempDecayMoves",
-    "Reduce temperature for every move from the game start to this number of "
-    "moves, decreasing linearly from initial temperature to 0. A value of 0 "
-    "disables tempdecay."};
+    "Reduce temperature for every move from decay start move, decreasing "
+    "linearly over this number of moves from initial temperature to 0. "
+    "A value of 0 disables tempdecay."};
+const OptionId SearchParams::kTempDecayStartMoveId{
+    "tempdecay-start-move", "TempDecayStartMove",
+    "Start the linear decrease of temperature after this number of moves, "
+    "decreasing linearly from initial temperature to 0. A value of 0 starts "
+    "tempdecay from the first move."};
 const OptionId SearchParams::kTemperatureCutoffMoveId{
     "temp-cutoff-move", "TempCutoffMove",
     "Move number, starting from which endgame temperature is used rather "
@@ -268,6 +273,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
+  options->Add<IntOption>(kTempDecayStartMoveId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
