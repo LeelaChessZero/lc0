@@ -27,7 +27,9 @@ if not cc.has_header('optional') or not cc.has_header('string_view')
 endif
 
 if not cc.has_header('charconv')
-  add_project_arguments('-DNO_CHARCONV', language : 'cpp')
+    warning('Your compiler or library does not have full C++17 support. ' +
+            'See the README for compilers that are known to be working. ' +
+            'This will become an error in the future.')
 endif
 
 if cc.get_id() == 'clang'

@@ -35,8 +35,10 @@
 #include "utils/logging.h"
 #include "utils/string.h"
 
-#ifndef NO_CHARCONV
+#if __has_include(<charconv>)
 #include <charconv>
+#else
+#define NO_CHARCONV
 #endif
 
 namespace lczero {
