@@ -403,6 +403,9 @@ if get_option('build_backends')
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
+    if get_option('nvcc_ccbin') != ''
+      cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
+    endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
     endforeach
