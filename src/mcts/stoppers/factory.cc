@@ -46,17 +46,10 @@ const OptionId kMoveOverheadId{
     "communication, etc)."};
 const OptionId kTimeManagerId{
     "time-manager", "TimeManager",
-    "Name and config of atime manager. "
-    "Default is 'legacy'. "
-    "Optional time manager is 'alphazero' "
-    "'alphazero' Makes the engine use AlphaZero time. The alphazero engine always "
-    "budgeted 5 percent of total time left for the first upcoming move, "
-    "Remaining time is divided by value `alphazero-time-value`. "
-    "Default value of 20 uses (all time / 20 = 5%) 5 percent of all remaining time. "
-    "Lower values will spend more time in beginning of game, higher values "
-    "will save more time for later in the game." 
-    "Configure as `--time-manager=alphazero(alphazero-time-value=10) "
-    "to go to (all time / 10 = 10%) ten percent of all remaining time per move"};
+    "Name and config of a time manager. "
+    "Default is 'legacy'. Optional time manager is 'alphazero' "
+    "Please see http://lczero.org/dev/docs/timemgr for more information"
+    "on configuring the time managers outside of default used values"};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {

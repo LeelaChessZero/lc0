@@ -63,31 +63,25 @@ class AlphazeroTimeManager : public TimeManager {
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
     const GoParams& params, const Position& position) {
   const bool is_black = position.IsBlackToMove();
-  std::optional<int64_t> time = (is_black ? params.btime : params.wtime);
+  const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
-  std::optional<int64_t> inc = is_black ? params.binc : params.winc;
+  const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
   const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
-  // How to scale moves time.
-  float this_move_time = 1.0f;
-  int time_to_squander = 0;
+  auto total_moves_time = *time + increment - move_overhead_;
+  
+  // use the increment in the first upcoming move
+  float this_move_time = increment + (total_moves_time / alphazerotimevalue_);
 
-  auto total_moves_time = *time - move_overhead_;
-  this_move_time =
-      increment +
-      (total_moves_time / alphazerotimevalue_);
-
-  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
-          << time_to_squander << "ms to squander). Remaining time " << *time
+  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
+          << "Remaining time " << *time
           << "ms(-" << move_overhead_ << "ms overhead)";
-  // Use `time_to_squander` time immediately.
-  this_move_time += time_to_squander;
-
+  
   // Make sure we don't exceed current time limit with what we calculated.
   auto deadline =
-      std::min(static_cast<int64_t>(this_move_time), *time - move_overhead_);
+      std::min(static_cast<int64_t>(this_move_time), *time + increment - move_overhead_);
   return std::make_unique<AlphazeroStopper>(deadline, &time_spared_ms_);
 }
 
