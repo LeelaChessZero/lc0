@@ -59,8 +59,9 @@ const OptionId kUciChess960{
 const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
 const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
-                                "The UCI host compensates for lag, and waits "
-                                "for the 'readyok' reply before sending 'go'."};
+                                "The UCI host compensates for lag, waits for "
+                                "the 'readyok' reply before sending 'go' and "
+                                "only then starts timing."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
