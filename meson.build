@@ -464,7 +464,13 @@ endif
   ## ~~~~
   # Pick latest from https://wrapdb.mesonbuild.com/zlib and put into
   # subprojects/zlib.wrap
-  deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
+  if host_machine.system() == 'windows'
+    # In several cases where a zlib dependency was detected on windows, it
+    # caused trouble (crashes or failed builds). Better safe than sorry.
+    deps += subproject('zlib').get_variable('zlib_dep')
+  else
+    deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
+  endif
 
   ## ~~~~~~~~
   ## Profiler
