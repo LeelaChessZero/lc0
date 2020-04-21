@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <iostream>
 
 #include "chess/bitboard.h"
 #include "chess/board.h"
@@ -186,10 +187,17 @@ class PgnReader {
     } else if (san[0] == 'O' && san.size() > 2 && san[1] == '-' &&
                san[2] == 'O') {
       Move m;
+      auto king_board = board.kings() & board.ours();
+      BoardSquare king_sq;
+      for (auto sq : king_board) {
+        king_sq = sq;
+      }
       if (san.size() > 4 && san[3] == '-' && san[4] == 'O') {
-        m = Move(BoardSquare(0, 4), BoardSquare(0, 2));
+        m = Move(BoardSquare(0, king_sq.col()),
+                 BoardSquare(0, board.castlings().queenside_rook()));
       } else {
-        m = Move(BoardSquare(0, 4), BoardSquare(0, 6));
+        m = Move(BoardSquare(0, king_sq.col()),
+                 BoardSquare(0, board.castlings().kingside_rook()));
       }
       return m;
     }
