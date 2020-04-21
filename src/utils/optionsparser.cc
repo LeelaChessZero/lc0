@@ -503,13 +503,25 @@ FloatOption::FloatOption(const OptionId& id, float min, float max)
     : Option(id), min_(min), max_(max) {}
 
 void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stof(value));
+  try {
+    SetVal(dict, std::stof(value));
+  } catch (std::invalid_argument&) {
+    throw Exception("invalid value " + value);
+  } catch (const std::out_of_range&) {
+    throw Exception("out of range value " + value);
+  }
 }
 
 bool FloatOption::ProcessLongFlag(const std::string& flag,
                                   const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    SetVal(dict, std::stof(value));
+    try {
+      SetVal(dict, std::stof(value));
+    } catch (std::invalid_argument&) {
+      throw Exception("invalid value " + value);
+    } catch (const std::out_of_range&) {
+      throw Exception("out of range value " + value);
+    }
     return true;
   }
   return false;
@@ -518,7 +530,13 @@ bool FloatOption::ProcessLongFlag(const std::string& flag,
 bool FloatOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                             OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    SetVal(dict, std::stof(value));
+    try {
+      SetVal(dict, std::stof(value));
+    } catch (std::invalid_argument&) {
+      throw Exception("invalid value " + value);
+    } catch (const std::out_of_range&) {
+      throw Exception("out of range value " + value);
+    }
     return true;
   }
   return false;
