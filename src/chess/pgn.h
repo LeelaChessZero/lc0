@@ -30,7 +30,6 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <iostream>
 
 #include "chess/bitboard.h"
 #include "chess/board.h"
