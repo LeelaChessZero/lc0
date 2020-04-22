@@ -990,6 +990,7 @@ void ChessBoard::SetFromFen(const std::string& fen, int* rule50_ply,
   for (char c : board) {
     if (c == '/') {
       --row;
+      if (row < 0) throw Exception("Bad fen string (too many rows): " + fen);
       col = 0;
       continue;
     }
@@ -997,6 +998,7 @@ void ChessBoard::SetFromFen(const std::string& fen, int* rule50_ply,
       col += c - '0';
       continue;
     }
+    if (col >= 8) throw Exception("Bad fen string (too many columns): " + fen);
 
     if (std::isupper(c)) {
       // White piece.
@@ -1095,6 +1097,8 @@ void ChessBoard::SetFromFen(const std::string& fen, int* rule50_ply,
 
   if (who_to_move == "b" || who_to_move == "B") {
     Mirror();
+  } else if (who_to_move != "w" && who_to_move != "W") {
+    throw Exception("Bad fen string (side to move): " + fen);
   }
   if (rule50_ply) *rule50_ply = rule50_halfmoves;
   if (moves) *moves = total_moves;

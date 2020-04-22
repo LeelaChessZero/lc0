@@ -145,9 +145,11 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
           std::round(edge.GetM(0.0f)) / 2 + (edge.IsTbTerminal() ? 101 : 1),
           wl);
     } else if (score_type == "centipawn_with_drawscore") {
-      uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
+      uci_info.score = 90 * tan(1.5637541897 * q);
     } else if (score_type == "centipawn") {
-      uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(q, 14));
+      uci_info.score = 90 * tan(1.5637541897 * wl);
+    } else if (score_type == "centipawn_2019") {
+      uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(wl, 14));
     } else if (score_type == "centipawn_2018") {
       uci_info.score = 290.680623072 * tan(1.548090806 * wl);
     } else if (score_type == "win_percentage") {
