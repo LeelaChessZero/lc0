@@ -187,10 +187,7 @@ class PgnReader {
                san[2] == 'O') {
       Move m;
       auto king_board = board.kings() & board.ours();
-      BoardSquare king_sq;
-      for (auto sq : king_board) {
-        king_sq = sq;
-      }
+      BoardSquare king_sq(GetLowestBit(king_board.as_int()));
       if (san.size() > 4 && san[3] == '-' && san[4] == 'O') {
         m = Move(BoardSquare(0, king_sq.col()),
                  BoardSquare(0, board.castlings().queenside_rook()));
