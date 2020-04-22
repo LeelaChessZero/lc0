@@ -254,11 +254,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
-  const float m_slope = GetMovesLeftSlope();
-  const float m_cap = GetMovesLeftMaxEffect();
-  const float a = GetMovesLeftConstantFactor();
-  const float b = GetMovesLeftScaledFactor();
-  const float c = GetMovesLeftQuadraticFactor();
+  const float m_slope = params_.GetMovesLeftSlope();
+  const float m_cap = params_.GetMovesLeftMaxEffect();
+  const float a = params_.GetMovesLeftConstantFactor();
+  const float b = params_.GetMovesLeftScaledFactor();
+  const float c = params_.GetMovesLeftQuadraticFactor();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
@@ -282,9 +282,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << std::left << std::setw(5)
         << edge.GetMove(is_black_to_move).as_string();
     
-    float Q = edge.GetQ(fpu, draw_score, /* logit_q= */ false)
+    float Q = edge.GetQ(fpu, draw_score, /* logit_q= */ false);
     float M_effect = std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
-      std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q)
+      std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q);
 
     // TODO: should this be displaying transformed index?
     oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
