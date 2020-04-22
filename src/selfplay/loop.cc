@@ -115,9 +115,11 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
     if (data.input_format ==
         pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
       // At most one en-passant bit.
-      DataAssert((data.side_to_move & (data.side_to_move - 1)) == 0);
+      DataAssert((data.side_to_move_or_enpassant &
+                  (data.side_to_move_or_enpassant - 1)) == 0);
     } else {
-      DataAssert(data.side_to_move >= 0 && data.side_to_move <= 1);
+      DataAssert(data.side_to_move_or_enpassant >= 0 &&
+                 data.side_to_move_or_enpassant <= 1);
     }
     DataAssert(data.result >= -1 && data.result <= 1);
     DataAssert(data.rule50_count >= 0 && data.rule50_count <= 100);
@@ -295,7 +297,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         history.Append(moves[i]);
         const auto& board = history.Last().GetBoard();
         if (board.castlings().no_legal_castle() &&
-            history.Last().GetNoCaptureNoPawnPly() == 0 &&
+            history.Last().GetRule50Ply() == 0 &&
             (board.ours() | board.theirs()).count() <=
                 tablebase->max_cardinality()) {
           ProbeState state;
@@ -346,7 +348,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         history.Append(moves[i]);
         const auto& board = history.Last().GetBoard();
         if (board.castlings().no_legal_castle() &&
-            history.Last().GetNoCaptureNoPawnPly() != 0 &&
+            history.Last().GetRule50Ply() != 0 &&
             (board.ours() | board.theirs()).count() <=
                 tablebase->max_cardinality()) {
           ProbeState state;
@@ -376,7 +378,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                 score_to_apply != 0) {
               // Any repetitions in the history since last 50 ply makes it risky
               // to assume dtz is still correct.
-              int steps = history.Last().GetNoCaptureNoPawnPly();
+              int steps = history.Last().GetRule50Ply();
               bool no_reps = true;
               for (int i = 0; i < steps; i++) {
                 // If game started from non-zero 50 move rule, this could
@@ -414,7 +416,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                 !dtz_rescored) {
               int depth = tablebase->probe_dtz(history.Last(), &state);
               if (state != FAIL) {
-                int steps = history.Last().GetNoCaptureNoPawnPly();
+                int steps = history.Last().GetRule50Ply();
                 // This should be able to be >= 101 safely, but I've not
                 // convinced myself thats true.
                 if (steps + std::abs(depth) > 101) {
@@ -567,7 +569,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               // Not a win for either player.
               continue;
             }
-            int steps = history.Last().GetNoCaptureNoPawnPly();
+            int steps = history.Last().GetRule50Ply();
             if ((dtm + steps > 99) && (dtm <= fileContents[i + 1].plies_left)) {
               // Following DTM could trigger 50 move rule and the current
               // move_count is more than DTM.
@@ -637,7 +639,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               if (score_to_apply == 0) continue;
               // Any repetitions in the history since last 50 ply makes it risky
               // to assume dtz is still correct.
-              int steps = history.Last().GetNoCaptureNoPawnPly();
+              int steps = history.Last().GetRule50Ply();
               bool no_reps = true;
               for (int i = 0; i < steps; i++) {
                 // If game started from non-zero 50 move rule, this could

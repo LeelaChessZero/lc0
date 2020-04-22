@@ -79,9 +79,10 @@ InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
   result.emplace_back();
   if (data.input_format ==
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
-    result.back().mask = static_cast<uint64_t>(data.side_to_move) << 56;
+    result.back().mask = static_cast<uint64_t>(data.side_to_move_or_enpassant)
+                         << 56;
   } else {
-    result.back().mask = data.side_to_move != 0 ? ~0LL : 0LL;
+    result.back().mask = data.side_to_move_or_enpassant != 0 ? ~0LL : 0LL;
   }
   result.emplace_back();
   result.back().Fill(data.rule50_count);
@@ -92,9 +93,9 @@ InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
   result.back().SetAll();
   if (data.input_format ==
           pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION &&
-      data.deprecated_move_count != 0) {
+      data.invariance_info != 0) {
     // Undo transformation here as it makes the calling code simpler.
-    int transform = data.deprecated_move_count;
+    int transform = data.invariance_info;
     for (int i = 0; i <= result.size(); i++) {
       auto v = result[i].mask;
       if (v == 0 || v == ~0ULL) continue;
