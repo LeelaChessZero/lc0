@@ -327,6 +327,13 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kLogLiveStatsId);
   options->HideOption(kDisplayCacheUsageId);
   options->HideOption(kRootHasOwnCpuctParamsId);
+  options->HideOption(kTemperatureId);
+  options->HideOption(kTempDecayMovesId);
+  options->HideOption(kTempDecayStartMoveId);
+  options->HideOption(kTemperatureCutoffMoveId);
+  options->HideOption(kTemperatureEndgameId);
+  options->HideOption(kTemperatureWinpctCutoffId);
+  options->HideOption(kTemperatureVisitOffsetId);
   options->HideOption(kMovesLeftConstantFactorId);
   options->HideOption(kMovesLeftScaledFactorId);
   options->HideOption(kMovesLeftQuadraticFactorId);
