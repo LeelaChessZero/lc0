@@ -71,9 +71,9 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   if (managers[0] == "legacy") {
     time_manager =
         MakeLegacyTimeManager(move_overhead, tm_options.GetSubdict("legacy"));
-  } else if (managers[0] == "smooth") {
-    time_manager =
-        MakeSmoothTimeManager(move_overhead, tm_options.GetSubdict("smooth"));
+  } else if (managers[0] == "smooth-experimental") {
+    time_manager = MakeSmoothTimeManager(
+        move_overhead, tm_options.GetSubdict("smooth-experimental"));
   }
   if (!time_manager) {
     throw Exception("Unknown time manager: [" + managers[0] + "]");
