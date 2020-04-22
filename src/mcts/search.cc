@@ -254,6 +254,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
+  const float m_slope = GetMovesLeftSlope();
+  const float m_cap = GetMovesLeftMaxEffect();
+  const float a = GetMovesLeftConstantFactor();
+  const float b = GetMovesLeftScaledFactor();
+  const float c = GetMovesLeftQuadraticFactor();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
@@ -276,6 +281,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
 
     oss << std::left << std::setw(5)
         << edge.GetMove(is_black_to_move).as_string();
+    
+    float Q = edge.GetQ(fpu, draw_score, /* logit_q= */ false)
+    float M_effect = std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
+      std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q)
 
     // TODO: should this be displaying transformed index?
     oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
@@ -304,8 +313,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
 
-    oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff) << ") ";
+    oss << "(Q+U+m: " << std::setw(8) << std::setprecision(5)
+        << Q + edge.GetU(U_coeff) + M_effect << ") ";
 
     oss << "(V: ";
     std::optional<float> v;
