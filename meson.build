@@ -20,10 +20,16 @@ project('rescorer', ['c', 'cpp'],
 
 cc = meson.get_compiler('cpp')
 
-if not cc.has_header('optional') or not cc.has_header('string_view') or not cc.has_header('charconv')
+if not cc.has_header('optional') or not cc.has_header('string_view')
     error('Lc0 requires a compiler supporting C++17, for example g++ v8.0, ' +
           'clang v5.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
           'later.')
+endif
+
+if not cc.has_header('charconv')
+    warning('Your compiler or library does not have full C++17 support. ' +
+            'See the README for compilers that are known to be working. ' +
+            'This will become an error in the future.')
 endif
 
 if cc.get_id() == 'clang'
@@ -478,7 +484,13 @@ endif
   ## ~~~~
   # Pick latest from https://wrapdb.mesonbuild.com/zlib and put into
   # subprojects/zlib.wrap
-  deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
+  if host_machine.system() == 'windows'
+    # In several cases where a zlib dependency was detected on windows, it
+    # caused trouble (crashes or failed builds). Better safe than sorry.
+    deps += subproject('zlib').get_variable('zlib_dep')
+  else
+    deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
+  endif
 
   ## ~~~~~~~~
   ## Profiler

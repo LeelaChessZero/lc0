@@ -26,7 +26,9 @@
 */
 
 #include <zlib.h>
+
 #include <fstream>
+
 #include "utils/cppattributes.h"
 #include "neural/network.h"
 
@@ -45,9 +47,14 @@ struct V5TrainingData {
   uint8_t castling_us_oo;
   uint8_t castling_them_ooo;
   uint8_t castling_them_oo;
-  uint8_t side_to_move;
+  // For input type 3 contains enpassant column as a mask.
+  uint8_t side_to_move_or_enpassant;
   uint8_t rule50_count;
-  uint8_t deprecated_move_count;  // left in to keep 8 int8 fields.
+  // For input type 3 contains a bit field indicating the transform that was
+  // used and the original side to move info.
+  // Side to move is in the top bit, transform in the lower bits.
+  // In versions prior to v5 this spot contained an unused move count field.
+  uint8_t invariance_info;
   int8_t result;
   float root_q;
   float best_q;
