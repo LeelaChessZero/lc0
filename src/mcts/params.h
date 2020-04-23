@@ -59,8 +59,8 @@ class SearchParams {
     return options_.Get<float>(kTemperatureVisitOffsetId);
   }
   int GetTempDecayMoves() const { return options_.Get<int>(kTempDecayMovesId); }
-  int GetTempDecayStartMove() const {
-    return options_.Get<int>(kTempDecayStartMoveId);
+  int GetTempDecayDelayMoves() const {
+    return options_.Get<int>(kTempDecayDelayMovesId);
   }
   int GetTemperatureCutoffMove() const {
     return options_.Get<int>(kTemperatureCutoffMoveId);
@@ -126,7 +126,7 @@ class SearchParams {
   static const OptionId kRootHasOwnCpuctParamsId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
-  static const OptionId kTempDecayStartMoveId;
+  static const OptionId kTempDecayDelayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
   static const OptionId kTemperatureEndgameId;
   static const OptionId kTemperatureWinpctCutoffId;

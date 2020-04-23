@@ -91,14 +91,14 @@ const OptionId SearchParams::kTemperatureId{
     "while making the move."};
 const OptionId SearchParams::kTempDecayMovesId{
     "tempdecay-moves", "TempDecayMoves",
-    "Reduce temperature for every move from decay start move, decreasing "
+    "Reduce temperature for every move after the first move, decreasing "
     "linearly over this number of moves from initial temperature to 0. "
     "A value of 0 disables tempdecay."};
-const OptionId SearchParams::kTempDecayStartMoveId{
-    "tempdecay-start-move", "TempDecayStartMove",
-    "Start the linear decrease of temperature after this number of moves, "
+const OptionId SearchParams::kTempDecayDelayMovesId{
+    "tempdecay-delay-moves", "TempDecayDelayMoves",
+    "Delay the linear decrease of temperature by this number of moves, "
     "decreasing linearly from initial temperature to 0. A value of 0 starts "
-    "tempdecay from the first move."};
+    "tempdecay after the first move."};
 const OptionId SearchParams::kTemperatureCutoffMoveId{
     "temp-cutoff-move", "TempCutoffMove",
     "Move number, starting from which endgame temperature is used rather "
@@ -273,7 +273,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
-  options->Add<IntOption>(kTempDecayStartMoveId, 0, 100) = 0;
+  options->Add<IntOption>(kTempDecayDelayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
@@ -329,7 +329,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kRootHasOwnCpuctParamsId);
   options->HideOption(kTemperatureId);
   options->HideOption(kTempDecayMovesId);
-  options->HideOption(kTempDecayStartMoveId);
+  options->HideOption(kTempDecayDelayMovesId);
   options->HideOption(kTemperatureCutoffMoveId);
   options->HideOption(kTemperatureEndgameId);
   options->HideOption(kTemperatureWinpctCutoffId);
