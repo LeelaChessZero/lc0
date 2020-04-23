@@ -125,7 +125,7 @@ __global__ void filterTransform_kernel(int K, int C, int elements,
     }
 }
 
-//--------------------------------------------------------------------------------------------------------------------------------------
+
 // index in intermediate/temp tensor
 // W, H == 6 here! (6x6 transformed blocks)
 // N also includes part of dimension (2x2)
