@@ -140,7 +140,6 @@ __global__ void filterTransform_kernel(int K, int C, int elements,
 // - producing 4 x 6x6 elements
 template <typename T>
 __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
-  constexpr int H = 8, W = 8;
   int c = threadIdx.x;
   int n = blockIdx.x;
 
@@ -246,7 +245,6 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* input, const T* skip,
                                        const T* bias, const T* w1, const T* b1,
                                        const T* w2, const T* b2) {
-  constexpr int H = 8, W = 8;
   const bool fp16 = std::is_same<half, T>::value;
 
   int k = threadIdx.x;
