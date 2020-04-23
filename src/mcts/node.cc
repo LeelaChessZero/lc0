@@ -296,15 +296,15 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
 
   
   float old_policy_temp = policy_temperature - 
-      policy_temp_decay * FastLog2(1 + n_last_temp_);
+      policy_temp_decay * log2f(1 + n_last_temp_);
   float exponent = old_policy_temp / (policy_temperature - 
-      policy_temp_decay * FastLog2(1 + n_));
+      policy_temp_decay * log2f(1 + n_));
 
   if (abs(exponent - 1.0f) > 0.001f) {
     float total = 0.0f;
     int counter = 0;
     for (auto& child : Edges()) {
-      float new_p = FastPow(child.GetP(), exponent);
+      float new_p = powf(child.GetP(), exponent);
       intermediate[counter++] = new_p;
       total += new_p;
     }
