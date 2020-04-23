@@ -268,13 +268,22 @@ class CudnnNetwork : public Network {
       if (!options.IsDefault<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
     }
 
-    // always try to set tensor math (won't have any effect on GPUs that don't
-    // support it)
+    // Always try to set tensor math (won't have any effect on GPUs that don't
+    // support it).
     ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
 
     // Check if we want to enable our custom winograd ?
     constexpr bool fp16 = std::is_same<half, DataType>::value;
-    use_custom_winograd_ = options.GetOrDefault<bool>("custom_winograd", true);
+
+    // Use our custom winograd impl for fp32.
+    // TODO: Enable this for fp16 too once it's tested to be faster.
+    use_custom_winograd_ = !fp16;
+
+    // Override if set in backend-opts.
+    if (!options.IsDefault<bool>("custom_winograd"))
+      use_custom_winograd_ = options.Get<bool>("custom_winograd");
+
+    // Winograd needs nchw tensor layout.
     if (use_custom_winograd_) nhwc_ = false;
 
     const int kNumInputPlanes = kInputPlanes;

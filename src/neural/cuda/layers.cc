@@ -857,19 +857,20 @@ void FusedWinogradConvSELayer<DataType>::Eval(
 
   cublasRowMjaorMatrixMul(transformed_input, transformed_weights_, transformed_output, N*4, C, c_input_, 36, cublas);  
 
-  if (has_se_)
-  {
-    assert(skip_add_ && use_bias_ && use_relu_);
+  if (has_se_ && use_relu_ && use_bias_ && skip_add_)
     OutputTransform<DataType, true, true, true, true>(
         N, C, se_k_, output, transformed_output, input2, biases_, w1_, b1_, w2_,
         b2_);
-  } else
-  {
-    assert(!skip_add_ && use_bias_ && use_relu_);
+  else if (!has_se_ && use_relu_ && use_bias_ && !skip_add_)
     OutputTransform<DataType, false, true, true, false>(
         N, C, 0, output, transformed_output, nullptr, biases_, nullptr, nullptr,
         nullptr, nullptr);
-  }
+  else if (!has_se_ && use_relu_ && use_bias_ && skip_add_)
+    OutputTransform<DataType, false, true, true, true>(
+        N, C, 0, output, transformed_output, input2, biases_, nullptr, nullptr,
+        nullptr, nullptr);
+  else
+    throw Exception("unsupported network type!");
 }
 
 template <typename DataType>
