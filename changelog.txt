@@ -21,6 +21,8 @@
   the total score, including any moves left based effect if applicable.
 * New temperature decay option to allow to delay the start of decay.
 * All temperature options have been hidden by default.
+* New optional cuda backend convolution implementation. Off by default for 
+  cudnn-fp16 until an issue with cublas performance on some gpus is resolved.
 
 v0.25.0-rc1 (2020-04-09)
 ~~~~~~~
