@@ -28,7 +28,7 @@
 #include <cassert>
 
 #include "cuda_common.h"
-#include "winograd_helper.h"
+#include "winograd_helper.inc"
 
 namespace lczero {
 namespace cudnn_backend {

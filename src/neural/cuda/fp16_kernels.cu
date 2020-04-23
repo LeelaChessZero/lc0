@@ -26,7 +26,7 @@
 */
 
 #include "cuda_common.h"
-#include "winograd_helper.h"
+#include "winograd_helper.inc"
 
 namespace lczero {
 namespace cudnn_backend {
@@ -44,9 +44,6 @@ namespace cudnn_backend {
 // K is the no. of outputs of first fully connected layer (same as no. of inputs
 // for second fully connected layer).
 // The kernel assumes K <= C.
-
-#define readw1(row, col) (w1[(row)*se_K + (col)])
-#define readw2(row, col) (w2[(row)*2 * C + (col)])
 
 template <int C, int K>
 __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
