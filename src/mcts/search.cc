@@ -286,8 +286,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         << edge.GetMove(is_black_to_move).as_string();
     
     float Q = edge.GetQ(fpu, draw_score, logit_q);
-    float M_effect = do_moves_left_adjustment ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
-      std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q)) : 0.0f;
+    float M_effect = do_moves_left_adjustment 
+        ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
+            std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q)) 
+        : 0.0f;
 
     // TODO: should this be displaying transformed index?
     oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
