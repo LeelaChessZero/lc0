@@ -261,7 +261,7 @@ void EngineController::Go(const GoParams& params) {
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
-  auto stopper = time_manager_->GetStopper(params, tree_->HeadPosition());
+  auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
