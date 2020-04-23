@@ -215,6 +215,13 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
+int64_t Search::GetTimeSinceFirstBatch() const {
+  if (!nps_start_time_) return 0;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now() - *nps_start_time_)
+      .count();
+}
+
 // Root is depth 0, i.e. even depth.
 float Search::GetDrawScore(bool is_odd_depth) const {
   return (is_odd_depth ? params_.GetOpponentDrawScore()
@@ -698,6 +705,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->time_since_movestart = GetTimeSinceStart();
 
   SharedMutex::SharedLock nodes_lock(nodes_mutex_);
+  stats->time_since_first_batch = GetTimeSinceFirstBatch();
   if (!nps_start_time_ && total_playouts_ > 0) {
     nps_start_time_ = std::chrono::steady_clock::now();
   }
