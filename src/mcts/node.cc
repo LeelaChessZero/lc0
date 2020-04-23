@@ -214,11 +214,14 @@ std::string Node::DebugString() const {
       << " Parent:" << parent_ << " Index:" << index_
       << " Child:" << child_.get() << " Sibling:" << sibling_.get()
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " Edges:" << edges_.size();
+      << " Edges:" << edges_.size()
+      << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
+      << static_cast<int>(upper_bound_) - 2;
   return oss.str();
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
+  SetBounds(result, result);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -260,6 +263,11 @@ void Node::MakeNotTerminal() {
     wl_ /= n_;
     d_ /= n_;
   }
+}
+
+void Node::SetBounds(GameResult lower, GameResult upper) {
+  lower_bound_ = lower;
+  upper_bound_ = upper;
 }
 
 bool Node::TryStartScoreUpdate() {
@@ -420,18 +428,21 @@ V5TrainingData Node::GetV5TrainingData(
   // Other params.
   if (input_format ==
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
-    result.side_to_move = position.GetBoard().en_passant().as_int() >> 56;
+    result.side_to_move_or_enpassant =
+        position.GetBoard().en_passant().as_int() >> 56;
     if ((transform & FlipTransform) != 0) {
-      result.side_to_move = ReverseBitsInBytes(result.side_to_move);
+      result.side_to_move_or_enpassant =
+          ReverseBitsInBytes(result.side_to_move_or_enpassant);
     }
     // Send transform in deprecated move count so rescorer can reverse it to
     // calculate the actual move list from the input data.
-    result.deprecated_move_count = transform;
+    result.invariance_info =
+        transform | (position.IsBlackToMove() ? (1u << 7) : 0u);
   } else {
-    result.side_to_move = position.IsBlackToMove() ? 1 : 0;
-    result.deprecated_move_count = 0;
+    result.side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
+    result.invariance_info = 0;
   }
-  result.rule50_count = position.GetNoCaptureNoPawnPly();
+  result.rule50_count = position.GetRule50Ply();
 
   // Game result.
   if (game_result == GameResult::WHITE_WON) {
@@ -508,7 +519,9 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   int no_capture_ply;
   int full_moves;
   starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
+  if (gamebegin_node_ &&
+      (history_.Starting().GetBoard() != starting_board ||
+       history_.Starting().GetRule50Ply() != no_capture_ply)) {
     // Completely different position.
     DeallocateTree();
   }

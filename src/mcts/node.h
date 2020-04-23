@@ -131,10 +131,15 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
-  enum class Terminal : uint8_t { NonTerminal, Terminal, Tablebase };
+  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase };
 
   // Takes pointer to a parent node and own index in a parent.
-  Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
+  Node(Node* parent, uint16_t index)
+      : parent_(parent),
+        index_(index),
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -166,13 +171,16 @@ class Node {
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
+  typedef std::pair<GameResult, GameResult> Bounds;
+  Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
   uint16_t GetNumEdges() const { return edges_.size(); }
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
-                    Terminal type = Terminal::Terminal);
+                    Terminal type = Terminal::EndOfGame);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
+  void SetBounds(GameResult lower, GameResult upper);
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -304,9 +312,12 @@ class Node {
   // Index of this node is parent's edge list.
   uint16_t index_;
 
-  // 1 byte fields.
+  // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
-  Terminal terminal_type_ = Terminal::NonTerminal;
+  Terminal terminal_type_ : 2;
+  // Best and worst result for this node.
+  GameResult lower_bound_ : 2;
+  GameResult upper_bound_ : 2;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -375,6 +386,10 @@ class EdgeAndNode {
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
   bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
+  Node::Bounds GetBounds() const {
+    return node_ ? node_->GetBounds()
+                 : Node::Bounds{GameResult::BLACK_WON, GameResult::WHITE_WON};
+  }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
