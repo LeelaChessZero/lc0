@@ -259,7 +259,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float a = params_.GetMovesLeftConstantFactor();
   const float b = params_.GetMovesLeftScaledFactor();
   const float c = params_.GetMovesLeftQuadraticFactor();
-
+  const bool do_moves_left_adjustment =
+      network_->GetCapabilities().moves_left !=
+          pblczero::NetworkFormat::MOVES_LEFT_NONE &&
+      (std::abs(node->GetQ(0.0f)) > params_.GetMovesLeftThreshold());
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
@@ -282,9 +285,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << std::left << std::setw(5)
         << edge.GetMove(is_black_to_move).as_string();
     
-    float Q = edge.GetQ(fpu, draw_score, /* logit_q= */ false);
-    float M_effect = std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
-      std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q);
+    float Q = edge.GetQ(fpu, draw_score, logit_q);
+    float M_effect = do_moves_left_adjustment ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
+      std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q)) : 0.0f;
 
     // TODO: should this be displaying transformed index?
     oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
@@ -313,7 +316,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
         << ") ";
 
-    oss << "(Q+U+m: " << std::setw(8) << std::setprecision(5)
+    oss << "(S: " << std::setw(8) << std::setprecision(5)
         << Q + edge.GetU(U_coeff) + M_effect << ") ";
 
     oss << "(V: ";
