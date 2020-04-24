@@ -116,6 +116,8 @@ int GetNumeric(const std::unordered_map<std::string, std::string>& params,
     return std::stoi(str);
   } catch (std::invalid_argument&) {
     throw Exception("invalid value " + str);
+  } catch (const std::out_of_range&) {
+    throw Exception("out of range value " + str);
   }
 }
 

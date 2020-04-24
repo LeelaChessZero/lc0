@@ -2223,6 +2223,27 @@ TEST(ChessBoard, CastlingIsSameMove) {
   EXPECT_FALSE(board.IsSameMove("e2c2", "e2a2"));
 }
 
+namespace {
+void TestInvalid(std::string fen) {
+  ChessBoard board;
+  try {
+    board.SetFromFen(fen);
+    FAIL() << "Invalid Fen accepted: " + fen + "\n";
+  } catch (...) {
+    SUCCEED();
+  }
+}
+}  // namespace
+
+
+TEST(ChessBoard, InvalidFEN) {
+  TestInvalid("rnbqkbnr/ppppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+  TestInvalid("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR/8 w KQkq - 0 1");
+  TestInvalid("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR g KQkq - 0 1");
+  TestInvalid("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq i6 0 3");
+  TestInvalid("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq A6 0 3");
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {

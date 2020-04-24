@@ -152,10 +152,9 @@ class CommonTimeManager : public TimeManager {
 
  private:
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const Position& position) override {
+                                            const NodeTree& tree) override {
     auto result = std::make_unique<ChainedSearchStopper>();
-    if (child_mgr_)
-      result->AddStopper(child_mgr_->GetStopper(params, position));
+    if (child_mgr_) result->AddStopper(child_mgr_->GetStopper(params, tree));
     PopulateCommonUciStoppers(result.get(), options_, params, move_overhead_);
     return result;
   }
