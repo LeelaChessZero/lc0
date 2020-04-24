@@ -1,4 +1,30 @@
-﻿v0.25.0-rc1 (2020-04-09)
+﻿v0.25.0-rc2 (2020-04-23)
+~~~~~~~
+
+* Increased upper limit for maximum collision events.
+* Allow negative values for some of the extended moves left head parameters.
+* Fix a critical bug in training data generation for input type 3.
+* Fix for switching between positions in uci mode that only differ by 50 move
+  rule in initial fen.
+* Some refinements of certainty propagation.
+* Better support for c++17 implementations that are missing charconv.
+* Option to more accurately apply time management for uci hosts using 
+  cuteseal or similar timing techniques.
+* Fix for selfplay mode to allow exactly book length total games.
+* Fix for selfplay opening books with castling moves starting from chess960 fens.
+* Add build option to override nvcc compiler.
+* Improved validity checking for some uci input parameters.
+* Updated the Q to CP conversion formula to better fit recent T60 net outputs to
+  expectations.
+* Add a new experimental time manager.
+* Bug fix for the Q+U in verbose move stats. It is now called S: and contains
+  the total score, including any moves left based effect if applicable.
+* New temperature decay option to allow to delay the start of decay.
+* All temperature options have been hidden by default.
+* New optional cuda backend convolution implementation. Off by default for 
+  cudnn-fp16 until an issue with cublas performance on some gpus is resolved.
+
+v0.25.0-rc1 (2020-04-09)
 ~~~~~~~
 
 * Now requires a c++17 supporting compilation environment to build.
