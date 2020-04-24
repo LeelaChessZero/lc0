@@ -253,6 +253,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  const float childVisits = node->GetChildrenVisits();
   const bool logit_q = params_.GetLogitQ();
 
   std::vector<EdgeAndNode> edges;
@@ -263,10 +264,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       [&fpu, &U_coeff, &logit_q, &draw_score](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
                    a.GetN(),
-                   a.GetQ(fpu, draw_score, logit_q) + a.GetU(U_coeff)) <
+                   a.GetQ(fpu, draw_score, logit_q) + a.GetU(U_coeff, childVisits) <
                std::forward_as_tuple(
                    b.GetN(),
-                   b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff));
+                   b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff, childVisits));
       });
 
   std::vector<std::string> infos;
@@ -301,11 +302,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
         << edge.GetQ(fpu, draw_score, /* logit_q= */ false) << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, childVisits)
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff) << ") ";
+        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff, childVisits) << ") ";
 
     oss << "(V: ";
     std::optional<float> v;
@@ -1076,7 +1077,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         M *= a + b * std::abs(Q) + c * Q * Q;
       }
 
-      const float score = child.GetU(puct_mult) + Q + M;
+      const float score = child.GetU(puct_mult, node->GetChildrenVisits()) + Q + M;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1313,7 +1314,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult) -
+    scores.emplace_back(-edge.GetU(puct_mult, node->GetChildrenVisits()) -
                             edge.GetQ(fpu, draw_score, /* logit_q= */ false),
                         edge);
   }
