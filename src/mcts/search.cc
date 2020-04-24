@@ -263,7 +263,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff, &childVisits, &logit_q, &draw_score](EdgeAndNode a, EdgeAndNode b) {
+      [&fpu, &U_coeff, &childVisits, &shift, &slope, &logit_q,
+       &draw_score](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
                    a.GetN(),
                    a.GetQ(fpu, draw_score, logit_q) +
@@ -311,7 +312,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
         << edge.GetQ(fpu, draw_score, logit_q) +
-           edge.GetU(U_coeff, childVisits, shift slope) << ") ";
+           edge.GetU(U_coeff, childVisits, shift, slope) << ") ";
 
     oss << "(V: ";
     std::optional<float> v;
