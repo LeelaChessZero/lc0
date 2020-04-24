@@ -254,6 +254,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float childVisits = node->GetChildrenVisits();
+  const float shift = params_.GetPolicyDecayShift();
+  const float slope = params_.GetPolicyDecaySlope();
   const bool logit_q = params_.GetLogitQ();
 
   std::vector<EdgeAndNode> edges;
@@ -264,10 +266,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       [&fpu, &U_coeff, &childVisits, &logit_q, &draw_score](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
                    a.GetN(),
-                   a.GetQ(fpu, draw_score, logit_q) + a.GetU(U_coeff, childVisits)) <
+                   a.GetQ(fpu, draw_score, logit_q) +
+                   a.GetU(U_coeff, childVisits, shift, slope)) <
                std::forward_as_tuple(
                    b.GetN(),
-                   b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff, childVisits));
+                   b.GetQ(fpu, draw_score, logit_q) +
+                   b.GetU(U_coeff, childVisits, shift, slope));
       });
 
   std::vector<std::string> infos;
@@ -302,11 +306,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << "(Q: " << std::setw(8) << std::setprecision(5)
         << edge.GetQ(fpu, draw_score, /* logit_q= */ false) << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff, childVisits)
-        << ") ";
+    oss << "(U: " << std::setw(6) << std::setprecision(5)
+        << edge.GetU(U_coeff, childVisits, shift, slope) << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff, childVisits) << ") ";
+        << edge.GetQ(fpu, draw_score, logit_q) +
+           edge.GetU(U_coeff, childVisits, shift slope) << ") ";
 
     oss << "(V: ";
     std::optional<float> v;
@@ -1028,6 +1033,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
     const float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+    const float childVisits = node->GetChildrenVisits();
+    const float shift = params_.GetPolicyDecayShift();
+    const float slope = params_.GetPolicyDecaySlope();
     float best = std::numeric_limits<float>::lowest();
     float best_without_u = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
@@ -1077,7 +1085,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         M *= a + b * std::abs(Q) + c * Q * Q;
       }
 
-      const float score = child.GetU(puct_mult, node->GetChildrenVisits()) + Q + M;
+      const float score = child.GetU(puct_mult, childVisits, shift, slope) + Q + M;
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1306,6 +1314,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
   std::vector<ScoredEdge> scores;
   const float cpuct =
       ComputeCpuct(params_, node->GetN(), node == search_->root_node_);
+  const float childVisits = node->GetChildrenVisits();
+  const float shift = params_.GetPolicyDecayShift();
+  const float slope = params_.GetPolicyDecaySlope();
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu =
@@ -1314,7 +1325,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult, node->GetChildrenVisits()) -
+    scores.emplace_back(-edge.GetU(puct_mult, childVisits, shift, slope) -
                             edge.GetQ(fpu, draw_score, /* logit_q= */ false),
                         edge);
   }
