@@ -969,22 +969,34 @@ MoveList ChessBoard::GenerateLegalMoves() const {
   return result;
 }
 
-void ChessBoard::SetFromFen(const std::string& fen, int* rule50_ply,
-                            int* moves) {
+void ChessBoard::SetFromFen(string fen, int* rule50_ply, int* moves) {
   Clear();
   int row = 7;
   int col = 0;
 
+  // Remove any trailing whitespaces to detect eof after the last field.
+  fen.erase(std::find_if(fen.rbegin(), fen.rend(),
+                         [](char c) { return !std::isspace(c); })
+                .base(),
+            fen.end());
+
   std::istringstream fen_str(fen);
   string board;
-  string who_to_move;
-  string castlings;
-  string en_passant;
-  int rule50_halfmoves;
-  int total_moves;
-  fen_str >> board >> who_to_move >> castlings >> en_passant >>
-      rule50_halfmoves >> total_moves;
-
+  fen_str >> board;
+  string who_to_move = "w";
+  if (!fen_str.eof()) fen_str >> who_to_move;
+  // Assume no castling rights. Other engines, e.g., Stockfish, assume kings and
+  // rooks on their initial rows can each castle with the outer-most rook.  Our
+  // implementation currently supports 960 castling where white and black rooks
+  // have matching columns, so it's unclear which rights to assume.
+  string castlings = "-";
+  if (!fen_str.eof()) fen_str >> castlings;
+  string en_passant = "-";
+  if (!fen_str.eof()) fen_str >> en_passant;
+  int rule50_halfmoves = 0;
+  if (!fen_str.eof()) fen_str >> rule50_halfmoves;
+  int total_moves = 1;
+  if (!fen_str.eof()) fen_str >> total_moves;
   if (!fen_str) throw Exception("Bad fen string: " + fen);
 
   for (char c : board) {
