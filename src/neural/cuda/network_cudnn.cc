@@ -276,7 +276,6 @@ class CudnnNetwork : public Network {
     // support it).
     ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
 
-
     constexpr bool fp16 = std::is_same<half, DataType>::value;
     const int kNumInputPlanes = kInputPlanes;
     const int kNumFilters = weights.input.biases.size();
@@ -286,26 +285,30 @@ class CudnnNetwork : public Network {
     //
     //  1. Should be always faster than cudnn's winograd that we use for fp32,
     //  and for fp16 on GPUs without tensor cores
-    // 
-    //  2. Should also be faster than cudnn's implicit GEMM on GPUs with tensor 
+    //
+    //  2. Should also be faster than cudnn's implicit GEMM on GPUs with tensor
     //     cores too, but only for networks with 256 or higher no. of filters.
-    // 
+    //
     //  3. Currently a bug in cublas makes it slower on RTX GPUs with fp16 so
     //  it's disabled. TODO: Enable it once the bug has been fixed and it's
-    //  tested to be faster.
+    //  tested to be faster. Putting check for cuda 11 for now.
 
     if (fp16) {
+      int cuda_version;
+      cudaRuntimeGetVersion(&cuda_version);
+
       if (!hasTensorCores)
         use_custom_winograd_ = true;
-      else if (kNumFilters >= 256 && deviceProp.minor != 5) // TODO: remove the second condition.
+      else if (kNumFilters >= 256 &&
+               !(deviceProp.major == 7 && deviceProp.minor == 5 &&
+                 cuda_version < 11000))
         use_custom_winograd_ = true;
       else
         use_custom_winograd_ = false;
+
     } else {
       use_custom_winograd_ = true;
     }
-
-    const bool use_gemm_ex = deviceProp.major >= 5;
 
     // Override if set in backend-opts.
     if (!options.IsDefault<bool>("custom_winograd"))
@@ -314,6 +317,7 @@ class CudnnNetwork : public Network {
     // Winograd needs nchw tensor layout.
     if (use_custom_winograd_) nhwc_ = false;
 
+    const bool use_gemm_ex = deviceProp.major >= 5;
 
     // 0. Check for SE.
     has_se_ = false;
