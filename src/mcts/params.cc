@@ -209,32 +209,23 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
-const OptionId SearchParams::kMovesLeftMaxEffectId{
-    "moves-left-max-effect", "MovesLeftMaxEffect",
-    "Maximum bonus to add to the score of a node based on how much "
-    "shorter/longer it makes the game when winning/losing."};
-const OptionId SearchParams::kMovesLeftThresholdId{
-    "moves-left-threshold", "MovesLeftThreshold",
-    "Absolute value of node Q needs to exceed this value before shorter wins "
-    "or longer losses are considered."};
-const OptionId SearchParams::kMovesLeftSlopeId{
-    "moves-left-slope", "MovesLeftSlope",
-    "Controls how the bonus for shorter wins or longer losses is adjusted "
-    "based on how many moves the move is estimated to shorten/lengthen the "
-    "game. The move difference is multiplied with the slope and capped at "
-    "MovesLeftMaxEffect."};
-const OptionId SearchParams::kMovesLeftConstantFactorId{
-    "moves-left-constant-factor", "MovesLeftConstantFactor",
-    "A simple multiplier to the moves left effect, can be set to 0 to only use "
-    "an effect scaled by Q."};
-const OptionId SearchParams::kMovesLeftScaledFactorId{
-    "moves-left-scaled-factor", "MovesLeftScaledFactor",
-    "A factor which is multiplied by the absolute Q of parent node and the "
-    "base moves left effect."};
-const OptionId SearchParams::kMovesLeftQuadraticFactorId{
-    "moves-left-quadratic-factor", "MovesLeftQuadraticFactor",
-    "A factor which is multiplied by the square of Q of parent node and the "
-    "base moves left effect."};
+const OptionId SearchParams::kMovesLeftStaticUtilityFactorId{
+    "moves-left-static-utility-factor", "MovesLeftStaticUtilityFactor",
+    "Scales the static moves left utility."};
+const OptionId SearchParams::kMovesLeftDynamicUtilityFactorId{
+    "moves-left-dynamic-utility-factor", "MovesLeftDynamicUtilityFactor",
+    "Scales the dynamic moves left utility."};
+const OptionId SearchParams::kMovesLeftUtilitySteepnessId{
+    "moves-left-utility-steepness", "MovesLeftUtilitySteepness",
+    "Scales the steepness of the logistic function in the moves left "
+    "utility."};
+const OptionId SearchParams::kMovesLeftInitialExpectedValueId{
+    "moves-left-initial-expected-value", "MovesLeftInitialExpectedValue",
+    "Expected moves left for the starting position."};
+const OptionId SearchParams::kMovesLeftCenterScalingFactorId{
+    "moves-left-center-scaling-factor", "MovesLeftCenterScalingFactor",
+    "Scales the moves left center for calculating the dynamic moves left "
+    "utility."};
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
@@ -309,12 +300,16 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.001f;
-  options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kMovesLeftScaledFactorId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftStaticUtilityFactorId, 0.0f, 100.0f) =
+      3.78f;
+  options->Add<FloatOption>(kMovesLeftDynamicUtilityFactorId, 0.0f, 100.0f) =
+      0.0f;
+  options->Add<FloatOption>(kMovesLeftUtilitySteepnessId, 0.0f, 100.0f) =
+      0.072f;
+  options->Add<FloatOption>(kMovesLeftInitialExpectedValueId, 0.0f, 200.0f) =
+      110.0f;
+  options->Add<FloatOption>(kMovesLeftCenterScalingFactorId, 0.0f, 2.0f) =
+      0.71f;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
@@ -335,9 +330,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureEndgameId);
   options->HideOption(kTemperatureWinpctCutoffId);
   options->HideOption(kTemperatureVisitOffsetId);
-  options->HideOption(kMovesLeftConstantFactorId);
-  options->HideOption(kMovesLeftScaledFactorId);
-  options->HideOption(kMovesLeftQuadraticFactorId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -375,12 +367,16 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId)),
       kHistoryFill(EncodeHistoryFill(options.Get<std::string>(kHistoryFillId))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId)),
-      kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId)),
-      kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId)),
-      kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId)),
-      kMovesLeftConstantFactor(options.Get<float>(kMovesLeftConstantFactorId)),
-      kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
-      kMovesLeftQuadraticFactor(options.Get<float>(kMovesLeftQuadraticFactorId)),
+      kMovesLeftStaticUtilityFactor(
+          options.Get<float>(kMovesLeftStaticUtilityFactorId)),
+      kMovesLeftDynamicUtilityFactor(
+          options.Get<float>(kMovesLeftDynamicUtilityFactorId)),
+      kMovesLeftUtilitySteepness(
+          options.Get<float>(kMovesLeftUtilitySteepnessId)),
+      kMovesLeftInitialExpectedValue(
+          options.Get<float>(kMovesLeftInitialExpectedValueId)),
+      kMovesLeftCenterScalingFactor(
+          options.Get<float>(kMovesLeftCenterScalingFactorId)),
       kShortSightedness(options.Get<float>(kShortSightednessId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),

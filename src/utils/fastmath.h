@@ -82,4 +82,9 @@ inline float FastLogit(const float a) {
   return 0.5f * FastLog((1.0f + a) / (1.0f - a));
 }
 
+// Fast logistic2 function for more readable code.
+inline float FastLogistic2(const float a) {
+  if (a <= -127) return 0.0f;
+  return 1.0f / (1.0f + FastPow2(-a));
+}
 }  // namespace lczero
