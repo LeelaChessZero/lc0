@@ -241,7 +241,6 @@ class CudnnNetwork : public Network {
 
     // Default layout is nchw.
     nhwc_ = false;
-
     bool hasTensorCores = false;
 
     if (std::is_same<half, DataType>::value) {
@@ -296,7 +295,6 @@ class CudnnNetwork : public Network {
     if (fp16) {
       int cuda_version;
       cudaRuntimeGetVersion(&cuda_version);
-
       if (!hasTensorCores)
         use_custom_winograd_ = true;
       else if (kNumFilters >= 256 &&
@@ -305,7 +303,6 @@ class CudnnNetwork : public Network {
         use_custom_winograd_ = true;
       else
         use_custom_winograd_ = false;
-
     } else {
       use_custom_winograd_ = true;
     }
