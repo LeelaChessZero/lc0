@@ -331,8 +331,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     oss << "(U: " << std::setw(6) << std::setprecision(5)
         << edge.GetU(U_coeff, childVisits, shift, slope) << ") ";
 
-    oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << Q + edge.GetU(U_coeff, childVisits, shift, slope) + M_effect<< ") ";
+    oss << "(S: " << std::setw(8) << std::setprecision(5)
+        << Q + edge.GetU(U_coeff, childVisits, shift, slope) + M_effect << ") ";
 
     oss << "(V: ";
     std::optional<float> v;
