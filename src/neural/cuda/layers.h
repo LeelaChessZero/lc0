@@ -200,5 +200,49 @@ class SELayer : public BaseLayer<DataType> {
   bool addPrevLayerBias_;
 };
 
+
+// Multi-pass Winograd Conv fused with (optional) SE
+template <typename DataType>
+class FusedWinogradConvSELayer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
+  using BaseLayer<DataType>::H;
+  using BaseLayer<DataType>::W;
+  using BaseLayer<DataType>::GetC;
+  using BaseLayer<DataType>::GetH;
+  using BaseLayer<DataType>::GetW;
+  using BaseLayer<DataType>::nhwc_;
+
+ public:
+  FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
+                         int Cin, bool relu, bool bias, bool skipAdd,
+                         bool se, int se_k);
+
+  ~FusedWinogradConvSELayer();
+  void LoadWeights(float* pfilter, float* pBias, void* scratch);
+  void LoadSEWeights(float* w1, float* b1, float* w2, float* b2, void *scratch);
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2,
+            void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  const int c_input_;
+  const bool use_relu_;
+  const bool use_bias_;
+  const bool skip_add_;
+  const bool has_se_;
+  const int se_k_;
+
+  DataType* biases_ = nullptr;
+  DataType* weights_ = nullptr;
+  DataType* transformed_weights_ = nullptr;  // After winograd transform.
+
+  // Weights and Biases for (optional) SE.
+  DataType* w1_;
+  DataType* w2_;
+  DataType* b1_;
+  DataType* b2_;
+};
+
 }  // namespace cudnn_backend
 }  // namespace lczero

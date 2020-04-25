@@ -215,6 +215,13 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
+int64_t Search::GetTimeSinceFirstBatch() const {
+  if (!nps_start_time_) return 0;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now() - *nps_start_time_)
+      .count();
+}
+
 // Root is depth 0, i.e. even depth.
 float Search::GetDrawScore(bool is_odd_depth) const {
   return (is_odd_depth ? params_.GetOpponentDrawScore()
@@ -257,7 +264,15 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float shift = params_.GetPolicyDecayShift();
   const float slope = params_.GetPolicyDecaySlope();
   const bool logit_q = params_.GetLogitQ();
-
+  const float m_slope = params_.GetMovesLeftSlope();
+  const float m_cap = params_.GetMovesLeftMaxEffect();
+  const float a = params_.GetMovesLeftConstantFactor();
+  const float b = params_.GetMovesLeftScaledFactor();
+  const float c = params_.GetMovesLeftQuadraticFactor();
+  const bool do_moves_left_adjustment =
+      network_->GetCapabilities().moves_left !=
+          pblczero::NetworkFormat::MOVES_LEFT_NONE &&
+      (std::abs(node->GetQ(0.0f)) > params_.GetMovesLeftThreshold());
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
@@ -282,6 +297,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
 
     oss << std::left << std::setw(5)
         << edge.GetMove(is_black_to_move).as_string();
+    
+    float Q = edge.GetQ(fpu, draw_score, logit_q);
+    float M_effect = do_moves_left_adjustment 
+        ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
+            std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q)) 
+        : 0.0f;
 
     // TODO: should this be displaying transformed index?
     oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
@@ -311,8 +332,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         << edge.GetU(U_coeff, childVisits, shift, slope) << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, draw_score, logit_q) +
-           edge.GetU(U_coeff, childVisits, shift, slope) << ") ";
+        << Q + edge.GetU(U_coeff, childVisits, shift, slope) + M_effect<< ") ";
 
     oss << "(V: ";
     std::optional<float> v;
@@ -485,15 +505,22 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 
   float temperature = params_.GetTemperature();
   const int cutoff_move = params_.GetTemperatureCutoffMove();
+  const int decay_delay_moves = params_.GetTempDecayDelayMoves();
+  const int decay_moves = params_.GetTempDecayMoves();
   const int moves = played_history_.Last().GetGamePly() / 2;
+
   if (cutoff_move && (moves + 1) >= cutoff_move) {
     temperature = params_.GetTemperatureEndgame();
-  } else if (temperature && params_.GetTempDecayMoves()) {
-    if (moves >= params_.GetTempDecayMoves()) {
+  } else if (temperature && decay_moves) {
+    if (moves >= decay_delay_moves + decay_moves) {
       temperature = 0.0;
-    } else {
-      temperature *= static_cast<float>(params_.GetTempDecayMoves() - moves) /
-                     params_.GetTempDecayMoves();
+    } else if (moves >= decay_delay_moves) {
+      temperature *= static_cast<float>
+        (decay_delay_moves + decay_moves - moves) / decay_moves;
+    }
+    // don't allow temperature to decay below endgame temperature
+    if (temperature < params_.GetTemperatureEndgame()) {
+      temperature = params_.GetTemperatureEndgame();
     }
   }
 
@@ -705,6 +732,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->time_since_movestart = GetTimeSinceStart();
 
   SharedMutex::SharedLock nodes_lock(nodes_mutex_);
+  stats->time_since_first_batch = GetTimeSinceFirstBatch();
   if (!nps_start_time_ && total_playouts_ > 0) {
     nps_start_time_ = std::chrono::steady_clock::now();
   }
