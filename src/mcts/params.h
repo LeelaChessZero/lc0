@@ -96,13 +96,20 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId);
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  float GetMovesLeftMaxEffect() const { return kMovesLeftMaxEffect; }
-  float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
-  float GetMovesLeftSlope() const { return kMovesLeftSlope; }
-  float GetMovesLeftConstantFactor() const { return kMovesLeftConstantFactor; }
-  float GetMovesLeftScaledFactor() const { return kMovesLeftScaledFactor; }
-  float GetMovesLeftQuadraticFactor() const {
-    return kMovesLeftQuadraticFactor;
+  float GetMovesLeftStaticUtilityFactor() const {
+    return kMovesLeftStaticUtilityFactor; 
+  }
+  float GetMovesLeftDynamicUtilityFactor() const {
+    return kMovesLeftDynamicUtilityFactor; 
+  }
+  float GetMovesLeftUtilitySteepness() const {
+    return kMovesLeftUtilitySteepness; 
+  }
+  float GetMovesLeftInitialExpectedValue() const {
+    return kMovesLeftInitialExpectedValue; 
+  }
+  float GetMovesLeftCenterScalingFactor() const {
+    return kMovesLeftCenterScalingFactor; 
   }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
@@ -150,12 +157,11 @@ class SearchParams {
   static const OptionId kPerPvCountersId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
-  static const OptionId kMovesLeftMaxEffectId;
-  static const OptionId kMovesLeftThresholdId;
-  static const OptionId kMovesLeftConstantFactorId;
-  static const OptionId kMovesLeftScaledFactorId;
-  static const OptionId kMovesLeftQuadraticFactorId;
-  static const OptionId kMovesLeftSlopeId;
+  static const OptionId kMovesLeftStaticUtilityFactorId;
+  static const OptionId kMovesLeftDynamicUtilityFactorId;
+  static const OptionId kMovesLeftUtilitySteepnessId;
+  static const OptionId kMovesLeftInitialExpectedValueId;
+  static const OptionId kMovesLeftCenterScalingFactorId;
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
@@ -195,12 +201,11 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
-  const float kMovesLeftMaxEffect;
-  const float kMovesLeftThreshold;
-  const float kMovesLeftSlope;
-  const float kMovesLeftConstantFactor;
-  const float kMovesLeftScaledFactor;
-  const float kMovesLeftQuadraticFactor;
+  const float kMovesLeftStaticUtilityFactor;
+  const float kMovesLeftDynamicUtilityFactor;
+  const float kMovesLeftUtilitySteepness;
+  const float kMovesLeftInitialExpectedValue;
+  const float kMovesLeftCenterScalingFactor;
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
