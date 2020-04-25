@@ -709,14 +709,15 @@ PolicyMapLayer<DataType>::~PolicyMapLayer() {
 template <typename DataType>
 FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
     BaseLayer<DataType>* ip, int C, int H, int W, int Cin, bool relu, bool bias,
-    bool skip_add, bool se, int se_k)
+    bool skip_add, bool se, int se_k, bool use_gemm_ex)
     : BaseLayer<DataType>(C, H, W, ip),
       c_input_(Cin),
       use_relu_(relu),
       use_bias_(bias),
       skip_add_(skip_add),
       has_se_(se),
-      se_k_(se_k) {
+      se_k_(se_k),
+      use_gemm_ex_(use_gemm_ex) {
   // Allocate memory for weights (filter tensor) and biases.
   const size_t weight_size = sizeof(DataType) * c_input_ * C * 3 * 3;
   ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
@@ -811,12 +812,15 @@ void FusedWinogradConvSELayer<DataType>::LoadSEWeights(float* w1, float* b1,
   copyTypeConverted((DataType*)b2_, (float*)scratch, num_biases2);
 }
 
+template <>
+void FusedWinogradConvSELayer<half>::cublasRowMjaorMatrixMul(
+    const half* A, const half* B, half* Out, int M, int N, int K, int batchSize,
+    cublasHandle_t cublas) {
 
-void cublasRowMjaorMatrixMul(const half* A, const half* B, half* Out, int M,
-                             int N, int K, int batchSize, cublasHandle_t cublas,
-                             int algo = -1) {
-  half halfOne = (half)1.0f;
-  half halfZero = (half)0.0f;
+  __half_raw one_h{0x3C00};
+  __half_raw zero_h{0};
+  half halfOne = one_h;
+  half halfZero = zero_h;
 
   // dimensions of matrix A = M x K
   // dimensions of matrix B = K x N
@@ -827,18 +831,26 @@ void cublasRowMjaorMatrixMul(const half* A, const half* B, half* Out, int M,
   ReportCUBLASErrors(cublasGemmStridedBatchedEx(
       cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &halfOne, B, CUDA_R_16F, N,
       N * K, A, CUDA_R_16F, K, K * M, &halfZero, Out, CUDA_R_16F, N, N * M,
-      batchSize, CUDA_R_16F, cublasGemmAlgo_t(algo)));
+      batchSize, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
 }
 
-void cublasRowMjaorMatrixMul(const float* A, const float* B, float* Out, int M,
-                             int N, int K, int batchSize, cublasHandle_t cublas,
-                             int algo = -1) {
+template <>
+void FusedWinogradConvSELayer<float>::cublasRowMjaorMatrixMul(
+    const float* A, const float* B, float* Out, int M, int N, int K,
+    int batchSize, cublasHandle_t cublas) {
+
   float floatOne  = 1.0f;
   float floatZero = 0.0f;
-  ReportCUBLASErrors(cublasGemmStridedBatchedEx(
-      cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, CUDA_R_32F, N,
-      N * K, A, CUDA_R_32F, K, K * M, &floatZero, Out, CUDA_R_32F, N, N * M,
-      batchSize, CUDA_R_32F, cublasGemmAlgo_t(algo)));
+  if (use_gemm_ex_)
+    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+        cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, CUDA_R_32F, N,
+        N * K, A, CUDA_R_32F, K, K * M, &floatZero, Out, CUDA_R_32F, N, N * M,
+        batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+  else
+    // Much slower on RTX 2060.. why? Maybe a cublas bug :-/
+    ReportCUBLASErrors(cublasSgemmStridedBatched(
+        cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, N, N * K, A, K,
+        K * M, &floatZero, Out, N, N * M, batchSize));
 }
 
 template <typename DataType>

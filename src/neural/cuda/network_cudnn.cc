@@ -242,6 +242,8 @@ class CudnnNetwork : public Network {
     // Default layout is nchw.
     nhwc_ = false;
 
+    bool hasTensorCores = false;
+
     if (std::is_same<half, DataType>::value) {
       // Check if the GPU support FP16.
 
@@ -251,13 +253,15 @@ class CudnnNetwork : public Network {
         // (SM 5.3 and 6.2). SM 6.1 GPUs also have FP16, but slower than FP32.
         // nhwc_ remains false.
       } else if (deviceProp.major >= 7) {
-        // NHWC layout is faster with Tensor Cores.
+        // NHWC layout is faster with Tensor Cores when using cudnn's implicit
+        // gemm algorithm.
         // Supported on Volta and Turing (and hopefully future GPUs too).
 
         // Some GPUs (GTX 16xx) are SM 7.5 but don't have tensor cores
         // enabling TENSOR_OP_MATH or nhwc_ layout for them works but is
         // very very slow (likely because the system emulates it).
         if (!strstr(deviceProp.name, "GTX 16")) {
+          hasTensorCores = true;
           nhwc_ = true;
         }
       } else {
@@ -272,12 +276,36 @@ class CudnnNetwork : public Network {
     // support it).
     ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
 
-    // Check if we want to enable our custom winograd ?
-    constexpr bool fp16 = std::is_same<half, DataType>::value;
 
-    // Use our custom winograd impl for fp32.
-    // TODO: Enable this for fp16 too once it's tested to be faster.
-    use_custom_winograd_ = !fp16;
+    constexpr bool fp16 = std::is_same<half, DataType>::value;
+    const int kNumInputPlanes = kInputPlanes;
+    const int kNumFilters = weights.input.biases.size();
+    numBlocks_ = weights.residual.size();
+
+    // Use our custom winograd for resudual tower convolutions for most cases:
+    //
+    //  1. Should be always faster than cudnn's winograd that we use for fp32,
+    //  and for fp16 on GPUs without tensor cores
+    // 
+    //  2. Should also be faster than cudnn's implicit GEMM on GPUs with tensor 
+    //     cores too, but only for networks with 256 or higher no. of filters.
+    // 
+    //  3. Currently a bug in cublas makes it slower on RTX GPUs with fp16 so
+    //  it's disabled. TODO: Enable it once the bug has been fixed and it's
+    //  tested to be faster.
+
+    if (fp16) {
+      if (!hasTensorCores)
+        use_custom_winograd_ = true;
+      else if (kNumFilters >= 256 && deviceProp.minor != 5) // TODO: remove the second condition.
+        use_custom_winograd_ = true;
+      else
+        use_custom_winograd_ = false;
+    } else {
+      use_custom_winograd_ = true;
+    }
+
+    const bool use_gemm_ex = deviceProp.major >= 5;
 
     // Override if set in backend-opts.
     if (!options.IsDefault<bool>("custom_winograd"))
@@ -286,14 +314,9 @@ class CudnnNetwork : public Network {
     // Winograd needs nchw tensor layout.
     if (use_custom_winograd_) nhwc_ = false;
 
-    const int kNumInputPlanes = kInputPlanes;
-    const int kNumFilters = weights.input.biases.size();
-
-    numBlocks_ = weights.residual.size();
-
-    has_se_ = false;
 
     // 0. Check for SE.
+    has_se_ = false;
     if (weights.residual[0].has_se) {
       has_se_ = true;
     }
@@ -370,7 +393,7 @@ class CudnnNetwork : public Network {
       if (use_custom_winograd_) {
         auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
             getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
-            false, 0);
+            false, 0, use_gemm_ex);
         conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                            &weights.residual[block].conv1.biases[0],
                            scratch_mem_);
@@ -380,7 +403,7 @@ class CudnnNetwork : public Network {
         int se_k = weights.residual[block].se.b1.size();
         auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
             getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
-            has_se, se_k);
+            has_se, se_k, use_gemm_ex);
         conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                            &weights.residual[block].conv2.biases[0],
                            scratch_mem_);

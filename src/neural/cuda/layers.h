@@ -214,8 +214,8 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
 
  public:
   FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                         int Cin, bool relu, bool bias, bool skipAdd,
-                         bool se, int se_k);
+                         int Cin, bool relu, bool bias, bool skipAdd, bool se,
+                           int se_k, bool use_gemm_ex);
 
   ~FusedWinogradConvSELayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -232,6 +232,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   const bool skip_add_;
   const bool has_se_;
   const int se_k_;
+  const bool use_gemm_ex_;
 
   DataType* biases_ = nullptr;
   DataType* weights_ = nullptr;
@@ -242,6 +243,10 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   DataType* w2_;
   DataType* b1_;
   DataType* b2_;
+
+ void cublasRowMjaorMatrixMul(const DataType* A, const DataType* B,
+                               DataType* Out, int M, int N, int K,
+                               int batchSize, cublasHandle_t cublas);
 };
 
 }  // namespace cudnn_backend
