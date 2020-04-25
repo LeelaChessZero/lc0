@@ -280,7 +280,7 @@ class CudnnNetwork : public Network {
     const int kNumFilters = weights.input.biases.size();
     numBlocks_ = weights.residual.size();
 
-    // Use our custom winograd for resudual tower convolutions for most cases:
+    // Use our custom winograd for residual tower convolutions for most cases:
     //
     //  1. Should be always faster than cudnn's winograd that we use for fp32,
     //  and for fp16 on GPUs without tensor cores

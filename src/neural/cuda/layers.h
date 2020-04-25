@@ -244,7 +244,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   DataType* b1_;
   DataType* b2_;
 
- void cublasRowMjaorMatrixMul(const DataType* A, const DataType* B,
+ void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
                                DataType* Out, int M, int N, int K,
                                int batchSize, cublasHandle_t cublas);
 };

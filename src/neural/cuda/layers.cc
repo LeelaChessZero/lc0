@@ -813,10 +813,11 @@ void FusedWinogradConvSELayer<DataType>::LoadSEWeights(float* w1, float* b1,
 }
 
 template <>
-void FusedWinogradConvSELayer<half>::cublasRowMjaorMatrixMul(
+void FusedWinogradConvSELayer<half>::cublasRowMajorMatrixMul(
     const half* A, const half* B, half* Out, int M, int N, int K, int batchSize,
     cublasHandle_t cublas) {
-
+  // Need to initialize 1.0 and 0.0 as hexadecimal for fp16 because typecasting
+  // float to half type doesn't work before CUDA 10.0
   __half_raw one_h{0x3C00};
   __half_raw zero_h{0};
   half halfOne = one_h;
@@ -835,7 +836,7 @@ void FusedWinogradConvSELayer<half>::cublasRowMjaorMatrixMul(
 }
 
 template <>
-void FusedWinogradConvSELayer<float>::cublasRowMjaorMatrixMul(
+void FusedWinogradConvSELayer<float>::cublasRowMajorMatrixMul(
     const float* A, const float* B, float* Out, int M, int N, int K,
     int batchSize, cublasHandle_t cublas) {
 
@@ -867,7 +868,7 @@ void FusedWinogradConvSELayer<DataType>::Eval(
 
   InputTransform<DataType>(N, C, transformed_input, input);
 
-  cublasRowMjaorMatrixMul(transformed_input, transformed_weights_, transformed_output, N*4, C, c_input_, 36, cublas);  
+  cublasRowMajorMatrixMul(transformed_input, transformed_weights_, transformed_output, N*4, C, c_input_, 36, cublas);  
 
   if (has_se_ && use_relu_ && use_bias_ && skip_add_)
     OutputTransform<DataType, true, true, true, true>(
