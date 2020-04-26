@@ -80,7 +80,6 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   } else if (managers[0] == "smooth-experimental") {
     time_manager = MakeSmoothTimeManager(
         move_overhead, tm_options.GetSubdict("smooth-experimental"));
-  } else if (managers[0] == options.Get<std::string>(kAlphazeroTimeManagerId)) {
   } else if (managers[0] == "alphazero") {
     time_manager = MakeAlphazeroTimeManager(move_overhead,
                                             tm_options.GetSubdict("alphazero"));
