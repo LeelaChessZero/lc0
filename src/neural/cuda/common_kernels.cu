@@ -28,6 +28,7 @@
 #include <cassert>
 
 #include "cuda_common.h"
+#include "winograd_helper.inc"
 
 namespace lczero {
 namespace cudnn_backend {
@@ -545,6 +546,8 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N);
 template void copyTypeConverted<float, half>(float* op, half* ip, int N);
+template void copyTypeConverted<float, float>(float* op, float* ip, int N);
+template void copyTypeConverted<half, half>(half* op, half* ip, int N);
 
 template void batchNorm<float>(float* output, const float* input,
                                const float* skipInput, int N, int C, int H,
@@ -587,6 +590,28 @@ template void PolicyMap<float>(int N, float* output, const float* input,
 template void PolicyMap<half>(int N, half* output, const half* input,
                               const short* indices, int inputSize, int usedSize,
                               int outputSize);
+
+template void FilterTransform<float>(int N, int C, float* transformedFilter,
+                                     const float* filter);
+
+template void InputTransform<float>(int N, int C, float* transformed_input,
+                                    const float* input);
+
+template void OutputTransform<float, true, true, true, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputTransform<float, false, true, true, false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputTransform<float, false, true, true, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
 
 }  // namespace cudnn_backend
 }  // namespace lczero

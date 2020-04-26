@@ -49,7 +49,7 @@ static constexpr int kNumOutputPolicy = 1858;
 
 #if 0
 // debug code to dump allocation in GPU memory
-void dumpTensor(void *memory, int elements, char *message, bool fp16 = false)
+void dumpTensor(void *memory, int elements, const char *message, bool fp16 = false)
 {
     printf("\n%s\n", message);
     int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
@@ -266,10 +266,25 @@ class CudnnNetwork : public Network {
 
       // Override if forced from backend option
       if (!options.IsDefault<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
-
-      if (nhwc_)
-        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
     }
+
+    // Always try to set tensor math (won't have any effect on GPUs that don't
+    // support it).
+    ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+
+    // Check if we want to enable our custom winograd ?
+    constexpr bool fp16 = std::is_same<half, DataType>::value;
+
+    // Use our custom winograd impl for fp32.
+    // TODO: Enable this for fp16 too once it's tested to be faster.
+    use_custom_winograd_ = !fp16;
+
+    // Override if set in backend-opts.
+    if (!options.IsDefault<bool>("custom_winograd"))
+      use_custom_winograd_ = options.Get<bool>("custom_winograd");
+
+    // Winograd needs nchw tensor layout.
+    if (use_custom_winograd_) nhwc_ = false;
 
     const int kNumInputPlanes = kInputPlanes;
     const int kNumFilters = weights.input.biases.size();
@@ -295,9 +310,7 @@ class CudnnNetwork : public Network {
 
     const int maxChannels = std::max(kInputPlanes, kNumFilters);
 
-    const cudnnDataType_t datatype = std::is_same<half, DataType>::value
-                                         ? CUDNN_DATA_HALF
-                                         : CUDNN_DATA_FLOAT;
+    const cudnnDataType_t datatype = fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
     const cudnnTensorFormat_t layout =
         nhwc_ ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
 
@@ -328,6 +341,14 @@ class CudnnNetwork : public Network {
     const int maxWeightSize = 128 * 1024 * 1024;
     if (scratch_size_ < maxWeightSize) scratch_size_ = maxWeightSize;
 
+    if (use_custom_winograd_) {
+      // Need additional space for transformed input/outputs which are 36/16
+      // times size (4x4 block transformed into 6x6).
+      const size_t transformed_tensor_size =
+          (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0));
+      scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
+    }
+
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 #ifdef DEBUG_RAW_NPS
     CERR << "allocated " << scratch_size_ << " bytes for scratch memory";
@@ -346,35 +367,61 @@ class CudnnNetwork : public Network {
 
     // Residual block.
     for (size_t block = 0; block < weights.residual.size(); block++) {
-      auto conv1 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
-      conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
-                         &weights.residual[block].conv1.biases[0],
-                         scratch_mem_);
-      network_.emplace_back(std::move(conv1));
+      if (use_custom_winograd_) {
+        auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+            getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
+            false, 0);
+        conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
+                           &weights.residual[block].conv1.biases[0],
+                           scratch_mem_);
+        network_.emplace_back(std::move(conv1));
 
-      // Relu and bias of second convolution is handled by SELayer.
-      bool useReluAndBias = weights.residual[block].has_se ? false : true;
+        bool has_se = weights.residual[block].has_se;
+        int se_k = weights.residual[block].se.b1.size();
+        auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+            getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
+            has_se, se_k);
+        conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
+                           &weights.residual[block].conv2.biases[0],
+                           scratch_mem_);
+        if (has_se)
+          conv2->LoadSEWeights(&weights.residual[block].se.w1[0],
+                               &weights.residual[block].se.b1[0],
+                               &weights.residual[block].se.w2[0],
+                               &weights.residual[block].se.b2[0], scratch_mem_);
+        network_.emplace_back(std::move(conv2));
+      } else {
+        auto conv1 = std::make_unique<ConvLayer<DataType>>(
+            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
+        conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
+                           &weights.residual[block].conv1.biases[0],
+                           scratch_mem_);
+        network_.emplace_back(std::move(conv1));
 
-      auto conv2 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, useReluAndBias,
-          useReluAndBias);
-      conv2->LoadWeights(
-          &weights.residual[block].conv2.weights[0],
-          useReluAndBias ? &weights.residual[block].conv2.biases[0] : nullptr,
-          scratch_mem_);
-      network_.emplace_back(std::move(conv2));
+        // Relu and bias of second convolution is handled by SELayer.
+        bool useReluAndBias = weights.residual[block].has_se ? false : true;
 
-      if (weights.residual[block].has_se) {
-        int numFCOut = weights.residual[block].se.b1.size();
-        auto se = std::make_unique<SELayer<DataType>>(getLastLayer(), numFCOut,
-                                                      false);
-        se->LoadWeights(&weights.residual[block].se.w1[0],
-                        &weights.residual[block].se.b1[0],
-                        &weights.residual[block].se.w2[0],
-                        &weights.residual[block].se.b2[0],
-                        &weights.residual[block].conv2.biases[0], scratch_mem_);
-        network_.emplace_back(std::move(se));
+        auto conv2 = std::make_unique<ConvLayer<DataType>>(
+            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, useReluAndBias,
+            useReluAndBias);
+        conv2->LoadWeights(
+            &weights.residual[block].conv2.weights[0],
+            useReluAndBias ? &weights.residual[block].conv2.biases[0] : nullptr,
+            scratch_mem_);
+        network_.emplace_back(std::move(conv2));
+
+        if (weights.residual[block].has_se) {
+          int numFCOut = weights.residual[block].se.b1.size();
+          auto se = std::make_unique<SELayer<DataType>>(getLastLayer(),
+                                                        numFCOut, false);
+          se->LoadWeights(&weights.residual[block].se.w1[0],
+                          &weights.residual[block].se.b1[0],
+                          &weights.residual[block].se.w2[0],
+                          &weights.residual[block].se.b2[0],
+                          &weights.residual[block].conv2.biases[0],
+                          scratch_mem_);
+          network_.emplace_back(std::move(se));
+        }
       }
     }
 
@@ -547,22 +594,30 @@ class CudnnNetwork : public Network {
                           scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // conv1
 
-      // For SE Resnet, skip connection is added after SE (and bias is added as
-      // part of SE).
-      if (has_se_) {
-        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // conv2
-      } else {
+      if (use_custom_winograd_) {
         network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                             tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
                             cublas_);  // conv2
-      }
+      } else {
+        // For SE Resnet, skip connection is added after SE (and bias is added
+        // as part of SE).
+        if (has_se_) {
+          network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0],
+                              nullptr, scratch_mem_, scratch_size_, cudnn_,
+                              cublas_);  // conv2
+        } else {
+          network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
+                              tensor_mem_[2], scratch_mem_, scratch_size_,
+                              cudnn_,
+                              cublas_);  // conv2
+        }
 
-      if (has_se_) {
-        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
-                            tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // SE layer
+        if (has_se_) {
+          network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
+                              tensor_mem_[2], scratch_mem_, scratch_size_,
+                              cudnn_,
+                              cublas_);  // SE layer
+        }
       }
     }
 
@@ -758,6 +813,9 @@ class CudnnNetwork : public Network {
 
   bool nhwc_;  // do we want to use nhwc layout (fastest with fp16 with tensor
                // cores)
+
+  bool use_custom_winograd_;  // Custom winograd convolution implementation for
+                              // convolutions of the residual tower.
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
