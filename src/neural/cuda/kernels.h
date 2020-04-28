@@ -82,10 +82,25 @@ template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
                int inputSize, int usedSize, int outputSize);
 
+
 // Hand tuned kernels for 3x3 convolutions of 8x8 planes
 bool convCuda3x3(float* output, const float* input, const float* weight,
                  const float* bias, const float* skip, bool relu, int N, int K,
                  int C);
+
+
+// Custom winograd helper functions
+template <typename T>
+void FilterTransform(int N, int C, T* transformedFilter, const T* filter);
+
+template <typename T>
+void InputTransform(int N, int C, T* transformedInput, const T* input);
+
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+void OutputTransform(int N, int C, int se_K, T* output, const T* input,
+                     const T* skip, const T* bias, const T* w1, const T* b1,
+                     const T* w2, const T* b2);
+
 
 }  // namespace cudnn_backend
 }  // namespace lczero

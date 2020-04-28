@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,11 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/factory.h"
-
 #include <condition_variable>
 #include <queue>
 #include <thread>
+
+#include "neural/factory.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -37,7 +37,8 @@ namespace {
 
 class RoundRobinNetwork : public Network {
  public:
-  RoundRobinNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  RoundRobinNetwork(const std::optional<WeightsFile>& weights,
+                    const OptionsDict& options) {
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
       // If options are empty, or multiplexer configured in root object,
@@ -51,12 +52,19 @@ class RoundRobinNetwork : public Network {
     }
   }
 
-  void AddBackend(const std::string& name, const WeightsFile& weights,
+  void AddBackend(const std::string& name,
+                  const std::optional<WeightsFile>& weights,
                   const OptionsDict& opts) {
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
+
+    if (networks_.size() == 1) {
+      capabilities_ = networks_.back()->GetCapabilities();
+    } else {
+      capabilities_.Merge(networks_.back()->GetCapabilities());
+    }
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -64,15 +72,20 @@ class RoundRobinNetwork : public Network {
     return networks_[val % networks_.size()]->NewComputation();
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
   ~RoundRobinNetwork() {}
 
  private:
   std::vector<std::unique_ptr<Network>> networks_;
   std::atomic<long long> counter_;
+  NetworkCapabilities capabilities_;
 };
 
-std::unique_ptr<Network> MakeRoundRobinNetwork(const WeightsFile& weights,
-                                               const OptionsDict& options) {
+std::unique_ptr<Network> MakeRoundRobinNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<RoundRobinNetwork>(weights, options);
 }
 

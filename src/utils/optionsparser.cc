@@ -35,6 +35,12 @@
 #include "utils/logging.h"
 #include "utils/string.h"
 
+#if __has_include(<charconv>)
+#include <charconv>
+#else
+#define NO_CHARCONV
+#endif
+
 namespace lczero {
 namespace {
 const int kHelpIndent = 15;
@@ -69,7 +75,7 @@ void OptionsParser::SetUciOption(const std::string& name,
 }
 
 void OptionsParser::HideOption(const OptionId& id) {
-  const auto option = FindOptionById(id.GetId());
+  const auto option = FindOptionById(id);
   if (option) option->hidden_ = true;
 }
 
@@ -90,10 +96,9 @@ OptionsParser::Option* OptionsParser::FindOptionByUciName(
   return nullptr;
 }
 
-OptionsParser::Option* OptionsParser::FindOptionById(
-    const std::string& name) const {
+OptionsParser::Option* OptionsParser::FindOptionById(const OptionId& id) const {
   for (const auto& val : options_) {
-    if (name == val->GetId()) return val.get();
+    if (id == val->GetId()) return val.get();
   }
   return nullptr;
 }
@@ -409,13 +414,13 @@ IntOption::IntOption(const OptionId& id, int min, int max)
     : Option(id), min_(min), max_(max) {}
 
 void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stoi(value));
+  SetVal(dict, ValidateIntString(value));
 }
 
 bool IntOption::ProcessLongFlag(const std::string& flag,
                                 const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    SetVal(dict, std::stoi(value));
+    SetVal(dict, ValidateIntString(value));
     return true;
   }
   return false;
@@ -424,7 +429,7 @@ bool IntOption::ProcessLongFlag(const std::string& flag,
 bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                           OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    SetVal(dict, std::stoi(value));
+    SetVal(dict, ValidateIntString(value));
     return true;
   }
   return false;
@@ -460,6 +465,36 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetId(), val);
 }
 
+#ifndef NO_CHARCONV
+int IntOption::ValidateIntString(const std::string& val) const {
+  int result;
+  const auto end = val.data() + val.size();
+  auto [ptr, err] = std::from_chars(val.data(), end, result);  
+  if (err == std::errc::invalid_argument) {
+    throw Exception("Flag '--" + GetLongFlag() + "' has an invalid format.");
+  } else if (err == std::errc::result_out_of_range) {
+    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
+  } else if (ptr != end) {
+    throw Exception("Flag '--" + GetLongFlag() + "' has trailing characters.");
+  } else {
+    return result;
+  }
+}
+#else
+int IntOption::ValidateIntString(const std::string& val) const {
+  char *end;
+  errno = 0;
+  int result = std::strtol(val.c_str(), &end, 10);
+  if (errno == ERANGE) {
+    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
+  } else if (val.length() == 0 || *end != '\0') {
+    throw Exception("Flag '--" + GetLongFlag() + "' value is invalid.");
+  } else {
+    return result;
+  }
+}
+#endif
+
 /////////////////////////////////////////////////////////////////
 // FloatOption
 /////////////////////////////////////////////////////////////////
@@ -468,13 +503,25 @@ FloatOption::FloatOption(const OptionId& id, float min, float max)
     : Option(id), min_(min), max_(max) {}
 
 void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stof(value));
+  try {
+    SetVal(dict, std::stof(value));
+  } catch (std::invalid_argument&) {
+    throw Exception("invalid value " + value);
+  } catch (const std::out_of_range&) {
+    throw Exception("out of range value " + value);
+  }
 }
 
 bool FloatOption::ProcessLongFlag(const std::string& flag,
                                   const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    SetVal(dict, std::stof(value));
+    try {
+      SetVal(dict, std::stof(value));
+    } catch (std::invalid_argument&) {
+      throw Exception("invalid value " + value);
+    } catch (const std::out_of_range&) {
+      throw Exception("out of range value " + value);
+    }
     return true;
   }
   return false;
@@ -483,7 +530,13 @@ bool FloatOption::ProcessLongFlag(const std::string& flag,
 bool FloatOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                             OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    SetVal(dict, std::stof(value));
+    try {
+      SetVal(dict, std::stof(value));
+    } catch (std::invalid_argument&) {
+      throw Exception("invalid value " + value);
+    } catch (const std::out_of_range&) {
+      throw Exception("out of range value " + value);
+    }
     return true;
   }
   return false;

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+pushd "$(dirname "$0")"
+
 set -e
 
 case $1 in
@@ -14,6 +16,11 @@ esac
 
 BUILDDIR=build/${BUILDTYPE}
 
+if ! hash meson 2>/dev/null && [ -x ${HOME}/.local/bin/meson ]
+then
+  export PATH=${PATH}:${HOME}/.local/bin
+fi
+
 if [ -f ${BUILDDIR}/build.ninja ]
 then
   meson configure ${BUILDDIR} -Dbuildtype=${BUILDTYPE} -Dprefix=${INSTALL_PREFIX:-/usr/local} "$@"
@@ -21,7 +28,7 @@ else
   meson ${BUILDDIR} --buildtype ${BUILDTYPE} --prefix ${INSTALL_PREFIX:-/usr/local} "$@"
 fi
 
-pushd ${BUILDDIR}
+cd ${BUILDDIR}
 
 NINJA=$(awk '/ninja/ {ninja=$4} END {print ninja}' meson-logs/meson-log.txt)
 

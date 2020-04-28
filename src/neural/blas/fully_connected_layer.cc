@@ -23,13 +23,49 @@
 #include <cassert>
 #include <cmath>
 
-namespace lczero {
+#include <Eigen/Dense>
 
-void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
-                                    const size_t output_size,
-                                    const float* inputs, const float* weights,
-                                    const float* biases, bool apply_relu,
-                                    float* outputs) {
+namespace lczero {
+namespace {
+void ApplyBias(size_t batch_size, const size_t output_size, const float* biases,
+               bool apply_relu, float* outputs) {
+  if (apply_relu) {
+    for (size_t i = 0; i < batch_size; i++) {
+      float* batch_outputs = outputs + i * output_size;
+      for (size_t o = 0; o < output_size; o++) {
+        float val = biases[o] + batch_outputs[o];
+        batch_outputs[o] = val >= 0 ? val : 0;
+      }
+    }
+  } else {
+    for (size_t i = 0; i < batch_size; i++) {
+      float* batch_outputs = outputs + i * output_size;
+      for (size_t o = 0; o < output_size; o++) {
+        batch_outputs[o] += biases[o];
+      }
+    }
+  }
+}
+} // namespace
+
+template <typename T>
+using EigenVectorMap = Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, 1>>;
+template <typename T>
+using ConstEigenVectorMap =
+    Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, 1>>;
+template <typename T>
+using EigenMatrixMap =
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+template <typename T>
+using ConstEigenMatrixMap =
+    Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+
+#ifdef USE_BLAS
+template <>
+void FullyConnectedLayer<false>::Forward1D(
+    size_t batch_size, const size_t input_size, const size_t output_size,
+    const float* inputs, const float* weights, const float* biases,
+    bool apply_relu, float* outputs) {
   if (batch_size == 1) {
     // Just a matrix-vector multiplication
     //
@@ -41,7 +77,6 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
     //
     //   rows  output_size      output_size          input_size
     //
-
     cblas_sgemv(CblasRowMajor, CblasNoTrans,
                 // M     K
                 (int)output_size, (int)input_size, 1.0f, weights,
@@ -66,7 +101,6 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
     // passing a matrix A[m][n], the value should be m.
     //    cblas_sgemm(CblasRowMajor, TransA, TransB, M, N, K, alpha, A, lda, B,
     //                ldb, beta, C, N);
-
     cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans,
                 (int)output_size,   // M
                 (int)batch_size,    // N
@@ -80,31 +114,45 @@ void FullyConnectedLayer::Forward1D(size_t batch_size, const size_t input_size,
                 outputs,            // C
                 (int)output_size);  // ldc, leading rank of C
   }
-  if (apply_relu) {
-    for (size_t i = 0; i < batch_size; i++) {
-      float* batch_outputs = outputs + i * output_size;
-      for (size_t o = 0; o < output_size; o++) {
-        float val = biases[o] + batch_outputs[o];
-        batch_outputs[o] = val >= 0 ? val : 0;
-      }
-    }
-  } else {
-    for (size_t i = 0; i < batch_size; i++) {
-      float* batch_outputs = outputs + i * output_size;
-      for (size_t o = 0; o < output_size; o++) {
-        batch_outputs[o] += biases[o];
-      }
-    }
-  }
+  ApplyBias(batch_size, output_size, biases, apply_relu, outputs);
 }
 
-float FullyConnectedLayer::Forward0D(const size_t size, const float* x,
-                                     const float* y) {
+template <>
+float FullyConnectedLayer<false>::Forward0D(const size_t size, const float* x,
+                                            const float* y) {
   // A scalar product, also known as a dot-product.
   // float cblas_sdot(const int N, const float *X, const int incX, const float
   // *Y,
   // const int incY);
   return cblas_sdot((int)size, x, 1, y, 1);
+}
+#endif
+
+template <>
+void FullyConnectedLayer<true>::Forward1D(
+    size_t batch_size, const size_t input_size, const size_t output_size,
+    const float* inputs, const float* weights, const float* biases,
+    bool apply_relu, float* outputs) {
+  if (batch_size == 1) {
+    EigenVectorMap<float> y(outputs, output_size);
+    y.noalias() = ConstEigenMatrixMap<float>(weights, input_size, output_size)
+                      .transpose() *
+                  ConstEigenVectorMap<float>(inputs, input_size);
+  } else {
+    auto C_mat = EigenMatrixMap<float>(outputs, output_size, batch_size);
+    C_mat.noalias() =
+        ConstEigenMatrixMap<float>(weights, input_size, output_size)
+            .transpose() *
+        ConstEigenMatrixMap<float>(inputs, input_size, batch_size);
+  }
+  ApplyBias(batch_size, output_size, biases, apply_relu, outputs);
+}
+
+template <>
+float FullyConnectedLayer<true>::Forward0D(const size_t size, const float* x,
+                                           const float* y) {
+  return ConstEigenVectorMap<float>(x, size)
+      .dot(ConstEigenVectorMap<float>(y, size));
 }
 
 }  // namespace lczero
