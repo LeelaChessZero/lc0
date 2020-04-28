@@ -1,5 +1,17 @@
-﻿v0.25.0-rc2 (2020-04-23)
+﻿v0.25.0 (2020-04-28)
 ~~~~~~~
+
+* Relax strictness for complete standard fens in uci and opening books. Fen
+  must still be standard, but default values will be substituted for sections
+  that are missing.
+* Restore some backwards compatibility in cudnn backends that was lost with
+  the addition of the new convolution implementation. It is also on by default
+  for more scenarios, although still off for fp16 on RTX gpus.
+* Small logic fix for nps smoothing in the new optional experimental time 
+  manager.
+
+v0.25.0-rc2 (2020-04-23)
+~~~~~~~~~~~
 
 * Increased upper limit for maximum collision events.
 * Allow negative values for some of the extended moves left head parameters.
@@ -25,7 +37,7 @@
   cudnn-fp16 until an issue with cublas performance on some gpus is resolved.
 
 v0.25.0-rc1 (2020-04-09)
-~~~~~~~
+~~~~~~~~~~~
 
 * Now requires a c++17 supporting compilation environment to build.
 * Support for Moves Left Head based networks. Includes options to adjust search
