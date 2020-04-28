@@ -27,6 +27,7 @@
 
 #include "uciloop.h"
 
+#include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
