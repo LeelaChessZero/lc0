@@ -148,12 +148,13 @@ class SmoothTimeManager : public TimeManager {
   float UpdateNps(int64_t time_since_movestart_ms,
                   int64_t nodes_since_movestart) {
     Mutex::Lock lock(mutex_);
-    if (nps_is_reliable_ && time_since_movestart_ms <= last_time_) {
+    if (time_since_movestart_ms <= 0) return nps_;
+    if (nps_is_reliable_ && time_since_movestart_ms >= last_time_) {
       const float nps =
           1000.0f * nodes_since_movestart / time_since_movestart_ms;
       nps_ = ExponentialDecay(nps_, nps, params_.nps_halfupdate_seconds(),
                               (time_since_movestart_ms - last_time_) / 1000.0f);
-    } else if (time_since_movestart_ms > 0) {
+    } else {
       nps_ = 1000.0f * nodes_since_movestart / time_since_movestart_ms;
     }
     last_time_ = time_since_movestart_ms;
