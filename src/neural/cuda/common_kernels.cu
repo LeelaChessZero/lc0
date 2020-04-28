@@ -1090,6 +1090,13 @@ bool convCuda3x3(float* output, const float* input, const float* weight,
     else if (K == 256)
       launch_convCuda3x3_0<256, 112>(blockDim, gridDim, output, input, weight,
                                      bias, relu);
+    else if (K == 320)
+      launch_convCuda3x3_0<320, 112>(blockDim, gridDim, output, input, weight,
+                                     bias, relu);
+    else if (K == 384)
+      launch_convCuda3x3_0<384, 112>(blockDim, gridDim, output, input, weight,
+                                     bias, relu);
+
     else
       return false;  // Add more template instantiations as needed
   } else {
@@ -1111,6 +1118,12 @@ bool convCuda3x3(float* output, const float* input, const float* weight,
                                      bias, skip, relu);
     else if (C == 256 && K == 256)
       launch_convCuda3x3_1<256, 256>(blockDim, gridDim, output, input, weight,
+                                     bias, skip, relu);
+    else if (C == 320 && K == 320)
+      launch_convCuda3x3_1<320, 320>(blockDim, gridDim, output, input, weight,
+                                     bias, skip, relu);
+    else if (C == 384 && K == 384)
+      launch_convCuda3x3_1<384, 384>(blockDim, gridDim, output, input, weight,
                                      bias, skip, relu);
     else
       return false; // Add more template instantiations as needed
