@@ -62,6 +62,30 @@ TEST(ChessBoard, PseudolegalMovesStartingPos) {
   EXPECT_EQ(moves.size(), 20);
 }
 
+TEST(ChessBoard, PartialFen) {
+  ChessBoard board;
+  int rule50ply;
+  int gameply;
+  board.SetFromFen("k/1R//K", &rule50ply, &gameply);
+  auto moves = board.GeneratePseudolegalMoves();
+
+  EXPECT_EQ(moves.size(), 19);
+  EXPECT_EQ(rule50ply, 0);
+  EXPECT_EQ(gameply, 1);
+}
+
+TEST(ChessBoard, PartialFenWithSpaces) {
+  ChessBoard board;
+  int rule50ply;
+  int gameply;
+  board.SetFromFen("   k/1R//K   w   ", &rule50ply, &gameply);
+  auto moves = board.GeneratePseudolegalMoves();
+
+  EXPECT_EQ(moves.size(), 19);
+  EXPECT_EQ(rule50ply, 0);
+  EXPECT_EQ(gameply, 1);
+}
+
 namespace {
 int Perft(const ChessBoard& board, int max_depth, bool dump = false,
           int depth = 0) {
