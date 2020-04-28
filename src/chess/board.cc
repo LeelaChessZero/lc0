@@ -969,7 +969,7 @@ MoveList ChessBoard::GenerateLegalMoves() const {
   return result;
 }
 
-void ChessBoard::SetFromFen(string fen, int* rule50_ply, int* moves) {
+void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
   Clear();
   int row = 7;
   int col = 0;
