@@ -252,7 +252,7 @@ if get_option('build_backends')
 
     endif
 
-    deps += subproject('eigen').get_variable('eigen_dep')
+    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep'])
 
     ispc = find_program('ispc', required: false)
     ispc_extra_args = []
