@@ -313,8 +313,10 @@ class CudnnNetwork : public Network {
     // Warn if the memory required for storing transformed weights is
     // going to exceed 60% of total video memory, force custom_winograd off
     // if it's going to exceed 80% of memory.
+    size_t residual_single_layer_weight_size =
+        3 * 3 * kNumFilters * kNumFilters * sizeof(DataType);
     size_t residual_weight_size =
-        3 * 3 * kNumFilters * kNumFilters * numBlocks_ * sizeof(DataType);
+        residual_single_layer_weight_size * numBlocks_;
     size_t transformed_residual_weight_size = residual_weight_size * 4;
     if (transformed_residual_weight_size > 0.8 * deviceProp.totalGlobalMem) {
       CERR << "WARNING: Low GPU video memory detected. Turning off "
@@ -381,8 +383,16 @@ class CudnnNetwork : public Network {
         cudnn_, xDesc, wDesc, convDesc, xDesc, conv_algo, &scratch_size_));
 
     // Have some minumum as we also use this for transforming weights.
-    const int maxWeightSize = 128 * 1024 * 1024;
-    if (scratch_size_ < maxWeightSize) scratch_size_ = maxWeightSize;
+    int max_weight_size = 128 * 1024 * 1024;
+
+    // parts from scratch allocation are suballocated to hold various weights
+    // and biases when transforming winograd weights (one layer at a time), 128
+    // MB is way more than that what we need but make sure it's at least 3x of
+    // single layer's weight size to be safe.
+    if (max_weight_size < 3 * residual_single_layer_weight_size)
+      max_weight_size = 3 * residual_single_layer_weight_size;
+
+    if (scratch_size_ < max_weight_size) scratch_size_ = max_weight_size;
 
     if (use_custom_winograd_) {
       // Need additional space for transformed input/outputs which are 36/16
