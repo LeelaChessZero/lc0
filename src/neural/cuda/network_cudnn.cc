@@ -318,18 +318,22 @@ class CudnnNetwork : public Network {
     size_t residual_weight_size =
         residual_single_layer_weight_size * numBlocks_;
     size_t transformed_residual_weight_size = residual_weight_size * 4;
-    if (transformed_residual_weight_size > 0.8 * deviceProp.totalGlobalMem) {
-      CERR << "WARNING: Low GPU video memory detected. Turning off "
-              "custom_winograd.";
+    if (residual_weight_size > 0.6 * deviceProp.totalGlobalMem) {
+      CERR << "Low video memory detected. You may run into OOM errors. Please "
+              "consider using a smaller network.";
+      // No hope of using custom winograd - even the fallback path might not run.
       use_custom_winograd_ = false;
-      if (residual_weight_size > 0.6 * deviceProp.totalGlobalMem) {
-        CERR << "You may still run into OOM errors. Please consider using a "
-                "smaller network.";
+    } else if (use_custom_winograd_) {
+      if (transformed_residual_weight_size > 0.8 * deviceProp.totalGlobalMem) {
+        CERR << "WARNING: Low GPU video memory detected. Turning off "
+                "custom_winograd.";
+        use_custom_winograd_ = false;
+      } else if (transformed_residual_weight_size >
+                 0.6 * deviceProp.totalGlobalMem) {
+        CERR << "WARNING: Low GPU video memory. You may run into OOM errors. "
+                "Please consider using a smaller network, or run with "
+                "--backend-opts=custom_winograd=false";
       }
-    } else if (transformed_residual_weight_size > 0.6 * deviceProp.totalGlobalMem) {
-      CERR << "WARNING: Low GPU video memory. You may run into OOM error. "
-              "Please consider using a smaller network, or run with "
-              "--backend-opts=custom_winograd=false";
     }
 
     // Winograd needs nchw tensor layout.
