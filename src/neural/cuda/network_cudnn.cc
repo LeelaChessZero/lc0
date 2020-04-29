@@ -316,7 +316,7 @@ class CudnnNetwork : public Network {
     size_t residual_single_layer_weight_size =
         3 * 3 * kNumFilters * kNumFilters * sizeof(DataType);
     size_t residual_weight_size =
-        residual_single_layer_weight_size * numBlocks_;
+        residual_single_layer_weight_size * numBlocks_ * 2;
     size_t transformed_residual_weight_size = residual_weight_size * 4;
     if (residual_weight_size > 0.6 * deviceProp.totalGlobalMem) {
       CERR << "Low video memory detected. You may run into OOM errors. Please "
