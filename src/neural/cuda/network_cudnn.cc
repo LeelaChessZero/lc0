@@ -310,6 +310,26 @@ class CudnnNetwork : public Network {
     if (!options.IsDefault<bool>("custom_winograd"))
       use_custom_winograd_ = options.Get<bool>("custom_winograd");
 
+    // Warn if the memory required for storing transformed weights is
+    // going to exceed 60% of total video memory, force custom_winograd off
+    // if it's going to exceed 80% of memory.
+    size_t residual_weight_size =
+        3 * 3 * kNumFilters * kNumFilters * numBlocks_ * sizeof(DataType);
+    size_t transformed_residual_weight_size = residual_weight_size * 4;
+    if (transformed_residual_weight_size > 0.8 * deviceProp.totalGlobalMem) {
+      CERR << "WARNING: Low GPU video memory detected. Turning off "
+              "custom_winograd.";
+      use_custom_winograd_ = false;
+      if (residual_weight_size > 0.6 * deviceProp.totalGlobalMem) {
+        CERR << "You may still run into OOM errors. Please consider using a "
+                "smaller network.";
+      }
+    } else if (transformed_residual_weight_size > 0.6 * deviceProp.totalGlobalMem) {
+      CERR << "WARNING: Low GPU video memory. You may run into OOM error. "
+              "Please consider using a smaller network, or run with "
+              "--backend-opts=custom_winograd=false";
+    }
+
     // Winograd needs nchw tensor layout.
     if (use_custom_winograd_) nhwc_ = false;
 
