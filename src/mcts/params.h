@@ -164,7 +164,7 @@ class SearchParams {
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
   static const OptionId kMaxOutOfOrderEvalsId;
-  static const OptionId kStrengthRatioId;
+  static const OptionId kNpsLimitId;
 
  private:
   const OptionsDict& options_;

@@ -257,11 +257,11 @@ const OptionId SearchParams::kDrawScoreWhiteId{
 const OptionId SearchParams::kDrawScoreBlackId{
     "draw-score-black", "DrawScoreBlack",
     "Adjustment, added to a draw score of a black player."};
-const OptionId SearchParams::kStrengthRatioId{
-    "strength-ratio", "StrengthRatio",
-    "An option to reduce engine strength. Works by delaying the search for a "
-    "portion of the allocated time. Set to zero for minimum and one for "
-    "maximum strength, or anything in-between."};
+const OptionId SearchParams::kNpsLimitId{
+    "nps-limit", "NodesPerSecondLimit",
+    "An option to specify an upper limit to the nodes per second searched. The "
+    "accuracy depends on the minibatch size used, increasing for lower sizes, "
+    "and on the lenght of the search. Zero to disable."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -327,7 +327,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
-  options->Add<FloatOption>(kStrengthRatioId, 0.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);

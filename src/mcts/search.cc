@@ -72,15 +72,9 @@ Search::Search(const NodeTree& tree, Network* network,
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
   }
-  float strength_ratio =
-      options.Get<float>(SearchParams::kStrengthRatioId);
-  if (strength_ratio != 1.0f) {
-    // Factor to multiply execution time to get the delay to add, so that the
-    // execution time is strength_ratio^2 of the total. This was found to
-    // approximate linear strength scaling from strength_ratio 0 to 1.
-    delay_factor_ = 1.0f / (strength_ratio * strength_ratio +
-                            std::numeric_limits<float>::epsilon()) -
-                    1.0f;
+  float nps_limit = options.Get<float>(SearchParams::kNpsLimitId);
+  if (nps_limit > 0.0f) {
+    nps_limit_ = nps_limit;
   }
 }
 
@@ -840,8 +834,6 @@ Search::~Search() {
 //////////////////////////////////////////////////////////////////////////////
 
 void SearchWorker::ExecuteOneIteration() {
-  auto start = std::chrono::steady_clock::now();
-
   // 1. Initialize internal structures.
   InitializeIteration(search_->network_->NewComputation());
 
@@ -892,15 +884,17 @@ void SearchWorker::ExecuteOneIteration() {
   // 7. Update the Search's status and progress information.
   UpdateCounters();
 
-  // If required, waste time for strength reduction.
-  if (search_->delay_factor_) {
-    auto move_delay = std::chrono::duration_cast<std::chrono::milliseconds>(
-        *search_->delay_factor_ * (std::chrono::steady_clock::now() - start));
-    using namespace std::chrono_literals;
-    constexpr auto kMaxWaitTime = 5ms;
-    while (move_delay > 0ms && search_->IsSearchActive()) {
-      std::this_thread::sleep_for(std::min(move_delay, kMaxWaitTime));
-      move_delay -= kMaxWaitTime;
+  // If required, waste time to limit nps.
+  if (search_->nps_limit_ && search_->nps_start_time_) {
+    while (search_->IsSearchActive()) {
+      auto time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
+      if (time_since_first_batch_ms <= 0) break;
+      auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
+      if (nps > *search_->nps_limit_) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } else {
+        break;
+      }
     }
   }
 }

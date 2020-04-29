@@ -176,7 +176,7 @@ class Search {
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
-  std::optional<float> delay_factor_;
+  std::optional<float> nps_limit_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
