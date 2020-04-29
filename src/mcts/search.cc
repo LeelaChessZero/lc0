@@ -1523,6 +1523,21 @@ void SearchWorker::DoBackupUpdateSingleNode(
     n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
                            d, m, node_to_process.multivisit);
 
+    // Flatten policy if we've visited the node enough times. We efficiently
+    // sample every 2^13 visits approximating 10k visits. The processed node is
+    // a Visit (multivisit 1), so check if N is a multiple of sample rate.
+    const auto visits = n->GetN();
+    if (!(visits & (1 << 13) - 1)) {
+      const auto ratio = params_.GetPolicyFlattenRatio();
+      const auto num_edges = n->GetNumEdges();
+      if (ratio && num_edges) {
+        const auto flat_policy_portion = ratio / num_edges;
+        for (const auto& edge : n->Edges()) {
+          edge.edge()->SetP((1.0f - ratio) * edge.GetP() + flat_policy_portion);
+        }
+      }
+    }
+
     // Nothing left to do without ancestors to update.
     if (!p) break;
 
@@ -1538,7 +1553,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Update the stats.
     // Best move.
     if (p == search_->root_node_ &&
-        search_->current_best_edge_.GetN() <= n->GetN()) {
+        search_->current_best_edge_.GetN() <= visits) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }

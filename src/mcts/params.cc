@@ -161,6 +161,11 @@ const OptionId SearchParams::kCacheHistoryLengthId{
     "this value is less than history that NN uses to eval a position, it's "
     "possble that the search will use eval of the same position with different "
     "history taken from cache."};
+const OptionId SearchParams::kPolicyFlattenRatioId{
+    "policy-flatten-ratio", "PolicyFlattenRatio",
+    "Ratio to move policy towards flat policy for every ~10k visits to a node. "
+    "0 means no flattening, 0.5 means moving halfway to flat, 1 means flatten "
+    "at 10k visits."};
 const OptionId SearchParams::kPolicySoftmaxTempId{
     "policy-softmax-temp", "PolicyTemperature",
     "Policy softmax temperature. Higher values make priors of move candidates "
@@ -290,6 +295,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
+  options->Add<FloatOption>(kPolicyFlattenRatioId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.607f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
@@ -367,6 +373,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                           ? kFpuValue
                           : options.Get<float>(kFpuValueAtRootId)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId)),
+      kPolicyFlattenRatio(options.Get<float>(kPolicyFlattenRatioId)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId)),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId)),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId)),
