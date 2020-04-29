@@ -92,7 +92,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;
-  options->Add<IntOption>(kTotalGamesId, -1, 999999) = -1;
+  options->Add<IntOption>(kTotalGamesId, -2, 999999) = -1;
   options->Add<IntOption>(kParallelGamesId, 1, 256) = 8;
   options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
   options->Add<IntOption>(kVisitsId, -1, 999999999) = -1;
@@ -204,7 +204,7 @@ SelfPlayTournament::SelfPlayTournament(
 
 void SelfPlayTournament::PlayOneGame(int game_number) {
   bool player1_black;  // Whether player1 will player as black in this game.
-  MoveList opening;
+  Opening opening;
   {
     Mutex::Lock lock(mutex_);
     player1_black = ((game_number % 2) == 1) != first_game_black_;
@@ -281,7 +281,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
             last_thinking_info = std::move(rich_info);
           }
         };
-    opt.discarded_callback = [this](const MoveList& moves) {
+    opt.discarded_callback = [this](const Opening& moves) {
       // Only track discards if discard start chance is non-zero.
       if (kDiscardedStartChance == 0.0f) return;
       Mutex::Lock lock(mutex_);
@@ -326,8 +326,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.game_result = game.GetGameResult();
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
+    game_info.initial_fen = opening.start_fen;
     game_info.moves = game.GetMoves();
-    game_info.play_start_ply = opening.size();
+    game_info.play_start_ply = opening.moves.size();
     if (!enable_resign) {
       game_info.min_false_positive_threshold =
           game.GetWorstEvalForWinnerOrDraw();

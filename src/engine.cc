@@ -58,6 +58,10 @@ const OptionId kUciChess960{
     "Castling moves are encoded as \"king takes rook\"."};
 const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
+const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
+                                "The UCI host compensates for lag, waits for "
+                                "the 'readyok' reply before sending 'go' and "
+                                "only then starts timing."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -73,9 +77,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
-    : options_(options),
-      uci_responder_(std::move(uci_responder)),
-      time_manager_(MakeLegacyTimeManager()) {}
+    : options_(options), uci_responder_(std::move(uci_responder)) {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -94,6 +96,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
+
+  options->Add<BoolOption>(kStrictUciTiming) = false;
+  options->HideOption(kStrictUciTiming);
 }
 
 void EngineController::ResetMoveTimer() {
@@ -127,6 +132,9 @@ void EngineController::UpdateFromUciOptions() {
 
   // Cache size.
   cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId));
+
+  // Check whether we can update the move timer in "Go".
+  strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
 }
 
 void EngineController::EnsureReady() {
@@ -144,7 +152,7 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  time_manager_->ResetGame();
+  CreateFreshTimeManager();
   current_position_.reset();
   UpdateFromUciOptions();
 }
@@ -171,7 +179,11 @@ void EngineController::SetupPosition(
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
   const bool is_same_game = tree_->ResetToPosition(fen, moves);
-  if (!is_same_game) time_manager_->ResetGame();
+  if (!is_same_game) CreateFreshTimeManager();
+}
+
+void EngineController::CreateFreshTimeManager() {
+  time_manager_ = MakeTimeManager(options_);
 }
 
 namespace {
@@ -215,7 +227,7 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
-  if (!move_start_time_) ResetMoveTimer();
+  if (strict_uci_timing_ || !move_start_time_) ResetMoveTimer();
   go_params_ = params;
 
   std::unique_ptr<UciResponder> responder =
@@ -249,8 +261,7 @@ void EngineController::Go(const GoParams& params) {
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
-  auto stopper =
-      time_manager_->GetStopper(options_, params, tree_->HeadPosition());
+  auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),

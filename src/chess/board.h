@@ -67,10 +67,10 @@ class ChessBoard {
   static const BitBoard kPawnMask;
 
   // Sets position from FEN string.
-  // If @no_capture_ply and @moves are not nullptr, they are filled with number
+  // If @rule50_ply and @moves are not nullptr, they are filled with number
   // of moves without capture and number of full moves since the beginning of
   // the game.
-  void SetFromFen(const std::string& fen, int* no_capture_ply = nullptr,
+  void SetFromFen(std::string fen, int* rule50_ply = nullptr,
                   int* moves = nullptr);
   // Nullifies the whole structure.
   void Clear();

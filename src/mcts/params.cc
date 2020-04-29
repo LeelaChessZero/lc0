@@ -91,9 +91,14 @@ const OptionId SearchParams::kTemperatureId{
     "while making the move."};
 const OptionId SearchParams::kTempDecayMovesId{
     "tempdecay-moves", "TempDecayMoves",
-    "Reduce temperature for every move from the game start to this number of "
-    "moves, decreasing linearly from initial temperature to 0. A value of 0 "
-    "disables tempdecay."};
+    "Reduce temperature for every move after the first move, decreasing "
+    "linearly over this number of moves from initial temperature to 0. "
+    "A value of 0 disables tempdecay."};
+const OptionId SearchParams::kTempDecayDelayMovesId{
+    "tempdecay-delay-moves", "TempDecayDelayMoves",
+    "Delay the linear decrease of temperature by this number of moves, "
+    "decreasing linearly from initial temperature to 0. A value of 0 starts "
+    "tempdecay after the first move."};
 const OptionId SearchParams::kTemperatureCutoffMoveId{
     "temp-cutoff-move", "TempCutoffMove",
     "Move number, starting from which endgame temperature is used rather "
@@ -218,6 +223,18 @@ const OptionId SearchParams::kMovesLeftSlopeId{
     "based on how many moves the move is estimated to shorten/lengthen the "
     "game. The move difference is multiplied with the slope and capped at "
     "MovesLeftMaxEffect."};
+const OptionId SearchParams::kMovesLeftConstantFactorId{
+    "moves-left-constant-factor", "MovesLeftConstantFactor",
+    "A simple multiplier to the moves left effect, can be set to 0 to only use "
+    "an effect scaled by Q."};
+const OptionId SearchParams::kMovesLeftScaledFactorId{
+    "moves-left-scaled-factor", "MovesLeftScaledFactor",
+    "A factor which is multiplied by the absolute Q of parent node and the "
+    "base moves left effect."};
+const OptionId SearchParams::kMovesLeftQuadraticFactorId{
+    "moves-left-quadratic-factor", "MovesLeftQuadraticFactor",
+    "A factor which is multiplied by the square of Q of parent node and the "
+    "base moves left effect."};
 const OptionId SearchParams::kShortSightednessId{
     "short-sightedness", "ShortSightedness",
     "Used to focus more on short term gains over long term."};
@@ -261,6 +278,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
+  options->Add<IntOption>(kTempDecayDelayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kTemperatureWinpctCutoffId, 0.0f, 100.0f) = 100.0f;
@@ -278,7 +296,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.607f;
-  options->Add<IntOption>(kMaxCollisionEventsId, 1, 1024) = 32;
+  options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 1.0f;
@@ -288,6 +306,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kPerPvCountersId) = false;
   std::vector<std::string> score_type = {"centipawn",
                                          "centipawn_with_drawscore",
+                                         "centipawn_2019",
                                          "centipawn_2018",
                                          "win_percentage",
                                          "Q",
@@ -298,6 +317,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.001f;
+  options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kMovesLeftScaledFactorId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
@@ -312,6 +334,16 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kLogLiveStatsId);
   options->HideOption(kDisplayCacheUsageId);
   options->HideOption(kRootHasOwnCpuctParamsId);
+  options->HideOption(kTemperatureId);
+  options->HideOption(kTempDecayMovesId);
+  options->HideOption(kTempDecayDelayMovesId);
+  options->HideOption(kTemperatureCutoffMoveId);
+  options->HideOption(kTemperatureEndgameId);
+  options->HideOption(kTemperatureWinpctCutoffId);
+  options->HideOption(kTemperatureVisitOffsetId);
+  options->HideOption(kMovesLeftConstantFactorId);
+  options->HideOption(kMovesLeftScaledFactorId);
+  options->HideOption(kMovesLeftQuadraticFactorId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -352,6 +384,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId)),
       kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId)),
       kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId)),
+      kMovesLeftConstantFactor(options.Get<float>(kMovesLeftConstantFactorId)),
+      kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
+      kMovesLeftQuadraticFactor(options.Get<float>(kMovesLeftQuadraticFactorId)),
       kShortSightedness(options.Get<float>(kShortSightednessId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),

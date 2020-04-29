@@ -98,11 +98,6 @@ option('dnnl',
        value: false,
        description: 'Enable DNNL BLAS support')
 
-option('eigen',
-       type: 'boolean',
-       value: false,
-       description: 'Use EIGEN as a BLAS alternative')
-
 option('accelerate',
        type: 'boolean',
        value: true,
@@ -127,3 +122,8 @@ option('embed',
        type: 'boolean',
        value: false,
        description: 'Use embedded net by default')
+
+option('nvcc_ccbin',
+       type: 'string',
+       value: '',
+       description: 'Override C++ compiler used by cuda nvcc')

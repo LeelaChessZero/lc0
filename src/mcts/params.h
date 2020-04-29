@@ -59,6 +59,9 @@ class SearchParams {
     return options_.Get<float>(kTemperatureVisitOffsetId);
   }
   int GetTempDecayMoves() const { return options_.Get<int>(kTempDecayMovesId); }
+  int GetTempDecayDelayMoves() const {
+    return options_.Get<int>(kTempDecayDelayMovesId);
+  }
   int GetTemperatureCutoffMove() const {
     return options_.Get<int>(kTemperatureCutoffMoveId);
   }
@@ -96,6 +99,11 @@ class SearchParams {
   float GetMovesLeftMaxEffect() const { return kMovesLeftMaxEffect; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
   float GetMovesLeftSlope() const { return kMovesLeftSlope; }
+  float GetMovesLeftConstantFactor() const { return kMovesLeftConstantFactor; }
+  float GetMovesLeftScaledFactor() const { return kMovesLeftScaledFactor; }
+  float GetMovesLeftQuadraticFactor() const {
+    return kMovesLeftQuadraticFactor;
+  }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
@@ -118,6 +126,7 @@ class SearchParams {
   static const OptionId kRootHasOwnCpuctParamsId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
+  static const OptionId kTempDecayDelayMovesId;
   static const OptionId kTemperatureCutoffMoveId;
   static const OptionId kTemperatureEndgameId;
   static const OptionId kTemperatureWinpctCutoffId;
@@ -143,6 +152,9 @@ class SearchParams {
   static const OptionId kHistoryFillId;
   static const OptionId kMovesLeftMaxEffectId;
   static const OptionId kMovesLeftThresholdId;
+  static const OptionId kMovesLeftConstantFactorId;
+  static const OptionId kMovesLeftScaledFactorId;
+  static const OptionId kMovesLeftQuadraticFactorId;
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
@@ -187,6 +199,9 @@ class SearchParams {
   const float kMovesLeftMaxEffect;
   const float kMovesLeftThreshold;
   const float kMovesLeftSlope;
+  const float kMovesLeftConstantFactor;
+  const float kMovesLeftScaledFactor;
+  const float kMovesLeftQuadraticFactor;
   const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;

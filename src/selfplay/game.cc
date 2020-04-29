@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "mcts/stoppers/common.h"
 #include "mcts/stoppers/factory.h"
 #include "mcts/stoppers/stoppers.h"
 #include "neural/writer.h"
@@ -69,20 +70,21 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree, const MoveList& opening)
+                           bool shared_tree, const Opening& opening)
     : options_{player1, player2},
       chess960_{player1.uci_options->Get<bool>(kUciChess960) ||
                 player2.uci_options->Get<bool>(kUciChess960)} {
+  orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
-  tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
+  tree_[0]->ResetToPosition(orig_fen_, {});
 
   if (shared_tree) {
     tree_[1] = tree_[0];
   } else {
     tree_[1] = std::make_shared<NodeTree>();
-    tree_[1]->ResetToPosition(ChessBoard::kStartposFen, {});
+    tree_[1]->ResetToPosition(orig_fen_, {});
   }
-  for (Move m : opening) {
+  for (Move m : opening.moves) {
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
   }
@@ -219,7 +221,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       if (history_copy.ComputeGameResult() == GameResult::UNDECIDED) {
         auto move_list_to_discard = GetMoves();
         move_list_to_discard.push_back(move);
-        options_[idx].discarded_callback(move_list_to_discard);
+        options_[idx].discarded_callback({orig_fen_, move_list_to_discard});
       }
       search_->ResetBestMove();
     }
@@ -279,7 +281,11 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   // different approach.
   float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
   for (auto chunk : training_data_) {
-    const bool black_to_move = chunk.side_to_move;
+    bool black_to_move = chunk.side_to_move_or_enpassant;
+    if (chunk.input_format ==
+        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+      black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
+    }
     if (game_result_ == GameResult::WHITE_WON) {
       chunk.result = black_to_move ? -1 : 1;
     } else if (game_result_ == GameResult::BLACK_WON) {
