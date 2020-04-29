@@ -271,9 +271,8 @@ class CudnnNetwork : public Network {
       if (!options.IsDefault<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
     }
 
-    // Always try to set tensor math (won't have any effect on GPUs that don't
-    // support it).
-    ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+    if (hasTensorCores)
+      ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
 
     constexpr bool fp16 = std::is_same<half, DataType>::value;
     const int kNumInputPlanes = kInputPlanes;
