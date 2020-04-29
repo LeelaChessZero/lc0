@@ -83,6 +83,7 @@ class SearchParams {
     return at_root ? kFpuValueAtRoot : kFpuValue;
   }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
+  uint32_t GetPolicyFlattenThreshold() const { return kPolicyFlattenThreshold; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   float GetShortSightedness() const { return kShortSightedness; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
@@ -140,6 +141,7 @@ class SearchParams {
   static const OptionId kFpuStrategyAtRootId;
   static const OptionId kFpuValueAtRootId;
   static const OptionId kCacheHistoryLengthId;
+  static const OptionId kPolicyFlattenRateId;
   static const OptionId kPolicySoftmaxTempId;
   static const OptionId kMaxCollisionEventsId;
   static const OptionId kMaxCollisionVisitsId;
@@ -187,6 +189,7 @@ class SearchParams {
   const bool kFpuAbsoluteAtRoot;
   const float kFpuValueAtRoot;
   const int kCacheHistoryLength;
+  const uint32_t kPolicyFlattenThreshold;
   const float kPolicySoftmaxTemp;
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
