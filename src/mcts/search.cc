@@ -72,10 +72,6 @@ Search::Search(const NodeTree& tree, Network* network,
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
   }
-  float nps_limit = options.Get<float>(SearchParams::kNpsLimitId);
-  if (nps_limit > 0.0f) {
-    nps_limit_ = nps_limit;
-  }
 }
 
 namespace {
@@ -885,12 +881,12 @@ void SearchWorker::ExecuteOneIteration() {
   UpdateCounters();
 
   // If required, waste time to limit nps.
-  if (search_->nps_limit_ && search_->nps_start_time_) {
+  if (params_.GetNpsLimit() > 0 && search_->nps_start_time_) {
     while (search_->IsSearchActive()) {
       auto time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
       if (time_since_first_batch_ms <= 0) break;
       auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
-      if (nps > *search_->nps_limit_) {
+      if (nps > params_.GetNpsLimit()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       } else {
         break;

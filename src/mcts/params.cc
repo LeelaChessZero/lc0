@@ -261,7 +261,7 @@ const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "
     "accuracy depends on the minibatch size used, increasing for lower sizes, "
-    "and on the lenght of the search. Zero to disable."};
+    "and on the length of the search. Zero to disable."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -396,7 +396,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
-                              options.Get<int>(kMiniBatchSizeId)))) {
+                              options.Get<int>(kMiniBatchSizeId)))),
+      kNpsLimit(options.Get<float>(kNpsLimitId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
