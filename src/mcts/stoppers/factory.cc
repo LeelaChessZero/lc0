@@ -47,9 +47,8 @@ const OptionId kMoveOverheadId{
 const OptionId kTimeManagerId{
     "time-manager", "TimeManager",
     "Name and config of a time manager. "
-    "Default is 'legacy'. Optional time manager is 'alphazero' "
-    "Please see http://lczero.org/dev/docs/timemgr for more information"
-    "on configuring the time managers outside of default used values"};
+    "Possible names are 'legacy' (default), 'smooth-experimental' and 'alphazero'."
+    "See https://lc0.org/timemgr for configuration details."};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
