@@ -271,9 +271,8 @@ class CudnnNetwork : public Network {
       if (!options.IsDefault<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
     }
 
-    // Always try to set tensor math (won't have any effect on GPUs that don't
-    // support it).
-    ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+    if (hasTensorCores)
+      ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
 
     constexpr bool fp16 = std::is_same<half, DataType>::value;
     const int kNumInputPlanes = kInputPlanes;
@@ -310,6 +309,32 @@ class CudnnNetwork : public Network {
     // Override if set in backend-opts.
     if (!options.IsDefault<bool>("custom_winograd"))
       use_custom_winograd_ = options.Get<bool>("custom_winograd");
+
+    // Warn if the memory required for storing transformed weights is
+    // going to exceed 60% of total video memory, force custom_winograd off
+    // if it's going to exceed 80% of memory.
+    size_t residual_single_layer_weight_size =
+        3 * 3 * kNumFilters * kNumFilters * sizeof(DataType);
+    size_t residual_weight_size =
+        residual_single_layer_weight_size * numBlocks_ * 2;
+    size_t transformed_residual_weight_size = residual_weight_size * 4;
+    if (residual_weight_size > 0.6 * deviceProp.totalGlobalMem) {
+      CERR << "Low video memory detected. You may run into OOM errors. Please "
+              "consider using a smaller network.";
+      // No hope of using custom winograd - even the fallback path might not run.
+      use_custom_winograd_ = false;
+    } else if (use_custom_winograd_) {
+      if (transformed_residual_weight_size > 0.8 * deviceProp.totalGlobalMem) {
+        CERR << "WARNING: Low GPU video memory detected. Turning off "
+                "custom_winograd.";
+        use_custom_winograd_ = false;
+      } else if (transformed_residual_weight_size >
+                 0.6 * deviceProp.totalGlobalMem) {
+        CERR << "WARNING: Low GPU video memory. You may run into OOM errors. "
+                "Please consider using a smaller network, or run with "
+                "--backend-opts=custom_winograd=false";
+      }
+    }
 
     // Winograd needs nchw tensor layout.
     if (use_custom_winograd_) nhwc_ = false;
@@ -362,8 +387,16 @@ class CudnnNetwork : public Network {
         cudnn_, xDesc, wDesc, convDesc, xDesc, conv_algo, &scratch_size_));
 
     // Have some minumum as we also use this for transforming weights.
-    const int maxWeightSize = 128 * 1024 * 1024;
-    if (scratch_size_ < maxWeightSize) scratch_size_ = maxWeightSize;
+    int max_weight_size = 128 * 1024 * 1024;
+
+    // parts from scratch allocation are suballocated to hold various weights
+    // and biases when transforming winograd weights (one layer at a time), 128
+    // MB is way more than that what we need but make sure it's at least 3x of
+    // single layer's weight size to be safe.
+    if (max_weight_size < 3 * residual_single_layer_weight_size)
+      max_weight_size = 3 * residual_single_layer_weight_size;
+
+    if (scratch_size_ < max_weight_size) scratch_size_ = max_weight_size;
 
     if (use_custom_winograd_) {
       // Need additional space for transformed input/outputs which are 36/16
