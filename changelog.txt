@@ -1,4 +1,13 @@
-﻿v0.25.0 (2020-04-28)
+﻿v0.25.1 (2020-04-30)
+~~~~~~~
+
+* Fixed some issues with cudnn backend on the 16xx GTX models and also for 
+  low memory devices with large network files where the new optimizations
+  could result in out of memory errors.
+* Added a workaround for a cutechess issue where reporting depth 0 during
+  instamoves causes it to ignore our info message.
+
+v0.25.0 (2020-04-28)
 ~~~~~~~
 
 * Relax strictness for complete standard fens in uci and opening books. Fen
