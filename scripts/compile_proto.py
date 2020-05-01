@@ -289,6 +289,14 @@ class ProtoFieldParser:
                         (cpp_type, name, name))
             w.Write("const std::vector<%s>& %s() const { return %s_; }" %
                     (cpp_type, name, name))
+            if self.type.IsMessage():
+                w.Write("const %s& %s(size_t idx) const { return %s_[idx]; }" %
+                        (cpp_type, name, name))
+            else:
+                w.Write("%s %s(size_t) const { return %s_[idx]; }" %
+                        (cpp_type, name, name))
+            w.Write("size_t %s_size() const { return %s_.size(); }" %
+                    (name, name))
         else:
             w.Write("bool has_%s() const { return has_%s_; }" % (name, name))
             if self.type.IsMessage():
