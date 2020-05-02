@@ -27,6 +27,7 @@ from enum import Enum
 from .core import PyObject
 from .parameters import Parameter
 from .retval import RetVal, NoneRetVal
+from .exceptions import CppException
 
 
 class FunctionType(Enum):
@@ -64,15 +65,21 @@ class Function(PyObject):
         self.retval = val
         return self
 
+    def AddEx(self, ex):
+        assert isinstance(ex, CppException)
+        self.exceptions.append(ex)
+        return self
+
     def Generate(self, w):
         w.Open(f'{self._return_cpp_type()} '
                f'{self.gen_function_name}({self._generate_params()}) {{')
 
+        self._generate_parse_params(w)
         self.retval.GenerateDeclaration(w)
+
         if self.exceptions:
             w.Open('try {')
 
-        self._generate_parse_params(w)
         self._generate_call(w)
         self.retval.GenerateConversion(w)
 
@@ -90,6 +97,7 @@ class Function(PyObject):
         return {
             FunctionType.METH_KEYWORDS: 'METH_VARARGS | METH_KEYWORDS',
             FunctionType.METH_NOARGS: 'METH_NOARGS',
+            FunctionType.METH_FASTCALL: 'METH_FASTCALL',
         }[self.param_type()]
 
     def _return_cpp_type(self):
@@ -134,10 +142,17 @@ class Function(PyObject):
             w.Write(f'return {self._failure()};')
             w.Close('}')
             for param in self.parameters:
-                param.GenerateCppParamInitialization(w)
+                param.GenerateCppParamInitialization(w, self)
             return
 
         if self.param_type() == FunctionType.METH_NOARGS:
+            return
+
+        if self.param_type() == FunctionType.METH_FASTCALL:
+            assert len(self.parameters) == 1
+            param = self.parameters[0]
+            assert param.needs_entire_argv()
+            param.GenerateCppParamInitialization(w, self)
             return
 
         raise NotImplementedError('Not implemented function type %d' %
@@ -174,15 +189,21 @@ class Function(PyObject):
         return ', '.join([x.name_at_caller() for x in self.parameters])
 
     def _success(self):
-        return self.retval.py_val()
+        return self.retval.ret_val()
 
     def _failure(self):
         return 'nullptr'
+
+    def _handle_exceptions(self, w):
+        for ex in self.exceptions:
+            ex.GenerateHandle(w, self)
 
     @staticmethod
     def TypeFromParameters(parameters):
         if len(parameters) == 0:
             return FunctionType.METH_NOARGS
+        if len(parameters) == 1 and parameters[0].needs_entire_argv():
+            return FunctionType.METH_FASTCALL
         return FunctionType.METH_KEYWORDS
 
 
@@ -233,6 +254,30 @@ class Constructor(Function):
     def _generate_call(self, w):
         w.Write(f'self->value = new '
                 f'{self.cpp_type_name}({self._list_caller_params()});')
+
+    def _return_cpp_type(self):
+        return 'int'
+
+    def _success(self):
+        return '0'
+
+    def _failure(self):
+        return '-1'
+
+
+class DisabledConstructor(Function):
+    def __init__(self, gen_function_name):
+        super().__init__('__init__',
+                         gen_function_name=gen_function_name,
+                         param_type=FunctionType.METH_KEYWORDS)
+
+    def Generate(self, w):
+        w.Open(f'{self._return_cpp_type()} '
+               f'{self.gen_function_name}({self._generate_params()}) {{')
+        w.Write('PyErr_SetString(PyExc_TypeError, '
+                '"Not possible to create instances of this type.");')
+        w.Write(f'return {self._failure()};')
+        w.Close('}\n')
 
     def _return_cpp_type(self):
         return 'int'

@@ -38,6 +38,9 @@ class Parameter:
     def name_at_caller(self):
         return self.cpp_name
 
+    def needs_entire_argv(self):
+        return False
+
 
 class StringParameter(Parameter):
     def __init__(self, *argv, can_be_none=False, **kwargs):
@@ -48,7 +51,7 @@ class StringParameter(Parameter):
         w.Write(f'const char* {self.name} = nullptr;')
         w.Write(f'Py_ssize_t {self.name}_len = 0;')
 
-    def GenerateCppParamInitialization(self, w):
+    def GenerateCppParamInitialization(self, w, func):
         if self.optional or self.can_be_none:
             w.Write(f'std::optional<std::string> {self.name_at_caller()};')
             w.Write(f'if ({self.name} != nullptr) '
@@ -81,7 +84,7 @@ class ClassParameter(Parameter):
     def parse_tuple_format(self):
         return 'O!'
 
-    def GenerateCppParamInitialization(self, w):
+    def GenerateCppParamInitialization(self, w, func):
         pass
 
     def name_at_caller(self):
@@ -89,6 +92,36 @@ class ClassParameter(Parameter):
             return f'{self.cpp_name} ? {self.cpp_name}->value : nullptr'
         else:
             return f'*{self.cpp_name}->value'
+
+
+class ListOfStringsParameter(Parameter):
+    def GenerateParseTupleSinkDeclaration(self, w):
+        w.Write(f'PyObject* {self.name} = nullptr;')
+
+    def parse_tuple_format(self):
+        return 'O!'
+
+    def parse_tuple_sink_list(self):
+        return ['&PyList_Type', f'&{self.name}']
+
+    def GenerateCppParamInitialization(self, w, func):
+        w.Write(f'std::vector<std::string> {self.name_at_caller()};')
+        w.Open(f'if ({self.name} != nullptr) {{')
+        w.Write(f'{self.name_at_caller()}.reserve(PyList_Size({self.name}));')
+        w.Open(f'for (Py_ssize_t i = 0; i < PyList_Size({self.name}); ++i) {{')
+        w.Write(f'PyObject* tmp = PyList_GetItem({self.name}, i);')
+        w.Open('if (!PyUnicode_Check(tmp)) {')
+        w.Write('PyErr_SetString(PyExc_TypeError, "String type expected.");')
+        w.Write(f'return {func._failure()};')
+        w.Close('}')
+        w.Write('Py_ssize_t size;')
+        w.Write('const char* str = PyUnicode_AsUTF8AndSize(tmp, &size);')
+        w.Write(f'{self.name_at_caller()}.emplace_back(str, size);')
+        w.Close('}')
+        w.Close('}')
+
+    def name_at_caller(self):
+        return f'{self.cpp_name}_cpp'
 
 
 class NumericParameter(Parameter):
@@ -116,5 +149,60 @@ class NumericParameter(Parameter):
             'f32': 'f',
         }[self.type]
 
-    def GenerateCppParamInitialization(self, w):
+    def GenerateCppParamInitialization(self, w, func):
         pass
+
+
+class ArgvParameter(Parameter):
+    def __init__(self, name, type, *argv, **kwargs):
+        self.type = type
+        super().__init__(name, *argv, **kwargs)
+
+    def needs_entire_argv(self):
+        return True
+
+    def cpp_type(self):
+        return f'std::vector<{self.type.cpp_name}*>'
+
+
+class ArgvObjects(ArgvParameter):
+    def cpp_type(self):
+        return f'std::vector<{self.type.cpp_name}*>'
+
+    def GenerateCppParamInitialization(self, w, func):
+        w.Write(f'{self.cpp_type()} {self.name}(num_args);')
+        w.Open('for (int i = 0; i < num_args; ++i) {')
+        w.Write(f'{self.name}[i] = reinterpret_cast<'
+                f'{self.type.object_struct_name()}*>(args[i])->value;')
+        w.Close('}')
+
+
+class IntegralArgv(ArgvParameter):
+    def cpp_type(self):
+        return f'std::vector<{self.item_cpp_type()}>'
+
+    def item_cpp_type(self):
+        return {
+            'i': 'int',
+            'u64': 'uint64_t',
+            'f32': 'float',
+        }[self.type]
+
+    def item_fetch_function(self):
+        return {
+            'i': 'PyLong_AsLongLong',
+        }[self.type]
+
+    def item_fetch_err_value(self):
+        return {
+            'i': '-1',
+        }[self.type]
+
+    def GenerateCppParamInitialization(self, w, func):
+        w.Write(f'{self.cpp_type()} {self.name}(num_args);')
+        w.Open('for (int i = 0; i < num_args; ++i) {')
+        w.Write(f'auto tmp = {self.item_fetch_function()}(args[i]);')
+        w.Write(f'if (tmp == {self.item_fetch_err_value()} '
+                f'&& PyErr_Occurred() != nullptr) return {func._failure()};')
+        w.Write(f'{self.name}[i] = tmp;')
+        w.Close('}')
