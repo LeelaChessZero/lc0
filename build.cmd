@@ -25,12 +25,12 @@ echo Deleting build directory:
 rd /s build
 
 if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019" (
-  call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
-  set MSBuild=msbuild
+  where /q cl
+  if errorlevel 1 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
   set backend=vs2019
 ) else (
-  call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
-  set MSBuild="C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\MSBuild\15.0\Bin\MSBuild.exe"
+  where /q cl
+  if errorlevel 1 call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
   set backend=vs2017
 )
 
@@ -58,5 +58,5 @@ pause
 
 cd build
 
-%MSBuild% /m /p:Configuration=Release /p:Platform=x64 /p:WholeProgramOptimization=true ^
+msbuild /m /p:Configuration=Release /p:Platform=x64 /p:WholeProgramOptimization=true ^
 /p:PreferredToolArchitecture=x64 lc0.sln /filelogger

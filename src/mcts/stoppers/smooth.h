@@ -32,9 +32,7 @@
 
 namespace lczero {
 
-float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness);
-
-std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
+std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params);
 
 }  // namespace lczero
