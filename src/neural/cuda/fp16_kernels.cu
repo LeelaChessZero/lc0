@@ -26,7 +26,7 @@
 */
 
 #include "cuda_common.h"
-
+#include "winograd_helper.inc"
 
 namespace lczero {
 namespace cudnn_backend {
@@ -35,8 +35,6 @@ namespace cudnn_backend {
 //          fp16-specific kernels used by certain layers                   //
 /////////////////////////////////////////////////////////////////////////////
 
-
-
 // SE layer implementation using single fused kernel.
 
 // N blocks.
@@ -44,17 +42,15 @@ namespace cudnn_backend {
 // 'HWC' input data processed by thread block.
 // Each thread processes 8x8 elements.
 // K is the no. of outputs of first fully connected layer (same as no. of inputs
-// for second fully connected layer). 
+// for second fully connected layer).
 // The kernel assumes K <= C.
-
-#define readw1(row, col) (w1[(row)*K + (col)])
-#define readw2(row, col) (w2[(row)*2 * C + (col)])
 
 template <int C, int K>
 __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
                               const half* w1, const half* b1, const half* w2,
-                              const half* b2, const half *bPrev) {
+                              const half* b2, const half* bPrev) {
   const int elementsPerThread = 64;  // 8x8 board
+  const int se_K = K;
 
   int n = blockIdx.x;
   int c = threadIdx.x;
@@ -68,8 +64,8 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   half bias = 0;
   if (bPrev) bias = bPrev[c];
 
-  // 1. Global avg (1 avg per thread).
-  #pragma unroll
+// 1. Global avg (1 avg per thread).
+#pragma unroll
   for (int i = 0; i < elementsPerThread; i++) {
     int localIndex = i * C + c;
     int inputIndex = n * C * elementsPerThread + localIndex;
@@ -87,7 +83,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   if (c < K) {
     S = 0;
 
-    #pragma unroll
+#pragma unroll
     for (int i = 0; i < C; i++) {
       S += sharedData[i] * readw1(i, c);
     }
@@ -104,7 +100,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   // 3. Second fully connected layer.
   S = 0;
   half B = 0;
-  #pragma unroll
+#pragma unroll
   for (int i = 0; i < K; i++) {
     half val = sharedData[i];
     S += val * readw2(i, c);
@@ -116,8 +112,8 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   // Sigmoid (only on the scale part).
   S = (half)(1.0f / (1.0f + exp(-(float)(S))));
 
-  // 4. Scale, and add skip connection, perform relu, and write to output.
-  #pragma unroll
+// 4. Scale, and add skip connection, perform relu, and write to output.
+#pragma unroll
   for (int i = 0; i < elementsPerThread; i++) {
     int localIndex = i * C + c;
     int inputIndex = n * C * elementsPerThread + localIndex;
@@ -180,7 +176,7 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
           <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else if (C == 320) {
       SE_Layer_NHWC<320, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);      
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else {
       // TODO: support other channel counts.
       return false;
@@ -192,6 +188,28 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
   ReportCUDAErrors(cudaGetLastError());
   return true;
 }
+
+template void FilterTransform<half>(int N, int C, half* transformedFilter,
+                                    const half* filter);
+
+
+template void InputTransform<half>(int N, int C, half* transformed_input,
+                                    const half* input);
+
+template void OutputTransform<half, true, true, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2);
+
+template void OutputTransform<half, false, true, true, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2);
+
+template void OutputTransform<half, false, true, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2);
 
 }   // namespace cudnn_backend
 }   // namespace lczero

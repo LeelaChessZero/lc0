@@ -145,9 +145,11 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
           std::round(edge.GetM(0.0f)) / 2 + (edge.IsTbTerminal() ? 101 : 1),
           wl);
     } else if (score_type == "centipawn_with_drawscore") {
-      uci_info.score = 295 * q / (1 - 0.976953126 * std::pow(q, 14));
+      uci_info.score = 90 * tan(1.5637541897 * q);
     } else if (score_type == "centipawn") {
-      uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(q, 14));
+      uci_info.score = 90 * tan(1.5637541897 * wl);
+    } else if (score_type == "centipawn_2019") {
+      uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(wl, 14));
     } else if (score_type == "centipawn_2018") {
       uci_info.score = 290.680623072 * tan(1.548090806 * wl);
     } else if (score_type == "win_percentage") {
@@ -213,6 +215,13 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
+int64_t Search::GetTimeSinceFirstBatch() const {
+  if (!nps_start_time_) return 0;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now() - *nps_start_time_)
+      .count();
+}
+
 // Root is depth 0, i.e. even depth.
 float Search::GetDrawScore(bool is_odd_depth) const {
   return (is_odd_depth ? params_.GetOpponentDrawScore()
@@ -253,7 +262,15 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
   const float april_factor = params_.GetAprilFactor();
-
+  const float m_slope = params_.GetMovesLeftSlope();
+  const float m_cap = params_.GetMovesLeftMaxEffect();
+  const float a = params_.GetMovesLeftConstantFactor();
+  const float b = params_.GetMovesLeftScaledFactor();
+  const float c = params_.GetMovesLeftQuadraticFactor();
+  const bool do_moves_left_adjustment =
+      network_->GetCapabilities().moves_left !=
+          pblczero::NetworkFormat::MOVES_LEFT_NONE &&
+      (std::abs(node->GetQ(0.0f)) > params_.GetMovesLeftThreshold());
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
@@ -275,6 +292,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
 
     oss << std::left << std::setw(5)
         << edge.GetMove(is_black_to_move).as_string();
+
+    float Q = edge.GetQ(fpu, draw_score, logit_q);
+    float M_effect = do_moves_left_adjustment
+        ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
+            std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q))
+        : 0.0f;
 
     // TODO: should this be displaying transformed index?
     oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
@@ -304,7 +327,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff, params_.GetAprilFactor()) << ") ";
+        << edge.GetQ(fpu, draw_score, logit_q) + edge.GetU(U_coeff,
+                            params_.GetAprilFactor()) + M_effect << ") ";
 
     oss << "(V: ";
     std::optional<float> v;
@@ -321,7 +345,16 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     }
     oss << ") ";
 
-    if (edge.IsTerminal()) oss << "(T) ";
+    const auto [edge_lower, edge_upper] = edge.GetBounds();
+    oss << (edge_lower == edge_upper
+                ? "(T) "
+                : edge_lower == GameResult::DRAW &&
+                          edge_upper == GameResult::WHITE_WON
+                      ? "(W) "
+                      : edge_lower == GameResult::BLACK_WON &&
+                                edge_upper == GameResult::DRAW
+                            ? "(L) "
+                            : "");
     infos.emplace_back(oss.str());
   }
   return infos;
@@ -468,15 +501,22 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 
   float temperature = params_.GetTemperature();
   const int cutoff_move = params_.GetTemperatureCutoffMove();
+  const int decay_delay_moves = params_.GetTempDecayDelayMoves();
+  const int decay_moves = params_.GetTempDecayMoves();
   const int moves = played_history_.Last().GetGamePly() / 2;
+
   if (cutoff_move && (moves + 1) >= cutoff_move) {
     temperature = params_.GetTemperatureEndgame();
-  } else if (temperature && params_.GetTempDecayMoves()) {
-    if (moves >= params_.GetTempDecayMoves()) {
+  } else if (temperature && decay_moves) {
+    if (moves >= decay_delay_moves + decay_moves) {
       temperature = 0.0;
-    } else {
-      temperature *= static_cast<float>(params_.GetTempDecayMoves() - moves) /
-                     params_.GetTempDecayMoves();
+    } else if (moves >= decay_delay_moves) {
+      temperature *= static_cast<float>
+        (decay_delay_moves + decay_moves - moves) / decay_moves;
+    }
+    // don't allow temperature to decay below endgame temperature
+    if (temperature < params_.GetTemperatureEndgame()) {
+      temperature = params_.GetTemperatureEndgame();
     }
   }
 
@@ -688,6 +728,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->time_since_movestart = GetTimeSinceStart();
 
   SharedMutex::SharedLock nodes_lock(nodes_mutex_);
+  stats->time_since_first_batch = GetTimeSinceFirstBatch();
   if (!nps_start_time_ && total_playouts_ > 0) {
     nps_start_time_ = std::chrono::steady_clock::now();
   }
@@ -1067,7 +1108,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
 
       const float score = child.GetU(puct_mult, params_.GetAprilFactor()) + Q + M;
-      
+
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1141,7 +1182,7 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetNoCaptureNoPawnPly() >= 100) {
+    if (history_.Last().GetRule50Ply() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
@@ -1153,7 +1194,7 @@ void SearchWorker::ExtendNode(Node* node) {
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
-        history_.Last().GetNoCaptureNoPawnPly() == 0 &&
+        history_.Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
@@ -1451,8 +1492,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     return;
   }
 
-  // For the first visit to a terminal, maybe convert ancestors to terminal too.
-  auto can_convert =
+  // For the first visit to a terminal, maybe update parent bounds too.
+  auto update_parent_bounds =
       params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
 
   // Backup V value up to a root. After 1 visit, V = Q.
@@ -1476,40 +1517,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Nothing left to do without ancestors to update.
     if (!p) break;
 
-    // Convert parents to terminals except the root or those already converted.
-    can_convert = can_convert && p != search_->root_node_ && !p->IsTerminal();
-
-    // A non-winning terminal move needs all other moves to be similar.
-    auto all_losing = true;
-    auto found_tb = n->IsTbTerminal();
-    float losing_m = 0.0f;
-    if (can_convert && v <= 0.0f) {
-      for (const auto& edge : p->Edges()) {
-        // Default_wl doesn't matter as WL is only used if IsTerminal is true.
-        const auto WL = edge.GetWL(0.0f);
-        can_convert = can_convert && edge.IsTerminal() && WL <= 0.0f;
-        if (!can_convert) break;
-        all_losing = all_losing && WL < 0.0f;
-        found_tb = found_tb || edge.IsTbTerminal();
-        losing_m = std::max(losing_m, edge.GetM(0.0f));
-      }
-    }
-
-    // Convert the parent to a terminal loss if at least one move is winning or
-    // to a terminal win if all moves are losing; otherwise there's a mix of
-    // draws and losing, so at best it's a draw.
-    if (can_convert) {
-      // Doesn't give the correct distance to mate because siblings are not
-      // considered but more accurate than doing nothing. This shouldn't
-      // underestimate the distance to mate since at worst we miss shorter
-      // moves.
-      float terminal_m = std::max(losing_m, m) + 1.0f;
-      p->MakeTerminal(
-          v > 0.0f ? GameResult::BLACK_WON
-                   : all_losing ? GameResult::WHITE_WON : GameResult::DRAW,
-          terminal_m,
-          found_tb ? Node::Terminal::Tablebase : Node::Terminal::Terminal);
-    }
+    // Try setting parent bounds except the root or those already terminal.
+    update_parent_bounds = update_parent_bounds && p != search_->root_node_ &&
+                           !p->IsTerminal() && MaybeSetBounds(p, m);
 
     // Q will be flipped for opponent.
     v = -v;
@@ -1527,7 +1537,64 @@ void SearchWorker::DoBackupUpdateSingleNode(
   search_->total_playouts_ += node_to_process.multivisit;
   search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
-}  // namespace lczero
+}
+
+bool SearchWorker::MaybeSetBounds(Node* p, float m) const {
+  auto losing_m = 0.0f;
+  auto prefer_tb = false;
+
+  // Determine the maximum (lower, upper) bounds across all children.
+  // (-1,-1) Loss (initial and lowest bounds)
+  // (-1, 0) Can't Win
+  // (-1, 1) Regular node
+  // ( 0, 0) Draw
+  // ( 0, 1) Can't Lose
+  // ( 1, 1) Win (highest bounds)
+  auto lower = GameResult::BLACK_WON;
+  auto upper = GameResult::BLACK_WON;
+  for (const auto& edge : p->Edges()) {
+    const auto [edge_lower, edge_upper] = edge.GetBounds();
+    lower = std::max(edge_lower, lower);
+    upper = std::max(edge_upper, upper);
+
+    // Checkmate is the best, so short-circuit.
+    const auto is_tb = edge.IsTbTerminal();
+    if (edge_lower == GameResult::WHITE_WON && !is_tb) {
+      prefer_tb = false;
+      break;
+    } else if (edge_upper == GameResult::BLACK_WON) {
+      // Track the longest loss.
+      losing_m = std::max(losing_m, edge.GetM(0.0f));
+    }
+    prefer_tb = prefer_tb || is_tb;
+  }
+
+  // The parent's bounds are flipped from the children (-max(U), -max(L))
+  // aggregated as if it was a single child (forced move) of the same bound.
+  //       Loss (-1,-1) -> ( 1, 1) Win
+  //  Can't Win (-1, 0) -> ( 0, 1) Can't Lose
+  //    Regular (-1, 1) -> (-1, 1) Regular
+  //       Draw ( 0, 0) -> ( 0, 0) Draw
+  // Can't Lose ( 0, 1) -> (-1, 0) Can't Win
+  //        Win ( 1, 1) -> (-1,-1) Loss
+
+  // Nothing left to do for ancestors if the parent would be a regular node.
+  if (lower == GameResult::BLACK_WON && upper == GameResult::WHITE_WON) {
+    return false;
+  } else if (lower == upper) {
+    // Search can stop at the parent if the bounds can't change anymore, so make
+    // it terminal preferring shorter wins and longer losses.
+    p->MakeTerminal(
+        -upper,
+        (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
+        prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+  } else {
+    p->SetBounds(-upper, -lower);
+  }
+
+  // Bounds were set, so indicate we should check the parent too.
+  return true;
+}
 
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~

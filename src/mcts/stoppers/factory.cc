@@ -31,6 +31,7 @@
 
 #include "factory.h"
 #include "mcts/stoppers/legacy.h"
+#include "mcts/stoppers/smooth.h"
 #include "mcts/stoppers/stoppers.h"
 #include "utils/exception.h"
 
@@ -70,6 +71,9 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   if (managers[0] == "legacy") {
     time_manager =
         MakeLegacyTimeManager(move_overhead, tm_options.GetSubdict("legacy"));
+  } else if (managers[0] == "smooth-experimental") {
+    time_manager = MakeSmoothTimeManager(
+        move_overhead, tm_options.GetSubdict("smooth-experimental"));
   }
   if (!time_manager) {
     throw Exception("Unknown time manager: [" + managers[0] + "]");

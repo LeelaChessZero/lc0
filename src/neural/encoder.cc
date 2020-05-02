@@ -181,7 +181,7 @@ InputPlanes EncodePositionForNN(
     } else {
       if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
     }
-    result[kAuxPlaneBase + 5].Fill(history.Last().GetNoCaptureNoPawnPly());
+    result[kAuxPlaneBase + 5].Fill(history.Last().GetRule50Ply());
     // Plane kAuxPlaneBase + 6 used to be movecount plane, now it's all zeros.
     // Plane kAuxPlaneBase + 7 is all ones to help NN find board edges.
     result[kAuxPlaneBase + 7].SetAll();
@@ -245,7 +245,7 @@ InputPlanes EncodePositionForNN(
     if (history_idx > 0) flip = !flip;
     // If no capture no pawn is 0, the previous was start of game, capture or
     // pawn push, so no need to go back further if stopping early.
-    if (stop_early && position.GetNoCaptureNoPawnPly() == 0) break;
+    if (stop_early && position.GetRule50Ply() == 0) break;
   }
   if (transform != NoTransform) {
     // Transform all masks.
