@@ -67,6 +67,10 @@ class Class(FunctionContainer):
                 gen_function_name=self.constructor_name(),
                 self_type=self.object_struct_name())
 
+    def GenerateForwardDeclarations(self, w):
+        w.Write(f'struct {self.object_struct_name()};')
+        w.Write(f'extern PyTypeObject {self.type_object_name()};')
+
     def Generate(self, w, module):
         # Object type.
         w.Open(f'struct {self.object_struct_name()} {{')
@@ -186,6 +190,8 @@ class Module(FunctionContainer):
         w.Write('\nnamespace {')
         for cls in self.exceptions:
             cls.Generate(w)
+        for cls in self.classes:
+            cls.GenerateForwardDeclarations(w)
         for cls in self.classes:
             cls.Generate(w, self)
         self._generate_functions(w)

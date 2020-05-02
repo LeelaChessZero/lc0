@@ -108,6 +108,9 @@ class Input {
     CheckPlaneExists(plane);
     return data_[plane].value;
   }
+  std::unique_ptr<Input> clone() const {
+    return std::make_unique<Input>(data_);
+  }
 
   // Not exported.
   const InputPlanes GetPlanes() const { return data_; }

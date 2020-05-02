@@ -69,6 +69,7 @@ input.AddMethod('mask').AddParameter(NumericParameter('plane')).AddRetVal(
     NumericRetVal('u64')).AddEx(ex)
 input.AddMethod('val').AddParameter(NumericParameter('plane')).AddRetVal(
     NumericRetVal('f32')).AddEx(ex)
+input.AddMethod('clone').AddRetVal(ObjOwnerRetval(input))
 
 # Output class
 output = mod.AddClass(
