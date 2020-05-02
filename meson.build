@@ -552,7 +552,7 @@ endif
 
 if get_option('python_bindings')
   pymod = import('python')
-  python = pymod.find_installation('python3', modules:['pybindgen'])
+  python = pymod.find_installation('python3')
   py_bindings_generator = find_program('scripts/gen_py_bindings.py')
 
   gen_py_bindings = custom_target('backends', input:[], output:['backends.cc'],
