@@ -72,16 +72,16 @@ __device__ __forceinline__ void multiply_bt(T *o0, T *o1, T *o2, T *o3,
                                             T *o4, T *o5, T i0, T i1, T i2,
                                             T i3, T i4, T i5) {
     // Calculates o = Bt.i
-    *o0 = 4 * i0 -5 * i2 + i4;
-    T t13 = -4 * i1 + i3;
-    T t24 = -4 * i2 + i4;
+    *o0 = 4.0f * i0 -5.0f * i2 + i4;
+    T t13 = -4.0f * i1 + i3;
+    T t24 = -4.0f * i2 + i4;
     *o1 = t13 + t24;
     *o2 = -t13 + t24;
-    T t13_2 = -2 * i1 + 2 * i3;
+    T t13_2 = -2.0f * i1 + 2.0f * i3;
     T t24_2 = -i2 + i4;
     *o3 = t13_2 + t24_2;
     *o4 = -t13_2 + t24_2;
-    *o5 = 4 * i1 - 5 * i3 + i5;
+    *o5 = 4.0f * i1 - 5.0f * i3 + i5;
 }
 
 // At = {{1, 1,  1, 1,  1, 0},
@@ -99,9 +99,9 @@ __device__ __forceinline__ void multiply_at(T *o0, T *o1, T *o2, T *o3,
     T t3p4 = i3 + i4;
     T t3m4 = i3 - i4;
     *o0 = i0 + t1p2 + t3p4;
-    *o1 = t1m2 + 2*t3m4;
-    *o2 = t1p2 + 4*t3p4;
-    *o3 = t1m2 + 8*t3m4 + i5;
+    *o1 = t1m2 + 2.0f * t3m4;
+    *o2 = t1p2 + 4.0f * t3p4;
+    *o3 = t1m2 + 8.0f * t3m4 + i5;
 }
 
 template <typename T>
