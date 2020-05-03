@@ -40,7 +40,7 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
-#define DEBUG_RAW_NPS
+//#define DEBUG_RAW_NPS
 
 namespace lczero {
 using namespace cudnn_backend;
@@ -387,7 +387,7 @@ class CudnnNetwork : public Network {
         cudnn_, xDesc, wDesc, convDesc, xDesc, conv_algo, &scratch_size_));
 
     // Have some minumum as we also use this for transforming weights.
-    size_t max_weight_size = 128 * 1024 * 1024;
+    int max_weight_size = 128 * 1024 * 1024;
 
     // parts from scratch allocation are suballocated to hold various weights
     // and biases when transforming winograd weights (one layer at a time), 128
