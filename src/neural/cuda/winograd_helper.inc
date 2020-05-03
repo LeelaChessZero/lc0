@@ -60,21 +60,45 @@ __device__ __forceinline__ void FilterTransform4x4(T* transformed_filter,
   matrixMul_gpu_serial<T, 6, 6, 3>(transformed_filter, temp_filter, Gt);
 }
 
+// Bt = {{4,  0, -5,  0, 1, 0},
+//       {0, -4, -4,  1, 1, 0},
+//       {0,  4, -4, -1, 1, 0},
+//       {0, -2, -1,  2, 1, 0},
+//       {0,  2, -1, -2, 1, 0},
+//       {0,  4,  0, -5, 0, 1}};
+
+
 template <typename T>
-__device__ __forceinline__ void InputTransform4x4(T* transformedInput,
+__device__ __forceinline__ void multiply_bt(T *o0, T *o1, T *o2, T *o3,
+    T *o4, T *o5, T i0, T i1, T i2, T i3, T i4, T i5) {
+
+    // o = Bt.i
+    *o0 = 4 * i0 -5 * i2 + i4;
+    T t13 = -4 * i1 + i3;
+    T t24 = -4 * i2 + i4;
+    *o1 = t13 + t24;
+    *o2 = -t13 + t24;
+    T t13_2 = -2 * i1 + 2 * i3;
+    T t24_2 = -i2 + i4;
+    *o3 = t13_2 + t24_2;
+    *o4 = -t13_2 + t24_2;
+    *o5 = 4 * i1 - 5 * i3 + i5;
+}
+
+template <typename T>
+__device__ __forceinline__ void InputTransform4x4(T* out,
                                                   const T* input) {
-  // transform applied to input tile (of size 4x4)
-  const T Bt[6 * 6] = {4, 0, -5, 0,  1, 0, 0, -4, -4, 1,  1, 0,
-                       0, 4, -4, -1, 1, 0, 0, -2, -1, 2,  1, 0,
-                       0, 2, -1, -2, 1, 0, 0, 4,  0,  -5, 0, 1};
+  // Calculate Bt.input.B as Bt.(Bt.(input)^T)^T.
+  T T1[6][6];
+  for (int i = 0; i < 6; i++) {
+      multiply_bt<T>(&(T1[0][i]), &(T1[1][i]), &(T1[2][i]), &(T1[3][i]), &(T1[4][i]), &(T1[5][i]),
+          input[i * 6 + 0], input[i * 6 + 1], input[i * 6 + 2], input[i * 6 + 3], input[i * 6 + 4], input[i * 6 + 5]);
+  }
 
-  const T B[6 * 6] = {4,  0,  0,  0,  0,  0, 0, -4, 4,  -2, 2,  4,
-                      -5, -4, -4, -1, -1, 0, 0, 1,  -1, 2,  -2, -5,
-                      1,  1,  1,  1,  1,  0, 0, 0,  0,  0,  0,  1};
-
-  T tempIp1[6 * 6];
-  matrixMul_gpu_serial<T, 6, 6, 6>(tempIp1, Bt, input);
-  matrixMul_gpu_serial<T, 6, 6, 6>(transformedInput, tempIp1, B);
+  for (int i = 0; i < 6; i++) {
+      multiply_bt<T>(&(out[6*i + 0]), &(out[6*i + 1]), &(out[6*i + 2]), &(out[6*i + 3]), &(out[6*i + 4]), &(out[6*i + 5]),
+          T1[i][0], T1[i][1], T1[i][2], T1[i][3], T1[i][4], T1[i][5]);
+  }
 }
 
 template <typename T>
@@ -171,7 +195,7 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
     for (int y = 0; y < 6; y++)
 #pragma unroll
       for (int x = 0; x < 6; x++)
-        output[TEMP_INDEX_HWNC(y, x, n * 4 + 0, c)] = inEl[y][x];
+        output[TEMP_INDEX_HWNC(y, x, n * 4 + 0, c)] = inEl[x][y];
   }
 
   // top-right
@@ -190,7 +214,7 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
     for (int y = 0; y < 6; y++)
 #pragma unroll
       for (int x = 0; x < 6; x++)
-        output[TEMP_INDEX_HWNC(y, x, n * 4 + 1, c)] = inEl[y][x];
+        output[TEMP_INDEX_HWNC(y, x, n * 4 + 1, c)] = inEl[x][y];
   }
 
   // bottom-left
@@ -209,7 +233,7 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
     for (int y = 0; y < 6; y++)
 #pragma unroll
       for (int x = 0; x < 6; x++)
-        output[TEMP_INDEX_HWNC(y, x, n * 4 + 2, c)] = inEl[y][x];
+        output[TEMP_INDEX_HWNC(y, x, n * 4 + 2, c)] = inEl[x][y];
   }
 
   // bottom-right
@@ -228,7 +252,7 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
     for (int y = 0; y < 6; y++)
 #pragma unroll
       for (int x = 0; x < 6; x++)
-        output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[y][x];
+        output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[x][y];
   }
 }
 
