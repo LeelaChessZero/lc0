@@ -319,7 +319,10 @@ class CudnnNetwork : public Network {
       CERR << "Low video memory detected. You may run into OOM errors. Please "
               "consider using a smaller network.";
     }
-    if (use_custom_winograd_ &&
+
+    const bool custom_winograd_override = !options.IsDefault<bool>("custom_winograd");
+
+    if (!custom_winograd_override && use_custom_winograd_ &&
         transformed_residual_weight_size > 0.5 * deviceProp.totalGlobalMem) {
       CERR << "WARNING: Low GPU video memory. Turning off custom_winograd "
               "path. You may still run into OOM errors. "
@@ -328,7 +331,7 @@ class CudnnNetwork : public Network {
     }
     
     // Override if set in backend-opts.
-    if (!options.IsDefault<bool>("custom_winograd"))
+    if (custom_winograd_override)
       use_custom_winograd_ = options.Get<bool>("custom_winograd");
     
     if (use_custom_winograd_ &&
