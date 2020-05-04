@@ -23,7 +23,7 @@ git clone -b release/0.25 --recurse-submodules https://github.com/LeelaChessZero
 If you have cloned already an old version, fetch, view and checkout a new branch:
 ```
 git fetch --all
-git git branch --all
+git branch --all
 git checkout -t remotes/origin/release/0.25
 ```
 
