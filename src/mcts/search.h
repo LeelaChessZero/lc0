@@ -135,7 +135,7 @@ class Search {
   std::vector<std::string> GetVerboseStats(Node* node) const;
 
   // Returns NN eval for a given node from cache, if that node is cached.
-  NNCacheLock GetCachedNNEval(Node* node) const;
+  NNCacheLock GetCachedNNEval(const Node* node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.

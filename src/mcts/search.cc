@@ -284,77 +284,94 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                    b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff));
       });
 
-  std::vector<std::string> infos;
-  for (const auto& edge : edges) {
-    std::ostringstream oss;
-    oss << std::fixed;
-
-    oss << std::left << std::setw(5)
-        << edge.GetMove(is_black_to_move).as_string();
-    
-    float Q = edge.GetQ(fpu, draw_score, logit_q);
-    float M_effect = do_moves_left_adjustment 
-        ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
-            std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q)) 
-        : 0.0f;
-
-    // TODO: should this be displaying transformed index?
-    oss << " (" << std::setw(4) << edge.GetMove().as_nn_index(0) << ")";
-
-    oss << " N: " << std::right << std::setw(7) << edge.GetN() << " (+"
-        << std::setw(2) << edge.GetNInFlight() << ") ";
-
-    oss << "(P: " << std::setw(5) << std::setprecision(2) << edge.GetP() * 100
-        << "%) ";
-
-    // Default value here assumes user knows to ignore this field when N is 0.
-    oss << "(WL: " << std::setw(8) << std::setprecision(5) << edge.GetWL(0.0f)
-        << ") ";
-
-    // Default value here assumes user knows to ignore this field when N is 0.
-    oss << "(D: " << std::setw(6) << std::setprecision(3) << edge.GetD(0.0f)
-        << ") ";
-
-    // Default value here assumes user knows to ignore this field when N is 0.
-    oss << "(M: " << std::setw(4) << std::setprecision(1) << edge.GetM(0.0f)
-        << ") ";
-
-    oss << "(Q: " << std::setw(8) << std::setprecision(5)
-        << edge.GetQ(fpu, draw_score, /* logit_q= */ false) << ") ";
-
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
-        << ") ";
-
-    oss << "(S: " << std::setw(8) << std::setprecision(5)
-        << Q + edge.GetU(U_coeff) + M_effect << ") ";
-
-    oss << "(V: ";
-    std::optional<float> v;
-    if (edge.IsTerminal()) {
-      v = edge.node()->GetQ(draw_score);
+  auto print_head = [&](auto* oss, auto label, auto i, auto n, auto f, auto p) {
+    *oss << std::fixed << std::setw(5) << label;
+    *oss << " (" << std::setw(4) << i << ")";
+    *oss << " N: " << std::right << std::setw(7) << n << " (+" << std::setw(2)
+         << f << ") ";
+    *oss << "(P: " << std::setw(5) << std::setprecision(2) << p * 100 << "%) ";
+  };
+  auto print_stats = [&](auto* oss, const auto* n) {
+    const auto sign = n == node ? -1 : 1;
+    if (n) {
+      *oss << "(WL: " << std::setw(8) << std::setprecision(5)
+           << sign * n->GetWL() << ") ";
+      *oss << "(D: " << std::setw(5) << std::setprecision(3) << n->GetD()
+           << ") ";
+      *oss << "(M: " << std::setw(4) << std::setprecision(1) << n->GetM()
+           << ") ";
+      *oss << "(Q: " << std::setw(8) << std::setprecision(5)
+           << sign * n->GetQ(sign * draw_score) << ") ";
     } else {
-      NNCacheLock nneval = GetCachedNNEval(edge.node());
+      *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
+      *oss << "(Q: " << std::setw(8) << std::setprecision(5) << fpu << ") ";
+    }
+  };
+  auto print_tail = [&](auto* oss, const auto* n) {
+    const auto sign = n == node ? -1 : 1;
+    *oss << "(V: ";
+    std::optional<float> v;
+    if (n && n->IsTerminal()) {
+      v = n->GetQ(sign * draw_score);
+    } else {
+      NNCacheLock nneval = GetCachedNNEval(n);
       if (nneval) v = -nneval->q;
     }
     if (v) {
-      oss << std::setw(7) << std::setprecision(4) << *v;
+      *oss << std::setw(7) << std::setprecision(4) << sign * *v;
     } else {
-      oss << " -.----";
+      *oss << " -.----";
     }
-    oss << ") ";
+    *oss << ") ";
 
-    const auto [edge_lower, edge_upper] = edge.GetBounds();
-    oss << (edge_lower == edge_upper
-                ? "(T) "
-                : edge_lower == GameResult::DRAW &&
-                          edge_upper == GameResult::WHITE_WON
-                      ? "(W) "
-                      : edge_lower == GameResult::BLACK_WON &&
-                                edge_upper == GameResult::DRAW
-                            ? "(L) "
-                            : "");
+    if (n) {
+      auto [lo, up] = n->GetBounds();
+      if (sign == -1) {
+        lo = -lo;
+        up = -up;
+        std::swap(lo, up);
+      }
+      *oss << (lo == up
+                   ? "(T) "
+                   : lo == GameResult::DRAW && up == GameResult::WHITE_WON
+                         ? "(W) "
+                         : lo == GameResult::BLACK_WON && up == GameResult::DRAW
+                               ? "(L) "
+                               : "");
+    }
+  };
+
+  std::vector<std::string> infos;
+  for (const auto& edge : edges) {
+    float Q = edge.GetQ(fpu, draw_score, logit_q);
+    float M_effect =
+        do_moves_left_adjustment
+            ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
+               std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q))
+            : 0.0f;
+
+    std::ostringstream oss;
+    oss << std::left;
+    // TODO: should this be displaying transformed index?
+    print_head(&oss, edge.GetMove(is_black_to_move).as_string(),
+               edge.GetMove().as_nn_index(0), edge.GetN(), edge.GetNInFlight(),
+               edge.GetP());
+    print_stats(&oss, edge.node());
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
+        << ") ";
+    oss << "(S: " << std::setw(8) << std::setprecision(5)
+        << Q + edge.GetU(U_coeff) + M_effect << ") ";
+    print_tail(&oss, edge.node());
     infos.emplace_back(oss.str());
   }
+
+  // Include stats about the node in similar format to its children above.
+  std::ostringstream oss;
+  print_head(&oss, "node ", node->GetNumEdges(), node->GetN(),
+             node->GetNInFlight(), node->GetVisitedPolicy());
+  print_stats(&oss, node);
+  print_tail(&oss, node);
+  infos.emplace_back(oss.str());
   return infos;
 }
 
@@ -384,7 +401,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
   }
 }
 
-NNCacheLock Search::GetCachedNNEval(Node* node) const {
+NNCacheLock Search::GetCachedNNEval(const Node* node) const {
   if (!node) return {};
 
   std::vector<Move> moves;
