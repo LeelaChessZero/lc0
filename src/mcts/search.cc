@@ -284,32 +284,31 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                    b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff));
       });
 
+  auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
+    *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
+  };
   auto print_head = [&](auto* oss, auto label, auto i, auto n, auto f, auto p) {
-    *oss << std::fixed << std::setw(5) << label;
-    *oss << " (" << std::setw(4) << i << ")";
-    *oss << " N: " << std::right << std::setw(7) << n << " (+" << std::setw(2)
-         << f << ") ";
-    *oss << "(P: " << std::setw(5) << std::setprecision(2) << p * 100 << "%) ";
+    *oss << std::fixed;
+    print(oss, "", label, " ", 5);
+    print(oss, "(", i, ") ", 4);
+    *oss << std::right;
+    print(oss, "N: ", n, " ", 7);
+    print(oss, "(+", f, ") ", 2);
+    print(oss, "(P: ", p * 100, "%) ", 5, 2);
   };
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
     if (n) {
-      *oss << "(WL: " << std::setw(8) << std::setprecision(5)
-           << sign * n->GetWL() << ") ";
-      *oss << "(D: " << std::setw(5) << std::setprecision(3) << n->GetD()
-           << ") ";
-      *oss << "(M: " << std::setw(4) << std::setprecision(1) << n->GetM()
-           << ") ";
-      *oss << "(Q: " << std::setw(8) << std::setprecision(5)
-           << sign * n->GetQ(sign * draw_score) << ") ";
+      print(oss, "(WL: ", sign * n->GetWL(), ") ", 8, 5);
+      print(oss, "(D: ", n->GetD(), ") ", 5, 3);
+      print(oss, "(M: ", n->GetM(), ") ", 4, 1);
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
-      *oss << "(Q: " << std::setw(8) << std::setprecision(5) << fpu << ") ";
     }
+    print(oss, "(Q: ", n ? sign * n->GetQ(sign * draw_score) : fpu, ") ", 8, 5);
   };
   auto print_tail = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
-    *oss << "(V: ";
     std::optional<float> v;
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
@@ -318,11 +317,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       if (nneval) v = -nneval->q;
     }
     if (v) {
-      *oss << std::setw(7) << std::setprecision(4) << sign * *v;
+      print(oss, "(V: ", sign * *v, ") ", 7, 4);
     } else {
-      *oss << " -.----";
+      *oss << "(V:  -.----) ";
     }
-    *oss << ") ";
 
     if (n) {
       auto [lo, up] = n->GetBounds();
@@ -357,10 +355,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                edge.GetMove().as_nn_index(0), edge.GetN(), edge.GetNInFlight(),
                edge.GetP());
     print_stats(&oss, edge.node());
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << edge.GetU(U_coeff)
-        << ") ";
-    oss << "(S: " << std::setw(8) << std::setprecision(5)
-        << Q + edge.GetU(U_coeff) + M_effect << ") ";
+    print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
+    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M_effect, ") ", 8, 5);
     print_tail(&oss, edge.node());
     infos.emplace_back(oss.str());
   }
