@@ -40,6 +40,8 @@ Backend support includes (in theory) any CBLAS-compatible library for CPU usage,
 
 Finally, lc0 requires a compiler supporting C++17. Minimal versions seem to be g++ v8.0, clang v5.0 (with C++17 stdlib) or Visual Studio 2017.
 
+*Note* that cuda checks the compiler version and stops even with newer compilers, and to work around this we have added the `nvcc_ccbin` build option. This is more of an issue with new Linux versions, where we recommend to install `g++-7` and add `-Dnvcc_ccbin=g++-7` to the `build.sh` command.
+
 Given those basics, the OS and backend specific instructions are below.
 
 ### Linux
