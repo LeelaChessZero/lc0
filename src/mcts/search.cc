@@ -342,11 +342,21 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   std::vector<std::string> infos;
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score, logit_q);
-    float M_effect =
-        do_moves_left_adjustment
-            ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
-               std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q))
-            : 0.0f;
+    float ML_utility = 0.0f;
+    if (do_moves_left_adjustment) {
+      float M = edge.GetM(0.0f);
+      float mlu_static = Q * FastLogistic2(-mlu_steepness * M);
+      ML_utility = mlu_static_c * mlu_static;
+      if (mlu_dynamic_c > 0.0f) {
+        Node* root_parent_ = root_node_->GetParent();
+        uint16_t depth = is_root ? 1 : 2;
+        float M0 = (root_parent_ == nullptr) ?
+            m_initial : root_parent_->GetM();
+        float mlu_dynamic = Q * FastLogistic2(-mlu_steepness *
+            (M - (M0 - depth) * m_center_scale));
+        ML_utility += mlu_dynamic_c * mlu_dynamic;
+      }
+    }
 
     std::ostringstream oss;
     oss << std::left;
@@ -356,7 +366,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                edge.GetP());
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
-    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M_effect, ") ", 8, 5);
+    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + ML_utility, ") ", 8, 5);
     print_tail(&oss, edge.node());
     infos.emplace_back(oss.str());
   }
