@@ -87,10 +87,17 @@ bool ConfigFile::Init(OptionsParser* options) {
   // If filename is an empty string then return true.  This is to override
   // loading the default configuration file.
   if (filename == "") return true;
-
-  if (filename.at(0) != '/') {
-    filename = CommandLine::BinaryDirectory() + "/" + filename;
-  }
+  
+  // If an absolute path has been given, do not change filename.
+  #ifdef _WIN32
+    if (filename.at(1) != ':') {
+      filename = CommandLine::BinaryDirectory() + "/" + filename;
+    }
+  #else
+    if (filename.at(0) != '/') {
+      filename = CommandLine::BinaryDirectory() + "/" + filename;
+    }
+  #endif
 
   // Parses the file into the arguments_ vector.
   if (!ParseFile(filename, options)) return false;
