@@ -88,7 +88,9 @@ bool ConfigFile::Init(OptionsParser* options) {
   // loading the default configuration file.
   if (filename == "") return true;
 
-  filename = CommandLine::BinaryDirectory() + "/" + filename;
+  if (filename.at(0) != '/') {
+    filename = CommandLine::BinaryDirectory() + "/" + filename;
+  }
 
   // Parses the file into the arguments_ vector.
   if (!ParseFile(filename, options)) return false;
