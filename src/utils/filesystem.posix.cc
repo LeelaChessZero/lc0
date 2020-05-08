@@ -27,6 +27,7 @@
 
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "utils/commandline.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -121,6 +122,15 @@ std::string GetUserDataDirectory() {
   const char *home = std::getenv("HOME");
   if (home == NULL) return std::string();
   return std::string(home) + "/" + kLocalDir;
+}
+
+std::string GetFilePath(std::string& filename) {
+  // If the filename is relative, then prepend the binary directory.
+  // If absolute, then return the string unchanged.
+  if (filename.at(0) != '/') {
+    filename = CommandLine::BinaryDirectory() + "/" + filename;
+  }
+  return filename;
 }
 
 }  // namespace lczero

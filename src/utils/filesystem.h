@@ -59,4 +59,8 @@ std::string GetUserConfigDirectory();
 // stored or an empty string if unspecified.
 std::string GetUserDataDirectory();
 
+// Returns an absolute path, either by prepending the binary directory
+// to a relative path, or leaving the absolute path given unchanged.
+std::string GetFilePath(std::string& filename);
+
 }  // namespace lczero

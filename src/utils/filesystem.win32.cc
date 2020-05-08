@@ -27,6 +27,7 @@
 
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "utils/commandline.h"
 
 #include <windows.h>
 #undef CreateDirectory
@@ -81,6 +82,15 @@ std::string GetUserConfigDirectory() {
 
 std::string GetUserDataDirectory() {
   return std::string();
+}
+
+std::string GetFilePath(std::string& filename) {
+  // If the filename is relative, then prepend the binary directory.
+  // If absolute, then return the string unchanged.
+  if (filename.PathIsRelativeA()) {
+    filename = CommandLine::BinaryDirectory() + "/" + filename;
+  }
+  return filename;
 }
 
 }  // namespace lczero

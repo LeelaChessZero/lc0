@@ -29,9 +29,9 @@
 
 #include <fstream>
 #include <sstream>
-#include <filesystem>
 
 #include "utils/commandline.h"
+#include "utils/filesystem.h"
 #include "utils/logging.h"
 #include "utils/optionsparser.h"
 #include "utils/string.h"
@@ -76,7 +76,14 @@ std::string ConfigFile::ProcessConfigFlag(
       }
     }
   }
-  return filename;
+  // If the filename is empty, then return it. Otherwise, convert
+  // it to an absolute path.
+  if (filename == "") {
+    return filename;
+  } else {
+    // Converts to an absolute path, which depends on the host filesystem.
+    return GetFilePath(filename);
+  }
 }
 
 bool ConfigFile::Init(OptionsParser* options) {
@@ -88,11 +95,6 @@ bool ConfigFile::Init(OptionsParser* options) {
   // If filename is an empty string then return true.  This is to override
   // loading the default configuration file.
   if (filename == "") return true;
-  
-  // If an absolute path has been given, do not change filename.
-  if (std::filesystem::path(filename).is_relative()) {
-    filename = CommandLine::BinaryDirectory() + "/" + filename;
-  }
 
   // Parses the file into the arguments_ vector.
   if (!ParseFile(filename, options)) return false;
