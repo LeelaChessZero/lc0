@@ -29,6 +29,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 
 #include "utils/commandline.h"
 #include "utils/logging.h"
@@ -81,7 +82,7 @@ std::string ConfigFile::ProcessConfigFlag(
 bool ConfigFile::Init(OptionsParser* options) {
   arguments_.clear();
 
-  // Get the relative path from the config file parameter.
+  // Get the path from the config file parameter.
   std::string filename = ProcessConfigFlag(CommandLine::Arguments());
 
   // If filename is an empty string then return true.  This is to override
@@ -89,15 +90,9 @@ bool ConfigFile::Init(OptionsParser* options) {
   if (filename == "") return true;
   
   // If an absolute path has been given, do not change filename.
-  #ifdef _WIN32
-    if (filename.at(1) != ':') {
-      filename = CommandLine::BinaryDirectory() + "/" + filename;
-    }
-  #else
-    if (filename.at(0) != '/') {
-      filename = CommandLine::BinaryDirectory() + "/" + filename;
-    }
-  #endif
+  if (std::filesystem::path(filename).is_relative()) {
+    filename = CommandLine::BinaryDirectory() + "/" + filename;
+  }
 
   // Parses the file into the arguments_ vector.
   if (!ParseFile(filename, options)) return false;
