@@ -394,7 +394,7 @@ class EdgeAndNode {
     auto visits = GetN();
     auto visits_parent = node_ ? node_->GetParent()->GetN() : 0;
     auto psa = GetP();
-    return ( april_factor > 0.0 )
+    return ( ( april_factor > 0.0 ) || ( april_factor_parent > 0.0 ) )
       ? ( psa > 0.0f
         ? 1.0f / ( 1.0f + (1.0f / psa - 1.0f) *
             FastInvSqrt( 1.0f + april_factor * visits +
