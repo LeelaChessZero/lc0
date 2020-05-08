@@ -1436,6 +1436,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                     node_to_process->probability_transform)));
   }
   float total = 0.0;
+  int counter = 0;
   for (auto edge : node->Edges()) {
     float p = computation_->GetPVal(
         idx_in_computation,
@@ -1444,16 +1445,15 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
-    // Note that p now lies in [0, 1], so it is safe to store it in compressed
-    // format. Normalization happens later.
-    edge.edge()->SetP(p);
+    intermediate_[counter++] = p;
     // Edge::SetP does some rounding, so only add to the total after rounding.
-    total += edge.edge()->GetP();
+    total += p;
   }
+  counter = 0;
   // Normalize P values to add up to 1.0.
   if (total > 0.0f) {
     const float scale = 1.0f / total;
-    for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
+    for (auto edge : node->Edges()) edge.edge()->SetP(intermediate_[counter++] * scale);
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
