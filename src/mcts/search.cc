@@ -1453,6 +1453,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (total > 0.0f) {
     const float scale = 1.0f / total;
     for (auto edge : node->Edges()) edge.edge()->SetP(intermediate_[counter++] * scale);
+  } else {
+    for (auto edge : node->Edges()) edge.edge()->SetP(intermediate_[counter++]);
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {

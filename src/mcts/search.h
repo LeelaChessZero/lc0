@@ -328,7 +328,7 @@ class SearchWorker {
   const bool moves_left_support_;
   IterationStats iteration_stats_;
   StoppersHints latest_time_manager_hints_;
-  // Intermediate array to store values when processing policy temperature decay.
+  // Intermediate array to store values when processing policy.
   // According to a lichess developer post:
   // https://lichess.org/blog/Wqa7GiAAAOIpBLoY/
   //     developer-update-275-improved-game-compression
