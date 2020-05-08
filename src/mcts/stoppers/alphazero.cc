@@ -35,7 +35,7 @@ class AlphazeroStopper : public TimeLimitStopper {
  public:
   AlphazeroStopper(int64_t deadline_ms, int64_t* time_piggy_bank)
       : TimeLimitStopper(deadline_ms), time_piggy_bank_(time_piggy_bank) {}
-  virtual void OnSearchDone(const IterationStats& stats) override {
+  void OnSearchDone(const IterationStats& stats) override {
     *time_piggy_bank_ += GetTimeLimitMs() - stats.time_since_movestart;
   }
 
