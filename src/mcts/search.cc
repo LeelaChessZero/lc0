@@ -1234,6 +1234,13 @@ void SearchWorker::ExtendNode(Node* node) {
     }
   }
 
+  // A lonely king cannot mate, so indicate that with restricted bounds.
+  if (board.ours().count() < 2) {
+    node->SetBounds(GameResult::DRAW, GameResult::WHITE_WON);
+  } else if (board.theirs().count() < 2) {
+    node->SetBounds(GameResult::BLACK_WON, GameResult::DRAW);
+  }
+
   // Add legal moves as edges of this node.
   node->CreateEdges(legal_moves);
 }
@@ -1501,9 +1508,11 @@ void SearchWorker::DoBackupUpdateSingleNode(
     return;
   }
 
-  // For the first visit to a terminal, maybe update parent bounds too.
+  // For the first visit to a bounded node, maybe update parent bounds too.
+  const auto [lower, upper] = node->GetBounds();
   auto update_parent_bounds =
-      params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
+      params_.GetStickyEndgames() && !node->GetN() &&
+      (lower > GameResult::BLACK_WON || upper < GameResult::WHITE_WON);
 
   // Backup V value up to a root. After 1 visit, V = Q.
   float v = node_to_process.v;
