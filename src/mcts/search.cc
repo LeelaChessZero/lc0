@@ -1446,7 +1446,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
     intermediate_[counter++] = p;
-    // Edge::SetP does some rounding, so only add to the total after rounding.
     total += p;
   }
   counter = 0;
