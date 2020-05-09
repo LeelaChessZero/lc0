@@ -251,6 +251,14 @@ class Node {
   // to smallest.
 
   // 8 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
+  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  double wl_ = 0.0f;
+
+  // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
   // Pointer to a parent node. nullptr for the root.
@@ -262,13 +270,6 @@ class Node {
   // Cached pointer to best child, valid while n_in_flight <
   // best_child_cache_in_flight_limit_
   Node* best_child_cached_ = nullptr;
-
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  // WL stands for "W minus L". Is equal to Q if draw score is 0.
-  double wl_ = 0.0f;
 
   // 4 byte fields.
   // Averaged draw probability. Works similarly to WL, except that D is not
