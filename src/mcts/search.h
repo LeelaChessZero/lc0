@@ -173,9 +173,11 @@ class Search {
   const PositionHistory& played_history_;
 
   Network* const network_;
+  const SearchParams params_;
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
+  const MoveList root_move_filter_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
@@ -196,7 +198,6 @@ class Search {
       GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
-  const SearchParams params_;
 
   friend class SearchWorker;
 };
@@ -320,8 +321,6 @@ class SearchWorker {
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
-  MoveList root_move_filter_;
-  bool root_move_filter_populated_ = false;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
