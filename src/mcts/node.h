@@ -251,7 +251,7 @@ class Node {
   // to smallest.
 
   // 8 byte fields.
-  // Adday of edges.
+  // Array of edges.
   std::unique_ptr<Edge[]> edges_;
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
