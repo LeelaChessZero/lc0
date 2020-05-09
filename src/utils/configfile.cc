@@ -76,14 +76,7 @@ std::string ConfigFile::ProcessConfigFlag(
       }
     }
   }
-  // If the filename is empty, then return it. Otherwise, convert
-  // it to an absolute path.
-  if (filename == "") {
-    return filename;
-  } else {
-    // Converts to an absolute path, which depends on the host filesystem.
-    return GetFilePath(filename);
-  }
+  return filename;
 }
 
 bool ConfigFile::Init(OptionsParser* options) {
@@ -92,9 +85,19 @@ bool ConfigFile::Init(OptionsParser* options) {
   // Get the path from the config file parameter.
   std::string filename = ProcessConfigFlag(CommandLine::Arguments());
 
-  // If filename is an empty string then return true.  This is to override
+  // If filename is an empty string then return true. This is to override
   // loading the default configuration file.
   if (filename == "") return true;
+
+  // Check to see if we are using the default config file or not.
+  const bool using_default_config = 
+      filename == std::string(kDefaultConfigFile);
+
+  // If no logfile was set on the command line, then the default is
+  // to check in the binary directory.
+  if (using_default_config) {
+    filename = CommandLine::BinaryDirectory() + "/" + filename;
+  }
 
   // Parses the file into the arguments_ vector.
   if (!ParseFile(filename, options)) return false;
@@ -106,14 +109,10 @@ bool ConfigFile::ParseFile(const std::string& filename,
                            OptionsParser* options) {
   std::ifstream input(filename);
 
-  // Check to see if we are using the default config file or not.
-  OptionsDict dict = options->GetOptionsDict();
-  const bool using_default_config = dict.IsDefault<std::string>(kConfigFileId);
-
   if (!input.is_open()) {
     // It is okay if we cannot open the default file since it is normal
-    // for it to not exist.
-    if (using_default_config) return true;
+    // for it to not exist. Check it is default by comparing to <default>.
+    if (filename == std::string(kDefaultConfigFile)) return true;
 
     CERR << "Could not open configuration file: " << filename;
     return false;
