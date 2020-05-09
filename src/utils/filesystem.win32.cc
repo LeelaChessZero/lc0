@@ -30,6 +30,7 @@
 #include "utils/commandline.h"
 
 #include <windows.h>
+#include <shlwapi.h>
 #undef CreateDirectory
 
 namespace lczero {
