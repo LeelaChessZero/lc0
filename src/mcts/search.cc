@@ -47,6 +47,28 @@ namespace lczero {
 namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
+
+MoveList MakeRootMoveFilter(const MoveList& searchmoves,
+                            SyzygyTablebase* syzygy_tb,
+                            const PositionHistory& history, bool fast_play,
+                            std::atomic<int>* tb_hits) {
+  // Search moves overrides tablebase.
+  if (!searchmoves.empty()) return searchmoves;
+  const auto& board = history.Last().GetBoard();
+  MoveList root_moves;
+  if (!syzygy_tb || !board.castlings().no_legal_castle() ||
+      (board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality()) {
+    return root_moves;
+  }
+  if (syzygy_tb->root_probe(
+          history.Last(), fast_play || history.DidRepeatSinceLastZeroingMove(),
+          &root_moves) ||
+      syzygy_tb->root_probe_wdl(history.Last(), &root_moves)) {
+    tb_hits->fetch_add(1, std::memory_order_acq_rel);
+  }
+  return root_moves;
+}
+
 }  // namespace
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -63,11 +85,14 @@ Search::Search(const NodeTree& tree, Network* network,
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
       network_(network),
+      params_(options),
       searchmoves_(searchmoves),
       start_time_(start_time),
       initial_visits_(root_node_->GetN()),
-      uci_responder_(std::move(uci_responder)),
-      params_(options) {
+      root_move_filter_(
+          MakeRootMoveFilter(searchmoves_, syzygy_tb_, played_history_,
+                             params_.GetSyzygyFastPlay(), &tb_hits_)),
+      uci_responder_(std::move(uci_responder)) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
@@ -476,25 +501,6 @@ std::int64_t Search::GetTotalPlayouts() const {
   return total_playouts_;
 }
 
-bool Search::PopulateRootMoveLimit(MoveList* root_moves) const {
-  // Search moves overrides tablebase.
-  if (!searchmoves_.empty()) {
-    *root_moves = searchmoves_;
-    return false;
-  }
-  auto board = played_history_.Last().GetBoard();
-  if (!syzygy_tb_ || !board.castlings().no_legal_castle() ||
-      (board.ours() | board.theirs()).count() > syzygy_tb_->max_cardinality()) {
-    return false;
-  }
-  return syzygy_tb_->root_probe(
-             played_history_.Last(),
-             params_.GetSyzygyFastPlay() ||
-                 played_history_.DidRepeatSinceLastZeroingMove(),
-             root_moves) ||
-         syzygy_tb_->root_probe_wdl(played_history_.Last(), root_moves);
-}
-
 void Search::ResetBestMove() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
@@ -522,8 +528,9 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     if (moves >= decay_delay_moves + decay_moves) {
       temperature = 0.0;
     } else if (moves >= decay_delay_moves) {
-      temperature *= static_cast<float>
-        (decay_delay_moves + decay_moves - moves) / decay_moves;
+      temperature *=
+          static_cast<float>(decay_delay_moves + decay_moves - moves) /
+          decay_moves;
     }
     // don't allow temperature to decay below endgame temperature
     if (temperature < params_.GetTemperatureEndgame()) {
@@ -543,10 +550,6 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                                                               int count,
                                                               int depth) const {
-  MoveList root_limit;
-  if (parent == root_node_) {
-    PopulateRootMoveLimit(&root_limit);
-  }
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
   // Best child is selected using the following criteria:
@@ -557,9 +560,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   //   * If that number is larger than 0, the one with larger eval wins.
   std::vector<EdgeAndNode> edges;
   for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !root_limit.empty() &&
-        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
+    if (parent == root_node_ && !root_move_filter_.empty() &&
+        std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                  edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
     edges.push_back(edge);
@@ -648,8 +651,6 @@ EdgeAndNode Search::GetBestChildNoTemperature(Node* parent, int depth) const {
 EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   // Root is at even depth.
   const float draw_score = GetDrawScore(/* is_odd_depth= */ false);
-  MoveList root_limit;
-  PopulateRootMoveLimit(&root_limit);
 
   std::vector<float> cumulative_sums;
   float sum = 0.0;
@@ -660,8 +661,9 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
       GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
 
   for (auto edge : root_node_->Edges()) {
-    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
-                                         edge.GetMove()) == root_limit.end()) {
+    if (!root_move_filter_.empty() &&
+        std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                  edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
     if (edge.GetN() + offset > max_n) {
@@ -677,8 +679,9 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   const float min_eval =
       max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
   for (auto edge : root_node_->Edges()) {
-    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
-                                         edge.GetMove()) == root_limit.end()) {
+    if (!root_move_filter_.empty() &&
+        std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                  edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
     if (edge.GetQ(fpu, draw_score, /* logit_q= */ false) < min_eval) continue;
@@ -695,8 +698,9 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
       cumulative_sums.begin();
 
   for (auto edge : root_node_->Edges()) {
-    if (!root_limit.empty() && std::find(root_limit.begin(), root_limit.end(),
-                                         edge.GetMove()) == root_limit.end()) {
+    if (!root_move_filter_.empty() &&
+        std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                  edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
     if (edge.GetQ(fpu, draw_score, /* logit_q= */ false) < min_eval) continue;
@@ -902,13 +906,6 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
   minibatch_.clear();
-
-  if (!root_move_filter_populated_) {
-    root_move_filter_populated_ = true;
-    if (search_->PopulateRootMoveLimit(&root_move_filter_)) {
-      search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-    }
-  }
 }
 
 // 2. Gather minibatch.
@@ -1021,6 +1018,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   bool is_root_node = true;
   const float even_draw_score = search_->GetDrawScore(false);
   const float odd_draw_score = search_->GetDrawScore(true);
+  const auto& root_move_filter = search_->root_move_filter_;
   uint16_t depth = 0;
   bool node_already_updated = true;
 
@@ -1096,9 +1094,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           continue;
         }
         // If root move filter exists, make sure move is in the list.
-        if (!root_move_filter_.empty() &&
-            std::find(root_move_filter_.begin(), root_move_filter_.end(),
-                      child.GetMove()) == root_move_filter_.end()) {
+        if (!root_move_filter.empty() &&
+            std::find(root_move_filter.begin(), root_move_filter.end(),
+                      child.GetMove()) == root_move_filter.end()) {
           continue;
         }
       }
