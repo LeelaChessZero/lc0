@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 
 #  This file is part of Leela Chess Zero.
 #  Copyright (C) 2020 The LCZero Authors
