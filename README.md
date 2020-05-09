@@ -9,7 +9,7 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 
 Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
 
-For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.24`), which is equivalent to using the latest version tag.
+For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.25`), which is equivalent to using the latest version tag.
 
 Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the versions output by the client and engine.
 
@@ -17,8 +17,16 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 Download using git:
 
 ```
-git clone -b release/0.24 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+git clone -b release/0.25 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
 ```
+
+If you have cloned already an old version, fetch, view and checkout a new branch:
+```
+git fetch --all
+git branch --all
+git checkout -t remotes/origin/release/0.25
+```
+
 
 If you prefer to download an archive, you need to also download and place the submodule:
  * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.24) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.24) archive is also available)
