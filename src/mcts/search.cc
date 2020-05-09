@@ -48,13 +48,24 @@ namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 
-MoveList MakeRootMoveFilter(const MoveList& searchmoves,
-                            SyzygyTablebase* syzygy_tb,
+MoveList MakeRootMoveFilter(MoveList searchmoves, SyzygyTablebase* syzygy_tb,
                             const PositionHistory& history, bool fast_play,
                             std::atomic<int>* tb_hits) {
   // Search moves overrides tablebase.
-  if (!searchmoves.empty()) return searchmoves;
   const auto& board = history.Last().GetBoard();
+  if (!searchmoves.empty()) {
+    const auto legal_moves = board.GenerateLegalMoves();
+    searchmoves.erase(std::remove_if(searchmoves.begin(), searchmoves.end(),
+                                     [&legal_moves](auto m) {
+                                       return std::find(legal_moves.begin(),
+                                                        legal_moves.end(),
+                                                        m) == legal_moves.end();
+                                     }),
+                      searchmoves.end());
+    if (searchmoves.empty()) throw Exception("No legal searchmoves.");
+    return searchmoves;
+  }
+
   MoveList root_moves;
   if (!syzygy_tb || !board.castlings().no_legal_castle() ||
       (board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality()) {
