@@ -121,10 +121,6 @@ class Search {
   // uci `stop` command;
   void WatchdogThread();
 
-  // Populates the given list with allowed root moves.
-  // Returns true if the population came from tablebase.
-  bool PopulateRootMoveLimit(MoveList* root_moves) const;
-
   // Fills IterationStats with global (rather than per-thread) portion of search
   // statistics. Currently all stats there (in IterationStats) are global
   // though.
