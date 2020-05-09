@@ -194,8 +194,8 @@ void Node::CreateEdges(const MoveList& moves) {
   num_edges_ = moves.size();
 }
 
-Node::ConstIterator Node::Edges() const { return {this, &child_}; }
-Node::Iterator Node::Edges() { return {this, &child_}; }
+Node::ConstIterator Node::Edges() const { return {*this, &child_}; }
+Node::Iterator Node::Edges() { return {*this, &child_}; }
 
 float Node::GetVisitedPolicy() const { return visited_policy_; }
 

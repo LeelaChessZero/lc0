@@ -433,12 +433,10 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator() {}
 
   // Creates "begin()" iterator. Also happens to be a range constructor.
-  Edge_Iterator(const Node* parent_ptr, Ptr child_ptr)
-      : EdgeAndNode(
-            parent_ptr->num_edges_ != 0 ? parent_ptr->edges_.get() : nullptr,
-            nullptr),
+  Edge_Iterator(const Node& parent_node, Ptr child_ptr)
+      : EdgeAndNode(parent_node.edges_.get(), nullptr),
         node_ptr_(child_ptr),
-        total_count_(parent_ptr->num_edges_) {
+        total_count_(parent_node.num_edges_) {
     if (edge_) Actualize();
   }
 
