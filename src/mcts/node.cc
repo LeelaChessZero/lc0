@@ -167,14 +167,11 @@ std::string Edge::DebugString() const {
   return oss.str();
 }
 
-/////////////////////////////////////////////////////////////////////////
-// EdgeList
-/////////////////////////////////////////////////////////////////////////
-
-EdgeList::EdgeList(MoveList moves)
-    : edges_(std::make_unique<Edge[]>(moves.size())), size_(moves.size()) {
-  auto* edge = edges_.get();
-  for (const auto move : moves) edge++->SetMove(move);
+std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
+  std::unique_ptr<Edge[]> edges = std::make_unique<Edge[]>(moves.size());
+  auto* edge = edges.get();
+  for (const auto move : moves) edge++->move_ = move;
+  return edges;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -184,7 +181,8 @@ EdgeList::EdgeList(MoveList moves)
 Node* Node::CreateSingleChildNode(Move move) {
   assert(!edges_);
   assert(!child_);
-  edges_ = EdgeList({move});
+  edges_ = Edge::FromMovelist({move});
+  num_edges_ = 1;
   child_ = std::make_unique<Node>(this, 0);
   return child_.get();
 }
@@ -192,17 +190,18 @@ Node* Node::CreateSingleChildNode(Move move) {
 void Node::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   assert(!child_);
-  edges_ = EdgeList(moves);
+  edges_ = Edge::FromMovelist(moves);
+  num_edges_ = moves.size();
 }
 
-Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
-Node::Iterator Node::Edges() { return {edges_, &child_}; }
+Node::ConstIterator Node::Edges() const { return {*this, &child_}; }
+Node::Iterator Node::Edges() { return {*this, &child_}; }
 
 float Node::GetVisitedPolicy() const { return visited_policy_; }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
-  assert(node->index_ < edges_.size());
+  assert(node->index_ < num_edges_);
   return &edges_[node->index_];
 }
 
@@ -214,7 +213,7 @@ std::string Node::DebugString() const {
       << " Parent:" << parent_ << " Index:" << index_
       << " Child:" << child_.get() << " Sibling:" << sibling_.get()
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " Edges:" << edges_.size()
+      << " Edges:" << num_edges_
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
   return oss.str();
@@ -326,7 +325,10 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Make saved node the only child. (kills previous siblings).
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
-  if (!child_) edges_ = EdgeList();  // Clear edges list.
+  if (!child_) {
+    num_edges_ = 0;
+    edges_.reset();  // Clear edges list.
+  }
 }
 
 V5TrainingData Node::GetV5TrainingData(
