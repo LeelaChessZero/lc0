@@ -48,10 +48,10 @@ namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 
-MoveList GetRootMoveFilter(const MoveList& searchmoves,
-                           SyzygyTablebase* syzygy_tb,
-                           const PositionHistory& history, bool fast_play,
-                           std::atomic<int>* tb_hits) {
+MoveList MakeRootMoveFilter(const MoveList& searchmoves,
+                            SyzygyTablebase* syzygy_tb,
+                            const PositionHistory& history, bool fast_play,
+                            std::atomic<int>* tb_hits) {
   // Search moves overrides tablebase.
   if (!searchmoves.empty()) return searchmoves;
   const auto& board = history.Last().GetBoard();
@@ -90,8 +90,8 @@ Search::Search(const NodeTree& tree, Network* network,
       start_time_(start_time),
       initial_visits_(root_node_->GetN()),
       root_move_filter_(
-          GetRootMoveFilter(searchmoves_, syzygy_tb_, played_history_,
-                            params_.GetSyzygyFastPlay(), &tb_hits_)),
+          MakeRootMoveFilter(searchmoves_, syzygy_tb_, played_history_,
+                             params_.GetSyzygyFastPlay(), &tb_hits_)),
       uci_responder_(std::move(uci_responder)) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
@@ -1018,6 +1018,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   bool is_root_node = true;
   const float even_draw_score = search_->GetDrawScore(false);
   const float odd_draw_score = search_->GetDrawScore(true);
+  const auto& root_move_filter = search_->root_move_filter_;
   uint16_t depth = 0;
   bool node_already_updated = true;
 
@@ -1093,10 +1094,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           continue;
         }
         // If root move filter exists, make sure move is in the list.
-        if (!search_->root_move_filter_.empty() &&
-            std::find(search_->root_move_filter_.begin(),
-                      search_->root_move_filter_.end(),
-                      child.GetMove()) == search_->root_move_filter_.end()) {
+        if (!root_move_filter.empty() &&
+            std::find(root_move_filter.begin(), root_move_filter.end(),
+                      child.GetMove()) == root_move_filter.end()) {
           continue;
         }
       }
