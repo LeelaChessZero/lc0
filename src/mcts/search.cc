@@ -50,7 +50,8 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 
 MoveList GetRootMoveFilter(const MoveList& searchmoves,
                            SyzygyTablebase* syzygy_tb,
-                           const PositionHistory& history, bool fast_play) {
+                           const PositionHistory& history, bool fast_play,
+                           std::atomic<int>* tb_hits) {
   // Search moves overrides tablebase.
   if (!searchmoves.empty()) return searchmoves;
   const auto& board = history.Last().GetBoard();
@@ -59,10 +60,12 @@ MoveList GetRootMoveFilter(const MoveList& searchmoves,
       (board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality()) {
     return root_moves;
   }
-  syzygy_tb->root_probe(history.Last(),
-                        fast_play || history.DidRepeatSinceLastZeroingMove(),
-                        &root_moves) ||
-      syzygy_tb->root_probe_wdl(history.Last(), &root_moves);
+  if (syzygy_tb->root_probe(
+          history.Last(), fast_play || history.DidRepeatSinceLastZeroingMove(),
+          &root_moves) ||
+      syzygy_tb->root_probe_wdl(history.Last(), &root_moves)) {
+    tb_hits->fetch_add(1, std::memory_order_acq_rel);
+  }
   return root_moves;
 }
 
@@ -86,9 +89,9 @@ Search::Search(const NodeTree& tree, Network* network,
       searchmoves_(searchmoves),
       start_time_(start_time),
       initial_visits_(root_node_->GetN()),
-      root_move_filter_(GetRootMoveFilter(searchmoves_, syzygy_tb_,
-                                          played_history_,
-                                          params_.GetSyzygyFastPlay())),
+      root_move_filter_(
+          GetRootMoveFilter(searchmoves_, syzygy_tb_, played_history_,
+                            params_.GetSyzygyFastPlay(), &tb_hits_)),
       uci_responder_(std::move(uci_responder)) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
