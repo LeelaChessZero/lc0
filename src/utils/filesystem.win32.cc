@@ -85,13 +85,4 @@ std::string GetUserDataDirectory() {
   return std::string();
 }
 
-std::string GetFilePath(std::string& filename) {
-  // If the filename is relative, then prepend the binary directory.
-  // If absolute, then return the string unchanged.
-  if (PathIsRelativeA(filename.c_str())) {
-    filename = CommandLine::BinaryDirectory() + "/" + filename;
-  }
-  return filename;
-}
-
 }  // namespace lczero

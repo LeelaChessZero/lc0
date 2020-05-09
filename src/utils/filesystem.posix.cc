@@ -124,13 +124,4 @@ std::string GetUserDataDirectory() {
   return std::string(home) + "/" + kLocalDir;
 }
 
-std::string GetFilePath(std::string& filename) {
-  // If the filename is relative, then prepend the binary directory.
-  // If absolute, then return the string unchanged.
-  if (filename.at(0) != '/') {
-    filename = CommandLine::BinaryDirectory() + "/" + filename;
-  }
-  return filename;
-}
-
 }  // namespace lczero
