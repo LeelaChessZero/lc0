@@ -27,7 +27,6 @@
 
 #include "utils/exception.h"
 #include "utils/filesystem.h"
-#include "utils/commandline.h"
 
 #include <dirent.h>
 #include <errno.h>

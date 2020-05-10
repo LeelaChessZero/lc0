@@ -31,7 +31,6 @@
 #include <sstream>
 
 #include "utils/commandline.h"
-#include "utils/filesystem.h"
 #include "utils/logging.h"
 #include "utils/optionsparser.h"
 #include "utils/string.h"
