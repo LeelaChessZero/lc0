@@ -1524,6 +1524,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Nothing left to do without ancestors to update.
     if (!p) break;
 
+    bool old_update_parent_bounds = update_parent_bounds;
+
     // Try setting parent bounds except the root or those already terminal.
     update_parent_bounds = update_parent_bounds && p != search_->root_node_ &&
                            !p->IsTerminal() && MaybeSetBounds(p, m);
@@ -1535,14 +1537,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Update the stats.
     // Best move.
-    // If update_parent_bounds is still set, we just adjusted bounds on the
+    // If update_parent_bounds was set, we just adjusted bounds on the
     // previous loop or there was no previous loop, so if n is a terminal, it
     // just became that way and could be a candidate for changing the current
     // best edge. Otherwise a visit can only change best edge if its to an edge
     // that isn't already the best and the new n is equal or greater to the old
     // n.
     if (p == search_->root_node_ &&
-        (update_parent_bounds && n->IsTerminal() ||
+        (old_update_parent_bounds && n->IsTerminal() ||
          n != search_->current_best_edge_.node() &&
              search_->current_best_edge_.GetN() <= n->GetN())) {
       search_->current_best_edge_ =
