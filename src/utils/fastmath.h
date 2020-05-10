@@ -82,4 +82,10 @@ inline float FastLogit(const float a) {
   return 0.5f * FastLog((1.0f + a) / (1.0f - a));
 }
 
+// Fast approximate a^x.
+inline float FastPow(const float base, const float power) {
+  if (base <= 0.0) return 0.0;
+  return FastExp(FastLog(base) * power);
+}
+
 }  // namespace lczero
