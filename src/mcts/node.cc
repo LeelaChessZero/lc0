@@ -232,6 +232,9 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
   } else if (result == GameResult::BLACK_WON) {
     wl_ = -1.0f;
     d_ = 0.0f;
+    // Terminal losses have no uncertainty and no reason for their U value to be
+    // comparable to another non-loss choice. Force this by clearing the policy.
+    if (GetParent() != nullptr) GetOwnEdge()->SetP(0.0f);
   }
 }
 
