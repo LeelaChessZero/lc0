@@ -308,7 +308,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         return std::forward_as_tuple(
                    a.GetN(),
                    a.GetQ(fpu, draw_score, logit_q) +
-                   a.GetU(U_coeff, policy_factor, policy_factor_parent), policy_exponent) <
+                   a.GetU(U_coeff, policy_factor, policy_factor_parent, policy_exponent)) <
                std::forward_as_tuple(
                    b.GetN(),
                    b.GetQ(fpu, draw_score, logit_q) +
