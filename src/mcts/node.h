@@ -386,7 +386,7 @@ class EdgeAndNode {
     return ( ( policy_factor > 0.0 ) || ( policy_factor_parent > 0.0 ) )
       ? ( psa > 0.0f
         ? 1.0f / ( 1.0f + (1.0f / psa - 1.0f) *
-            std::pow( 1.0f + policy_factor * visits +
+            FastPow( 1.0f + policy_factor * visits +
                           policy_factor_parent * visits_parent, policy_exponent )
           )
         : 0.0f )
