@@ -286,6 +286,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const bool logit_q = params_.GetLogitQ();
+  const float april_factor = params_.GetAprilFactor();
+  const float april_factor_parent = params_.GetAprilFactorParent();
   const float m_slope = params_.GetMovesLeftSlope();
   const float m_cap = params_.GetMovesLeftMaxEffect();
   const float a = params_.GetMovesLeftConstantFactor();
@@ -300,13 +302,16 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
 
   std::sort(
       edges.begin(), edges.end(),
-      [&fpu, &U_coeff, &logit_q, &draw_score](EdgeAndNode a, EdgeAndNode b) {
+      [&fpu, &U_coeff, &logit_q, &draw_score, &april_factor,
+                &april_factor_parent](EdgeAndNode a, EdgeAndNode b) {
         return std::forward_as_tuple(
                    a.GetN(),
-                   a.GetQ(fpu, draw_score, logit_q) + a.GetU(U_coeff)) <
+                   a.GetQ(fpu, draw_score, logit_q) + a.GetU(U_coeff,
+                                     april_factor, april_factor_parent)) <
                std::forward_as_tuple(
                    b.GetN(),
-                   b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff));
+                   b.GetQ(fpu, draw_score, logit_q) + b.GetU(U_coeff,
+                                     april_factor, april_factor_parent));
       });
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
@@ -380,8 +385,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                edge.GetMove().as_nn_index(0), edge.GetN(), edge.GetNInFlight(),
                edge.GetP());
     print_stats(&oss, edge.node());
-    print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
-    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M_effect, ") ", 8, 5);
+    print(&oss, "(U: ", edge.GetU(U_coeff,
+            params_.GetAprilFactor(), params_.GetAprilFactorParent()), ") ", 6, 5);
+    print(&oss, "(S: ", Q + edge.GetU(U_coeff,
+            params_.GetAprilFactor(), params_.GetAprilFactorParent()) + M_effect, ") ", 8, 5);
     print_tail(&oss, edge.node());
     infos.emplace_back(oss.str());
   }
@@ -1118,7 +1125,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         M *= a + b * std::abs(Q) + c * Q * Q;
       }
 
-      const float score = child.GetU(puct_mult) + Q + M;
+      const float score = child.GetU(puct_mult, params_.GetAprilFactor(),
+                              params_.GetAprilFactorParent()) + Q + M;
+
       if (score > best) {
         second_best = best;
         second_best_edge = best_edge;
@@ -1133,7 +1142,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     if (second_best_edge) {
       int estimated_visits_to_change_best =
-          best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u);
+          best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u,
+                      params_.GetAprilFactor(), params_.GetAprilFactorParent());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
@@ -1355,7 +1365,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult) -
+    scores.emplace_back(-edge.GetU(puct_mult, params_.GetAprilFactor(),
+                               params_.GetAprilFactorParent()) -
                             edge.GetQ(fpu, draw_score, /* logit_q= */ false),
                         edge);
   }
@@ -1391,7 +1402,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       const float q = edge.GetQ(-fpu, draw_score, /* logit_q= */ false);
       if (next_score > q) {
         budget_to_spend =
-            std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
+            std::min(budget, int(edge.GetPApril(params_.GetAprilFactor(),
+            params_.GetAprilFactorParent()) * puct_mult / (next_score - q) -
                                  edge.GetNStarted()) +
                                  1);
       } else {
