@@ -33,8 +33,6 @@ namespace {
 
 class AlphazeroStopper : public TimeLimitStopper {
  public:
-  AlphazeroStopper(int64_t deadline_ms, int64_t* time_piggy_bank)
-      : TimeLimitStopper(deadline_ms), time_piggy_bank_(time_piggy_bank) {}
   void OnSearchDone(const IterationStats& stats) override {
     *time_piggy_bank_ += GetTimeLimitMs() - stats.time_since_movestart;
   }
@@ -47,18 +45,17 @@ class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        alphazerotimevalue_(params.GetOrDefault<float>("alphazero-time-value", 20.0f)),
-        spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)) {}
+        alphazerotimepct_(params.GetOrDefault<float>("alphazero-time-pct", 5.0f)) {
+    if (alphazerotimepct_ < 1.0f || alphazerotimepct_ > 99.0f) 
+      throw Exception("alphazero-time-pct value to be in range [1.0, 99.0]");
+    }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
  private:
   const int64_t move_overhead_;
-  const float alphazerotimevalue_;
-  const float spend_saved_time_;
-  // No need to be atomic as only one thread will update it.
-  int64_t time_spared_ms_ = 0;
-};
+  const float alphazerotimepct_;
+ };
 
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
     const GoParams& params, const NodeTree& tree) {
@@ -74,7 +71,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   auto total_moves_time = *time + increment - move_overhead_;
   
   // use the increment in the first upcoming move
-  float this_move_time = increment + (total_moves_time / alphazerotimevalue_);
+  float this_move_time = increment + (total_moves_time / (100.0f / alphazerotimepct_));
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
           << "Remaining time " << *time
@@ -83,7 +80,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   // Make sure we don't exceed current time limit with what we calculated.
   auto deadline =
       std::min(static_cast<int64_t>(this_move_time), *time + increment - move_overhead_);
-  return std::make_unique<AlphazeroStopper>(deadline, &time_spared_ms_);
+  return std::make_unique<TimeLimitStopper>(deadline);
 }
 
 }  // namespace
