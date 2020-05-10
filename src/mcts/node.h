@@ -378,15 +378,16 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
-  float GetPApril(float april_factor, float april_factor_parent) const {
+  float GetPApril(float policy_factor, float policy_factor_parent,
+                  float policy_exponent) const {
     auto visits = GetN();
     auto visits_parent = node_ ? node_->GetParent()->GetN() : 0;
     auto psa = GetP();
-    return ( ( april_factor > 0.0 ) || ( april_factor_parent > 0.0 ) )
+    return ( ( policy_factor > 0.0 ) || ( policy_factor_parent > 0.0 ) )
       ? ( psa > 0.0f
         ? 1.0f / ( 1.0f + (1.0f / psa - 1.0f) *
-            FastInvSqrt( 1.0f + april_factor * visits +
-                          april_factor_parent * visits_parent )
+            std::pow( 1.0f + policy_factor * visits +
+                          policy_factor_parent * visits_parent, policy_exponent )
           )
         : 0.0f )
       : psa ; }
@@ -396,16 +397,23 @@ class EdgeAndNode {
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator, float april_factor, float april_factor_parent) const {
-    return numerator * GetPApril(april_factor, april_factor_parent) / (1 + GetNStarted());
+  float GetU(float numerator, float policy_factor, float policy_factor_parent,
+             float policy_exponent) const {
+    return numerator * GetPApril(policy_factor, policy_factor_parent, policy_exponent)
+      / (1 + GetNStarted());
   }
 
   int GetVisitsToReachU(float target_score, float numerator, float score_without_u,
-                         float april_factor, float april_factor_parent) const {
+                        float policy_factor, float policy_factor_parent,
+                        float policy_exponent) const {
     if (score_without_u >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
-    return std::max(1.0f, std::min(std::floor(GetPApril(april_factor, april_factor_parent)
-                    * numerator / (target_score - score_without_u) - n1) + 1,
+    const auto p = GetPApril(policy_factor, policy_factor_parent, policy_exponent)
+    return std::max(1.0f,
+                    std::min(std::floor(p * numerator /
+                                            (target_score - score_without_u) -
+                                        n1) +
+                                   1,
                              1e9f));
   }
 
