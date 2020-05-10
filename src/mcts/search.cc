@@ -1408,9 +1408,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       const float q = edge.GetQ(-fpu, draw_score, /* logit_q= */ false);
       if (next_score > q) {
         budget_to_spend =
-            std::min(budget, int(edge.GetPPolicy(params_.GetPolicyFactor(),
-                                                params_.GetPolicyFactorParent(),
-                                                params_.GetPolicyExponent()) *
+            std::min(budget, int(edge.GetPEffect(params_.GetPolicyFactor(),
+                                                 params_.GetPolicyFactorParent(),
+                                                 params_.GetPolicyExponent()) *
                      puct_mult / (next_score - q) - edge.GetNStarted()) + 1);
       } else {
         budget_to_spend = budget;
