@@ -57,14 +57,17 @@ const OptionId SearchParams::kLogitQId{
     "logit-q", "LogitQ",
     "Apply logit to Q when determining Q+U best child. This makes the U term "
     "less dominant when Q is near -1 or +1."};
-const OptionId SearchParams::kAprilFactorId{
-    "april-factor", "AprilFactor",
+const OptionId SearchParams::kPolicyFactorId{
+    "policy-factor", "PolicyFactor",
     "Decides how fast Policies will increase with number of node visits. "
     "Using CPuctFactor = 0 and CPuctFactorAtRoot = 0 is recommended."};
-const OptionId SearchParams::kAprilFactorParentId{
-    "april-factor-parent", "AprilFactorParent",
+const OptionId SearchParams::kPolicyFactorParentId{
+    "policy-factor-parent", "PolicyFactorParent",
     "Decides how fast Policies will increase with number of parent node visits. "
     "Using CPuctFactor = 0 and CPuctFactorAtRoot = 0 is recommended."};
+const OptionId SearchParams::kPolicyExponentId{
+    "policy-exponent", "PolicyExponent",
+    "Sets the rate Policies will increase to 1."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -272,8 +275,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
-  options->Add<FloatOption>(kAprilFactorId, 0.0f, 10.0f) = 1.0f;
-  options->Add<FloatOption>(kAprilFactorParentId, 0.0f, 10.0f) = 0.001f;
+  options->Add<FloatOption>(kPolicyFactorId, 0.0f, 10.0f) = 1.0f;
+  options->Add<FloatOption>(kPolicyFactorParentId, 0.0f, 10.0f) = 0.001f;
+  options->Add<FloatOption>(kPllicyExponendId, 0.0f, 10.0f) = 0.5f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
@@ -353,8 +357,9 @@ void SearchParams::Populate(OptionsParser* options) {
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kLogitQ(options.Get<bool>(kLogitQId)),
-      kAprilFactor(options.Get<float>(kAprilFactorId)),
-      kAprilFactorParent(options.Get<float>(kAprilFactorParentId)),
+      kPolicyFactor(options.Get<float>(kPolicyFactorId)),
+      kPolicyFactorParent(options.Get<float>(kPolicyFactorParentId)),
+      kPolicyExponent(options.Get<float>(kPolicyExponentId)),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
