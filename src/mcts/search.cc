@@ -1535,8 +1535,16 @@ void SearchWorker::DoBackupUpdateSingleNode(
 
     // Update the stats.
     // Best move.
+    // If update_parent_bounds is still set, we just adjusted bounds on the
+    // previous loop or there was no previous loop, so if n is a terminal, it
+    // just became that way and could be a candidate for changing the current
+    // best edge. Otherwise a visit can only change best edge if its to an edge
+    // that isn't already the best and the new n is equal or greater to the old
+    // n.
     if (p == search_->root_node_ &&
-        search_->current_best_edge_.GetN() <= n->GetN()) {
+        (update_parent_bounds && n->IsTerminal() ||
+         n != search_->current_best_edge_.node() &&
+             search_->current_best_edge_.GetN() <= n->GetN())) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }
