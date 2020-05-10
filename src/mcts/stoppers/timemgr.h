@@ -48,6 +48,7 @@ struct IterationStats {
   int64_t batches_since_movestart = 0;
   int average_depth = 0;
   std::vector<uint32_t> edge_n;
+  bool win_found = false;
 };
 
 // Hints from stoppers back to the search engine. Currently include:

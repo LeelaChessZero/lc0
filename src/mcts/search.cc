@@ -754,6 +754,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->edge_n.clear();
   for (const auto& edge : root_node_->Edges()) {
     stats->edge_n.push_back(edge.GetN());
+    if (edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) stats->win_found = true;
   }
 }
 
