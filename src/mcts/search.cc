@@ -1435,6 +1435,12 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                 edge.GetMove().as_nn_index(
                                     node_to_process->probability_transform)));
   }
+  // Intermediate array to store values when processing policy.
+  // According to a lichess developer post:
+  // https://lichess.org/blog/Wqa7GiAAAOIpBLoY/
+  //     developer-update-275-improved-game-compression
+  // there are never more than 256 valid legal moves in any legal position.
+  float intermediate[256];
   float total = 0.0;
   int counter = 0;
   for (auto edge : node->Edges()) {
@@ -1445,16 +1451,14 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
-    intermediate_[counter++] = p;
+    intermediate[counter++] = p;
     total += p;
   }
   counter = 0;
   // Normalize P values to add up to 1.0.
-  if (total > 0.0f) {
-    const float scale = 1.0f / total;
-    for (auto edge : node->Edges()) edge.edge()->SetP(intermediate_[counter++] * scale);
-  } else {
-    for (auto edge : node->Edges()) edge.edge()->SetP(intermediate_[counter++]);
+  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
+  for (auto edge : node->Edges()) {
+    edge.edge()->SetP(intermediate[counter++] * scale);
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
