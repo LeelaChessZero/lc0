@@ -66,9 +66,15 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
   MoveList result;
-  result.reserve(moves.size());
-  for (const auto& move : moves) {
-    result.emplace_back(board.GetModernMove({move, board.flipped()}));
+  if (moves.size()) {
+    result.reserve(moves.size());
+    const auto legal_moves = board.GenerateLegalMoves();
+    const auto end = legal_moves.end();
+    for (const auto& move : moves) {
+      const auto m = board.GetModernMove({move, board.flipped()});
+      if (std::find(legal_moves.begin(), end, m) != end) result.emplace_back(m);
+    }
+    if (result.empty()) throw Exception("No legal searchmoves.");
   }
   return result;
 }
