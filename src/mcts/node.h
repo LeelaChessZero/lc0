@@ -408,7 +408,7 @@ class EdgeAndNode {
                         float policy_exponent) const {
     if (score_without_u >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
-    const auto p = GetPEffect(policy_factor, policy_factor_parent, policy_exponent)
+    const auto p = GetPEffect(policy_factor, policy_factor_parent, policy_exponent);
     return std::max(1.0f,
                     std::min(std::floor(p * numerator /
                                             (target_score - score_without_u) -
