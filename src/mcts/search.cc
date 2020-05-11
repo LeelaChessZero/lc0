@@ -35,6 +35,7 @@
 #include <iterator>
 #include <sstream>
 #include <thread>
+#include <array>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
