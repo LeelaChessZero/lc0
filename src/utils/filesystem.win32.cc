@@ -29,7 +29,6 @@
 #include "utils/filesystem.h"
 
 #include <windows.h>
-
 #undef CreateDirectory
 
 namespace lczero {
