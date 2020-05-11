@@ -29,27 +29,39 @@
 #include "winograd_transform_ispc.h"
 #endif
 
-namespace lczero {
+#include <Eigen/Dense>
 
-WinogradConvolution3::WinogradConvolution3(const size_t max_batch_size,
-                                           const size_t max_input_layers,
-                                           const size_t max_output_layers)
+namespace lczero {
+template <typename T>
+using EigenMatrixMap =
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+template <typename T>
+using ConstEigenMatrixMap =
+    Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+
+template <bool use_eigen>
+WinogradConvolution3<use_eigen>::WinogradConvolution3(
+    const size_t max_batch_size, const size_t max_input_layers,
+    const size_t max_output_layers)
     : V_(max_batch_size * kWinogradTile * max_input_layers * kTiles),
       M_(max_batch_size * kWinogradTile * max_output_layers * kTiles) {}
 
-void WinogradConvolution3::Forward(const size_t batch_size,
-                                   const size_t input_channels,
-                                   const size_t output_channels,
-                                   const float* input, const float* weights,
-                                   float* output) {
+template <bool use_eigen>
+void WinogradConvolution3<use_eigen>::Forward(const size_t batch_size,
+                                              const size_t input_channels,
+                                              const size_t output_channels,
+                                              const float* input,
+                                              const float* weights,
+                                              float* output) {
   TransformIn(batch_size, input, input_channels);
   Sgemm(batch_size, weights, input_channels, output_channels);
   TransformOut(batch_size, output, output_channels);
 }
 
-void WinogradConvolution3::TransformIn(const size_t batch_size,
-                                       const float* input,
-                                       const size_t channels) {
+template <bool use_eigen>
+void WinogradConvolution3<use_eigen>::TransformIn(const size_t batch_size,
+                                                  const float* input,
+                                                  const size_t channels) {
 #ifndef USE_ISPC
 
   static const size_t kCacheSize = 128;
@@ -148,9 +160,12 @@ void WinogradConvolution3::TransformIn(const size_t batch_size,
 #endif  // USE_ISPC
 }
 
-void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
-                                 const size_t input_channels,
-                                 const size_t output_channels) {
+#ifdef USE_BLAS
+template <>
+void WinogradConvolution3<false>::Sgemm(const size_t batch_size,
+                                        const float* weights,
+                                        const size_t input_channels,
+                                        const size_t output_channels) {
 #ifdef USE_MKL
 
   /*
@@ -206,7 +221,6 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
 
     auto offset_v = b * batch_size * input_channels * kTiles;
     auto offset_m = b * batch_size * output_channels * kTiles;
-
     cblas_sgemm(CblasColMajor,               // Row major format
                 CblasNoTrans,                // A no trans
                 CblasNoTrans,                // B no trans
@@ -221,12 +235,32 @@ void WinogradConvolution3::Sgemm(const size_t batch_size, const float* weights,
                 &M_[offset_m],               // M
                 (int)output_channels);       // ldM
   }
-
 #endif
 }
+#endif
 
-void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
-                                        const size_t channels) {
+template <>
+void WinogradConvolution3<true>::Sgemm(const size_t batch_size,
+                                       const float* weights,
+                                       const size_t input_channels,
+                                       const size_t output_channels) {
+  for (size_t b = 0; b < kWinogradTile; b++) {
+    auto offset_u = b * output_channels * input_channels;
+    auto offset_v = b * batch_size * input_channels * kTiles;
+    auto offset_m = b * batch_size * output_channels * kTiles;
+    auto C_mat = EigenMatrixMap<float>(&M_[offset_m], output_channels,
+                                       batch_size * kTiles);
+    C_mat.noalias() = ConstEigenMatrixMap<float>(
+                          &weights[offset_u], output_channels, input_channels) *
+                      ConstEigenMatrixMap<float>(&V_[offset_v], input_channels,
+                                                 batch_size * kTiles);
+  }
+}
+
+template <bool use_eigen>
+void WinogradConvolution3<use_eigen>::TransformOut(const size_t batch_size,
+                                                   float* output,
+                                                   const size_t channels) {
 #ifndef USE_ISPC
 
   float m[kWinogradTile];
@@ -291,4 +325,8 @@ void WinogradConvolution3::TransformOut(const size_t batch_size, float* output,
 #endif  // USE_ISPC
 }
 
+template class WinogradConvolution3<true>;
+#ifdef USE_BLAS
+template class WinogradConvolution3<false>;
+#endif
 }  // namespace lczero

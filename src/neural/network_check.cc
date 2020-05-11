@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2020 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -97,6 +97,10 @@ class CheckComputation : public NetworkComputation {
     return work_comp_->GetDVal(sample);
   }
 
+  float GetMVal(int sample) const override {
+    return work_comp_->GetMVal(sample);
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return work_comp_->GetPVal(sample, move_id);
   }
@@ -107,18 +111,18 @@ class CheckComputation : public NetworkComputation {
 
   void CheckOnly() const {
     bool valueAlmostEqual = true;
-    int size = GetBatchSize();
+    const int size = GetBatchSize();
     for (int i = 0; i < size && valueAlmostEqual; i++) {
-      float v1 = work_comp_->GetQVal(i);
-      float v2 = check_comp_->GetQVal(i);
+      const float v1 = work_comp_->GetQVal(i);
+      const float v2 = check_comp_->GetQVal(i);
       valueAlmostEqual &= IsAlmostEqual(v1, v2);
     }
 
     bool policyAlmostEqual = true;
     for (int i = 0; i < size && policyAlmostEqual; i++) {
       for (int j = 0; j < kNumOutputPolicies; j++) {
-        float v1 = work_comp_->GetPVal(i, j);
-        float v2 = check_comp_->GetPVal(i, j);
+        const float v1 = work_comp_->GetPVal(i, j);
+        const float v2 = check_comp_->GetPVal(i, j);
         policyAlmostEqual &= IsAlmostEqual(v1, v2);
       }
     }
@@ -153,14 +157,14 @@ class CheckComputation : public NetworkComputation {
   void DisplayHistogram() {
     Histogram histogram(-15, 1, 5);
 
-    int size = GetBatchSize();
+    const int size = GetBatchSize();
     for (int i = 0; i < size; i++) {
-      float qv1 = work_comp_->GetQVal(i);
-      float qv2 = check_comp_->GetQVal(i);
+      const float qv1 = work_comp_->GetQVal(i);
+      const float qv2 = check_comp_->GetQVal(i);
       histogram.Add(qv2 - qv1);
       for (int j = 0; j < kNumOutputPolicies; j++) {
-        float pv1 = work_comp_->GetPVal(i, j);
-        float pv2 = check_comp_->GetPVal(i, j);
+        const float pv1 = work_comp_->GetPVal(i, j);
+        const float pv2 = check_comp_->GetPVal(i, j);
         histogram.Add(pv2 - pv1);
       }
     }
@@ -174,11 +178,11 @@ class CheckComputation : public NetworkComputation {
     double max_relative_error = 0;
 
     void Add(double a, double b) {
-      double absolute_error = GetAbsoluteError(a, b);
+      const double absolute_error = GetAbsoluteError(a, b);
       if (absolute_error > max_absolute_error) {
         max_absolute_error = absolute_error;
       }
-      double relative_error = GetRelativeError(a, b);
+      const double relative_error = GetRelativeError(a, b);
       if (relative_error > max_relative_error) {
         max_relative_error = relative_error;
       }
@@ -191,7 +195,7 @@ class CheckComputation : public NetworkComputation {
     }
 
     static double GetRelativeError(double a, double b) {
-      double max = std::max(std::abs(a), std::abs(b));
+      const double max = std::max(std::abs(a), std::abs(b));
       return max == 0 ? 0 : std::abs(a - b) / max;
     }
 
@@ -202,18 +206,18 @@ class CheckComputation : public NetworkComputation {
 
   void DisplayError() {
     MaximumError value_error;
-    int size = GetBatchSize();
+    const int size = GetBatchSize();
     for (int i = 0; i < size; i++) {
-      float v1 = work_comp_->GetQVal(i);
-      float v2 = check_comp_->GetQVal(i);
+      const float v1 = work_comp_->GetQVal(i);
+      const float v2 = check_comp_->GetQVal(i);
       value_error.Add(v1, v2);
     }
 
     MaximumError policy_error;
     for (int i = 0; i < size; i++) {
       for (int j = 0; j < kNumOutputPolicies; j++) {
-        float v1 = work_comp_->GetPVal(i, j);
-        float v2 = check_comp_->GetPVal(i, j);
+        const float v1 = work_comp_->GetPVal(i, j);
+        const float v2 = check_comp_->GetPVal(i, j);
         policy_error.Add(v1, v2);
       }
     }
@@ -235,7 +239,8 @@ class CheckNetwork : public Network {
   static constexpr double kDefaultAbsoluteTolerance = 1e-5;
   static constexpr double kDefaultRelativeTolerance = 1e-4;
 
-  CheckNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  CheckNetwork(const std::optional<WeightsFile>& weights,
+               const OptionsDict& options) {
     params_.mode = kDefaultMode;
     params_.absolute_tolerance = kDefaultAbsoluteTolerance;
     params_.relative_tolerance = kDefaultRelativeTolerance;
@@ -246,10 +251,10 @@ class CheckNetwork : public Network {
     OptionsDict& backend1_dict = dict1;
 
     OptionsDict dict2;
-    std::string backendName2 = "blas";
+    std::string backendName2 = "eigen";
     OptionsDict& backend2_dict = dict2;
 
-    std::string mode = options.GetOrDefault<std::string>("mode", "check");
+    const std::string mode = options.GetOrDefault<std::string>("mode", "check");
     if (mode == "check") {
       params_.mode = kCheckOnly;
     } else if (mode == "histo") {
@@ -288,14 +293,17 @@ class CheckNetwork : public Network {
     check_net_ =
         NetworkFactory::Get()->Create(backendName2, weights, backend2_dict);
 
+    capabilities_ = work_net_->GetCapabilities();
+    capabilities_.Merge(check_net_->GetCapabilities());
+
     check_frequency_ =
         options.GetOrDefault<float>("freq", kDefaultCheckFrequency);
     switch (params_.mode) {
       case kCheckOnly:
         CERR << std::scientific << std::setprecision(1)
              << "Check mode: check only with relative tolerance "
-             << params_.absolute_tolerance << ", absolute tolerance "
-             << params_.relative_tolerance << ".";
+             << params_.relative_tolerance << ", absolute tolerance "
+             << params_.absolute_tolerance << ".";
         break;
       case kErrorDisplay:
         CERR << "Check mode: error display.";
@@ -309,8 +317,8 @@ class CheckNetwork : public Network {
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    double draw = Random::Get().GetDouble(1.0);
-    bool check = draw < check_frequency_;
+    const double draw = Random::Get().GetDouble(1.0);
+    const bool check = draw < check_frequency_;
     if (check) {
       std::unique_ptr<NetworkComputation> work_comp =
           work_net_->NewComputation();
@@ -322,6 +330,10 @@ class CheckNetwork : public Network {
     return work_net_->NewComputation();
   }
 
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
  private:
   CheckParams params_;
 
@@ -329,10 +341,11 @@ class CheckNetwork : public Network {
   double check_frequency_;
   std::unique_ptr<Network> work_net_;
   std::unique_ptr<Network> check_net_;
+  NetworkCapabilities capabilities_;
 };
 
-std::unique_ptr<Network> MakeCheckNetwork(const WeightsFile& weights,
-                                          const OptionsDict& options) {
+std::unique_ptr<Network> MakeCheckNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<CheckNetwork>(weights, options);
 }
 

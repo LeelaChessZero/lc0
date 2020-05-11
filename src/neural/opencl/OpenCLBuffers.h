@@ -49,7 +49,8 @@ class OpenCLBuffers {
   OpenCLBuffers(const OpenCL_Network& opencl_net);
 
   void forward(const std::vector<net_t>& input, std::vector<net_t>& output_pol,
-               std::vector<net_t>& output_val, const int batch_size);
+               std::vector<net_t>& output_val, std::vector<net_t>& output_mov,
+               const int batch_size);
 
  private:
   using weight_slice_t = std::vector<cl::Buffer>::const_iterator;
@@ -57,29 +58,26 @@ class OpenCLBuffers {
   void convolve3(int channels, int outputs, cl::Buffer& bufferIn,
                  cl::Buffer& bufferOut, cl::Buffer& bufferV,
                  cl::Buffer& bufferM, weight_slice_t weights,
-                 cl::Buffer* bufferResidual, weight_slice_t bn_weights,
+                 cl::Buffer* bufferResidual, weight_slice_t biases,
                  bool skip_in_transform, bool fuse_in_transform,
                  bool store_inout, bool relu, int batch_size);
 
   void convolve1(int channels, int outputs, cl::Buffer& bufferInput,
                  cl::Buffer& bufferOutput, cl::Buffer& bufferMerge,
-                 weight_slice_t weights, int batch_size);
+                 weight_slice_t weights, weight_slice_t biases, int batch_size);
 
   void innerproduct(cl::Buffer& input, weight_slice_t weights,
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
                     const int outputs, const int relu, int batch_size);
 
-  void squeeze_excitation(int channels,
-                          int fc_outputs,
-                          cl::Buffer& bufferIn,
-                          cl::Buffer& bufferTemp1,
-                          cl::Buffer& bufferTemp2,
-                          weight_slice_t weights,
-                          cl::Buffer& bufferResidual,
+  void squeeze_excitation(int channels, int fc_outputs, cl::Buffer& bufferIn,
+                          cl::Buffer& bufferTemp1, cl::Buffer& bufferTemp2,
+                          weight_slice_t weights, cl::Buffer& bufferResidual,
                           int batch_size);
 
-  void policymap(int N, const cl::Buffer& input, cl::Buffer& output, const cl::Buffer& indices,
-        int inputSize, int usedSize, int outputSize);
+  void policymap(int N, const cl::Buffer& input, cl::Buffer& output,
+                 const cl::Buffer& indices, int inputSize, int usedSize,
+                 int outputSize);
 
   const OpenCL_Network& m_opencl_net;
   const OpenCL& m_opencl;
@@ -102,4 +100,8 @@ class OpenCLBuffers {
   cl::Buffer m_pool_buffer;
   cl::Buffer m_pinnedOutBuffer_pol;
   cl::Buffer m_pinnedOutBuffer_val;
+  cl::Buffer m_pinnedOutBuffer_mov;
+  size_t m_finalSize_pol;
+  size_t m_finalSize_val;
+  size_t m_finalSize_mov;
 };
