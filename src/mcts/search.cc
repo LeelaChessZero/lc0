@@ -1436,11 +1436,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                     node_to_process->probability_transform)));
   }
   // Intermediate array to store values when processing policy.
-  // According to a lichess developer post:
-  // https://lichess.org/blog/Wqa7GiAAAOIpBLoY/
-  //     developer-update-275-improved-game-compression
-  // there are never more than 256 valid legal moves in any legal position.
-  float intermediate[256];
+  // There are never more than 256 valid legal moves in any legal position.
+  std::array<float, 256> intermediate;
   float total = 0.0;
   int counter = 0;
   for (auto edge : node->Edges()) {
