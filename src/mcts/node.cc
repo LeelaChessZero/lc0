@@ -256,6 +256,11 @@ void Node::MakeNotTerminal() {
       }
     }
 
+    // Since this is only used in NodeTree, which is unused in search,
+    // applying the new policy temperature is not really relevant to search 
+    // as much.
+    // Just ignore and fix it up when in FinalizeScoreUpdate.
+
     // Recompute with current eval (instead of network's) and children's eval.
     wl_ /= n_;
     d_ /= n_;
@@ -278,7 +283,8 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit, 
+    float policy_temperature, float policy_temp_decay, float intermediate[]) {
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
@@ -290,6 +296,40 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   }
   // Increment N.
   n_ += multivisit;
+
+  // Update the policies of children _if_ the difference is nontrivial
+  // Take power only when the difference is nontrivial to minimize error
+  // On a test with P = 0.2 and 0.5, visits = 2m, limiting pow calls with 
+  // distance from 1 > 0.0001
+  // brings us to 4 decimal places accuracy compared to the correct answer
+  // (correct answer = one pow call with the proper scaling exponent).
+
+  
+  float old_policy_temp = policy_temperature - 
+      policy_temp_decay * log2f(1 + n_last_temp_);
+  float exponent = old_policy_temp / (policy_temperature - 
+      policy_temp_decay * log2f(1 + n_));
+
+  if (abs(exponent - 1.0f) > 0.001f) {
+    float total = 0.0f;
+    int counter = 0;
+    for (auto& child : Edges()) {
+      float new_p = powf(child.GetP(), exponent);
+      intermediate[counter++] = new_p;
+      total += new_p;
+    }
+
+    counter = 0;
+    if (total > 0.0f) {
+      for (auto& child : Edges()) {
+        child.SetP(intermediate[counter++] / total);
+      }  
+    }
+    
+    n_last_temp_ = n_;
+  }
+  
+
   // Decrement virtual loss.
   n_in_flight_ -= multivisit;
   // Best child is potentially no longer valid.

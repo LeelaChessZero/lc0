@@ -165,6 +165,11 @@ const OptionId SearchParams::kPolicySoftmaxTempId{
     "policy-softmax-temp", "PolicyTemperature",
     "Policy softmax temperature. Higher values make priors of move candidates "
     "closer to each other, widening the search."};
+const OptionId SearchParams::kPolicyTempDecayId{
+    "policy-temp-decay", "PolicyTemperatureDecay",
+    "Policy softmax temperature decay. Positive values make temperature "
+    "smaller as visits increase, negative values make it larger. Bigger "
+    "magnitude means there is a stronger effect."};
 const OptionId SearchParams::kMaxCollisionVisitsId{
     "max-collision-visits", "MaxCollisionVisits",
     "Total allowed node collision visits, per batch."};
@@ -290,7 +295,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
-  options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.607f;
+  options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.5427f;
+  options->Add<FloatOption>(kPolicyTempDecayId, -10.0f, 10.0f) = -0.2702f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
@@ -368,6 +374,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                           : options.Get<float>(kFpuValueAtRootId)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId)),
       kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId)),
+      kPolicyTempDecay(options.Get<float>(kPolicyTempDecayId)),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId)),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId)),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId)),
@@ -388,6 +395,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
+
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))) {
