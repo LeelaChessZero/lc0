@@ -276,7 +276,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
   options->Add<BoolOption>(kLogitQId) = false;
   options->Add<FloatOption>(kPolicyFactorId, 0.0f, 10.0f) = 0.024f;
-  options->Add<FloatOption>(kPolicyFactorParentId, 0.0f, 10.0f) = 0.0.000003f;
+  options->Add<FloatOption>(kPolicyFactorParentId, 0.0f, 10.0f) = 0.000003f;
   options->Add<FloatOption>(kPolicyExponentId, 0.0f, 10.0f) = 0.5f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
