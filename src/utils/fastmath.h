@@ -83,9 +83,14 @@ inline float FastLogit(const float a) {
 }
 
 // Fast approximate a^x.
-inline float FastPow(const float base, const float power) {
-  if (base <= 0.0) return 0.0;
-  return FastExp(FastLog(base) * power);
+inline float FastPow(const float a, const float b) {
+  int32_t tmp;
+  std::memcpy(&tmp, &a, sizeof(float));
+  tmp = (tmp - 0x3f800000) * b;
+  tmp += 0x3f800000;
+  float out;
+  std::memcpy(&out, &tmp, sizeof(float));
+  return out;
 }
 
 }  // namespace lczero
