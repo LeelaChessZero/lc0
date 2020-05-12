@@ -70,6 +70,8 @@ cache:
   - C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
 - cmd: git submodule update --init --recursive
+- cmd: IF %BLAS%==true sed -i "/kMiniBatchSizeId/ s/256/4/" src/mcts/params.cc
+- cmd: IF %ANDROID%==true sed -i "/kMiniBatchSizeId/ s/256/7/" src/mcts/params.cc
 - cmd: SET BUILD_BLAS=%BLAS%
 - cmd: IF %OPENCL%==true SET BUILD_BLAS=true
 - cmd: IF %DX%==true SET BUILD_BLAS=true
