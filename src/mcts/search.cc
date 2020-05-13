@@ -900,10 +900,12 @@ void SearchWorker::ExecuteOneIteration() {
   UpdateCounters();
 
   // If required, waste time to limit nps.
-  if (params_.GetNpsLimit() > 0 && search_->nps_start_time_) {
+  if (params_.GetNpsLimit() > 0) {
     while (search_->IsSearchActive()) {
       auto time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
-      if (time_since_first_batch_ms <= 0) break;
+      if (time_since_first_batch_ms <= 0) {
+        time_since_first_batch_ms = search_->GetTimeSinceStart();
+      }
       auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
       if (nps > params_.GetNpsLimit()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
