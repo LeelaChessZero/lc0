@@ -235,7 +235,6 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   const bool use_gemm_ex_;
 
   DataType* biases_ = nullptr;
-  DataType* weights_ = nullptr;
   DataType* transformed_weights_ = nullptr;  // After winograd transform.
 
   // Weights and Biases for (optional) SE.

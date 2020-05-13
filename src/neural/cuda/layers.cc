@@ -206,7 +206,7 @@ void ConvLayer<float>::LoadWeights(float* pfilter, float* pBias,
     ReportCUDAErrors(
         cudaMemcpy(biases, pBias, blas_size, cudaMemcpyHostToDevice));
   } else {
-    ReportCUDAErrors(cudaMemset(biases, blas_size, 0));
+    ReportCUDAErrors(cudaMemset(biases, 0, blas_size));
   }
 }
 
@@ -375,24 +375,24 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   // Weight for the first FC layer.
   ReportCUDAErrors(
       cudaMemcpy(scratch, w1, weight_size1, cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)w1_, (float*)scratch, num_weights1);
+  copyTypeConverted((half*)w1_, (float*)scratch, (int)num_weights1);
   if (kUseFusedSELayer && nhwc_) {
     // transposed copy for fused SE kernel
     cpuTranspose(temp.data(), w1, numFc1Out_, C);
     ReportCUDAErrors(
         cudaMemcpy(scratch, temp.data(), weight_size1, cudaMemcpyHostToDevice));
-    copyTypeConverted((half*)w1_t_, (float*)scratch, num_weights1);
+    copyTypeConverted((half*)w1_t_, (float*)scratch, (int)num_weights1);
   }
 
   // Weight for the second FC layer.
   ReportCUDAErrors(
       cudaMemcpy(scratch, w2, weight_size2, cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)w2_, (float*)scratch, num_weights2);
+  copyTypeConverted((half*)w2_, (float*)scratch, (int)num_weights2);
   if (kUseFusedSELayer && nhwc_) {
     cpuTranspose(temp.data(), w2, 2 * C, numFc1Out_);
     ReportCUDAErrors(
         cudaMemcpy(scratch, temp.data(), weight_size2, cudaMemcpyHostToDevice));
-    copyTypeConverted((half*)w2_t_, (float*)scratch, num_weights2);
+    copyTypeConverted((half*)w2_t_, (float*)scratch, (int)num_weights2);
   }
 
   // Bias for the first FC layer.
@@ -521,17 +521,17 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
       cudaMemcpy(scratch, cpuWeight, weight_size, cudaMemcpyHostToDevice));
 
   if (nhwc_) {
-    fp32NCHWtofp16NHWC((half*)weights_, (float*)scratch, num_biases,
-                       input_->GetC(), num_biases, input_->GetC(),
+    fp32NCHWtofp16NHWC((half*)weights_, (float*)scratch, (int)num_biases,
+                       input_->GetC(), (int)num_biases, input_->GetC(),
                        input_->GetH(), input_->GetW());
   } else {
-    copyTypeConverted((half*)weights_, (float*)scratch, num_weights);
+    copyTypeConverted((half*)weights_, (float*)scratch, (int)num_weights);
   }
 
   if (cpuBias) {
     ReportCUDAErrors(
         cudaMemcpy(scratch, cpuBias, blas_size, cudaMemcpyHostToDevice));
-    copyTypeConverted((half*)biases_, (float*)scratch, num_biases);
+    copyTypeConverted((half*)biases_, (float*)scratch, (int)num_biases);
   }
 }
 
@@ -720,7 +720,6 @@ FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
       use_gemm_ex_(use_gemm_ex) {
   // Allocate memory for weights (filter tensor) and biases.
   const size_t weight_size = sizeof(DataType) * c_input_ * C * 3 * 3;
-  ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
 
   if (use_bias_) {
     const size_t blas_size = sizeof(DataType) * C;
@@ -755,12 +754,15 @@ void FusedWinogradConvSELayer<DataType>::LoadWeights(float* pfilter,
   const size_t weight_size = sizeof(float) * c_input_ * C * 3 * 3;
   const size_t blas_size = sizeof(float) * C;
 
+  // Store untransformed weights in scratch.
+  const DataType* weights = (DataType*)scratch + weight_size + blas_size;
+
   // first copy from CPU memory to scratch space in GPU memory
   // and then do the type conversion using a kernel
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights_, (float*)scratch, C * c_input_ * 3 * 3);
+  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3);
 
   if (pBias) {
     ReportCUDAErrors(
@@ -769,7 +771,7 @@ void FusedWinogradConvSELayer<DataType>::LoadWeights(float* pfilter,
   }
 
   // run winograd transform kernel for the filter
-  FilterTransform(C, c_input_, transformed_weights_, weights_);
+  FilterTransform(C, c_input_, transformed_weights_, weights);
 }
 
 // TODO: Do this on the GPU to improve network load time!
@@ -793,23 +795,23 @@ void FusedWinogradConvSELayer<DataType>::LoadSEWeights(float* w1, float* b1,
   CpuTranspose(temp_transposed.data(), w1, se_k_, C);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(), num_weights1*sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)w1_, (float*)scratch, num_weights1);
+  copyTypeConverted((DataType*)w1_, (float*)scratch, (int)num_weights1);
 
   CpuTranspose(temp_transposed.data(), w2, 2 * C, se_k_);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(),
                               num_weights2 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)w2_, (float*)scratch, num_weights2);
+  copyTypeConverted((DataType*)w2_, (float*)scratch, (int)num_weights2);
 
 
 
   ReportCUDAErrors(cudaMemcpy(scratch, b1, num_biases1 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)b1_, (float*)scratch, num_biases1);
+  copyTypeConverted((DataType*)b1_, (float*)scratch, (int)num_biases1);
 
   ReportCUDAErrors(cudaMemcpy(scratch, b2, num_biases2 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)b2_, (float*)scratch, num_biases2);
+  copyTypeConverted((DataType*)b2_, (float*)scratch, (int)num_biases2);
 }
 
 template <>
@@ -888,7 +890,6 @@ void FusedWinogradConvSELayer<DataType>::Eval(
 
 template <typename DataType>
 FusedWinogradConvSELayer<DataType>::~FusedWinogradConvSELayer() {
-  ReportCUDAErrors(cudaFree(weights_));
   ReportCUDAErrors(cudaFree(transformed_weights_));
   if (use_bias_) ReportCUDAErrors(cudaFree(biases_));
   if (has_se_) {

@@ -276,8 +276,8 @@ class CudnnNetwork : public Network {
 
     constexpr bool fp16 = std::is_same<half, DataType>::value;
     const int kNumInputPlanes = kInputPlanes;
-    const int kNumFilters = weights.input.biases.size();
-    numBlocks_ = weights.residual.size();
+    const int kNumFilters = (int)weights.input.biases.size();
+    numBlocks_ = (int)weights.residual.size();
 
     // Use our custom winograd for residual tower convolutions for most cases:
     //
@@ -306,9 +306,40 @@ class CudnnNetwork : public Network {
       use_custom_winograd_ = true;
     }
 
+    // Warn if the memory required for storing transformed weights is
+    // going to exceed 40% of total video memory, force custom_winograd off
+    // if it's going to exceed 50% of memory.
+    size_t residual_single_layer_weight_size =
+        3 * 3 * kNumFilters * kNumFilters * sizeof(DataType);
+    size_t residual_weight_size =
+        residual_single_layer_weight_size * numBlocks_ * 2;
+    size_t transformed_residual_weight_size = residual_weight_size * 4;
+
+    if (residual_weight_size > 0.6 * deviceProp.totalGlobalMem) {
+      CERR << "Low video memory detected. You may run into OOM errors. Please "
+              "consider using a smaller network.";
+    }
+
+    const bool custom_winograd_override = !options.IsDefault<bool>("custom_winograd");
+
+    if (!custom_winograd_override && use_custom_winograd_ &&
+        transformed_residual_weight_size > 0.5 * deviceProp.totalGlobalMem) {
+      CERR << "WARNING: Low GPU video memory. Turning off custom_winograd "
+              "path. You may still run into OOM errors. "
+              "Please consider using a smaller network.";
+      use_custom_winograd_ = false;
+    }
+    
     // Override if set in backend-opts.
-    if (!options.IsDefault<bool>("custom_winograd"))
+    if (custom_winograd_override)
       use_custom_winograd_ = options.Get<bool>("custom_winograd");
+    
+    if (use_custom_winograd_ &&
+        transformed_residual_weight_size > 0.4 * deviceProp.totalGlobalMem) {
+      CERR << "WARNING: Low GPU video memory. You may still run into OOM "
+              "errors. Try with backend-opts=custom_winograd=false, or "
+              "using a smaller network.";
+    }
 
     // Winograd needs nchw tensor layout.
     if (use_custom_winograd_) nhwc_ = false;
@@ -361,8 +392,16 @@ class CudnnNetwork : public Network {
         cudnn_, xDesc, wDesc, convDesc, xDesc, conv_algo, &scratch_size_));
 
     // Have some minumum as we also use this for transforming weights.
-    const int maxWeightSize = 128 * 1024 * 1024;
-    if (scratch_size_ < maxWeightSize) scratch_size_ = maxWeightSize;
+    size_t max_weight_size = 128 * 1024 * 1024;
+
+    // parts from scratch allocation are suballocated to hold various weights
+    // and biases when transforming winograd weights (one layer at a time), 128
+    // MB is way more than that what we need but make sure it's at least 3x of
+    // single layer's weight size to be safe.
+    if (max_weight_size < 3 * residual_single_layer_weight_size)
+      max_weight_size = 3 * residual_single_layer_weight_size;
+
+    if (scratch_size_ < max_weight_size) scratch_size_ = max_weight_size;
 
     if (use_custom_winograd_) {
       // Need additional space for transformed input/outputs which are 36/16
@@ -400,7 +439,7 @@ class CudnnNetwork : public Network {
         network_.emplace_back(std::move(conv1));
 
         bool has_se = weights.residual[block].has_se;
-        int se_k = weights.residual[block].se.b1.size();
+        int se_k = (int)weights.residual[block].se.b1.size();
         auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
             getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
             has_se, se_k, use_gemm_ex);
@@ -434,7 +473,7 @@ class CudnnNetwork : public Network {
         network_.emplace_back(std::move(conv2));
 
         if (weights.residual[block].has_se) {
-          int numFCOut = weights.residual[block].se.b1.size();
+          int numFCOut = (int)weights.residual[block].se.b1.size();
           auto se = std::make_unique<SELayer<DataType>>(getLastLayer(),
                                                         numFCOut, false);
           se->LoadWeights(&weights.residual[block].se.w1[0],
@@ -885,7 +924,7 @@ class CudnnNetwork : public Network {
               "version "
            << major << "." << minor << "." << pl;
     }
-    version = cudnnGetVersion();
+    version = (int)cudnnGetVersion();
     major = version / 1000;
     minor = (version - major * 1000) / 100;
     pl = version - major * 1000 - minor * 100;
@@ -914,7 +953,7 @@ class CudnnNetwork : public Network {
     CERR << "GPU compute capability: " << deviceProp.major << "."
          << deviceProp.minor;
 
-    int version = cudnnGetVersion();
+    int version = (int)cudnnGetVersion();
     if (version < 7301 && (deviceProp.major > 7 ||
                            (deviceProp.major == 7 && deviceProp.minor >= 5))) {
       CERR << "WARNING: CUDNN version 7.3.1 or newer is better for this GPU.";
