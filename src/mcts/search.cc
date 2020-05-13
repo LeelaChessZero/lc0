@@ -28,6 +28,7 @@
 #include "mcts/search.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -35,7 +36,6 @@
 #include <iterator>
 #include <sstream>
 #include <thread>
-#include <array>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
@@ -1549,9 +1549,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // that isn't already the best and the new n is equal or greater to the old
     // n.
     if (p == search_->root_node_ &&
-        (old_update_parent_bounds && n->IsTerminal() ||
-         n != search_->current_best_edge_.node() &&
-             search_->current_best_edge_.GetN() <= n->GetN())) {
+        ((old_update_parent_bounds && n->IsTerminal()) ||
+         (n != search_->current_best_edge_.node() &&
+          search_->current_best_edge_.GetN() <= n->GetN()))) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }
