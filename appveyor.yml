@@ -11,6 +11,13 @@ environment:
   - NAME: cpu-dnnl
   - NAME: cpu-openblas
   - NAME: android
+for:
+-
+  matrix:
+    only:
+    - NAME: gpu-opencl
+    - NAME: cpu-dnnl
+  skip_non_tags: true
 clone_folder: c:\projects\lc0
 install:
 - cmd: set CUDA=false
