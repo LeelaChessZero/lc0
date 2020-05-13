@@ -256,6 +256,7 @@ if get_option('build_backends')
     deps += subproject('eigen').get_variable('eigen_dep')
 
     ispc = find_program('ispc', required: false)
+    ispc_arch = 'x86-64'
     ispc_extra_args = []
     if get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
@@ -263,26 +264,41 @@ if get_option('build_backends')
         outputnames = [ '@BASENAME@.obj']
         if not ispc_native_only
           outputnames += ['@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
-                          '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj',
-                          '@BASENAME@_avx2.obj' ]
+                          '@BASENAME@_avx.obj', '@BASENAME@_avx2.obj',
+                          '@BASENAME@_avx512knl.obj', '@BASENAME@_avx512skx.obj' ]
         endif
       else
         ispc_extra_args += ['--pic']
         outputnames = [ '@BASENAME@.o']
         if not ispc_native_only
           outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
-                           '@BASENAME@_avx.o', '@BASENAME@_avx11.o',
-                           '@BASENAME@_avx2.o' ]
+                          '@BASENAME@_avx.o', '@BASENAME@_avx2.o',
+                          '@BASENAME@_avx512knl.o', '@BASENAME@_avx512skx.o' ]
         endif
       endif
       if ispc_native_only
         ispc_target = 'host'
       else
-        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx1.1-i32x8,avx2-i32x8'
+        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
       endif
+
+      if host_machine.system() == 'android'
+        ispc_extra_args += ['--target-os=android']
+        if host_machine.cpu_family() == 'arm'
+          outputnames = [ '@BASENAME@.o']
+          if host_machine.cpu() == 'aarch64'
+            ispc_target = 'neon-i32x8'
+            ispc_arch = 'aarch64'
+          else
+            ispc_target = 'neon-i32x4'
+            ispc_arch = 'arm'
+          endif
+        endif
+      endif
+
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
-        arguments: [ '-O2', '--wno-perf', '--arch=x86-64',
+        arguments: [ '-O2', '--wno-perf', '--arch=' + ispc_arch,
                      '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
                      + ispc_extra_args
