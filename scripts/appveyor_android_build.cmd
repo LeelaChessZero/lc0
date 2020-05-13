@@ -3,3 +3,6 @@ ninja
 cd C:\projects\lc0
 cd armeabi-v7a
 ninja
+cd C:\projects\lc0
+cd android-i686
+ninja
