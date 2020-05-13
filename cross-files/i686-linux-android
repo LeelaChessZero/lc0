@@ -1,0 +1,25 @@
+
+# Tested with Android NDK r19c, default toolchain
+# Targeting API level 21
+
+# Set the toolchain path on your environment
+# export PATH="$HOME/.local/share/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+
+[host_machine]
+system = 'android'
+cpu_family = 'x86'
+cpu = 'x86'
+endian = 'little'
+
+[properties]
+cpp_args = ['-U_FILE_OFFSET_BITS']
+cpp_link_args = ['-llog', '-static-libstdc++']
+
+[binaries]
+c = 'i686-linux-android19-clang'
+cpp = 'i686-linux-android19-clang++'
+ar = 'i686-linux-android-ar'
+strip = 'i686-linux-android-strip'
+ld = 'i686-linux-android-ld'
+ranlib = 'i686-linux-android-ranlib'
+as = 'i686-linux-android-as'
