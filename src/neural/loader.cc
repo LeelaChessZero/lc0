@@ -44,6 +44,9 @@
 #include "utils/logging.h"
 #include "version.h"
 
+#include "chess/callbacks.h"
+#include "chess/uciloop.h"
+
 #ifdef _WIN32
 #include <io.h>
 #else
@@ -217,7 +220,10 @@ std::string DiscoverWeightsFile() {
     int val = 0;
     data >> val;
     if (!data.fail() && val == 2) {
-      CERR << "Found txt network file: " << candidate.second;
+      ThinkingInfo info;
+      info.comment = "Found txt network file: " + candidate.second;
+      UciLoop().SendInfo({info});
+      return candidate.second;
       return candidate.second;
     }
 
@@ -227,7 +233,9 @@ std::string DiscoverWeightsFile() {
                        (static_cast<uint32_t>(buf[3]) << 16) |
                        (static_cast<uint32_t>(buf[4]) << 24);
     if (magic == kWeightMagic) {
-      CERR << "Found pb network file: " << candidate.second;
+      ThinkingInfo info;
+      info.comment = "Found pb network file: " + candidate.second;
+      UciLoop().SendInfo({info});
       return candidate.second;
     }
   }

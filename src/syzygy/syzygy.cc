@@ -48,6 +48,9 @@
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
+#include "chess/callbacks.h"
+#include "chess/uciloop.h"
+
 #ifndef _WIN32
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -989,8 +992,10 @@ class SyzygyTablebaseImpl {
     }
 
   finished:
-    CERR << "Found " << num_wdl_ << "WDL, " << num_dtm_ << " DTM and "
-         << num_dtz_ << " DTZ tablebase files.";
+    ThinkingInfo info;
+    info.comment = "Syzygy found: " + std::to_string(num_wdl_) + " WDL, " + std::to_string(num_dtm_) + " DTM and "
+  + std::to_string(num_dtz_) + " DTZ tablebase files.";
+    UciLoop().SendInfo({info});
   }
 
   ~SyzygyTablebaseImpl() {

@@ -33,6 +33,9 @@
 #include "utils/commandline.h"
 #include "utils/logging.h"
 
+#include "chess/callbacks.h"
+#include "chess/uciloop.h"
+
 namespace lczero {
 
 const OptionId NetworkFactory::kWeightsId{
@@ -121,7 +124,9 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else if (net_path == kEmbed) {
     net_path = CommandLine::BinaryName();
   } else {
-    CERR << "Loading weights file from: " << net_path;
+    ThinkingInfo info;
+    info.comment = "Load weights file from: " + net_path;
+    UciLoop().SendInfo({info});
   }
   std::optional<WeightsFile> weights;
   if (!net_path.empty()) {
