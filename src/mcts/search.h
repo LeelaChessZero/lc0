@@ -121,10 +121,6 @@ class Search {
   // uci `stop` command;
   void WatchdogThread();
 
-  // Populates the given list with allowed root moves.
-  // Returns true if the population came from tablebase.
-  bool PopulateRootMoveLimit(MoveList* root_moves) const;
-
   // Fills IterationStats with global (rather than per-thread) portion of search
   // statistics. Currently all stats there (in IterationStats) are global
   // though.
@@ -135,7 +131,7 @@ class Search {
   std::vector<std::string> GetVerboseStats(Node* node) const;
 
   // Returns NN eval for a given node from cache, if that node is cached.
-  NNCacheLock GetCachedNNEval(Node* node) const;
+  NNCacheLock GetCachedNNEval(const Node* node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
@@ -173,9 +169,13 @@ class Search {
   const PositionHistory& played_history_;
 
   Network* const network_;
+  const SearchParams params_;
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
+  // tb_hits_ must be initialized before root_move_filter_.
+  std::atomic<int> tb_hits_{0};
+  const MoveList root_move_filter_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
@@ -188,7 +188,6 @@ class Search {
   // Cumulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
   std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
-  std::atomic<int> tb_hits_{0};
 
   std::atomic<int> pending_searchers_{0};
 
@@ -196,7 +195,6 @@ class Search {
       GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
-  const SearchParams params_;
 
   friend class SearchWorker;
 };
@@ -320,8 +318,6 @@ class SearchWorker {
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
-  MoveList root_move_filter_;
-  bool root_move_filter_populated_ = false;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;

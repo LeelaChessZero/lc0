@@ -81,6 +81,8 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
 
   if (for_what == RunType::kUci) {
     options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
+    options->HideOption(kMinimumKLDGainPerNodeId);
+    options->HideOption(kKLDGainAverageIntervalId);
     options->HideOption(kNodesAsPlayoutsId);
   }
 }

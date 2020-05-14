@@ -31,7 +31,7 @@ install:
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
-- cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows appveyor DownloadFile https://sourceforge.net/projects/ispcmirror/files/v1.9.2/ispc-v1.9.2-windows.zip
+- cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows appveyor DownloadFile https://github.com/ispc/ispc/releases/download/v1.9.2/ispc-v1.9.2-windows.zip
 - cmd: IF %BLAS%==true IF NOT EXIST C:\cache\ispc-v1.9.2-windows 7z x ispc-v1.9.2-windows.zip -oC:\cache
 - cmd: IF %BLAS%==true set PATH=C:\cache\ispc-v1.9.2-windows;%PATH%
 - cmd: set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0"
@@ -64,7 +64,7 @@ install:
 - cmd: IF %GTEST%==true IF NOT EXIST KQvKQ.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK{P,N,R,B,Q}.rtb{w,z}
 - cmd: cd C:\projects\lc0
 cache:
-  - C:\cache -> appveyor.yml
+  - C:\cache
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0'
   - C:\projects\lc0\subprojects\packagecache
   - C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64
