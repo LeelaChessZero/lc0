@@ -31,6 +31,7 @@
 
 #include "factory.h"
 #include "mcts/stoppers/legacy.h"
+#include "mcts/stoppers/alphazero.h"
 #include "mcts/stoppers/smooth.h"
 #include "mcts/stoppers/stoppers.h"
 #include "utils/exception.h"
@@ -43,9 +44,11 @@ const OptionId kMoveOverheadId{
     "Amount of time, in milliseconds, that the engine subtracts from it's "
     "total available time (to compensate for slow connection, interprocess "
     "communication, etc)."};
-const OptionId kTimeManagerId{"time-manager", "TimeManager",
-                              "Name and config of atime manager."};
-
+const OptionId kTimeManagerId{
+    "time-manager", "TimeManager",
+    "Name and config of a time manager. "
+    "Possible names are 'legacy' (default), 'smooth-experimental' and 'alphazero'."
+    "See https://lc0.org/timemgr for configuration details."};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
@@ -61,6 +64,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
 
   OptionsDict tm_options;
   tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
+  
   const auto managers = tm_options.ListSubdicts();
 
   std::unique_ptr<TimeManager> time_manager;
@@ -68,13 +72,18 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
     throw Exception("Exactly one time manager should be specified, " +
                     std::to_string(managers.size()) + " specified instead.");
   }
+  
   if (managers[0] == "legacy") {
     time_manager =
         MakeLegacyTimeManager(move_overhead, tm_options.GetSubdict("legacy"));
+  } else if (managers[0] == "alphazero") {
+    time_manager = MakeAlphazeroTimeManager(move_overhead,
+                                            tm_options.GetSubdict("alphazero"));
   } else if (managers[0] == "smooth-experimental") {
     time_manager = MakeSmoothTimeManager(
         move_overhead, tm_options.GetSubdict("smooth-experimental"));
   }
+  
   if (!time_manager) {
     throw Exception("Unknown time manager: [" + managers[0] + "]");
   }

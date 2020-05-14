@@ -190,6 +190,10 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     LOGFILE << "Only one possible move. Moving immediately.";
     return true;
   }
+  if (stats.win_found) {
+    LOGFILE << "Terminal win found, stopping search.";
+    return true;
+  }
   if (stats.nodes_since_movestart > 0 && !first_eval_time_) {
     first_eval_time_ = stats.time_since_movestart;
     return false;
