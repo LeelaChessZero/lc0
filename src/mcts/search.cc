@@ -320,7 +320,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     *oss << std::right;
     print(oss, "N: ", n, " ", 7);
     print(oss, "(+", f, ") ", 2);
-    print(oss, "(P: ", p * 100, "%) ", 5, p >= 1.0f ? 1 : 2);
+    print(oss, "(P: ", p * 100, "%) ", 5, p >= 0.99995f ? 1 : 2);
   };
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
