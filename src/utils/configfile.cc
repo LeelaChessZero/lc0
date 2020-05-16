@@ -42,7 +42,7 @@ const OptionId kConfigFileId{
     "Path to a configuration file. The format of the file is one command line "
     "parameter per line, e.g.:\n--weights=/path/to/weights",
     'c'};
-const char* kDefaultConfigFile = "lc0.config";
+const char* kDefaultConfigFile = "<default>";
 }  // namespace
 
 std::vector<std::string> ConfigFile::arguments_;
@@ -88,6 +88,15 @@ bool ConfigFile::Init(OptionsParser* options) {
   // loading the default configuration file.
   if (filename == "") return true;
 
+  // Parses the file into the arguments_ vector.
+  if (!ParseFile(filename, options)) return false;
+
+  return true;
+}
+
+bool ConfigFile::ParseFile(const std::string& filename,
+                           OptionsParser* options) {
+
   // Check to see if we are using the default config file or not.
   const bool using_default_config = 
       filename == std::string(kDefaultConfigFile);
@@ -98,20 +107,12 @@ bool ConfigFile::Init(OptionsParser* options) {
     filename = CommandLine::BinaryDirectory() + "/" + filename;
   }
 
-  // Parses the file into the arguments_ vector.
-  if (!ParseFile(filename, options)) return false;
-
-  return true;
-}
-
-bool ConfigFile::ParseFile(const std::string& filename,
-                           OptionsParser* options) {
   std::ifstream input(filename);
 
   if (!input.is_open()) {
     // It is okay if we cannot open the default file since it is normal
-    // for it to not exist. Check it is default by comparing to <default>.
-    if (filename == std::string(kDefaultConfigFile)) return true;
+    // for it to not exist.
+    if (using_default_config) return true;
 
     CERR << "Could not open configuration file: " << filename;
     return false;
