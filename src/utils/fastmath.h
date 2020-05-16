@@ -82,9 +82,21 @@ inline float FastLogit(const float a) {
   return 0.5f * FastLog((1.0f + a) / (1.0f - a));
 }
 
-// Fast approximate a^x.
+// Fast approximate x^y. Works for x>0 and saturates on underflow.
+// The approximation used here is a combination of log2(2^N*(1+f)) ~ N+f+k
+// and 2^(N+f) ~ 2^N*(1+f-k) with N integer and f the fractional part, f>=0.
+// The constant k is used to tune the approximation accuracy.
 inline float FastPow(const float a, const float b) {
-  return FastPow2(FastLog2(a) * b);
+  int32_t tmp;
+  std::memcpy(&tmp, &a, sizeof(float));
+  tmp -= 0x3f78aa40;
+  float out;
+  tmp = static_cast<int>(tmp * b + 1064872512.0f);
+  if (tmp < 0x800000) {
+    return 1.17549435E-38;
+  }
+  std::memcpy(&out, &tmp, sizeof(float));
+  return out;
 }
 
 }  // namespace lczero
