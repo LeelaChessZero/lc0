@@ -104,7 +104,7 @@ bool ConfigFile::ParseFile(std::string& filename,
   // If no logfile was set on the command line, then the default is
   // to check in the binary directory.
   if (using_default_config) {
-    filename = CommandLine::BinaryDirectory() + "/" + filename;
+    filename = CommandLine::BinaryDirectory() + "/lc0.config";
   }
 
   std::ifstream input(filename);
