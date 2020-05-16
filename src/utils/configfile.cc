@@ -94,7 +94,7 @@ bool ConfigFile::Init(OptionsParser* options) {
   return true;
 }
 
-bool ConfigFile::ParseFile(const std::string& filename,
+bool ConfigFile::ParseFile(std::string& filename,
                            OptionsParser* options) {
 
   // Check to see if we are using the default config file or not.
