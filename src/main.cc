@@ -42,7 +42,7 @@ int main(int argc, const char** argv) {
   CERR << EscCodes::Bold() << EscCodes::Red() << "       _";
   CERR << "|   _ | |";
   CERR << "|_ |_ |_|" << EscCodes::Reset() << " v" << GetVersionStr()
-       << '+' << BUILD_IDENTIFIER << " built " << __DATE__;
+       << " built " << __DATE__;
 
   try {
     InitializeMagicBitboards();
