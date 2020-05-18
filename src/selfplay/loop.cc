@@ -26,6 +26,9 @@
 */
 
 #include "selfplay/loop.h"
+
+#include <optional>
+
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
 
@@ -49,7 +52,7 @@ void SelfPlayLoop::RunLoop() {
   options_.Add<BoolOption>(kInteractiveId) = false;
 
   if (!options_.ProcessAllFlags()) return;
-  if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
+  if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
     UciLoop::RunLoop();
   } else {
     // Send id before starting tournament to allow wrapping client to know
@@ -119,6 +122,10 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
     res += " moves";
     for (const auto& move : info.moves) res += " " + move.as_string();
   }
+  if (!info.initial_fen.empty() &&
+      info.initial_fen != ChessBoard::kStartposFen) {
+    res += " from_fen " + info.initial_fen;
+  }
   responses.push_back(res);
   SendResponses(responses);
 }
@@ -136,8 +143,8 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
 
   // Initialize variables.
   float percentage = -1;
-  optional<float> elo;
-  optional<float> los;
+  std::optional<float> elo;
+  std::optional<float> los;
 
   // Only caculate percentage if any games at all (avoid divide by 0).
   if ((winp1 + losep1 + draws) > 0) {
@@ -163,18 +170,19 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   }
   if (elo) {
     oss << " Elo: " << std::fixed << std::setw(5) << std::setprecision(2)
-        << (elo.value_or(0.0f));
+        << (*elo);
   }
   if (los) {
     oss << " LOS: " << std::fixed << std::setw(5) << std::setprecision(2)
-        << (los.value_or(0.0f) * 100.0f) << "%";
+        << (*los * 100.0f) << "%";
   }
 
   oss << " P1-W: +" << info.results[0][0] << " -" << info.results[2][0] << " ="
       << info.results[1][0];
   oss << " P1-B: +" << info.results[0][1] << " -" << info.results[2][1] << " ="
       << info.results[1][1];
-  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) / info.move_count_);
+  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) /
+                                  info.move_count_);
   oss << " nodes " + std::to_string(info.nodes_total_);
   oss << " moves " + std::to_string(info.move_count_);
   SendResponse(oss.str());

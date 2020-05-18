@@ -23,6 +23,7 @@
 
 namespace lczero {
 
+template <bool use_eigen>
 class FullyConnectedLayer {
  public:
   FullyConnectedLayer() = delete;

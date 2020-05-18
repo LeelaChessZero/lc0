@@ -26,6 +26,7 @@
 */
 
 #include "benchmark/benchmark.h"
+#include "benchmark/backendbench.h"
 #include "chess/board.h"
 #include "engine.h"
 #include "selfplay/loop.h"
@@ -50,6 +51,7 @@ int main(int argc, const char** argv) {
     CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
     CommandLine::RegisterMode("selfplay", "Play games with itself");
     CommandLine::RegisterMode("benchmark", "Quick benchmark");
+    CommandLine::RegisterMode("backendbench", "Quick benchmark of backend only");
 
     if (CommandLine::ConsumeCommand("selfplay")) {
       // Selfplay mode.
@@ -58,6 +60,10 @@ int main(int argc, const char** argv) {
     } else if (CommandLine::ConsumeCommand("benchmark")) {
       // Benchmark mode.
       Benchmark benchmark;
+      benchmark.Run();
+    } else if (CommandLine::ConsumeCommand("backendbench")) {
+      // Backend Benchmark mode.
+      BackendBenchmark benchmark;
       benchmark.Run();
     } else {
       // Consuming optional "uci" mode.

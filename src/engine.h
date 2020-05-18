@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include "chess/uciloop.h"
 #include "mcts/search.h"
 #include "neural/cache.h"
@@ -34,7 +36,6 @@
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
-#include "utils/optional.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -79,6 +80,7 @@ class EngineController {
   void SetupPosition(const std::string& fen,
                      const std::vector<std::string>& moves);
   void ResetMoveTimer();
+  void CreateFreshTimeManager();
 
   const OptionsDict& options_;
 
@@ -103,10 +105,13 @@ class EngineController {
   // The current position as given with SetPosition. For normal (ie. non-ponder)
   // search, the tree is set up with this position, however, during ponder we
   // actually search the position one move earlier.
-  optional<CurrentPosition> current_position_;
+  std::optional<CurrentPosition> current_position_;
   GoParams go_params_;
 
-  optional<std::chrono::steady_clock::time_point> move_start_time_;
+  std::optional<std::chrono::steady_clock::time_point> move_start_time_;
+
+  // If true we can reset move_start_time_ in "Go".
+  bool strict_uci_timing_;
 };
 
 class EngineLoop : public UciLoop {
