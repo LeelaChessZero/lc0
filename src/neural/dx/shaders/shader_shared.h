@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,31 +25,28 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "utils/transpose.h"
-#include <cstddef>
+#define kExpandPlanesElementsPerBlock 256
+#define kExpandPlanesFp32BlockSize kExpandPlanesElementsPerBlock
+#define kExpandPlanesFp16BlockSize (kExpandPlanesElementsPerBlock / 2)
 
-namespace lczero {
-void TransposeTensor(const std::vector<int>& dims, std::vector<int> order,
-                     const std::vector<float> from, float* to) {
-  if (order.empty()) {
-    for (size_t i = 0; i < dims.size(); ++i)
-      order.push_back(dims.size() - i - 1);
-  }
-  std::vector<int> cur_idx(dims.size());
-  for (size_t _ = 0; _ < from.size(); ++_) {
-    size_t from_idx = 0;
-    for (int i : order) {
-      from_idx *= dims[i];
-      from_idx += cur_idx[i];
-    }
-    *to++ = from[from_idx];
-    for (int i = static_cast<int>(dims.size()) - 1; i >= 0; --i) {
-      if (++cur_idx[i] == dims[i]) {
-        cur_idx[i] = 0;
-      } else {
-        break;
-      }
-    }
-  }
-}
-}  // namespace lczero
+// for both input transform and output transform shaders
+#define kWinogradTransformShaderBlockSize 64
+
+#define kConv1x1BlockSize 64
+
+#define kAddVectorsBlockSize 512
+
+#define kPolicyMapBlockSize 256
+
+
+// Constants for GEMM shader.
+#define kGemmBlockWidth 16
+#define kGemmBlockHeight 16
+
+#define kGemmElPerThreadX 8
+#define kGemmElPerThreadY 8
+
+#define kGemmElPerBlockX (kGemmElPerThreadX * kGemmBlockWidth)
+#define kGemmElPerBlockY (kGemmElPerThreadY * kGemmBlockHeight)
+
+#define kGemmShMemKChunk 16

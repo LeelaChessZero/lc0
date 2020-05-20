@@ -37,6 +37,7 @@ struct CachedNNRequest {
   typedef std::pair<uint16_t, float> IdxAndProb;
   float q;
   float d;
+  float m;
   // TODO(mooskagh) Don't really need index if using perfect hash.
   SmallArray<IdxAndProb> p;
 };
@@ -72,8 +73,10 @@ class CachingComputation {
   void ComputeBlocking();
   // Returns Q value of @sample.
   float GetQVal(int sample) const;
-  // Returns probability of draw if NN has WDL value head
+  // Returns probability of draw if NN has WDL value head.
   float GetDVal(int sample) const;
+  // Returns estimated remaining moves.
+  float GetMVal(int sample) const;
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const;
   // Pops last input from the computation. Only allowed for inputs which were

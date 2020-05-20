@@ -7,5 +7,4 @@ source_hash = 94c634d499558a76fa649edb13721dce6e98fb1e7018dfaeba3cd7a083945e91
 
 patch_url = https://wrapdb.mesonbuild.com/v1/projects/gtest/1.10.0/1/get_zip
 patch_filename = gtest-1.10.0-1-wrap.zip
-patch_hash = 2825db6614cb56783e88a3f4a01a8d3423fdac68c5de6cc61e5319b8607b5417
-
+patch_hash = 04ff14e8880e4e465f6260221e9dfd56fea6bc7cce4c4aff0dc528e4a2c8f514
