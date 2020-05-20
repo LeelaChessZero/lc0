@@ -53,6 +53,21 @@ const OptionId kClippyThresholdId{"clippy-threshold", "",
 const OptionId kClippyToleranceId{
     "clippy-tolerance", "",
     "After this nps drop (relative to best) wait for next peak."};
+
+void Clippy(std::string msg) {
+  std::cout << "  __" << std::endl;
+  std::cout << " /  \\" << std::endl;
+  std::cout << " |  |" << std::endl;
+  std::cout << " +  +    " << std::string(msg.length() + 2, '_') << std::endl;
+  std::cout << "(@)(@) _|" << std::string(msg.length() + 2, ' ') << '|'
+            << std::endl;
+  std::cout << " |  |  \\  " << msg << " |" << std::endl;
+  std::cout << " || |/  |" << std::string(msg.length() + 2, '_') << '|'
+            << std::endl;
+  std::cout << " || ||" << std::endl;
+  std::cout << " |\\_/|" << std::endl;
+  std::cout << " \\___/" << std::endl;
+}
 }  // namespace
 
 void BackendBenchmark::Run() {
@@ -113,15 +128,19 @@ void BackendBenchmark::Run() {
             (run == true || nps > best_nps * (1.0f + threshold))) {
           best_nps = nps;
           best = i;
+          Clippy(std::to_string(best) +
+                 " looks like the best minibatch-size for this net (so far).");
           run = true;
         }
 
         if (nps < best_nps * (1.0f - tolerance)) {
           run = false;
         }
-        std::cout << "Clippy thinks the best minibatch-size for this net is "
-                  << best << " (so far)." << std::endl;
       }
+    }
+    if (option_dict.Get<bool>(kClippyId)) {
+      Clippy(std::to_string(best) +
+             " looks like the best minibatch-size for this net.");
     }
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;
