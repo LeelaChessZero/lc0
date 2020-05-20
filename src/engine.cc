@@ -58,13 +58,23 @@ const OptionId kUciChess960{
     "Castling moves are encoded as \"king takes rook\"."};
 const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
+const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
+                                "The UCI host compensates for lag, waits for "
+                                "the 'readyok' reply before sending 'go' and "
+                                "only then starts timing."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
   MoveList result;
-  result.reserve(moves.size());
-  for (const auto& move : moves) {
-    result.emplace_back(board.GetModernMove({move, board.flipped()}));
+  if (moves.size()) {
+    result.reserve(moves.size());
+    const auto legal_moves = board.GenerateLegalMoves();
+    const auto end = legal_moves.end();
+    for (const auto& move : moves) {
+      const auto m = board.GetModernMove({move, board.flipped()});
+      if (std::find(legal_moves.begin(), end, m) != end) result.emplace_back(m);
+    }
+    if (result.empty()) throw Exception("No legal searchmoves.");
   }
   return result;
 }
@@ -92,6 +102,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
+
+  options->Add<BoolOption>(kStrictUciTiming) = false;
+  options->HideOption(kStrictUciTiming);
 }
 
 void EngineController::ResetMoveTimer() {
@@ -125,6 +138,9 @@ void EngineController::UpdateFromUciOptions() {
 
   // Cache size.
   cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId));
+
+  // Check whether we can update the move timer in "Go".
+  strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
 }
 
 void EngineController::EnsureReady() {
@@ -217,7 +233,7 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
-  if (!move_start_time_) ResetMoveTimer();
+  if (strict_uci_timing_ || !move_start_time_) ResetMoveTimer();
   go_params_ = params;
 
   std::unique_ptr<UciResponder> responder =
@@ -251,7 +267,7 @@ void EngineController::Go(const GoParams& params) {
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
-  auto stopper = time_manager_->GetStopper(params, tree_->HeadPosition());
+  auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),

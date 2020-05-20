@@ -81,6 +81,8 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
 
   if (for_what == RunType::kUci) {
     options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
+    options->HideOption(kMinimumKLDGainPerNodeId);
+    options->HideOption(kKLDGainAverageIntervalId);
     options->HideOption(kNodesAsPlayoutsId);
   }
 }
@@ -152,10 +154,9 @@ class CommonTimeManager : public TimeManager {
 
  private:
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const Position& position) override {
+                                            const NodeTree& tree) override {
     auto result = std::make_unique<ChainedSearchStopper>();
-    if (child_mgr_)
-      result->AddStopper(child_mgr_->GetStopper(params, position));
+    if (child_mgr_) result->AddStopper(child_mgr_->GetStopper(params, tree));
     PopulateCommonUciStoppers(result.get(), options_, params, move_overhead_);
     return result;
   }

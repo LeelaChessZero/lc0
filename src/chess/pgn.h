@@ -65,12 +65,6 @@ class PgnReader {
         if (uc_line.find("[FEN \"", 0) == 0) {
           auto start_trimmed = line.substr(6);
           cur_startpos_ = start_trimmed.substr(0, start_trimmed.find('"'));
-          // Some 'opening books' omit the last 2 fields, so there is only 3
-          // space delimiters.
-          if (std::count(cur_startpos_.begin(), cur_startpos_.end(), ' ') ==
-              3) {
-            cur_startpos_ += " 0 1";
-          }
           cur_board_.SetFromFen(cur_startpos_);
         }
         continue;
@@ -186,10 +180,14 @@ class PgnReader {
     } else if (san[0] == 'O' && san.size() > 2 && san[1] == '-' &&
                san[2] == 'O') {
       Move m;
+      auto king_board = board.kings() & board.ours();
+      BoardSquare king_sq(GetLowestBit(king_board.as_int()));
       if (san.size() > 4 && san[3] == '-' && san[4] == 'O') {
-        m = Move(BoardSquare(0, 4), BoardSquare(0, 2));
+        m = Move(BoardSquare(0, king_sq.col()),
+                 BoardSquare(0, board.castlings().queenside_rook()));
       } else {
-        m = Move(BoardSquare(0, 4), BoardSquare(0, 6));
+        m = Move(BoardSquare(0, king_sq.col()),
+                 BoardSquare(0, board.castlings().kingside_rook()));
       }
       return m;
     }

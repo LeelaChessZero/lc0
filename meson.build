@@ -131,6 +131,8 @@ files += [
   'src/mcts/stoppers/common.cc',
   'src/mcts/stoppers/factory.cc',
   'src/mcts/stoppers/legacy.cc',
+  'src/mcts/stoppers/alphazero.cc',
+  'src/mcts/stoppers/smooth.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
   'src/neural/cache.cc',
@@ -403,6 +405,9 @@ if get_option('build_backends')
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
+    if get_option('nvcc_ccbin') != ''
+      cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
+    endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
     endforeach
@@ -464,7 +469,13 @@ endif
   ## ~~~~
   # Pick latest from https://wrapdb.mesonbuild.com/zlib and put into
   # subprojects/zlib.wrap
-  deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
+  if host_machine.system() == 'windows'
+    # In several cases where a zlib dependency was detected on windows, it
+    # caused trouble (crashes or failed builds). Better safe than sorry.
+    deps += subproject('zlib').get_variable('zlib_dep')
+  else
+    deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
+  endif
 
   ## ~~~~~~~~
   ## Profiler
