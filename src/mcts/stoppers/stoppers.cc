@@ -58,8 +58,10 @@ void ChainedSearchStopper::OnSearchDone(const IterationStats& stats) {
 
 bool VisitsStopper::ShouldStop(const IterationStats& stats,
                                StoppersHints* hints) {
-  hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
-                                                   stats.total_nodes);
+  if (smart_pruning_factor_ > 0.0) {
+    hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
+                                                     stats.total_nodes);
+  }
   if (stats.total_nodes >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached visits limit: " << stats.total_nodes
             << ">=" << nodes_limit_;
@@ -74,8 +76,10 @@ bool VisitsStopper::ShouldStop(const IterationStats& stats,
 
 bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
                                  StoppersHints* hints) {
-  hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
-                                                   stats.nodes_since_movestart);
+  if (smart_pruning_factor_ > 0.0) {
+    hints->UpdateEstimatedRemainingRemainingPlayouts(
+        nodes_limit_ - stats.nodes_since_movestart);
+  }
   if (stats.nodes_since_movestart >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached playouts limit: "
             << stats.nodes_since_movestart << ">=" << nodes_limit_;
@@ -97,10 +101,10 @@ const size_t kAvgCacheItemSize =
         MemoryWatchingStopper::kAvgMovesPerPosition;
 }  // namespace
 
-MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb)
+MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb, float smart_pruning_factor)
     : VisitsStopper(
           (ram_limit_mb * 1000000LL - cache_size * kAvgCacheItemSize) /
-          kAvgNodeSize) {
+          kAvgNodeSize, smart_pruning_factor) {
   LOGFILE << "RAM limit " << ram_limit_mb << "MB. Cache takes "
           << cache_size * kAvgCacheItemSize / 1000000
           << "MB. Remaining memory is enough for " << GetVisitsLimit()

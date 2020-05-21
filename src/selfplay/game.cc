@@ -303,9 +303,11 @@ std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
     const {
   auto result = std::make_unique<ChainedSearchStopper>();
 
-  if (visits >= 0) result->AddStopper(std::make_unique<VisitsStopper>(visits));
+  if (visits >= 0) {
+    result->AddStopper(std::make_unique<VisitsStopper>(visits, 0.0f));
+  }
   if (playouts >= 0) {
-    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts));
+    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, 0.0f));
   }
   if (movetime >= 0) {
     result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));

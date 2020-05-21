@@ -53,23 +53,27 @@ class ChainedSearchStopper : public SearchStopper {
 // Watches visits (total tree nodes) and predicts remaining visits.
 class VisitsStopper : public SearchStopper {
  public:
-  VisitsStopper(int64_t limit) : nodes_limit_(limit) {}
+  VisitsStopper(int64_t limit, float smart_pruning_factor)
+      : nodes_limit_(limit), smart_pruning_factor_(smart_pruning_factor) {}
   int64_t GetVisitsLimit() const { return nodes_limit_; }
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const int64_t nodes_limit_;
+  const float smart_pruning_factor_;
 };
 
 // Watches playouts (new tree nodes) and predicts remaining visits.
 class PlayoutsStopper : public SearchStopper {
  public:
-  PlayoutsStopper(int64_t limit) : nodes_limit_(limit) {}
+  PlayoutsStopper(int64_t limit, float smart_pruning_factor)
+      : nodes_limit_(limit), smart_pruning_factor_(smart_pruning_factor) {}
   int64_t GetVisitsLimit() const { return nodes_limit_; }
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const int64_t nodes_limit_;
+  const float smart_pruning_factor_;
 };
 
 // Computes tree size which may fit into the memory and limits by that tree
@@ -78,7 +82,8 @@ class MemoryWatchingStopper : public VisitsStopper {
  public:
   // Must be in sync with description at kRamLimitMbId.
   static constexpr size_t kAvgMovesPerPosition = 30;
-  MemoryWatchingStopper(int cache_size, int ram_limit_mb);
+  MemoryWatchingStopper(int cache_size, int ram_limit_mb,
+                        float smart_pruning_factor);
 };
 
 // Stops after time budget is gone.
