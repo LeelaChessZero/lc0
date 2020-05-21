@@ -1,6 +1,6 @@
 
 # Tested with Android NDK r19c, default toolchain
-# Targeting API level 21
+# Targeting API level 19
 
 # Set the toolchain path on your environment
 # export PATH="$HOME/.local/share/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
