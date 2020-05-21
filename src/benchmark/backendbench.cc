@@ -96,6 +96,7 @@ void BackendBenchmark::Run() {
     int best = 0;
     float best_nps = 0.0f;
     bool run = true;
+    std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
 
     for (int i = 1; i <= option_dict.Get<int>(kMaxBatchSizeId); i++) {
       const auto start = std::chrono::steady_clock::now();
@@ -128,11 +129,20 @@ void BackendBenchmark::Run() {
             (run == true || nps > best_nps * (1.0f + threshold))) {
           best_nps = nps;
           best = i;
-          Clippy(std::to_string(best) +
-                 " looks like the best minibatch-size for this net (so far).");
           run = true;
+          if (!pending) {
+            pending = std::chrono::steady_clock::now();
+          }
         }
-
+        if (pending) {
+          time = std::chrono::steady_clock::now() - *pending;
+          if (time.count() > 10) {
+            Clippy(
+                std::to_string(best) +
+                " looks like the best minibatch-size for this net (so far).");
+            pending.reset();
+          }
+        }
         if (nps < best_nps * (1.0f - tolerance)) {
           run = false;
         }
