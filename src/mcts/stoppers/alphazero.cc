@@ -31,23 +31,13 @@ namespace lczero {
 
 namespace {
 
-class AlphazeroStopper : public TimeLimitStopper {
- public:
-  void OnSearchDone(const IterationStats& stats) override {
-    *time_piggy_bank_ += GetTimeLimitMs() - stats.time_since_movestart;
-  }
-
- private:
-  int64_t* const time_piggy_bank_;
-};
-
 class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
         alphazerotimepct_(params.GetOrDefault<float>("alphazero-time-pct", 5.0f)) {
-    if (alphazerotimepct_ < 1.0f || alphazerotimepct_ > 99.0f) 
-      throw Exception("alphazero-time-pct value to be in range [1.0, 99.0]");
+    if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f) 
+      throw Exception("alphazero-time-pct value to be in range [0.0, 100.0]");
     }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
