@@ -60,8 +60,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
 
   auto total_moves_time = *time + increment - move_overhead_;
   
-  // use the increment in the first upcoming move
-  float this_move_time = increment + (total_moves_time * (alphazerotimepct_ / 100.0f));
+  float this_move_time = total_moves_time * (alphazerotimepct_ / 100.0f);
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
           << "Remaining time " << *time
