@@ -55,10 +55,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
-  const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
-  const int increment = inc ? std::max(int64_t(0), *inc) : 0;
-
-  auto total_moves_time = *time + increment - move_overhead_;
+  auto total_moves_time = *time - move_overhead_;
   
   float this_move_time = total_moves_time * (alphazerotimepct_ / 100.0f);
 
@@ -66,10 +63,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
           << "Remaining time " << *time
           << "ms(-" << move_overhead_ << "ms overhead)";
   
-  // Make sure we don't exceed current time limit with what we calculated.
-  auto deadline =
-      std::min(static_cast<int64_t>(this_move_time), *time + increment - move_overhead_);
-  return std::make_unique<TimeLimitStopper>(deadline);
+  return std::make_unique<TimeLimitStopper>();
 }
 
 }  // namespace
