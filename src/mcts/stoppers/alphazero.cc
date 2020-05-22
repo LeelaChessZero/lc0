@@ -63,7 +63,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
           << "Remaining time " << *time
           << "ms(-" << move_overhead_ << "ms overhead)";
   
-  return std::make_unique<TimeLimitStopper>();
+  return std::make_unique<TimeLimitStopper>(this_move_time);
 }
 
 }  // namespace
