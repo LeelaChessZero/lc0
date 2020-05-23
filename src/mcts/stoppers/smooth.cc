@@ -139,8 +139,8 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
       initial_piggybank_fraction_(
           params.GetOrDefault<float>("init-piggybank", 0.1f)),
       per_move_piggybank_fraction_(
-          params.GetOrDefault<float>("per-move-piggybank", 0.05f)),
-      max_piggybank_use_(params.GetOrDefault<float>("max-piggybank-use", 0.7f)),
+          params.GetOrDefault<float>("per-move-piggybank", 0.1f)),
+      max_piggybank_use_(params.GetOrDefault<float>("max-piggybank-use", 0.8f)),
       max_piggybank_moves_(
           params.GetOrDefault<float>("max-piggybank-moves", 10.0f)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
