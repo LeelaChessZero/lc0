@@ -58,7 +58,7 @@ void ChainedSearchStopper::OnSearchDone(const IterationStats& stats) {
 
 bool VisitsStopper::ShouldStop(const IterationStats& stats,
                                StoppersHints* hints) {
-  if (smart_pruning_factor_ > 0.0) {
+  if (populate_remaining_moves_) {
     hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
                                                      stats.total_nodes);
   }
@@ -76,7 +76,7 @@ bool VisitsStopper::ShouldStop(const IterationStats& stats,
 
 bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
                                  StoppersHints* hints) {
-  if (smart_pruning_factor_ > 0.0) {
+  if (populate_remaining_moves_) {
     hints->UpdateEstimatedRemainingRemainingPlayouts(
         nodes_limit_ - stats.nodes_since_movestart);
   }
@@ -101,10 +101,12 @@ const size_t kAvgCacheItemSize =
         MemoryWatchingStopper::kAvgMovesPerPosition;
 }  // namespace
 
-MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb, float smart_pruning_factor)
+MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb,
+                                             bool populate_remaining_moves)
     : VisitsStopper(
           (ram_limit_mb * 1000000LL - cache_size * kAvgCacheItemSize) /
-          kAvgNodeSize, smart_pruning_factor) {
+              kAvgNodeSize,
+          populate_remaining_moves) {
   LOGFILE << "RAM limit " << ram_limit_mb << "MB. Cache takes "
           << cache_size * kAvgCacheItemSize / 1000000
           << "MB. Remaining memory is enough for " << GetVisitsLimit()

@@ -117,17 +117,18 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
   const int ram_limit = options.Get<int>(kRamLimitMbId);
   if (ram_limit) {
     stopper->AddStopper(std::make_unique<MemoryWatchingStopper>(
-        cache_size_mb, ram_limit, options.Get<float>(kSmartPruningFactorId)));
+        cache_size_mb, ram_limit,
+        options.Get<float>(kSmartPruningFactorId) > 0.0f));
   }
 
   // "go nodes" stopper.
   if (params.nodes) {
     if (options.Get<bool>(kNodesAsPlayoutsId)) {
       stopper->AddStopper(std::make_unique<PlayoutsStopper>(
-          *params.nodes, options.Get<float>(kSmartPruningFactorId)));
+          *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
     } else {
       stopper->AddStopper(std::make_unique<VisitsStopper>(
-          *params.nodes, options.Get<float>(kSmartPruningFactorId)));
+          *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
     }
   }
 
