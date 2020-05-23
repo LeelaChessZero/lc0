@@ -80,6 +80,9 @@ class Params {
   // Maximum time in piggybank to use for a single move.
   float max_piggybank_use() const { return max_piggybank_use_; }
 
+  // Max number of avg move times in piggybank.
+  float max_piggybank_moves() const { return max_piggybank_moves_; }
+
   // Move overhead.
   int64_t move_overhead_ms() const { return move_overhead_ms_; }
   // Returns a function function that estimates remaining moves.
@@ -100,6 +103,7 @@ class Params {
   const float initial_piggybank_fraction_;
   const float per_move_piggybank_fraction_;
   const float max_piggybank_use_;
+  const float max_piggybank_moves_;
   const MovesLeftEstimator moves_left_estimator_;
 };
 
@@ -137,6 +141,8 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
       per_move_piggybank_fraction_(
           params.GetOrDefault<float>("per-move-piggybank", 0.05f)),
       max_piggybank_use_(params.GetOrDefault<float>("max-piggybank-use", 0.7f)),
+      max_piggybank_moves_(
+          params.GetOrDefault<float>("max-piggybank-moves", 10.0f)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
 // Returns the updated value of @from, towards @to by the number of halves
@@ -201,7 +207,7 @@ class SmoothTimeManager : public TimeManager {
     // If piggybank was used, cannot update timeuse_.
     int64_t piggybank_time_used = 0;
     if (used_piggybank) {
-      piggybank_time_used = std::max(0L, total_move_time - time_budget);
+      piggybank_time_used = std::max(int64_t(), total_move_time - time_budget);
       piggybank_time_ -= piggybank_time_used;
     } else {
       timeuse_ =
@@ -266,6 +272,17 @@ class SmoothTimeManager : public TimeManager {
     const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
     const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
+    // Maximum time allowed in piggybank.
+    const float max_piggybank_time =
+        params_.max_piggybank_moves() *
+        std::max(0.0f, *time + increment * (remaining_moves - 1) -
+                           params_.move_overhead_ms()) /
+        remaining_moves;
+
+    if (piggybank_time_ > max_piggybank_time) {
+      piggybank_time_ = max_piggybank_time;
+    }
+
     // Total time, including increments, until time control.
     const auto total_remaining_ms = std::max(
         0.0f, *time - piggybank_time_ + increment * (remaining_moves - 1) -
@@ -287,8 +304,9 @@ class SmoothTimeManager : public TimeManager {
     const float expected_movetime_ms_brutto =
         move_estimate_nodes / nps_ * 1000.0f;
     // Share of this move that will go to piggybank.
-    const float time_to_piggybank_ms =
-        expected_movetime_ms_brutto * params_.per_move_piggybank_fraction();
+    const float time_to_piggybank_ms = std::min(
+        max_piggybank_time - piggybank_time_,
+        expected_movetime_ms_brutto * params_.per_move_piggybank_fraction());
     // Some share of this time will go to a piggybank, so a move gets less.
     const float expected_movetime_ms =
         expected_movetime_ms_brutto - time_to_piggybank_ms;
@@ -322,7 +340,8 @@ class SmoothTimeManager : public TimeManager {
     LOGFILE << std::fixed << std::setprecision(1)
             << "TMGR: PIGGYBANK: total=" << piggybank_time_
             << "ms, increment=" << time_to_piggybank_ms
-            << "ms, longthink=" << allowed_piggybank_time_ms << "ms";
+            << "ms, longthink=" << allowed_piggybank_time_ms
+            << "ms, max=" << max_piggybank_time << "ms";
 
     LOGFILE << std::fixed << std::setprecision(1)
             << "TMGR: REMAINING GAME: nodes=" << remaining_game_nodes
