@@ -754,9 +754,30 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
   stats->win_found = false;
+  stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
+
+  const auto draw_score = GetDrawScore(true);
+  const float fpu =
+      GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
+  float max_q = -1000;
+  uint64_t max_n = 0;
+  bool max_n_has_max_q = true;
   for (const auto& edge : root_node_->Edges()) {
-    stats->edge_n.push_back(edge.GetN());
+    const auto n = edge.GetN();
+    const auto q = edge.GetQ(fpu, draw_score, params_.GetLogitQ());
+    stats->edge_n.push_back(n);
     if (edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) stats->win_found = true;
+    if (max_n < n) {
+      max_n = n;
+      max_n_has_max_q = false;
+    }
+    if (max_q <= q) {
+      max_n_has_max_q = (max_n == n);
+      max_q = q;
+    }
+  }
+  if (!max_n_has_max_q) {
+    stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNeedMoreTime;
   }
 }
 
