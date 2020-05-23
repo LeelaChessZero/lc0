@@ -770,7 +770,6 @@ void Search::WatchdogThread() {
     MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
 
-    using namespace std::chrono_literals;
     constexpr auto kMaxWaitTimeMs = 100;
     constexpr auto kMinWaitTimeMs = 1;
 
@@ -900,6 +899,22 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 7. Update the Search's status and progress information.
   UpdateCounters();
+
+  // If required, waste time to limit nps.
+  if (params_.GetNpsLimit() > 0) {
+    while (search_->IsSearchActive()) {
+      auto time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
+      if (time_since_first_batch_ms <= 0) {
+        time_since_first_batch_ms = search_->GetTimeSinceStart();
+      }
+      auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
+      if (nps > params_.GetNpsLimit()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } else {
+        break;
+      }
+    }
+  }
 }
 
 // 1. Initialize internal structures.
