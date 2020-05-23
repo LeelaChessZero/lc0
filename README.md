@@ -166,7 +166,7 @@ First you need to install some required packages through Terminal:
 Alternate Step 5a+5b+5c (For MacOS 10.15 Catalina, or if the other step 5 fails): 
 5a. Install developer tools: ``xcode-select --install``
 5b. Install Xcode Developer Tools through the app store. You may need to create an apple store account to do this. (The correct application should be the first one that appears with the blueprint and hammer in the Apple Store Search.)
-5c. Use in terminal: `export CPATH=`xcrun --show-sdk-path`/usr/include`
+5c. Use in terminal: export CPATH=\`xcrun --show-sdk-path\`/usr/include
 
 Now download the lc0 source, if you haven't already done so, following the instructions earlier in the page.
 
