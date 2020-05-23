@@ -42,6 +42,10 @@
 #include "utils/string.h"
 #include "version.h"
 
+#ifndef _WIN32
+#include <linenoise.h>
+#endif
+
 namespace lczero {
 
 namespace {
@@ -131,7 +135,20 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
 void UciLoop::RunLoop() {
   std::cout.setf(std::ios::unitbuf);
   std::string line;
-  while (std::getline(std::cin, line)) {
+#ifndef _WIN32
+  linenoiseSetMultiLine(1);
+  linenoiseHistorySetMaxLen(100);
+#endif
+  while (true) {
+#ifdef _WIN32
+    if (!std::getline(std::cin, line)) break;
+#else
+    char* tlin = linenoise("");
+    if (!tlin) break;
+    line = tlin;
+    linenoiseHistoryAdd(tlin);
+    linenoiseFree(tlin);
+#endif
     LOGFILE << ">> " << line;
     try {
       auto command = ParseCommand(line);

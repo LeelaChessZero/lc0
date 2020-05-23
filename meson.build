@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-project('lc0', 'cpp',
+project('lc0', ['c', 'cpp'],
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
         meson_version: '>=0.52')
 
@@ -164,6 +164,10 @@ files += [
 includes += include_directories('src')
 
 deps += dependency('threads')
+
+if host_machine.system() != 'windows'
+  files += 'third_party/linenoise.c'
+endif
 
 #############################################################################
 ## Platform specific files
