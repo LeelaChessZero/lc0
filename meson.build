@@ -99,6 +99,9 @@ if git.found()
     # Now let's check if the working directory is clean.
     if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
       short_rev = r.stdout().strip()
+      if run_command(git, 'describe', '--exact-match', '--tags').returncode() == 0
+        short_rev = ''
+      endif
     else
       short_rev = 'dirty'
       warning('Cannot extract valid git short revision from dirty working directory.')
@@ -109,9 +112,11 @@ if git.found()
 endif
 
 # Construct build identifier.
-build_identifier = 'git.' + short_rev
-add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
-message('Using build identifier "' + build_identifier + '".')
+if short_rev != ''
+  build_identifier = 'git.' + short_rev
+  add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
+  message('Using build identifier "' + build_identifier + '".')
+endif
 
 #############################################################################
 ## Main files
