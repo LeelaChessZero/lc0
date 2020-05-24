@@ -296,6 +296,17 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   best_child_cached_ = nullptr;
 }
 
+void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
+  // Recompute Q.
+  wl_ += multivisit * v / n_;
+  d_ += multivisit * d / n_;
+  m_ += multivisit * m / n_;
+  // Best child is potentially no longer valid. This shouldn't be needed since
+  // AjdustForTerminal is always called immediately after FinalizeScoreUpdate,
+  // but for safety in case that changes.
+  best_child_cached_ = nullptr;
+}
+
 void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
   best_child_cached_ = best_edge.node();
   // An edge can point to an unexpanded node with n==0. These nodes don't

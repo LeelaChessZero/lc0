@@ -1527,6 +1527,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.v;
   float d = node_to_process.d;
   float m = node_to_process.m;
+  int n_to_fix = 0;
+  float v_delta = 0.0f;
+  float d_delta = 0.0f;
+  float m_delta = 0.0f;
   int depth = 0;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
@@ -1540,18 +1544,25 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
     n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
                            d, m, node_to_process.multivisit);
+    if (n_to_fix > 0) {
+      n->AdjustForTerminal(
+          v_delta / (1.0f + params_.GetShortSightedness() * depth), d_delta,
+          m_delta, n_to_fix);
+    }
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
 
     bool old_update_parent_bounds = update_parent_bounds;
-
+    // If parent already is terminal further adjustment is not required.
+    if (p->IsTerminal()) n_to_fix = 0;
     // Try setting parent bounds except the root or those already terminal.
     update_parent_bounds = update_parent_bounds && p != search_->root_node_ &&
-                           !p->IsTerminal() && MaybeSetBounds(p, m);
+                           !p->IsTerminal() && MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta);
 
     // Q will be flipped for opponent.
     v = -v;
+    v_delta = -v_delta;
     depth++;
     m++;
 
@@ -1576,7 +1587,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }
 
-bool SearchWorker::MaybeSetBounds(Node* p, float m) const {
+bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta, float* d_delta, float* m_delta) const {
   auto losing_m = 0.0f;
   auto prefer_tb = false;
 
@@ -1621,10 +1632,20 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m) const {
   } else if (lower == upper) {
     // Search can stop at the parent if the bounds can't change anymore, so make
     // it terminal preferring shorter wins and longer losses.
+    int old_n_to_fix = *n_to_fix;
+    // This assumes the active visit is a multivist of size 1.
+    *n_to_fix = p->GetN() - 1;
+    assert(*n_to_fix > 0);
+    float cur_v = p->GetWL();
+    float cur_d = p->GetD();
+    float cur_m = p->GetM();
     p->MakeTerminal(
         -upper,
         (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
         prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+    *v_delta = p->GetWL() - cur_v + old_n_to_fix * *v_delta / *n_to_fix;
+    *d_delta = p->GetD() - cur_d + old_n_to_fix * *d_delta / *n_to_fix;
+    *m_delta = p->GetM() - cur_m + old_n_to_fix * *m_delta / *n_to_fix;
   } else {
     p->SetBounds(-upper, -lower);
   }
