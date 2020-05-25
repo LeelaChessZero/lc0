@@ -160,8 +160,7 @@ First you need to install some required packages through Terminal:
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
-5. (For Mac OS 10.15 Catalina, or if the other step 5 fails)
-
+5. (For Mac OS 10.14 Mojave, or if the other step 5 fails)
     Install developer tools: ``xcode-select --install``
     When using Mojave install SDK headers: `installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /` (if this doesn't work, use `sudo installer` instead of just `installer`.)
 
