@@ -160,16 +160,16 @@ First you need to install some required packages through Terminal:
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
-5. (For Mac OS 10.14 Mojave, or if the other step 5 fails)
-    Install developer tools: ``xcode-select --install``
-    When using Mojave install SDK headers: `installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /` (if this doesn't work, use `sudo installer` instead of just `installer`.)
+5. (For Mac OS 10.14 Mojave, or if the other step 5 fails):
+ * Install developer tools: ``xcode-select --install``
+ * When using Mojave install SDK headers: `installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /` (if this doesn't work, use `sudo installer` instead of just `installer`.)
 
 Or.
 
 5. (For MacOS 10.15 Catalina, or if the other step 5 fails): 
-    Install developer tools: ``xcode-select --install``
-    Install Xcode Developer Tools through the app store. You may need to create an apple store account to do this. (The correct application should be the first one that appears with the blueprint and hammer in the Apple Store Search.)
-    Use in terminal: export CPATH=\`xcrun --show-sdk-path\`/usr/include
+ * Install Xcode command-line tools: ``xcode-select --install``
+ * Install "XCode Developer Tools" through the app store. (First one on the list of Apps if searched.)
+ * Associate the SDK headers in XCode with a command: export CPATH=\`xcrun --show-sdk-path\`/usr/include
 
 Now download the lc0 source, if you haven't already done so, following the instructions earlier in the page.
 
