@@ -259,7 +259,11 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
              std::to_string(info.wdl->d) + " " + std::to_string(info.wdl->l);
     }
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
-    if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
+    if (info.nodes >= 0) {
+      // Always report nps if we report nodes defaulting to the last reported.
+      if (info.nps >= 0) last_nps_ = info.nps;
+      res += " nps " + std::to_string(last_nps_);
+    }
     if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
     if (info.multipv >= 0) res += " multipv " + std::to_string(info.multipv);
 

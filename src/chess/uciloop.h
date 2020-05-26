@@ -89,6 +89,7 @@ class UciLoop {
   bool DispatchCommand(
       const std::string& command,
       const std::unordered_map<std::string, std::string>& params);
+  int last_nps_ = 0;
 };
 
 }  // namespace lczero
