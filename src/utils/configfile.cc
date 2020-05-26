@@ -42,7 +42,8 @@ const OptionId kConfigFileId{
     "Path to a configuration file. The format of the file is one command line "
     "parameter per line, e.g.:\n--weights=/path/to/weights",
     'c'};
-const char* kDefaultConfigFile = "<default>";
+const char* kDefaultConfigFile = "lc0.config";
+const char* kDefaultConfigFileParam = "<default>";
 }  // namespace
 
 std::vector<std::string> ConfigFile::arguments_;
@@ -55,7 +56,7 @@ void ConfigFile::PopulateOptions(OptionsParser* options) {
 // ProcessAllFlags() that should be called only once, and needs the config file.
 std::string ConfigFile::ProcessConfigFlag(
     const std::vector<std::string>& args) {
-  std::string filename = kDefaultConfigFile;
+  std::string filename = kDefaultConfigFileParam;
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
 
@@ -99,12 +100,12 @@ bool ConfigFile::ParseFile(std::string& filename,
 
   // Check to see if we are using the default config file or not.
   const bool using_default_config = 
-      filename == std::string(kDefaultConfigFile);
+      filename == std::string(kDefaultConfigFileParam);
 
   // If no logfile was set on the command line, then the default is
   // to check in the binary directory.
   if (using_default_config) {
-    filename = CommandLine::BinaryDirectory() + "/lc0.config";
+    filename = CommandLine::BinaryDirectory() + '/' + kDefaultConfigFile;
   }
 
   std::ifstream input(filename);
