@@ -99,6 +99,9 @@ if git.found()
     # Now let's check if the working directory is clean.
     if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
       short_rev = r.stdout().strip()
+      if run_command(git, 'describe', '--exact-match', '--tags').returncode() == 0
+        short_rev = ''
+      endif
     else
       short_rev = 'dirty'
       warning('Cannot extract valid git short revision from dirty working directory.')
@@ -109,9 +112,11 @@ if git.found()
 endif
 
 # Construct build identifier.
-build_identifier = 'git.' + short_rev
-add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
-message('Using build identifier "' + build_identifier + '".')
+if short_rev != ''
+  build_identifier = 'git.' + short_rev
+  add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
+  message('Using build identifier "' + build_identifier + '".')
+endif
 
 #############################################################################
 ## Main files
@@ -505,8 +510,9 @@ endif
 executable('lc0', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
-
-### Tests
+#############################################################################
+## Tests
+#############################################################################
 
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
@@ -543,4 +549,29 @@ if get_option('gtest')
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
+endif
+
+
+#############################################################################
+## Python bindings
+#############################################################################
+
+if get_option('python_bindings')
+  pymod = import('python')
+  python = pymod.find_installation('python3')
+  if python.language_version() < '3.7'
+    error('You need python 3.7 or newer')
+  endif  
+  py_bindings_generator = find_program('scripts/gen_py_bindings.py')
+
+  gen_py_bindings = custom_target('backends', input:[], output:['backends.cc'],
+    command : [py_bindings_generator, '@OUTPUT0@'])
+
+  py_files = [ gen_py_bindings ]
+
+  cpython = dependency('python3')
+  python.extension_module('backends',
+    [py_files + files],
+    include_directories: [includes],
+    dependencies: [cpython] + deps)
 endif

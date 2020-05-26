@@ -114,6 +114,7 @@ class SearchParams {
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
 
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
+  float GetNpsLimit() const { return kNpsLimit; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -168,6 +169,7 @@ class SearchParams {
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
   static const OptionId kMaxOutOfOrderEvalsId;
+  static const OptionId kNpsLimitId;
 
  private:
   const OptionsDict& options_;
@@ -215,6 +217,7 @@ class SearchParams {
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
   const int kMaxOutOfOrderEvals;
+  const float kNpsLimit;
 };
 
 }  // namespace lczero

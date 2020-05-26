@@ -314,10 +314,6 @@ class SmoothTimeManager : public TimeManager {
   int64_t last_move_final_nodes_ GUARDED_BY(mutex_) = 0;
   // Time of the last report, since the beginning of the move.
   int64_t last_time_ GUARDED_BY(mutex_) = 0;
-
-  // According to the recent calculations, how much time should be spent in
-  // average per move.
-  float last_expected_movetime_ms_ GUARDED_BY(mutex_) = 0.0f;
 };
 
 SmoothStopper::SmoothStopper(int64_t deadline_ms, SmoothTimeManager* manager)

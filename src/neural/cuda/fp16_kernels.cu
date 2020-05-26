@@ -157,6 +157,9 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
     } else if (C == 352) {
       SE_Layer_NHWC<352, 32>
           <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+    } else if (C == 384) {
+      SE_Layer_NHWC<384, 32>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else {
       // TODO: support other channel counts.
       return false;
@@ -176,6 +179,9 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
           <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else if (C == 320) {
       SE_Layer_NHWC<320, 64>
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+    } else if (C == 384) {
+      SE_Layer_NHWC<384, 64>
           <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
     } else {
       // TODO: support other channel counts.

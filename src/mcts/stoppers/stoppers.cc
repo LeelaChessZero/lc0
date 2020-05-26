@@ -58,8 +58,10 @@ void ChainedSearchStopper::OnSearchDone(const IterationStats& stats) {
 
 bool VisitsStopper::ShouldStop(const IterationStats& stats,
                                StoppersHints* hints) {
-  hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
-                                                   stats.total_nodes);
+  if (populate_remaining_playouts_) {
+    hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
+                                                     stats.total_nodes);
+  }
   if (stats.total_nodes >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached visits limit: " << stats.total_nodes
             << ">=" << nodes_limit_;
@@ -74,8 +76,10 @@ bool VisitsStopper::ShouldStop(const IterationStats& stats,
 
 bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
                                  StoppersHints* hints) {
-  hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
-                                                   stats.nodes_since_movestart);
+  if (populate_remaining_playouts_) {
+    hints->UpdateEstimatedRemainingRemainingPlayouts(
+        nodes_limit_ - stats.nodes_since_movestart);
+  }
   if (stats.nodes_since_movestart >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached playouts limit: "
             << stats.nodes_since_movestart << ">=" << nodes_limit_;
@@ -97,10 +101,12 @@ const size_t kAvgCacheItemSize =
         MemoryWatchingStopper::kAvgMovesPerPosition;
 }  // namespace
 
-MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb)
+MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb,
+                                             bool populate_remaining_playouts)
     : VisitsStopper(
           (ram_limit_mb * 1000000LL - cache_size * kAvgCacheItemSize) /
-          kAvgNodeSize) {
+              kAvgNodeSize,
+          populate_remaining_playouts) {
   LOGFILE << "RAM limit " << ram_limit_mb << "MB. Cache takes "
           << cache_size * kAvgCacheItemSize / 1000000
           << "MB. Remaining memory is enough for " << GetVisitsLimit()
@@ -188,6 +194,10 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   Mutex::Lock lock(mutex_);
   if (stats.edge_n.size() == 1) {
     LOGFILE << "Only one possible move. Moving immediately.";
+    return true;
+  }
+  if (stats.win_found) {
+    LOGFILE << "Terminal win found, stopping search.";
     return true;
   }
   if (stats.nodes_since_movestart > 0 && !first_eval_time_) {
