@@ -91,7 +91,7 @@ void Benchmark::Run() {
         stopper->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
       }
       if (visits > -1) {
-        stopper->AddStopper(std::make_unique<VisitsStopper>(visits));
+        stopper->AddStopper(std::make_unique<VisitsStopper>(visits, false));
       }
 
       NNCache cache;
