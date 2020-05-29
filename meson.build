@@ -289,6 +289,9 @@ if get_option('build_backends')
 
       if host_machine.system() == 'android'
         ispc_extra_args += ['--target-os=android']
+        if host_machine.cpu_family() == 'x86'
+          ispc_arch = 'x86'
+        endif
         if host_machine.cpu_family() == 'arm'
           outputnames = [ '@BASENAME@.o']
           if host_machine.cpu() == 'aarch64'
