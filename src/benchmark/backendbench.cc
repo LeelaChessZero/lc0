@@ -43,6 +43,31 @@ const OptionId kBatchesId{"batches", "",
 const OptionId kMaxBatchSizeId{"max-batch-size", "",
                                "Maximum batch size to benchmark."};
 const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
+
+const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
+
+const OptionId kClippyThresholdId{"clippy-threshold", "",
+                                  "Ratio of nps improvement necessary for the "
+                                  "next peak to be considered best."};
+
+const OptionId kClippyToleranceId{
+    "clippy-tolerance", "",
+    "After this nps drop (relative to best) wait for next peak."};
+
+void Clippy(std::string msg) {
+  std::cout << "  __" << std::endl;
+  std::cout << " /  \\" << std::endl;
+  std::cout << " |  |" << std::endl;
+  std::cout << " +  +    " << std::string(msg.length() + 2, '_') << std::endl;
+  std::cout << "(@)(@) _|" << std::string(msg.length() + 2, ' ') << '|'
+            << std::endl;
+  std::cout << " |  |  \\  " << msg << " |" << std::endl;
+  std::cout << " || |/  |" << std::string(msg.length() + 2, '_') << '|'
+            << std::endl;
+  std::cout << " || ||" << std::endl;
+  std::cout << " |\\_/|" << std::endl;
+  std::cout << " \\___/" << std::endl;
+}
 }  // namespace
 
 void BackendBenchmark::Run() {
@@ -53,6 +78,9 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kBatchesId, 1, 999999999) = 100;
   options.Add<IntOption>(kMaxBatchSizeId, 1, 1024) = 256;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
+  options.Add<BoolOption>(kClippyId) = false;
+  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.05f;
+  options.Add<FloatOption>(kClippyToleranceId, 0.0f, 1.0f) = 0.03f;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -64,6 +92,11 @@ void BackendBenchmark::Run() {
     NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
     const int batches = option_dict.Get<int>(kBatchesId);
+
+    int best = 0;
+    float best_nps = 0.0f;
+    bool run = true;
+    std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
 
     for (int i = 1; i <= option_dict.Get<int>(kMaxBatchSizeId); i++) {
       const auto start = std::chrono::steady_clock::now();
@@ -82,10 +115,42 @@ void BackendBenchmark::Run() {
 
       const auto end = std::chrono::steady_clock::now();
       std::chrono::duration<double> time = end - start;
+      const auto nps = i * batches / time.count();
       std::cout << "Benchmark batch size " << i
                 << " with inference average time "
-                << time.count() / batches * 1000 << "ms - throughput "
-                << i * batches / time.count() << " nps." << std::endl;
+                << time.count() / batches * 1000 << "ms - throughput " << nps
+                << " nps." << std::endl;
+
+      if (option_dict.Get<bool>(kClippyId)) {
+        const float threshold = option_dict.Get<float>(kClippyThresholdId);
+        const float tolerance = option_dict.Get<float>(kClippyToleranceId);
+
+        if (nps > best_nps &&
+            (run == true || nps > best_nps * (1.0f + threshold))) {
+          best_nps = nps;
+          best = i;
+          run = true;
+          if (!pending) {
+            pending = std::chrono::steady_clock::now();
+          }
+        }
+        if (pending) {
+          time = std::chrono::steady_clock::now() - *pending;
+          if (time.count() > 10) {
+            Clippy(
+                std::to_string(best) +
+                " looks like the best minibatch-size for this net (so far).");
+            pending.reset();
+          }
+        }
+        if (nps < best_nps * (1.0f - tolerance)) {
+          run = false;
+        }
+      }
+    }
+    if (option_dict.Get<bool>(kClippyId)) {
+      Clippy(std::to_string(best) +
+             " looks like the best minibatch-size for this net.");
     }
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;
