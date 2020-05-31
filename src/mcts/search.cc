@@ -366,11 +366,13 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   };
 
   std::vector<std::string> infos;
+  const auto parent_m = node->GetM();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score, logit_q);
+    const auto child_m = edge.GetM(parent_m);
     float M_effect =
         do_moves_left_adjustment
-            ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
+            ? (std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
                std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q))
             : 0.0f;
 
