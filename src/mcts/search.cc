@@ -1531,7 +1531,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
-  int depth = 0;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1542,12 +1541,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
       m = n->GetM();
     }
-    n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
-                           d, m, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (n_to_fix > 0 && !n->IsTerminal()) {
-      n->AdjustForTerminal(
-          v_delta / (1.0f + params_.GetShortSightedness() * depth), d_delta,
-          m_delta, n_to_fix);
+      n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
 
     // Nothing left to do without ancestors to update.
@@ -1564,7 +1560,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Q will be flipped for opponent.
     v = -v;
     v_delta = -v_delta;
-    depth++;
     m++;
 
     // Update the stats.
