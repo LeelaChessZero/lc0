@@ -1531,7 +1531,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
-  int depth = 0;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1561,7 +1560,6 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Q will be flipped for opponent.
     v = -v;
     v_delta = -v_delta;
-    depth++;
     m++;
 
     // Update the stats.
