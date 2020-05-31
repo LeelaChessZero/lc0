@@ -366,13 +366,13 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   };
 
   std::vector<std::string> infos;
-  const auto parent_m = node->GetM();
+  const auto expect_m = node->GetM() - 1.0f;
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score, logit_q);
-    const auto child_m = edge.GetM(parent_m);
+    const auto child_m = edge.GetM(expect_m);
     float M_effect =
         do_moves_left_adjustment
-            ? (std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
+            ? (std::clamp(m_slope * (child_m - expect_m), -m_cap, m_cap) *
                std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q))
             : 0.0f;
 
@@ -1126,9 +1126,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       if (do_moves_left_adjustment) {
         const float m_slope = params_.GetMovesLeftSlope();
         const float m_cap = params_.GetMovesLeftMaxEffect();
-        const float parent_m = node->GetM();
-        const float child_m = child.GetM(parent_m);
-        M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
+        const float expect_m = node->GetM() - 1.0f;
+        const float child_m = child.GetM(expect_m);
+        M = std::clamp(m_slope * (child_m - expect_m), -m_cap, m_cap) *
             std::copysign(1.0f, -Q);
         const float a = params_.GetMovesLeftConstantFactor();
         const float b = params_.GetMovesLeftScaledFactor();
