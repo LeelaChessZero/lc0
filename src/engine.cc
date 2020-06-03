@@ -300,7 +300,7 @@ EngineLoop::EngineLoop()
 }
 
 void EngineLoop::RunLoop() {
-  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
+  if (!ConfigFile::Init() || !options_.ProcessAllFlags()) return;
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId));
   UciLoop::RunLoop();

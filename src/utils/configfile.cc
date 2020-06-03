@@ -79,7 +79,7 @@ std::string ConfigFile::ProcessConfigFlag(
   return filename;
 }
 
-bool ConfigFile::Init(OptionsParser* options) {
+bool ConfigFile::Init() {
   arguments_.clear();
 
   // Get the path from the config file parameter.
@@ -90,13 +90,12 @@ bool ConfigFile::Init(OptionsParser* options) {
   if (filename == "") return true;
 
   // Parses the file into the arguments_ vector.
-  if (!ParseFile(filename, options)) return false;
+  if (!ParseFile(filename)) return false;
 
   return true;
 }
 
-bool ConfigFile::ParseFile(std::string& filename,
-                           OptionsParser* options) {
+bool ConfigFile::ParseFile(std::string& filename) {
 
   // Check to see if we are using the default config file or not.
   const bool using_default_config = 
