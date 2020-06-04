@@ -276,7 +276,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.815f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 2.815f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = true;
-  options->Add<BoolOption>(kTwoFoldDrawId) = true;
+  options->Add<BoolOption>(kTwoFoldDrawId) = false;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTempDecayDelayMovesId, 0, 100) = 0;
