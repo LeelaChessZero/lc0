@@ -11,7 +11,7 @@ Lc0 can be acquired either via a git clone or an archive download from GitHub. B
 
 For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.25`), which is equivalent to using the latest version tag.
 
-Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the versions output by the client and engine.
+Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the version's output by the client and engine.
 
 
 Download using git:
@@ -28,7 +28,7 @@ git checkout -t remotes/origin/release/0.25
 ```
 
 
-If you prefer to download an archive, you need to also download and place the submodule:
+If you prefer to download an archive, you also need to download and place the submodule:
  * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.24) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.24) archive is also available)
  * Extract
  * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
@@ -42,13 +42,13 @@ Having successfully acquired Lc0 via either of these methods, proceed to the bui
 
 Building should be easier now than it was in the past. Please report any problems you have.
 
-Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as the required `zlib`. (`gtest` is optionally used for the test suite.) If your system already has this library installed, they will be used; otherwise Meson will generate its own copy of the two (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
+Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as the required `zlib`. (`gtest` is optionally used for the test suite.) If your system already has this library installed, they will be used; otherwise Meson will generate its own copy of the two (a "subproject"), which requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
 
-Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's DNNL or MKL. For GPUs, OpenCL and CUDA+cuDNN are supported, while DX-12 can be used in Windows 10 with latest drivers.
+Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's DNNL or MKL. For GPUs, OpenCL and CUDA+cuDNN are supported, while DX-12 can be used in Windows 10 with the latest drivers.
 
 Finally, lc0 requires a compiler supporting C++17. Minimal versions seem to be g++ v8.0, clang v5.0 (with C++17 stdlib) or Visual Studio 2017.
 
-*Note* that cuda checks the compiler version and stops even with newer compilers, and to work around this we have added the `nvcc_ccbin` build option. This is more of an issue with new Linux versions, where we recommend to install `g++-7` and add `-Dnvcc_ccbin=g++-7` to the `build.sh` command.
+*Note* that CUDA checks the compiler version and stops even with newer compilers, and to work around this we have added the `nvcc_ccbin` build option. This is more of an issue with new Linux versions, where we recommend installing `g++-7` and add `-Dnvcc_ccbin=g++-7` to the `build.sh` command.
 
 Given those basics, the OS and backend specific instructions are below.
 
@@ -71,7 +71,7 @@ If you want to build with a different compiler, pass the `CC` and `CXX` environm
 
 #### Note on installing CUDA on Ubuntu
 
-NVIDIA provides .deb packages. CUDA will be installed in `/usr/local/cuda-10.0` and requires 3GB of diskspace.
+NVIDIA provides .deb packages. CUDA will be installed in `/usr/local/cuda-10.0` and requires 3GB of disk space.
 If your `/usr/local` partition doesn't have that much space left you can create a symbolic link before
 doing the install; for example: `sudo ln -s /opt/cuda-10.0 /usr/local/cuda-10.0`
 
@@ -125,12 +125,12 @@ Instructions, packages and tools for building on openSUSE are at [openSUSE_insta
 #### Docker
 
 Use https://github.com/vochicong/lc0-docker
-to run latest releases of lc0 and the client inside a Docker container.
+to run the latest releases of lc0 and the client inside a Docker container.
 
 
 ### Windows
 
-Here are the brief instructions for CUDA/CuDNN, for details and other options see `windows-build.md`.
+Here are the brief instructions for CUDA/cuDNN, for details and other options see `windows-build.md`.
 
 0. Install Microsoft Visual Studio (2017 or later)
 1. Install [CUDA](https://developer.nvidia.com/cuda-zone)
@@ -147,7 +147,7 @@ Here are the brief instructions for CUDA/CuDNN, for details and other options se
 Then either:
 
 7. Hit `Enter` to build it.
-8. Resulting binary will be `build/lc0.exe`
+8. Resulting binary will be in `build/lc0.exe`
 
 Or.
 
@@ -182,7 +182,7 @@ sudo make PREFIX=/usr install
 cd ..
 ```
 
-2. Install Meson
+2. Install Meson and ninja
 
 ```
 pip3 install meson
@@ -204,7 +204,7 @@ git submodule update --init --recursive
 CC=clang-6.0 CXX=clang++-6.0 ./build.sh -Ddefault_library=static
 ```
 
-5. The resulting binary will be in build/release
+5. The resulting binary will be in `build/release`
 
 ## License
 
