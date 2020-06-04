@@ -213,7 +213,7 @@ std::string Node::DebugString() const {
       << " Parent:" << parent_ << " Index:" << index_
       << " Child:" << child_.get() << " Sibling:" << sibling_.get()
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " Edges:" << num_edges_
+      << " Edges:" << static_cast<int>(num_edges_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
   return oss.str();
@@ -293,6 +293,17 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Decrement virtual loss.
   n_in_flight_ -= multivisit;
   // Best child is potentially no longer valid.
+  best_child_cached_ = nullptr;
+}
+
+void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
+  // Recompute Q.
+  wl_ += multivisit * v / n_;
+  d_ += multivisit * d / n_;
+  m_ += multivisit * m / n_;
+  // Best child is potentially no longer valid. This shouldn't be needed since
+  // AjdustForTerminal is always called immediately after FinalizeScoreUpdate,
+  // but for safety in case that changes.
   best_child_cached_ = nullptr;
 }
 

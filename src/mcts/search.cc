@@ -28,6 +28,7 @@
 #include "mcts/search.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -312,14 +313,14 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
   };
-  auto print_head = [&](auto* oss, auto label, auto i, auto n, auto f, auto p) {
+  auto print_head = [&](auto* oss, auto label, int i, auto n, auto f, auto p) {
     *oss << std::fixed;
     print(oss, "", label, " ", 5);
     print(oss, "(", i, ") ", 4);
     *oss << std::right;
     print(oss, "N: ", n, " ", 7);
     print(oss, "(+", f, ") ", 2);
-    print(oss, "(P: ", p * 100, "%) ", 5, 2);
+    print(oss, "(P: ", p * 100, "%) ", 5, p >= 0.99995f ? 1 : 2);
   };
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
@@ -365,11 +366,13 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   };
 
   std::vector<std::string> infos;
+  const auto parent_m = node->GetM();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score, logit_q);
+    const auto child_m = edge.GetM(parent_m);
     float M_effect =
         do_moves_left_adjustment
-            ? (std::clamp(m_slope * edge.GetM(0.0f), -m_cap, m_cap) *
+            ? (std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
                std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q))
             : 0.0f;
 
@@ -769,7 +772,6 @@ void Search::WatchdogThread() {
     MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
 
-    using namespace std::chrono_literals;
     constexpr auto kMaxWaitTimeMs = 100;
     constexpr auto kMinWaitTimeMs = 1;
 
@@ -899,6 +901,22 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 7. Update the Search's status and progress information.
   UpdateCounters();
+
+  // If required, waste time to limit nps.
+  if (params_.GetNpsLimit() > 0) {
+    while (search_->IsSearchActive()) {
+      auto time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
+      if (time_since_first_batch_ms <= 0) {
+        time_since_first_batch_ms = search_->GetTimeSinceStart();
+      }
+      auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
+      if (nps > params_.GetNpsLimit()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } else {
+        break;
+      }
+    }
+  }
 }
 
 // 1. Initialize internal structures.
@@ -1448,7 +1466,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                 edge.GetMove().as_nn_index(
                                     node_to_process->probability_transform)));
   }
+  // Intermediate array to store values when processing policy.
+  // There are never more than 256 valid legal moves in any legal position.
+  std::array<float, 256> intermediate;
   float total = 0.0;
+  int counter = 0;
   for (auto edge : node->Edges()) {
     float p = computation_->GetPVal(
         idx_in_computation,
@@ -1457,16 +1479,14 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
     p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
 
-    // Note that p now lies in [0, 1], so it is safe to store it in compressed
-    // format. Normalization happens later.
-    edge.edge()->SetP(p);
-    // Edge::SetP does some rounding, so only add to the total after rounding.
-    total += edge.edge()->GetP();
+    intermediate[counter++] = p;
+    total += p;
   }
+  counter = 0;
   // Normalize P values to add up to 1.0.
-  if (total > 0.0f) {
-    const float scale = 1.0f / total;
-    for (auto edge : node->Edges()) edge.edge()->SetP(edge.GetP() * scale);
+  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
+  for (auto edge : node->Edges()) {
+    edge.edge()->SetP(intermediate[counter++] * scale);
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
@@ -1509,7 +1529,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.v;
   float d = node_to_process.d;
   float m = node_to_process.m;
-  int depth = 0;
+  int n_to_fix = 0;
+  float v_delta = 0.0f;
+  float d_delta = 0.0f;
+  float m_delta = 0.0f;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1520,21 +1543,25 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
       m = n->GetM();
     }
-    n->FinalizeScoreUpdate(v / (1.0f + params_.GetShortSightedness() * depth),
-                           d, m, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    if (n_to_fix > 0 && !n->IsTerminal()) {
+      n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+    }
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
 
     bool old_update_parent_bounds = update_parent_bounds;
-
+    // If parent already is terminal further adjustment is not required.
+    if (p->IsTerminal()) n_to_fix = 0;
     // Try setting parent bounds except the root or those already terminal.
-    update_parent_bounds = update_parent_bounds && p != search_->root_node_ &&
-                           !p->IsTerminal() && MaybeSetBounds(p, m);
+    update_parent_bounds =
+        update_parent_bounds && p != search_->root_node_ && !p->IsTerminal() &&
+        MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta);
 
     // Q will be flipped for opponent.
     v = -v;
-    depth++;
+    v_delta = -v_delta;
     m++;
 
     // Update the stats.
@@ -1546,9 +1573,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // that isn't already the best and the new n is equal or greater to the old
     // n.
     if (p == search_->root_node_ &&
-        (old_update_parent_bounds && n->IsTerminal() ||
-         n != search_->current_best_edge_.node() &&
-             search_->current_best_edge_.GetN() <= n->GetN())) {
+        ((old_update_parent_bounds && n->IsTerminal()) ||
+         (n != search_->current_best_edge_.node() &&
+          search_->current_best_edge_.GetN() <= n->GetN()))) {
       search_->current_best_edge_ =
           search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }
@@ -1558,7 +1585,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }
 
-bool SearchWorker::MaybeSetBounds(Node* p, float m) const {
+bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
+                                  float* v_delta, float* d_delta,
+                                  float* m_delta) const {
   auto losing_m = 0.0f;
   auto prefer_tb = false;
 
@@ -1603,10 +1632,20 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m) const {
   } else if (lower == upper) {
     // Search can stop at the parent if the bounds can't change anymore, so make
     // it terminal preferring shorter wins and longer losses.
+    *n_to_fix = p->GetN();
+    assert(*n_to_fix > 0);
+    float cur_v = p->GetWL();
+    float cur_d = p->GetD();
+    float cur_m = p->GetM();
     p->MakeTerminal(
         -upper,
         (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
         prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+    // Negate v_delta because we're calculating for the parent, but immediately
+    // afterwards we'll negate v_delta in case it has come from the child.
+    *v_delta = -(p->GetWL() - cur_v);
+    *d_delta = p->GetD() - cur_d;
+    *m_delta = p->GetM() - cur_m;
   } else {
     p->SetBounds(-upper, -lower);
   }
