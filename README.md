@@ -44,7 +44,7 @@ Building should be easier now than it was in the past. Please report any problem
 
 Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as the required `zlib`. (`gtest` is optionally used for the test suite.) If your system already has this library installed, they will be used; otherwise Meson will generate its own copy of the two (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
 
-Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's DNNL or MKL. For GPUs, OpenCL and CUDA+cudnn are supported, while DX-12 can be used in Windows 10 with latest drivers.
+Backend support includes (in theory) any CBLAS-compatible library for CPU usage, such as OpenBLAS or Intel's DNNL or MKL. For GPUs, OpenCL and CUDA+cuDNN are supported, while DX-12 can be used in Windows 10 with latest drivers.
 
 Finally, lc0 requires a compiler supporting C++17. Minimal versions seem to be g++ v8.0, clang v5.0 (with C++17 stdlib) or Visual Studio 2017.
 
@@ -57,9 +57,9 @@ Given those basics, the OS and backend specific instructions are below.
 #### Generic
 
 1. Install backend:
-    - If you want to use NVidia graphics cards Install [CUDA](https://developer.nvidia.com/cuda-zone) and [cuDNN](https://developer.nvidia.com/cudnn).
+    - If you want to use NVIDIA graphics cards install [CUDA](https://developer.nvidia.com/cuda-zone) and [cuDNN](https://developer.nvidia.com/cudnn).
     - If you want to use AMD graphics cards install OpenCL.
-    - if you want OpenBLAS version Install OpenBLAS (`libopenblas-dev`).
+    - If you want OpenBLAS version install OpenBLAS (`libopenblas-dev`).
 2. Install ninja build (`ninja-build`), meson, and (optionally) gtest (`libgtest-dev`).
 3. Go to `lc0/`
 4. Run `./build.sh`
@@ -71,11 +71,11 @@ If you want to build with a different compiler, pass the `CC` and `CXX` environm
 
 #### Note on installing CUDA on Ubuntu
 
-Nvidia provides .deb packages. CUDA will be installed in `/usr/local/cuda-10.0` and requires 3GB of diskspace.
+NVIDIA provides .deb packages. CUDA will be installed in `/usr/local/cuda-10.0` and requires 3GB of diskspace.
 If your `/usr/local` partition doesn't have that much space left you can create a symbolic link before
 doing the install; for example: `sudo ln -s /opt/cuda-10.0 /usr/local/cuda-10.0`
 
-The instructions given on the nvidia website tell you to finish with `apt install cuda`. However, this
+The instructions given on the NVIDIA website tell you to finish with `apt install cuda`. However, this
 might not work (missing dependencies). In that case use `apt install cuda-10-0`. Afterwards you can
 install the meta package `cuda` which will cause an automatic upgrade to a newer version when that
 comes available (assuming you use `Installer Type deb (network)`, if you'd want that (just cuda-10-0 will
@@ -83,10 +83,10 @@ stay at version 10). If you don't know what to do, only install cuda-10-0.
 
 cuDNN exists of two packages, the Runtime Library and the Developer Library (both a .deb package).
 
-Before you can download the latter you need to create a (free) "developer" account with nvidia for
-which at least a legit email address is required (their website says: The e-mail address is not made public
+Before you can download the latter you need to create a (free) "developer" account with NVIDIA for
+which at least a legit email address is required (their website says: "The e-mail address is not made public
 and will only be used if you wish to receive a new password or wish to receive certain news or notifications
-by e-mail.). Further they ask for a name, date of birth (not visible later on), country, organisation ("LeelaZero"
+by e-mail."). Further they ask for a name, date of birth (not visible later on), country, organisation ("LeelaZero"
 if you have none), primary industry segment ("Other"/none) and which development areas you are interested
 in ("Deep Learning").
 
@@ -102,7 +102,7 @@ Make sure that `~/.local/bin` is in your `PATH` environment variable. You can no
 
 #### Ubuntu 16.04
 
-For Ubuntu 16.04 you need the latest version of meson, ninja and also gcc-8.0 before performing the steps above:
+For Ubuntu 16.04 you need the latest version of Meson, ninja and also gcc-8.0 before performing the steps above:
 
     sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
@@ -158,7 +158,7 @@ Or.
 First you need to install some required packages:
 1. Install brew as per the instructions at https://brew.sh/
 2. Install python3: `brew install python3`
-3. Install meson: `brew install meson`
+3. Install Meson: `brew install meson`
 4. Install ninja: `brew install ninja`
 5. When using Mojave install SDK headers: installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /
 
