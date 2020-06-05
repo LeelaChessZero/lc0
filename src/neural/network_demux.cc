@@ -222,8 +222,8 @@ class DemuxingNetwork : public Network {
 
 void DemuxingComputation::ComputeBlocking() {
   if (GetBatchSize() == 0) return;
-  partial_size_ = (GetBatchSize() + network_->networks_.size() - 1) /
-                  network_->networks_.size();
+  partial_size_ = (GetBatchSize() + network_->threads_.size() - 1) /
+                  network_->threads_.size();
   if (partial_size_ < network_->minimum_split_size_) {
     partial_size_ = std::min(GetBatchSize(), network_->minimum_split_size_);
   }
