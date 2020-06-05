@@ -83,7 +83,7 @@ stay at version 10). If you don't know what to do, only install cuda-10-0.
 
 cuDNN exists of two packages, the Runtime Library and the Developer Library (both a .deb package).
 
-Before you can download the latter you need to create a (free) "developer" account with NVIDIA for
+Before you can download the latter, you need to create a (free) "developer" account with NVIDIA for
 which at least a legit email address is required (their website says: "The e-mail address is not made public
 and will only be used if you wish to receive a new password or wish to receive certain news or notifications
 by e-mail."). Further they ask for a name, date of birth (not visible later on), country, organisation ("LeelaZero"
