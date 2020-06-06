@@ -30,6 +30,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+
 #include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
@@ -105,12 +106,20 @@ OptionsParser::Option* OptionsParser::FindOptionById(const OptionId& id) const {
 
 OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) {
   if (context == "") return &values_;
-  return values_.GetMutableSubdict(context);
+  auto* result = &values_;
+  for (const auto& x : StrSplit(context, ".")) {
+    result = result->GetMutableSubdict(x);
+  }
+  return result;
 }
 
 const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
   if (context == "") return values_;
-  return values_.GetSubdict(context);
+  const auto* result = &values_;
+  for (const auto& x : StrSplit(context, ".")) {
+    result = &result->GetSubdict(x);
+  }
+  return *result;
 }
 
 bool OptionsParser::ProcessAllFlags() {
@@ -148,7 +157,7 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         value = param.substr(pos + 1);
         param = param.substr(0, pos);
       }
-      pos = param.find('.');
+      pos = param.rfind('.');
       if (pos != std::string::npos) {
         context = param.substr(0, pos);
         param = param.substr(pos + 1);
@@ -480,7 +489,7 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 int IntOption::ValidateIntString(const std::string& val) const {
   int result;
   const auto end = val.data() + val.size();
-  auto [ptr, err] = std::from_chars(val.data(), end, result);  
+  auto [ptr, err] = std::from_chars(val.data(), end, result);
   if (err == std::errc::invalid_argument) {
     throw Exception("Flag '--" + GetLongFlag() + "' has an invalid format.");
   } else if (err == std::errc::result_out_of_range) {
@@ -493,7 +502,7 @@ int IntOption::ValidateIntString(const std::string& val) const {
 }
 #else
 int IntOption::ValidateIntString(const std::string& val) const {
-  char *end;
+  char* end;
   errno = 0;
   int result = std::strtol(val.c_str(), &end, 10);
   if (errno == ERANGE) {

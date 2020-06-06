@@ -85,6 +85,13 @@ const OptionId kOpeningsModeId{"openings-mode", "OpeningsMode",
 void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player1");
   options->AddContext("player2");
+  options->AddContext("white");
+  options->AddContext("black");
+  for (const auto context : {"player1", "player2"}) {
+    auto* dict = options->GetMutableOptions(context);
+    dict->AddSubdict("white")->AddAliasDict(&options->GetOptionsDict("white"));
+    dict->AddSubdict("black")->AddAliasDict(&options->GetOptionsDict("black"));
+  }
 
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
@@ -133,16 +140,14 @@ SelfPlayTournament::SelfPlayTournament(
     CallbackUciResponder::BestMoveCallback best_move_info,
     CallbackUciResponder::ThinkingCallback thinking_info,
     GameInfo::Callback game_info, TournamentInfo::Callback tournament_info)
-    : player_options_{options.GetSubdict("player1"),
-                      options.GetSubdict("player2")},
+    : player_options_{{options.GetSubdict("player1.white"),
+                       options.GetSubdict("player1.black")},
+                      {options.GetSubdict("player2.white"),
+                       options.GetSubdict("player2.black")}},
       best_move_callback_(best_move_info),
       info_callback_(thinking_info),
       game_callback_(game_info),
       tournament_callback_(tournament_info),
-      kThreads{
-          options.GetSubdict("player1").Get<int>(kThreadsId),
-          options.GetSubdict("player2").Get<int>(kThreadsId),
-      },
       kTotalGames(options.Get<int>(kTotalGamesId)),
       kShareTree(options.Get<bool>(kShareTreesId)),
       kParallelism(options.Get<int>(kParallelGamesId)),
@@ -165,13 +170,14 @@ SelfPlayTournament::SelfPlayTournament(
 
   static const char* kPlayerNames[2] = {"player1", "player2"};
   // Initializing networks.
-  const auto& player1_opts = options.GetSubdict(kPlayerNames[0]);
-  const auto& player2_opts = options.GetSubdict(kPlayerNames[1]);
-  networks_[0] = NetworkFactory::LoadNetwork(player1_opts);
-  networks_[1] = NetworkFactory::BackendConfiguration(player1_opts) ==
-                         NetworkFactory::BackendConfiguration(player2_opts)
-                     ? networks_[0]
-                     : NetworkFactory::LoadNetwork(player2_opts);
+  for (const auto& context :
+       {"player1.white", "player1.black", "player2.white", "player2.black"}) {
+    const auto& opts = options.GetSubdict(context);
+    const auto config = NetworkFactory::BackendConfiguration(opts);
+    if (networks_.find(config) == networks_.end()) {
+      networks_.emplace(config, NetworkFactory::LoadNetwork(opts));
+    }
+  }
 
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(
@@ -209,10 +215,10 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     Mutex::Lock lock(mutex_);
     player1_black = ((game_number % 2) == 1) != first_game_black_;
     if (!openings_.empty()) {
-      if (player_options_[0].Get<bool>(kOpeningsMirroredId)) {
+      if (player_options_[0][!player1_black].Get<bool>(kOpeningsMirroredId)) {
         opening = openings_[(game_number / 2) % openings_.size()];
-      } else if (player_options_[0].Get<std::string>(kOpeningsModeId) ==
-                 "random") {
+      } else if (player_options_[0][!player1_black].Get<std::string>(
+                     kOpeningsModeId) == "random") {
         opening = openings_[Random::Get().GetInt(0, openings_.size() - 1)];
       } else {
         opening = openings_[game_number % openings_.size()];
@@ -234,15 +240,18 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
   std::vector<ThinkingInfo> last_thinking_info;
   for (int pl_idx : {0, 1}) {
+    const int color = color_idx[pl_idx];
     const bool verbose_thinking =
-        player_options_[pl_idx].Get<bool>(kVerboseThinkingId);
+        player_options_[pl_idx][color].Get<bool>(kVerboseThinkingId);
     const bool move_thinking =
-        player_options_[pl_idx].Get<bool>(kMoveThinkingId);
+        player_options_[pl_idx][color].Get<bool>(kMoveThinkingId);
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
-    opt.network = networks_[pl_idx].get();
+    opt.network = networks_[NetworkFactory::BackendConfiguration(
+                                player_options_[pl_idx][color])]
+                      .get();
     opt.cache = cache_[pl_idx].get();
-    opt.uci_options = &player_options_[pl_idx];
+    opt.uci_options = &player_options_[pl_idx][color];
     opt.search_limits = search_limits_[pl_idx];
 
     // "bestmove" callback.
@@ -316,8 +325,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
 
   // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining,
-            enable_resign);
+  auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
+  auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
+  game.Play(player1_threads, player2_threads, kTraining, enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
@@ -368,7 +378,7 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      bool mirrored = player_options_[0].Get<bool>(kOpeningsMirroredId);
+      bool mirrored = player_options_[0][0].Get<bool>(kOpeningsMirroredId);
       if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
           (kTotalGames == -2 && !openings_.empty() &&
            games_count_ >=
