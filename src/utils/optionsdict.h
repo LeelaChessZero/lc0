@@ -28,6 +28,7 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
