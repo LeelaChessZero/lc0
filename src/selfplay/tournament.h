@@ -96,7 +96,7 @@ class SelfPlayTournament {
   std::shared_ptr<NNCache> cache_[2];
   // [player1 or player2][white or black].
   const OptionsDict player_options_[2][2];
-  SelfPlayLimits search_limits_[2];
+  SelfPlayLimits search_limits_[2][2];
 
   CallbackUciResponder::BestMoveCallback best_move_callback_;
   CallbackUciResponder::ThinkingCallback info_callback_;

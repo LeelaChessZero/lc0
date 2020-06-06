@@ -140,10 +140,10 @@ SelfPlayTournament::SelfPlayTournament(
     CallbackUciResponder::BestMoveCallback best_move_info,
     CallbackUciResponder::ThinkingCallback thinking_info,
     GameInfo::Callback game_info, TournamentInfo::Callback tournament_info)
-    : player_options_{{options.GetSubdict("player1.white"),
-                       options.GetSubdict("player1.black")},
-                      {options.GetSubdict("player2.white"),
-                       options.GetSubdict("player2.black")}},
+    : player_options_{{options.GetSubdict("player1").GetSubdict("white"),
+                       options.GetSubdict("player1").GetSubdict("black")},
+                      {options.GetSubdict("player2").GetSubdict("white"),
+                       options.GetSubdict("player2").GetSubdict("black")}},
       best_move_callback_(best_move_info),
       info_callback_(thinking_info),
       game_callback_(game_info),
@@ -168,14 +168,14 @@ SelfPlayTournament::SelfPlayTournament(
     first_game_black_ = Random::Get().GetBool();
   }
 
-  static const char* kPlayerNames[2] = {"player1", "player2"};
   // Initializing networks.
-  for (const auto& context :
-       {"player1.white", "player1.black", "player2.white", "player2.black"}) {
-    const auto& opts = options.GetSubdict(context);
-    const auto config = NetworkFactory::BackendConfiguration(opts);
-    if (networks_.find(config) == networks_.end()) {
-      networks_.emplace(config, NetworkFactory::LoadNetwork(opts));
+  for (const auto& name : {"player1", "player2"}) {
+    for (const auto& color : {"white", "black"}) {
+      const auto& opts = options.GetSubdict(name).GetSubdict(color);
+      const auto config = NetworkFactory::BackendConfiguration(opts);
+      if (networks_.find(config) == networks_.end()) {
+        networks_.emplace(config, NetworkFactory::LoadNetwork(opts));
+      }
     }
   }
 
@@ -190,20 +190,23 @@ SelfPlayTournament::SelfPlayTournament(
   }
 
   // SearchLimits.
-  for (int idx : {0, 1}) {
-    search_limits_[idx].playouts =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kPlayoutsId);
-    search_limits_[idx].visits =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kVisitsId);
-    search_limits_[idx].movetime =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsId);
+  static constexpr const char* kPlayerNames[2] = {"player1", "player2"};
+  static constexpr const char* kPlayerColors[2] = {"white", "black"};
+  for (int name_idx : {0, 1}) {
+    for (int color_idx : {0, 1}) {
+      auto& limits = search_limits_[name_idx][color_idx];
+      const auto& dict = options.GetSubdict(kPlayerNames[name_idx])
+                             .GetSubdict(kPlayerColors[color_idx]);
+      limits.playouts = dict.Get<int>(kPlayoutsId);
+      limits.visits = dict.Get<int>(kVisitsId);
+      limits.movetime = dict.Get<int>(kTimeMsId);
 
-    if (search_limits_[idx].playouts == -1 &&
-        search_limits_[idx].visits == -1 &&
-        search_limits_[idx].movetime == -1) {
-      throw Exception(
-          "Please define --visits, --playouts or --movetime, otherwise it's "
-          "not clear when to stop search.");
+      if (limits.playouts == -1 && limits.visits == -1 &&
+          limits.movetime == -1) {
+        throw Exception(
+            "Please define --visits, --playouts or --movetime, otherwise it's "
+            "not clear when to stop search.");
+      }
     }
   }
 }
@@ -252,7 +255,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
                       .get();
     opt.cache = cache_[pl_idx].get();
     opt.uci_options = &player_options_[pl_idx][color];
-    opt.search_limits = search_limits_[pl_idx];
+    opt.search_limits = search_limits_[pl_idx][color];
 
     // "bestmove" callback.
     opt.best_move_callback = [this, game_number, pl_idx, player1_black,
