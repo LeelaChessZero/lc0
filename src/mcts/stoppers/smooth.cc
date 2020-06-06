@@ -137,12 +137,13 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
       max_single_move_time_fraction_(
           params.GetOrDefault<float>("max-move-budget", 0.3f)),
       initial_piggybank_fraction_(
-          params.GetOrDefault<float>("init-piggybank", 0.1f)),
+          params.GetOrDefault<float>("init-piggybank", 0.0f)),
       per_move_piggybank_fraction_(
-          params.GetOrDefault<float>("per-move-piggybank", 0.1f)),
-      max_piggybank_use_(params.GetOrDefault<float>("max-piggybank-use", 0.8f)),
+          params.GetOrDefault<float>("per-move-piggybank", 0.18f)),
+      max_piggybank_use_(
+          params.GetOrDefault<float>("max-piggybank-use", 0.95f)),
       max_piggybank_moves_(
-          params.GetOrDefault<float>("max-piggybank-moves", 10.0f)),
+          params.GetOrDefault<float>("max-piggybank-moves", 27.0f)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
 // Returns the updated value of @from, towards @to by the number of halves
