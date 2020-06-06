@@ -49,8 +49,9 @@ class ConfigFile {
 
  private:
   // Parses the config file into the arguments_ vector.
-  static bool ParseFile(const std::string& filename, OptionsParser* options);
+  static bool ParseFile(std::string& filename, OptionsParser* options);
 
+  // Returns the absolute path to the config file argument given.
   static std::string ProcessConfigFlag(const std::vector<std::string>& args);
 
   static std::vector<std::string> arguments_;

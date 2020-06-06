@@ -84,7 +84,6 @@ class SearchParams {
   }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
-  float GetShortSightedness() const { return kShortSightedness; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
@@ -112,6 +111,7 @@ class SearchParams {
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
 
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
+  float GetNpsLimit() const { return kNpsLimit; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -156,7 +156,6 @@ class SearchParams {
   static const OptionId kMovesLeftScaledFactorId;
   static const OptionId kMovesLeftQuadraticFactorId;
   static const OptionId kMovesLeftSlopeId;
-  static const OptionId kShortSightednessId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
   static const OptionId kDrawScoreSidetomoveId;
@@ -164,6 +163,7 @@ class SearchParams {
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
   static const OptionId kMaxOutOfOrderEvalsId;
+  static const OptionId kNpsLimitId;
 
  private:
   const OptionsDict& options_;
@@ -201,7 +201,6 @@ class SearchParams {
   const float kMovesLeftConstantFactor;
   const float kMovesLeftScaledFactor;
   const float kMovesLeftQuadraticFactor;
-  const float kShortSightedness;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
   const float kDrawScoreSidetomove;
@@ -209,6 +208,7 @@ class SearchParams {
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
   const int kMaxOutOfOrderEvals;
+  const float kNpsLimit;
 };
 
 }  // namespace lczero

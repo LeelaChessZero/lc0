@@ -31,34 +31,21 @@ namespace lczero {
 
 namespace {
 
-class AlphazeroStopper : public TimeLimitStopper {
- public:
-  AlphazeroStopper(int64_t deadline_ms, int64_t* time_piggy_bank)
-      : TimeLimitStopper(deadline_ms), time_piggy_bank_(time_piggy_bank) {}
-  void OnSearchDone(const IterationStats& stats) override {
-    *time_piggy_bank_ += GetTimeLimitMs() - stats.time_since_movestart;
-  }
-
- private:
-  int64_t* const time_piggy_bank_;
-};
-
 class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        alphazerotimevalue_(params.GetOrDefault<float>("alphazero-time-value", 20.0f)),
-        spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)) {}
+        alphazerotimepct_(params.GetOrDefault<float>("alphazero-time-pct", 5.0f)) {
+    if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f) 
+      throw Exception("alphazero-time-pct value to be in range [0.0, 100.0]");
+    }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
  private:
   const int64_t move_overhead_;
-  const float alphazerotimevalue_;
-  const float spend_saved_time_;
-  // No need to be atomic as only one thread will update it.
-  int64_t time_spared_ms_ = 0;
-};
+  const float alphazerotimepct_;
+ };
 
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
     const GoParams& params, const NodeTree& tree) {
@@ -68,22 +55,15 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
-  const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
-  const int increment = inc ? std::max(int64_t(0), *inc) : 0;
-
-  auto total_moves_time = *time + increment - move_overhead_;
+  auto total_moves_time = *time - move_overhead_;
   
-  // use the increment in the first upcoming move
-  float this_move_time = increment + (total_moves_time / alphazerotimevalue_);
+  float this_move_time = total_moves_time * (alphazerotimepct_ / 100.0f);
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
           << "Remaining time " << *time
           << "ms(-" << move_overhead_ << "ms overhead)";
   
-  // Make sure we don't exceed current time limit with what we calculated.
-  auto deadline =
-      std::min(static_cast<int64_t>(this_move_time), *time + increment - move_overhead_);
-  return std::make_unique<AlphazeroStopper>(deadline, &time_spared_ms_);
+  return std::make_unique<TimeLimitStopper>(this_move_time);
 }
 
 }  // namespace
