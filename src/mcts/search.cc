@@ -189,6 +189,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     // Using 1000-w-l instead of 1000*d for D score so that W+D+L add up to
     // 1000.0.
     uci_info.wdl = ThinkingInfo::WDL{w, 1000 - w - l, l};
+    if (network_->GetCapabilities().has_mlh()) {
+      uci_info.moves_left = static_cast<int>(
+          (1.0f + edge.GetM(1.0f + root_node_->GetM())) / 2.0f);
+    }
     if (max_pv > 1) uci_info.multipv = multipv;
     if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
