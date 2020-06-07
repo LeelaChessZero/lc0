@@ -121,7 +121,7 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   } else if (net_path == kEmbed) {
     net_path = CommandLine::BinaryName();
   } else {
-    CERR << "Loading weights file from: " << net_path;
+    LogInfo("Load weights file from: " + net_path);
   }
   std::optional<WeightsFile> weights;
   if (!net_path.empty()) {

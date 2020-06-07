@@ -68,6 +68,16 @@ void Logging::SetFilename(const std::string& filename) {
   buffer_.clear();
 }
 
+std::function<void(const std::string&)> LogInfo::logFunc = nullptr;
+
+LogInfo::LogInfo(const std::string& msg) {
+    if (logFunc) {
+        (logFunc)(msg);
+    } else {
+        CERR << msg;
+    }
+}
+
 LogMessage::LogMessage(const char* file, int line) {
   *this << FormatTime(std::chrono::system_clock::now()) << ' '
         << std::setfill(' ') << std::this_thread::get_id() << std::setfill('0')

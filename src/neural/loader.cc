@@ -217,7 +217,7 @@ std::string DiscoverWeightsFile() {
     int val = 0;
     data >> val;
     if (!data.fail() && val == 2) {
-      CERR << "Found txt network file: " << candidate.second;
+      LogInfo("Found txt network file: " + candidate.second);
       return candidate.second;
     }
 
@@ -227,7 +227,7 @@ std::string DiscoverWeightsFile() {
                        (static_cast<uint32_t>(buf[3]) << 16) |
                        (static_cast<uint32_t>(buf[4]) << 24);
     if (magic == kWeightMagic) {
-      CERR << "Found pb network file: " << candidate.second;
+      LogInfo("Found pb network file: " + candidate.second);
       return candidate.second;
     }
   }
