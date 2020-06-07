@@ -218,7 +218,6 @@ std::optional<T> OptionsDict::OwnGet(const OptionId& option_id) const {
 
 template <typename T>
 bool OptionsDict::Exists(const std::string& key) const {
-  if (OwnExists<T>(key)) return true;
   for (const auto* alias : aliases_) {
     if (alias->OwnExists<T>(key)) return true;
   }

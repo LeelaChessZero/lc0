@@ -218,10 +218,10 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     Mutex::Lock lock(mutex_);
     player1_black = ((game_number % 2) == 1) != first_game_black_;
     if (!openings_.empty()) {
-      if (player_options_[0][!player1_black].Get<bool>(kOpeningsMirroredId)) {
+      if (player_options_[0][0].Get<bool>(kOpeningsMirroredId)) {
         opening = openings_[(game_number / 2) % openings_.size()];
-      } else if (player_options_[0][!player1_black].Get<std::string>(
-                     kOpeningsModeId) == "random") {
+      } else if (player_options_[0][0].Get<std::string>(kOpeningsModeId) ==
+                 "random") {
         opening = openings_[Random::Get().GetInt(0, openings_.size() - 1)];
       } else {
         opening = openings_[game_number % openings_.size()];
