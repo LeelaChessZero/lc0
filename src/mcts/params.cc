@@ -188,6 +188,9 @@ const OptionId SearchParams::kStickyEndgamesId{
     "example, if at least one move results in checkmate, then the position "
     "should stick as checkmated. Similarly, if all moves are drawn or "
     "checkmated, the position should stick as drawn or checkmate."};
+const OptionId SearchParams::kSyzygy50MoveRuleId{
+    "syzygy-50-move-rule", "Syzygy50MoveRule",
+    "Use 50-move rule to treat blessed losses and cursed wins as draw."};
 const OptionId SearchParams::kSyzygyFastPlayId{
     "syzygy-fast-play", "SyzygyFastPlay",
     "With DTZ tablebase files, only allow the network pick from winning moves "
@@ -298,6 +301,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 1.0f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
+  options->Add<BoolOption>(kSyzygy50MoveRuleId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   options->Add<BoolOption>(kPerPvCountersId) = false;
@@ -374,6 +378,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId)),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId)),
       kStickyEndgames(options.Get<bool>(kStickyEndgamesId)),
+      kSyzygy50MoveRule(options.Get<bool>(kSyzygy50MoveRuleId)),
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId)),
       kHistoryFill(EncodeHistoryFill(options.Get<std::string>(kHistoryFillId))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId)),

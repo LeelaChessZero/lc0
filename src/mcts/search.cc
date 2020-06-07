@@ -1237,13 +1237,15 @@ void SearchWorker::ExtendNode(Node* node) {
           m = std::max(0.0f, parent->GetM() - 1.0f);
         }
         // If the colors seem backwards, check the checkmate check above.
-        if (wdl == WDL_WIN) {
+        const auto use_50_move_rule = params_.GetSyzygy50MoveRule();
+        if (wdl >= (use_50_move_rule ? WDL_WIN : WDL_CURSED_WIN)) {
           node->MakeTerminal(GameResult::BLACK_WON, m,
                              Node::Terminal::Tablebase);
-        } else if (wdl == WDL_LOSS) {
+        } else if (wdl <= (use_50_move_rule ? WDL_LOSS : WDL_BLESSED_LOSS)) {
           node->MakeTerminal(GameResult::WHITE_WON, m,
                              Node::Terminal::Tablebase);
-        } else {  // Cursed wins and blessed losses count as draws.
+        } else {
+          // Cursed wins and blessed losses also are draws using 50 move rule.
           node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
