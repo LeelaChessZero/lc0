@@ -143,15 +143,15 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     common_info.hashfull =
         cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   }
-  if (nps_start_time_) {
-    const auto time_since_first_batch_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - *nps_start_time_)
-            .count();
-    if (time_since_first_batch_ms > 0) {
-      common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
-    }
-  }
+  const auto time_since_first_batch_ms =
+      nps_start_time_ ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - *nps_start_time_)
+                            .count()
+                      : 0;
+  // Report new nodes / elapsed time defaulting to all (i.e., nodes / 1 second).
+  common_info.nps = time_since_first_batch_ms > 0
+                        ? total_playouts_ * 1000 / time_since_first_batch_ms
+                        : total_playouts_;
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   int multipv = 0;
