@@ -27,6 +27,7 @@
 
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "utils/string.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -121,6 +122,34 @@ std::string GetUserDataDirectory() {
   const char *home = std::getenv("HOME");
   if (home == NULL) return std::string();
   return std::string(home) + "/" + kLocalDir;
+}
+
+std::vector<std::string> GetSystemConfigDirectoryList() {
+#ifdef __APPLE__
+  return {};
+#else
+  std::vector<std::string> result;
+  const char *xdg_config_dirs = std::getenv("XDG_CONFIG_DIRS");
+  if (xdg_config_dirs == NULL) {
+    return {"/etc/xdg/"};
+  }
+  result = StrSplit(xdg_config_dirs, ":");
+  return result;
+#endif
+}
+
+std::vector<std::string> GetSystemDataDirectoryList() {
+#ifdef __APPLE__
+  return {};
+#else
+  std::vector<std::string> result;
+  const char *xdg_data_dirs = std::getenv("XDG_DATA_DIRS");
+  if (xdg_data_dirs == NULL) {
+    return {"/usr/local/share/", "/usr/share/"};
+  }
+  result = StrSplit(xdg_data_dirs, ":");
+  return result;
+#endif
 }
 
 }  // namespace lczero
