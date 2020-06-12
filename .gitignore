@@ -2,7 +2,9 @@
 *.swp
 .clang_complete
 .DS_Store
+.clangd/
 build/
+__pycache__/
 compile_commands.json
 CUDA_NN/
 lc0.xcodeproj/

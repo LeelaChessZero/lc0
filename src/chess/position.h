@@ -77,7 +77,9 @@ class Position {
   int ply_count_ = 0;
 };
 
-enum class GameResult { UNDECIDED, WHITE_WON, DRAW, BLACK_WON };
+// These are ordered so max() prefers the best result.
+enum class GameResult : uint8_t { UNDECIDED, BLACK_WON, DRAW, WHITE_WON };
+GameResult operator-(const GameResult& res);
 
 class PositionHistory {
  public:

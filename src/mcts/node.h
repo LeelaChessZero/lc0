@@ -80,6 +80,9 @@ namespace lczero {
 class Node;
 class Edge {
  public:
+  // Creates array of edges from the list of moves.
+  static std::unique_ptr<Edge[]> FromMovelist(const MoveList& moves);
+
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
   Move GetMove(bool as_opponent = false) const;
@@ -93,8 +96,6 @@ class Edge {
   std::string DebugString() const;
 
  private:
-  void SetMove(Move move) { move_ = move; }
-
   // Move corresponding to this node. From the point of view of a player,
   // i.e. black's e7e5 is stored as e2e4.
   // Root node contains move a1a1.
@@ -103,23 +104,6 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
-
-  friend class EdgeList;
-};
-
-// Array of Edges.
-class EdgeList {
- public:
-  EdgeList() {}
-  EdgeList(MoveList moves);
-  Edge* get() const { return edges_.get(); }
-  Edge& operator[](size_t idx) const { return edges_[idx]; }
-  operator bool() const { return static_cast<bool>(edges_); }
-  uint16_t size() const { return size_; }
-
- private:
-  std::unique_ptr<Edge[]> edges_;
-  uint16_t size_ = 0;
 };
 
 class EdgeAndNode;
@@ -131,10 +115,15 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
-  enum class Terminal : uint8_t { NonTerminal, Terminal, Tablebase };
+  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase };
 
   // Takes pointer to a parent node and own index in a parent.
-  Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
+  Node(Node* parent, uint16_t index)
+      : parent_(parent),
+        index_(index),
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -147,7 +136,7 @@ class Node {
   Node* GetParent() const { return parent_; }
 
   // Returns whether a node has children.
-  bool HasChildren() const { return edges_; }
+  bool HasChildren() const { return static_cast<bool>(edges_); }
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
@@ -166,13 +155,16 @@ class Node {
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
-  uint16_t GetNumEdges() const { return edges_.size(); }
+  typedef std::pair<GameResult, GameResult> Bounds;
+  Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
+  uint8_t GetNumEdges() const { return num_edges_; }
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
-                    Terminal type = Terminal::Terminal);
+                    Terminal type = Terminal::EndOfGame);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
+  void SetBounds(GameResult lower, GameResult upper);
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -187,6 +179,8 @@ class Node {
   // * N (+=1)
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
+  // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
+  void AdjustForTerminal(float v, float d, float m, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -258,11 +252,17 @@ class Node {
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
-  // TODO: shrink the padding on this somehow? It takes 16 bytes even though
-  // only 10 are real! Maybe even merge it into this class??
-  EdgeList edges_;
-
   // 8 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
+  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  double wl_ = 0.0f;
+
+  // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
+  // Array of edges.
+  std::unique_ptr<Edge[]> edges_;
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
@@ -274,12 +274,6 @@ class Node {
   Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  // WL stands for "W minus L". Is equal to Q if draw score is 0.
-  float wl_ = 0.0f;
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -302,8 +296,15 @@ class Node {
   uint16_t index_;
 
   // 1 byte fields.
+  // Number of edges in @edges_.
+  uint8_t num_edges_ = 0;
+
+  // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
-  Terminal terminal_type_ = Terminal::NonTerminal;
+  Terminal terminal_type_ : 2;
+  // Best and worst result for this node.
+  GameResult lower_bound_ : 2;
+  GameResult upper_bound_ : 2;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -372,6 +373,10 @@ class EdgeAndNode {
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
   bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
+  Node::Bounds GetBounds() const {
+    return node_ ? node_->GetBounds()
+                 : Node::Bounds{GameResult::BLACK_WON, GameResult::WHITE_WON};
+  }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
@@ -431,10 +436,10 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator() {}
 
   // Creates "begin()" iterator. Also happens to be a range constructor.
-  Edge_Iterator(const EdgeList& edges, Ptr node_ptr)
-      : EdgeAndNode(edges.size() ? edges.get() : nullptr, nullptr),
-        node_ptr_(node_ptr),
-        total_count_(edges.size()) {
+  Edge_Iterator(const Node& parent_node, Ptr child_ptr)
+      : EdgeAndNode(parent_node.edges_.get(), nullptr),
+        node_ptr_(child_ptr),
+        total_count_(parent_node.num_edges_) {
     if (edge_) Actualize();
   }
 

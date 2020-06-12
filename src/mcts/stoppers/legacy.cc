@@ -25,9 +25,29 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "mcts/stoppers/legacy.h"
+
 #include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
+
+float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
+  // An analysis of chess games shows that the distribution of game lengths
+  // looks like a log-logistic distribution. The mean residual time function
+  // calculates how many more moves are expected in the game given that we are
+  // at the current ply. Given that this function can be expensive to compute,
+  // we calculate the median residual time function instead. This is derived and
+  // shown to be similar to the mean residual time in "Some Useful Properties of
+  // Log-Logistic Random Variables for Health Care Simulations" (Clark &
+  // El-Taha, 2015).
+  // midpoint: The median length of games.
+  // steepness: How quickly the function drops off from its maximum value,
+  // around the midpoint.
+  const float move = ply / 2.0f;
+  return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
+                             1 / steepness) -
+         move;
+}
 
 namespace {
 
@@ -53,7 +73,7 @@ class LegacyTimeManager : public TimeManager {
         time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
         spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const Position& position) override;
+                                            const NodeTree& tree) override;
 
  private:
   const int64_t move_overhead_;
@@ -65,26 +85,9 @@ class LegacyTimeManager : public TimeManager {
   int64_t time_spared_ms_ = 0;
 };
 
-float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
-  // An analysis of chess games shows that the distribution of game lengths
-  // looks like a log-logistic distribution. The mean residual time function
-  // calculates how many more moves are expected in the game given that we are
-  // at the current ply. Given that this function can be expensive to compute,
-  // we calculate the median residual time function instead. This is derived and
-  // shown to be similar to the mean residual time in "Some Useful Properties of
-  // Log-Logistic Random Variables for Health Care Simulations" (Clark &
-  // El-Taha, 2015).
-  // midpoint: The median length of games.
-  // steepness: How quickly the function drops off from its maximum value,
-  // around the midpoint.
-  const float move = ply / 2.0f;
-  return midpoint * std::pow(1 + 2 * std::pow(move / midpoint, steepness),
-                             1 / steepness) -
-         move;
-}
-
 std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
-    const GoParams& params, const Position& position) {
+    const GoParams& params, const NodeTree& tree) {
+  const Position& position = tree.HeadPosition();
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   // If no time limit is given, don't stop on this condition.

@@ -30,11 +30,16 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <charconv>
 #include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
 #include "utils/string.h"
+
+#if __has_include(<charconv>)
+#include <charconv>
+#else
+#define NO_CHARCONV
+#endif
 
 namespace lczero {
 namespace {
@@ -114,18 +119,23 @@ bool OptionsParser::ProcessAllFlags() {
 }
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
+  auto show_help = false;
+  if (CommandLine::BinaryName().find("pro") != std::string::npos) {
+    ShowHidden();
+  }
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
-    if (param == "-h" || param == "--help") {
-      ShowHelp();
-      return false;
-    }
     if (param == "--help-md") {
       ShowHelpMd();
       return false;
     }
     if (param == "--show-hidden") {
       ShowHidden();
+      continue;
+    }
+    if (param == "-h" || param == "--help") {
+      // Set a flag so that --show-hidden after --help works.
+      show_help = true;
       continue;
     }
 
@@ -183,6 +193,10 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
 
     CERR << "Unknown command line argument: " << *iter << ".\n";
     CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
+    return false;
+  }
+  if (show_help) {
+    ShowHelp();
     return false;
   }
   return true;
@@ -255,6 +269,8 @@ void OptionsParser::ShowHelp() const {
 
   std::cout << "\nAllowed command line flags for current mode:\n";
   std::cout << FormatFlag('h', "help", "Show help and exit.");
+  std::cout << FormatFlag('\0', "show-hidden",
+                          "Show hidden options. Use with --help.");
   for (const auto& option : options_) {
     if (!option->hidden_) std::cout << option->GetHelp(defaults_);
   }
@@ -460,6 +476,7 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetId(), val);
 }
 
+#ifndef NO_CHARCONV
 int IntOption::ValidateIntString(const std::string& val) const {
   int result;
   const auto end = val.data() + val.size();
@@ -474,6 +491,20 @@ int IntOption::ValidateIntString(const std::string& val) const {
     return result;
   }
 }
+#else
+int IntOption::ValidateIntString(const std::string& val) const {
+  char *end;
+  errno = 0;
+  int result = std::strtol(val.c_str(), &end, 10);
+  if (errno == ERANGE) {
+    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
+  } else if (val.length() == 0 || *end != '\0') {
+    throw Exception("Flag '--" + GetLongFlag() + "' value is invalid.");
+  } else {
+    return result;
+  }
+}
+#endif
 
 /////////////////////////////////////////////////////////////////
 // FloatOption
@@ -483,13 +514,25 @@ FloatOption::FloatOption(const OptionId& id, float min, float max)
     : Option(id), min_(min), max_(max) {}
 
 void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stof(value));
+  try {
+    SetVal(dict, std::stof(value));
+  } catch (std::invalid_argument&) {
+    throw Exception("invalid value " + value);
+  } catch (const std::out_of_range&) {
+    throw Exception("out of range value " + value);
+  }
 }
 
 bool FloatOption::ProcessLongFlag(const std::string& flag,
                                   const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    SetVal(dict, std::stof(value));
+    try {
+      SetVal(dict, std::stof(value));
+    } catch (std::invalid_argument&) {
+      throw Exception("invalid value " + value);
+    } catch (const std::out_of_range&) {
+      throw Exception("out of range value " + value);
+    }
     return true;
   }
   return false;
@@ -498,7 +541,13 @@ bool FloatOption::ProcessLongFlag(const std::string& flag,
 bool FloatOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                             OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    SetVal(dict, std::stof(value));
+    try {
+      SetVal(dict, std::stof(value));
+    } catch (std::invalid_argument&) {
+      throw Exception("invalid value " + value);
+    } catch (const std::out_of_range&) {
+      throw Exception("out of range value " + value);
+    }
     return true;
   }
   return false;
