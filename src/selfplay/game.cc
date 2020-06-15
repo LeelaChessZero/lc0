@@ -282,13 +282,8 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
   for (auto chunk : training_data_) {
     bool black_to_move = chunk.side_to_move_or_enpassant;
-    if (chunk.input_format ==
-            pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION ||
-        chunk.input_format == pblczero::NetworkFormat::
-                                  INPUT_112_WITH_CANONICALIZATION_HECTOPLIES ||
-        chunk.input_format ==
-            pblczero::NetworkFormat::
-                INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON) {
+    if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
+            chunk.input_format))) {
       black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
     }
     if (game_result_ == GameResult::WHITE_WON) {
