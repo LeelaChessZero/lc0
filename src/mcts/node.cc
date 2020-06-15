@@ -391,7 +391,12 @@ V5TrainingData Node::GetV5TrainingData(
   // If frc trained, send the bit mask representing rook position.
   if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
       input_format ==
-          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION ||
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES ||
+      input_format ==
+          pblczero::NetworkFormat::
+              INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON) {
     queen_side <<= castlings.queenside_rook();
     king_side <<= castlings.kingside_rook();
   }
@@ -403,7 +408,12 @@ V5TrainingData Node::GetV5TrainingData(
 
   // Other params.
   if (input_format ==
-      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION ||
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES ||
+      input_format ==
+          pblczero::NetworkFormat::
+              INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON) {
     result.side_to_move_or_enpassant =
         position.GetBoard().en_passant().as_int() >> 56;
     if ((transform & FlipTransform) != 0) {
