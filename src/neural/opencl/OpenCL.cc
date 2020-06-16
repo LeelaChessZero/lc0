@@ -36,6 +36,7 @@
 #include "neural/opencl/OpenCLParams.h"
 #include "neural/opencl/OpenCLTuner.h"
 #include "utils/logging.h"
+#include "utils/exception.h"
 
 static std::string cl_args =
     "-cl-mad-enable -cl-fast-relaxed-math -cl-no-signed-zeros "
@@ -318,7 +319,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   }
 
   if (!found_device) {
-    throw std::runtime_error("No suitable OpenCL device found.");
+    throw lczero::Exception("No suitable OpenCL device found.");
   }
 
   CERR << "Selected platform: " << best_platform.getInfo<CL_PLATFORM_NAME>();
@@ -331,7 +332,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
     context = cl::Context(best_device);
   } catch (const cl::Error& e) {
     CERR << "Error creating OpenCL context: " << e.what() << ": " << e.err();
-    throw std::runtime_error("Error creating OpenCL context.");
+    throw lczero::Exception("Error creating OpenCL context.");
   }
   m_context = context;
   m_device = best_device;
@@ -344,7 +345,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
                        sourceCode_sgemv + sourceCode_policymap);
   } catch (const cl::Error& e) {
     CERR << "Error getting kernels: " << e.what() << ": " << e.err();
-    throw std::runtime_error("Error getting OpenCL kernels.");
+    throw lczero::Exception("Error getting OpenCL kernels.");
   }
 
   m_cl_args = cl_args;
@@ -361,7 +362,7 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
   } catch (const cl::Error&) {
     CERR << "Error building kernels: "
          << m_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device) << ".";
-    throw std::runtime_error("Error building OpenCL kernels.");
+    throw lczero::Exception("Error building OpenCL kernels.");
   }
 
   process_tuners(sgemm_tuners);
