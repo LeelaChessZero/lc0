@@ -1070,7 +1070,7 @@ class SyzygyTablebaseImpl {
     *mapping = mmap;
     base_address = MapViewOfFile(mmap, FILE_MAP_READ, 0, 0, 0);
     if (!base_address) {
-      throw Exception("MapViewOfFile() failed, name = " + fname + ", error = " + GetLastError());
+      throw Exception("MapViewOfFile() failed, name = " + fname + ", error = " + std::to_string(GetLastError()));
     }
 #endif
     return base_address;
