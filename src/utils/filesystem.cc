@@ -28,63 +28,56 @@
 #include "utils/exception.h"
 #include "utils/filesystem.h"
 
-#include <dirent.h>
-#include <errno.h>
-#include <sys/stat.h>
+#include <filesystem>
 
 namespace lczero {
 
 void CreateDirectory(const std::string& path) {
-  if (mkdir(path.c_str(), 0777) < 0 && errno != EEXIST) {
+  try {
+    std::filesystem::create_directory(path);
+  } catch(std::filesystem::filesystem_error& e) {
     throw Exception("Cannot create directory: " + path);
   }
 }
 
 std::vector<std::string> GetFileList(const std::string& directory) {
   std::vector<std::string> result;
-  DIR* dir = opendir(directory.c_str());
-  if (!dir) return result;
-  while (auto* entry = readdir(dir)) {
-    bool exists = false;
-    switch (entry->d_type) {
-      case DT_REG:
-        exists = true;
-        break;
-      case DT_LNK:
-        // check that the soft link actually points to a regular file.
-        const std::string filename = directory + "/" + entry->d_name;
-        struct stat s;
-        exists =
-            stat(filename.c_str(), &s) == 0 && (s.st_mode & S_IFMT) == S_IFREG;
-        break;
+  try {
+    const std::filesystem::path p(directory);
+    if (std::filesystem::exists(p)) {
+      for (const auto & entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_symlink()) {
+          result.push_back(entry.path().filename());
+        }
+      }
     }
-    if (exists) result.push_back(entry->d_name);
-  }
-  closedir(dir);
+  } catch(std::filesystem::filesystem_error& e) {}
   return result;
 }
 
 uint64_t GetFileSize(const std::string& filename) {
-  struct stat s;
-  if (stat(filename.c_str(), &s) < 0) {
-    throw Exception("Cannot stat file: " + filename);
-  }
-  return s.st_size;
+  try {
+    return static_cast<uint64_t>(std::filesystem::file_size(filename));
+  } catch(std::filesystem::filesystem_error&) {}
+  return 0;
 }
 
 time_t GetFileTime(const std::string& filename) {
-  struct stat s;
-  if (stat(filename.c_str(), &s) < 0) {
-    throw Exception("Cannot stat file: " + filename);
+  try {
+    std::filesystem::path p(filename);
+    auto ftime = std::filesystem::last_write_time(p);
+    auto ttime = decltype(ftime)::clock::to_time_t(ftime);
+      return ttime;
+  } catch(std::filesystem::filesystem_error& e) {
+    CERR << "GetFileTime Exception: " << e.what();
   }
-#ifdef __APPLE__
-  return s.st_mtimespec.tv_sec;
-#else
-  return s.st_mtim.tv_sec;
-#endif
+  return 0;
 }
 
 std::string GetUserCacheDirectory() {
+#ifdef _WIN32
+    return "";
+#else
 #ifdef __APPLE__
   constexpr auto kLocalDir = "Library/Caches/";
 #else
@@ -95,9 +88,13 @@ std::string GetUserCacheDirectory() {
   const char *home = std::getenv("HOME");
   if (home == NULL) return std::string();
   return std::string(home) + "/" + kLocalDir;
+#endif
 }
 
 std::string GetUserConfigDirectory() {
+#ifdef _WIN32
+    return "";
+#else
 #ifdef __APPLE__
   constexpr auto kLocalDir = "Library/Preferences/";
 #else
@@ -108,9 +105,13 @@ std::string GetUserConfigDirectory() {
   const char *home = std::getenv("HOME");
   if (home == NULL) return std::string();
   return std::string(home) + "/" + kLocalDir;
+#endif
 }
 
 std::string GetUserDataDirectory() {
+#ifdef _WIN32
+    return "";
+#else
 #ifdef __APPLE__
   constexpr auto kLocalDir = "Library/";
 #else
@@ -121,6 +122,7 @@ std::string GetUserDataDirectory() {
   const char *home = std::getenv("HOME");
   if (home == NULL) return std::string();
   return std::string(home) + "/" + kLocalDir;
+#endif
 }
 
 }  // namespace lczero

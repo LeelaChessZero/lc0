@@ -165,6 +165,7 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/weights_adapter.cc',
+  'src/utils/filesystem.cc',
 ]
 includes += include_directories('src')
 
@@ -173,11 +174,11 @@ deps += dependency('threads')
 #############################################################################
 ## Platform specific files
 ############################################################################
-if host_machine.system() == 'windows'
-  files += 'src/utils/filesystem.win32.cc'
-else
-  files += 'src/utils/filesystem.posix.cc'
-endif
+#if host_machine.system() == 'windows'
+#  files += 'src/utils/filesystem.win32.cc'
+#else
+#  files += 'src/utils/filesystem.posix.cc'
+#endif
 
 #############################################################################
 ## BACKENDS
