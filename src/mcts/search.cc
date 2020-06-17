@@ -58,7 +58,7 @@ MoveList MakeRootMoveFilter(const MoveList& searchmoves,
   const auto& board = history.Last().GetBoard();
   MoveList root_moves;
   if (!syzygy_tb || !board.castlings().no_legal_castle() ||
-      (board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality()) {
+      (board.ours() | board.theirs()).count() > syzygy_tb->cardinality()) {
     return root_moves;
   }
   if (syzygy_tb->root_probe(
@@ -1223,7 +1223,7 @@ void SearchWorker::ExtendNode(Node* node) {
     if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
         history_.Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
-            search_->syzygy_tb_->max_cardinality()) {
+            search_->syzygy_tb_->cardinality()) {
       ProbeState state;
       const WDLScore wdl =
           search_->syzygy_tb_->probe_wdl(history_.Last(), &state);

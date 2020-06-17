@@ -66,6 +66,12 @@ class SyzygyTablebase {
   // be 0 unless initialized with tablebase paths.
   // Thread safe.
   int max_cardinality() { return max_cardinality_; }
+    
+  // Allowed maximum number of pieces on board that can be probed for.
+  // Set by option SyzygyProbeLimit
+  int cardinality() { return cardinality_; }
+  void set_cardinality(int cd) { cardinality_ = cd; }
+
   // Allows for the tablebases being used to be changed. This method is not
   // thread safe, there must be no concurrent usage while this method is
   // running. All other thread safe method calls must be strictly ordered with
@@ -106,6 +112,7 @@ class SyzygyTablebase {
   // Caches the max_cardinality from the impl, as max_cardinality may be a hot
   // path.
   int max_cardinality_;
+  int cardinality_;
   std::unique_ptr<SyzygyTablebaseImpl> impl_;
 };
 

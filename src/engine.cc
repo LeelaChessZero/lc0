@@ -51,6 +51,8 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+const OptionId kSyzygyProbeLimitId{"syzygyprobelimit", "SyzygyProbeLimit",
+                                    "Max pieces can probe Syzygy tablebase.", 't'};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
 const OptionId kUciChess960{
@@ -94,6 +96,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   SearchParams::Populate(options);
 
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<IntOption>(kSyzygyProbeLimitId, 0, 7) = 7;
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
@@ -126,6 +129,11 @@ void EngineController::UpdateFromUciOptions() {
     } else {
       tb_paths_ = tb_paths;
     }
+  }
+    
+  if (syzygy_tb_) {
+      auto cardinality = std::min(options_.Get<int>(kSyzygyProbeLimitId), syzygy_tb_->max_cardinality());
+      syzygy_tb_->set_cardinality(cardinality);
   }
 
   // Network.
