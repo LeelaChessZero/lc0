@@ -389,9 +389,7 @@ V5TrainingData Node::GetV5TrainingData(
   uint8_t queen_side = 1;
   uint8_t king_side = 1;
   // If frc trained, send the bit mask representing rook position.
-  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
-      input_format ==
-          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+  if (Is960CastlingFormat(input_format)) {
     queen_side <<= castlings.queenside_rook();
     king_side <<= castlings.kingside_rook();
   }
@@ -402,8 +400,7 @@ V5TrainingData Node::GetV5TrainingData(
   result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
   // Other params.
-  if (input_format ==
-      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+  if (IsCanonicalFormat(input_format)) {
     result.side_to_move_or_enpassant =
         position.GetBoard().en_passant().as_int() >> 56;
     if ((transform & FlipTransform) != 0) {
