@@ -27,14 +27,11 @@
 
 #pragma once
 
-#include "mcts/stoppers/timemgr.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
 
-float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness);
-
-std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
+std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params);
 
 }  // namespace lczero

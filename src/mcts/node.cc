@@ -167,14 +167,11 @@ std::string Edge::DebugString() const {
   return oss.str();
 }
 
-/////////////////////////////////////////////////////////////////////////
-// EdgeList
-/////////////////////////////////////////////////////////////////////////
-
-EdgeList::EdgeList(MoveList moves)
-    : edges_(std::make_unique<Edge[]>(moves.size())), size_(moves.size()) {
-  auto* edge = edges_.get();
-  for (const auto move : moves) edge++->SetMove(move);
+std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
+  std::unique_ptr<Edge[]> edges = std::make_unique<Edge[]>(moves.size());
+  auto* edge = edges.get();
+  for (const auto move : moves) edge++->move_ = move;
+  return edges;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -184,7 +181,8 @@ EdgeList::EdgeList(MoveList moves)
 Node* Node::CreateSingleChildNode(Move move) {
   assert(!edges_);
   assert(!child_);
-  edges_ = EdgeList({move});
+  edges_ = Edge::FromMovelist({move});
+  num_edges_ = 1;
   child_ = std::make_unique<Node>(this, 0);
   return child_.get();
 }
@@ -192,17 +190,18 @@ Node* Node::CreateSingleChildNode(Move move) {
 void Node::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   assert(!child_);
-  edges_ = EdgeList(moves);
+  edges_ = Edge::FromMovelist(moves);
+  num_edges_ = moves.size();
 }
 
-Node::ConstIterator Node::Edges() const { return {edges_, &child_}; }
-Node::Iterator Node::Edges() { return {edges_, &child_}; }
+Node::ConstIterator Node::Edges() const { return {*this, &child_}; }
+Node::Iterator Node::Edges() { return {*this, &child_}; }
 
 float Node::GetVisitedPolicy() const { return visited_policy_; }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
-  assert(node->index_ < edges_.size());
+  assert(node->index_ < num_edges_);
   return &edges_[node->index_];
 }
 
@@ -214,7 +213,7 @@ std::string Node::DebugString() const {
       << " Parent:" << parent_ << " Index:" << index_
       << " Child:" << child_.get() << " Sibling:" << sibling_.get()
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
-      << " Edges:" << edges_.size()
+      << " Edges:" << static_cast<int>(num_edges_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
   return oss.str();
@@ -233,6 +232,9 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
   } else if (result == GameResult::BLACK_WON) {
     wl_ = -1.0f;
     d_ = 0.0f;
+    // Terminal losses have no uncertainty and no reason for their U value to be
+    // comparable to another non-loss choice. Force this by clearing the policy.
+    if (GetParent() != nullptr) GetOwnEdge()->SetP(0.0f);
   }
 }
 
@@ -294,6 +296,17 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   best_child_cached_ = nullptr;
 }
 
+void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
+  // Recompute Q.
+  wl_ += multivisit * v / n_;
+  d_ += multivisit * d / n_;
+  m_ += multivisit * m / n_;
+  // Best child is potentially no longer valid. This shouldn't be needed since
+  // AjdustForTerminal is always called immediately after FinalizeScoreUpdate,
+  // but for safety in case that changes.
+  best_child_cached_ = nullptr;
+}
+
 void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
   best_child_cached_ = best_edge.node();
   // An edge can point to an unexpanded node with n==0. These nodes don't
@@ -326,7 +339,10 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   // Make saved node the only child. (kills previous siblings).
   gNodeGc.AddToGcQueue(std::move(child_));
   child_ = std::move(saved_node);
-  if (!child_) edges_ = EdgeList();  // Clear edges list.
+  if (!child_) {
+    num_edges_ = 0;
+    edges_.reset();  // Clear edges list.
+  }
 }
 
 V5TrainingData Node::GetV5TrainingData(
@@ -373,9 +389,7 @@ V5TrainingData Node::GetV5TrainingData(
   uint8_t queen_side = 1;
   uint8_t king_side = 1;
   // If frc trained, send the bit mask representing rook position.
-  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
-      input_format ==
-          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+  if (Is960CastlingFormat(input_format)) {
     queen_side <<= castlings.queenside_rook();
     king_side <<= castlings.kingside_rook();
   }
@@ -386,8 +400,7 @@ V5TrainingData Node::GetV5TrainingData(
   result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
   // Other params.
-  if (input_format ==
-      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+  if (IsCanonicalFormat(input_format)) {
     result.side_to_move_or_enpassant =
         position.GetBoard().en_passant().as_int() >> 56;
     if ((transform & FlipTransform) != 0) {

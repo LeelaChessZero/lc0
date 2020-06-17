@@ -32,6 +32,10 @@
 #include <string>
 #include "version.inc"
 
+#ifndef BUILD_IDENTIFIER
+#define BUILD_IDENTIFIER ""
+#endif
+
 std::uint32_t GetVersionInt(int major = LC0_VERSION_MAJOR,
                             int minor = LC0_VERSION_MINOR,
                             int patch = LC0_VERSION_PATCH);

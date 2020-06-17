@@ -66,9 +66,15 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
   MoveList result;
-  result.reserve(moves.size());
-  for (const auto& move : moves) {
-    result.emplace_back(board.GetModernMove({move, board.flipped()}));
+  if (moves.size()) {
+    result.reserve(moves.size());
+    const auto legal_moves = board.GenerateLegalMoves();
+    const auto end = legal_moves.end();
+    for (const auto& move : moves) {
+      const auto m = board.GetModernMove({move, board.flipped()});
+      if (std::find(legal_moves.begin(), end, m) != end) result.emplace_back(m);
+    }
+    if (result.empty()) throw Exception("No legal searchmoves.");
   }
   return result;
 }
@@ -261,7 +267,7 @@ void EngineController::Go(const GoParams& params) {
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
-  auto stopper = time_manager_->GetStopper(params, tree_->HeadPosition());
+  auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
@@ -294,7 +300,7 @@ EngineLoop::EngineLoop()
 }
 
 void EngineLoop::RunLoop() {
-  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
+  if (!ConfigFile::Init() || !options_.ProcessAllFlags()) return;
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId));
   UciLoop::RunLoop();
