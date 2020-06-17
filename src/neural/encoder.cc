@@ -161,7 +161,8 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE:
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION:
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES:
-    case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON: {
+    case pblczero::NetworkFormat::
+        INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON: {
       auto queenside = 0;
       auto kingside = 7;
       if (planes[kAuxPlaneBase + 0].mask != 0) {
@@ -196,8 +197,7 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
   // Canonical input has no sense of side to move, so we should simply assume
   // the starting position is always white.
   bool black_to_move =
-      !IsCanonicalFormat(input_format) &&
-      planes[kAuxPlaneBase + 4].mask != 0;
+      !IsCanonicalFormat(input_format) && planes[kAuxPlaneBase + 4].mask != 0;
   if (black_to_move) {
     // Flip to white perspective rather than side to move perspective.
     std::swap(pawnsOurs, pawnsTheirs);

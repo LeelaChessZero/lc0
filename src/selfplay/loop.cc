@@ -89,7 +89,13 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
                data.input_format ==
                    pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
                data.input_format ==
-                   pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION);
+                   pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION ||
+               data.input_format ==
+                   pblczero::NetworkFormat::
+                       INPUT_112_WITH_CANONICALIZATION_HECTOPLIES ||
+               data.input_format ==
+                   pblczero::NetworkFormat::
+                       INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON);
     DataAssert(data.best_d >= 0.0f && data.best_d <= 1.0f);
     DataAssert(data.root_d >= 0.0f && data.root_d <= 1.0f);
     DataAssert(data.best_q >= -1.0f && data.best_q <= 1.0f);
@@ -112,8 +118,8 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
         DataAssert((data.castling_us_oo & (data.castling_us_oo - 1)) == 0);
         DataAssert((data.castling_us_ooo & (data.castling_us_ooo - 1)) == 0);
     }
-    if (data.input_format ==
-        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
+            data.input_format))) {
       // At most one en-passant bit.
       DataAssert((data.side_to_move_or_enpassant &
                   (data.side_to_move_or_enpassant - 1)) == 0);
