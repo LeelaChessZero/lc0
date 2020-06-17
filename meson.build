@@ -165,12 +165,20 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/weights_adapter.cc',
-  'src/utils/filesystem.cc',
 ]
 includes += include_directories('src')
 
 deps += dependency('threads')
 
+
+#############################################################################
+## Platform specific files
+############################################################################
+if host_machine.system() == 'android'
+  files += 'src/utils/filesystem.android.cc'
+else
+  files += 'src/utils/filesystem.cc'
+endif
 
 #############################################################################
 ## BACKENDS
