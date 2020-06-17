@@ -129,6 +129,12 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
 }  // namespace
 
 void UciLoop::RunLoop() {
+  LogInfo::logFunc = [=](const std::string& msg) {
+    ThinkingInfo info;
+    info.comment = msg;
+    SendInfo({info});
+  };
+    
   std::cout.setf(std::ios::unitbuf);
   std::string line;
   while (std::getline(std::cin, line)) {

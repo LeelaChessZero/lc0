@@ -32,6 +32,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <functional>
 
 #include "utils/mutex.h"
 
@@ -55,6 +56,12 @@ class Logging {
 
   Logging() = default;
   friend class LogMessage;
+};
+
+class LogInfo {
+ public:
+  LogInfo(const std::string&);
+  static std::function<void(const std::string&)> logFunc;
 };
 
 class LogMessage : public std::ostringstream {

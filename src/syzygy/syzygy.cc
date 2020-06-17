@@ -989,8 +989,9 @@ class SyzygyTablebaseImpl {
     }
 
   finished:
-    CERR << "Found " << num_wdl_ << "WDL, " << num_dtm_ << " DTM and "
-         << num_dtz_ << " DTZ tablebase files.";
+    LogInfo("Syzygy found: " + std::to_string(num_wdl_) + " WDL, " + std::to_string(num_dtm_) + " DTM and "
+    + std::to_string(num_dtz_) + " DTZ tablebase files.");
+
   }
 
   ~SyzygyTablebaseImpl() {
