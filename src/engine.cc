@@ -107,6 +107,13 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->HideOption(kStrictUciTiming);
 }
 
+void EngineController::Display() const {
+  auto fen = current_position_->fen.empty() ? ChessBoard::kStartposFen : current_position_->fen;
+  ChessBoard board;
+  board.SetFromFen(fen);
+  std::cout << board.DebugString() << std::endl;
+}
+
 void EngineController::ResetMoveTimer() {
   move_start_time_ = std::chrono::steady_clock::now();
 }
@@ -341,5 +348,7 @@ void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
+
+void EngineLoop::CmdDisplay() const { engine_.Display(); }
 
 }  // namespace lczero

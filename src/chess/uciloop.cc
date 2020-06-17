@@ -59,6 +59,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"stop"}, {}},
         {{"ponderhit"}, {}},
         {{"quit"}, {}},
+        {{"d"}, {}},
         {{"xyzzy"}, {}},
 };
 
@@ -205,6 +206,8 @@ bool UciLoop::DispatchCommand(
     SendResponse("Nothing happens.");
   } else if (command == "quit") {
     return false;
+  } else if (command == "d") {
+      CmdDisplay();
   } else {
     throw Exception("Unknown command: " + command);
   }

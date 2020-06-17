@@ -84,6 +84,7 @@ class UciLoop {
   virtual void CmdStop() { throw Exception("Not supported"); }
   virtual void CmdPonderHit() { throw Exception("Not supported"); }
   virtual void CmdStart() { throw Exception("Not supported"); }
+  virtual void CmdDisplay() const { throw Exception("Not supported"); }
 
  private:
   bool DispatchCommand(

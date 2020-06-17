@@ -57,6 +57,7 @@ class EngineController {
   }
 
   void PopulateOptions(OptionsParser* options);
+  void Display() const;
 
   // Blocks.
   void EnsureReady();
@@ -129,6 +130,7 @@ class EngineLoop : public UciLoop {
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
+  void CmdDisplay() const override;
 
  private:
   OptionsParser options_;
