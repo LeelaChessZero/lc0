@@ -28,7 +28,15 @@
 #include "utils/exception.h"
 #include "utils/filesystem.h"
 
-#include <filesystem>
+#if __has_include(<filesystem>)
+ #include <filesystem>
+#else
+ #include <experimental/filesystem>
+ // This works for the compilers we care about.
+ namespace std {
+  namespace filesystem = experimental::filesystem;
+ }
+#endif
 
 namespace lczero {
 
@@ -46,7 +54,7 @@ std::vector<std::string> GetFileList(const std::string& directory) {
     const std::filesystem::path p(directory);
     if (std::filesystem::exists(p)) {
       for (const auto & entry : std::filesystem::directory_iterator(directory)) {
-        if (!entry.is_symlink()) {
+        if (!std::filesystem::is_symlink(entry.path())) {
           result.push_back(entry.path().filename());
         }
       }
@@ -66,8 +74,7 @@ time_t GetFileTime(const std::string& filename) {
   try {
     std::filesystem::path p(filename);
     auto ftime = std::filesystem::last_write_time(p);
-    auto ttime = decltype(ftime)::clock::to_time_t(ftime);
-      return ttime;
+    return decltype(ftime)::clock::to_time_t(ftime);
   } catch(std::filesystem::filesystem_error& e) {
     CERR << "GetFileTime Exception: " << e.what();
   }
