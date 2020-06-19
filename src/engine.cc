@@ -110,21 +110,24 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 void EngineController::Display() const {
   auto fen = current_position_->fen.empty() ? ChessBoard::kStartposFen : current_position_->fen;
   ChessBoard board(fen);
+  auto white = true;
+  if (board.flipped()) {
+    board.Mirror();
+    white = false;
+  }
   if (!current_position_->moves.empty()) {
-    bool flipped = board.flipped(), oflipped = flipped;
-    if (flipped) board.Mirror();
     for (const auto& moveString : current_position_->moves) {
       if (moveString.empty()) break;
-      Move move(moveString, flipped);
+      Move move(moveString, board.flipped());
       KingAttackInfo king_attack_info;
       if (!board.IsLegalMove(move, king_attack_info)) break;
       board.ApplyMove(move);
-      flipped = !flipped;
       board.Mirror();
+      white = !white;
     }
-    if (oflipped != flipped) board.Mirror();
+    if (board.flipped()) board.Mirror();
   }
-  std::cout << board.DebugString() << std::endl;
+  std::cout << board.DebugString() << std::endl << "side: " << (white ? "white" : "black") << std::endl;
 }
 
 void EngineController::ResetMoveTimer() {
