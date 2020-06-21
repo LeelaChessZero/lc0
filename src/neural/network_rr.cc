@@ -116,11 +116,20 @@ class RecordComputation : public NetworkComputation {
     inner_->AddInput(std::move(input));
   }
   // Do the computation.
-  void ComputeBlocking() override { inner_->ComputeBlocking(); }
+  void ComputeBlocking() override { inner_->ComputeBlocking();
+    for (int i = 0; i < requests_.size(); i++) {
+      requests_[i].push_back(inner_->GetQVal(i));
+      requests_[i].push_back(inner_->GetDVal(i));
+      requests_[i].push_back(inner_->GetMVal(i));
+      for (int j = 0; j < 1858; j++) {
+        requests_[i].push_back(inner_->GetPVal(i, j));
+      }
+    }
+  }
   // Returns how many times AddInput() was called.
   int GetBatchSize() const override { return inner_->GetBatchSize(); }
   float Capture(float value, int index) const {
-    requests_[index].push_back(value);
+    //requests_[index].push_back(value);
     return value;
   }
   // Returns Q value of @sample.
@@ -174,27 +183,30 @@ class ReplayComputation : public NetworkComputation {
   void ComputeBlocking() override {}
   // Returns how many times AddInput() was called.
   int GetBatchSize() const override { return hashes_.size(); }
-  float Replay(int index) const {
+  float Replay(int index, int sub_idx) const {
     const auto& entry_ptr = lookup_->find(hashes_[index]);
     if (entry_ptr == lookup_->end()) {
       return 0.0f;
     }
     const auto& entry = entry_ptr->second;
+    return entry[sub_idx];
+    /*
     int counter = replay_counter_[index];
     if (counter >= entry.size()) {
       return 0.0f;
     }
     replay_counter_[index]++;
     return entry[counter];
+    */
   }
   // Returns Q value of @sample.
-  float GetQVal(int sample) const override { return Replay(sample); }
-  float GetDVal(int sample) const override { return Replay(sample); }
+  float GetQVal(int sample) const override { return Replay(sample, 0); }
+  float GetDVal(int sample) const override { return Replay(sample, 1); }
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const override {
-    return Replay(sample);
+    return Replay(sample, move_id+3);
   }
-  float GetMVal(int sample) const override { return Replay(sample); }
+  float GetMVal(int sample) const override { return Replay(sample, 2); }
   virtual ~ReplayComputation() {}
   std::unique_ptr<NetworkComputation> inner_;
   std::vector<uint64_t> hashes_;
