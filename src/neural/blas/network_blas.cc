@@ -427,8 +427,9 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   wdl_ = file.format().network_format().value() ==
          pblczero::NetworkFormat::VALUE_WDL;
 
-  moves_left_ = file.format().network_format().moves_left() ==
-                pblczero::NetworkFormat::MOVES_LEFT_V1;
+  moves_left_ = (file.format().network_format().moves_left() ==
+                 pblczero::NetworkFormat::MOVES_LEFT_V1) &&
+                options.GetOrDefault<bool>("mlh", true);
 
   conv_policy_ = file.format().network_format().policy() ==
                  pblczero::NetworkFormat::POLICY_CONVOLUTION;
