@@ -95,6 +95,13 @@ class SelfPlayTournament {
   std::shared_ptr<NNCache> cache_[2];
   const OptionsDict player_options_[2];
   SelfPlayLimits search_limits_[2];
+    
+  const int workInProcess_show_period_ = 20; // 20s
+  Mutex workInProcess_mutex_;
+  enum class WorkInProgressType {
+    begin, end, newgame, endgame, move
+  };
+  void ShowWorkInProcess(WorkInProgressType, int gameIdx = -1);
 
   CallbackUciResponder::BestMoveCallback best_move_callback_;
   CallbackUciResponder::ThinkingCallback info_callback_;
