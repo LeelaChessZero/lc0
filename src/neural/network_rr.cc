@@ -235,9 +235,9 @@ class RecordReplayNetwork : public Network {
           std::make_unique<std::unordered_map<uint64_t, std::vector<float>>>();
       std::ifstream input(replay_file_, std::ios_base::binary);
       input.seekg(0, input.end);
-      int length = input.tellg();
+      auto file_length = input.tellg();
       input.seekg(0, input.beg);
-      while (input.tellg() != length) {
+      while (input.tellg() < file_length) {
         uint64_t value = 0;
         input.read(reinterpret_cast<char*>(&value), sizeof(value));
         int32_t length = 0;
