@@ -80,6 +80,9 @@ const OptionId kOpeningsMirroredId{
 const OptionId kOpeningsModeId{"openings-mode", "OpeningsMode",
                                "A choice of sequential, shuffled, or random."};
 
+const OptionId kLogFileId{"logfile", "LogFile",
+    "Write log to that file. Special value <stderr> to "
+    "output the log to the console."};
 }  // namespace
 
 void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
@@ -107,6 +110,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   std::vector<std::string> openings_modes = {"sequential", "shuffled",
                                              "random"};
   options->Add<ChoiceOption>(kOpeningsModeId, openings_modes) = "sequential";
+  options->Add<StringOption>(kLogFileId);
 
   SelfPlayGame::PopulateUciParams(options);
 
@@ -162,6 +166,8 @@ SelfPlayTournament::SelfPlayTournament(
   if (kTotalGames != 1) {
     first_game_black_ = Random::Get().GetBool();
   }
+
+  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
 
   static const char* kPlayerNames[2] = {"player1", "player2"};
   // Initializing networks.
