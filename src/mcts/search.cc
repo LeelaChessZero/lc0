@@ -1174,11 +1174,14 @@ void SearchWorker::ExtendNode(Node* node) {
   // Could instead reserve one more than the difference between history_.size()
   // and history_.capacity().
   to_add.reserve(60);
-  Node* cur = node;
-  while (cur != search_->root_node_) {
-    Node* prev = cur->GetParent();
-    to_add.push_back(prev->GetEdgeToNode(cur)->GetMove());
-    cur = prev;
+  {
+    SharedMutex::SharedLock lock(search_->nodes_mutex_);
+    Node* cur = node;
+    while (cur != search_->root_node_) {
+      Node* prev = cur->GetParent();
+      to_add.push_back(prev->GetEdgeToNode(cur)->GetMove());
+      cur = prev;
+    }
   }
   for (int i = to_add.size() - 1; i >= 0; i--) {
     history_.Append(to_add[i]);
@@ -1232,9 +1235,12 @@ void SearchWorker::ExtendNode(Node* node) {
       if (state != FAIL) {
         // TB nodes don't have NN evaluation, assign M from parent node.
         float m = 0.0f;
-        auto parent = node->GetParent();
-        if (parent) {
-          m = std::max(0.0f, parent->GetM() - 1.0f);
+        {
+          SharedMutex::SharedLock lock(search_->nodes_mutex_);
+          auto parent = node->GetParent();
+          if (parent) {
+            m = std::max(0.0f, parent->GetM() - 1.0f);
+          }
         }
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
@@ -1547,6 +1553,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
+    if (n->GetN() >= 100) n->MakeSolid();
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
