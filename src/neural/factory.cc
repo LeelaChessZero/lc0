@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,9 +26,11 @@
 */
 
 #include "neural/factory.h"
-#include "neural/loader.h"
 
 #include <algorithm>
+
+#include "neural/loader.h"
+#include "utils/commandline.h"
 #include "utils/logging.h"
 
 namespace lczero {
@@ -47,6 +49,7 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Exact parameters differ per backend.",
     'o'};
 const char* kAutoDiscover = "<autodiscover>";
+const char* kEmbed = "<built in>";
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
@@ -59,7 +62,11 @@ NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
 }
 
 void NetworkFactory::PopulateOptions(OptionsParser* options) {
+#if defined(EMBED)
+  options->Add<StringOption>(NetworkFactory::kWeightsId) = kEmbed;
+#else
   options->Add<StringOption>(NetworkFactory::kWeightsId) = kAutoDiscover;
+#endif
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
@@ -78,9 +85,9 @@ std::vector<std::string> NetworkFactory::GetBackendsList() const {
   return result;
 }
 
-std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
-                                                const WeightsFile& weights,
-                                                const OptionsDict& options) {
+std::unique_ptr<Network> NetworkFactory::Create(
+    const std::string& network, const std::optional<WeightsFile>& weights,
+    const OptionsDict& options) {
   CERR << "Creating backend [" << network << "]...";
   for (const auto& factory : factories_) {
     if (factory.name == network) {
@@ -92,9 +99,9 @@ std::unique_ptr<Network> NetworkFactory::Create(const std::string& network,
 
 NetworkFactory::BackendConfiguration::BackendConfiguration(
     const OptionsDict& options)
-    : weights_path(options.Get<std::string>(kWeightsId.GetId())),
-      backend(options.Get<std::string>(kBackendId.GetId())),
-      backend_options(options.Get<std::string>(kBackendOptionsId.GetId())) {}
+    : weights_path(options.Get<std::string>(kWeightsId)),
+      backend(options.Get<std::string>(kBackendId)),
+      backend_options(options.Get<std::string>(kBackendOptionsId)) {}
 
 bool NetworkFactory::BackendConfiguration::operator==(
     const BackendConfiguration& other) const {
@@ -104,22 +111,29 @@ bool NetworkFactory::BackendConfiguration::operator==(
 
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
-  std::string net_path = options.Get<std::string>(kWeightsId.GetId());
-  const std::string backend = options.Get<std::string>(kBackendId.GetId());
+  std::string net_path = options.Get<std::string>(kWeightsId);
+  const std::string backend = options.Get<std::string>(kBackendId);
   const std::string backend_options =
-      options.Get<std::string>(kBackendOptionsId.GetId());
+      options.Get<std::string>(kBackendOptionsId);
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
+  } else if (net_path == kEmbed) {
+    net_path = CommandLine::BinaryName();
   } else {
     CERR << "Loading weights file from: " << net_path;
   }
-  const WeightsFile weights = LoadWeightsFromFile(net_path);
+  std::optional<WeightsFile> weights;
+  if (!net_path.empty()) {
+    weights = LoadWeightsFromFile(net_path);
+  }
 
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
 
-  return NetworkFactory::Get()->Create(backend, weights, network_options);
+  auto ptr = NetworkFactory::Get()->Create(backend, weights, network_options);
+  network_options.CheckAllOptionsRead(backend);
+  return ptr;
 }
 
 }  // namespace lczero

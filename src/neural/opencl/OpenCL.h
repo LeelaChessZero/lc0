@@ -68,6 +68,7 @@ class Layer {
   bool is_policy{false};
   bool is_conv_policy{false};
   bool is_value{false};
+  bool is_moves_left{false};
   std::vector<cl::Buffer> weights;
 };
 
@@ -181,6 +182,24 @@ class OpenCL_Network {
     push_weights(layer, fc_w);
     push_weights(layer, fc_b);
     m_layers[layer].is_value = true;
+    m_layers[layer].outputs = outputs;
+    m_layers[layer].channels = channels;
+    m_layers[layer].ip_in_size = ip_in;
+    m_layers[layer].ip_out_size = ip_out;
+  }
+
+  void push_moves_left(unsigned int channels, unsigned int outputs,
+                       unsigned int ip_in, unsigned int ip_out,
+                       const std::vector<float>& weights,
+                       const std::vector<float>& biases,
+                       const std::vector<float>& fc_w,
+                       const std::vector<float>& fc_b) {
+    size_t layer = get_layer_count();
+    push_weights(layer, weights);
+    push_weights(layer, biases);
+    push_weights(layer, fc_w);
+    push_weights(layer, fc_b);
+    m_layers[layer].is_moves_left = true;
     m_layers[layer].outputs = outputs;
     m_layers[layer].channels = channels;
     m_layers[layer].ip_in_size = ip_in;

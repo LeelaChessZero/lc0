@@ -28,23 +28,25 @@
 #pragma once
 
 #include <fstream>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include "chess/callbacks.h"
 #include "utils/exception.h"
 
 namespace lczero {
 
 struct GoParams {
-  optional<std::int64_t> wtime;
-  optional<std::int64_t> btime;
-  optional<std::int64_t> winc;
-  optional<std::int64_t> binc;
-  optional<int> movestogo;
-  optional<int> depth;
-  optional<int> nodes;
-  optional<std::int64_t> movetime;
+  std::optional<std::int64_t> wtime;
+  std::optional<std::int64_t> btime;
+  std::optional<std::int64_t> winc;
+  std::optional<std::int64_t> binc;
+  std::optional<int> movestogo;
+  std::optional<int> depth;
+  std::optional<int> nodes;
+  std::optional<std::int64_t> movetime;
   bool infinite = false;
   std::vector<std::string> searchmoves;
   bool ponder = false;
