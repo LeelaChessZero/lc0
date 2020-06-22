@@ -243,7 +243,7 @@ bool Node::MakeSolid() {
   // allow the search code to hold references to leaf nodes across locks.
   Node* old_child_to_check = child_.get();
   while (old_child_to_check != nullptr) {
-    if (old_child_to_check->GetN() == 0 &&
+    if (old_child_to_check->GetN() <= 1 &&
         old_child_to_check->GetNInFlight() > 0) {
       return false;
     }
