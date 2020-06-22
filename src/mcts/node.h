@@ -243,7 +243,9 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
-  void MakeSolid();
+  // Reallocates this nodes children to be in a solid block, if possible and not already done.
+  // Returns true if the transformation was performed.
+  bool MakeSolid();
 
   ~Node() {
     if (solid_children_ && child_) {

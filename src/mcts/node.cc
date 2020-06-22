@@ -237,19 +237,19 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
-void Node::MakeSolid() {
-  if (solid_children_ || num_edges_ == 0 || IsTerminal()) return;
+bool Node::MakeSolid() {
+  if (solid_children_ || num_edges_ == 0 || IsTerminal()) return false;
   // Can only make solid if no immediate leaf childredn are in flight since we
   // allow the search code to hold references to leaf nodes across locks.
   Node* old_child_to_check = child_.get();
   while (old_child_to_check != nullptr) {
     if (old_child_to_check->GetN() == 0 &&
         old_child_to_check->GetNInFlight() > 0) {
-      return;
+      return false;
     }
     if (old_child_to_check->IsTerminal() &&
         old_child_to_check->GetNInFlight() > 0) {
-      return;
+      return false;
     }
     old_child_to_check = old_child_to_check->sibling_.get();
   }
@@ -281,6 +281,7 @@ void Node::MakeSolid() {
   child_ = std::unique_ptr<Node>(new_children);
   best_child_cached_ = nullptr;
   solid_children_ = true;
+  return true;
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {

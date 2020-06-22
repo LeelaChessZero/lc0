@@ -415,12 +415,15 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
     LOGFILE << "=== Move stats:";
     for (const auto& line : move_stats) LOGFILE << line;
   }
-  if (final_bestmove_.HasNode()) {
-    LOGFILE
-        << "--- Opponent moves after: "
-        << final_bestmove_.GetMove(played_history_.IsBlackToMove()).as_string();
-    for (const auto& line : GetVerboseStats(final_bestmove_.node())) {
-      LOGFILE << line;
+  for (auto edge : root_node_->Edges()) {
+    if (!(edge.GetMove(played_history_.IsBlackToMove()) == final_bestmove_)) {
+      continue;
+    }
+    if (edge.HasNode()) {
+      LOGFILE << "--- Opponent moves after: " << final_bestmove_.as_string();
+      for (const auto& line : GetVerboseStats(edge.node())) {
+        LOGFILE << line;
+      }
     }
   }
 }
@@ -461,9 +464,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     SendUciInfo();
     EnsureBestMoveKnown();
     SendMovesStats();
-    BestMoveInfo info(
-        final_bestmove_.GetMove(played_history_.IsBlackToMove()),
-        final_pondermove_.GetMove(!played_history_.IsBlackToMove()));
+    BestMoveInfo info(final_bestmove_, final_pondermove_);
     uci_responder_->OutputBestMove(&info);
     stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
@@ -495,8 +496,7 @@ std::pair<Move, Move> Search::GetBestMove() {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
   EnsureBestMoveKnown();
-  return {final_bestmove_.GetMove(played_history_.IsBlackToMove()),
-          final_pondermove_.GetMove(!played_history_.IsBlackToMove())};
+  return {final_bestmove_, final_pondermove_};
 }
 
 std::int64_t Search::GetTotalPlayouts() const {
@@ -541,11 +541,14 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     }
   }
 
-  final_bestmove_ = temperature ? GetBestRootChildWithTemperature(temperature)
-                                : GetBestChildNoTemperature(root_node_, 0);
+  auto bestmove_edge = temperature
+                           ? GetBestRootChildWithTemperature(temperature)
+                           : GetBestChildNoTemperature(root_node_, 0);
+  final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
 
-  if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
-    final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node(), 1);
+  if (bestmove_edge.HasNode() && bestmove_edge.node()->HasChildren()) {
+    final_pondermove_ = GetBestChildNoTemperature(bestmove_edge.node(), 1)
+                            .GetMove(!played_history_.IsBlackToMove());
   }
 }
 
@@ -1553,7 +1556,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
-    if (n->GetN() >= 100) n->MakeSolid();
+    if (n->GetN() >= 100) {
+      if (n->MakeSolid() && n == search_->root_node_) {
+        // If we make the root solid, the current_best_edge_ becomes invalid and
+        // we should repopulate it.
+        search_->current_best_edge_ =
+            search_->GetBestChildNoTemperature(search_->root_node_, 0);
+      }
+    }
 
     // Nothing left to do without ancestors to update.
     if (!p) break;
