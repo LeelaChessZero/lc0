@@ -1542,6 +1542,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
+  int solid_threshold = params_.GetSolidTreeThreshold();
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1556,7 +1557,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
-    if (n->GetN() >= 100) {
+    if (n->GetN() >= solid_threshold) {
       if (n->MakeSolid() && n == search_->root_node_) {
         // If we make the root solid, the current_best_edge_ becomes invalid and
         // we should repopulate it.

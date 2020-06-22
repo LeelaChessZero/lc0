@@ -112,6 +112,9 @@ class SearchParams {
 
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
+  
+  int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
+
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -164,6 +167,7 @@ class SearchParams {
   static const OptionId kDrawScoreBlackId;
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
+  static const OptionId kSolidTreeThresholdId;
 
  private:
   const OptionsDict& options_;
@@ -209,6 +213,7 @@ class SearchParams {
   const float kDrawScoreBlack;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
+  const int kSolidTreeThreshold;
 };
 
 }  // namespace lczero
