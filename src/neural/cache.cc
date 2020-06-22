@@ -82,6 +82,8 @@ void CachingComputation::ComputeBlocking() {
     auto req =
         std::make_unique<CachedNNRequest>(item.probabilities_to_cache.size());
     req->q = parent_->GetQVal(item.idx_in_parent);
+    req->d = parent_->GetDVal(item.idx_in_parent);
+    req->m = parent_->GetMVal(item.idx_in_parent);
     int idx = 0;
     for (auto x : item.probabilities_to_cache) {
       req->p[idx++] =
@@ -95,6 +97,18 @@ float CachingComputation::GetQVal(int sample) const {
   const auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) return parent_->GetQVal(item.idx_in_parent);
   return item.lock->q;
+}
+
+float CachingComputation::GetDVal(int sample) const {
+  const auto& item = batch_[sample];
+  if (item.idx_in_parent >= 0) return parent_->GetDVal(item.idx_in_parent);
+  return item.lock->d;
+}
+
+float CachingComputation::GetMVal(int sample) const {
+  const auto& item = batch_[sample];
+  if (item.idx_in_parent >= 0) return parent_->GetMVal(item.idx_in_parent);
+  return item.lock->m;
 }
 
 float CachingComputation::GetPVal(int sample, int move_id) const {

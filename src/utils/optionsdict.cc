@@ -35,7 +35,7 @@
 namespace lczero {
 
 const OptionsDict& OptionsDict::GetSubdict(const std::string& name) const {
-  auto iter = subdicts_.find(name);
+  const auto iter = subdicts_.find(name);
   if (iter == subdicts_.end())
     throw Exception("Subdictionary not found: " + name);
   return iter->second;
@@ -51,10 +51,10 @@ OptionsDict* OptionsDict::GetMutableSubdict(const std::string& name) {
 
 // Creates subdictionary. Throws exception if already exists.
 OptionsDict* OptionsDict::AddSubdict(const std::string& name) {
-  auto iter = subdicts_.find(name);
+  const auto iter = subdicts_.find(name);
   if (iter != subdicts_.end())
     throw Exception("Subdictionary already exists: " + name);
-  auto x = &subdicts_.emplace(name, this).first->second;
+  const auto x = &subdicts_.emplace(name, this).first->second;
   return x;
 }
 
@@ -128,7 +128,7 @@ class Lexer {
     }
 
     // Identifier
-    if (std::isalnum(str_[idx_])) {
+    if (std::isalnum(str_[idx_]) || str_[idx_]=='/') {
       ReadIdentifier();
       return;
     }
@@ -320,6 +320,18 @@ class Parser {
 void OptionsDict::AddSubdictFromString(const std::string& str) {
   Parser parser(str);
   parser.ParseMain(this);
+}
+
+void OptionsDict::CheckAllOptionsRead(
+    const std::string& path_from_parent) const {
+  std::string s = path_from_parent.empty() ? "" : path_from_parent + '.';
+  TypeDict<bool>::EnsureNoUnusedOptions("boolean", s);
+  TypeDict<int>::EnsureNoUnusedOptions("integer", s);
+  TypeDict<float>::EnsureNoUnusedOptions("floating point", s);
+  TypeDict<std::string>::EnsureNoUnusedOptions("string", s);
+  for (auto const& dict : subdicts_) {
+    dict.second.CheckAllOptionsRead(s + dict.first);
+  }
 }
 
 }  // namespace lczero

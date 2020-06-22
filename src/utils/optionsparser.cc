@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -34,6 +34,12 @@
 #include "utils/configfile.h"
 #include "utils/logging.h"
 #include "utils/string.h"
+
+#if __has_include(<charconv>)
+#include <charconv>
+#else
+#define NO_CHARCONV
+#endif
 
 namespace lczero {
 namespace {
@@ -69,7 +75,7 @@ void OptionsParser::SetUciOption(const std::string& name,
 }
 
 void OptionsParser::HideOption(const OptionId& id) {
-  auto option = FindOptionById(id.GetId());
+  const auto option = FindOptionById(id);
   if (option) option->hidden_ = true;
 }
 
@@ -90,10 +96,9 @@ OptionsParser::Option* OptionsParser::FindOptionByUciName(
   return nullptr;
 }
 
-OptionsParser::Option* OptionsParser::FindOptionById(
-    const std::string& name) const {
+OptionsParser::Option* OptionsParser::FindOptionById(const OptionId& id) const {
   for (const auto& val : options_) {
-    if (name == val->GetId()) return val.get();
+    if (id == val->GetId()) return val.get();
   }
   return nullptr;
 }
@@ -114,14 +119,23 @@ bool OptionsParser::ProcessAllFlags() {
 }
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
+  auto show_help = false;
+  if (CommandLine::BinaryName().find("pro") != std::string::npos) {
+    ShowHidden();
+  }
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
-    if (param == "-h" || param == "--help") {
-      ShowHelp();
+    if (param == "--help-md") {
+      ShowHelpMd();
       return false;
     }
     if (param == "--show-hidden") {
       ShowHidden();
+      continue;
+    }
+    if (param == "-h" || param == "--help") {
+      // Set a flag so that --show-hidden after --help works.
+      show_help = true;
       continue;
     }
 
@@ -179,6 +193,10 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
 
     CERR << "Unknown command line argument: " << *iter << ".\n";
     CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
+    return false;
+  }
+  if (show_help) {
+    ShowHelp();
     return false;
   }
   return true;
@@ -239,28 +257,112 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }  // namespace
 
 void OptionsParser::ShowHelp() const {
-  std::cerr << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
+  std::cout << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
             << std::endl;
 
-  std::cerr << "\nAvailable modes. A help for a mode: "
+  std::cout << "\nAvailable modes. A help for a mode: "
             << CommandLine::BinaryName() << " <mode> --help\n";
   for (const auto& mode : CommandLine::GetModes()) {
-    std::cerr << "  " << std::setw(10) << std::left << mode.first << " "
+    std::cout << "  " << std::setw(10) << std::left << mode.first << " "
               << mode.second << std::endl;
   }
 
-  std::cerr << "\nAllowed command line flags for current mode:\n";
-  std::cerr << FormatFlag('h', "help", "Show help and exit.");
+  std::cout << "\nAllowed command line flags for current mode:\n";
+  std::cout << FormatFlag('h', "help", "Show help and exit.");
+  std::cout << FormatFlag('\0', "show-hidden",
+                          "Show hidden options. Use with --help.");
   for (const auto& option : options_) {
-    if (!option->hidden_) std::cerr << option->GetHelp(defaults_);
+    if (!option->hidden_) std::cout << option->GetHelp(defaults_);
   }
 
   auto contexts = values_.ListSubdicts();
   if (!contexts.empty()) {
-    std::cerr << "\nFlags can be defined per context (one of: "
+    std::cout << "\nFlags can be defined per context (one of: "
               << StrJoin(contexts, ", ") << "), for example:\n";
-    std::cerr << "       --" << contexts[0] << '.'
+    std::cout << "       --" << contexts[0] << '.'
               << options_.back()->GetLongFlag() << "=(value)\n";
+  }
+}
+
+namespace {
+std::string EscapeMd(const std::string& input) {
+  const std::string kSpecial = "~#<>&*_\\[]+-`|:\n\r";
+  std::string s = input;
+  size_t pos = 0;
+  while ((pos = s.find_first_of(kSpecial, pos)) != std::string::npos) {
+    switch (s[pos]) {
+      case '<':
+        s.replace(pos, 1, "&lt;");
+        pos += 4;
+        break;
+      case '>':
+        s.replace(pos, 1, "&gt;");
+        pos += 4;
+        break;
+      case '&':
+        s.replace(pos, 1, "&amp;");
+        pos += 5;
+        break;
+      case '\n':
+        s.replace(pos, 1, "<br/>");
+        pos += 5;
+        break;
+      case '\r':
+        s.erase(pos, 1);
+        break;
+      default:
+        s.insert(pos, "\\");
+        pos += 2;
+    }
+  }
+  return s;
+}
+}  // namespace
+
+void OptionsParser::ShowHelpMd() const {
+  std::cout << "\n# Lc0 options\n";
+  std::cout << "\n*Flag*|*UCI option*|Description\n---|---|------\n";
+  std::cout << "**--help**, **-h**||Show help and exit.\n";
+  for (const auto& option : options_) {
+    if (option->hidden_) continue;
+    if (!option->GetLongFlag().empty()) {
+      std::cout << "**--" << option->GetLongFlag() << "**";
+    }
+    if (option->GetShortFlag()) {
+      std::cout << ", **-" << option->GetShortFlag() << "**";
+    }
+    std::cout << '|';
+    if (!option->GetUciOption().empty()) {
+      std::cout << "**" << option->GetUciOption() << "**";
+    }
+    std::cout << '|' << EscapeMd(option->GetHelpText());
+    std::string help = option->GetHelp(defaults_);
+    size_t idx = help.rfind("DEFAULT:");
+    if (idx != std::string::npos) {
+      help.replace(idx, 8, "*Default value:* `");
+      size_t idx2 = help.rfind("MIN:");
+      if (idx2 != std::string::npos) {
+        help.replace(idx2, 4, "`<br/>*Minimum value:* `");
+      }
+      idx2 = help.rfind("MAX:");
+      if (idx2 != std::string::npos) {
+        help.replace(idx2, 4, "`<br/>*Maximum value:* `");
+      }
+      idx2 = help.rfind("VALUES:");
+      if (idx2 != std::string::npos) {
+        help.replace(idx2, 7, "`<br/>*Allowed values:* `");
+        while ((idx2 = help.find(",", idx2)) != std::string::npos) {
+          help.replace(idx2, 1, "`, `");
+          idx2 += 4;
+        }
+      }
+      idx2 = help.rfind("]");
+      if (idx2 != std::string::npos) {
+        help.erase(idx2);
+      }
+      std::cout << "<br/>" << help.substr(idx) << "`";
+    }
+    std::cout << "\n";
   }
 }
 
@@ -323,13 +425,13 @@ IntOption::IntOption(const OptionId& id, int min, int max)
     : Option(id), min_(min), max_(max) {}
 
 void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stoi(value));
+  SetVal(dict, ValidateIntString(value));
 }
 
 bool IntOption::ProcessLongFlag(const std::string& flag,
                                 const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    SetVal(dict, std::stoi(value));
+    SetVal(dict, ValidateIntString(value));
     return true;
   }
   return false;
@@ -338,7 +440,7 @@ bool IntOption::ProcessLongFlag(const std::string& flag,
 bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                           OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    SetVal(dict, std::stoi(value));
+    SetVal(dict, ValidateIntString(value));
     return true;
   }
   return false;
@@ -374,6 +476,36 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetId(), val);
 }
 
+#ifndef NO_CHARCONV
+int IntOption::ValidateIntString(const std::string& val) const {
+  int result;
+  const auto end = val.data() + val.size();
+  auto [ptr, err] = std::from_chars(val.data(), end, result);  
+  if (err == std::errc::invalid_argument) {
+    throw Exception("Flag '--" + GetLongFlag() + "' has an invalid format.");
+  } else if (err == std::errc::result_out_of_range) {
+    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
+  } else if (ptr != end) {
+    throw Exception("Flag '--" + GetLongFlag() + "' has trailing characters.");
+  } else {
+    return result;
+  }
+}
+#else
+int IntOption::ValidateIntString(const std::string& val) const {
+  char *end;
+  errno = 0;
+  int result = std::strtol(val.c_str(), &end, 10);
+  if (errno == ERANGE) {
+    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
+  } else if (val.length() == 0 || *end != '\0') {
+    throw Exception("Flag '--" + GetLongFlag() + "' value is invalid.");
+  } else {
+    return result;
+  }
+}
+#endif
+
 /////////////////////////////////////////////////////////////////
 // FloatOption
 /////////////////////////////////////////////////////////////////
@@ -382,13 +514,25 @@ FloatOption::FloatOption(const OptionId& id, float min, float max)
     : Option(id), min_(min), max_(max) {}
 
 void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
-  SetVal(dict, std::stof(value));
+  try {
+    SetVal(dict, std::stof(value));
+  } catch (std::invalid_argument&) {
+    throw Exception("invalid value " + value);
+  } catch (const std::out_of_range&) {
+    throw Exception("out of range value " + value);
+  }
 }
 
 bool FloatOption::ProcessLongFlag(const std::string& flag,
                                   const std::string& value, OptionsDict* dict) {
   if (flag == GetLongFlag()) {
-    SetVal(dict, std::stof(value));
+    try {
+      SetVal(dict, std::stof(value));
+    } catch (std::invalid_argument&) {
+      throw Exception("invalid value " + value);
+    } catch (const std::out_of_range&) {
+      throw Exception("out of range value " + value);
+    }
     return true;
   }
   return false;
@@ -397,7 +541,13 @@ bool FloatOption::ProcessLongFlag(const std::string& flag,
 bool FloatOption::ProcessShortFlagWithValue(char flag, const std::string& value,
                                             OptionsDict* dict) {
   if (flag == GetShortFlag()) {
-    SetVal(dict, std::stof(value));
+    try {
+      SetVal(dict, std::stof(value));
+    } catch (std::invalid_argument&) {
+      throw Exception("invalid value " + value);
+    } catch (const std::out_of_range&) {
+      throw Exception("out of range value " + value);
+    }
     return true;
   }
   return false;
