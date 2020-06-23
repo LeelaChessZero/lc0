@@ -85,11 +85,22 @@ class Edge {
 
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
-  Move GetMove(bool as_opponent = false) const;
+  Move GetMove(bool as_opponent = false) const {
+    if (!as_opponent) return move_;
+    Move m = move_;
+    m.Mirror();
+    return m;
+  }
 
   // Returns or sets value of Move policy prior returned from the neural net
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
-  float GetP() const;
+  float GetP() const {
+    // Reshift into place and set the assumed-set exponent bits.
+    uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
+    float ret;
+    std::memcpy(&ret, &tmp, sizeof(uint32_t));
+    return ret;
+  }
   void SetP(float val);
 
   // Debug information about the edge.
@@ -145,7 +156,7 @@ class Node {
   bool HasChildren() const { return static_cast<bool>(edges_); }
 
   // Returns sum of policy priors which have had at least one playout.
-  float GetVisitedPolicy() const;
+  float GetVisitedPolicy() const { return visited_policy_; }
   uint32_t GetN() const { return n_; }
   uint32_t GetNInFlight() const { return n_in_flight_; }
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
@@ -556,6 +567,13 @@ class Edge_Iterator : public EdgeAndNode {
   uint16_t current_idx_ = 0;
   uint16_t total_count_ = 0;
 };
+
+inline Node::ConstIterator Node::Edges() const {
+  return {*this, !solid_children_ ? &child_ : nullptr};
+}
+inline Node::Iterator Node::Edges() {
+  return {*this, !solid_children_ ? &child_ : nullptr};
+}
 
 class NodeTree {
  public:

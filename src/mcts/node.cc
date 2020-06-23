@@ -120,13 +120,6 @@ NodeGarbageCollector gNodeGc;
 // Edge
 /////////////////////////////////////////////////////////////////////////
 
-Move Edge::GetMove(bool as_opponent) const {
-  if (!as_opponent) return move_;
-  Move m = move_;
-  m.Mirror();
-  return m;
-}
-
 // Policy priors (P) are stored in a compressed 16-bit format.
 //
 // Source values are 32-bit floats:
@@ -166,14 +159,6 @@ void Edge::SetP(float p) {
   p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
 }
 
-float Edge::GetP() const {
-  // Reshift into place and set the assumed-set exponent bits.
-  uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
-  float ret;
-  std::memcpy(&ret, &tmp, sizeof(uint32_t));
-  return ret;
-}
-
 std::string Edge::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
@@ -206,15 +191,6 @@ void Node::CreateEdges(const MoveList& moves) {
   edges_ = Edge::FromMovelist(moves);
   num_edges_ = moves.size();
 }
-
-Node::ConstIterator Node::Edges() const {
-  return {*this, !solid_children_ ? &child_ : nullptr};
-}
-Node::Iterator Node::Edges() {
-  return {*this, !solid_children_ ? &child_ : nullptr};
-}
-
-float Node::GetVisitedPolicy() const { return visited_policy_; }
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
