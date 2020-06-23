@@ -32,6 +32,7 @@
 #include "mcts/stoppers/factory.h"
 #include "neural/factory.h"
 #include "selfplay/game.h"
+#include "utils/optionsparser.h"
 #include "utils/random.h"
 
 namespace lczero {
