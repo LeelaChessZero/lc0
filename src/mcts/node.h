@@ -252,14 +252,6 @@ class Node {
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
-  // 8 byte fields.
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  // WL stands for "W minus L". Is equal to Q if draw score is 0.
-  double wl_ = 0.0f;
-
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
@@ -274,6 +266,13 @@ class Node {
   Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
+  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  float wl_ = 0.0f;
+
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -326,7 +325,7 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+static_assert(sizeof(Node) == 72, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
