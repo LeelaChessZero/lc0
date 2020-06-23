@@ -266,12 +266,13 @@ bool Node::MakeSolid() {
   for (int i = 0; i < num_edges_; i++) {
     new (&(new_children[i])) Node(this, i);
   }
-  Node* old_child = child_.release();
-  while (old_child != nullptr) {
+  std::unique_ptr<Node> old_child = std::move(child_);
+  while (old_child) {
     int index = old_child->index_;
-    new_children[index] = std::move(*old_child);
+    new_children[index] = std::move(*old_child.get());
+    // This isn't needed, but it helps crash things faster if something has gone wrong.
     old_child->parent_ = nullptr;
-    gNodeGc.AddToGcQueue(std::unique_ptr<Node>(old_child));
+    gNodeGc.AddToGcQueue(std::move(old_child));
     Node* to_update_parent = new_children[index].child_.get();
     if (!new_children[index].solid_children_) {
       while (to_update_parent != nullptr) {
@@ -283,7 +284,7 @@ bool Node::MakeSolid() {
         to_update_parent[i].parent_ = &new_children[index];
       }
     }
-    old_child = new_children[index].sibling_.release();
+    old_child = std::move(new_children[index].sibling_);
   }
   // This is a hack.
   child_ = std::unique_ptr<Node>(new_children);
