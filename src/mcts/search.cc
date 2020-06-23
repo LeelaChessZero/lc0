@@ -163,8 +163,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     const auto wl = edge.GetWL(default_wl);
-    const auto d = edge.GetD(default_d);
-    const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
+    const auto foatD = edge.GetD(default_d);
     const auto q = edge.GetQ(default_q, draw_score, /* logit_q= */ false);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
@@ -185,10 +184,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
     }
-    const int l = static_cast<int>(std::round(500.0 * (1.0 - wl - d)));
+
+    const auto w = std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - foatD))));
+    const auto l = std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - foatD))));
+    const auto d = std::max(0, 1000 - w - l);
     // Using 1000-w-l instead of 1000*d for D score so that W+D+L add up to
     // 1000.0.
-    uci_info.wdl = ThinkingInfo::WDL{w, 1000 - w - l, l};
+    uci_info.wdl = ThinkingInfo::WDL{w, d, l};
     if (max_pv > 1) uci_info.multipv = multipv;
     if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
