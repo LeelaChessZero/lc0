@@ -430,7 +430,7 @@ V5TrainingData Node::GetV5TrainingData(
   }
 
   // Aggregate evaluation WL.
-  result.root_q = -GetWL();
+  result.root_q = static_cast<float>(-GetWL());
   result.best_q = best_q;
 
   // Draw probability of WDL head.

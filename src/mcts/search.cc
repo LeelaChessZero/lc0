@@ -482,12 +482,12 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
 Search::BestEval Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  float parent_wl = -root_node_->GetWL();
+  auto parent_wl = -root_node_->GetWL();
   float parent_d = root_node_->GetD();
   float parent_m = root_node_->GetM();
-  if (!root_node_->HasChildren()) return {parent_wl, parent_d, parent_m};
+  if (!root_node_->HasChildren()) return {static_cast<float>(parent_wl), parent_d, parent_m};
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
-  return {best_edge.GetWL(parent_wl), best_edge.GetD(parent_d),
+  return {static_cast<float>(best_edge.GetWL(parent_wl)), best_edge.GetD(parent_d),
           best_edge.GetM(parent_m - 1) + 1};
 }
 
@@ -1447,7 +1447,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (!node_to_process->nn_queried) {
     // Terminal nodes don't involve the neural NetworkComputation, nor do
     // they require any further processing after value retrieval.
-    node_to_process->v = node->GetWL();
+    node_to_process->v = static_cast<float>(node->GetWL());
     node_to_process->d = node->GetD();
     node_to_process->m = node->GetM();
     return;
@@ -1539,7 +1539,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Current node might have become terminal from some other descendant, so
     // backup the rest of the way with more accurate values.
     if (n->IsTerminal()) {
-      v = n->GetWL();
+      v = static_cast<float>(n->GetWL());
       d = n->GetD();
       m = n->GetM();
     }
@@ -1634,7 +1634,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
     // it terminal preferring shorter wins and longer losses.
     *n_to_fix = p->GetN();
     assert(*n_to_fix > 0);
-    float cur_v = p->GetWL();
+    auto cur_v = p->GetWL();
     float cur_d = p->GetD();
     float cur_m = p->GetM();
     p->MakeTerminal(
@@ -1643,7 +1643,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
         prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
     // Negate v_delta because we're calculating for the parent, but immediately
     // afterwards we'll negate v_delta in case it has come from the child.
-    *v_delta = -(p->GetWL() - cur_v);
+    *v_delta = static_cast<float>(-(p->GetWL() - cur_v));
     *d_delta = p->GetD() - cur_d;
     *m_delta = p->GetM() - cur_m;
   } else {

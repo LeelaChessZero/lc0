@@ -148,7 +148,7 @@ class Node {
   float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetWL() const { return wl_; }
+  double GetWL() const { return wl_; }
   float GetD() const { return d_; }
   float GetM() const { return m_; }
 
@@ -252,6 +252,15 @@ class Node {
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
+  // 8 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
+  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  // This has to be a double, issue: https://github.com/LeelaChessZero/lc0/issues/875
+  double wl_ = 0.0f;
+
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
@@ -266,13 +275,6 @@ class Node {
   Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  // WL stands for "W minus L". Is equal to Q if draw score is 0.
-  float wl_ = 0.0f;
-
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -323,9 +325,9 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 72, "Unexpected size of Node");
+static_assert(sizeof(Node) == 80, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -355,7 +357,7 @@ class EdgeAndNode {
                         : node_->GetQ(draw_score))
                : default_q;
   }
-  float GetWL(float default_wl) const {
+  double GetWL(double default_wl) const {
     return node_ ? node_->GetWL() : default_wl;
   }
   float GetD(float default_d) const {
