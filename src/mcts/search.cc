@@ -1542,7 +1542,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
-  int solid_threshold = params_.GetSolidTreeThreshold();
+  uint32_t solid_threshold = static_cast<uint32_t>(params_.GetSolidTreeThreshold());
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 

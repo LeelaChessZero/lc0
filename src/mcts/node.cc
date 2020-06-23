@@ -88,7 +88,7 @@ class NodeGarbageCollector {
       }
       // Solid is a hack...
       if (solid_size != 0) {
-        for (int i = 0; i < solid_size; i++) {
+        for (size_t i = 0; i < solid_size; i++) {
           node_to_gc.get()[i].~Node();
         }
         std::allocator<Node> alloc;
@@ -242,7 +242,7 @@ bool Node::MakeSolid() {
   // Can only make solid if no immediate leaf childredn are in flight since we
   // allow the search code to hold references to leaf nodes across locks.
   Node* old_child_to_check = child_.get();
-  int total_in_flight = 0;
+  uint32_t total_in_flight = 0;
   while (old_child_to_check != nullptr) {
     if (old_child_to_check->GetN() <= 1 &&
         old_child_to_check->GetNInFlight() > 0) {
