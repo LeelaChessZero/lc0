@@ -1,6 +1,6 @@
-git clone https://github.com/lealgo/chessenginesupport-androidlib.git --branch lc0 --single-branch oex
+git clone https://github.com/LeelaChessZero/chessenginesupport-androidlib.git --branch lc0 --single-branch oex
 cd oex
-git checkout 949de43f0c0c6339c0e66a6711d24987a67b29d8
+git checkout 0c02a8893b9c57ec57b40569ba60625912c6d32f
 cd ..
 perl -e "printf '%%sLc0!', pack('V', -s 'c:/cache/591226.pb.gz')" >tail.bin
 copy /y /b arm64-v8a\lc0+c:\cache\591226.pb.gz+tail.bin oex\LeelaChessEngine\leelaChessEngine\src\main\jniLibs\arm64-v8a\liblc0.so
