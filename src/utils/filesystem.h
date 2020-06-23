@@ -41,10 +41,10 @@ void CreateDirectory(const std::string& path);
 // Silently returns empty vector on error.
 std::vector<std::string> GetFileList(const std::string& directory);
 
-// Returns size of a file. Throws exception if file doesn't exist.
+// Returns size of a file, 0 if file doesn't exist or can't be read.
 uint64_t GetFileSize(const std::string& filename);
 
-// Returns modification time of a file. Throws exception if file doesn't exist.
+// Returns modification time of a file, 0 if file doesn't exist or can't be read.
 time_t GetFileTime(const std::string& filename);
 
 // Returns the base directory relative to which user specific non-essential data

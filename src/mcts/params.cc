@@ -243,9 +243,6 @@ const OptionId SearchParams::kMovesLeftQuadraticFactorId{
     "moves-left-quadratic-factor", "MovesLeftQuadraticFactor",
     "A factor which is multiplied by the square of Q of parent node and the "
     "base moves left effect."};
-const OptionId SearchParams::kShortSightednessId{
-    "short-sightedness", "ShortSightedness",
-    "Used to focus more on short term gains over long term."};
 const OptionId SearchParams::kDisplayCacheUsageId{
     "display-cache-usage", "DisplayCacheUsage",
     "Display cache fullness through UCI info `hash` section."};
@@ -330,7 +327,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kMovesLeftScaledFactorId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kShortSightednessId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
   options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
@@ -399,7 +395,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMovesLeftConstantFactor(options.Get<float>(kMovesLeftConstantFactorId)),
       kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
       kMovesLeftQuadraticFactor(options.Get<float>(kMovesLeftQuadraticFactorId)),
-      kShortSightedness(options.Get<float>(kShortSightednessId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
       kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},

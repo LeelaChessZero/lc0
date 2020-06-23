@@ -310,7 +310,7 @@ class SearchWorker {
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
-  bool MaybeSetBounds(Node* p, float m) const;
+  bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta, float* d_delta, float* m_delta) const;
 
   Search* const search_;
   // List of nodes to process.

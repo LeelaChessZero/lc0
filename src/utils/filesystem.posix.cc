@@ -67,7 +67,7 @@ std::vector<std::string> GetFileList(const std::string& directory) {
 uint64_t GetFileSize(const std::string& filename) {
   struct stat s;
   if (stat(filename.c_str(), &s) < 0) {
-    throw Exception("Cannot stat file: " + filename);
+    return 0;
   }
   return s.st_size;
 }
@@ -75,7 +75,7 @@ uint64_t GetFileSize(const std::string& filename) {
 time_t GetFileTime(const std::string& filename) {
   struct stat s;
   if (stat(filename.c_str(), &s) < 0) {
-    throw Exception("Cannot stat file: " + filename);
+    return 0;
   }
 #ifdef __APPLE__
   return s.st_mtimespec.tv_sec;
