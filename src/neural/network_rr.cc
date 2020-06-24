@@ -90,5 +90,6 @@ std::unique_ptr<Network> MakeRoundRobinNetwork(
 }
 
 REGISTER_NETWORK("roundrobin", MakeRoundRobinNetwork, -999)
+
 }  // namespace
 }  // namespace lczero
