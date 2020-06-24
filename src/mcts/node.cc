@@ -296,6 +296,17 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   best_child_cached_ = nullptr;
 }
 
+void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
+  // Recompute Q.
+  wl_ += multivisit * v / n_;
+  d_ += multivisit * d / n_;
+  m_ += multivisit * m / n_;
+  // Best child is potentially no longer valid. This shouldn't be needed since
+  // AjdustForTerminal is always called immediately after FinalizeScoreUpdate,
+  // but for safety in case that changes.
+  best_child_cached_ = nullptr;
+}
+
 void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
   best_child_cached_ = best_edge.node();
   // An edge can point to an unexpanded node with n==0. These nodes don't
@@ -378,9 +389,7 @@ V5TrainingData Node::GetV5TrainingData(
   uint8_t queen_side = 1;
   uint8_t king_side = 1;
   // If frc trained, send the bit mask representing rook position.
-  if (input_format == pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
-      input_format ==
-          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+  if (Is960CastlingFormat(input_format)) {
     queen_side <<= castlings.queenside_rook();
     king_side <<= castlings.kingside_rook();
   }
@@ -391,8 +400,7 @@ V5TrainingData Node::GetV5TrainingData(
   result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
   // Other params.
-  if (input_format ==
-      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+  if (IsCanonicalFormat(input_format)) {
     result.side_to_move_or_enpassant =
         position.GetBoard().en_passant().as_int() >> 56;
     if ((transform & FlipTransform) != 0) {

@@ -282,8 +282,8 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
   for (auto chunk : training_data_) {
     bool black_to_move = chunk.side_to_move_or_enpassant;
-    if (chunk.input_format ==
-        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
+            chunk.input_format))) {
       black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
     }
     if (game_result_ == GameResult::WHITE_WON) {
@@ -303,9 +303,11 @@ std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
     const {
   auto result = std::make_unique<ChainedSearchStopper>();
 
-  if (visits >= 0) result->AddStopper(std::make_unique<VisitsStopper>(visits));
+  if (visits >= 0) {
+    result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
+  }
   if (playouts >= 0) {
-    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts));
+    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));
   }
   if (movetime >= 0) {
     result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
