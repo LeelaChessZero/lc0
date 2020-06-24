@@ -61,7 +61,7 @@ class NodeGarbageCollector {
     if (!node) return;
     Mutex::Lock lock(gc_mutex_);
     subtrees_to_gc_.emplace_back(std::move(node));
-    subtrees_is_solid_.push_back(solid_size);
+    subtrees_to_gc_solid_size_.push_back(solid_size);
   }
 
   ~NodeGarbageCollector() {
@@ -83,8 +83,8 @@ class NodeGarbageCollector {
         if (subtrees_to_gc_.empty()) return;
         node_to_gc = std::move(subtrees_to_gc_.back());
         subtrees_to_gc_.pop_back();
-        solid_size = subtrees_is_solid_.back();
-        subtrees_is_solid_.pop_back();
+        solid_size = subtrees_to_gc_solid_size_.back();
+        subtrees_to_gc_solid_size_.pop_back();
       }
       // Solid is a hack...
       if (solid_size != 0) {
@@ -106,7 +106,7 @@ class NodeGarbageCollector {
 
   mutable Mutex gc_mutex_;
   std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
-  std::vector<size_t> subtrees_is_solid_ GUARDED_BY(gc_mutex_);
+  std::vector<size_t> subtrees_to_gc_solid_size_ GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
   std::atomic<bool> stop_{false};
