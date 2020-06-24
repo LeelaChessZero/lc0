@@ -233,7 +233,7 @@ std::string Node::DebugString() const {
       << " Edges:" << static_cast<int>(num_edges_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2
-      << " Solid:" << static_cast<bool>(solid_children_);
+      << " Solid:" << solid_children_;
   return oss.str();
 }
 
@@ -273,17 +273,7 @@ bool Node::MakeSolid() {
     // This isn't needed, but it helps crash things faster if something has gone wrong.
     old_child->parent_ = nullptr;
     gNodeGc.AddToGcQueue(std::move(old_child));
-    Node* to_update_parent = new_children[index].child_.get();
-    if (!new_children[index].solid_children_) {
-      while (to_update_parent != nullptr) {
-        to_update_parent->parent_ = &new_children[index];
-        to_update_parent = to_update_parent->sibling_.get();
-      }
-    } else {
-      for (int i = 0; i < new_children[index].num_edges_; i++) {
-        to_update_parent[i].parent_ = &new_children[index];
-      }
-    }
+    new_children[index].UpdateChildrenParents();
     old_child = std::move(new_children[index].sibling_);
   }
   // This is a hack.
@@ -391,6 +381,21 @@ void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
   best_child_cache_in_flight_limit_ = visits_allowed + n_in_flight_;
 }
 
+void Node::UpdateChildrenParents() {
+  if (!solid_children_) {
+    Node* cur_child = child_.get();
+    while (cur_child != nullptr) {
+      cur_child->parent_ = this;
+      cur_child = cur_child->sibling_.get();
+    }
+  } else {
+    Node* child_array = child_.get();
+    for (int i = 0; i < num_edges_; i++) {
+      child_array[i].parent_ = this;
+    }
+  }
+}
+
 void Node::ReleaseChildren() {
   gNodeGc.AddToGcQueue(std::move(child_), solid_children_ ? num_edges_ : 0);
 }
@@ -402,17 +407,7 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
     gNodeGc.AddToGcQueue(std::move(child_), num_edges_);
     child_ = std::move(new_child);
     if (child_) {
-      Node* to_update_parent = child_->child_.get();
-      if (!child_->solid_children_) {
-        while (to_update_parent != nullptr) {
-          to_update_parent->parent_ = child_.get();
-          to_update_parent = to_update_parent->sibling_.get();
-        }
-      } else {
-        for (int i = 0; i < child_->num_edges_; i++) {
-          to_update_parent[i].parent_ = child_.get();
-        }
-      }
+      child_->UpdateChildrenParents();
     }
     solid_children_ = false;
   } else {
