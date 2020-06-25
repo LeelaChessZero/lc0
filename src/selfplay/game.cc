@@ -69,11 +69,11 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
 }
 
-SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
+SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
                            bool shared_tree, const Opening& opening)
-    : options_{player1, player2},
-      chess960_{player1.uci_options->Get<bool>(kUciChess960) ||
-                player2.uci_options->Get<bool>(kUciChess960)} {
+    : options_{white, black},
+      chess960_{white.uci_options->Get<bool>(kUciChess960) ||
+                black.uci_options->Get<bool>(kUciChess960)} {
   orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
