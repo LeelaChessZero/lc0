@@ -120,7 +120,7 @@ class ReplayComputation : public NetworkComputation {
       return 0.0f;
     }
     const auto& entry = entry_ptr->second;
-    int counter = replay_counter_[index];
+    size_t counter = replay_counter_[index];
     if (counter >= entry.size()) {
       return 0.0f;
     }
@@ -138,7 +138,7 @@ class ReplayComputation : public NetworkComputation {
   virtual ~ReplayComputation() {}
   std::unique_ptr<NetworkComputation> inner_;
   std::vector<uint64_t> hashes_;
-  mutable std::vector<int> replay_counter_;
+  mutable std::vector<size_t> replay_counter_;
   std::unordered_map<uint64_t, std::vector<float>>* lookup_;
 };
 
