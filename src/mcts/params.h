@@ -71,7 +71,6 @@ class SearchParams {
   float GetTemperatureWinpctCutoff() const {
     return options_.Get<float>(kTemperatureWinpctCutoffId);
   }
-
   float GetNoiseEpsilon() const { return kNoiseEpsilon; }
   float GetNoiseAlpha() const { return kNoiseAlpha; }
   bool GetVerboseStats() const { return options_.Get<bool>(kVerboseStatsId); }
@@ -109,12 +108,9 @@ class SearchParams {
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
-
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
-  
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
-
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
