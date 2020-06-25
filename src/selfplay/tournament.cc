@@ -203,6 +203,8 @@ SelfPlayTournament::SelfPlayTournament(
 }
 
 void SelfPlayTournament::PlayOneGame(int game_number) {
+  ShowWorkInProcess(WorkInProgressType::newgame, game_number);
+
   bool player1_black;  // Whether player1 will player as black in this game.
   Opening opening;
   {
@@ -249,6 +251,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     opt.best_move_callback = [this, game_number, pl_idx, player1_black,
                               verbose_thinking, move_thinking,
                               &last_thinking_info](const BestMoveInfo& info) {
+      ShowWorkInProcess(WorkInProgressType::move, game_number);
       if (!move_thinking) {
         last_thinking_info.clear();
         return;
@@ -359,6 +362,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     Mutex::Lock lock(mutex_);
     games_.erase(game_iter);
   }
+  ShowWorkInProcess(WorkInProgressType::endgame, game_number);
 }
 
 void SelfPlayTournament::Worker() {
@@ -388,6 +392,7 @@ void SelfPlayTournament::StartAsync() {
 }
 
 void SelfPlayTournament::RunBlocking() {
+  ShowWorkInProcess(WorkInProgressType::begin);
   if (kParallelism == 1) {
     // No need for multiple threads if there is one worker.
     Worker();
@@ -400,6 +405,7 @@ void SelfPlayTournament::RunBlocking() {
     StartAsync();
     Wait();
   }
+  ShowWorkInProcess(WorkInProgressType::end);
 }
 
 void SelfPlayTournament::Wait() {
@@ -436,4 +442,39 @@ SelfPlayTournament::~SelfPlayTournament() {
   Wait();
 }
 
+void SelfPlayTournament::ShowWorkInProcess(WorkInProgressType type, int gameIdx) {
+  static std::chrono::steady_clock::time_point showTime;
+  std::string info;
+  switch (type) {
+  case WorkInProgressType::begin:
+    info = "Self traing started.";
+    break;
+  case WorkInProgressType::end:
+    info = "Self traing finished.";
+    break;
+  case WorkInProgressType::newgame:
+    info = "Game started id " + std::to_string(gameIdx);
+    break;
+  case WorkInProgressType::endgame:
+    info = "Game ended id " + std::to_string(gameIdx);
+    break;
+  case WorkInProgressType::move: {
+    std::chrono::duration<double> time = std::chrono::steady_clock::now() - showTime;
+    if (time.count() < workInProcess_show_period_) {
+        return;
+    }
+    info = "Game playing, got move from game id " + std::to_string(gameIdx);
+    break;
+}
+
+default:
+    return;
+}
+
+Mutex::Lock lock(workInProcess_mutex_);
+showTime = std::chrono::steady_clock::now();
+std::cout << info << std::endl;
+}
+
 }  // namespace lczero
+
