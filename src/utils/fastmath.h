@@ -27,9 +27,9 @@
 
 #pragma once
 
+#include <cmath>
+#include <cstdint>
 #include <cstring>
-
-
 
 namespace lczero {
 // These stunts are performed by trained professionals, do not try this at home.
@@ -58,7 +58,7 @@ inline float FastLog2(const float a) {
 // modified for better accuracy with 32 bit floating point math.
 inline float FastPow2(const float a) {
   if (a < -126) return 0.0;
-  int32_t exp = floor(a);
+  int32_t exp = static_cast<int32_t>(floor(a));
   float out = a - exp;
   // Minimize max relative error.
   out = 1.0f + out * (0.6602339f + 0.33976606f * out);
@@ -76,5 +76,10 @@ inline float FastLog(const float a) {
 
 // Fast approximate exp(x). Does only limited range checking.
 inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
+
+// Fast logit for more readable code.
+inline float FastLogit(const float a) {
+  return 0.5f * FastLog((1.0f + a) / (1.0f - a));
+}
 
 }  // namespace lczero

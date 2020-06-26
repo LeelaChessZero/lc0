@@ -26,10 +26,12 @@
 */
 
 #include "utils/optionsdict.h"
+
 #include <cassert>
 #include <cctype>
 #include <sstream>
 #include <string>
+
 #include "utils/exception.h"
 
 namespace lczero {
@@ -56,6 +58,10 @@ OptionsDict* OptionsDict::AddSubdict(const std::string& name) {
     throw Exception("Subdictionary already exists: " + name);
   const auto x = &subdicts_.emplace(name, this).first->second;
   return x;
+}
+
+void OptionsDict::AddAliasDict(const OptionsDict* dict) {
+  aliases_.push_back(dict);
 }
 
 // Returns list of subdictionaries.
@@ -128,7 +134,7 @@ class Lexer {
     }
 
     // Identifier
-    if (std::isalnum(str_[idx_])) {
+    if (std::isalnum(str_[idx_]) || str_[idx_] == '/') {
       ReadIdentifier();
       return;
     }
@@ -320,6 +326,18 @@ class Parser {
 void OptionsDict::AddSubdictFromString(const std::string& str) {
   Parser parser(str);
   parser.ParseMain(this);
+}
+
+void OptionsDict::CheckAllOptionsRead(
+    const std::string& path_from_parent) const {
+  std::string s = path_from_parent.empty() ? "" : path_from_parent + '.';
+  TypeDict<bool>::EnsureNoUnusedOptions("boolean", s);
+  TypeDict<int>::EnsureNoUnusedOptions("integer", s);
+  TypeDict<float>::EnsureNoUnusedOptions("floating point", s);
+  TypeDict<std::string>::EnsureNoUnusedOptions("string", s);
+  for (auto const& dict : subdicts_) {
+    dict.second.CheckAllOptionsRead(s + dict.first);
+  }
 }
 
 }  // namespace lczero

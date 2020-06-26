@@ -24,6 +24,7 @@
 namespace lczero {
 
 // Convolution 1x1
+template <bool use_eigen>
 class Convolution1 {
  public:
   Convolution1() = delete;

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,9 +28,11 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
-#include "neural/network.h"
+
 #include "neural/loader.h"
+#include "neural/network.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
@@ -39,7 +41,7 @@ namespace lczero {
 class NetworkFactory {
  public:
   using FactoryFunc = std::function<std::unique_ptr<Network>(
-      const WeightsFile&, const OptionsDict&)>;
+      const std::optional<WeightsFile>&, const OptionsDict&)>;
 
   static NetworkFactory* Get();
 
@@ -61,7 +63,7 @@ class NetworkFactory {
 
   // Creates a backend given name and config.
   std::unique_ptr<Network> Create(const std::string& network,
-                                  const WeightsFile&,
+                                  const std::optional<WeightsFile>&,
                                   const OptionsDict& options);
 
   // Helper function to load the network from the options. Returns nullptr
@@ -82,6 +84,10 @@ class NetworkFactory {
     bool operator==(const BackendConfiguration& other) const;
     bool operator!=(const BackendConfiguration& other) const {
       return !operator==(other);
+    }
+    bool operator<(const BackendConfiguration& other) const {
+      return std::tie(weights_path, backend, backend_options) <
+             std::tie(other.weights_path, other.backend, other.backend_options);
     }
   };
 
@@ -109,12 +115,14 @@ class NetworkFactory {
   friend class Register;
 };
 
-#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)        \
-  namespace {                                                                \
-  static NetworkFactory::Register regH38fhs##counter(                        \
-      name,                                                                  \
-      [](const WeightsFile& w, const OptionsDict& o) { return func(w, o); }, \
-      priority);                                                             \
+#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter) \
+  namespace {                                                         \
+  static NetworkFactory::Register regH38fhs##counter(                 \
+      name,                                                           \
+      [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
+        return func(w, o);                                            \
+      },                                                              \
+      priority);                                                      \
   }
 #define REGISTER_NETWORK_WITH_COUNTER(name, func, priority, counter) \
   REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)

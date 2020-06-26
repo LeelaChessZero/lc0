@@ -27,6 +27,7 @@
 
 #include "uciloop.h"
 
+#include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -35,6 +36,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+
 #include "utils/exception.h"
 #include "utils/logging.h"
 #include "utils/string.h"
@@ -113,8 +115,10 @@ int GetNumeric(const std::unordered_map<std::string, std::string>& params,
       throw Exception("expected value after " + key);
     }
     return std::stoi(str);
-  } catch (std::invalid_argument& e) {
+  } catch (std::invalid_argument&) {
     throw Exception("invalid value " + str);
+  } catch (const std::out_of_range&) {
+    throw Exception("out of range value " + str);
   }
 }
 
@@ -243,11 +247,17 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
     if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
     if (info.is_black)
       res += " side " + std::string(*info.is_black ? "black" : "white");
-    if (info.depth >= 0) res += " depth " + std::to_string(info.depth);
+    if (info.depth >= 0)
+      res += " depth " + std::to_string(std::max(info.depth, 1));
     if (info.seldepth >= 0) res += " seldepth " + std::to_string(info.seldepth);
     if (info.time >= 0) res += " time " + std::to_string(info.time);
     if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
+    if (info.mate) res += " score mate " + std::to_string(*info.mate);
     if (info.score) res += " score cp " + std::to_string(*info.score);
+    if (info.wdl) {
+      res += " wdl " + std::to_string(info.wdl->w) + " " +
+             std::to_string(info.wdl->d) + " " + std::to_string(info.wdl->l);
+    }
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
     if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
     if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
