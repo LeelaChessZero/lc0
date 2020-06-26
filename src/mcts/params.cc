@@ -259,6 +259,10 @@ const OptionId SearchParams::kNpsLimitId{
     "An option to specify an upper limit to the nodes per second searched. The "
     "accuracy depends on the minibatch size used, increasing for lower sizes, "
     "and on the length of the search. Zero to disable."};
+const OptionId SearchParams::kSolidTreeThresholdId{
+    "solid-tree-threshold", "SolidTreeThreshold",
+    "Only nodes with at least this number of visits will be considered for "
+    "solidification for improved cache locality."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -324,6 +328,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
+  options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -382,7 +387,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId)),
       kMovesLeftConstantFactor(options.Get<float>(kMovesLeftConstantFactorId)),
       kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
-      kMovesLeftQuadraticFactor(options.Get<float>(kMovesLeftQuadraticFactorId)),
+      kMovesLeftQuadraticFactor(
+          options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
       kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
@@ -392,7 +398,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),
-      kNpsLimit(options.Get<float>(kNpsLimitId)) {
+      kNpsLimit(options.Get<float>(kNpsLimitId)),
+      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
