@@ -50,6 +50,10 @@ namespace lczero {
 // * Edges are stored are a simple array on heap.
 // * Nodes are stored as a linked list, and contain index_ field which shows
 //   which edge of a parent that node points to.
+//   Or they are stored a contiguous array of Node objects on the heap if
+//   solid_children_ is true. If the children have been 'solidified' their
+//   sibling links are unused and left empty. In this state there are no
+//   dangling edges, but the nodes may not have ever received any visits.
 //
 // Example:
 //                                Parent Node
@@ -254,8 +258,8 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
-  // Reallocates this nodes children to be in a solid block, if possible and not already done.
-  // Returns true if the transformation was performed.
+  // Reallocates this nodes children to be in a solid block, if possible and not
+  // already done. Returns true if the transformation was performed.
   bool MakeSolid();
 
   ~Node() {
@@ -277,6 +281,9 @@ class Node {
     parent_ = parent;
     index_ = index;
   }
+
+  // For each child, ensures that its parent pointer is pointing to this.
+  void UpdateChildrenParents();
 
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
@@ -344,7 +351,6 @@ class Node {
   friend class NodeTree;
   friend class Edge_Iterator<true>;
   friend class Edge_Iterator<false>;
-  friend class Node_Iterator;
   friend class Edge;
 };
 

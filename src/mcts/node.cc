@@ -61,7 +61,7 @@ class NodeGarbageCollector {
     if (!node) return;
     Mutex::Lock lock(gc_mutex_);
     subtrees_to_gc_.emplace_back(std::move(node));
-    subtrees_is_solid_.push_back(solid_size);
+    subtrees_to_gc_solid_size_.push_back(solid_size);
   }
 
   ~NodeGarbageCollector() {
@@ -83,12 +83,12 @@ class NodeGarbageCollector {
         if (subtrees_to_gc_.empty()) return;
         node_to_gc = std::move(subtrees_to_gc_.back());
         subtrees_to_gc_.pop_back();
-        solid_size = subtrees_is_solid_.back();
-        subtrees_is_solid_.pop_back();
+        solid_size = subtrees_to_gc_solid_size_.back();
+        subtrees_to_gc_solid_size_.pop_back();
       }
       // Solid is a hack...
       if (solid_size != 0) {
-        for (int i = 0; i < solid_size; i++) {
+        for (size_t i = 0; i < solid_size; i++) {
           node_to_gc.get()[i].~Node();
         }
         std::allocator<Node> alloc;
@@ -106,7 +106,7 @@ class NodeGarbageCollector {
 
   mutable Mutex gc_mutex_;
   std::vector<std::unique_ptr<Node>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
-  std::vector<size_t> subtrees_is_solid_ GUARDED_BY(gc_mutex_);
+  std::vector<size_t> subtrees_to_gc_solid_size_ GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
   std::atomic<bool> stop_{false};
@@ -209,7 +209,7 @@ std::string Node::DebugString() const {
       << " Edges:" << static_cast<int>(num_edges_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2
-      << " Solid:" << static_cast<bool>(solid_children_);
+      << " Solid:" << solid_children_;
   return oss.str();
 }
 
@@ -218,7 +218,7 @@ bool Node::MakeSolid() {
   // Can only make solid if no immediate leaf childredn are in flight since we
   // allow the search code to hold references to leaf nodes across locks.
   Node* old_child_to_check = child_.get();
-  int total_in_flight = 0;
+  uint32_t total_in_flight = 0;
   while (old_child_to_check != nullptr) {
     if (old_child_to_check->GetN() <= 1 &&
         old_child_to_check->GetNInFlight() > 0) {
@@ -242,24 +242,15 @@ bool Node::MakeSolid() {
   for (int i = 0; i < num_edges_; i++) {
     new (&(new_children[i])) Node(this, i);
   }
-  Node* old_child = child_.release();
-  while (old_child != nullptr) {
+  std::unique_ptr<Node> old_child = std::move(child_);
+  while (old_child) {
     int index = old_child->index_;
-    new_children[index] = std::move(*old_child);
+    new_children[index] = std::move(*old_child.get());
+    // This isn't needed, but it helps crash things faster if something has gone wrong.
     old_child->parent_ = nullptr;
-    gNodeGc.AddToGcQueue(std::unique_ptr<Node>(old_child));
-    Node* to_update_parent = new_children[index].child_.get();
-    if (!new_children[index].solid_children_) {
-      while (to_update_parent != nullptr) {
-        to_update_parent->parent_ = &new_children[index];
-        to_update_parent = to_update_parent->sibling_.get();
-      }
-    } else {
-      for (int i = 0; i < new_children[index].num_edges_; i++) {
-        to_update_parent[i].parent_ = &new_children[index];
-      }
-    }
-    old_child = new_children[index].sibling_.release();
+    gNodeGc.AddToGcQueue(std::move(old_child));
+    new_children[index].UpdateChildrenParents();
+    old_child = std::move(new_children[index].sibling_);
   }
   // This is a hack.
   child_ = std::unique_ptr<Node>(new_children);
@@ -366,6 +357,21 @@ void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
   best_child_cache_in_flight_limit_ = visits_allowed + n_in_flight_;
 }
 
+void Node::UpdateChildrenParents() {
+  if (!solid_children_) {
+    Node* cur_child = child_.get();
+    while (cur_child != nullptr) {
+      cur_child->parent_ = this;
+      cur_child = cur_child->sibling_.get();
+    }
+  } else {
+    Node* child_array = child_.get();
+    for (int i = 0; i < num_edges_; i++) {
+      child_array[i].parent_ = this;
+    }
+  }
+}
+
 void Node::ReleaseChildren() {
   gNodeGc.AddToGcQueue(std::move(child_), solid_children_ ? num_edges_ : 0);
 }
@@ -377,17 +383,7 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
     gNodeGc.AddToGcQueue(std::move(child_), num_edges_);
     child_ = std::move(new_child);
     if (child_) {
-      Node* to_update_parent = child_->child_.get();
-      if (!child_->solid_children_) {
-        while (to_update_parent != nullptr) {
-          to_update_parent->parent_ = child_.get();
-          to_update_parent = to_update_parent->sibling_.get();
-        }
-      } else {
-        for (int i = 0; i < child_->num_edges_; i++) {
-          to_update_parent[i].parent_ = child_.get();
-        }
-      }
+      child_->UpdateChildrenParents();
     }
     solid_children_ = false;
   } else {

@@ -6,7 +6,7 @@ IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimiz
 IF ERRORLEVEL 1 EXIT
 cd build
 IF %NAME%==cpu-openblas copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
-IF %NAME%==cpu-dnnl copy C:\cache\dnnl_win_1.1.1_cpu_vcomp\bin\dnnl.dll
+IF %NAME%==cpu-dnnl copy C:\cache\dnnl_win_1.5.0_cpu_vcomp\bin\dnnl.dll
 IF %PGO%==true (
   IF %OPENCL%==true copy C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
   IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll

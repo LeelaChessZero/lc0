@@ -149,6 +149,7 @@ files += [
   'src/neural/network_legacy.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
+  'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',

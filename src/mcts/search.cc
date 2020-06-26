@@ -1177,6 +1177,8 @@ void SearchWorker::ExtendNode(Node* node) {
   // Could instead reserve one more than the difference between history_.size()
   // and history_.capacity().
   to_add.reserve(60);
+  // Need a lock to walk parents of leaf in case MakeSolid is concurrently
+  // adjusting parent chain.
   {
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
     Node* cur = node;
@@ -1238,6 +1240,7 @@ void SearchWorker::ExtendNode(Node* node) {
       if (state != FAIL) {
         // TB nodes don't have NN evaluation, assign M from parent node.
         float m = 0.0f;
+        // Need a lock to access parent, in case MakeSolid is in progress.
         {
           SharedMutex::SharedLock lock(search_->nodes_mutex_);
           auto parent = node->GetParent();
@@ -1542,7 +1545,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
-  int solid_threshold = params_.GetSolidTreeThreshold();
+  uint32_t solid_threshold =
+      static_cast<uint32_t>(params_.GetSolidTreeThreshold());
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
