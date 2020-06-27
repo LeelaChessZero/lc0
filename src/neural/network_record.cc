@@ -53,6 +53,7 @@ class RecordComputation : public NetworkComputation {
   void AddInput(InputPlanes&& input) override {
     hashes_.push_back(make_hash(input));
     requests_.emplace_back();
+    q_count_.push_back(0);
     inner_->AddInput(std::move(input));
   }
   // Do the computation.
@@ -60,11 +61,15 @@ class RecordComputation : public NetworkComputation {
   // Returns how many times AddInput() was called.
   int GetBatchSize() const override { return inner_->GetBatchSize(); }
   float Capture(float value, int index) const {
+    // Only capture until we see Q again - the rest can be infered from that
+    // set.
+    if (q_count_[index] > 1) return value;
     requests_[index].push_back(value);
     return value;
   }
   // Returns Q value of @sample.
   float GetQVal(int sample) const override {
+    q_count_[sample]++;
     return Capture(inner_->GetQVal(sample), sample);
   }
   float GetDVal(int sample) const override {
@@ -95,6 +100,7 @@ class RecordComputation : public NetworkComputation {
   std::unique_ptr<NetworkComputation> inner_;
   std::string record_file_;
   std::vector<uint64_t> hashes_;
+  mutable std::vector<int> q_count_;
   mutable std::vector<std::vector<float>> requests_;
   static Mutex mutex_;
 };
@@ -122,7 +128,15 @@ class ReplayComputation : public NetworkComputation {
     const auto& entry = entry_ptr->second;
     size_t counter = replay_counter_[index];
     if (counter >= entry.size()) {
-      return 0.0f;
+      // Second pass reads the same things in the same order as first.
+      counter = counter - entry.size();
+      if (counter >= entry.size()) {
+        // Third pass skips the first 3, then reads the rest in the same order.
+        counter = counter - entry.size() + 3;
+        if (counter >= entry.size()) {
+          return 0.0f;
+        }
+      }
     }
     replay_counter_[index]++;
     return entry[counter];
@@ -131,11 +145,10 @@ class ReplayComputation : public NetworkComputation {
   float GetQVal(int sample) const override { return Replay(sample); }
   float GetDVal(int sample) const override { return Replay(sample); }
   // Returns P value @move_id of @sample.
-  float GetPVal(int sample, int) const override {
-    return Replay(sample);
-  }
+  float GetPVal(int sample, int) const override { return Replay(sample); }
   float GetMVal(int sample) const override { return Replay(sample); }
   virtual ~ReplayComputation() {}
+
   std::unique_ptr<NetworkComputation> inner_;
   std::vector<uint64_t> hashes_;
   mutable std::vector<size_t> replay_counter_;
@@ -172,10 +185,14 @@ class RecordReplayNetwork : public Network {
         int32_t length = 0;
         input.read(reinterpret_cast<char*>(&length), sizeof(length));
         auto& entry = (*lookup_)[value];
+        // Only use the first recorded value for any hash collisions.
+        bool fill = entry.size() == 0;
         for (int j = 0; j < length; j++) {
           float recorded = 0.0f;
           input.read(reinterpret_cast<char*>(&recorded), sizeof(recorded));
-          entry.push_back(recorded);
+          if (fill) {
+            entry.push_back(recorded);
+          }
         }
       }
     }
