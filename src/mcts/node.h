@@ -115,7 +115,7 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
-  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase };
+  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase, TwoFold };
 
   // Takes pointer to a parent node and own index in a parent.
   Node(Node* parent, uint16_t index)

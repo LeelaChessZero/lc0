@@ -1065,6 +1065,18 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
+    // probably best place to check for two-fold draws consistently
+    if (node->terminal_type_ == Node::Terminal::TwoFold &&
+                    ( params_.GetTwoFoldDrawLevel() > 0 ) ) {
+      if (params_.GetTwoFoldDrawLevel() == 2 && depth <= 3) {
+        // Level 2: no two-fold draw at depth 3 or lower
+        node->MakeNotTerminal();
+      } else if (params_.GetTwoFoldDrawLevel() == 1) {
+        // Level 1: check whether first repetition was before root
+
+      }
+
+    }
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (node->IsTerminal() || !node->HasChildren()) {
       return NodeToProcess::Visit(node, depth);
@@ -1214,9 +1226,24 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetRepetitions() >= 2) {
+    // Mark two-fold repetitions as draws according to settings
+    const auto repetitions = history_.Last().GetRepetitions();
+    const auto twofolddrawlevel = history_.Last().GetTwoFoldDrawLevel();
+    if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
+    } else if (repetitions == 1 && twofolddrawlevel > 0) {
+      if (twofolddrawlevel == 3) {
+        // always mark as draw
+        node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
+      } else if (twofolddrawlevel == 2) {
+        // only mark as draw if depth >= 4
+        node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
+      } else if (twofolddrawlevel == 1) {
+        // check whether first repetition happened at root or in the tree
+        // don't mark as draw if repetition happened in the game history
+        node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
+      }
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
