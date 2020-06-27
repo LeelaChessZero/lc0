@@ -1125,8 +1125,16 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const float m_cap = params_.GetMovesLeftMaxEffect();
         const float parent_m = node->GetM();
         const float child_m = child.GetM(parent_m);
-        M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
-            std::copysign(1.0f, -Q);
+        M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap);
+        // Microsoft compiler does not have a builtin for copysign and emits a
+        // library call which is too expensive for a hot path like this.
+#if defined(_MSC_VER)
+        // This doesn't treat signed 0's the same way that copysign does, but it
+        // should be good enough...
+        if (Q > 0) M *= -1.0f;
+#else
+        M *= std::copysign(1.0f, -Q);
+#endif
         const float a = params_.GetMovesLeftConstantFactor();
         const float b = params_.GetMovesLeftScaledFactor();
         const float c = params_.GetMovesLeftQuadraticFactor();
