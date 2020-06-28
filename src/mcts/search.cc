@@ -70,6 +70,71 @@ MoveList MakeRootMoveFilter(const MoveList& searchmoves,
   return root_moves;
 }
 
+class MEvaluator {
+ public:
+  MEvaluator()
+      : enabled_{false},
+        m_slope_{0.0f},
+        m_cap_{0.0f},
+        a_constant_{0.0f},
+        a_linear_{0.0f},
+        a_square_{0.0f},
+        q_threshold_{0.0f},
+        parent_m_{0.0f} {}
+
+  MEvaluator(const SearchParams& params, const Node* parent = nullptr)
+      : enabled_{true},
+        m_slope_{params.GetMovesLeftSlope()},
+        m_cap_{params.GetMovesLeftMaxEffect()},
+        a_constant_{params.GetMovesLeftConstantFactor()},
+        a_linear_{params.GetMovesLeftScaledFactor()},
+        a_square_{params.GetMovesLeftQuadraticFactor()},
+        q_threshold_{params.GetMovesLeftThreshold()},
+        parent_m_{parent ? parent->GetM() : 0.0f},
+        parent_within_threshold_{parent ? WithinTheshold(parent, q_threshold_)
+                                        : false} {}
+
+  void SetParent(const Node* parent) {
+    assert(parent);
+    if (enabled_) {
+      parent_m_ = parent->GetM();
+      parent_within_threshold_ = WithinTheshold(parent, q_threshold_);
+    }
+  }
+
+  float GetM(const EdgeAndNode& child, float q) const {
+    if (!enabled_ || !parent_within_threshold_) return 0.0f;
+    const float child_m = child.GetM(parent_m_);
+    float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
+    // Microsoft compiler does not have a builtin for copysign and emits a
+    // library call which is too expensive for a hot path like this.
+#if defined(_MSC_VER)
+    // This doesn't treat signed 0's the same way that copysign does, but it
+    // should be good enough...
+    if (q > 0) m *= -1.0f;
+#else
+    m *= std::copysign(1.0f, -q);
+#endif
+    m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
+    return m;
+  }
+
+ private:
+  static bool WithinTheshold(const Node* parent, float q_threshold) {
+    return std::abs(parent->GetQ(0.0f)) > q_threshold;
+  }
+
+  const bool enabled_;
+  const float m_slope_;
+  const float m_cap_;
+  const float a_constant_;
+  const float a_linear_;
+  const float a_square_;
+  const float q_threshold_;
+  float parent_m_ = 0.0f;
+  bool parent_within_threshold_ = false;
+};
+
 }  // namespace
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -189,6 +254,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     // Using 1000-w-l instead of 1000*d for D score so that W+D+L add up to
     // 1000.0.
     uci_info.wdl = ThinkingInfo::WDL{w, 1000 - w - l, l};
+    if (network_->GetCapabilities().has_mlh()) {
+      uci_info.moves_left = static_cast<int>(
+          (1.0f + edge.GetM(1.0f + root_node_->GetM())) / 2.0f);
+    }
     if (max_pv > 1) uci_info.multipv = multipv;
     if (per_pv_counters) uci_info.nodes = edge.GetN();
     bool flip = played_history_.IsBlackToMove();
@@ -286,15 +355,6 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float m_slope = params_.GetMovesLeftSlope();
-  const float m_cap = params_.GetMovesLeftMaxEffect();
-  const float a = params_.GetMovesLeftConstantFactor();
-  const float b = params_.GetMovesLeftScaledFactor();
-  const float c = params_.GetMovesLeftQuadraticFactor();
-  const bool do_moves_left_adjustment =
-      network_->GetCapabilities().moves_left !=
-          pblczero::NetworkFormat::MOVES_LEFT_NONE &&
-      (std::abs(node->GetQ(0.0f)) > params_.GetMovesLeftThreshold());
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
@@ -362,16 +422,12 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   };
 
   std::vector<std::string> infos;
-  const auto parent_m = node->GetM();
+  const auto m_evaluator = network_->GetCapabilities().has_mlh()
+                               ? MEvaluator(params_, node)
+                               : MEvaluator();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score);
-    const auto child_m = edge.GetM(parent_m);
-    float M_effect =
-        do_moves_left_adjustment
-            ? (std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap) *
-               std::copysign(1.0f, -Q) * (a + b * std::abs(Q) + c * Q * Q))
-            : 0.0f;
-
+    float M = m_evaluator.GetM(edge, Q);
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
@@ -380,7 +436,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                edge.GetP());
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
-    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M_effect, ") ", 8, 5);
+    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
     print_tail(&oss, edge.node());
     infos.emplace_back(oss.str());
   }
@@ -753,9 +809,35 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
   stats->win_found = false;
+  stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
+
+  const auto draw_score = GetDrawScore(true);
+  const float fpu =
+      GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
+  float max_q_plus_m = -1000;
+  uint64_t max_n = 0;
+  bool max_n_has_max_q_plus_m = true;
+  const auto m_evaluator = network_->GetCapabilities().has_mlh()
+                               ? MEvaluator(params_, root_node_)
+                               : MEvaluator();
   for (const auto& edge : root_node_->Edges()) {
-    stats->edge_n.push_back(edge.GetN());
+    const auto n = edge.GetN();
+    const auto q = edge.GetQ(fpu, draw_score);
+    const auto m = m_evaluator.GetM(edge, q);
+    const auto q_plus_m = q + m;
+    stats->edge_n.push_back(n);
     if (edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) stats->win_found = true;
+    if (max_n < n) {
+      max_n = n;
+      max_n_has_max_q_plus_m = false;
+    }
+    if (max_q_plus_m <= q_plus_m) {
+      max_n_has_max_q_plus_m = (max_n == n);
+      max_q_plus_m = q_plus_m;
+    }
+  }
+  if (!max_n_has_max_q_plus_m) {
+    stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNeedMoreTime;
   }
 }
 
@@ -1038,6 +1120,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   const auto& root_move_filter = search_->root_move_filter_;
   uint16_t depth = 0;
   bool node_already_updated = true;
+  auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
 
   while (true) {
     // First, terminate if we find collisions or leaf nodes.
@@ -1093,11 +1176,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         (depth % 2 == 0) ? odd_draw_score : even_draw_score;
     const float fpu = GetFpu(params_, node, is_root_node, draw_score);
 
-    const float node_q = node->GetQ(0.0f);
-    const bool do_moves_left_adjustment =
-        moves_left_support_ &&
-        (std::abs(node_q) > params_.GetMovesLeftThreshold());
-
+    m_evaluator.SetParent(node);
     bool can_exit = false;
     for (auto child : node->Edges()) {
       if (is_root_node) {
@@ -1120,27 +1199,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
 
       const float Q = child.GetQ(fpu, draw_score);
-      float M = 0.0f;
-      if (do_moves_left_adjustment) {
-        const float m_slope = params_.GetMovesLeftSlope();
-        const float m_cap = params_.GetMovesLeftMaxEffect();
-        const float parent_m = node->GetM();
-        const float child_m = child.GetM(parent_m);
-        M = std::clamp(m_slope * (child_m - parent_m), -m_cap, m_cap);
-        // Microsoft compiler does not have a builtin for copysign and emits a
-        // library call which is too expensive for a hot path like this.
-#if defined(_MSC_VER)
-        // This doesn't treat signed 0's the same way that copysign does, but it
-        // should be good enough...
-        if (Q > 0) M *= -1.0f;
-#else
-        M *= std::copysign(1.0f, -Q);
-#endif
-        const float a = params_.GetMovesLeftConstantFactor();
-        const float b = params_.GetMovesLeftScaledFactor();
-        const float c = params_.GetMovesLeftQuadraticFactor();
-        M *= a + b * std::abs(Q) + c * Q * Q;
-      }
+      const float M = m_evaluator.GetM(child, Q);
 
       const float score = child.GetU(puct_mult) + Q + M;
       if (score > best) {
