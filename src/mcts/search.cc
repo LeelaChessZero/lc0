@@ -1481,26 +1481,24 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // ...and secondly, the policy data.
   // Calculate maximum first.
   float max_p = -std::numeric_limits<float>::infinity();
-  for (auto edge : node->Edges()) {
-    max_p = std::max(max_p, computation_->GetPVal(
-                                idx_in_computation,
-                                edge.GetMove().as_nn_index(
-                                    node_to_process->probability_transform)));
-  }
   // Intermediate array to store values when processing policy.
   // There are never more than 256 valid legal moves in any legal position.
   std::array<float, 256> intermediate;
-  float total = 0.0;
   int counter = 0;
   for (auto edge : node->Edges()) {
     float p = computation_->GetPVal(
         idx_in_computation,
         edge.GetMove().as_nn_index(node_to_process->probability_transform));
+    intermediate[counter++] = p;
+    max_p = std::max(max_p, p);
+  }
+  float total = 0.0;
+  for (int i = 0; i < counter; i++) {
     // Perform softmax and take into account policy softmax temperature T.
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    p = FastExp((p - max_p) / params_.GetPolicySoftmaxTemp());
-
-    intermediate[counter++] = p;
+    float p =
+        FastExp((intermediate[i] - max_p) / params_.GetPolicySoftmaxTemp());
+    intermediate[i] = p;
     total += p;
   }
   counter = 0;
