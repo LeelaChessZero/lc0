@@ -79,7 +79,6 @@ const OptionId kOpeningsMirroredId{
     "Not really compatible with openings mode random."};
 const OptionId kOpeningsModeId{"openings-mode", "OpeningsMode",
                                "A choice of sequential, shuffled, or random."};
-
 }  // namespace
 
 void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
