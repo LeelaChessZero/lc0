@@ -36,9 +36,20 @@
 
 namespace lczero {
 
+namespace {
+std::string GetLc0CacheDirectory() {
+  const std::string user_cache_path = GetUserCacheDirectory();
+  if (!user_cache_path.empty()) {
+    return user_cache_path + "lc0/";
+  }
+  return std::string();
+}
+
+}  // namespace
+
 TrainingDataWriter::TrainingDataWriter(int game_id) {
   static std::string directory =
-      GetUserCacheDirectory() + "lc0/data-" + Random::Get().GetString(12);
+      GetLc0CacheDirectory() + "data-" + Random::Get().GetString(12);
   // It's fine if it already exists.
   CreateDirectory(directory.c_str());
 

@@ -186,9 +186,9 @@ std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
   std::vector<std::string> data_dirs = {CommandLine::BinaryDirectory()};
-  const std::string user_data_path = GetUserDataDirectory() + "lc0";
+  const std::string user_data_path = GetUserDataDirectory();
   if (!user_data_path.empty()) {
-    data_dirs.emplace_back(user_data_path);
+    data_dirs.emplace_back(user_data_path + "lc0");
   }
   for (const auto& dir : GetSystemDataDirectoryList()) {
     data_dirs.emplace_back(dir + (dir.back() == '/' ? "" : "/") + "lc0");
