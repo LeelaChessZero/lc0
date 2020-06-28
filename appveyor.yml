@@ -26,6 +26,8 @@ install:
 - cmd: set BLAS=false
 - cmd: set GTEST=false
 - cmd: set ANDROID=false
+- cmd: set NET=703350
+- cmd: set NET_HASH=feb6dcb84697b55c3573f503dc9fca2783478ef5f3021669ad854129aaab0683
 - cmd: IF %NAME%==android set ANDROID=true
 - cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
 - cmd: IF %NAME%==gpu-dx12 set DX=true
@@ -64,8 +66,8 @@ install:
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a 7z x openblas-android-armv7a.zip -oC:\cache\OpenBLAS
 - cmd: set PKG_FOLDER="C:\cache"
 - cmd: IF NOT EXIST c:\cache mkdir c:\cache
-- cmd: IF NOT EXIST c:\cache\591226.pb.gz appveyor DownloadFile http://training.lczero.org/get_network?sha=47e3f899519dc1bc95496a457b77730fce7b0b89b6187af5c01ecbbd02e88398 -Filename c:\cache\591226.pb.gz
-- cmd: touch -t 201801010000.00 c:\cache\591226.pb.gz
+- cmd: IF NOT EXIST c:\cache\%NET%.pb.gz appveyor DownloadFile http://training.lczero.org/get_network?sha=%NET_HASH% -Filename c:\cache\%NET%.pb.gz
+- cmd: touch -t 201801010000.00 c:\cache\%NET%.pb.gz
 - cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
 - cmd: IF %GTEST%==true cd C:\cache\syzygy
 - cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}

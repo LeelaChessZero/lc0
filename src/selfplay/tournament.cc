@@ -79,12 +79,18 @@ const OptionId kOpeningsMirroredId{
     "Not really compatible with openings mode random."};
 const OptionId kOpeningsModeId{"openings-mode", "OpeningsMode",
                                "A choice of sequential, shuffled, or random."};
-
 }  // namespace
 
 void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->AddContext("player1");
   options->AddContext("player2");
+  options->AddContext("white");
+  options->AddContext("black");
+  for (const auto context : {"player1", "player2"}) {
+    auto* dict = options->GetMutableOptions(context);
+    dict->AddSubdict("white")->AddAliasDict(&options->GetOptionsDict("white"));
+    dict->AddSubdict("black")->AddAliasDict(&options->GetOptionsDict("black"));
+  }
 
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
@@ -125,7 +131,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<std::string>(SearchParams::kHistoryFillId, "no");
   defaults->Set<std::string>(NetworkFactory::kBackendId, "multiplexing");
   defaults->Set<bool>(SearchParams::kStickyEndgamesId, false);
-  defaults->Set<bool>(SearchParams::kLogitQId, false);
 }
 
 SelfPlayTournament::SelfPlayTournament(
@@ -133,16 +138,14 @@ SelfPlayTournament::SelfPlayTournament(
     CallbackUciResponder::BestMoveCallback best_move_info,
     CallbackUciResponder::ThinkingCallback thinking_info,
     GameInfo::Callback game_info, TournamentInfo::Callback tournament_info)
-    : player_options_{options.GetSubdict("player1"),
-                      options.GetSubdict("player2")},
+    : player_options_{{options.GetSubdict("player1").GetSubdict("white"),
+                       options.GetSubdict("player1").GetSubdict("black")},
+                      {options.GetSubdict("player2").GetSubdict("white"),
+                       options.GetSubdict("player2").GetSubdict("black")}},
       best_move_callback_(best_move_info),
       info_callback_(thinking_info),
       game_callback_(game_info),
       tournament_callback_(tournament_info),
-      kThreads{
-          options.GetSubdict("player1").Get<int>(kThreadsId),
-          options.GetSubdict("player2").Get<int>(kThreadsId),
-      },
       kTotalGames(options.Get<int>(kTotalGamesId)),
       kShareTree(options.Get<bool>(kShareTreesId)),
       kParallelism(options.Get<int>(kParallelGamesId)),
@@ -163,15 +166,16 @@ SelfPlayTournament::SelfPlayTournament(
     first_game_black_ = Random::Get().GetBool();
   }
 
-  static const char* kPlayerNames[2] = {"player1", "player2"};
   // Initializing networks.
-  const auto& player1_opts = options.GetSubdict(kPlayerNames[0]);
-  const auto& player2_opts = options.GetSubdict(kPlayerNames[1]);
-  networks_[0] = NetworkFactory::LoadNetwork(player1_opts);
-  networks_[1] = NetworkFactory::BackendConfiguration(player1_opts) ==
-                         NetworkFactory::BackendConfiguration(player2_opts)
-                     ? networks_[0]
-                     : NetworkFactory::LoadNetwork(player2_opts);
+  for (const auto& name : {"player1", "player2"}) {
+    for (const auto& color : {"white", "black"}) {
+      const auto& opts = options.GetSubdict(name).GetSubdict(color);
+      const auto config = NetworkFactory::BackendConfiguration(opts);
+      if (networks_.find(config) == networks_.end()) {
+        networks_.emplace(config, NetworkFactory::LoadNetwork(opts));
+      }
+    }
+  }
 
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(
@@ -184,20 +188,23 @@ SelfPlayTournament::SelfPlayTournament(
   }
 
   // SearchLimits.
-  for (int idx : {0, 1}) {
-    search_limits_[idx].playouts =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kPlayoutsId);
-    search_limits_[idx].visits =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kVisitsId);
-    search_limits_[idx].movetime =
-        options.GetSubdict(kPlayerNames[idx]).Get<int>(kTimeMsId);
+  static constexpr const char* kPlayerNames[2] = {"player1", "player2"};
+  static constexpr const char* kPlayerColors[2] = {"white", "black"};
+  for (int name_idx : {0, 1}) {
+    for (int color_idx : {0, 1}) {
+      auto& limits = search_limits_[name_idx][color_idx];
+      const auto& dict = options.GetSubdict(kPlayerNames[name_idx])
+                             .GetSubdict(kPlayerColors[color_idx]);
+      limits.playouts = dict.Get<int>(kPlayoutsId);
+      limits.visits = dict.Get<int>(kVisitsId);
+      limits.movetime = dict.Get<int>(kTimeMsId);
 
-    if (search_limits_[idx].playouts == -1 &&
-        search_limits_[idx].visits == -1 &&
-        search_limits_[idx].movetime == -1) {
-      throw Exception(
-          "Please define --visits, --playouts or --movetime, otherwise it's "
-          "not clear when to stop search.");
+      if (limits.playouts == -1 && limits.visits == -1 &&
+          limits.movetime == -1) {
+        throw Exception(
+            "Please define --visits, --playouts or --movetime, otherwise it's "
+            "not clear when to stop search.");
+      }
     }
   }
 }
@@ -209,9 +216,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     Mutex::Lock lock(mutex_);
     player1_black = ((game_number % 2) == 1) != first_game_black_;
     if (!openings_.empty()) {
-      if (player_options_[0].Get<bool>(kOpeningsMirroredId)) {
+      if (player_options_[0][0].Get<bool>(kOpeningsMirroredId)) {
         opening = openings_[(game_number / 2) % openings_.size()];
-      } else if (player_options_[0].Get<std::string>(kOpeningsModeId) ==
+      } else if (player_options_[0][0].Get<std::string>(kOpeningsModeId) ==
                  "random") {
         opening = openings_[Random::Get().GetInt(0, openings_.size() - 1)];
       } else {
@@ -234,16 +241,19 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 
   std::vector<ThinkingInfo> last_thinking_info;
   for (int pl_idx : {0, 1}) {
+    const int color = color_idx[pl_idx];
     const bool verbose_thinking =
-        player_options_[pl_idx].Get<bool>(kVerboseThinkingId);
+        player_options_[pl_idx][color].Get<bool>(kVerboseThinkingId);
     const bool move_thinking =
-        player_options_[pl_idx].Get<bool>(kMoveThinkingId);
+        player_options_[pl_idx][color].Get<bool>(kMoveThinkingId);
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
-    opt.network = networks_[pl_idx].get();
+    opt.network = networks_[NetworkFactory::BackendConfiguration(
+                                player_options_[pl_idx][color])]
+                      .get();
     opt.cache = cache_[pl_idx].get();
-    opt.uci_options = &player_options_[pl_idx];
-    opt.search_limits = search_limits_[pl_idx];
+    opt.uci_options = &player_options_[pl_idx][color];
+    opt.search_limits = search_limits_[pl_idx][color];
 
     // "bestmove" callback.
     opt.best_move_callback = [this, game_number, pl_idx, player1_black,
@@ -316,8 +326,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       Random::Get().GetFloat(100.0f) >= kResignPlaythrough;
 
   // PLAY GAME!
-  game.Play(kThreads[color_idx[0]], kThreads[color_idx[1]], kTraining,
-            enable_resign);
+  auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
+  auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
+  game.Play(player1_threads, player2_threads, kTraining, enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
@@ -368,7 +379,7 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      bool mirrored = player_options_[0].Get<bool>(kOpeningsMirroredId);
+      bool mirrored = player_options_[0][0].Get<bool>(kOpeningsMirroredId);
       if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
           (kTotalGames == -2 && !openings_.empty() &&
            games_count_ >=
