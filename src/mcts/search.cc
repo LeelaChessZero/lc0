@@ -1177,6 +1177,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     const float fpu = GetFpu(params_, node, is_root_node, draw_score);
 
     m_evaluator.SetParent(node);
+    bool can_exit = false;
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -1210,6 +1211,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       } else if (score > second_best) {
         second_best = score;
         second_best_edge = child;
+      }
+      if (can_exit) break;
+      if (child.GetNStarted() == 0) {
+        // One more loop will get 2 unvisited nodes, which is sufficient to
+        // ensure second best is correct. This relies upon the fact that edges
+        // are sorted in policy decreasing order.
+        can_exit = true;
       }
     }
 
@@ -1563,6 +1571,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
   }
+  node->SortEdges();
 }
 
 // 6. Propagate the new nodes' information to all their parents in the tree.
