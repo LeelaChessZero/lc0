@@ -1012,6 +1012,7 @@ void SearchWorker::InitializeIteration(
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
+  int realbatch_size = 0;
   int collision_events_left = params_.GetMaxCollisionEvents();
   int collisions_left = params_.GetMaxCollisionVisitsId();
 
@@ -1022,9 +1023,9 @@ void SearchWorker::GatherMinibatch() {
   // If we had too many nodes out of order, also interrupt the iteration so
   // that search can exit.
   while (minibatch_size < params_.GetMiniBatchSize() &&
-         number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
+         realbatch_size < params_.GetMaxNotOutOfOrder()) {
     // If there's something to process without touching slow neural net, do it.
-    if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
+    if (realbatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     // Pick next node to extend.
     minibatch_.emplace_back(PickNodeToExtend(collisions_left));
     auto& picked_node = minibatch_.back();
@@ -1038,6 +1039,7 @@ void SearchWorker::GatherMinibatch() {
       if (search_->stop_.load(std::memory_order_acquire)) return;
       continue;
     }
+    ++realbatch_size;
     ++minibatch_size;
 
     // If node is already known as terminal (win/loss/draw according to rules
@@ -1059,21 +1061,27 @@ void SearchWorker::GatherMinibatch() {
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
-      // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
-      {
-        // Nodes mutex for doing node updates.
-        SharedMutex::Lock lock(search_->nodes_mutex_);
-        DoBackupUpdateSingleNode(picked_node);
-      }
+      if (number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
+        // Perform out of order eval for the last entry in minibatch_.
+        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+        {
+          // Nodes mutex for doing node updates.
+          SharedMutex::Lock lock(search_->nodes_mutex_);
+          DoBackupUpdateSingleNode(picked_node);
+        }
 
-      // Remove last entry in minibatch_, as it has just been
-      // processed.
-      // If NN eval was already processed out of order, remove it.
-      if (picked_node.nn_queried) computation_->PopCacheHit();
-      minibatch_.pop_back();
-      --minibatch_size;
-      ++number_out_of_order_;
+        // Remove last entry in minibatch_, as it has just been
+        // processed.
+        // If NN eval was already processed out of order, remove it.
+        if (picked_node.nn_queried) computation_->PopCacheHit();
+        minibatch_.pop_back();
+        --minibatch_size;
+        --realbatch_size;
+        ++number_out_of_order_;
+      } else {
+        // This entry won't be sent to the gpu, so it doesn't count to the minibatch_size.
+        --minibatch_size;
+      }
     }
     // Check for stop at the end so we have at least one node.
     if (search_->stop_.load(std::memory_order_acquire)) return;
