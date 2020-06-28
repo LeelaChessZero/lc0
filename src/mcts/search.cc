@@ -822,7 +822,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
                                : MEvaluator();
   for (const auto& edge : root_node_->Edges()) {
     const auto n = edge.GetN();
-    const auto q = edge.GetQ(fpu, draw_score, params_.GetLogitQ());
+    const auto q = edge.GetQ(fpu, draw_score);
     const auto m = m_evaluator.GetM(edge, q);
     const auto q_plus_m = q + m;
     stats->edge_n.push_back(n);
