@@ -255,8 +255,9 @@ class OpenCLNetwork : public Network {
     wdl_ = file.format().network_format().output() ==
            pblczero::NetworkFormat::OUTPUT_WDL;
 
-    moves_left_ = file.format().network_format().moves_left() ==
-                  pblczero::NetworkFormat::MOVES_LEFT_V1;
+    moves_left_ = (file.format().network_format().moves_left() ==
+                   pblczero::NetworkFormat::MOVES_LEFT_V1) &&
+                  options.GetOrDefault<bool>("mlh", true);
 
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));
