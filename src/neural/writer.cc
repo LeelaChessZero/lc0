@@ -38,11 +38,12 @@ namespace lczero {
 
 namespace {
 std::string GetLc0CacheDirectory() {
-  const std::string user_cache_path = GetUserCacheDirectory();
+  std::string user_cache_path = GetUserCacheDirectory();
   if (!user_cache_path.empty()) {
-    return user_cache_path + "lc0/";
+    user_cache_path += "lc0/";
+    CreateDirectory(user_cache_path);
   }
-  return std::string();
+  return user_cache_path;
 }
 
 }  // namespace

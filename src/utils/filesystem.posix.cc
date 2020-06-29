@@ -85,17 +85,29 @@ time_t GetFileTime(const std::string& filename) {
 #endif
 }
 
+namespace {
+bool CheckDir(const std::string& dirname) {
+  struct stat s;
+  return stat(dirname.c_str(), &s) == 0 && S_ISDIR(s.st_mode);
+}
+
+}  // namespace
+
 std::string GetUserCacheDirectory() {
 #ifdef __APPLE__
   constexpr auto kLocalDir = "Library/Caches/";
 #else
   constexpr auto kLocalDir = ".cache/";
   const char *xdg_cache_home = std::getenv("XDG_CACHE_HOME");
-  if (xdg_cache_home != NULL) return std::string(xdg_cache_home) + "/";
+  if (xdg_cache_home != NULL && CheckDir(xdg_cache_home)) {
+    return std::string(xdg_cache_home) + "/";
+  }
 #endif
   const char *home = std::getenv("HOME");
   if (home == NULL) return std::string();
-  return std::string(home) + "/" + kLocalDir;
+  const std::string path = std::string(home) + "/" + kLocalDir;
+  if (!CheckDir(path)) return std::string();
+  return path;
 }
 
 std::string GetUserConfigDirectory() {
@@ -104,11 +116,15 @@ std::string GetUserConfigDirectory() {
 #else
   constexpr auto kLocalDir = ".config/";
   const char *xdg_config_home = std::getenv("XDG_CONFIG_HOME");
-  if (xdg_config_home != NULL) return std::string(xdg_config_home) + "/";
+  if (xdg_config_home != NULL && CheckDir(xdg_config_home)) {
+    return std::string(xdg_config_home) + "/";
+  }
 #endif
   const char *home = std::getenv("HOME");
   if (home == NULL) return std::string();
-  return std::string(home) + "/" + kLocalDir;
+  const std::string path = std::string(home) + "/" + kLocalDir;
+  if (!CheckDir(path)) return std::string();
+  return path;
 }
 
 std::string GetUserDataDirectory() {
@@ -117,11 +133,15 @@ std::string GetUserDataDirectory() {
 #else
   constexpr auto kLocalDir = ".local/share/";
   const char *xdg_data_home = std::getenv("XDG_DATA_HOME");
-  if (xdg_data_home != NULL) return std::string(xdg_data_home) + "/";
+  if (xdg_data_home != NULL && CheckDir(xdg_data_home)) {
+    return std::string(xdg_data_home) + "/";
+  }
 #endif
   const char *home = std::getenv("HOME");
   if (home == NULL) return std::string();
-  return std::string(home) + "/" + kLocalDir;
+  const std::string path = std::string(home) + "/" + kLocalDir;
+  if (!CheckDir(path)) return std::string();
+  return path;
 }
 
 std::vector<std::string> GetSystemConfigDirectoryList() {
