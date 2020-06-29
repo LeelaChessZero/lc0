@@ -31,13 +31,19 @@
 
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
 namespace {
 const OptionId kInteractiveId{
     "interactive", "", "Run in interactive mode with UCI-like interface."};
+
+const OptionId kLogFileId{"logfile", "LogFile",
+  "Write log to that file. Special value <stderr> to "
+  "output the log to the console."};
 }  // namespace
+
 
 SelfPlayLoop::SelfPlayLoop() {}
 
@@ -50,8 +56,12 @@ void SelfPlayLoop::RunLoop() {
   SelfPlayTournament::PopulateOptions(&options_);
 
   options_.Add<BoolOption>(kInteractiveId) = false;
+  options_.Add<StringOption>(kLogFileId);
 
   if (!options_.ProcessAllFlags()) return;
+  
+  Logging::Get().SetFilename(options_.GetOptionsDict().Get<std::string>(kLogFileId));
+
   if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
     UciLoop::RunLoop();
   } else {

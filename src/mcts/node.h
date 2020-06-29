@@ -39,7 +39,6 @@
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "proto/net.pb.h"
-#include "utils/fastmath.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -108,6 +107,7 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
+  friend class Node;
 };
 
 class EdgeAndNode;
@@ -251,6 +251,8 @@ class Node {
   // already done. Returns true if the transformation was performed.
   bool MakeSolid();
 
+  void SortEdges();
+
   ~Node() {
     if (solid_children_ && child_) {
       // As a hack, solid_children is actually storing an array in here, release
@@ -377,13 +379,8 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score, bool logit_q) const {
-    return (node_ && node_->GetN() > 0)
-               ?
-               // Scale Q slightly to avoid logit(1) = infinity.
-               (logit_q ? FastLogit(0.9999999f * node_->GetQ(draw_score))
-                        : node_->GetQ(draw_score))
-               : default_q;
+  float GetQ(float default_q, float draw_score) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score) : default_q;
   }
   float GetWL(float default_wl) const {
     return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
