@@ -428,145 +428,135 @@ void InitializeMagicBitboards() {
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
   result.reserve(60);
-  for (auto source : our_pieces_) {
-    // King
-    if (source == our_king_) {
-      for (const auto& delta : kKingMoves) {
-        const auto dst_row = source.row() + delta.first;
-        const auto dst_col = source.col() + delta.second;
-        if (!BoardSquare::IsValid(dst_row, dst_col)) continue;
-        const BoardSquare destination(dst_row, dst_col);
-        if (our_pieces_.get(destination)) continue;
-        if (IsUnderAttack(destination)) continue;
-        result.emplace_back(source, destination);
-      }
-      // Castlings.
-      auto walk_free = [this](int from, int to, int rook, int king) {
-        for (int i = from; i <= to; ++i) {
-          if (i == rook || i == king) continue;
-          if (our_pieces_.get(i) || their_pieces_.get(i)) return false;
-        }
-        return true;
-      };
-      // @From may be less or greater than @to. @To is not included in check
-      // unless it is the same with @from.
-      auto range_attacked = [this](int from, int to) {
-        if (from == to) return IsUnderAttack(from);
-        const int increment = from < to ? 1 : -1;
-        while (from != to) {
-          if (IsUnderAttack(from)) return true;
-          from += increment;
-        }
-        return false;
-      };
-      const uint8_t king = source.col();
-      // For castlings we don't check destination king square for checks, it
-      // will be done in legal move check phase.
-      if (castlings_.we_can_000()) {
-        const uint8_t qrook = castlings_.queenside_rook();
-        if (walk_free(std::min(static_cast<uint8_t>(C1), qrook),
-                      std::max(static_cast<uint8_t>(D1), king), qrook, king) &&
-            !range_attacked(king, C1)) {
-          result.emplace_back(source,
-                              BoardSquare(RANK_1, castlings_.queenside_rook()));
-        }
-      }
-      if (castlings_.we_can_00()) {
-        const uint8_t krook = castlings_.kingside_rook();
-        if (walk_free(std::min(static_cast<uint8_t>(F1), king),
-                      std::max(static_cast<uint8_t>(G1), krook), krook, king) &&
-            !range_attacked(king, G1)) {
-          result.emplace_back(source,
-                              BoardSquare(RANK_1, castlings_.kingside_rook()));
-        }
-      }
-      continue;
-    }
-    bool processed_piece = false;
-    // Rook (and queen)
-    if (rooks_.get(source)) {
-      processed_piece = true;
-      BitBoard attacked =
-          GetRookAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
+  // Rook (and queen)
+  for (auto source : our_pieces_& rooks_) {
+    BitBoard attacked =
+        GetRookAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
 
-      for (const auto& destination : attacked) {
-        result.emplace_back(source, destination);
-      }
+    for (const auto& destination : attacked) {
+      result.emplace_back(source, destination);
     }
-    // Bishop (and queen)
-    if (bishops_.get(source)) {
-      processed_piece = true;
-      BitBoard attacked =
-          GetBishopAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
+  }
+  // Bishop (and queen)
+  for (auto source : our_pieces_& bishops_) {
+    BitBoard attacked =
+        GetBishopAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
 
-      for (const auto& destination : attacked) {
-        result.emplace_back(source, destination);
-      }
+    for (const auto& destination : attacked) {
+      result.emplace_back(source, destination);
     }
-    if (processed_piece) continue;
-    // Pawns.
-    if ((pawns_ & kPawnMask).get(source)) {
-      // Moves forward.
-      {
-        const auto dst_row = source.row() + 1;
-        const auto dst_col = source.col();
-        const BoardSquare destination(dst_row, dst_col);
+  }
+  // Knight.
+  for (auto source : our_pieces_ - pawns() - our_king_ - rooks_ - bishops_) {
+    for (const auto destination :
+         kKnightAttacks[source.as_int()] - our_pieces_) {
+      result.emplace_back(source, destination);
+    }
+  }
+  // Castlings.
+  auto walk_free = [this](int from, int to, int rook, int king) {
+    for (int i = from; i <= to; ++i) {
+      if (i == rook || i == king) continue;
+      if (our_pieces_.get(i) || their_pieces_.get(i)) return false;
+    }
+    return true;
+  };
+  // @From may be less or greater than @to. @To is not included in check
+  // unless it is the same with @from.
+  auto range_attacked = [this](int from, int to) {
+    if (from == to) return IsUnderAttack(from);
+    const int increment = from < to ? 1 : -1;
+    while (from != to) {
+      if (IsUnderAttack(from)) return true;
+      from += increment;
+    }
+    return false;
+  };
+  const uint8_t king = our_king_.col();
+  // For castlings we don't check destination king square for checks, it
+  // will be done in legal move check phase.
+  if (castlings_.we_can_000()) {
+    const uint8_t qrook = castlings_.queenside_rook();
+    if (walk_free(std::min(static_cast<uint8_t>(C1), qrook),
+                  std::max(static_cast<uint8_t>(D1), king), qrook, king) &&
+        !range_attacked(king, C1)) {
+      result.emplace_back(our_king_,
+                          BoardSquare(RANK_1, castlings_.queenside_rook()));
+    }
+  }
+  if (castlings_.we_can_00()) {
+    const uint8_t krook = castlings_.kingside_rook();
+    if (walk_free(std::min(static_cast<uint8_t>(F1), king),
+                  std::max(static_cast<uint8_t>(G1), krook), krook, king) &&
+        !range_attacked(king, G1)) {
+      result.emplace_back(our_king_,
+                          BoardSquare(RANK_1, castlings_.kingside_rook()));
+    }
+  }
+  // Pawns.
+  for (auto source : our_pieces_& pawns()) {
+    // Moves forward.
+    {
+      const auto dst_row = source.row() + 1;
+      const auto dst_col = source.col();
+      const BoardSquare destination(dst_row, dst_col);
 
-        if (!our_pieces_.get(destination) && !their_pieces_.get(destination)) {
-          if (dst_row != RANK_8) {
-            result.emplace_back(source, destination);
-            if (dst_row == RANK_3) {
-              // Maybe it'll be possible to move two squares.
-              if (!our_pieces_.get(RANK_4, dst_col) &&
-                  !their_pieces_.get(RANK_4, dst_col)) {
-                result.emplace_back(source, BoardSquare(RANK_4, dst_col));
-              }
+      if (!our_pieces_.get(destination) && !their_pieces_.get(destination)) {
+        if (dst_row != RANK_8) {
+          result.emplace_back(source, destination);
+          if (dst_row == RANK_3) {
+            // Maybe it'll be possible to move two squares.
+            if (!our_pieces_.get(RANK_4, dst_col) &&
+                !their_pieces_.get(RANK_4, dst_col)) {
+              result.emplace_back(source, BoardSquare(RANK_4, dst_col));
             }
-          } else {
-            // Promotions
+          }
+        } else {
+          // Promotions
+          for (auto promotion : kPromotions) {
+            result.emplace_back(source, destination, promotion);
+          }
+        }
+      }
+    }
+    // Captures.
+    {
+      for (auto direction : {-1, 1}) {
+        const auto dst_row = source.row() + 1;
+        const auto dst_col = source.col() + direction;
+        if (dst_col < 0 || dst_col >= 8) continue;
+        const BoardSquare destination(dst_row, dst_col);
+        if (their_pieces_.get(destination)) {
+          if (dst_row == RANK_8) {
+            // Promotion.
             for (auto promotion : kPromotions) {
               result.emplace_back(source, destination, promotion);
             }
-          }
-        }
-      }
-      // Captures.
-      {
-        for (auto direction : {-1, 1}) {
-          const auto dst_row = source.row() + 1;
-          const auto dst_col = source.col() + direction;
-          if (dst_col < 0 || dst_col >= 8) continue;
-          const BoardSquare destination(dst_row, dst_col);
-          if (their_pieces_.get(destination)) {
-            if (dst_row == RANK_8) {
-              // Promotion.
-              for (auto promotion : kPromotions) {
-                result.emplace_back(source, destination, promotion);
-              }
-            } else {
-              // Ordinary capture.
-              result.emplace_back(source, destination);
-            }
-          } else if (dst_row == RANK_6 && pawns_.get(RANK_8, dst_col)) {
-            // En passant.
-            // "Pawn" on opponent's file 8 means that en passant is possible.
-            // Those fake pawns are reset in ApplyMove.
+          } else {
+            // Ordinary capture.
             result.emplace_back(source, destination);
           }
+        } else if (dst_row == RANK_6 && pawns_.get(RANK_8, dst_col)) {
+          // En passant.
+          // "Pawn" on opponent's file 8 means that en passant is possible.
+          // Those fake pawns are reset in ApplyMove.
+          result.emplace_back(source, destination);
         }
-      }
-      continue;
-    }
-    // Knight.
-    {
-      for (const auto destination :
-           kKnightAttacks[source.as_int()] - our_pieces_) {
-        result.emplace_back(source, destination);
       }
     }
   }
+  // King
+  for (const auto& delta : kKingMoves) {
+    const auto dst_row = our_king_.row() + delta.first;
+    const auto dst_col = our_king_.col() + delta.second;
+    if (!BoardSquare::IsValid(dst_row, dst_col)) continue;
+    const BoardSquare destination(dst_row, dst_col);
+    if (our_pieces_.get(destination)) continue;
+    if (IsUnderAttack(destination)) continue;
+    result.emplace_back(our_king_, destination);
+  }
   return result;
-}  // namespace lczero
+}
 
 bool ChessBoard::ApplyMove(Move move) {
   const auto& from = move.from();
