@@ -37,13 +37,14 @@
 namespace lczero {
 
 TrainingDataWriter::TrainingDataWriter(int game_id) {
-  static std::string directory =
-      CommandLine::BinaryDirectory() + "/data-" + Random::Get().GetString(12);
+  static const std::string randomString = Random::Get().GetString(12);
+  static const std::string directory =
+      CommandLine::BinaryDirectory() + "/data-" + randomString;
   // It's fine if it already exists.
   CreateDirectory(directory.c_str());
 
   std::ostringstream oss;
-  oss << directory << '/' << "game_" << std::setfill('0') << std::setw(6)
+  oss << directory << '/' << "game_" << randomString << "_" << std::setfill('0') << std::setw(6)
       << game_id << ".gz";
 
   filename_ = oss.str();
