@@ -15,7 +15,7 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
+        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true'],
         meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
@@ -99,6 +99,9 @@ if git.found()
     # Now let's check if the working directory is clean.
     if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
       short_rev = r.stdout().strip()
+      if run_command(git, 'describe', '--exact-match', '--tags').returncode() == 0
+        short_rev = ''
+      endif
     else
       short_rev = 'dirty'
       warning('Cannot extract valid git short revision from dirty working directory.')
@@ -109,9 +112,11 @@ if git.found()
 endif
 
 # Construct build identifier.
-build_identifier = 'git.' + short_rev
-add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
-message('Using build identifier "' + build_identifier + '".')
+if short_rev != ''
+  build_identifier = 'git.' + short_rev
+  add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
+  message('Using build identifier "' + build_identifier + '".')
+endif
 
 #############################################################################
 ## Main files
@@ -144,6 +149,7 @@ files += [
   'src/neural/network_legacy.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
+  'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
@@ -253,9 +259,10 @@ if get_option('build_backends')
 
     endif
 
-    deps += subproject('eigen').get_variable('eigen_dep')
+    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep'])
 
     ispc = find_program('ispc', required: false)
+    ispc_arch = 'x86-64'
     ispc_extra_args = []
     if get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
@@ -263,26 +270,41 @@ if get_option('build_backends')
         outputnames = [ '@BASENAME@.obj']
         if not ispc_native_only
           outputnames += ['@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
-                          '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj',
-                          '@BASENAME@_avx2.obj' ]
+                          '@BASENAME@_avx.obj', '@BASENAME@_avx2.obj',
+                          '@BASENAME@_avx512knl.obj', '@BASENAME@_avx512skx.obj' ]
         endif
       else
         ispc_extra_args += ['--pic']
         outputnames = [ '@BASENAME@.o']
         if not ispc_native_only
           outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
-                           '@BASENAME@_avx.o', '@BASENAME@_avx11.o',
-                           '@BASENAME@_avx2.o' ]
+                          '@BASENAME@_avx.o', '@BASENAME@_avx2.o',
+                          '@BASENAME@_avx512knl.o', '@BASENAME@_avx512skx.o' ]
         endif
       endif
       if ispc_native_only
         ispc_target = 'host'
       else
-        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx1.1-i32x8,avx2-i32x8'
+        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
       endif
+
+      if host_machine.system() == 'android'
+        ispc_extra_args += ['--target-os=android']
+        if host_machine.cpu_family() == 'arm'
+          outputnames = [ '@BASENAME@.o']
+          if host_machine.cpu() == 'aarch64'
+            ispc_target = 'neon-i32x8'
+            ispc_arch = 'aarch64'
+          else
+            ispc_target = 'neon-i32x4'
+            ispc_arch = 'arm'
+          endif
+        endif
+      endif
+
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
-        arguments: [ '-O2', '--wno-perf', '--arch=x86-64',
+        arguments: [ '-O2', '--wno-perf', '--arch=' + ispc_arch,
                      '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
                      + ispc_extra_args
@@ -505,8 +527,9 @@ endif
 executable('lc0', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
-
-### Tests
+#############################################################################
+## Tests
+#############################################################################
 
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
@@ -543,4 +566,29 @@ if get_option('gtest')
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
+endif
+
+
+#############################################################################
+## Python bindings
+#############################################################################
+
+if get_option('python_bindings')
+  pymod = import('python')
+  python = pymod.find_installation('python3')
+  if python.language_version() < '3.7'
+    error('You need python 3.7 or newer')
+  endif  
+  py_bindings_generator = find_program('scripts/gen_py_bindings.py')
+
+  gen_py_bindings = custom_target('backends', input:[], output:['backends.cc'],
+    command : [py_bindings_generator, '@OUTPUT0@'])
+
+  py_files = [ gen_py_bindings ]
+
+  cpython = dependency('python3')
+  python.extension_module('backends',
+    [py_files + files],
+    include_directories: [includes],
+    dependencies: [cpython] + deps)
 endif

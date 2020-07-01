@@ -30,6 +30,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+
 #include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
@@ -105,12 +106,20 @@ OptionsParser::Option* OptionsParser::FindOptionById(const OptionId& id) const {
 
 OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) {
   if (context == "") return &values_;
-  return values_.GetMutableSubdict(context);
+  auto* result = &values_;
+  for (const auto& x : StrSplit(context, ".")) {
+    result = result->GetMutableSubdict(x);
+  }
+  return result;
 }
 
 const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
   if (context == "") return values_;
-  return values_.GetSubdict(context);
+  const auto* result = &values_;
+  for (const auto& x : StrSplit(context, ".")) {
+    result = &result->GetSubdict(x);
+  }
+  return *result;
 }
 
 bool OptionsParser::ProcessAllFlags() {
@@ -119,18 +128,19 @@ bool OptionsParser::ProcessAllFlags() {
 }
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
+  auto show_help = false;
+  if (CommandLine::BinaryName().find("pro") != std::string::npos) {
+    ShowHidden();
+  }
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
-    if (param == "-h" || param == "--help") {
-      ShowHelp();
-      return false;
-    }
-    if (param == "--help-md") {
-      ShowHelpMd();
-      return false;
-    }
     if (param == "--show-hidden") {
       ShowHidden();
+      continue;
+    }
+    if (param == "-h" || param == "--help") {
+      // Set a flag so that --show-hidden after --help works.
+      show_help = true;
       continue;
     }
 
@@ -143,7 +153,7 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
         value = param.substr(pos + 1);
         param = param.substr(0, pos);
       }
-      pos = param.find('.');
+      pos = param.rfind('.');
       if (pos != std::string::npos) {
         context = param.substr(0, pos);
         param = param.substr(pos + 1);
@@ -188,6 +198,10 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
 
     CERR << "Unknown command line argument: " << *iter << ".\n";
     CERR << "For help run:\n  " << CommandLine::BinaryName() << " --help";
+    return false;
+  }
+  if (show_help) {
+    ShowHelp();
     return false;
   }
   return true;
@@ -260,6 +274,8 @@ void OptionsParser::ShowHelp() const {
 
   std::cout << "\nAllowed command line flags for current mode:\n";
   std::cout << FormatFlag('h', "help", "Show help and exit.");
+  std::cout << FormatFlag('\0', "show-hidden",
+                          "Show hidden options. Use with --help.");
   for (const auto& option : options_) {
     if (!option->hidden_) std::cout << option->GetHelp(defaults_);
   }
@@ -270,88 +286,6 @@ void OptionsParser::ShowHelp() const {
               << StrJoin(contexts, ", ") << "), for example:\n";
     std::cout << "       --" << contexts[0] << '.'
               << options_.back()->GetLongFlag() << "=(value)\n";
-  }
-}
-
-namespace {
-std::string EscapeMd(const std::string& input) {
-  const std::string kSpecial = "~#<>&*_\\[]+-`|:\n\r";
-  std::string s = input;
-  size_t pos = 0;
-  while ((pos = s.find_first_of(kSpecial, pos)) != std::string::npos) {
-    switch (s[pos]) {
-      case '<':
-        s.replace(pos, 1, "&lt;");
-        pos += 4;
-        break;
-      case '>':
-        s.replace(pos, 1, "&gt;");
-        pos += 4;
-        break;
-      case '&':
-        s.replace(pos, 1, "&amp;");
-        pos += 5;
-        break;
-      case '\n':
-        s.replace(pos, 1, "<br/>");
-        pos += 5;
-        break;
-      case '\r':
-        s.erase(pos, 1);
-        break;
-      default:
-        s.insert(pos, "\\");
-        pos += 2;
-    }
-  }
-  return s;
-}
-}  // namespace
-
-void OptionsParser::ShowHelpMd() const {
-  std::cout << "\n# Lc0 options\n";
-  std::cout << "\n*Flag*|*UCI option*|Description\n---|---|------\n";
-  std::cout << "**--help**, **-h**||Show help and exit.\n";
-  for (const auto& option : options_) {
-    if (option->hidden_) continue;
-    if (!option->GetLongFlag().empty()) {
-      std::cout << "**--" << option->GetLongFlag() << "**";
-    }
-    if (option->GetShortFlag()) {
-      std::cout << ", **-" << option->GetShortFlag() << "**";
-    }
-    std::cout << '|';
-    if (!option->GetUciOption().empty()) {
-      std::cout << "**" << option->GetUciOption() << "**";
-    }
-    std::cout << '|' << EscapeMd(option->GetHelpText());
-    std::string help = option->GetHelp(defaults_);
-    size_t idx = help.rfind("DEFAULT:");
-    if (idx != std::string::npos) {
-      help.replace(idx, 8, "*Default value:* `");
-      size_t idx2 = help.rfind("MIN:");
-      if (idx2 != std::string::npos) {
-        help.replace(idx2, 4, "`<br/>*Minimum value:* `");
-      }
-      idx2 = help.rfind("MAX:");
-      if (idx2 != std::string::npos) {
-        help.replace(idx2, 4, "`<br/>*Maximum value:* `");
-      }
-      idx2 = help.rfind("VALUES:");
-      if (idx2 != std::string::npos) {
-        help.replace(idx2, 7, "`<br/>*Allowed values:* `");
-        while ((idx2 = help.find(",", idx2)) != std::string::npos) {
-          help.replace(idx2, 1, "`, `");
-          idx2 += 4;
-        }
-      }
-      idx2 = help.rfind("]");
-      if (idx2 != std::string::npos) {
-        help.erase(idx2);
-      }
-      std::cout << "<br/>" << help.substr(idx) << "`";
-    }
-    std::cout << "\n";
   }
 }
 
@@ -469,7 +403,7 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 int IntOption::ValidateIntString(const std::string& val) const {
   int result;
   const auto end = val.data() + val.size();
-  auto [ptr, err] = std::from_chars(val.data(), end, result);  
+  auto [ptr, err] = std::from_chars(val.data(), end, result);
   if (err == std::errc::invalid_argument) {
     throw Exception("Flag '--" + GetLongFlag() + "' has an invalid format.");
   } else if (err == std::errc::result_out_of_range) {
@@ -482,7 +416,7 @@ int IntOption::ValidateIntString(const std::string& val) const {
 }
 #else
 int IntOption::ValidateIntString(const std::string& val) const {
-  char *end;
+  char* end;
   errno = 0;
   int result = std::strtol(val.c_str(), &end, 10);
   if (errno == ERANGE) {

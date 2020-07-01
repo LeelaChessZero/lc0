@@ -155,8 +155,8 @@ class Search {
   bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
-  EdgeAndNode final_bestmove_ GUARDED_BY(counters_mutex_);
-  EdgeAndNode final_pondermove_ GUARDED_BY(counters_mutex_);
+  Move final_bestmove_ GUARDED_BY(counters_mutex_);
+  Move final_pondermove_ GUARDED_BY(counters_mutex_);
   std::unique_ptr<SearchStopper> stopper_ GUARDED_BY(counters_mutex_);
 
   Mutex threads_mutex_;
@@ -310,7 +310,7 @@ class SearchWorker {
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
-  bool MaybeSetBounds(Node* p, float m) const;
+  bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta, float* d_delta, float* m_delta) const;
 
   Search* const search_;
   // List of nodes to process.

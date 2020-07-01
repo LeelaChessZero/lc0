@@ -145,7 +145,7 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
 
   const auto min_version =
       GetVersionStr(net.min_version().major(), net.min_version().minor(),
-                    net.min_version().patch(), "");
+                    net.min_version().patch(), "", "");
   const auto lc0_ver = GetVersionInt();
   const auto net_ver =
       GetVersionInt(net.min_version().major(), net.min_version().minor(),
@@ -185,53 +185,61 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
 std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
-  const std::string root_path = CommandLine::BinaryDirectory();
-
-  // Open all files in <binary dir> amd <binary dir>/networks,
-  // ones which are >= kMinFileSize are candidates.
-  std::vector<std::pair<time_t, std::string> > time_and_filename;
-  for (const auto& path : {"", "/networks"}) {
-    for (const auto& file : GetFileList(root_path + path)) {
-      const std::string filename = root_path + path + "/" + file;
-      if (GetFileSize(filename) < kMinFileSize) continue;
-      time_and_filename.emplace_back(GetFileTime(filename), filename);
-    }
+  std::vector<std::string> data_dirs = {CommandLine::BinaryDirectory()};
+  const std::string user_data_path = GetUserDataDirectory();
+  if (!user_data_path.empty()) {
+    data_dirs.emplace_back(user_data_path + "lc0");
+  }
+  for (const auto& dir : GetSystemDataDirectoryList()) {
+    data_dirs.emplace_back(dir + (dir.back() == '/' ? "" : "/") + "lc0");
   }
 
-  std::sort(time_and_filename.rbegin(), time_and_filename.rend());
-
-  // Open all candidates, from newest to oldest, possibly gzipped, and try to
-  // read version for it. If version is 2 or if the file is our protobuf,
-  // return it.
-  for (const auto& candidate : time_and_filename) {
-    const gzFile file = gzopen(candidate.second.c_str(), "rb");
-
-    if (!file) continue;
-    unsigned char buf[256];
-    int sz = gzread(file, buf, 256);
-    gzclose(file);
-    if (sz < 0) continue;
-
-    std::string str(buf, buf + sz);
-    std::istringstream data(str);
-    int val = 0;
-    data >> val;
-    if (!data.fail() && val == 2) {
-      CERR << "Found txt network file: " << candidate.second;
-      return candidate.second;
+  for (const auto& dir : data_dirs) {
+    // Open all files in <dir> amd <dir>/networks,
+    // ones which are >= kMinFileSize are candidates.
+    std::vector<std::pair<time_t, std::string> > time_and_filename;
+    for (const auto& path : {"", "/networks"}) {
+      for (const auto& file : GetFileList(dir + path)) {
+        const std::string filename = dir + path + "/" + file;
+        if (GetFileSize(filename) < kMinFileSize) continue;
+        time_and_filename.emplace_back(GetFileTime(filename), filename);
+      }
     }
 
-    // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it as
-    // our own magic should suffice.
-    const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
-                       (static_cast<uint32_t>(buf[3]) << 16) |
-                       (static_cast<uint32_t>(buf[4]) << 24);
-    if (magic == kWeightMagic) {
-      CERR << "Found pb network file: " << candidate.second;
-      return candidate.second;
+    std::sort(time_and_filename.rbegin(), time_and_filename.rend());
+
+    // Open all candidates, from newest to oldest, possibly gzipped, and try to
+    // read version for it. If version is 2 or if the file is our protobuf,
+    // return it.
+    for (const auto& candidate : time_and_filename) {
+      const gzFile file = gzopen(candidate.second.c_str(), "rb");
+
+      if (!file) continue;
+      unsigned char buf[256];
+      int sz = gzread(file, buf, 256);
+      gzclose(file);
+      if (sz < 0) continue;
+
+      std::string str(buf, buf + sz);
+      std::istringstream data(str);
+      int val = 0;
+      data >> val;
+      if (!data.fail() && val == 2) {
+        CERR << "Found txt network file: " << candidate.second;
+        return candidate.second;
+      }
+
+      // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it
+      // as our own magic should suffice.
+      const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
+                         (static_cast<uint32_t>(buf[3]) << 16) |
+                         (static_cast<uint32_t>(buf[4]) << 24);
+      if (magic == kWeightMagic) {
+        CERR << "Found pb network file: " << candidate.second;
+        return candidate.second;
+      }
     }
   }
-
   LOGFILE << "Network weights file not found.";
   return {};
 }

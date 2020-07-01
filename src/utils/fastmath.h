@@ -77,11 +77,6 @@ inline float FastLog(const float a) {
 // Fast approximate exp(x). Does only limited range checking.
 inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
 
-// Fast logit for more readable code.
-inline float FastLogit(const float a) {
-  return 0.5f * FastLog((1.0f + a) / (1.0f - a));
-}
-
 // Fast approximate x^y. Works for x>0 and saturates on underflow.
 // The approximation used here is a combination of log2(2^N*(1+f)) ~ N+f+k
 // and 2^(N+f) ~ 2^N*(1+f-k) with N integer and f the fractional part, f>=0.
