@@ -43,6 +43,10 @@
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace lczero {
 
 class Search {
@@ -204,12 +208,48 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search, const SearchParams& params)
+  SearchWorker(Search* search, const SearchParams& params, int id)
       : search_(search),
         history_(search_->played_history_),
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
-                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {}
+                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {
+#if defined(_WIN64) && _WIN32_WINNT >= 0x0601
+    int threads_per_core = 1;
+    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* buffer;
+    DWORD len;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);
+    buffer = static_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(malloc(len));
+    GetLogicalProcessorInformationEx(RelationProcessorCore, buffer, &len);
+    if (buffer->Processor.Flags & LTP_PC_SMT) {
+      threads_per_core = BitBoard(buffer->Processor.GroupMask[0].Mask).count();
+    }
+    free(buffer);
+
+    int group_count = GetActiveProcessorGroupCount();
+    int thread_count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    int core_count = thread_count / threads_per_core;
+    int core_id = id;
+    GROUP_AFFINITY affinity = {};
+    for (int group_id = 0; group_id < group_count; group_id++) {
+      int group_threads = GetActiveProcessorCount(group_id);
+      int group_cores = group_threads / threads_per_core;
+      // Allocate cores of each group in order, and distribute remaing threads
+      // to all groups.
+      if ((id < core_count && core_id < group_cores) ||
+          (id >= core_count && (id - core_count) % group_count == group_id)) {
+        affinity.Group = group_id;
+        affinity.Mask = (1ULL << group_threads) - 1;
+        SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
+        break;
+      }
+      core_id -= group_cores;
+    }
+#else
+    // Silence warning.
+    (void)id;
+#endif
+  }
 
   // Runs iterations while needed.
   void RunBlocking() {
