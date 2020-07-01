@@ -229,11 +229,19 @@ class SearchWorker {
     int group_count = GetActiveProcessorGroupCount();
     int thread_count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     int core_count = thread_count / threads_per_core;
+    if (id == 0) {
+      CERR << "Detected " << core_count << " core(s) and " << thread_count
+           << " thread(s) in " << group_count << "group(s).";
+    }
     int core_id = id;
     GROUP_AFFINITY affinity = {};
     for (int group_id = 0; group_id < group_count; group_id++) {
       int group_threads = GetActiveProcessorCount(group_id);
       int group_cores = group_threads / threads_per_core;
+      if (id == 0) {
+        CERR << "Group " << group_id << " has " << group_cores
+             << " core(s) and " << group_threads << " thread(s).";
+      }
       // Allocate cores of each group in order, and distribute remaing threads
       // to all groups.
       if ((id < core_count && core_id < group_cores) ||
