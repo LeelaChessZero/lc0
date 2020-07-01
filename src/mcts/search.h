@@ -231,7 +231,7 @@ class SearchWorker {
     int core_count = thread_count / threads_per_core;
     if (id == 0) {
       CERR << "Detected " << core_count << " core(s) and " << thread_count
-           << " thread(s) in " << group_count << "group(s).";
+           << " thread(s) in " << group_count << " group(s).";
     }
     int core_id = id;
     GROUP_AFFINITY affinity = {};
