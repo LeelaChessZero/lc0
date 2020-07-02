@@ -420,8 +420,13 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
   }
 
   PlayerOptions options[2];
-  options[0].network = networks_[0].get();
-  options[1].network = networks_[1].get();
+  // This doesn't support separate network configurations for white vs black games.
+  options[0].network =
+      networks_[NetworkFactory::BackendConfiguration(player_options_[0][0])]
+          .get();
+  options[1].network =
+      networks_[NetworkFactory::BackendConfiguration(player_options_[1][0])]
+          .get();
 
   // TODO - add game to the abortable queue.
   auto game1 = std::make_unique<PolicySelfPlayGames>(
@@ -492,7 +497,7 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      if (!player_options_[0].Get<bool>(kOpeningsMirroredId)) {
+      if (!player_options_[0][0].Get<bool>(kOpeningsMirroredId)) {
         throw Exception("This binary only supports mirrored mode.");
       }
       int to_take = 1;
@@ -583,8 +588,8 @@ SelfPlayTournament::~SelfPlayTournament() {
 void SelfPlayTournament::SaveResults() {
   if (kTournamentResultsFile.empty()) return;
   std::ofstream output(kTournamentResultsFile, std::ios_base::app);
-  auto p1name = player_options_[0].Get<std::string>(NetworkFactory::kWeightsId);
-  auto p2name = player_options_[1].Get<std::string>(NetworkFactory::kWeightsId);
+  auto p1name = player_options_[0][0].Get<std::string>(NetworkFactory::kWeightsId);
+  auto p2name = player_options_[1][0].Get<std::string>(NetworkFactory::kWeightsId);
 
   output << std::endl;
   output << "[White \"" << p1name << "\"]" << std::endl;
