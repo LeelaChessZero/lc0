@@ -31,6 +31,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "neural/encoder.h"
 #include "utils/bititer.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
@@ -69,7 +70,10 @@ InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
       break;
     }
     case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE:
-    case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION: {
+    case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION:
+    case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES:
+    case pblczero::NetworkFormat::
+        INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON: {
       result.emplace_back();
       result.back().mask =
           data.castling_us_ooo |
@@ -88,23 +92,30 @@ InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
                       std::to_string(data.input_format));
   }
   result.emplace_back();
-  if (data.input_format ==
-      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+  auto typed_format =
+      static_cast<pblczero::NetworkFormat::InputFormat>(data.input_format);
+  if (IsCanonicalFormat(typed_format)) {
     result.back().mask = static_cast<uint64_t>(data.side_to_move_or_enpassant)
                          << 56;
   } else {
     result.back().mask = data.side_to_move_or_enpassant != 0 ? ~0LL : 0LL;
   }
   result.emplace_back();
-  result.back().Fill(data.rule50_count);
+  if (IsHectopliesFormat(typed_format)) {
+    result.back().Fill(data.rule50_count / 100.0f);
+  } else {
+    result.back().Fill(data.rule50_count);
+  }
   result.emplace_back();
-  // Empty plane.
+  // Empty plane, except for canonical armageddon.
+  if (IsCanonicalArmageddonFormat(typed_format) &&
+      data.invariance_info >= 128) {
+    result.back().SetAll();
+  }
   result.emplace_back();
   // All ones plane.
   result.back().SetAll();
-  if (data.input_format ==
-          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION &&
-      data.invariance_info != 0) {
+  if (IsCanonicalFormat(typed_format) && data.invariance_info != 0) {
     // Undo transformation here as it makes the calling code simpler.
     int transform = data.invariance_info;
     for (int i = 0; i <= result.size(); i++) {

@@ -298,10 +298,14 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     }
   }
   fen += " ";
-  fen += std::to_string((int)planes[kAuxPlaneBase + 5].value);
+  int rule50plane = (int)planes[kAuxPlaneBase + 5].value;
+  if (IsHectopliesFormat(input_format)) {
+    rule50plane = (int)(100.0f * planes[kAuxPlaneBase + 5].value);
+  }
+  fen += std::to_string(rule50plane);
   // Reuse the 50 move rule as gameply since we don't know better.
   fen += " ";
-  fen += std::to_string((int)planes[kAuxPlaneBase + 5].value);
+  fen += std::to_string(rule50plane);
   board->SetFromFen(fen, rule50, gameply);
 }
 
