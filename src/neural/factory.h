@@ -31,8 +31,8 @@
 #include <optional>
 #include <string>
 
-#include "neural/network.h"
 #include "neural/loader.h"
+#include "neural/network.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
@@ -85,6 +85,10 @@ class NetworkFactory {
     bool operator!=(const BackendConfiguration& other) const {
       return !operator==(other);
     }
+    bool operator<(const BackendConfiguration& other) const {
+      return std::tie(weights_path, backend, backend_options) <
+             std::tie(other.weights_path, other.backend, other.backend_options);
+    }
   };
 
  private:
@@ -111,12 +115,14 @@ class NetworkFactory {
   friend class Register;
 };
 
-#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)       \
-  namespace {                                                               \
-  static NetworkFactory::Register regH38fhs##counter(                       \
-      name, [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
-        return func(w, o);                                                  \
-      }, priority);                                                         \
+#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter) \
+  namespace {                                                         \
+  static NetworkFactory::Register regH38fhs##counter(                 \
+      name,                                                           \
+      [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
+        return func(w, o);                                            \
+      },                                                              \
+      priority);                                                      \
   }
 #define REGISTER_NETWORK_WITH_COUNTER(name, func, priority, counter) \
   REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)

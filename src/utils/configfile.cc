@@ -31,6 +31,7 @@
 #include <sstream>
 
 #include "utils/commandline.h"
+#include "utils/filesystem.h"
 #include "utils/logging.h"
 #include "utils/optionsparser.h"
 #include "utils/string.h"
@@ -96,18 +97,32 @@ bool ConfigFile::Init() {
 }
 
 bool ConfigFile::ParseFile(std::string& filename) {
-
   // Check to see if we are using the default config file or not.
   const bool using_default_config = 
       filename == std::string(kDefaultConfigFileParam);
 
+  std::ifstream input;
+
   // If no logfile was set on the command line, then the default is
   // to check in the binary directory.
   if (using_default_config) {
-    filename = CommandLine::BinaryDirectory() + '/' + kDefaultConfigFile;
-  }
+    std::vector<std::string> config_dirs = {CommandLine::BinaryDirectory()};
+    const std::string user_config_path = GetUserConfigDirectory();
+    if (!user_config_path.empty()) {
+      config_dirs.emplace_back(user_config_path + "lc0");
+    }
+    for (const auto& dir : GetSystemConfigDirectoryList()) {
+      config_dirs.emplace_back(dir + (dir.back() == '/' ? "" : "/") + "lc0");
+    }
 
-  std::ifstream input(filename);
+    for (const auto& dir : config_dirs) {
+      filename = dir + '/' + kDefaultConfigFile;
+      input.open(filename);
+      if (input.is_open()) break;
+    }
+  } else {
+    input.open(filename);
+  }
 
   if (!input.is_open()) {
     // It is okay if we cannot open the default file since it is normal

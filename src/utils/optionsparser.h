@@ -115,8 +115,6 @@ class OptionsParser {
  private:
   // Prints help to std::cout.
   void ShowHelp() const;
-  // Prints markdown formatted help to std::cout.
-  void ShowHelpMd() const;
   // Make all hidden options visible.
   void ShowHidden() const;
   // Returns an option based on the long flag.

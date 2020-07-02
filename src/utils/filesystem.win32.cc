@@ -57,7 +57,7 @@ std::vector<std::string> GetFileList(const std::string& directory) {
 uint64_t GetFileSize(const std::string& filename) {
   WIN32_FILE_ATTRIBUTE_DATA s;
   if (!GetFileAttributesExA(filename.c_str(), GetFileExInfoStandard, &s)) {
-    throw Exception("Cannot stat file: " + filename);
+    return 0;
   }
   return (static_cast<uint64_t>(s.nFileSizeHigh) << 32) + s.nFileSizeLow;
 }
@@ -65,7 +65,7 @@ uint64_t GetFileSize(const std::string& filename) {
 time_t GetFileTime(const std::string& filename) {
   WIN32_FILE_ATTRIBUTE_DATA s;
   if (!GetFileAttributesExA(filename.c_str(), GetFileExInfoStandard, &s)) {
-    throw Exception("Cannot stat file: " + filename);
+    return 0;
   }
   return (static_cast<uint64_t>(s.ftLastWriteTime.dwHighDateTime) << 32) +
          s.ftLastWriteTime.dwLowDateTime;
@@ -82,5 +82,14 @@ std::string GetUserConfigDirectory() {
 std::string GetUserDataDirectory() {
   return std::string();
 }
+
+std::vector<std::string> GetSystemConfigDirectoryList() {
+  return {};
+}
+
+std::vector<std::string> GetSystemDataDirectoryList() {
+  return {};
+}
+
 
 }  // namespace lczero

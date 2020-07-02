@@ -35,6 +35,7 @@
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
 #include "utils/filesystem.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
@@ -59,6 +60,10 @@ const OptionId kMinDTZBoostId{
     "dtz_policy_boost", "",
     "Additional offset to apply to policy target before temperature for moves "
     "that are best dtz option."};
+
+const OptionId kLogFileId{"logfile", "LogFile",
+                          "Write log to that file. Special value <stderr> to "
+                          "output the log to the console."};
 
 std::atomic<int> games(0);
 std::atomic<int> positions(0);
@@ -857,8 +862,12 @@ void SelfPlayLoop::RunLoop() {
   SelfPlayTournament::PopulateOptions(&options_);
 
   options_.Add<BoolOption>(kInteractiveId) = false;
+  options_.Add<StringOption>(kLogFileId);
 
   if (!options_.ProcessAllFlags()) return;
+  
+  Logging::Get().SetFilename(options_.GetOptionsDict().Get<std::string>(kLogFileId));
+
   if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
     UciLoop::RunLoop();
   } else {
