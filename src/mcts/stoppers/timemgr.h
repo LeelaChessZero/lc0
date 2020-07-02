@@ -29,9 +29,11 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "chess/uciloop.h"
+#include "mcts/node.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
@@ -40,11 +42,19 @@ namespace lczero {
 // It is expected that this structure will grow.
 struct IterationStats {
   int64_t time_since_movestart = 0;
+  int64_t time_since_first_batch = 0;
   int64_t total_nodes = 0;
   int64_t nodes_since_movestart = 0;
   int64_t batches_since_movestart = 0;
   int average_depth = 0;
   std::vector<uint32_t> edge_n;
+
+  // TODO: remove this in favor of time_usage_hint_=kImmediateMove when
+  // smooth time manager is the default.
+  bool win_found = false;
+
+  enum class TimeUsageHint { kNormal, kNeedMoreTime, kImmediateMove };
+  TimeUsageHint time_usage_hint_ = TimeUsageHint::kNormal;
 };
 
 // Hints from stoppers back to the search engine. Currently include:
@@ -60,10 +70,13 @@ class StoppersHints {
   int64_t GetEstimatedRemainingTimeMs() const;
   void UpdateEstimatedRemainingRemainingPlayouts(int64_t v);
   int64_t GetEstimatedRemainingPlayouts() const;
+  void UpdateEstimatedNps(float v);
+  std::optional<float> GetEstimatedNps() const;
 
  private:
   int64_t remaining_time_ms_;
   int64_t remaining_playouts_;
+  std::optional<float> estimated_nps_;
 };
 
 // Interface for search stopper.
@@ -88,8 +101,8 @@ class SearchStopper {
 class TimeManager {
  public:
   virtual ~TimeManager() = default;
-  virtual std::unique_ptr<SearchStopper> GetStopper(
-      const GoParams& params, const Position& position) = 0;
+  virtual std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
+                                                    const NodeTree& tree) = 0;
 };
 
 }  // namespace lczero

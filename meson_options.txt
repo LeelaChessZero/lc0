@@ -122,3 +122,13 @@ option('embed',
        type: 'boolean',
        value: false,
        description: 'Use embedded net by default')
+
+option('nvcc_ccbin',
+       type: 'string',
+       value: '',
+       description: 'Override C++ compiler used by cuda nvcc')
+
+option('python_bindings',
+       type: 'boolean',
+       value: false,
+       description: 'Build Python bindings for the python to bind.')

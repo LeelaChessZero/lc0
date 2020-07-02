@@ -81,6 +81,8 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
 
   if (for_what == RunType::kUci) {
     options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
+    options->HideOption(kMinimumKLDGainPerNodeId);
+    options->HideOption(kKLDGainAverageIntervalId);
     options->HideOption(kNodesAsPlayoutsId);
   }
 }
@@ -114,18 +116,24 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
   const auto cache_size_mb = options.Get<int>(kNNCacheSizeId);
   const int ram_limit = options.Get<int>(kRamLimitMbId);
   if (ram_limit) {
-    stopper->AddStopper(
-        std::make_unique<MemoryWatchingStopper>(cache_size_mb, ram_limit));
+    stopper->AddStopper(std::make_unique<MemoryWatchingStopper>(
+        cache_size_mb, ram_limit,
+        options.Get<float>(kSmartPruningFactorId) > 0.0f));
   }
 
   // "go nodes" stopper.
+  int64_t node_limit = 0;
   if (params.nodes) {
     if (options.Get<bool>(kNodesAsPlayoutsId)) {
-      stopper->AddStopper(std::make_unique<PlayoutsStopper>(*params.nodes));
+      stopper->AddStopper(std::make_unique<PlayoutsStopper>(
+          *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
     } else {
-      stopper->AddStopper(std::make_unique<VisitsStopper>(*params.nodes));
+        node_limit = *params.nodes;
     }
   }
+  // always limit nodes to avoid exceeding the limit 4000000000. That number is default when node_limit = 0)
+  stopper->AddStopper(std::make_unique<VisitsStopper>(
+        node_limit, options.Get<float>(kSmartPruningFactorId) > 0.0f));
 
   // "go movetime" stopper.
   if (params.movetime && !infinite) {
@@ -152,10 +160,9 @@ class CommonTimeManager : public TimeManager {
 
  private:
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const Position& position) override {
+                                            const NodeTree& tree) override {
     auto result = std::make_unique<ChainedSearchStopper>();
-    if (child_mgr_)
-      result->AddStopper(child_mgr_->GetStopper(params, position));
+    if (child_mgr_) result->AddStopper(child_mgr_->GetStopper(params, tree));
     PopulateCommonUciStoppers(result.get(), options_, params, move_overhead_);
     return result;
   }

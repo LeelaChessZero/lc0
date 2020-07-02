@@ -31,6 +31,7 @@
 #include <sstream>
 
 #include "utils/commandline.h"
+#include "utils/filesystem.h"
 #include "utils/logging.h"
 #include "utils/optionsparser.h"
 #include "utils/string.h"
@@ -43,6 +44,7 @@ const OptionId kConfigFileId{
     "parameter per line, e.g.:\n--weights=/path/to/weights",
     'c'};
 const char* kDefaultConfigFile = "lc0.config";
+const char* kDefaultConfigFileParam = "<default>";
 }  // namespace
 
 std::vector<std::string> ConfigFile::arguments_;
@@ -55,7 +57,7 @@ void ConfigFile::PopulateOptions(OptionsParser* options) {
 // ProcessAllFlags() that should be called only once, and needs the config file.
 std::string ConfigFile::ProcessConfigFlag(
     const std::vector<std::string>& args) {
-  std::string filename = kDefaultConfigFile;
+  std::string filename = kDefaultConfigFileParam;
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
 
@@ -78,31 +80,49 @@ std::string ConfigFile::ProcessConfigFlag(
   return filename;
 }
 
-bool ConfigFile::Init(OptionsParser* options) {
+bool ConfigFile::Init() {
   arguments_.clear();
 
-  // Get the relative path from the config file parameter.
+  // Get the path from the config file parameter.
   std::string filename = ProcessConfigFlag(CommandLine::Arguments());
 
-  // If filename is an empty string then return true.  This is to override
+  // If filename is an empty string then return true. This is to override
   // loading the default configuration file.
   if (filename == "") return true;
 
-  filename = CommandLine::BinaryDirectory() + "/" + filename;
-
   // Parses the file into the arguments_ vector.
-  if (!ParseFile(filename, options)) return false;
+  if (!ParseFile(filename)) return false;
 
   return true;
 }
 
-bool ConfigFile::ParseFile(const std::string& filename,
-                           OptionsParser* options) {
-  std::ifstream input(filename);
-
+bool ConfigFile::ParseFile(std::string& filename) {
   // Check to see if we are using the default config file or not.
-  OptionsDict dict = options->GetOptionsDict();
-  const bool using_default_config = dict.IsDefault<std::string>(kConfigFileId);
+  const bool using_default_config = 
+      filename == std::string(kDefaultConfigFileParam);
+
+  std::ifstream input;
+
+  // If no logfile was set on the command line, then the default is
+  // to check in the binary directory.
+  if (using_default_config) {
+    std::vector<std::string> config_dirs = {CommandLine::BinaryDirectory()};
+    const std::string user_config_path = GetUserConfigDirectory();
+    if (!user_config_path.empty()) {
+      config_dirs.emplace_back(user_config_path + "lc0");
+    }
+    for (const auto& dir : GetSystemConfigDirectoryList()) {
+      config_dirs.emplace_back(dir + (dir.back() == '/' ? "" : "/") + "lc0");
+    }
+
+    for (const auto& dir : config_dirs) {
+      filename = dir + '/' + kDefaultConfigFile;
+      input.open(filename);
+      if (input.is_open()) break;
+    }
+  } else {
+    input.open(filename);
+  }
 
   if (!input.is_open()) {
     // It is okay if we cannot open the default file since it is normal
