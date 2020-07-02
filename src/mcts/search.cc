@@ -449,7 +449,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
             params_.GetPolicyExponent()), ") ", 6, 5);
     print(&oss, "(S: ", Q + edge.GetU(U_coeff,
             params_.GetPolicyFactor(), params_.GetPolicyFactorParent(),
-            params_.GetPolicyExponent()) + M_effect, ") ", 8, 5);
+            params_.GetPolicyExponent()) + M, ") ", 8, 5);
     print_tail(&oss, edge.node());
     infos.emplace_back(oss.str());
   }
