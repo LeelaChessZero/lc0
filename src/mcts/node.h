@@ -40,6 +40,7 @@
 #include "neural/writer.h"
 #include "proto/net.pb.h"
 #include "utils/mutex.h"
+#include "utils/fastmath.h"
 
 namespace lczero {
 
