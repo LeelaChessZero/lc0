@@ -288,8 +288,16 @@ void Node::SortEdges() {
   assert(!child_);
   // Sorting on raw p_ is the same as sorting on GetP() as a side effect of
   // the encoding, and its noticeably faster.
-  std::sort(edges_.get(), (edges_.get() + num_edges_),
-            [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
+  for (int i = 1; i < num_edges_; i++) {
+    if (edges_[i - 1].p_ < edges_[i].p_) {
+      Edge t = edges_[i];
+      int j = i;
+      do {
+        edges_[j] = edges_[j - 1];
+      } while (--j > 0 && edges_[j - 1].p_ < t.p_);
+      edges_[j] = t;
+    }
+  }
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
