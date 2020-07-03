@@ -33,6 +33,7 @@
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
 #include "utils/logging.h"
+#include "utils/numa.h"
 #include "version.h"
 
 int main(int argc, const char** argv) {
@@ -46,6 +47,7 @@ int main(int argc, const char** argv) {
 
   try {
     InitializeMagicBitboards();
+    Numa::Init();
 
     CommandLine::Init(argc, argv);
     CommandLine::RegisterMode("uci", "(default) Act as UCI engine");

@@ -42,10 +42,7 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
+#include "utils/numa.h"
 
 namespace lczero {
 
@@ -214,49 +211,7 @@ class SearchWorker {
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
-#if defined(_WIN64) && _WIN32_WINNT >= 0x0601
-    int threads_per_core = 1;
-    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* buffer;
-    DWORD len;
-    GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);
-    buffer = static_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(malloc(len));
-    GetLogicalProcessorInformationEx(RelationProcessorCore, buffer, &len);
-    if (buffer->Processor.Flags & LTP_PC_SMT) {
-      threads_per_core = BitBoard(buffer->Processor.GroupMask[0].Mask).count();
-    }
-    free(buffer);
-
-    int group_count = GetActiveProcessorGroupCount();
-    int thread_count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
-    int core_count = thread_count / threads_per_core;
-    if (id == 0) {
-      CERR << "Detected " << core_count << " core(s) and " << thread_count
-           << " thread(s) in " << group_count << " group(s).";
-    }
-    int core_id = id;
-    GROUP_AFFINITY affinity = {};
-    for (int group_id = 0; group_id < group_count; group_id++) {
-      int group_threads = GetActiveProcessorCount(group_id);
-      int group_cores = group_threads / threads_per_core;
-      if (id == 0) {
-        CERR << "Group " << group_id << " has " << group_cores
-             << " core(s) and " << group_threads << " thread(s).";
-      }
-      // Allocate cores of each group in order, and distribute remaing threads
-      // to all groups.
-      if ((id < core_count && core_id < group_cores) ||
-          (id >= core_count && (id - core_count) % group_count == group_id)) {
-        affinity.Group = group_id;
-        affinity.Mask = (1ULL << group_threads) - 1;
-        SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
-        break;
-      }
-      core_id -= group_cores;
-    }
-#else
-    // Silence warning.
-    (void)id;
-#endif
+    Numa::BindThread(id);
   }
 
   // Runs iterations while needed.
