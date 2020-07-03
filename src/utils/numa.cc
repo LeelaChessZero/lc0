@@ -66,28 +66,28 @@ void Numa::Init() {
 
 void Numa::BindThread(int id) {
 #if defined(_WIN64) && _WIN32_WINNT >= 0x0601
-    int group_count = GetActiveProcessorGroupCount();
-    int thread_count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
-    int core_count = thread_count / threads_per_core_;
-    int core_id = id;
-    GROUP_AFFINITY affinity = {};
-    for (int group_id = 0; group_id < group_count; group_id++) {
-      int group_threads = GetActiveProcessorCount(group_id);
-      int group_cores = group_threads / threads_per_core_;
-      // Allocate cores of each group in order, and distribute remaing threads
-      // to all groups.
-      if ((id < core_count && core_id < group_cores) ||
-          (id >= core_count && (id - core_count) % group_count == group_id)) {
-        affinity.Group = group_id;
-        affinity.Mask = -1ULL >> (64 - group_threads);
-        SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
-        break;
-      }
-      core_id -= group_cores;
+  int group_count = GetActiveProcessorGroupCount();
+  int thread_count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+  int core_count = thread_count / threads_per_core_;
+  int core_id = id;
+  GROUP_AFFINITY affinity = {};
+  for (int group_id = 0; group_id < group_count; group_id++) {
+    int group_threads = GetActiveProcessorCount(group_id);
+    int group_cores = group_threads / threads_per_core_;
+    // Allocate cores of each group in order, and distribute remaining threads
+    // to all groups.
+    if ((id < core_count && core_id < group_cores) ||
+        (id >= core_count && (id - core_count) % group_count == group_id)) {
+      affinity.Group = group_id;
+      affinity.Mask = -1ULL >> (64 - group_threads);
+      SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
+      break;
     }
+    core_id -= group_cores;
+  }
 #else
-    // Silence warning.
-    (void)id;
+  // Silence warning.
+  (void)id;
 #endif
 }
 
