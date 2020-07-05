@@ -122,15 +122,18 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
   }
 
   // "go nodes" stopper.
+  int64_t node_limit = 0;
   if (params.nodes) {
     if (options.Get<bool>(kNodesAsPlayoutsId)) {
       stopper->AddStopper(std::make_unique<PlayoutsStopper>(
           *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
     } else {
-      stopper->AddStopper(std::make_unique<VisitsStopper>(
-          *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
+        node_limit = *params.nodes;
     }
   }
+  // always limit nodes to avoid exceeding the limit 4000000000. That number is default when node_limit = 0)
+  stopper->AddStopper(std::make_unique<VisitsStopper>(
+        node_limit, options.Get<float>(kSmartPruningFactorId) > 0.0f));
 
   // "go movetime" stopper.
   if (params.movetime && !infinite) {

@@ -155,8 +155,8 @@ class Search {
   bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
-  EdgeAndNode final_bestmove_ GUARDED_BY(counters_mutex_);
-  EdgeAndNode final_pondermove_ GUARDED_BY(counters_mutex_);
+  Move final_bestmove_ GUARDED_BY(counters_mutex_);
+  Move final_pondermove_ GUARDED_BY(counters_mutex_);
   std::unique_ptr<SearchStopper> stopper_ GUARDED_BY(counters_mutex_);
 
   Mutex threads_mutex_;

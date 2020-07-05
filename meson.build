@@ -15,7 +15,7 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
+        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true'],
         meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
@@ -149,6 +149,7 @@ files += [
   'src/neural/network_legacy.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
+  'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
