@@ -91,14 +91,14 @@ class MEvaluator {
         a_square_{params.GetMovesLeftQuadraticFactor()},
         q_threshold_{params.GetMovesLeftThreshold()},
         parent_m_{parent ? parent->GetM() : 0.0f},
-        parent_within_threshold_{parent ? WithinTheshold(parent, q_threshold_)
+        parent_within_threshold_{parent ? WithinThreshold(parent, q_threshold_)
                                         : false} {}
 
   void SetParent(const Node* parent) {
     assert(parent);
     if (enabled_) {
       parent_m_ = parent->GetM();
-      parent_within_threshold_ = WithinTheshold(parent, q_threshold_);
+      parent_within_threshold_ = WithinThreshold(parent, q_threshold_);
     }
   }
 
@@ -120,7 +120,7 @@ class MEvaluator {
   }
 
  private:
-  static bool WithinTheshold(const Node* parent, float q_threshold) {
+  static bool WithinThreshold(const Node* parent, float q_threshold) {
     return std::abs(parent->GetQ(0.0f)) > q_threshold;
   }
 
