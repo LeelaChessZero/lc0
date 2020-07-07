@@ -428,10 +428,11 @@ void InitializeMagicBitboards() {
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
   result.reserve(60);
+  const BitBoard all_pieces = our_pieces_ | their_pieces_;
   // Rook (and queen)
   for (auto source : our_pieces_& rooks_) {
     BitBoard attacked =
-        GetRookAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
+        GetRookAttacks(source, all_pieces) - our_pieces_;
 
     for (const auto& destination : attacked) {
       result.emplace_back(source, destination);
@@ -440,7 +441,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
   // Bishop (and queen)
   for (auto source : our_pieces_& bishops_) {
     BitBoard attacked =
-        GetBishopAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
+        GetBishopAttacks(source, all_pieces) - our_pieces_;
 
     for (const auto& destination : attacked) {
       result.emplace_back(source, destination);
@@ -454,10 +455,10 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     }
   }
   // Castlings.
-  auto walk_free = [this](int from, int to, int rook, int king) {
+  auto walk_free = [this, all_pieces](int from, int to, int rook, int king) {
     for (int i = from; i <= to; ++i) {
       if (i == rook || i == king) continue;
-      if (our_pieces_.get(i) || their_pieces_.get(i)) return false;
+      if (all_pieces.get(i)) return false;
     }
     return true;
   };
@@ -501,13 +502,12 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
       const auto dst_col = source.col();
       const BoardSquare destination(dst_row, dst_col);
 
-      if (!our_pieces_.get(destination) && !their_pieces_.get(destination)) {
+      if (!all_pieces.get(destination)) {
         if (dst_row != RANK_8) {
           result.emplace_back(source, destination);
           if (dst_row == RANK_3) {
             // Maybe it'll be possible to move two squares.
-            if (!our_pieces_.get(RANK_4, dst_col) &&
-                !their_pieces_.get(RANK_4, dst_col)) {
+            if (!all_pieces.get(RANK_4, dst_col)) {
               result.emplace_back(source, BoardSquare(RANK_4, dst_col));
             }
           }
