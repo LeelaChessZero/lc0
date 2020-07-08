@@ -79,7 +79,7 @@ void Numa::BindThread(int id) {
     if ((id < core_count && core_id < group_cores) ||
         (id >= core_count && (id - core_count) % group_count == group_id)) {
       affinity.Group = group_id;
-      affinity.Mask = -1ULL >> (64 - group_threads);
+      affinity.Mask = ~0ULL >> (64 - group_threads);
       SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
       break;
     }

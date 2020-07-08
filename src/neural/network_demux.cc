@@ -164,7 +164,8 @@ class DemuxingNetwork : public Network {
   }
 
   void Worker(int id) {
-    Numa::BindThread(id);
+    // Add one to the id in order to leave space for an active search thread.
+    Numa::BindThread(id + 1);
     // While Abort() is not called (and it can only be called from destructor).
     while (!abort_) {
       {
