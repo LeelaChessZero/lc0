@@ -155,7 +155,8 @@ class MuxingNetwork : public Network {
   }
 
   void Worker(Network* network, const int max_batch, int id) {
-    Numa::BindThread(id);
+    // Add one to the id in order to leave space for an active search thread.
+    Numa::BindThread(id + 1);
     // While Abort() is not called (and it can only be called from destructor).
     while (!abort_) {
       std::vector<MuxingComputation*> children;
