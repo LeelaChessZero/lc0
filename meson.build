@@ -418,8 +418,7 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      # meson bug fixed in v0.51
-      if meson.version().version_compare('<0.51') or get_option('default_library') != 'static'
+      if get_option('default_library') != 'static'
         cuda_arguments += ['-Xcompiler', '-MD']
       else
         cuda_arguments += ['-Xcompiler', '-MT']
