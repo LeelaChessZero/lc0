@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <zlib.h>
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -43,14 +45,31 @@ struct Opening {
   MoveList moves;
 };
 
+inline bool GzGetLine(gzFile file, std::string& line) {
+  bool flag = false;
+  char s[200];
+  line.clear();
+  while (gzgets(file, s, sizeof(s))) {
+    flag = true;
+    line += s;
+    auto r = line.find_last_of('\n');
+    if (r != std::string::npos) {
+      line.erase(r);
+      break;
+    }
+  }
+  return flag;
+}
+
 class PgnReader {
  public:
   void AddPgnFile(const std::string& filepath) {
-    std::ifstream file(filepath);
+    const gzFile file = gzopen(filepath.c_str(), "r");
+    if (!file) return;
     std::string line;
     bool in_comment = false;
     bool started = false;
-    while (std::getline(file, line)) {
+    while (GzGetLine(file, line)) {
       // TODO: support line breaks in tags to ensure they are properly ignored.
       if (line.empty() || line[0] == '[') {
         if (started) {
@@ -132,6 +151,7 @@ class PgnReader {
     if (started) {
       Flush();
     }
+    gzclose(file);
   }
   std::vector<Opening> GetGames() const { return games_; }
   std::vector<Opening>&& ReleaseGames() { return std::move(games_); }
