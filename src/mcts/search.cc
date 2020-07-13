@@ -1150,9 +1150,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       if (params_.GetTwoFoldDrawLevel() == 2 && depth <= 3) {
         // Level 2: no two-fold draw at depth 3 or lower
         node->MakeNotTerminal();
-      } else if (params_.GetTwoFoldDrawLevel() == 1) {
+      } else if (params_.GetTwoFoldDrawLevel() == 1 && depth <= 3) {
         // Level 1: check whether first repetition was before root
-
+        // temporary approximation: MakeNotTerminal() when depth <= 3
+        node->MakeNotTerminal();
       }
 
     }
