@@ -109,6 +109,21 @@ int PositionHistory::ComputeLastMoveRepetitions() const {
   return 0;
 }
 
+int PositionHistory::ComputePliesSinceFirstRepetition() const {
+  const auto& last = positions_.back();
+  // TODO(crem) implement hash/cache based solution.
+  if (last.GetRule50Ply() < 4) return 0;
+
+  for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
+    const auto& pos = positions_[idx];
+    if (pos.GetBoard() == last.GetBoard()) {
+      return positions_.size() - 1 - idx;
+    }
+    if (pos.GetRule50Ply() < 2) return 0;
+  }
+  return 0;
+}
+
 bool PositionHistory::DidRepeatSinceLastZeroingMove() const {
   for (auto iter = positions_.rbegin(), end = positions_.rend(); iter != end;
        ++iter) {

@@ -126,6 +126,7 @@ class PositionHistory {
 
  private:
   int ComputeLastMoveRepetitions() const;
+  int ComputePliesSinceFirstRepetition() const;
 
   std::vector<Position> positions_;
 };
