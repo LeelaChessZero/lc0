@@ -117,7 +117,6 @@ int PositionHistory::ComputePliesSinceFirstRepetition() const {
   for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
     const auto& pos = positions_[idx];
     if (pos.GetBoard() == last.GetBoard()) {
-      print(std::fixed, "twofold rep found", positions_.size(), idx)
       return positions_.size() - 1 - idx;
     }
     if (pos.GetRule50Ply() < 2) return 0;
