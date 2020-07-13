@@ -77,9 +77,4 @@ inline float FastLog(const float a) {
 // Fast approximate exp(x). Does only limited range checking.
 inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
 
-// Fast logit for more readable code.
-inline float FastLogit(const float a) {
-  return 0.5f * FastLog((1.0f + a) / (1.0f - a));
-}
-
 }  // namespace lczero

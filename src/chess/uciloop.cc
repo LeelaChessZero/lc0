@@ -258,6 +258,9 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
       res += " wdl " + std::to_string(info.wdl->w) + " " +
              std::to_string(info.wdl->d) + " " + std::to_string(info.wdl->l);
     }
+    if (info.moves_left) {
+      res += " movesleft " + std::to_string(*info.moves_left);
+    }
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
     if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
     if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);

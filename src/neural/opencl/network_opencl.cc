@@ -32,6 +32,7 @@
 #include "neural/shared/winograd_filter.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
+#include "utils/filesystem.h"
 #include "utils/logging.h"
 #include "utils/weights_adapter.h"
 
@@ -245,14 +246,23 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-    params_.tuner_file =
-        options.GetOrDefault<std::string>("tuner_file", "leelaz_opencl_tuning");
+    if (options.IsDefault<std::string>("tuner_file")) {
+      std::string user_cache_path = GetUserCacheDirectory();
+      if (!user_cache_path.empty()) {
+        user_cache_path += "lc0/";
+        CreateDirectory(user_cache_path);
+      }
+      params_.tuner_file = user_cache_path + "leelaz_opencl_tuning";
+    } else {
+      params_.tuner_file = options.Get<std::string>("tuner_file");
+    }
 
     wdl_ = file.format().network_format().output() ==
            pblczero::NetworkFormat::OUTPUT_WDL;
 
-    moves_left_ = file.format().network_format().moves_left() ==
-                  pblczero::NetworkFormat::MOVES_LEFT_V1;
+    moves_left_ = (file.format().network_format().moves_left() ==
+                   pblczero::NetworkFormat::MOVES_LEFT_V1) &&
+                  options.GetOrDefault<bool>("mlh", true);
 
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));
