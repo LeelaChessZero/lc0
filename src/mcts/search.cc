@@ -1313,7 +1313,7 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
       if (twofolddrawlevel == 3) {
         // always mark as draw
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
-      } else if (twofolddrawlevel == 2 && depth >= 1) {
+      } else if (twofolddrawlevel == 2 && depth >= 3) {
         // only mark as draw if depth of extended node is >= 4
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
       } else if (twofolddrawlevel == 1 && depth >= 3 && depth >=
