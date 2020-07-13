@@ -1316,7 +1316,7 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
         // only mark as draw if depth of extended node is >= 4
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
       } else if (twofolddrawlevel == 1 && depth >= 3 && depth >=
-                 history_.Last().ComputePliesSinceFirstRepetition()) {
+                 history_.ComputePliesSinceFirstRepetition()) {
         // check whether first repetition happened at root or in the tree
         // don't mark as draw if repetition happened in the game history
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);

@@ -111,7 +111,7 @@ int PositionHistory::ComputeLastMoveRepetitions() const {
 
 int PositionHistory::ComputePliesSinceFirstRepetition() const {
   const auto& last = positions_.back();
-  // TODO(crem) implement hash/cache based solution.
+  // copied TODO(crem) implement hash/cache based solution.
   if (last.GetRule50Ply() < 4) return 0;
 
   for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
