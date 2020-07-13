@@ -1304,7 +1304,7 @@ void SearchWorker::ExtendNode(Node* node) {
 
     // Mark two-fold repetitions as draws according to settings
     const auto repetitions = history_.Last().GetRepetitions();
-    const auto twofolddrawlevel = history_.Last().GetTwoFoldDrawLevel();
+    const auto twofolddrawlevel = params_.GetTwoFoldDrawLevel();
     if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
