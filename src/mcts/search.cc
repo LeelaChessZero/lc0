@@ -1044,7 +1044,7 @@ void SearchWorker::GatherMinibatch() {
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(node);
+      ExtendNode(node,picked_node.depth);
 
       // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
@@ -1250,7 +1250,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   }
 }
 
-void SearchWorker::ExtendNode(Node* node) {
+void SearchWorker::ExtendNode(Node* node, int depth) {
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
   std::vector<Move> to_add;
@@ -1312,10 +1312,11 @@ void SearchWorker::ExtendNode(Node* node) {
       if (twofolddrawlevel == 3) {
         // always mark as draw
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
-      } else if (twofolddrawlevel == 2) {
-        // only mark as draw if depth >= 4
+      } else if (twofolddrawlevel == 2 && depth >= 3) {
+        // only mark as draw if depth of extended node is >= 4
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
-      } else if (twofolddrawlevel == 1) {
+      } else if (twofolddrawlevel == 1 && depth >= 3 && depth >=
+                 history_.Last().ComputePliesSinceFirstRepetition()) {
         // check whether first repetition happened at root or in the tree
         // don't mark as draw if repetition happened in the game history
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);

@@ -303,7 +303,7 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  void ExtendNode(Node* node);
+  void ExtendNode(Node* node, int depth = 0);
   bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
