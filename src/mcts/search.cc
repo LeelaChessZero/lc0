@@ -1146,8 +1146,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // probably best place to check for two-fold draws consistently
-    if (node->terminal_type_ == Node::Terminal::TwoFold &&
-                    ( params_.GetTwoFoldDrawLevel() > 0 ) ) {
+    if (node->IsTwofoldTerminal() && ( params_.GetTwoFoldDrawLevel() > 0 ) ) {
       if (params_.GetTwoFoldDrawLevel() == 2 && depth <= 3) {
         // Level 2: no two-fold draw at depth 3 or lower
         node->MakeNotTerminal();
