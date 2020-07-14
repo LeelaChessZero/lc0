@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <fstream>
 
 #include "chess/bitboard.h"
@@ -65,7 +66,10 @@ class PgnReader {
  public:
   void AddPgnFile(const std::string& filepath) {
     const gzFile file = gzopen(filepath.c_str(), "r");
-    if (!file) return;
+    if (!file) {
+      throw Exception(errno == ENOENT ? "Opening book file not found."
+                                      : "Error opening opening book file.");
+    }
     std::string line;
     bool in_comment = false;
     bool started = false;
