@@ -48,7 +48,7 @@ struct Opening {
 
 inline bool GzGetLine(gzFile file, std::string& line) {
   bool flag = false;
-  char s[200];
+  char s[2000];
   line.clear();
   while (gzgets(file, s, sizeof(s))) {
     flag = true;
