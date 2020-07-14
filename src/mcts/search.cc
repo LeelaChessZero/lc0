@@ -1147,12 +1147,15 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     // probably best place to check for two-fold draws consistently
     if (node->IsTwofoldTerminal() && ( params_.GetTwoFoldDrawLevel() > 0 ) ) {
+      LOGFILE << "== encountered twofold draw ==";
       if (params_.GetTwoFoldDrawLevel() == 2 && depth <= 3) {
         // Level 2: no two-fold draw at depth 3 or lower
+        LOGFILE << "== level 2 twofold draw reset ==";
         node->MakeNotTerminal();
       } else if (params_.GetTwoFoldDrawLevel() == 1 && depth <= 3) {
         // Level 1: check whether first repetition was before root
         // temporary approximation: MakeNotTerminal() when depth <= 3
+        LOGFILE << "== level 1 twofold draw reset ==";
         node->MakeNotTerminal();
       }
 
@@ -1312,14 +1315,17 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     } else if (repetitions == 1 && twofolddrawlevel > 0) {
       if (twofolddrawlevel == 3) {
         // always mark as draw
+        LOGFILE << "== marked level 3 twofold draw ==";
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
       } else if (twofolddrawlevel == 2 && depth >= 3) {
         // only mark as draw if depth of extended node is >= 4
+        LOGFILE << "== marked level 2 twofold draw ==";
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
       } else if (twofolddrawlevel == 1 && depth >= 3 && depth >=
                  history_.ComputePliesSinceFirstRepetition()) {
         // check whether first repetition happened at root or in the tree
         // don't mark as draw if repetition happened in the game history
+        LOGFILE << "== marked level 1 twofold draw ==";
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
       }
     }
