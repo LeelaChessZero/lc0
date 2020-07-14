@@ -312,6 +312,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 }
 
 void Node::MakeNotTerminal() {
+  SetBounds(GameResult::BLACK_WON, GameResult::WHITE_WON);
   terminal_type_ = Terminal::NonTerminal;
   n_ = 0;
 
