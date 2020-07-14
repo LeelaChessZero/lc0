@@ -176,8 +176,22 @@ void EngineController::SetPosition(const std::string& fen,
 std::string EngineController::GetCurrentPositionFen() {
   if (tree_ != nullptr) {
     return tree_->HeadPosition().GetFen();
+  } else if (current_position_) {
+    ChessBoard board;
+    int no_capture_ply;
+    int game_move;
+    board.SetFromFen(current_position_->fen, &no_capture_ply, &game_move);
+    int game_ply = 2 * game_move - (board.flipped() ? 1 : 2);
+    Position pos(board, no_capture_ply, game_ply);
+    for (std::string move_str: current_position_->moves) {
+      Move move(move_str);
+      if (pos.IsBlackToMove()) move.Mirror();
+      pos = Position(pos, move);
+    }
+    return pos.GetFen();
   }
-  throw Exception("Need a 'go nodes..' before returning fen position.");
+  return ChessBoard::kStartposFen;
+
 }
 
 void EngineController::SetupPosition(
