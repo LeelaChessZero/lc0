@@ -79,8 +79,8 @@ class UciLoop {
     throw Exception("Not supported");
   }
   // To support non-UCI commands this can be overridden in the engine class.
-  virtual bool CmdNonStandardUciCommand(const std::string& command) {
-	  return false; // throw Exception("Unknown command: " + command);
+  virtual bool CmdNonStandardUciCommand(const std::string& /*command*/) {
+	  return false;
   }
 
   virtual void CmdGo(const GoParams& /*params*/) {
