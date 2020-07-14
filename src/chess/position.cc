@@ -190,7 +190,7 @@ std::string Position::GetFen() const {
   result += " " + board.castlings().as_string();
   result += " " + enpassant;
   result += " " + std::to_string(GetRule50Ply());
-  result += " " + std::to_string(ply_count_);
+  result += " " + std::to_string((ply_count_ + (IsBlackToMove() ? 1 : 2)) / 2);
   return result;
 }
 }  // namespace lczero
