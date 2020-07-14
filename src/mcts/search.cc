@@ -1315,7 +1315,7 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     } else if (repetitions == 1 && twofolddrawlevel > 0) {
       if (twofolddrawlevel == 3) {
         // always mark as draw
-        LOGFILE << "== marked level 3 twofold draw ==";
+        LOGFILE << "== marked level 3 twofold draw == depth: " << depth;
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
       } else if (twofolddrawlevel == 2 && depth >= 3) {
         // only mark as draw if depth of extended node is >= 4
