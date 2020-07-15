@@ -1319,6 +1319,8 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
       if (twofolddrawlevel == 3) {
         // always mark as draw
         LOGFILE << "== marked level 3 twofold draw == depth: " << depth - 1;
+        LOGFILE << "== plies since first repetition: "
+                << history_.ComputePliesSinceFirstRepetition();
         node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
         return;
       } else if (twofolddrawlevel == 2 && depth - 1 >= 4) {
