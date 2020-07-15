@@ -293,7 +293,7 @@ void Node::SortEdges() {
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
-  SetBounds(result, result);
+  if (type != Terminal::TwoFold) { SetBounds(result, result); }
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -313,7 +313,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 }
 
 void Node::MakeNotTerminal() {
-  SetBounds(GameResult::BLACK_WON, GameResult::WHITE_WON);
+  // SetBounds(GameResult::BLACK_WON, GameResult::WHITE_WON);
   terminal_type_ = Terminal::NonTerminal;
   n_ = 0;
 
