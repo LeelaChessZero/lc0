@@ -9,7 +9,7 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 
 Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
 
-For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.25`), which is equivalent to using the latest version tag.
+For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.26`), which is equivalent to using the latest version tag.
 
 Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the versions output by the client and engine.
 
@@ -17,19 +17,19 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 Download using git:
 
 ```
-git clone -b release/0.25 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+git clone -b release/0.26 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
 ```
 
 If you have cloned already an old version, fetch, view and checkout a new branch:
 ```
 git fetch --all
 git branch --all
-git checkout -t remotes/origin/release/0.25
+git checkout -t remotes/origin/release/0.26
 ```
 
 
 If you prefer to download an archive, you need to also download and place the submodule:
- * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.24) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.24) archive is also available)
+ * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.26) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.26) archive is also available)
  * Extract
  * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
  * Move the second archive into the first archive's `libs/lczero-common/` folder and extract
@@ -92,9 +92,9 @@ in ("Deep Learning").
 
 #### Ubuntu 18.04
 
-For Ubuntu 18.04 you need the latest version of meson, g++-8 and clang-6.0 before performing the steps above:
+For Ubuntu 18.04 you need the latest version of meson, libstdc++-8-dev, and clang-6.0 before performing the steps above:
 
-    sudo apt-get install gcc-8 g++-8 clang-6.0 ninja-build pkg-config
+    sudo apt-get install libstdc++-8-dev clang-6.0 ninja-build pkg-config
     pip3 install meson --user
     CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
@@ -102,21 +102,17 @@ Make sure that `~/.local/bin` is in your `PATH` environment variable. You can no
 
 #### Ubuntu 16.04
 
-For Ubuntu 16.04 you need the latest version of meson, ninja and also gcc-8.0 before performing the steps above:
+For Ubuntu 16.04 you need the latest version of meson, ninja, clang-6.0, and libstdc++-8:
 
+    wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+    sudo apt-add-repository 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main'
     sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install gcc-8 g++-8
-    pip3 install meson --user
-    pip3 install ninja --user
-    CC=gcc-8 CXX=g++-8 INSTALL_PREFIX=~/.local ./build.sh
+    sudo apt-get install clang-6.0 libstdc++-8-dev
+    pip3 install meson ninja --user
+    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 Make sure that `~/.local/bin` is in your `PATH` environment variable. You can now type `lc0 --help` and start.
-
-If you want to build with clang-6.0 you still need g++-8 for the library. Replace the last line above with:
-
-    sudo apt-get install clang-6.0
-    CC=clang-6.0 CXX=clang++-6.0 INSTALL_PREFIX=~/.local ./build.sh
 
 #### openSUSE (all versions)
 
@@ -155,17 +151,26 @@ Or.
 
 ### Mac
 
-First you need to install some required packages:
+First you need to install some required packages through Terminal:
 1. Install brew as per the instructions at https://brew.sh/
 2. Install python3: `brew install python3`
 3. Install meson: `brew install meson`
 4. Install ninja: `brew install ninja`
-5. When using Mojave install SDK headers: installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /
+5. (For Mac OS 10.14 Mojave, or if the other step 5 fails):
+ * Install developer tools: ``xcode-select --install``
+ * When using Mojave install SDK headers: `installer -pkg /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg -target /` (if this doesn't work, use `sudo installer` instead of just `installer`.)
+
+Or.
+
+5. (For MacOS 10.15 Catalina, or if the other step 5 fails): 
+ * Install Xcode command-line tools: ``xcode-select --install``
+ * Install "XCode Developer Tools" through the app store. (First one on the list of Apps if searched.)
+ * Associate the SDK headers in XCode with a command: export CPATH=\`xcrun --show-sdk-path\`/usr/include
 
 Now download the lc0 source, if you haven't already done so, following the instructions earlier in the page.
 
 6. Go to the lc0 directory.
-7. Run `./build.sh`
+7. Run `./build.sh` (needs step 5)
 8. The resulting binary will be in build/release
 
 ### Raspberry Pi
