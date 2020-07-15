@@ -1044,7 +1044,7 @@ void SearchWorker::GatherMinibatch() {
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(node,picked_node.depth);
+      ExtendNode(node, picked_node.depth);
 
       // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
