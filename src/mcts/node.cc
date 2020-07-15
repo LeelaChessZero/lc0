@@ -307,9 +307,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
     d_ = 0.0f;
     // Terminal losses have no uncertainty and no reason for their U value to be
     // comparable to another non-loss choice. Force this by clearing the policy.
-    // However, don't set policy of twofold draws to zero as this only is a
-    // heuristic for more accurate eval
-    if (GetParent() != nullptr && terminal_type_ != Node::Terminal::TwoFold)
+    if (GetParent() != nullptr)
             GetOwnEdge()->SetP(0.0f);
   }
 }
