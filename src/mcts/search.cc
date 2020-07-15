@@ -1331,7 +1331,7 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     }
     // if node turned out to be a valid twofold, mark it as Terminal::Twofold
     if (validtwofold) {
-      auto cyclelength = history_.ComputePliesSinceFirstRepetition();
+      const auto cyclelength = history_.ComputePliesSinceFirstRepetition();
       // logging for debugging purpose
       LOGFILE << "== marked twofold draw == depth: " << depth - 1;
       LOGFILE << "== plies since first repetition: " << cyclelength;
