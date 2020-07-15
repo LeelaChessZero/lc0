@@ -1146,15 +1146,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Probably best place to check for two-fold draws consistently.
-    // Depth starts with 1 at root, and is incremented before checking
-    // for twofold draws here, so real depth is depth - 2
+    // Depth starts with 1 at root, so real depth is depth - 1
     if (node->IsTwofoldTerminal() && ( params_.GetTwoFoldDrawLevel() > 0 ) ) {
-      LOGFILE << "== encountered twofold draw == depth: " << depth - 2;
-      if (params_.GetTwoFoldDrawLevel() == 2 && depth - 2 <= 3) {
+      LOGFILE << "== encountered twofold draw == depth: " << depth - 1;
+      if (params_.GetTwoFoldDrawLevel() == 2 && depth - 1 <= 3) {
         // Level 2: no two-fold draw at depth 3 or lower
         LOGFILE << "== level 2 twofold draw reset ==";
         node->MakeNotTerminal();
-      } else if (params_.GetTwoFoldDrawLevel() == 1 && depth - 2 <= 3) {
+      } else if (params_.GetTwoFoldDrawLevel() == 1 && depth - 1 <= 3) {
         // Level 1: check whether first repetition was before root
         // temporary approximation: MakeNotTerminal() when depth <= 3
         LOGFILE << "== level 1 twofold draw reset ==";
