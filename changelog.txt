@@ -1,4 +1,10 @@
-﻿v0.26.0 (2020-07-03)
+v0.26.1 (2020-07-15)
+~~~~~~~
+* Fix a bug where invalid openings-pgn settings would result in the book
+  being ignored rather than used.
+* Add support for compressed book files.
+
+v0.26.0 (2020-07-03)
 ~~~~~~~
 * No changes from rc1.
 
