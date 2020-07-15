@@ -1153,9 +1153,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // Level 2: no two-fold draw at depth 3 or lower
         LOGFILE << "== level 2 twofold draw reset ==";
         node->MakeNotTerminal();
-      } else if (params_.GetTwoFoldDrawLevel() == 1 && depth - 1 <= 3) {
+      } else if (params_.GetTwoFoldDrawLevel() == 1 && depth - 1 < node->GetM()) {
         // Level 1: check whether first repetition was before root
-        // temporary approximation: MakeNotTerminal() when depth <= 3
+        // Length of repetition was stored in m_, so we don't need to calculate
         LOGFILE << "== level 1 twofold draw reset ==";
         node->MakeNotTerminal();
       }
@@ -1307,38 +1307,38 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
       return;
     }
 
-    // Mark two-fold repetitions as draws according to settings
-    // Depth starts with 1 at root, so real depth here is depth - 1
     const auto repetitions = history_.Last().GetRepetitions();
     const auto twofolddrawlevel = params_.GetTwoFoldDrawLevel();
+    bool validtwofold = false;
+    // Mark two-fold repetitions as draws according to settings
+    // Depth starts with 1 at root, so number of plies in PV is depth - 1
     if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     } else if (repetitions == 1 && twofolddrawlevel > 0) {
       if (twofolddrawlevel == 3) {
         // always mark as draw
-        LOGFILE << "== marked level 3 twofold draw == depth: " << depth - 1;
-        LOGFILE << "== plies since first repetition: "
-                << history_.ComputePliesSinceFirstRepetition();
-        node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
-        return;
+        validtwofold = true;
       } else if (twofolddrawlevel == 2 && depth - 1 >= 4) {
         // only mark as draw if depth of extended node is >= 4
-        LOGFILE << "== marked level 2 twofold draw == depth: " << depth - 1;
-        LOGFILE << "== plies since first repetition: "
-                << history_.ComputePliesSinceFirstRepetition();
-        node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
-        return;
+        validtwofold = true;
       } else if (twofolddrawlevel == 1 && depth - 1 >= 4 && depth - 1 >=
                  history_.ComputePliesSinceFirstRepetition()) {
         // check whether first repetition happened at root or in the tree
         // don't mark as draw if repetition happened in the game history
-        LOGFILE << "== marked level 1 twofold draw == depth: " << depth - 1;
-        LOGFILE << "== plies since first repetition: "
-                << history_.ComputePliesSinceFirstRepetition();
-        node->MakeTerminal(GameResult::DRAW, 0.0f, Node::Terminal::TwoFold);
-        return;
+        validtwofold = true;
       }
+    }
+    // if node turned out to be a valid twofold, mark it as Terminal::Twofold
+    if (validtwofold) {
+      auto cyclelength = history_.ComputePliesSinceFirstRepetition();
+      // logging for debugging purpose
+      LOGFILE << "== marked twofold draw == depth: " << depth - 1;
+      LOGFILE << "== plies since first repetition: " << cyclelength;
+      // use plies since first repetition as moves left; exact if forced draw.
+      node->MakeTerminal(GameResult::DRAW, (float)cyclelength,
+                         Node::Terminal::TwoFold);
+      return;
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
