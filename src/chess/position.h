@@ -49,6 +49,9 @@ class Position {
   // How many time the same position appeared in the game before.
   int GetRepetitions() const { return repetitions_; }
 
+  // How many half-moves since the same position appeared in the game before.
+  int GetPliesSinceFirstRepetition() const { return cycle_length_; }
+
   // Someone outside that class knows better about repetitions, so they can
   // set it.
   void SetRepetitions(int repetitions) { repetitions_ = repetitions; }
@@ -73,6 +76,8 @@ class Position {
   int rule50_ply_ = 0;
   // How many repetitions this position had before. For new positions it's 0.
   int repetitions_;
+  // How many half-moves since the position was repeated or 0.
+  int cycle_length_;
   // number of half-moves since beginning of the game.
   int ply_count_ = 0;
 };
@@ -124,11 +129,10 @@ class PositionHistory {
   // Checks for any repetitions since the last time 50 move rule was reset.
   bool DidRepeatSinceLastZeroingMove() const;
 
-  int ComputePliesSinceFirstRepetition() const;
-
 
  private:
   int ComputeLastMoveRepetitions() const;
+  int ComputeLastMoveRepetitions(int* cycle_length) const;
 
   std::vector<Position> positions_;
 };

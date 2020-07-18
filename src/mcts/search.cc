@@ -1323,8 +1323,8 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     // Level 1: check whether first repetition happened at root or in the tree
     // don't mark as draw if repetition happened in the game history
                   (twofolddrawlevel == 1 && depth - 1 >= 4 && depth - 1 >=
-                   history_.ComputePliesSinceFirstRepetition()) ) ) {
-      const auto cyclelength = history_.ComputePliesSinceFirstRepetition();
+                   history_.Last().GetPliesSinceFirstRepetition()) ) ) {
+      const auto cyclelength = history_.Last().GetPliesSinceFirstRepetition();
       // logging for debugging purpose
       LOGFILE << "== marked twofold draw == depth: " << depth - 1;
       LOGFILE << "== plies since first repetition: " << cyclelength;
