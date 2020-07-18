@@ -1147,7 +1147,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     // Probably best place to check for two-fold draws consistently.
     // Depth starts with 1 at root, so real depth is depth - 1
-    if (node->IsTwofoldTerminal() && ( params_.GetTwoFoldDrawLevel() > 0 ) ) {
+    if (node->IsTwoFoldTerminal() && ( params_.GetTwoFoldDrawLevel() > 0 ) ) {
       LOGFILE << "== encountered twofold draw == depth: " << depth - 1;
       if (params_.GetTwoFoldDrawLevel() == 2 && depth - 1 <= 3) {
         // Level 2: no two-fold draw at depth 3 or lower
@@ -1309,7 +1309,6 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
 
     const auto repetitions = history_.Last().GetRepetitions();
     const auto twofolddrawlevel = params_.GetTwoFoldDrawLevel();
-    bool validtwofold = false;
     // Mark two-fold repetitions as draws according to settings
     // Depth starts with 1 at root, so number of plies in PV is depth - 1
     if (repetitions >= 2) {
