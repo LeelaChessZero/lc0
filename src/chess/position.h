@@ -54,7 +54,10 @@ class Position {
 
   // Someone outside that class knows better about repetitions, so they can
   // set it.
-  void SetRepetitions(int repetitions) { repetitions_ = repetitions; }
+  void SetRepetitions(int repetitions, int cycle_length) {
+    repetitions_ = repetitions;
+    cycle_length_ = cycle_length;
+  }
 
   // Number of ply with no captures and pawn moves.
   int GetRule50Ply() const { return rule50_ply_; }
