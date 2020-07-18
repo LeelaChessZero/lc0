@@ -1315,22 +1315,15 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
-    } else if (repetitions == 1 && twofolddrawlevel > 0) {
-      if (twofolddrawlevel == 3) {
-        // always mark as draw
-        validtwofold = true;
-      } else if (twofolddrawlevel == 2 && depth - 1 >= 4) {
-        // only mark as draw if depth of extended node is >= 4
-        validtwofold = true;
-      } else if (twofolddrawlevel == 1 && depth - 1 >= 4 && depth - 1 >=
-                 history_.ComputePliesSinceFirstRepetition()) {
-        // check whether first repetition happened at root or in the tree
-        // don't mark as draw if repetition happened in the game history
-        validtwofold = true;
-      }
-    }
-    // if node turned out to be a valid twofold, mark it as Terminal::Twofold
-    if (validtwofold) {
+    } else if (repetitions == 1 && twofolddrawlevel > 0) &&
+    // Level 3: always mark as draw
+              ( (twofolddrawlevel == 3) ||
+    // Level 2: only mark as draw if depth of extended node is >= 4
+                (twofolddrawlevel == 2 && depth - 1 >= 4) ||
+    // Level 1: check whether first repetition happened at root or in the tree
+    // don't mark as draw if repetition happened in the game history
+                (twofolddrawlevel == 1 && depth - 1 >= 4 && depth - 1 >=
+                 history_.ComputePliesSinceFirstRepetition()) ) {
       const auto cyclelength = history_.ComputePliesSinceFirstRepetition();
       // logging for debugging purpose
       LOGFILE << "== marked twofold draw == depth: " << depth - 1;
