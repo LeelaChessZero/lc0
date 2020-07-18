@@ -132,9 +132,7 @@ class PositionHistory {
   // Checks for any repetitions since the last time 50 move rule was reset.
   bool DidRepeatSinceLastZeroingMove() const;
 
-
  private:
-  int ComputeLastMoveRepetitions() const;
   int ComputeLastMoveRepetitions(int* cycle_length) const;
 
   std::vector<Position> positions_;

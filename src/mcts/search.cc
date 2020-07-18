@@ -1146,20 +1146,18 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
     // Probably best place to check for two-fold draws consistently.
-    // Depth starts with 1 at root, so real depth is depth - 1
-    if (node->IsTwoFoldTerminal() && ( params_.GetTwoFoldDrawLevel() > 0 ) ) {
+    // Depth starts with 1 at root, so real depth is depth - 1.
+    if (node->IsTwoFoldTerminal() && params_.GetTwoFoldDrawLevel() > 0) {
       LOGFILE << "== encountered twofold draw == depth: " << depth - 1;
-      if (params_.GetTwoFoldDrawLevel() == 2 && depth - 1 <= 3) {
+      if ((params_.GetTwoFoldDrawLevel() == 2 && depth - 1 <= 3) ||
         // Level 2: no two-fold draw at depth 3 or lower
-        LOGFILE << "== level 2 twofold draw reset ==";
-        node->MakeNotTerminal();
-      } else if (params_.GetTwoFoldDrawLevel() == 1 && depth - 1 < node->GetM()) {
+          (params_.GetTwoFoldDrawLevel() == 1 && depth - 1 < node->GetM())) {
         // Level 1: check whether first repetition was before root
-        // Length of repetition was stored in m_, so we don't need to calculate
-        LOGFILE << "== level 1 twofold draw reset ==";
+        // Length of repetition was stored in m_.
+        // TODO: Cleaner alternative to call position history?
+        LOGFILE << "== twofold draw reset ==";
         node->MakeNotTerminal();
       }
-
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (node->IsTerminal() || !node->HasChildren()) {
