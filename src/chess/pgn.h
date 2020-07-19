@@ -74,6 +74,7 @@ class PgnReader {
     bool in_comment = false;
     bool started = false;
     while (GzGetLine(file, line)) {
+      if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
       if (line.empty() || line[0] == '[') {
         if (started) {
