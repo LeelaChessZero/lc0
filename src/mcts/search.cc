@@ -1145,20 +1145,18 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
-    // Probably best place to check for two-fold draws consistently.
-    // Depth starts with 1 at root, so real depth is depth - 1.
-    if (node->IsTwoFoldTerminal() && params_.GetTwoFoldDraws()) {
-      if (depth - 1 < node->GetM()) {
+    // Either terminal or unexamined leaf node -- the end of this playout.
+    if (node->IsTerminal() || !node->HasChildren()) {
+      // Probably best place to check for two-fold draws consistently.
+      // Depth starts with 1 at root, so real depth is depth - 1.
+      if (node->IsTwoFoldTerminal() && depth - 1 < node->GetM()) {
         // Check whether first repetition was before root. If yes, remove
         // terminal status of node.
         // Length of repetition was stored in m_.
-        // TODO: Cleaner alternative to call position history?
         node->MakeNotTerminal();
+      } else {
+        return NodeToProcess::Visit(node, depth);
       }
-    }
-    // Either terminal or unexamined leaf node -- the end of this playout.
-    if (node->IsTerminal() || !node->HasChildren()) {
-      return NodeToProcess::Visit(node, depth);
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
     if (possible_shortcut_child) {
