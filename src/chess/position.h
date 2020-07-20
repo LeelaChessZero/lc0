@@ -50,7 +50,7 @@ class Position {
   int GetRepetitions() const { return repetitions_; }
 
   // How many half-moves since the same position appeared in the game before.
-  int GetPliesSinceFirstRepetition() const { return cycle_length_; }
+  int GetPliesSincePrevRepetition() const { return cycle_length_; }
 
   // Someone outside that class knows better about repetitions, so they can
   // set it.

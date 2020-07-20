@@ -1303,15 +1303,15 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     }
 
     const auto repetitions = history_.Last().GetRepetitions();
-    const auto twofolddraws = params_.GetTwoFoldDraws();
-    // Mark two-fold repetitions as draws according to settings
-    // Depth starts with 1 at root, so number of plies in PV is depth - 1
+    // Mark two-fold repetitions as draws according to settings.
+    // Depth starts with 1 at root, so number of plies in PV is depth - 1.
     if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
-    } else if (repetitions == 1 && twofolddraws && depth - 1 >= 4 &&
-               depth - 1 >= history_.Last().GetPliesSinceFirstRepetition()) {
-      const auto cyclelength = history_.Last().GetPliesSinceFirstRepetition();
+    } else if (repetitions == 1 && params_.GetTwoFoldDraws() &&
+               depth - 1 >= 4 &&
+               depth - 1 >= history_.Last().GetPliesSincePrevRepetition()) {
+      const auto cyclelength = history_.Last().GetPliesSincePrevRepetition();
       // use plies since first repetition as moves left; exact if forced draw.
       node->MakeTerminal(GameResult::DRAW, (float)cyclelength,
                          Node::Terminal::TwoFold);
