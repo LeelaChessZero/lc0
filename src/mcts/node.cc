@@ -313,13 +313,23 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 
 void Node::MakeNotTerminal() {
   if (terminal_type_ == Terminal::TwoFold) {
-    /* under construction
-    for (auto node = this; node=node->parent_; node != ) {
+    // When reverting a terminal twofold repetition draw, this can happen
+    // in the tree. To keep consistency, we revert the effect of the visits
+    // to that terminal on all parent nodes and let PUCT revisit the nodes
+    // and fetch the evals without the twofold draw.
+    int depth = 0;
+    // Cache node's values as we reset them in the process. We could manually
+    // set wl and d, but if we want to reuse this for reverting other terminal
+    // nodes this is the way to go.
+    const auto wl = wl_;
+    const auto d = d_;
+    const auto m = m_;
+    for (Node node = this; node = node->GetParent(); node != nullptr ) {
       // Revert all visits on twofold terminal when making it non terminal.
-      node.RevertVisits(visits, wl, d, m);
-      // Best edge cache etc needs to be invalidated.
+      node.RevertTerminalVisits(wl, d, m + (float)depth, n);
+      depth++;
+      // If wl != 0, we would have to switch signs at each depth.
     }
-    */
     // Currently, only visits to the node itself are reset, making the tree
     // inconsistent.
     n_ = 0;
@@ -388,8 +398,34 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   d_ += multivisit * d / n_;
   m_ += multivisit * m / n_;
   // Best child is potentially no longer valid. This shouldn't be needed since
-  // AjdustForTerminal is always called immediately after FinalizeScoreUpdate,
+  // AdjustForTerminal is always called immediately after FinalizeScoreUpdate,
   // but for safety in case that changes.
+  best_child_cached_ = nullptr;
+}
+
+void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
+  // Compute new n_ first, as reducing a node to 0 visits is a special case.
+  const int n_new = n_ - multivisit;
+  if (n_new <= 0) {
+    if (parent_ != nullptr) {
+      // To keep consistency with FinalizeScoreUpdate() expanding a node again,
+      // we need to reduce the parent's visited policy.
+      parent_->visited_policy_ -= parent_->edges_[index_].GetP();
+    }
+    // If n_new == 0, reset all relevant values to 0.
+    wl_ = 0.0;
+    d_ = 1.0;
+    m_ = 0.0;
+    n_ = 0;
+  } else {
+    // Recompute Q and M.
+    wl_ -= multivisit * (v - wl_) / n_new;
+    d_ -= multivisit * (d - d_) / n_new;
+    m_ -= multivisit * (m - m_) / n_new;
+    // Decrement N.
+    n_ -= multivisit;
+  }
+  // Best child is potentially no longer valid.
   best_child_cached_ = nullptr;
 }
 
