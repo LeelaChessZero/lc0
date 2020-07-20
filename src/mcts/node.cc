@@ -324,16 +324,15 @@ void Node::MakeNotTerminal() {
     const auto wl = wl_;
     const auto d = d_;
     const auto m = m_;
+    const auto terminal_visits = n_;
     for (Node* node = this; node = node->GetParent(); node != nullptr ) {
       // Revert all visits on twofold terminal when making it non terminal.
-      node.RevertTerminalVisits(wl, d, m + (float)depth, n);
+      node->RevertTerminalVisits(wl, d, m + (float)depth, terminal_visits);
       depth++;
       // If wl != 0, we would have to switch signs at each depth.
     }
-    // Currently, only visits to the node itself are reset, making the tree
-    // inconsistent.
-    n_ = 0;
   } else {
+    // Any other case, just setting n_ = 0 is sufficient, as parent is root.
     n_ = 0;
   }
   terminal_type_ = Terminal::NonTerminal;
