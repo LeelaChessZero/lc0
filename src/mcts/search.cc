@@ -1147,15 +1147,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     // Probably best place to check for two-fold draws consistently.
     // Depth starts with 1 at root, so real depth is depth - 1.
-    if (node->IsTwoFoldTerminal() && params_.GetTwoFoldDrawLevel() > 0) {
-      LOGFILE << "== encountered twofold draw == depth: " << depth - 1;
-      if ((params_.GetTwoFoldDrawLevel() == 2 && depth - 1 <= 3) ||
-        // Level 2: no two-fold draw at depth 3 or lower
-          (params_.GetTwoFoldDrawLevel() == 1 && depth - 1 < node->GetM())) {
-        // Level 1: check whether first repetition was before root
+    if (node->IsTwoFoldTerminal() && params_.GetTwoFoldDraws()) {
+      if (depth - 1 < node->GetM()) {
+        // Check whether first repetition was before root. If yes, remove
+        // terminal status of node.
         // Length of repetition was stored in m_.
         // TODO: Cleaner alternative to call position history?
-        LOGFILE << "== twofold draw reset ==";
         node->MakeNotTerminal();
       }
     }
@@ -1306,25 +1303,15 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     }
 
     const auto repetitions = history_.Last().GetRepetitions();
-    const auto twofolddrawlevel = params_.GetTwoFoldDrawLevel();
+    const auto twofolddraws = params_.GetTwoFoldDraws();
     // Mark two-fold repetitions as draws according to settings
     // Depth starts with 1 at root, so number of plies in PV is depth - 1
     if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
-    } else if ( (repetitions == 1 && twofolddrawlevel > 0) &&
-    // Level 3: always mark as draw
-                ( (twofolddrawlevel == 3) ||
-    // Level 2: only mark as draw if depth of extended node is >= 4
-                  (twofolddrawlevel == 2 && depth - 1 >= 4) ||
-    // Level 1: check whether first repetition happened at root or in the tree
-    // don't mark as draw if repetition happened in the game history
-                  (twofolddrawlevel == 1 && depth - 1 >= 4 && depth - 1 >=
-                   history_.Last().GetPliesSinceFirstRepetition()) ) ) {
+    } else if (repetitions == 1 && twofolddraws && depth - 1 >= 4 &&
+               depth - 1 >= history_.Last().GetPliesSinceFirstRepetition()) {
       const auto cyclelength = history_.Last().GetPliesSinceFirstRepetition();
-      // logging for debugging purpose
-      LOGFILE << "== marked twofold draw == depth: " << depth - 1;
-      LOGFILE << "== plies since first repetition: " << cyclelength;
       // use plies since first repetition as moves left; exact if forced draw.
       node->MakeTerminal(GameResult::DRAW, (float)cyclelength,
                          Node::Terminal::TwoFold);

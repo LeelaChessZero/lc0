@@ -293,7 +293,7 @@ void Node::SortEdges() {
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
-  if (type != Terminal::TwoFold) { SetBounds(result, result); }
+  if (type != Terminal::TwoFold) SetBounds(result, result);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -312,8 +312,21 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 }
 
 void Node::MakeNotTerminal() {
+  if (terminal_type_ == Terminal::TwoFold) {
+    /* under construction
+    for (auto node = this; node=node->parent_; node != ) {
+      // Revert all visits on twofold terminal when making it non terminal.
+      node.RevertVisits(visits, wl, d, m);
+      // Best edge cache etc needs to be invalidated.
+    }
+    */
+    // Currently, only visits to the node itself are reset, making the tree
+    // inconsistent.
+    n_ = 0;
+  } else {
+    n_ = 0;
+  }
   terminal_type_ = Terminal::NonTerminal;
-  n_ = 0;
 
   // If we have edges, we've been extended (1 visit), so include children too.
   if (edges_) {
