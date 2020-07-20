@@ -1311,9 +1311,9 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     } else if (repetitions == 1 && params_.GetTwoFoldDraws() &&
                depth - 1 >= 4 &&
                depth - 1 >= history_.Last().GetPliesSincePrevRepetition()) {
-      const auto cyclelength = history_.Last().GetPliesSincePrevRepetition();
+      const auto cycle_length = history_.Last().GetPliesSincePrevRepetition();
       // use plies since first repetition as moves left; exact if forced draw.
-      node->MakeTerminal(GameResult::DRAW, (float)cyclelength,
+      node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
                          Node::Terminal::TwoFold);
       return;
     }
