@@ -325,7 +325,7 @@ void Node::MakeNotTerminal() {
     const auto d = d_;
     const auto m = m_;
     const auto terminal_visits = n_;
-    for (Node* node = this; node = node->GetParent(); node != nullptr ) {
+    for (Node* node = this; node != nullptr; node = node->GetParent()) {
       // Revert all visits on twofold terminal when making it non terminal.
       node->RevertTerminalVisits(wl, d, m + (float)depth, terminal_visits);
       depth++;
