@@ -336,6 +336,7 @@ void Node::MakeNotTerminal() {
       depth++;
       // If wl != 0, we would have to switch signs at each depth.
     } */
+    n_ = 0;
   } else {
     // Any other case, just setting n_ = 0 is sufficient, as parent is root.
     n_ = 0;
