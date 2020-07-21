@@ -313,29 +313,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 
 void Node::MakeNotTerminal() {
   if (terminal_type_ == Terminal::TwoFold) {
-    // When reverting a terminal twofold repetition draw, this can happen
-    // in the tree. To keep consistency, we revert the effect of the visits
-    // to that terminal on all parent nodes and let PUCT revisit the nodes
-    // and fetch the evals without the twofold draw.
-    int depth = 0;
-    // Cache node's values as we reset them in the process. We could manually
-    // set wl and d, but if we want to reuse this for reverting other terminal
-    // nodes this is the way to go.
-    const auto wl = wl_;
-    const auto d = d_;
-    const auto m = m_;
-    const auto terminal_visits = n_;
-    // Logging stuff for debugging purposes
-    LOGFILE << "Attempting to revert terminal visits";
-    for (Node* node = this; node != nullptr; node = node->GetParent()) {
-      // Logging stuff for debugging purposes
-      LOGFILE << "Attempting to revert " << terminal_visits << " visits at depth " << depth;
-      // Revert all visits on twofold terminal when making it non terminal.
-      node->RevertTerminalVisits(wl, d, m + (float)depth, terminal_visits);
-      LOGFILE << "Successfully reverted " << terminal_visits << " visits at depth " << depth;
-      depth++;
-      // If wl != 0, we would have to switch signs at each depth.
-    }
+    // Special handling of reverting terminal nodes happens in search.cc now.
     n_ = 0;
   } else {
     // Any other case, just setting n_ = 0 is sufficient, as parent is root.

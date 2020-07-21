@@ -39,7 +39,6 @@
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "proto/net.pb.h"
-#include "utils/logging.h"
 #include "utils/mutex.h"
 
 namespace lczero {
