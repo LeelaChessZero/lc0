@@ -325,6 +325,8 @@ void Node::MakeNotTerminal() {
     const auto d = d_;
     const auto m = m_;
     const auto terminal_visits = n_;
+    // Logging stuff for debugging purposes
+    LOGFILE << "Attempting to revert terminal visits";
     for (Node* node = this; node != nullptr; node = node->GetParent()) {
       // Logging stuff for debugging purposes
       LOGFILE << "Attempting to revert " << terminal_visits << " visits at depth " << depth;
