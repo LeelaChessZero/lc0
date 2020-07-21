@@ -327,7 +327,7 @@ void Node::MakeNotTerminal() {
     const auto terminal_visits = n_;
     // Logging stuff for debugging purposes
     LOGFILE << "Attempting to revert terminal visits";
-    for (Node* node = this; node != nullptr; node = node->GetParent()) {
+    for (Node* node = *this; node != nullptr; node = node->GetParent()) {
       // Logging stuff for debugging purposes
       LOGFILE << "Attempting to revert " << terminal_visits << " visits at depth " << depth;
       // Revert all visits on twofold terminal when making it non terminal.
@@ -430,8 +430,7 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
     n_ -= multivisit;
   }
   // Best child is potentially no longer valid.
-  // Deactivating temporarily
-  // best_child_cached_ = nullptr;
+  best_child_cached_ = nullptr;
 }
 
 void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
