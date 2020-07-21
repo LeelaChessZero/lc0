@@ -1151,6 +1151,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       // Check whether first repetition was before root. If yes, remove
       // terminal status of node.
       // Length of repetition was stored in m_.
+      LOGFILE << "== resetting twofold terminal at depth " << depth - 1;
       node->MakeNotTerminal();
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
