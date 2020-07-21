@@ -327,7 +327,7 @@ void Node::MakeNotTerminal() {
     const auto terminal_visits = n_;
     // Logging stuff for debugging purposes
     LOGFILE << "Attempting to revert terminal visits";
-    for (Node* node = this; node != nullptr; node = node->GetParent()) {
+/*    for (Node* node = this; node != nullptr; node = node->GetParent()) {
       // Logging stuff for debugging purposes
       LOGFILE << "Attempting to revert " << terminal_visits << " visits at depth " << depth;
       // Revert all visits on twofold terminal when making it non terminal.
@@ -335,8 +335,8 @@ void Node::MakeNotTerminal() {
       LOGFILE << "Successfully reverted " << terminal_visits << " visits at depth " << depth;
       depth++;
       // If wl != 0, we would have to switch signs at each depth.
-    }
-    // n_ = 0;
+    } */
+    n_ = 0;
   } else {
     // Any other case, just setting n_ = 0 is sufficient, as parent is root.
     n_ = 0;
