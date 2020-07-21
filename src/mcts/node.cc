@@ -327,9 +327,9 @@ void Node::MakeNotTerminal() {
     const auto terminal_visits = n_;
     for (Node* node = this; node != nullptr; node = node->GetParent()) {
       // Logging stuff for debugging purposes
-      LOGFILE << "Reverted " << terminal_visits << " visits at depth " << depth;
       // Revert all visits on twofold terminal when making it non terminal.
       node->RevertTerminalVisits(wl, d, m + (float)depth, terminal_visits);
+      LOGFILE << "Successfully everted " << terminal_visits << " visits at depth " << depth;
       depth++;
       // If wl != 0, we would have to switch signs at each depth.
     }
