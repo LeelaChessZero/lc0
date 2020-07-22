@@ -1149,14 +1149,9 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // Depth starts with 1 at root, so real depth is depth - 1.
     if (node->IsTwoFoldTerminal() && depth - 1 < node->GetM()) {
       // Check whether first repetition was before root. If yes, remove
-      // terminal status of node.
+      // terminal status of node and revert all visits in the tree.
       // Length of repetition was stored in m_.
-      LOGFILE << "== resetting twofold terminal at depth " << depth - 1;
-      // When reverting a terminal twofold repetition draw, this can happen
-      // in the tree. To keep consistency, we revert the effect of the visits
-      // to that terminal on all parent nodes and let PUCT revisit the nodes
-      // and fetch the evals without the twofold draw.
-      int depth_revert = 0;
+      int depth_counter = 0;
       // Cache node's values as we reset them in the process. We could manually
       // set wl and d, but if we want to reuse this for reverting other
       // terminal nodes this is the way to go.
@@ -1164,15 +1159,17 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       const auto d = node->GetD();
       const auto m = node->GetM();
       const auto terminal_visits = node->GetN();
+      LOGFILE << "== reverting " << terminal_visits << " visits to " <<
+            "a twofold terminal at depth " << depth - 1 << " ==";
       for (Node* node_to_revert = node; node_to_revert != nullptr;
                         node_to_revert = node_to_revert->GetParent()) {
         // Revert all visits on twofold terminal when making it non terminal.
         node_to_revert->RevertTerminalVisits(wl, d,
-                          m + (float)depth_revert, terminal_visits);
-        depth_revert++;
+                          m + (float)depth_counter, terminal_visits);
+        depth_counter++;
         // Even if original tree still exists, we don't want to revert more
         // than until new root.
-        if (depth_revert > depth - 1) break;
+        if (depth_counter > depth - 1) break;
         // If wl != 0, we would have to switch signs at each depth.
       }
       // Mark the prior twofold repetition as non terminal to extend it again.
