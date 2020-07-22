@@ -312,14 +312,8 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 }
 
 void Node::MakeNotTerminal() {
-  if (terminal_type_ == Terminal::TwoFold) {
-    // Special handling of reverting terminal nodes happens in search.cc now.
-    n_ = 0;
-  } else {
-    // Any other case, just setting n_ = 0 is sufficient, as parent is root.
-    n_ = 0;
-  }
   terminal_type_ = Terminal::NonTerminal;
+  n_ = 0;
 
   // If we have edges, we've been extended (1 visit), so include children too.
   if (edges_) {
