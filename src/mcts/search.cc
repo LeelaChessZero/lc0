@@ -1167,21 +1167,21 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       for (Node* node_to_revert = node; node_to_revert != nullptr;
                         node_to_revert = node_to_revert->GetParent()) {
         // Revert all visits on twofold terminal when making it non terminal.
-        node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_revert, terminal_visits);
-        // Logging stuff for debugging purposes
-        LOGFILE << "Successfully reverted " << terminal_visits << " visits at depth " << depth_revert;
+        node_to_revert->RevertTerminalVisits(wl, d,
+                          m + (float)depth_revert, terminal_visits);
         depth_revert++;
         // Even if original tree still exists, we don't want to revert more
         // than until new root.
         if (depth_revert > depth - 1) break;
         // If wl != 0, we would have to switch signs at each depth.
       }
-      // When reverting the visits, we also need to revert the total playouts.
-      search_->total_playouts_ -= terminal_visits;
-      search_->cum_depth_ -= (depth - 1) * terminal_visits;
-      // Max depth doesn't change when reverting the visits.
-
+      // Mark the prior twofold repetition as non terminal to extend it again.
       node->MakeNotTerminal();
+      // When reverting the visits, we also need to revert the initial visits,
+      // as we reused fewer nodes than anticipated.
+      search_->initial_visits_ -= terminal_visits;
+      // Max depth doesn't change when reverting the visits, and cum_depth_
+      // only counts the average depth of new nodes, not reused ones.
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
     if (node->IsTerminal() || !node->HasChildren()) {

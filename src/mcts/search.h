@@ -172,7 +172,7 @@ class Search {
   const SearchParams params_;
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
-  const int64_t initial_visits_;
+  int64_t initial_visits_;
   // tb_hits_ must be initialized before root_move_filter_.
   std::atomic<int> tb_hits_{0};
   const MoveList root_move_filter_;
