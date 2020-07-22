@@ -1176,6 +1176,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         if (depth_revert > depth - 1) break;
         // If wl != 0, we would have to switch signs at each depth.
       }
+      // When reverting the visits, we also need to revert the total playouts.
+      search_->total_playouts_ -= terminal_visits;
+      search_->cum_depth_ -= (depth - 1) * terminal_visits;
+      // Max depth doesn't change when reverting the visits.
+
       node->MakeNotTerminal();
     }
     // Either terminal or unexamined leaf node -- the end of this playout.
