@@ -1338,8 +1338,8 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
       return;
-    } else if (repetitions == 1 && params_.GetTwoFoldDraws() &&
-               depth - 1 >= 4 &&
+    } else if (repetitions == 1 && depth - 1 >= 4 &&
+               params_.GetTwoFoldDraws() &&
                depth - 1 >= history_.Last().GetPliesSincePrevRepetition()) {
       const auto cycle_length = history_.Last().GetPliesSincePrevRepetition();
       // use plies since first repetition as moves left; exact if forced draw.
