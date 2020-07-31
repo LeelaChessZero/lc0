@@ -393,7 +393,8 @@ if get_option('build_backends')
   #.cc files
   cuda_files = [
     'src/neural/cuda/network_cudnn.cc',
-	'src/neural/cuda/layers.cc',
+    'src/neural/cuda/network_cuda.cc',
+	 'src/neural/cuda/layers.cc',
   ]
 
   # .cu files compiled without any specific sm version
