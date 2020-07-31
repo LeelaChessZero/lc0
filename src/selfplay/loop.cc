@@ -31,13 +31,19 @@
 
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
 namespace {
 const OptionId kInteractiveId{
     "interactive", "", "Run in interactive mode with UCI-like interface."};
+
+const OptionId kLogFileId{"logfile", "LogFile",
+  "Write log to that file. Special value <stderr> to "
+  "output the log to the console."};
 }  // namespace
+
 
 SelfPlayLoop::SelfPlayLoop() {}
 
@@ -50,9 +56,13 @@ void SelfPlayLoop::RunLoop() {
   SelfPlayTournament::PopulateOptions(&options_);
 
   options_.Add<BoolOption>(kInteractiveId) = false;
+  options_.Add<StringOption>(kLogFileId);
 
   if (!options_.ProcessAllFlags()) return;
-  if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
+  
+  Logging::Get().SetFilename(options_.GetOptionsDict().Get<std::string>(kLogFileId));
+
+  if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
     UciLoop::RunLoop();
   } else {
     // Send id before starting tournament to allow wrapping client to know
@@ -121,6 +131,10 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   if (!info.moves.empty()) {
     res += " moves";
     for (const auto& move : info.moves) res += " " + move.as_string();
+  }
+  if (!info.initial_fen.empty() &&
+      info.initial_fen != ChessBoard::kStartposFen) {
+    res += " from_fen " + info.initial_fen;
   }
   responses.push_back(res);
   SendResponses(responses);

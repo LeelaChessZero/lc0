@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -102,7 +102,8 @@ class DemuxingComputation : public NetworkComputation {
 
 class DemuxingNetwork : public Network {
  public:
-  DemuxingNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  DemuxingNetwork(const std::optional<WeightsFile>& weights,
+                  const OptionsDict& options) {
     minimum_split_size_ = options.GetOrDefault<int>("minimum-split-size", 0);
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
@@ -117,7 +118,8 @@ class DemuxingNetwork : public Network {
     }
   }
 
-  void AddBackend(const std::string& name, const WeightsFile& weights,
+  void AddBackend(const std::string& name,
+                  const std::optional<WeightsFile>& weights,
                   const OptionsDict& opts) {
     const int nn_threads = opts.GetOrDefault<int>("threads", 1);
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
@@ -220,8 +222,8 @@ class DemuxingNetwork : public Network {
 
 void DemuxingComputation::ComputeBlocking() {
   if (GetBatchSize() == 0) return;
-  partial_size_ = (GetBatchSize() + network_->networks_.size() - 1) /
-                  network_->networks_.size();
+  partial_size_ = (GetBatchSize() + network_->threads_.size() - 1) /
+                  network_->threads_.size();
   if (partial_size_ < network_->minimum_split_size_) {
     partial_size_ = std::min(GetBatchSize(), network_->minimum_split_size_);
   }
@@ -235,8 +237,8 @@ void DemuxingComputation::ComputeBlocking() {
   dataready_cv_.wait(lock, [this]() { return dataready_ == 0; });
 }
 
-std::unique_ptr<Network> MakeDemuxingNetwork(const WeightsFile& weights,
-                                             const OptionsDict& options) {
+std::unique_ptr<Network> MakeDemuxingNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<DemuxingNetwork>(weights, options);
 }
 

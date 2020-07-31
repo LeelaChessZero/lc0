@@ -38,7 +38,7 @@ class Position {
   // From parent position and move.
   Position(const Position& parent, Move m);
   // From particular position.
-  Position(const ChessBoard& board, int no_capture_ply, int game_ply);
+  Position(const ChessBoard& board, int rule50_ply, int game_ply);
 
   uint64_t Hash() const;
   bool IsBlackToMove() const { return us_board_.flipped(); }
@@ -54,7 +54,7 @@ class Position {
   void SetRepetitions(int repetitions) { repetitions_ = repetitions; }
 
   // Number of ply with no captures and pawn moves.
-  int GetNoCaptureNoPawnPly() const { return no_capture_ply_; }
+  int GetRule50Ply() const { return rule50_ply_; }
 
   // Gets board from the point of view of player to move.
   const ChessBoard& GetBoard() const { return us_board_; }
@@ -70,14 +70,16 @@ class Position {
   ChessBoard them_board_;
 
   // How many half-moves without capture or pawn move was there.
-  int no_capture_ply_ = 0;
+  int rule50_ply_ = 0;
   // How many repetitions this position had before. For new positions it's 0.
   int repetitions_;
   // number of half-moves since beginning of the game.
   int ply_count_ = 0;
 };
 
-enum class GameResult { UNDECIDED, WHITE_WON, DRAW, BLACK_WON };
+// These are ordered so max() prefers the best result.
+enum class GameResult : uint8_t { UNDECIDED, BLACK_WON, DRAW, WHITE_WON };
+GameResult operator-(const GameResult& res);
 
 class PositionHistory {
  public:
@@ -102,7 +104,7 @@ class PositionHistory {
   int GetLength() const { return positions_.size(); }
 
   // Resets the position to a given state.
-  void Reset(const ChessBoard& board, int no_capture_ply, int game_ply);
+  void Reset(const ChessBoard& board, int rule50_ply, int game_ply);
 
   // Appends a position to history.
   void Append(Move m);

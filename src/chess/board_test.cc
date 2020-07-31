@@ -62,6 +62,30 @@ TEST(ChessBoard, PseudolegalMovesStartingPos) {
   EXPECT_EQ(moves.size(), 20);
 }
 
+TEST(ChessBoard, PartialFen) {
+  ChessBoard board;
+  int rule50ply;
+  int gameply;
+  board.SetFromFen("k/1R//K", &rule50ply, &gameply);
+  auto moves = board.GeneratePseudolegalMoves();
+
+  EXPECT_EQ(moves.size(), 19);
+  EXPECT_EQ(rule50ply, 0);
+  EXPECT_EQ(gameply, 1);
+}
+
+TEST(ChessBoard, PartialFenWithSpaces) {
+  ChessBoard board;
+  int rule50ply;
+  int gameply;
+  board.SetFromFen("   k/1R//K   w   ", &rule50ply, &gameply);
+  auto moves = board.GeneratePseudolegalMoves();
+
+  EXPECT_EQ(moves.size(), 19);
+  EXPECT_EQ(rule50ply, 0);
+  EXPECT_EQ(gameply, 1);
+}
+
 namespace {
 int Perft(const ChessBoard& board, int max_depth, bool dump = false,
           int depth = 0) {
@@ -2221,6 +2245,27 @@ TEST(ChessBoard, CastlingIsSameMove) {
   EXPECT_TRUE(board.IsSameMove("e2c2", "e2c2"));
   EXPECT_TRUE(board.IsSameMove("e2a2", "e2a2"));
   EXPECT_FALSE(board.IsSameMove("e2c2", "e2a2"));
+}
+
+namespace {
+void TestInvalid(std::string fen) {
+  ChessBoard board;
+  try {
+    board.SetFromFen(fen);
+    FAIL() << "Invalid Fen accepted: " + fen + "\n";
+  } catch (...) {
+    SUCCEED();
+  }
+}
+}  // namespace
+
+
+TEST(ChessBoard, InvalidFEN) {
+  TestInvalid("rnbqkbnr/ppppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+  TestInvalid("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR/8 w KQkq - 0 1");
+  TestInvalid("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR g KQkq - 0 1");
+  TestInvalid("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq i6 0 3");
+  TestInvalid("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq A6 0 3");
 }
 
 }  // namespace lczero

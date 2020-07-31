@@ -26,6 +26,7 @@
 */
 
 #include "mcts/stoppers/timemgr.h"
+
 #include "mcts/stoppers/stoppers.h"
 
 namespace lczero {
@@ -47,12 +48,20 @@ int64_t StoppersHints::GetEstimatedRemainingPlayouts() const {
   return std::max(decltype(remaining_playouts_){1}, remaining_playouts_);
 }
 
+void StoppersHints::UpdateEstimatedNps(float v) { estimated_nps_ = v; }
+
+std::optional<float> StoppersHints::GetEstimatedNps() const {
+  return estimated_nps_;
+}
+
 void StoppersHints::Reset() {
   // Slightly more than 3 years.
   remaining_time_ms_ = 100000000000;
   // Type for N in nodes is currently uint32_t, so set limit in order not to
   // overflow it.
   remaining_playouts_ = 4000000000;
+  // NPS is not known.
+  estimated_nps_.reset();
 }
 
 }  // namespace lczero

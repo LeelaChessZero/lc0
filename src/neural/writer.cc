@@ -36,9 +36,21 @@
 
 namespace lczero {
 
+namespace {
+std::string GetLc0CacheDirectory() {
+  std::string user_cache_path = GetUserCacheDirectory();
+  if (!user_cache_path.empty()) {
+    user_cache_path += "lc0/";
+    CreateDirectory(user_cache_path);
+  }
+  return user_cache_path;
+}
+
+}  // namespace
+
 TrainingDataWriter::TrainingDataWriter(int game_id) {
   static std::string directory =
-      CommandLine::BinaryDirectory() + "/data-" + Random::Get().GetString(12);
+      GetLc0CacheDirectory() + "data-" + Random::Get().GetString(12);
   // It's fine if it already exists.
   CreateDirectory(directory.c_str());
 
@@ -51,7 +63,7 @@ TrainingDataWriter::TrainingDataWriter(int game_id) {
   if (!fout_) throw Exception("Cannot create gzip file " + filename_);
 }
 
-void TrainingDataWriter::WriteChunk(const V4TrainingData& data) {
+void TrainingDataWriter::WriteChunk(const V5TrainingData& data) {
   auto bytes_written =
       gzwrite(fout_, reinterpret_cast<const char*>(&data), sizeof(data));
   if (bytes_written != sizeof(data)) {

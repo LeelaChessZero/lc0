@@ -38,7 +38,7 @@
 #include "chess/position.h"
 #include "neural/encoder.h"
 #include "neural/writer.h"
-#include "utils/fastmath.h"
+#include "proto/net.pb.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -49,6 +49,10 @@ namespace lczero {
 // * Edges are stored are a simple array on heap.
 // * Nodes are stored as a linked list, and contain index_ field which shows
 //   which edge of a parent that node points to.
+//   Or they are stored a contiguous array of Node objects on the heap if
+//   solid_children_ is true. If the children have been 'solidified' their
+//   sibling links are unused and left empty. In this state there are no
+//   dangling edges, but the nodes may not have ever received any visits.
 //
 // Example:
 //                                Parent Node
@@ -79,6 +83,9 @@ namespace lczero {
 class Node;
 class Edge {
  public:
+  // Creates array of edges from the list of moves.
+  static std::unique_ptr<Edge[]> FromMovelist(const MoveList& moves);
+
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
   Move GetMove(bool as_opponent = false) const;
@@ -98,8 +105,6 @@ class Edge {
   std::string DebugString() const;
 
  private:
-  void SetMove(Move move) { move_ = move; }
-
   // Move corresponding to this node. From the point of view of a player,
   // i.e. black's e7e5 is stored as e2e4.
   // Root node contains move a1a1.
@@ -112,22 +117,7 @@ class Edge {
   // float r_betamcts_ = 1.0f;
   /* Moved to Node for memory reasons. */
 
-  friend class EdgeList;
-};
-
-// Array of Edges.
-class EdgeList {
- public:
-  EdgeList() {}
-  EdgeList(MoveList moves);
-  Edge* get() const { return edges_.get(); }
-  Edge& operator[](size_t idx) const { return edges_[idx]; }
-  operator bool() const { return static_cast<bool>(edges_); }
-  uint16_t size() const { return size_; }
-
- private:
-  std::unique_ptr<Edge[]> edges_;
-  uint16_t size_ = 0;
+  friend class Node;
 };
 
 class EdgeAndNode;
@@ -139,10 +129,21 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
-  enum class Terminal : uint8_t { NonTerminal, Terminal, Tablebase };
+  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase };
 
   // Takes pointer to a parent node and own index in a parent.
-  Node(Node* parent, uint16_t index) : parent_(parent), index_(index) {}
+  Node(Node* parent, uint16_t index)
+      : parent_(parent),
+        index_(index),
+        terminal_type_(Terminal::NonTerminal),
+        lower_bound_(GameResult::BLACK_WON),
+        upper_bound_(GameResult::WHITE_WON),
+        solid_children_(false) {}
+
+  // We have a custom destructor, but its behavior does not need to be emulated
+  // during move operations so default is fine.
+  Node(Node&& move_from) = default;
+  Node& operator=(Node&& move_from) = default;
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -155,7 +156,7 @@ class Node {
   Node* GetParent() const { return parent_; }
 
   // Returns whether a node has children.
-  bool HasChildren() const { return edges_; }
+  bool HasChildren() const { return static_cast<bool>(edges_); }
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
@@ -188,13 +189,16 @@ class Node {
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
-  uint16_t GetNumEdges() const { return edges_.size(); }
+  typedef std::pair<GameResult, GameResult> Bounds;
+  Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
+  uint8_t GetNumEdges() const { return num_edges_; }
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
-    Terminal type = Terminal::Terminal, const bool inflate_terminals = false);
+    Terminal type = Terminal::EndOfGame, const bool inflate_terminals = false);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
+  void SetBounds(GameResult lower, GameResult upper);
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -210,6 +214,8 @@ class Node {
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit,
               const bool inflate_terminals, const bool full_betamcts_update);
+  // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
+  void AdjustForTerminal(float v, float d, float m, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -239,24 +245,22 @@ class Node {
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
 
-  V4TrainingData GetV4TrainingData(GameResult result,
-                                   const PositionHistory& history,
-                                   FillEmptyHistory fill_empty_history,
-                                   float best_q, float best_d) const;
+  V5TrainingData GetV5TrainingData(
+      GameResult result, const PositionHistory& history,
+      FillEmptyHistory fill_empty_history,
+      pblczero::NetworkFormat::InputFormat input_format, float best_q,
+      float best_d, float best_m) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
 
-  class NodeRange;
-  // Returns range for iterating over nodes. Note that there may be edges
-  // without nodes, which will be skipped by this iteration.
-  NodeRange ChildNodes() const;
-
   // Deletes all children.
   void ReleaseChildren();
 
   // Deletes all children except one.
+  // The node provided may be moved, so should not be relied upon to exist
+  // afterwards.
   void ReleaseChildrenExceptOne(Node* node);
 
   // For a child node, returns corresponding edge.
@@ -268,6 +272,24 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
+  // Reallocates this nodes children to be in a solid block, if possible and not
+  // already done. Returns true if the transformation was performed.
+  bool MakeSolid();
+
+  void SortEdges();
+
+  ~Node() {
+    if (solid_children_ && child_) {
+      // As a hack, solid_children is actually storing an array in here, release
+      // so we can correctly invoke the array delete.
+      for (int i = 0; i < num_edges_; i++) {
+        child_.get()[i].~Node();
+      }
+      std::allocator<Node> alloc;
+      alloc.deallocate(child_.release(), num_edges_);
+    }
+  }
+
  private:
   // Performs construction time type initialization. For use only with a node
   // that has not been used beyond its construction.
@@ -276,20 +298,31 @@ class Node {
     index_ = index;
   }
 
+  // For each child, ensures that its parent pointer is pointing to this.
+  void UpdateChildrenParents();
+
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
-  // TODO: shrink the padding on this somehow? It takes 16 bytes even though
-  // only 10 are real! Maybe even merge it into this class??
-  EdgeList edges_;
-
   // 8 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
+  // WL stands for "W minus L". Is equal to Q if draw score is 0.
+  double wl_ = 0.0f;
+
+  // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
+  // Array of edges.
+  std::unique_ptr<Edge[]> edges_;
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
+  // As a 'hack' actually a unique_ptr to Node[] if solid_children.
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
+  // Also null in the solid case.
   std::unique_ptr<Node> sibling_;
   // Cached pointer to best child, valid while n_in_flight <
   // best_child_cache_in_flight_limit_
@@ -306,8 +339,6 @@ class Node {
   float n_betamcts_ = 0.0f;
   float r_betamcts_ = 1.0f; /* Moved from Edge for memory reasons */
 
-  // WL stands for "W minus L". Is equal to Q if draw score is 0.
-  float wl_ = 0.0f;
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -330,14 +361,22 @@ class Node {
   uint16_t index_;
 
   // 1 byte fields.
+  // Number of edges in @edges_.
+  uint8_t num_edges_ = 0;
+
+  // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
-  Terminal terminal_type_ = Terminal::NonTerminal;
+  Terminal terminal_type_ : 2;
+  // Best and worst result for this node.
+  GameResult lower_bound_ : 2;
+  GameResult upper_bound_ : 2;
+  // Whether the child_ is actually an array of equal length to edges.
+  bool solid_children_ : 1;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
   friend class Edge_Iterator<true>;
   friend class Edge_Iterator<false>;
-  friend class Node_Iterator;
   friend class Edge;
 };
 
@@ -376,24 +415,15 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score, bool logit_q,
-                bool betamcts_q = false) const {
-    return (node_ && node_->GetN() > 0)
-               ?
-               // Scale Q slightly to avoid logit(1) = infinity.
-               (logit_q ? FastLogit(0.9999999f * node_->GetQ(draw_score, betamcts_q))
-                        : node_->GetQ(draw_score, betamcts_q))
-               : default_q;
+  float GetQ(float default_q, float draw_score, bool betamcts_q = false) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score, betamcts_q)
+                                        : default_q;
   }
-  float GetQBetamcts(float default_q, bool logit_q = false) const {
-    return (node_ && node_->GetN() > 0)
-               ?
-               (logit_q ? FastLogit(node_->GetQBetamcts()) : node_->GetQBetamcts())
-               : default_q;
+  float GetQBetamcts(float default_q) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetQBetamcts() : default_q;
   }
-  float GetWL() const { return node_ ? node_->GetWL() : 0.0f; }
-  float GetD() const {
-    return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
+  float GetD(float default_d) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetD() : default_d;
   }
   float GetM(float default_m) const {
     return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
@@ -408,6 +438,10 @@ class EdgeAndNode {
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
   bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
+  Node::Bounds GetBounds() const {
+    return node_ ? node_->GetBounds()
+                 : Node::Bounds{GameResult::BLACK_WON, GameResult::WHITE_WON};
+  }
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
@@ -428,15 +462,16 @@ class EdgeAndNode {
     return numerator * GetP() * FastInvSqrt(x) / x;
   }
 
-  int GetVisitsToReachU(float target_score, float numerator, float default_q,
-                        float draw_score, bool logit_q, int betamcts_level) const {
-    const auto q = GetQ(default_q, draw_score, logit_q, betamcts_level >= 2);
-    if (q >= target_score) return std::numeric_limits<int>::max();
-    const auto n1 = (betamcts_level >= 3 ? (int)GetNStartedBetamcts() : GetNStarted()) + 1;
-    return std::max(
-        1.0f,
-        std::min(std::floor(GetP() * numerator / (target_score - q) - n1) + 1,
-                 1e9f));
+  int GetVisitsToReachU(float target_score, float numerator,
+                        float score_without_u, int betamcts_level) const {
+    if (score_without_u >= target_score) return std::numeric_limits<int>::max();
+    const auto n1 = GetNStarted() + 1;
+    return std::max(1.0f,
+                    std::min(std::floor(GetP() * numerator /
+                                            (target_score - score_without_u) -
+                                        n1) +
+                                 1,
+                             1e9f));
   }
 
   int GetVisitsToReachNewU(float target_score, float numerator,
@@ -473,8 +508,9 @@ class EdgeAndNode {
 // excessive.
 //
 // All functions are not thread safe (must be externally synchronized), but
-// it's fine if Node/Edges state change between calls to functions of the
-// iterator (e.g. advancing the iterator).
+// it's fine if GetOrSpawnNode is called between calls to functions of the
+// iterator (e.g. advancing the iterator). Other functions that manipulate
+// child_ of parent or the sibling chain are not safe to call while iterating.
 template <bool is_const>
 class Edge_Iterator : public EdgeAndNode {
  public:
@@ -485,11 +521,15 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator() {}
 
   // Creates "begin()" iterator. Also happens to be a range constructor.
-  Edge_Iterator(const EdgeList& edges, Ptr node_ptr)
-      : EdgeAndNode(edges.size() ? edges.get() : nullptr, nullptr),
-        node_ptr_(node_ptr),
-        total_count_(edges.size()) {
-    if (edge_) Actualize();
+  // child_ptr will be nullptr if parent_node is solid children.
+  Edge_Iterator(const Node& parent_node, Ptr child_ptr)
+      : EdgeAndNode(parent_node.edges_.get(), nullptr),
+        node_ptr_(child_ptr),
+        total_count_(parent_node.num_edges_) {
+    if (edge_ && child_ptr != nullptr) Actualize();
+    if (edge_ && child_ptr == nullptr) {
+      node_ = parent_node.child_.get();
+    }
   }
 
   // Function to support range interface.
@@ -504,7 +544,11 @@ class Edge_Iterator : public EdgeAndNode {
       edge_ = nullptr;
     } else {
       ++edge_;
-      Actualize();
+      if (node_ptr_ != nullptr) {
+        Actualize();
+      } else {
+        ++node_;
+      }
     }
   }
   Edge_Iterator& operator*() { return *this; }
@@ -513,6 +557,8 @@ class Edge_Iterator : public EdgeAndNode {
   Node* GetOrSpawnNode(Node* parent,
                        std::unique_ptr<Node>* node_source = nullptr) {
     if (node_) return node_;  // If there is already a node, return it.
+    // Should never reach here in solid mode.
+    assert(node_ptr_ != nullptr);
     Actualize();              // But maybe other thread already did that.
     if (node_) return node_;  // If it did, return.
     // Now we are sure we have to create a new node.
@@ -546,6 +592,8 @@ class Edge_Iterator : public EdgeAndNode {
 
  private:
   void Actualize() {
+    // This must never be called in solid mode.
+    assert(node_ptr_ != nullptr);
     // If node_ptr_ is behind, advance it.
     // This is needed (and has to be 'while' rather than 'if') as other threads
     // could spawn new nodes between &node_ptr_ and *node_ptr_ while we didn't
@@ -568,30 +616,6 @@ class Edge_Iterator : public EdgeAndNode {
   Ptr node_ptr_;
   uint16_t current_idx_ = 0;
   uint16_t total_count_ = 0;
-};
-
-class Node_Iterator {
- public:
-  Node_Iterator(Node* node) : node_(node) {}
-  Node* operator*() { return node_; }
-  Node* operator->() { return node_; }
-  bool operator==(Node_Iterator& other) { return node_ == other.node_; }
-  bool operator!=(Node_Iterator& other) { return node_ != other.node_; }
-  void operator++() { node_ = node_->sibling_.get(); }
-
- private:
-  Node* node_;
-};
-
-class Node::NodeRange {
- public:
-  Node_Iterator begin() { return Node_Iterator(node_); }
-  Node_Iterator end() { return Node_Iterator(nullptr); }
-
- private:
-  NodeRange(Node* node) : node_(node) {}
-  Node* node_;
-  friend class Node;
 };
 
 class NodeTree {

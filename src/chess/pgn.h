@@ -27,26 +27,75 @@
 
 #pragma once
 
+#include <zlib.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cerrno>
 #include <fstream>
 
 #include "chess/bitboard.h"
 #include "chess/board.h"
+#include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
 
+struct Opening {
+  std::string start_fen = ChessBoard::kStartposFen;
+  MoveList moves;
+};
+
+inline bool GzGetLine(gzFile file, std::string& line) {
+  bool flag = false;
+  char s[2000];
+  line.clear();
+  while (gzgets(file, s, sizeof(s))) {
+    flag = true;
+    line += s;
+    auto r = line.find_last_of('\n');
+    if (r != std::string::npos) {
+      line.erase(r);
+      break;
+    }
+  }
+  return flag;
+}
+
 class PgnReader {
  public:
   void AddPgnFile(const std::string& filepath) {
-    std::ifstream file(filepath);
+    const gzFile file = gzopen(filepath.c_str(), "r");
+    if (!file) {
+      throw Exception(errno == ENOENT ? "Opening book file not found."
+                                      : "Error opening opening book file.");
+    }
     std::string line;
     bool in_comment = false;
-    while (std::getline(file, line)) {
+    bool started = false;
+    while (GzGetLine(file, line)) {
+      if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
       if (line.empty() || line[0] == '[') {
-        Flush();
+        if (started) {
+          Flush();
+          started = false;
+        }
+        auto uc_line = line;
+        std::transform(
+            uc_line.begin(), uc_line.end(), uc_line.begin(),
+            [](unsigned char c) { return std::toupper(c); }  // correct
+        );
+        if (uc_line.find("[FEN \"", 0) == 0) {
+          auto start_trimmed = line.substr(6);
+          cur_startpos_ = start_trimmed.substr(0, start_trimmed.find('"'));
+          cur_board_.SetFromFen(cur_startpos_);
+        }
         continue;
       }
+      // Must have at least one non-tag non-empty line in order to be considered
+      // a game.
+      started = true;
       // Handle braced comments.
       int cur_offset = 0;
       while ((in_comment && line.find('}', cur_offset) != std::string::npos) ||
@@ -104,17 +153,20 @@ class PgnReader {
         cur_board_.Mirror();
       }
     }
-    Flush();
+    if (started) {
+      Flush();
+    }
+    gzclose(file);
   }
-  std::vector<MoveList> GetGames() const { return games_; }
-  std::vector<MoveList>&& ReleaseGames() { return std::move(games_); }
+  std::vector<Opening> GetGames() const { return games_; }
+  std::vector<Opening>&& ReleaseGames() { return std::move(games_); }
 
  private:
   void Flush() {
-    if (cur_game_.empty()) return;
-    games_.push_back(cur_game_);
+    games_.push_back({cur_startpos_, cur_game_});
     cur_game_.clear();
     cur_board_.SetFromFen(ChessBoard::kStartposFen);
+    cur_startpos_ = ChessBoard::kStartposFen;
   }
 
   Move::Promotion PieceToPromotion(int p) {
@@ -153,10 +205,14 @@ class PgnReader {
     } else if (san[0] == 'O' && san.size() > 2 && san[1] == '-' &&
                san[2] == 'O') {
       Move m;
+      auto king_board = board.kings() & board.ours();
+      BoardSquare king_sq(GetLowestBit(king_board.as_int()));
       if (san.size() > 4 && san[3] == '-' && san[4] == 'O') {
-        m = Move(BoardSquare(0, 4), BoardSquare(0, 2));
+        m = Move(BoardSquare(0, king_sq.col()),
+                 BoardSquare(0, board.castlings().queenside_rook()));
       } else {
-        m = Move(BoardSquare(0, 4), BoardSquare(0, 6));
+        m = Move(BoardSquare(0, king_sq.col()),
+                 BoardSquare(0, board.castlings().kingside_rook()));
       }
       return m;
     }
@@ -212,13 +268,13 @@ class PgnReader {
       if (p == 0) {
         searchBits = (board.pawns() & board.ours());
       } else if (p == 1) {
-        searchBits = board.our_king();
+        searchBits = (board.kings() & board.ours());
       } else if (p == 2) {
         searchBits = (board.queens() & board.ours());
       } else if (p == 3) {
         searchBits = (board.bishops() & board.ours());
       } else if (p == 4) {
-        searchBits = board.our_knights();
+        searchBits = (board.knights() & board.ours());
       } else if (p == 5) {
         searchBits = (board.rooks() & board.ours());
       }
@@ -257,7 +313,8 @@ class PgnReader {
 
   ChessBoard cur_board_{ChessBoard::kStartposFen};
   MoveList cur_game_;
-  std::vector<MoveList> games_;
+  std::string cur_startpos_ = ChessBoard::kStartposFen;
+  std::vector<Opening> games_;
 };
 
 }  // namespace lczero

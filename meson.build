@@ -15,10 +15,23 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3'],
-        meson_version: '>=0.46')
+        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true'],
+        meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
+
+if not cc.has_header('optional') or not cc.has_header('string_view')
+    error('Lc0 requires a compiler supporting C++17, for example g++ v8.0, ' +
+          'clang v5.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
+          'later.')
+endif
+
+if not cc.has_header('charconv')
+    warning('Your compiler or library does not have full C++17 support. ' +
+            'See the README for compilers that are known to be working. ' +
+            'This will become an error in the future.')
+endif
+
 if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
@@ -86,6 +99,9 @@ if git.found()
     # Now let's check if the working directory is clean.
     if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
       short_rev = r.stdout().strip()
+      if run_command(git, 'describe', '--exact-match', '--tags').returncode() == 0
+        short_rev = ''
+      endif
     else
       short_rev = 'dirty'
       warning('Cannot extract valid git short revision from dirty working directory.')
@@ -96,9 +112,11 @@ if git.found()
 endif
 
 # Construct build identifier.
-build_identifier = 'git.' + short_rev
-add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
-message('Using build identifier "' + build_identifier + '".')
+if short_rev != ''
+  build_identifier = 'git.' + short_rev
+  add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
+  message('Using build identifier "' + build_identifier + '".')
+endif
 
 #############################################################################
 ## Main files
@@ -115,7 +133,11 @@ files += [
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/stoppers/common.cc',
   'src/mcts/stoppers/factory.cc',
+  'src/mcts/stoppers/legacy.cc',
+  'src/mcts/stoppers/alphazero.cc',
+  'src/mcts/stoppers/smooth.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
   'src/neural/cache.cc',
@@ -127,6 +149,7 @@ files += [
   'src/neural/network_legacy.cc',
   'src/neural/network_mux.cc',
   'src/neural/network_random.cc',
+  'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
   'src/neural/writer.cc',
   'src/selfplay/game.cc',
@@ -142,7 +165,6 @@ files += [
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
   'src/utils/string.cc',
-  'src/utils/transpose.cc',
   'src/utils/weights_adapter.cc',
 ]
 includes += include_directories('src')
@@ -158,8 +180,6 @@ else
   files += 'src/utils/filesystem.posix.cc'
 endif
 
-
-
 #############################################################################
 ## BACKENDS
 #############################################################################
@@ -168,38 +188,20 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## Tensorflow
   ## ~~~~~~~~~~
-  # Installed from https://github.com/FloopCZ/tensorflow_cc
-  tensorflow_include = get_option('tensorflow_include')
-  tensorflow_libdir = get_option('tensorflow_libdir')
   tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_lib = cc.find_library('libtensorflow_cc',
-            dirs: tensorflow_libdir, required: false)
-
-  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_lib.found()
-    includes += include_directories(
-      tensorflow_include,
-      tensorflow_include[0] + '/bazel-genfiles',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/absl',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/eigen',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/gemmlowp',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/downloads/nsync/public',
-      tensorflow_include[0] + '/tensorflow/contrib/makefile/gen/protobuf-host/include',
-      is_system: true
-    )
-    deps += [tf_dl_lib, tf_tensorflow_lib]
-    files += 'src/neural/network_tf.cc'
+  tf_tensorflow_cc_lib = dependency('tensorflow_cc',
+                                    required: false, include_type:'system')
+  if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
+    deps += [tf_dl_lib, tf_tensorflow_cc_lib]
+    files += 'src/neural/network_tf_cc.cc'
     has_backends = true
   endif
-
 
   ## ~~~~~
   ## Blas
   ## ~~~~~
 
   shared_files = []
-
-  has_blas = false
 
   accelerate_lib = dependency('Accelerate', required: false)
 
@@ -220,23 +222,21 @@ if get_option('build_backends')
 
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
-      add_project_arguments('-DUSE_MKL', language : 'cpp')
+      add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('mkl_include'))
       deps += [ mkl_lib ]
-      has_blas = true
 
     elif get_option('dnnl') and dnnl_lib.found()
-      add_project_arguments('-DUSE_DNNL', language : 'cpp')
+      add_project_arguments(['-DUSE_DNNL', '-DUSE_BLAS'], language : 'cpp')
       includes += include_directories(get_option('dnnl_dir') + '/include')
       deps += [ dnnl_lib, dependency('openmp', required:true) ]
-      has_blas = true
 
     elif get_option('accelerate') and accelerate_lib.found()
       deps += [ accelerate_lib ]
-      has_blas = true
+      add_project_arguments('-DUSE_BLAS', language : 'cpp')
 
     elif get_option('openblas') and openblas_lib.found()
-      add_project_arguments('-DUSE_OPENBLAS', language : 'cpp')
+      add_project_arguments(['-DUSE_OPENBLAS', '-DUSE_BLAS'], language : 'cpp')
 
       required_openblas_header = 'openblas_config.h'
       if not cc.has_header(required_openblas_header)
@@ -256,51 +256,60 @@ if get_option('build_backends')
       endif
 
       deps += [ openblas_lib ]
-      has_blas = true
 
-    elif get_option('eigen')
-      add_project_arguments('-DUSE_EIGEN', language : 'cpp')
-      has_blas = true
-      deps += subproject('eigen').get_variable('eigen_dep')
     endif
 
+    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep'])
+
     ispc = find_program('ispc', required: false)
+    ispc_arch = 'x86-64'
     ispc_extra_args = []
-    if has_blas and get_option('ispc') and ispc.found()
+    if get_option('ispc') and ispc.found()
       ispc_native_only = get_option('ispc_native_only')
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
         if not ispc_native_only
           outputnames += ['@BASENAME@_sse2.obj', '@BASENAME@_sse4.obj',
-                          '@BASENAME@_avx.obj', '@BASENAME@_avx11.obj',
-                          '@BASENAME@_avx2.obj' ]
+                          '@BASENAME@_avx.obj', '@BASENAME@_avx2.obj',
+                          '@BASENAME@_avx512knl.obj', '@BASENAME@_avx512skx.obj' ]
         endif
       else
         ispc_extra_args += ['--pic']
         outputnames = [ '@BASENAME@.o']
         if not ispc_native_only
           outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
-                           '@BASENAME@_avx.o', '@BASENAME@_avx11.o',
-                           '@BASENAME@_avx2.o' ]
+                          '@BASENAME@_avx.o', '@BASENAME@_avx2.o',
+                          '@BASENAME@_avx512knl.o', '@BASENAME@_avx512skx.o' ]
         endif
       endif
       if ispc_native_only
         ispc_target = 'host'
       else
-        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx1.1-i32x8,avx2-i32x8'
+        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
       endif
+
+      if host_machine.system() == 'android'
+        ispc_extra_args += ['--target-os=android']
+        if host_machine.cpu_family() == 'arm'
+          outputnames = [ '@BASENAME@.o']
+          if host_machine.cpu() == 'aarch64'
+            ispc_target = 'neon-i32x8'
+            ispc_arch = 'aarch64'
+          else
+            ispc_target = 'neon-i32x4'
+            ispc_arch = 'arm'
+          endif
+        endif
+      endif
+
       iscp_gen = generator(ispc,
         output: [ '@BASENAME@_ispc.h', outputnames ],
-        arguments: [ '-O2', '--wno-perf', '--arch=x86-64',
+        arguments: [ '-O2', '--wno-perf', '--arch=' + ispc_arch,
                      '--target=' + ispc_target,
                      '@INPUT@', '-o', '@OUTPUT1@' ,'-h', '@OUTPUT0@' ]
                      + ispc_extra_args
       )
     endif
-
-  endif
-
-  if get_option('blas') and has_blas
 
     blas_files = [
     'src/neural/blas/convolution1.cc',
@@ -335,7 +344,7 @@ if get_option('build_backends')
   opencl_libdirs = get_option('opencl_libdirs')
   opencl_lib=cc.find_library('OpenCL', dirs: opencl_libdirs, required: false)
 
-  opencl_framework=dependency('OpenCL', required: false)
+  opencl_framework=dependency('OpenCL', method: 'extraframework', required: false)
   if opencl_framework.found()
       opencl_dep = [ opencl_framework ]
       has_opencl = true
@@ -418,6 +427,9 @@ if get_option('build_backends')
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
+    if get_option('nvcc_ccbin') != ''
+      cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
+    endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
     endforeach
@@ -479,7 +491,13 @@ endif
   ## ~~~~
   # Pick latest from https://wrapdb.mesonbuild.com/zlib and put into
   # subprojects/zlib.wrap
-  deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
+  if host_machine.system() == 'windows'
+    # In several cases where a zlib dependency was detected on windows, it
+    # caused trouble (crashes or failed builds). Better safe than sorry.
+    deps += subproject('zlib').get_variable('zlib_dep')
+  else
+    deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
+  endif
 
   ## ~~~~~~~~
   ## Profiler
@@ -509,8 +527,9 @@ endif
 executable('lc0', 'src/main.cc',
   files, include_directories: includes, dependencies: deps, install: true)
 
-
-### Tests
+#############################################################################
+## Tests
+#############################################################################
 
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
@@ -547,4 +566,29 @@ if get_option('gtest')
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
+endif
+
+
+#############################################################################
+## Python bindings
+#############################################################################
+
+if get_option('python_bindings')
+  pymod = import('python')
+  python = pymod.find_installation('python3')
+  if python.language_version() < '3.7'
+    error('You need python 3.7 or newer')
+  endif  
+  py_bindings_generator = find_program('scripts/gen_py_bindings.py')
+
+  gen_py_bindings = custom_target('backends', input:[], output:['backends.cc'],
+    command : [py_bindings_generator, '@OUTPUT0@'])
+
+  py_files = [ gen_py_bindings ]
+
+  cpython = dependency('python3')
+  python.extension_module('backends',
+    [py_files + files],
+    include_directories: [includes],
+    dependencies: [cpython] + deps)
 endif

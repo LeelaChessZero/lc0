@@ -42,12 +42,12 @@
 
 namespace lczero {
 
-using std::string;
-
 const char* ChessBoard::kStartposFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 const ChessBoard ChessBoard::kStartposBoard(ChessBoard::kStartposFen);
+
+const BitBoard ChessBoard::kPawnMask = 0x00FFFFFFFFFFFF00ULL;
 
 void ChessBoard::Clear() {
   std::memset(reinterpret_cast<void*>(this), 0, sizeof(ChessBoard));
@@ -68,8 +68,6 @@ void ChessBoard::Mirror() {
 }
 
 namespace {
-static const BitBoard kPawnMask = 0x00FFFFFFFFFFFF00ULL;
-
 static const std::pair<int, int> kKingMoves[] = {
     {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
 
@@ -426,10 +424,6 @@ void InitializeMagicBitboards() {
   BuildAttacksTable(bishop_magic_params, bishop_attacks_table,
                     kBishopDirections);
 }
-
-BitBoard ChessBoard::pawns() const { return pawns_ & kPawnMask; }
-
-BitBoard ChessBoard::en_passant() const { return pawns_ - pawns(); }
 
 MoveList ChessBoard::GeneratePseudolegalMoves() const {
   MoveList result;
@@ -973,27 +967,40 @@ MoveList ChessBoard::GenerateLegalMoves() const {
   return result;
 }
 
-void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
-                            int* moves) {
+void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
   Clear();
   int row = 7;
   int col = 0;
 
-  std::istringstream fen_str(fen);
-  string board;
-  string who_to_move;
-  string castlings;
-  string en_passant;
-  int no_capture_halfmoves;
-  int total_moves;
-  fen_str >> board >> who_to_move >> castlings >> en_passant >>
-      no_capture_halfmoves >> total_moves;
+  // Remove any trailing whitespaces to detect eof after the last field.
+  fen.erase(std::find_if(fen.rbegin(), fen.rend(),
+                         [](char c) { return !std::isspace(c); })
+                .base(),
+            fen.end());
 
+  std::istringstream fen_str(fen);
+  std::string board;
+  fen_str >> board;
+  std::string who_to_move = "w";
+  if (!fen_str.eof()) fen_str >> who_to_move;
+  // Assume no castling rights. Other engines, e.g., Stockfish, assume kings and
+  // rooks on their initial rows can each castle with the outer-most rook.  Our
+  // implementation currently supports 960 castling where white and black rooks
+  // have matching columns, so it's unclear which rights to assume.
+  std::string castlings = "-";
+  if (!fen_str.eof()) fen_str >> castlings;
+  std::string en_passant = "-";
+  if (!fen_str.eof()) fen_str >> en_passant;
+  int rule50_halfmoves = 0;
+  if (!fen_str.eof()) fen_str >> rule50_halfmoves;
+  int total_moves = 1;
+  if (!fen_str.eof()) fen_str >> total_moves;
   if (!fen_str) throw Exception("Bad fen string: " + fen);
 
   for (char c : board) {
     if (c == '/') {
       --row;
+      if (row < 0) throw Exception("Bad fen string (too many rows): " + fen);
       col = 0;
       continue;
     }
@@ -1001,6 +1008,7 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
       col += c - '0';
       continue;
     }
+    if (col >= 8) throw Exception("Bad fen string (too many columns): " + fen);
 
     if (std::isupper(c)) {
       // White piece.
@@ -1099,8 +1107,10 @@ void ChessBoard::SetFromFen(const std::string& fen, int* no_capture_ply,
 
   if (who_to_move == "b" || who_to_move == "B") {
     Mirror();
+  } else if (who_to_move != "w" && who_to_move != "W") {
+    throw Exception("Bad fen string (side to move): " + fen);
   }
-  if (no_capture_ply) *no_capture_ply = no_capture_halfmoves;
+  if (rule50_ply) *rule50_ply = rule50_halfmoves;
   if (moves) *moves = total_moves;
 }
 
@@ -1113,7 +1123,7 @@ bool ChessBoard::HasMatingMaterial() const {
     // K v K, K+B v K, K+N v K.
     return false;
   }
-  if (!our_knights().empty() || !their_knights().empty()) {
+  if (!(knights().empty())) {
     return true;
   }
 
@@ -1127,8 +1137,8 @@ bool ChessBoard::HasMatingMaterial() const {
   return light_bishop && dark_bishop;
 }
 
-string ChessBoard::DebugString() const {
-  string result;
+std::string ChessBoard::DebugString() const {
+  std::string result;
   for (int i = 7; i >= 0; --i) {
     for (int j = 0; j < 8; ++j) {
       if (!our_pieces_.get(i, j) && !their_pieces_.get(i, j)) {

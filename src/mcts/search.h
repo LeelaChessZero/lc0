@@ -77,11 +77,16 @@ class Search {
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove();
+
+  struct BestEval {
+    float wl;
+    float d;
+    float ml;
+  };
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  // Returns pair {Q, D}.
-  std::pair<float, float> GetBestEval() const;
+  BestEval GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
@@ -98,12 +103,13 @@ class Search {
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
   // accepts only nodes with at least 1 visited child.
-  EdgeAndNode GetBestChildNoTemperature(Node* parent) const;
-  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent,
-                                                        int count) const;
+  EdgeAndNode GetBestChildNoTemperature(Node* parent, int depth) const;
+  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent, int count,
+                                                        int depth) const;
   EdgeAndNode GetBestRootChildWithTemperature(float temperature) const;
 
   int64_t GetTimeSinceStart() const;
+  int64_t GetTimeSinceFirstBatch() const;
   void MaybeTriggerStop(const IterationStats& stats, StoppersHints* hints);
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
@@ -115,10 +121,6 @@ class Search {
   // uci `stop` command;
   void WatchdogThread();
 
-  // Populates the given list with allowed root moves.
-  // Returns true if the population came from tablebase.
-  bool PopulateRootMoveLimit(MoveList* root_moves) const;
-
   // Fills IterationStats with global (rather than per-thread) portion of search
   // statistics. Currently all stats there (in IterationStats) are global
   // though.
@@ -129,12 +131,15 @@ class Search {
   std::vector<std::string> GetVerboseStats(Node* node) const;
 
   // Returns NN eval for a given node from cache, if that node is cached.
-  NNCacheLock GetCachedNNEval(Node* node) const;
+  NNCacheLock GetCachedNNEval(const Node* node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
   // Depth of a root node is 0 (even number).
   float GetDrawScore(bool is_odd_depth) const;
+
+  // Ensure that all shared collisions are cancelled and clear them out.
+  void CancelSharedCollisions();
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -150,8 +155,8 @@ class Search {
   bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
-  EdgeAndNode final_bestmove_ GUARDED_BY(counters_mutex_);
-  EdgeAndNode final_pondermove_ GUARDED_BY(counters_mutex_);
+  Move final_bestmove_ GUARDED_BY(counters_mutex_);
+  Move final_pondermove_ GUARDED_BY(counters_mutex_);
   std::unique_ptr<SearchStopper> stopper_ GUARDED_BY(counters_mutex_);
 
   Mutex threads_mutex_;
@@ -164,9 +169,13 @@ class Search {
   const PositionHistory& played_history_;
 
   Network* const network_;
+  const SearchParams params_;
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
   const int64_t initial_visits_;
+  // tb_hits_ must be initialized before root_move_filter_.
+  std::atomic<int> tb_hits_{0};
+  const MoveList root_move_filter_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
@@ -179,12 +188,13 @@ class Search {
   // Cumulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
   std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
-  std::atomic<int> tb_hits_{0};
 
   std::atomic<int> pending_searchers_{0};
 
+  std::vector<std::pair<Node*, int>> shared_collisions_
+      GUARDED_BY(nodes_mutex_);
+
   std::unique_ptr<UciResponder> uci_responder_;
-  const SearchParams params_;
 
   friend class SearchWorker;
 };
@@ -235,6 +245,9 @@ class SearchWorker {
   // 2. Gather minibatch.
   void GatherMinibatch();
 
+  // 2b. Copy collisions into shared_collisions_.
+  void CollectCollisions();
+
   // 3. Prefetch into cache.
   void MaybePrefetchIntoCache();
 
@@ -271,6 +284,7 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
+    int probability_transform = 0;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count) {
@@ -290,11 +304,13 @@ class SearchWorker {
 
   NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node);
-  bool AddNodeToComputation(Node* node, bool add_if_cached);
+  bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
+  // Returns whether a node's bounds were set based on its children.
+  bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta, float* d_delta, float* m_delta) const;
 
   Search* const search_;
   // List of nodes to process.
@@ -302,8 +318,6 @@ class SearchWorker {
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
-  MoveList root_move_filter_;
-  bool root_move_filter_populated_ = false;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;

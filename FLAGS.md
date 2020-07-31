@@ -52,7 +52,7 @@ List of command line flags:
 | --fpu-reduction=NUM | First Play Urgency reduction | Default: `0.2` |
 | --cache-history-length=NUM | The length of history to include in the cache | Default: `7` |
 | --extra-virtual-loss=NUM | Extra virtual loss | Default: `0` |
-| -l,<br>--debuglog=FILENAME | Do debug logging into a file | Default is off (empty string) |
+| -l,<br>--logfile=FILENAME | Do debug logging into a file | Default is off (empty string) |
 
 
 ## Configuration Files
@@ -65,7 +65,7 @@ List of command line flags:
 # The -- is optional.  The following flags will work as well:
 weights=10445.txt.gz
 syzygy-paths=syzygy
-debuglog=lc0.log
+logfile=lc0.log
 ```
 You can tell `lc0` to ignore the default configuration file by passing `--config=` on the command line.  Command line arguments will override any arguments that also exist in the configuration file.
 
