@@ -71,7 +71,7 @@ class SelfPlayGame {
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
-  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree,
+  SelfPlayGame(PlayerOptions white, PlayerOptions black, bool shared_tree,
                const Opening& opening);
 
   // Populate command line options that it uses.

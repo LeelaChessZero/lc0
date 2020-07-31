@@ -48,7 +48,13 @@ struct IterationStats {
   int64_t batches_since_movestart = 0;
   int average_depth = 0;
   std::vector<uint32_t> edge_n;
+
+  // TODO: remove this in favor of time_usage_hint_=kImmediateMove when
+  // smooth time manager is the default.
   bool win_found = false;
+
+  enum class TimeUsageHint { kNormal, kNeedMoreTime, kImmediateMove };
+  TimeUsageHint time_usage_hint_ = TimeUsageHint::kNormal;
 };
 
 // Hints from stoppers back to the search engine. Currently include:

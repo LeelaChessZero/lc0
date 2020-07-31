@@ -562,8 +562,9 @@ class CudnnNetwork : public Network {
     value_out_ = getLastLayer();
 
     // Moves left head
-    moves_left_ = file.format().network_format().moves_left() ==
-                  pblczero::NetworkFormat::MOVES_LEFT_V1;
+    moves_left_ = (file.format().network_format().moves_left() ==
+                   pblczero::NetworkFormat::MOVES_LEFT_V1) &&
+                  options.GetOrDefault<bool>("mlh", true);
     if (moves_left_) {
       auto convMov = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.moves_left.biases.size(), 8, 8, 1, kNumFilters,

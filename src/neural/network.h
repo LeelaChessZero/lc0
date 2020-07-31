@@ -96,6 +96,11 @@ struct NetworkCapabilities {
                       std::to_string(other.input_format));
     }
   }
+
+  bool has_mlh() const {
+    return moves_left !=
+           pblczero::NetworkFormat::MovesLeftFormat::MOVES_LEFT_NONE;
+  }
 };
 
 class Network {

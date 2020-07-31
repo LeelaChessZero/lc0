@@ -58,6 +58,8 @@ const OptionId kUciChess960{
     "Castling moves are encoded as \"king takes rook\"."};
 const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
+const OptionId kShowMovesleft{"show-movesleft", "UCI_ShowMovesLeft",
+                              "Show estimated moves left."};
 const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
@@ -99,6 +101,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<BoolOption>(kUciChess960) = false;
   options->Add<BoolOption>(kShowWDL) = false;
+  options->Add<BoolOption>(kShowMovesleft) = false;
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
@@ -267,6 +270,11 @@ void EngineController::Go(const GoParams& params) {
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
+  if (!options_.Get<bool>(kShowMovesleft)) {
+    // Strip movesleft information from the response.
+    responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
+  }
+
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
@@ -300,7 +308,7 @@ EngineLoop::EngineLoop()
 }
 
 void EngineLoop::RunLoop() {
-  if (!ConfigFile::Init(&options_) || !options_.ProcessAllFlags()) return;
+  if (!ConfigFile::Init() || !options_.ProcessAllFlags()) return;
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId));
   UciLoop::RunLoop();

@@ -39,7 +39,6 @@
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "proto/net.pb.h"
-#include "utils/fastmath.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -50,6 +49,10 @@ namespace lczero {
 // * Edges are stored are a simple array on heap.
 // * Nodes are stored as a linked list, and contain index_ field which shows
 //   which edge of a parent that node points to.
+//   Or they are stored a contiguous array of Node objects on the heap if
+//   solid_children_ is true. If the children have been 'solidified' their
+//   sibling links are unused and left empty. In this state there are no
+//   dangling edges, but the nodes may not have ever received any visits.
 //
 // Example:
 //                                Parent Node
@@ -104,6 +107,7 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
+  friend class Node;
 };
 
 class EdgeAndNode;
@@ -123,7 +127,13 @@ class Node {
         index_(index),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {}
+        upper_bound_(GameResult::WHITE_WON),
+        solid_children_(false) {}
+
+  // We have a custom destructor, but its behavior does not need to be emulated
+  // during move operations so default is fine.
+  Node(Node&& move_from) = default;
+  Node& operator=(Node&& move_from) = default;
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -220,15 +230,12 @@ class Node {
   ConstIterator Edges() const;
   Iterator Edges();
 
-  class NodeRange;
-  // Returns range for iterating over nodes. Note that there may be edges
-  // without nodes, which will be skipped by this iteration.
-  NodeRange ChildNodes() const;
-
   // Deletes all children.
   void ReleaseChildren();
 
   // Deletes all children except one.
+  // The node provided may be moved, so should not be relied upon to exist
+  // afterwards.
   void ReleaseChildrenExceptOne(Node* node);
 
   // For a child node, returns corresponding edge.
@@ -240,6 +247,24 @@ class Node {
   // Debug information about the node.
   std::string DebugString() const;
 
+  // Reallocates this nodes children to be in a solid block, if possible and not
+  // already done. Returns true if the transformation was performed.
+  bool MakeSolid();
+
+  void SortEdges();
+
+  ~Node() {
+    if (solid_children_ && child_) {
+      // As a hack, solid_children is actually storing an array in here, release
+      // so we can correctly invoke the array delete.
+      for (int i = 0; i < num_edges_; i++) {
+        child_.get()[i].~Node();
+      }
+      std::allocator<Node> alloc;
+      alloc.deallocate(child_.release(), num_edges_);
+    }
+  }
+
  private:
   // Performs construction time type initialization. For use only with a node
   // that has not been used beyond its construction.
@@ -247,6 +272,9 @@ class Node {
     parent_ = parent;
     index_ = index;
   }
+
+  // For each child, ensures that its parent pointer is pointing to this.
+  void UpdateChildrenParents();
 
   // To minimize the number of padding bytes and to avoid having unnecessary
   // padding when new fields are added, we arrange the fields by size, largest
@@ -266,8 +294,10 @@ class Node {
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
+  // As a 'hack' actually a unique_ptr to Node[] if solid_children.
   std::unique_ptr<Node> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
+  // Also null in the solid case.
   std::unique_ptr<Node> sibling_;
   // Cached pointer to best child, valid while n_in_flight <
   // best_child_cache_in_flight_limit_
@@ -305,12 +335,13 @@ class Node {
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
+  // Whether the child_ is actually an array of equal length to edges.
+  bool solid_children_ : 1;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
   friend class Edge_Iterator<true>;
   friend class Edge_Iterator<false>;
-  friend class Node_Iterator;
   friend class Edge;
 };
 
@@ -348,16 +379,11 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score, bool logit_q) const {
-    return (node_ && node_->GetN() > 0)
-               ?
-               // Scale Q slightly to avoid logit(1) = infinity.
-               (logit_q ? FastLogit(0.9999999f * node_->GetQ(draw_score))
-                        : node_->GetQ(draw_score))
-               : default_q;
+  float GetQ(float default_q, float draw_score) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score) : default_q;
   }
   float GetWL(float default_wl) const {
-    return node_ ? node_->GetWL() : default_wl;
+    return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
   }
   float GetD(float default_d) const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : default_d;
@@ -424,8 +450,9 @@ class EdgeAndNode {
 // excessive.
 //
 // All functions are not thread safe (must be externally synchronized), but
-// it's fine if Node/Edges state change between calls to functions of the
-// iterator (e.g. advancing the iterator).
+// it's fine if GetOrSpawnNode is called between calls to functions of the
+// iterator (e.g. advancing the iterator). Other functions that manipulate
+// child_ of parent or the sibling chain are not safe to call while iterating.
 template <bool is_const>
 class Edge_Iterator : public EdgeAndNode {
  public:
@@ -436,11 +463,15 @@ class Edge_Iterator : public EdgeAndNode {
   Edge_Iterator() {}
 
   // Creates "begin()" iterator. Also happens to be a range constructor.
+  // child_ptr will be nullptr if parent_node is solid children.
   Edge_Iterator(const Node& parent_node, Ptr child_ptr)
       : EdgeAndNode(parent_node.edges_.get(), nullptr),
         node_ptr_(child_ptr),
         total_count_(parent_node.num_edges_) {
-    if (edge_) Actualize();
+    if (edge_ && child_ptr != nullptr) Actualize();
+    if (edge_ && child_ptr == nullptr) {
+      node_ = parent_node.child_.get();
+    }
   }
 
   // Function to support range interface.
@@ -455,7 +486,11 @@ class Edge_Iterator : public EdgeAndNode {
       edge_ = nullptr;
     } else {
       ++edge_;
-      Actualize();
+      if (node_ptr_ != nullptr) {
+        Actualize();
+      } else {
+        ++node_;
+      }
     }
   }
   Edge_Iterator& operator*() { return *this; }
@@ -464,6 +499,8 @@ class Edge_Iterator : public EdgeAndNode {
   Node* GetOrSpawnNode(Node* parent,
                        std::unique_ptr<Node>* node_source = nullptr) {
     if (node_) return node_;  // If there is already a node, return it.
+    // Should never reach here in solid mode.
+    assert(node_ptr_ != nullptr);
     Actualize();              // But maybe other thread already did that.
     if (node_) return node_;  // If it did, return.
     // Now we are sure we have to create a new node.
@@ -497,6 +534,8 @@ class Edge_Iterator : public EdgeAndNode {
 
  private:
   void Actualize() {
+    // This must never be called in solid mode.
+    assert(node_ptr_ != nullptr);
     // If node_ptr_ is behind, advance it.
     // This is needed (and has to be 'while' rather than 'if') as other threads
     // could spawn new nodes between &node_ptr_ and *node_ptr_ while we didn't
@@ -519,30 +558,6 @@ class Edge_Iterator : public EdgeAndNode {
   Ptr node_ptr_;
   uint16_t current_idx_ = 0;
   uint16_t total_count_ = 0;
-};
-
-class Node_Iterator {
- public:
-  Node_Iterator(Node* node) : node_(node) {}
-  Node* operator*() { return node_; }
-  Node* operator->() { return node_; }
-  bool operator==(Node_Iterator& other) { return node_ == other.node_; }
-  bool operator!=(Node_Iterator& other) { return node_ != other.node_; }
-  void operator++() { node_ = node_->sibling_.get(); }
-
- private:
-  Node* node_;
-};
-
-class Node::NodeRange {
- public:
-  Node_Iterator begin() { return Node_Iterator(node_); }
-  Node_Iterator end() { return Node_Iterator(nullptr); }
-
- private:
-  NodeRange(Node* node) : node_(node) {}
-  Node* node_;
-  friend class Node;
 };
 
 class NodeTree {

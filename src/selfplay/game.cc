@@ -69,11 +69,11 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
 }
 
-SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
+SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
                            bool shared_tree, const Opening& opening)
-    : options_{player1, player2},
-      chess960_{player1.uci_options->Get<bool>(kUciChess960) ||
-                player2.uci_options->Get<bool>(kUciChess960)} {
+    : options_{white, black},
+      chess960_{white.uci_options->Get<bool>(kUciChess960) ||
+                black.uci_options->Get<bool>(kUciChess960)} {
   orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
@@ -282,8 +282,8 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
   for (auto chunk : training_data_) {
     bool black_to_move = chunk.side_to_move_or_enpassant;
-    if (chunk.input_format ==
-        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
+            chunk.input_format))) {
       black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
     }
     if (game_result_ == GameResult::WHITE_WON) {
@@ -303,9 +303,8 @@ std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
     const {
   auto result = std::make_unique<ChainedSearchStopper>();
 
-  if (visits >= 0) {
-    result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
-  }
+  // always set VisitsStopper to avoid exceeding the limit 4000000000, the default value when visits = 0
+  result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
   if (playouts >= 0) {
     result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));
   }
