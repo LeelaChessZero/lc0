@@ -1185,10 +1185,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         ? static_cast<unsigned int>(node->GetNBetamcts() + 0.5) : node->GetN()),
                                       is_root_node);
     const float puct_mult =
-        cpuct * ( params_.GetNewUEnabled() ?
-            std::max((params_.GetBetamctsLevel() >= 3 ?
-                (int)node->GetNBetamcts() : node->GetChildrenVisits()), 1u) :
-            std::sqrt(std::max((params_.GetBetamctsLevel() >= 3 ?
+        cpuct * ( std::sqrt(std::max((params_.GetBetamctsLevel() >= 3 ?
                 (int)node->GetNBetamcts() : node->GetChildrenVisits()), 1u)) );
     float best = std::numeric_limits<float>::lowest();
     float best_without_u = std::numeric_limits<float>::lowest();
@@ -1473,9 +1470,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
   const float cpuct =
       ComputeCpuct(params_, node->GetN(), node == search_->root_node_);
   const float puct_mult =
-      cpuct * (params_.GetNewUEnabled() ?
-          std::max(node->GetChildrenVisits(), 1u) :
-          std::sqrt(std::max(node->GetChildrenVisits(), 1u)));
+      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu = GetFpu(params_, node, node == search_->root_node_, draw_score);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
