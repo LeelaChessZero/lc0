@@ -393,7 +393,7 @@ class Node {
 static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
 #else
 //static_assert(sizeof(Node) == 80, "Unexpected size of Node");
-static_assert(sizeof(Node) == 96, "Unexpected size of Node");
+static_assert(sizeof(Node) == 88, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -457,11 +457,6 @@ class EdgeAndNode {
     return numerator * GetP() / (1 + (betamcts_q ? GetNStartedBetamcts() : GetNStarted()));
   }
 
-  float GetNewU(float numerator, bool betamcts_q = false) const {
-    const float x = 1 + (betamcts_q ? GetNStartedBetamcts() : GetNStarted());
-    return numerator * GetP() * FastInvSqrt(x) / x;
-  }
-
   int GetVisitsToReachU(float target_score, float numerator,
                         float score_without_u, int betamcts_level) const {
     if (score_without_u >= target_score) return std::numeric_limits<int>::max();
@@ -472,18 +467,6 @@ class EdgeAndNode {
                                         n1) +
                                  1,
                              1e9f));
-  }
-
-  int GetVisitsToReachNewU(float target_score, float numerator,
-                           float default_q, int betamcts_level, bool logit_q) const {
-    const auto q = GetQ(default_q, betamcts_level >= 2, logit_q);
-    if (q >= target_score) return std::numeric_limits<int>::max();
-    const auto n1 = (betamcts_level >= 3 ? (int)GetNStartedBetamcts() : GetNStarted()) + 1;
-    const float inner = std::pow((GetP() * numerator) / (target_score - q), 2. / 3.);
-    return std::max(
-        1.0f,
-        std::min(std::floor(inner - n1) + 1,
-                 1e9f));
   }
 
   std::string DebugString() const;
