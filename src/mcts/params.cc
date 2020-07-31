@@ -372,10 +372,10 @@ void SearchParams::Populate(OptionsParser* options) {
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
-      kBetamctsLevel(options.Get<int>(kBetamctsLevelId.GetId())),
-      kBetamctsTrust(options.Get<float>(kBetamctsTrustId.GetId())),
-      kBetamctsPercentile(options.Get<float>(kBetamctsPercentileId.GetId())),
-      kBetamctsUpdateInterval(options.Get<int>(kBetamctsUpdateIntervalId.GetId())),
+      kBetamctsLevel(options.Get<int>(kBetamctsLevelId)),
+      kBetamctsTrust(options.Get<float>(kBetamctsTrustId)),
+      kBetamctsPercentile(options.Get<float>(kBetamctsPercentileId)),
+      kBetamctsUpdateInterval(options.Get<int>(kBetamctsUpdateIntervalId)),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
