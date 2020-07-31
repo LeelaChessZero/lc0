@@ -434,7 +434,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                ? MEvaluator(params_, node)
                                : MEvaluator();
   for (const auto& edge : edges) {
-    float Q = edge.GetQBetamcts(fpu, draw_score, betamcts_q);
+    float Q = edge.GetQ(fpu, draw_score, betamcts_q);
     float M = m_evaluator.GetM(edge, Q);
     std::ostringstream oss;
     oss << std::left;
