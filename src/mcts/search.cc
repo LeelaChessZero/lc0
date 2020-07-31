@@ -394,8 +394,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     }
     print(oss, "(Q: ", n ? sign * n->GetQ(sign * draw_score, betamcts_q) : fpu, ") ", 8, 5);
     print(oss, "(Qraw: ", n ? sign * n->GetQ(sign * draw_score) : fpu, ") ", 8, 5);
-    print(oss, "(Nbeta: ", n ? sign * n->GetNBetamcts() : 0, ") ", 8, 5);
-    print(oss, "(Rbeta: ", n ? sign * n->GetRBetamcts() : 0, ") ", 8, 5);
+    print(oss, "(Nbeta: ", n ? n->GetNBetamcts() : 0, ") ", 8, 5);
+    print(oss, "(Rbeta: ", n ? n->GetRBetamcts() : 0, ") ", 8, 5);
   };
   auto print_tail = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
