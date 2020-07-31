@@ -332,9 +332,7 @@ namespace {
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
-  const auto Q = (params.GetLogitQ()
-        ? FastLogit(-node->GetQ(-draw_score, params.GetBetamctsLevel()>=2))
-        : -node->GetQ(-draw_score, params.GetBetamctsLevel()>=2));
+  const auto Q = -node->GetQ(-draw_score, params.GetBetamctsLevel()>=2);
   return params.GetFpuAbsolute(is_root_node)
              ? value
              : Q - value * std::sqrt(node->GetVisitedPolicy());
