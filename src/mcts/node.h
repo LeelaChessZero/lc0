@@ -419,6 +419,9 @@ class EdgeAndNode {
     return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score, betamcts_q)
                                         : default_q;
   }
+  float GetWL(float default_wl) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
+  }
   float GetQBetamcts(float default_q) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQBetamcts() : default_q;
   }
