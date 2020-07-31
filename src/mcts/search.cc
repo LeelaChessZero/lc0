@@ -1507,7 +1507,6 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      // TODO: As above - should this use logit_q if set?
       const float q = edge.GetQ(-fpu, draw_score,
                                 params_.GetBetamctsLevel() >= 2);
       if (next_score > q) {
