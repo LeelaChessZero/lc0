@@ -16,6 +16,11 @@ esac
 
 BUILDDIR=build/${BUILDTYPE}
 
+if ! hash meson 2>/dev/null && [ -x ${HOME}/.local/bin/meson ]
+then
+  export PATH=${PATH}:${HOME}/.local/bin
+fi
+
 if [ -f ${BUILDDIR}/build.ninja ]
 then
   meson configure ${BUILDDIR} -Dbuildtype=${BUILDTYPE} -Dprefix=${INSTALL_PREFIX:-/usr/local} "$@"

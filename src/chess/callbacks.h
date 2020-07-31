@@ -94,6 +94,8 @@ struct ThinkingInfo {
   int game_id = -1;
   // The color of the player, if known.
   std::optional<bool> is_black;
+  // Moves left
+  std::optional<int> moves_left;
 };
 
 // Is sent when a single game is finished.
@@ -102,6 +104,8 @@ struct GameInfo {
   GameResult game_result = GameResult::UNDECIDED;
   // Name of the file with training data.
   std::string training_filename;
+  // Initial fen of the game.
+  std::string initial_fen;
   // Game moves.
   std::vector<Move> moves;
   // Ply within moves that the game actually started.
@@ -202,6 +206,13 @@ class WDLResponseFilter : public TransformingUciResponder {
   using TransformingUciResponder::TransformingUciResponder;
   void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
     for (auto& info : *infos) info.wdl.reset();
+  }
+};
+
+class MovesLeftResponseFilter : public TransformingUciResponder {
+  using TransformingUciResponder::TransformingUciResponder;
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    for (auto& info : *infos) info.moves_left.reset();
   }
 };
 

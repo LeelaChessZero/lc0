@@ -80,6 +80,7 @@ class EngineController {
   void SetupPosition(const std::string& fen,
                      const std::vector<std::string>& moves);
   void ResetMoveTimer();
+  void CreateFreshTimeManager();
 
   const OptionsDict& options_;
 
@@ -108,6 +109,9 @@ class EngineController {
   GoParams go_params_;
 
   std::optional<std::chrono::steady_clock::time_point> move_start_time_;
+
+  // If true we can reset move_start_time_ in "Go".
+  bool strict_uci_timing_;
 };
 
 class EngineLoop : public UciLoop {
