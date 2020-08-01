@@ -172,7 +172,7 @@ class Node {
   float GetQ(float draw_score, bool betamcts_q = false)
     const { return (betamcts_q ? q_betamcts_ : wl_) + draw_score * d_; }
   float GetQBetamcts() const { return q_betamcts_; } /* betamcts::return q_betamcts */
-  float GetWL() const { return wl_; }
+  float GetWL(bool betamcts_q = false) const { return betamcts_q ? q_betamcts_ : wl_; }
   float GetD() const { return d_; }
   float GetM() const { return m_; }
 
@@ -421,8 +421,8 @@ class EdgeAndNode {
     return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score, betamcts_q)
                                         : default_q;
   }
-  float GetWL(float default_wl) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
+  float GetWL(float default_wl, bool betamcts_q = false) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetWL(betamcts_q) : default_wl;
   }
   float GetQBetamcts(float default_q) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQBetamcts() : default_q;

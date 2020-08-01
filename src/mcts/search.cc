@@ -222,13 +222,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
 
   int multipv = 0;
   const auto default_q = -root_node_->GetQ(-draw_score);
-  const auto default_wl = -root_node_->GetWL();
+  const auto default_wl = -root_node_->GetWL(params_.GetBetamctsLevel() >= 2);
   const auto default_d = root_node_->GetD();
   for (const auto& edge : edges) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto wl = edge.GetWL(default_wl);
+    const auto wl = edge.GetWL(default_wl, params_.GetBetamctsLevel() >= 2);
     const auto d = edge.GetD(default_d);
     const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
     const auto q = edge.GetQ(default_q, draw_score,
@@ -386,7 +386,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
     if (n) {
-      print(oss, "(WL: ", sign * n->GetWL(), ") ", 8, 5);
+      print(oss, "(WL: ", sign * n->GetWL(params_.GetBetamctsLevel() >= 1), ") ", 8, 5);
       print(oss, "(D: ", n->GetD(), ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
     } else {
@@ -543,13 +543,13 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
 Search::BestEval Search::GetBestEval() const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  float parent_wl = -root_node_->GetWL();
+  float parent_wl = -root_node_->GetWL(params_.GetBetamctsLevel() >= 2);
   float parent_d = root_node_->GetD();
   float parent_m = root_node_->GetM();
   if (!root_node_->HasChildren()) return {parent_wl, parent_d, parent_m};
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
-  return {best_edge.GetWL(parent_wl), best_edge.GetD(parent_d),
-          best_edge.GetM(parent_m - 1) + 1};
+  return {best_edge.GetWL(parent_wl, params_.GetBetamctsLevel() >= 2),
+          best_edge.GetD(parent_d), best_edge.GetM(parent_m - 1) + 1};
 }
 
 std::pair<Move, Move> Search::GetBestMove() {
