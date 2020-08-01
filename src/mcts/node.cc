@@ -35,7 +35,6 @@
 #include <sstream>
 #include <thread>
 
-#include "myasa109.h"
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
@@ -348,50 +347,6 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float percentile)
                       / sqrt(2.0 * (logit_var_child + logit_var_parent)));
 
       child.SetRBetamcts(child_relevance);
-    }
-}
-
-void Node::CalculateRelevanceBetamctsOld(const float trust, const float percentile) {
-  const auto winrate = (1.0f - GetQBetamcts())/2.0f;
-  const auto visits = GetNBetamcts();
-  const auto visits_eff = std::min(1000000.0f,visits * trust);
-  // betain() doesn't like to be called with values >2000000
-  auto alpha = 1.0f + winrate * visits_eff;
-  auto beta = 1.0f + (1.0f - winrate) * visits_eff;
-  auto beta_log = lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta);
-  int ifault;
-  const auto eval_cutoff = xinbta(alpha, beta, beta_log, percentile, &ifault);
-
-  for (const auto& child : Edges()) {
-      // betamcts::child Q values are flipped
-      if (child.GetN() == 0) {continue;}
-      const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
-      const auto visits_child = child.GetNBetamcts();
-      const auto visits_child_eff = std::min(1000000.0f,visits_child * trust);
-      auto alpha_child = 1.0f + winrate_child * visits_child_eff;
-      auto beta_child  = 1.0f + (1.0f - winrate_child) * visits_child_eff;
-      auto beta_log_child = lgamma(alpha_child) + lgamma(beta_child) -
-                                  lgamma(alpha_child + beta_child);
-      int ifault = 0;
-      auto child_relevance = std::min(1.1,(1.0f - betain(eval_cutoff,
-          alpha_child, beta_child, beta_log_child, &ifault)) / (1.0f - percentile));
-      if (!child.IsTerminal())
-      {
-        // child_relevance = std::max(0.03,child_relevance);
-        // minimum relevance deactivated, issues with terminal nodes
-        child.SetRBetamcts(child_relevance);
-      } else if (trust > 0 && percentile > 0) {
-        // if one of the factors is 0, relevance is always 1
-        // which doesn't work well with the terminal logic
-        child.SetRBetamcts(child_relevance);
-      } else {
-        // terminal nodes special treatment temporarily deactivated
-        if (child.GetQBetamcts(0.0) == 0.0) {
-          child.SetRBetamcts(0.01); //standard relevance for terminal nodes
-        } else {
-          child.SetRBetamcts(child_relevance);
-        }
-      }
     }
 }
 
