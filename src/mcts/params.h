@@ -46,6 +46,10 @@ class SearchParams {
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId);
   }
+  int GetBetamctsLevel() const { return kBetamctsLevel; }
+  float GetBetamctsTrust() const { return kBetamctsTrust; }
+  float GetBetamctsPercentile() const { return kBetamctsPercentile; }
+  int GetBetamctsUpdateInterval() const { return kBetamctsUpdateInterval; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
@@ -115,6 +119,10 @@ class SearchParams {
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
+  static const OptionId kBetamctsLevelId;
+  static const OptionId kBetamctsTrustId;
+  static const OptionId kBetamctsPercentileId;
+  static const OptionId kBetamctsUpdateIntervalId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
@@ -173,6 +181,10 @@ class SearchParams {
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimizations.
+  const int kBetamctsLevel;
+  const float kBetamctsTrust;
+  const float kBetamctsPercentile;
+  const int kBetamctsUpdateInterval;
   const float kCpuct;
   const float kCpuctAtRoot;
   const float kCpuctBase;

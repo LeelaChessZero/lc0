@@ -292,23 +292,59 @@ void Node::SortEdges() {
             [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
 }
 
-void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
+void Node::MakeTerminal(GameResult result, float plies_left, Terminal type,
+                        const bool inflate_terminals) {
   if (type != Terminal::TwoFold) SetBounds(result, result);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
     wl_ = 0.0f;
+    q_betamcts_ = 0.0f;
     d_ = 1.0f;
   } else if (result == GameResult::WHITE_WON) {
     wl_ = 1.0f;
+    q_betamcts_ = 1.0f;
     d_ = 0.0f;
   } else if (result == GameResult::BLACK_WON) {
     wl_ = -1.0f;
+    q_betamcts_ = -1.0f;
     d_ = 0.0f;
     // Terminal losses have no uncertainty and no reason for their U value to be
     // comparable to another non-loss choice. Force this by clearing the policy.
     if (GetParent() != nullptr) GetOwnEdge()->SetP(0.0f);
   }
+  // special treatment for terminal nodes, only for draws now
+    if (inflate_terminals) {
+      n_betamcts_ = 100.0f; // betamcts::terminal nodes get high n
+      GetOwnEdge()->SetP(0.01);
+    }
+}
+
+void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
+  const auto winrate = (1.0f - GetQBetamcts())/2.0f;
+  const auto visits = GetNBetamcts() * trust + 42;
+
+  auto alpha = 1.0f + winrate * visits;
+  auto beta = 1.0f + (1.0f - winrate) * visits;
+  auto logit_eval_parent = log(alpha / beta);
+  auto logit_var_parent = 1.0f / alpha + 1.0f / beta;
+
+  for (const auto& child : Edges()) {
+      // betamcts::child Q values are flipped
+      if (child.GetN() == 0) {continue;}
+      const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
+      const auto visits_child = child.GetNBetamcts() * trust + 42;
+
+      auto alpha_child = 1.0f + winrate_child * visits_child;
+      auto beta_child = 1.0f + (1.0f - winrate_child) * visits_child;
+      auto logit_eval_child = log(alpha_child / beta_child);
+      auto logit_var_child = 1.0f / alpha_child + 1.0f / beta_child;
+
+      auto child_relevance = 1.0f + erf( (logit_eval_child - logit_eval_parent)
+                      / sqrt(2.0 * (logit_var_child + logit_var_parent)));
+
+      child.SetRBetamcts(child_relevance);
+    }
 }
 
 void Node::MakeNotTerminal() {
@@ -316,7 +352,7 @@ void Node::MakeNotTerminal() {
   n_ = 0;
 
   // If we have edges, we've been extended (1 visit), so include children too.
-  if (edges_) {
+  if (edges_) { /* TODO betamcts::update q_betamcts_ here ? */
     n_++;
     for (const auto& child : Edges()) {
       const auto n = child.GetN();
@@ -351,7 +387,53 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
+    const bool inflate_terminals=false, const bool full_betamcts_update=true) {
+  if (IsTerminal()) {
+    // terminal logic for draws only
+/*    if ((q_betamcts_ == 0.0) && (inflate_terminals)) {
+      n_betamcts_ += multivisit * 100;
+    } else if (q_betamcts_ == 0.0) {
+      n_betamcts_ += multivisit * 10;
+    } else {
+      n_betamcts_ += multivisit;
+    } */
+
+    // treat all terminals equally:
+    // terminal node will start at 500 visits, getting +50 on every visit
+    if (inflate_terminals) {
+      n_betamcts_ += multivisit * 500;
+    } else {
+      n_betamcts_ += multivisit * 50;
+    }
+
+
+  } else {
+    if (edges_) { /* betamcts::update q_betamcts_ here */
+        float q_temp = q_betamcts_;
+        // float q_temp = q_betamcts_; // evals of expanded nodes not kept
+        float n_temp = 1.0f;
+        if (full_betamcts_update) {
+          for (const auto& child : Edges()) {
+            const auto n = child.GetNBetamcts();
+            const auto r = child.GetRBetamcts();
+            if (n > 0) {
+              const auto visits_eff = r * n;
+              n_temp += visits_eff;
+              // Flip Q for opponent.
+              q_temp += -child.node()->GetQBetamcts() * visits_eff;
+            }
+          }
+          if (n_temp > 0) {
+              q_betamcts_ = q_temp / n_temp;
+              n_betamcts_ = n_temp; }
+        } else {
+          q_betamcts_ += multivisit * (v - q_betamcts_) / (n_ + multivisit);
+          n_betamcts_ += multivisit;
+        }
+      }
+  }
+
   // Recompute Q.
   wl_ += multivisit * (v - wl_) / (n_ + multivisit);
   d_ += multivisit * (d - d_) / (n_ + multivisit);
@@ -360,6 +442,8 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
+    q_betamcts_ = v;
+    n_betamcts_ = multivisit;
   }
   // Increment N.
   n_ += multivisit;

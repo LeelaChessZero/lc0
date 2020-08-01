@@ -36,6 +36,7 @@
 #include <iterator>
 #include <sstream>
 #include <thread>
+#include <future>
 
 #include "mcts/node.h"
 #include "neural/cache.h"
@@ -230,7 +231,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     const auto wl = edge.GetWL(default_wl);
     const auto d = edge.GetD(default_d);
     const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
-    const auto q = edge.GetQ(default_q, draw_score);
+    const auto q = edge.GetQ(default_q, draw_score,
+                             params_.GetBetamctsLevel() >= 1);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
           std::round(edge.GetM(0.0f)) / 2 + (edge.IsTbTerminal() ? 101 : 1),
@@ -330,10 +332,10 @@ namespace {
 inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
+  const auto Q = -node->GetQ(-draw_score, params.GetBetamctsLevel()>=2);
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ(-draw_score) -
-                   value * std::sqrt(node->GetVisitedPolicy());
+             : Q - value * std::sqrt(node->GetVisitedPolicy());
 }
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
@@ -355,15 +357,18 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+
+  const bool betamcts_q = (params_.GetBetamctsLevel() >= 2);
+
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score](EdgeAndNode a, EdgeAndNode b) {
+            [&fpu, &U_coeff, &draw_score, &betamcts_q](EdgeAndNode a, EdgeAndNode b) {
               return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score) + a.GetU(U_coeff)) <
+                         a.GetN(), a.GetQ(fpu, draw_score, betamcts_q) + a.GetU(U_coeff)) <
                      std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score) + b.GetU(U_coeff));
+                         b.GetN(), b.GetQ(fpu, draw_score, betamcts_q) + b.GetU(U_coeff));
             });
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
@@ -387,7 +392,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
     }
-    print(oss, "(Q: ", n ? sign * n->GetQ(sign * draw_score) : fpu, ") ", 8, 5);
+    print(oss, "(Q: ", n ? sign * n->GetQ(sign * draw_score, betamcts_q) : fpu, ") ", 8, 5);
+    print(oss, "(Qraw: ", n ? sign * n->GetQ(sign * draw_score) : fpu, ") ", 8, 5);
+    print(oss, "(Nbeta: ", n ? n->GetNBetamcts() : 0, ") ", 8, 1);
+    print(oss, "(Rbeta: ", n ? n->GetRBetamcts() : 0, ") ", 8, 3);
   };
   auto print_tail = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
@@ -426,7 +434,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                ? MEvaluator(params_, node)
                                : MEvaluator();
   for (const auto& edge : edges) {
-    float Q = edge.GetQ(fpu, draw_score);
+    float Q = edge.GetQ(fpu, draw_score, betamcts_q);
     float M = m_evaluator.GetM(edge, Q);
     std::ostringstream oss;
     oss << std::left;
@@ -740,7 +748,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score,
+                  params_.GetBetamctsLevel() >= 2) < min_eval) continue;
     sum += std::pow(
         std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
         1 / temperature);
@@ -759,7 +768,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score,
+                  params_.GetBetamctsLevel() >= 2) < min_eval) continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
@@ -1186,6 +1196,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         return NodeToProcess::Visit(node, depth);
       }
     }
+
+    // betamcts::calculate relevances only every X visits
+    if ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
+      node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
+            params_.GetBetamctsPercentile());
+    }
+
     // If unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
       return NodeToProcess::Visit(node, depth);
@@ -1205,9 +1222,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
+    const float cpuct = ComputeCpuct(params_, (params_.GetBetamctsLevel() >= 4
+        ? static_cast<unsigned int>(node->GetNBetamcts() + 0.5) : node->GetN()),
+                                      is_root_node);
     const float puct_mult =
-        cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+        cpuct * ( std::sqrt(std::max((params_.GetBetamctsLevel() >= 3 ?
+                (int)node->GetNBetamcts() : node->GetChildrenVisits()), 1u)) );
     float best = std::numeric_limits<float>::lowest();
     float best_without_u = std::numeric_limits<float>::lowest();
     float second_best = std::numeric_limits<float>::lowest();
@@ -1239,7 +1259,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
 
-      const float Q = child.GetQ(fpu, draw_score);
+      const float Q = child.GetQ(fpu, draw_score,
+                                 params_.GetBetamctsLevel() >= 2);
       const float M = m_evaluator.GetM(child, Q);
 
       const float score = child.GetU(puct_mult) + Q + M;
@@ -1264,7 +1285,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     if (second_best_edge) {
       int estimated_visits_to_change_best =
-          best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u);
+          best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u,
+                              params_.GetBetamctsLevel());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
@@ -1312,9 +1334,9 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
+      node->MakeTerminal(GameResult::WHITE_WON, params_.GetBetamctsLevel()>=4);
     } else {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
     }
     return;
   }
@@ -1323,12 +1345,12 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
   // if they are root, then thinking about them is the point.
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
       return;
     }
 
     if (history_.Last().GetRule50Ply() >= 100) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
       return;
     }
 
@@ -1336,7 +1358,7 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     // Mark two-fold repetitions as draws according to settings.
     // Depth starts with 1 at root, so number of plies in PV is depth - 1.
     if (repetitions >= 2) {
-      node->MakeTerminal(GameResult::DRAW);
+      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
       return;
     } else if (repetitions == 1 && depth - 1 >= 4 &&
                params_.GetTwoFoldDraws() &&
@@ -1372,12 +1394,13 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
           node->MakeTerminal(GameResult::BLACK_WON, m,
-                             Node::Terminal::Tablebase);
+                     Node::Terminal::Tablebase, params_.GetBetamctsLevel()>=4);
         } else if (wdl == WDL_LOSS) {
           node->MakeTerminal(GameResult::WHITE_WON, m,
-                             Node::Terminal::Tablebase);
+                     Node::Terminal::Tablebase, params_.GetBetamctsLevel()>=4);
         } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
+          node->MakeTerminal(GameResult::DRAW, m,
+                     Node::Terminal::Tablebase, params_.GetBetamctsLevel()>=4);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
@@ -1500,13 +1523,12 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       ComputeCpuct(params_, node->GetN(), node == search_->root_node_);
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float fpu =
-      GetFpu(params_, node, node == search_->root_node_, draw_score);
+  const float fpu = GetFpu(params_, node, node == search_->root_node_, draw_score);
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score),
+    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score,
+                                     params_.GetBetamctsLevel() >= 2),
                         edge);
   }
 
@@ -1537,8 +1559,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      // TODO: As above - should this use logit_q if set?
-      const float q = edge.GetQ(-fpu, draw_score);
+      const float q = edge.GetQ(-fpu, draw_score,
+                                params_.GetBetamctsLevel() >= 2);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
@@ -1676,7 +1698,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
       m = n->GetM();
     }
-    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
+                           params_.GetBetamctsLevel()>=2,
+       ((n->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0));
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
