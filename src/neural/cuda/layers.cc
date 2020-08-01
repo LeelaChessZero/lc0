@@ -48,6 +48,7 @@ template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
     : input_(ip), C(c), H(h), W(w), nhwc_(ip->nhwc_) {}
 
+#ifdef USE_CUDNN
 template <typename DataType>
 SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType>* ip)
     : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip) {
@@ -296,6 +297,7 @@ ConvLayer<DataType>::~ConvLayer() {
   cudnnDestroyTensorDescriptor(out_tensor_desc_);
   cudnnDestroyActivationDescriptor(activation_);
 }
+#endif
 
 template <typename DataType>
 SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
@@ -901,14 +903,18 @@ FusedWinogradConvSELayer<DataType>::~FusedWinogradConvSELayer() {
 }
 
 // Template instantiation.
+#ifdef USE_CUDNN
 template class ConvLayer<half>;
 template class ConvLayer<float>;
+#endif
 
 template class FCLayer<half>;
 template class FCLayer<float>;
 
+#ifdef USE_CUDNN
 template class SoftMaxLayer<half>;
 template class SoftMaxLayer<float>;
+#endif
 
 template class SELayer<half>;
 template class SELayer<float>;
@@ -921,6 +927,7 @@ template class FusedWinogradConvSELayer<float>;
 
 
 // Misc error handling stuff.
+#ifdef USE_CUDNN
 void CudnnError(cudnnStatus_t status, const char* file, const int& line) {
   if (status != CUDNN_STATUS_SUCCESS) {
     char message[128];
@@ -929,6 +936,7 @@ void CudnnError(cudnnStatus_t status, const char* file, const int& line) {
     throw Exception(message);
   }
 }
+#endif
 
 const char* CublasGetErrorString(cublasStatus_t status) {
   switch (status) {

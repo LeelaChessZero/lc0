@@ -28,7 +28,12 @@
 
 #include <cstddef>
 #include <cublas_v2.h>
+
+#ifdef USE_CUDNN
 #include <cudnn.h>
+#else
+typedef void* cudnnHandle_t;
+#endif
 
 namespace lczero {
 namespace cudnn_backend {
@@ -63,6 +68,7 @@ class BaseLayer {
   bool nhwc_;   // tensor layout
 };
 
+#ifdef USE_CUDNN
 template <typename DataType>
 class ConvLayer : public BaseLayer<DataType> {
   using BaseLayer<DataType>::C;
@@ -124,6 +130,7 @@ class SoftMaxLayer : public BaseLayer<DataType> {
  private:
   cudnnTensorDescriptor_t out_tensor_desc_;
 };
+#endif
 
 template <typename DataType>
 class FCLayer : public BaseLayer<DataType> {
