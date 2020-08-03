@@ -421,14 +421,6 @@ class CudaNetwork : public Network {
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
-
-      if (wdl_) {
-/*
-        auto softmaxVal =
-            std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
-        network_.emplace_back(std::move(softmaxVal));
-*/
-      }
     }
     value_out_ = getLastLayer();
 
@@ -581,20 +573,14 @@ class CudaNetwork : public Network {
                         cublas_);  // value FC1
 
     if (wdl_) {
-      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, nullptr,
-                          cublas_);  // value FC2    // VALUE
-
-      // Value softmax
       if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, nullptr,
-                            cublas_);  // value FC2
-        copyTypeConverted(opVal, (half*)(tensor_mem_[1]),
+                            cublas_);  // value FC2    // VALUE
+        copyTypeConverted(opVal, (half*)(tensor_mem_[0]),
                           3 * batchSize);  // VALUE
       } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[0],
+        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, nullptr,
                             cublas_);  // value FC2    // VALUE
       }
@@ -636,6 +622,22 @@ class CudaNetwork : public Network {
     }
 
     ReportCUDAErrors(cudaDeviceSynchronize());
+
+    if (wdl_) {
+      // Value softmax done cpu side.
+      for (int i = 0; i < batchSize; i++) {
+        float w = std::exp(io->op_value_mem_[3 * i + 0]);
+        float d = std::exp(io->op_value_mem_[3 * i + 1]);
+        float l = std::exp(io->op_value_mem_[3 * i + 2]);
+        float sum = w + d + l;
+        w /= sum;
+        l /= sum;
+        d = 1.0f - w - l;
+        io->op_value_mem_[3 * i + 0] = w;
+        io->op_value_mem_[3 * i + 1] = d;
+        io->op_value_mem_[3 * i + 2] = l;
+      }
+    }
 
 #ifdef DEBUG_RAW_NPS
     const int reportingCalls = 100;
