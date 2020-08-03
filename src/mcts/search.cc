@@ -352,7 +352,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float scale = GetScaleQ();
+  const float scale = params_.GetScaleQ();
   const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -716,7 +716,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   float max_eval = -1.0f;
   const float fpu =
       GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
-  const float scale = GetScaleQ();
+  const float scale = params_.GetScaleQ();
 
   for (auto edge : root_node_->Edges()) {
     if (!root_move_filter_.empty() &&
@@ -816,7 +816,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   const auto draw_score = GetDrawScore(true);
   const float fpu =
       GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
-  const float scale = GetScaleQ();
+  const float scale = params_.GetScaleQ();
   float max_q_plus_m = -1000;
   uint64_t max_n = 0;
   bool max_n_has_max_q_plus_m = true;
@@ -1167,7 +1167,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
-    const float scale = GetScaleQ();
+    const float scale = params_.GetScaleQ();
     const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
     const float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
