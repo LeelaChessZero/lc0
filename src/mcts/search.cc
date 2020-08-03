@@ -230,7 +230,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
     const auto wl = edge.GetWL(default_wl);
     const auto d = edge.GetD(default_d);
     const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
-    const auto q = edge.GetQ(default_q, draw_score);
+    const auto q = edge.GetQ(default_q, draw_score, 0.0f);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
           std::round(edge.GetM(0.0f)) / 2 + (edge.IsTbTerminal() ? 101 : 1),
@@ -352,6 +352,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
+  const float scale = GetScaleQ();
   const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -359,11 +360,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score](EdgeAndNode a, EdgeAndNode b) {
+            [&fpu, &U_coeff, &draw_score, &scale](EdgeAndNode a, EdgeAndNode b) {
               return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score) + a.GetU(U_coeff)) <
+                         a.GetN(), a.GetQ(fpu, draw_score, scale) + a.GetU(U_coeff)) <
                      std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score) + b.GetU(U_coeff));
+                         b.GetN(), b.GetQ(fpu, draw_score, scale) + b.GetU(U_coeff));
             });
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
@@ -426,7 +427,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                ? MEvaluator(params_, node)
                                : MEvaluator();
   for (const auto& edge : edges) {
-    float Q = edge.GetQ(fpu, draw_score);
+    float Q = edge.GetQ(fpu, draw_score, scale);
     float M = m_evaluator.GetM(edge, Q);
     std::ostringstream oss;
     oss << std::left;
@@ -675,8 +676,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
           // Default doesn't matter here so long as they are the same as either
           // both are N==0 (thus we're comparing equal defaults) or N!=0 and
           // default isn't used.
-          if (a.GetQ(0.0f, draw_score) != b.GetQ(0.0f, draw_score)) {
-            return a.GetQ(0.0f, draw_score) > b.GetQ(0.0f, draw_score);
+          if (a.GetQ(0.0f, draw_score, 0.0f) != b.GetQ(0.0f, draw_score, 0.0f)) {
+            return a.GetQ(0.0f, draw_score, 0.0f) > b.GetQ(0.0f, draw_score, 0.0f);
           }
           return a.GetP() > b.GetP();
         }
@@ -715,6 +716,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   float max_eval = -1.0f;
   const float fpu =
       GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
+  const float scale = GetScaleQ();
 
   for (auto edge : root_node_->Edges()) {
     if (!root_move_filter_.empty() &&
@@ -724,7 +726,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     }
     if (edge.GetN() + offset > max_n) {
       max_n = edge.GetN() + offset;
-      max_eval = edge.GetQ(fpu, draw_score);
+      max_eval = edge.GetQ(fpu, draw_score, scale);
     }
   }
 
@@ -740,7 +742,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score, scale) < min_eval) continue;
     sum += std::pow(
         std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
         1 / temperature);
@@ -759,7 +761,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
+    if (edge.GetQ(fpu, draw_score, scale) < min_eval) continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
@@ -814,6 +816,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   const auto draw_score = GetDrawScore(true);
   const float fpu =
       GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
+  const float scale = GetScaleQ();
   float max_q_plus_m = -1000;
   uint64_t max_n = 0;
   bool max_n_has_max_q_plus_m = true;
@@ -822,7 +825,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
                                : MEvaluator();
   for (const auto& edge : root_node_->Edges()) {
     const auto n = edge.GetN();
-    const auto q = edge.GetQ(fpu, draw_score);
+    const auto q = edge.GetQ(fpu, draw_score, scale);
     const auto m = m_evaluator.GetM(edge, q);
     const auto q_plus_m = q + m;
     stats->edge_n.push_back(n);
@@ -1164,6 +1167,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     // If we fall through, then n_in_flight_ has been incremented but this
     // playout remains incomplete; we must go deeper.
+    const float scale = GetScaleQ();
     const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
     const float puct_mult =
         cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
@@ -1198,7 +1202,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
 
-      const float Q = child.GetQ(fpu, draw_score);
+      const float Q = child.GetQ(fpu, draw_score, scale);
       const float M = m_evaluator.GetM(child, Q);
 
       const float score = child.GetU(puct_mult) + Q + M;
@@ -1453,8 +1457,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
   for (auto edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
-    // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score),
+    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score, 0.0f),
                         edge);
   }
 
@@ -1485,8 +1488,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
-      // TODO: As above - should this use logit_q if set?
-      const float q = edge.GetQ(-fpu, draw_score);
+      const float q = edge.GetQ(-fpu, draw_score, 0.0f);
       if (next_score > q) {
         budget_to_spend =
             std::min(budget, int(edge.GetP() * puct_mult / (next_score - q) -
