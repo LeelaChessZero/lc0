@@ -137,6 +137,8 @@ class Search {
   // the value of @is_odd_depth to change the sign of the draw score.
   // Depth of a root node is 0 (even number).
   float GetDrawScore(bool is_odd_depth) const;
+  
+  float GetScaleQ() const;
 
   // Ensure that all shared collisions are cancelled and clear them out.
   void CancelSharedCollisions();
