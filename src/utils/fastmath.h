@@ -81,5 +81,11 @@ inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
 inline float FastAtanh(const float a) {
   return 0.5 * FastLog((1.0f + a) / (1.0f - a));
 }
-
+  
+// ScaleQ(q,s) = atanh(s * q) / s
+// s in [0,1] and q in [-1,1]
+inline float ScaleQ(const float q, const float s) {
+  return (s > 0.0f) ? FastAtanh(s * q) / s : q;
+}
+  
 }  // namespace lczero
