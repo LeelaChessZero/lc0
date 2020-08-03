@@ -64,6 +64,9 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "When the engine cannot gather a large enough batch for immediate use, try "
     "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
+const OptionId SearchParams::kScaleQId{
+    "scale-q", "ScaleQ",
+    "Scaling factor to apply before computing atanh. 0 is no scaling."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -276,6 +279,7 @@ void SearchParams::Populate(OptionsParser* options) {
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
+  options->Add<FloatOption>(kScaleQId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
@@ -352,6 +356,7 @@ void SearchParams::Populate(OptionsParser* options) {
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
+      kScaleQ(options.Get<float>(kScaleQId.GetId()) * 0.99999994f),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
