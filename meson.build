@@ -15,7 +15,7 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true'],
+        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
@@ -418,11 +418,7 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      if get_option('default_library') != 'static'
-        cuda_arguments += ['-Xcompiler', '-MD']
-      else
-        cuda_arguments += ['-Xcompiler', '-MT']
-      endif
+      cuda_arguments += ['-Xcompiler', '-MT']
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
