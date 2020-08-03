@@ -46,7 +46,7 @@ class SearchParams {
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId);
   }
-  float GetScaleQ(bool at_root) const { return kScaleQ; }
+  float GetScaleQ() const { return kScaleQ; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
