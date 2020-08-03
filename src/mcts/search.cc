@@ -428,7 +428,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                : MEvaluator();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score, scale);
-    float M = m_evaluator.GetM(edge, Q);
+    float M = m_evaluator.GetM(edge, edge.GetQ(fpu, draw_score, 0.0f));
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
@@ -826,7 +826,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   for (const auto& edge : root_node_->Edges()) {
     const auto n = edge.GetN();
     const auto q = edge.GetQ(fpu, draw_score, scale);
-    const auto m = m_evaluator.GetM(edge, q);
+    const auto m = m_evaluator.GetM(edge, edge.GetQ(fpu, draw_score, 0.0f));
     const auto q_plus_m = q + m;
     stats->edge_n.push_back(n);
     if (edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) stats->win_found = true;
@@ -1203,7 +1203,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
 
       const float Q = child.GetQ(fpu, draw_score, scale);
-      const float M = m_evaluator.GetM(child, Q);
+      const float M = m_evaluator.GetM(child, child.GetQ(fpu, draw_score, 0.0f));
 
       const float score = child.GetU(puct_mult) + Q + M;
       if (score > best) {
