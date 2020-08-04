@@ -179,6 +179,13 @@ class Node {
   // betamcts::update relevances of children
   void CalculateRelevanceBetamcts(const float trust, const float percentile);
 
+  // betamcts::recalculation of eval
+  void RecalculateScoreBetamcts();
+
+  // recalculate evaluation until it is stable
+  void StabilizeScoreBetamcts(const float trust, const float percentile,
+  const int max_steps = 10, const float threshold = 0.001);
+
   float GetRBetamcts() const { return r_betamcts_; }
   /* betamcts::relevance should be edge property.
   Moved to Node for memory reasons. Revert if transpositions are included */

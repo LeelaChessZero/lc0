@@ -347,6 +347,46 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float percentile)
     }
 }
 
+void Node::RecalculateScoreBetamcts() {
+  float q_temp = q_betamcts_;
+  // float q_temp = q_betamcts_; // evals of expanded nodes not kept
+  float n_temp = 1.0f;
+  for (const auto& child : Edges()) {
+    const auto n = child.GetNBetamcts();
+    const auto r = child.GetRBetamcts();
+    if (n > 0) {
+      const auto visits_eff = r * n;
+      n_temp += visits_eff;
+      // Flip Q for opponent.
+      q_temp += -child.node()->GetQBetamcts() * visits_eff;
+    }
+  }
+  if (n_temp > 0) {
+    q_betamcts_ = q_temp / n_temp;
+    n_betamcts_ = n_temp;
+  }
+}
+
+void Node::StabilizeScoreBetamcts(const float trust, const float percentile,
+  const int max_steps, const float threshold) {
+  float q_init = 10.0; // just needs to be outside of [-1, 1] as we want to update
+  auto q_new = GetQBetamcts();
+    int steps = 0;
+    // ensure convergence when updating evals
+    // LOGFILE << "test: " << q_init - q_new;
+    while (steps < max_steps && std::abs(q_new - q_init) > threshold) {
+      if (steps > 0) {
+        LOGFILE << "Repeating score update iteration " << steps <<
+            ", q difference was " << q_new - q_init;
+      }
+    CalculateRelevanceBetamcts(trust, percentile);
+    RecalculateScoreBetamcts();
+    q_init = q_new;
+    q_new = GetQBetamcts();
+    steps++;
+  }
+}
+
 void Node::MakeNotTerminal() {
   terminal_type_ = Terminal::NonTerminal;
   n_ = 0;
@@ -409,24 +449,9 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
 
 
   } else {
-    if (edges_) { /* betamcts::update q_betamcts_ here */
-        float q_temp = q_betamcts_;
-        // float q_temp = q_betamcts_; // evals of expanded nodes not kept
-        float n_temp = 1.0f;
+    if (edges_) {
         if (full_betamcts_update) {
-          for (const auto& child : Edges()) {
-            const auto n = child.GetNBetamcts();
-            const auto r = child.GetRBetamcts();
-            if (n > 0) {
-              const auto visits_eff = r * n;
-              n_temp += visits_eff;
-              // Flip Q for opponent.
-              q_temp += -child.node()->GetQBetamcts() * visits_eff;
-            }
-          }
-          if (n_temp > 0) {
-              q_betamcts_ = q_temp / n_temp;
-              n_betamcts_ = n_temp; }
+          RecalculateScoreBetamcts();
         } else {
           q_betamcts_ += multivisit * (v - q_betamcts_) / (n_ + multivisit);
           n_betamcts_ += multivisit;
@@ -478,6 +503,9 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
     d_ = 1.0;
     m_ = 0.0;
     n_ = 0;
+    n_betamcts_ = 0.0;
+    q_betamcts_ = 0.0;
+    r_betamcts_ = 1.0;
   } else {
     // Recompute Q and M.
     wl_ -= multivisit * (v - wl_) / n_new;
@@ -485,6 +513,7 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
     m_ -= multivisit * (m - m_) / n_new;
     // Decrement N.
     n_ -= multivisit;
+    RecalculateScoreBetamcts();
     // Best child is potentially no longer valid.
     best_child_cached_ = nullptr;
   }

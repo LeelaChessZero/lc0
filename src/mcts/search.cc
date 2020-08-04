@@ -1179,6 +1179,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           // Revert all visits on twofold draw when making it non terminal.
           node_to_revert->RevertTerminalVisits(wl, d,
                           m + (float)depth_counter, terminal_visits);
+          node_to_revert->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
+                             params_.GetBetamctsPercentile(), 10, 0.001);
           depth_counter++;
           // Even if original tree still exists, we don't want to revert more
           // than until new root.
@@ -1698,9 +1700,20 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
       m = n->GetM();
     }
-    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
-                           params_.GetBetamctsLevel()>=3,
-       ((n->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0));
+    // When doing full betamcts score update, repeat until evals converge
+    if ((n->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
+      auto q_init = n->GetQBetamcts();
+      n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
+                           params_.GetBetamctsLevel()>=3, true);
+      auto q_new = n->GetQBetamcts();
+      if (std::abs(q_new - q_init) > 0.001) {
+        n->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
+              params_.GetBetamctsPercentile(), 10, 0.001);
+      }
+    } else {
+      n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
+                           params_.GetBetamctsLevel()>=3, false);
+    }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
