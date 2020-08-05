@@ -331,8 +331,8 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
-             ? value
-             : -node->GetQ(-draw_score) -
+             ? ScaleQ(std::min(1.0f, std::max(-1.0f, value)), params.GetScaleQ())
+             : -ScaleQ(node->GetQ(-draw_score), params.GetScaleQ()) -
                    value * std::sqrt(node->GetVisitedPolicy());
 }
 
