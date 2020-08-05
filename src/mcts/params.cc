@@ -357,7 +357,7 @@ void SearchParams::Populate(OptionsParser* options) {
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
-      kScaleQ(1.0f - std:pow(2, -options.Get<float>(kScaleQId))),
+      kScaleQ(1.0f - std::pow(2, -options.Get<float>(kScaleQId))),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
