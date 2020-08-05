@@ -66,7 +66,8 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "them into cache."};
 const OptionId SearchParams::kScaleQId{
     "scale-q", "ScaleQ",
-    "Scaling factor to apply before computing atanh. 0 is no scaling."};
+    "Parameter for calculating the scaling factor to apply before computing atanh. "
+    "The scaling factor is calculated as 1 - 2^(-ScaleQ) with ScaleQ in [0,24]."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -279,7 +280,7 @@ void SearchParams::Populate(OptionsParser* options) {
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
-  options->Add<FloatOption>(kScaleQId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kScaleQId, 0.0f, 24.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
@@ -356,7 +357,7 @@ void SearchParams::Populate(OptionsParser* options) {
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
-      kScaleQ(options.Get<float>(kScaleQId) * 0.99999994f),
+      kScaleQ(1.0f - std:pow(2, -options.Get<float>(kScaleQId))),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
