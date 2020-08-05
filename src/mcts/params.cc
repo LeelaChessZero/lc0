@@ -28,6 +28,7 @@
 #include "mcts/params.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "utils/exception.h"
 
