@@ -322,7 +322,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type,
 
 void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
   const auto winrate = (1.0f - GetQBetamcts())/2.0f;
-  const auto visits = GetNBetamcts() * trust + 42;
+  const auto visits = GetNBetamcts() * trust + 10; // + 42;
 
   auto alpha = 1.0f + winrate * visits;
   auto beta = 1.0f + (1.0f - winrate) * visits;
@@ -340,7 +340,8 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float percentile)
       auto logit_eval_child = log(alpha_child / beta_child);
       auto logit_var_child = 1.0f / alpha_child + 1.0f / beta_child;
 
-      auto child_relevance = 1.0f + erf( (logit_eval_child - logit_eval_parent)
+      auto child_relevance = winrate_child == 0.0 ? 0.0 :
+                        1.0f + erf( (logit_eval_child - logit_eval_parent)
                       / sqrt(2.0 * (logit_var_child + logit_var_parent)));
 
       child.SetRBetamcts(child_relevance);
@@ -362,7 +363,8 @@ void Node::RecalculateScoreBetamcts() {
     }
   }
   if (n_temp > 0) {
-    q_betamcts_ = q_temp / n_temp;
+    // Testing a dissipation term to hopefully stabilize evaluation.
+    q_betamcts_ = 0.1 * q_betamcts_ + 0.9 * q_temp / n_temp;
     n_betamcts_ = n_temp;
   }
 }
@@ -375,9 +377,12 @@ void Node::StabilizeScoreBetamcts(const float trust, const float percentile,
     // ensure convergence when updating evals
     // LOGFILE << "test: " << q_init - q_new;
     while (steps < max_steps && std::abs(q_new - q_init) > threshold) {
-      if (steps > 0) {
-        LOGFILE << "Repeating score update iteration " << steps <<
-            ", q difference was " << q_new - q_init;
+      if (steps == 50) {
+         LOGFILE << "Repeating score update. Move stats: N " << n_;
+      }
+      if (steps > 50) {
+        LOGFILE << "iteration " << steps <<
+            ", q_old: " << q_init << ", q_new: " << q_new << ", diff: " << q_new - q_init;
       }
     CalculateRelevanceBetamcts(trust, percentile);
     RecalculateScoreBetamcts();
@@ -428,6 +433,7 @@ void Node::CancelScoreUpdate(int multivisit) {
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
+    float multivisit_eff,
     const bool inflate_terminals=false, const bool full_betamcts_update=true) {
   if (IsTerminal()) {
     // terminal logic for draws only
@@ -453,8 +459,8 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
         if (full_betamcts_update) {
           RecalculateScoreBetamcts();
         } else {
-          q_betamcts_ += multivisit * (v - q_betamcts_) / (n_ + multivisit);
-          n_betamcts_ += multivisit;
+          q_betamcts_ += multivisit_eff * (v - q_betamcts_) / (n_ + multivisit_eff);
+          n_betamcts_ += multivisit_eff;
         }
       }
   }

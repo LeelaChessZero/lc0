@@ -220,6 +220,7 @@ class Node {
   // * N (+=1)
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit,
+              float multivisit_eff,
               const bool inflate_terminals, const bool full_betamcts_update);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);

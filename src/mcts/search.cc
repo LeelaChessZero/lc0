@@ -1180,7 +1180,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           node_to_revert->RevertTerminalVisits(wl, d,
                           m + (float)depth_counter, terminal_visits);
           node_to_revert->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
-                             params_.GetBetamctsPercentile(), 10, 0.001);
+                             params_.GetBetamctsPercentile(), 1000, 0.0001);
           depth_counter++;
           // Even if original tree still exists, we don't want to revert more
           // than until new root.
@@ -1690,6 +1690,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float m_delta = 0.0f;
   uint32_t solid_threshold =
       static_cast<uint32_t>(params_.GetSolidTreeThreshold());
+  float r = 1.0;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
 
@@ -1704,15 +1705,17 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if ((n->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
       auto q_init = n->GetQBetamcts();
       n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
-                           params_.GetBetamctsLevel()>=3, true);
+                           r * (float)node_to_process.multivisit,
+                           params_.GetBetamctsLevel()>=2, true);
       auto q_new = n->GetQBetamcts();
       if (std::abs(q_new - q_init) > 0.001) {
         n->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
-              params_.GetBetamctsPercentile(), 10, 0.001);
+              params_.GetBetamctsPercentile(), 1000, 0.0001);
       }
     } else {
       n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
-                           params_.GetBetamctsLevel()>=3, false);
+                           r * (float)node_to_process.multivisit,
+                           params_.GetBetamctsLevel()>=2, false);
     }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
@@ -1741,6 +1744,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     v = -v;
     v_delta = -v_delta;
     m++;
+    // Before switching to parent, save betamcts relevance of child.
+    r = n->GetRBetamcts();
 
     // Update the stats.
     // Best move.
