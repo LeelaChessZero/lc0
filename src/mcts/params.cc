@@ -70,12 +70,11 @@ const OptionId SearchParams::kBetamctsLevelId{
     "1 reports values in UCI, 2 uses Q in search, 3 uses effective N in search"};
 const OptionId SearchParams::kBetamctsTrustId{
     "betamcts-trust", "BetamctsTrust",
-    "Trust factor for betamcts Q calculation. 0.0 will result in plain MCTS "
-    "behaviour, high values in minimax."};
-const OptionId SearchParams::kBetamctsPercentileId{
-    "betamcts-percentile", "BetamctsPercentile",
-    "Percentile for betamcts Q calculation. 0.0 will result in plain MCTS "
-    "behaviour. For maximal minimax similarity use 0.5"};
+    "Trust increment for betamcts Q calculation."};
+const OptionId SearchParams::kBetamctsPriorId{
+    "betamcts-prior", "BetamctsPrior",
+    "Prior visits for betamcts Q calculation. High value will approximate "
+    "minimax, setting both params to 0.0 will result in plain MCTS behavior."};
 const OptionId SearchParams::kBetamctsUpdateIntervalId{
     "betamcts-update-interval", "BetamctsUpdateInterval",
     "Update interval for betamcts R calculation. Relevance is only updated "
@@ -299,7 +298,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
   options->Add<IntOption>(kBetamctsLevelId, 0, 4) = 2;
   options->Add<FloatOption>(kBetamctsTrustId, 0.0f, 1000.0f) = 0.1f;
-  options->Add<FloatOption>(kBetamctsPercentileId, 0.0f, 0.5f) = 0.35f;
+  options->Add<FloatOption>(kBetamctsPriorId, 0.0f, 100000.0f) = 42.0f;
   options->Add<IntOption>(kBetamctsUpdateIntervalId, 1, 100) = 10;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
@@ -380,7 +379,7 @@ SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kBetamctsLevel(options.Get<int>(kBetamctsLevelId)),
       kBetamctsTrust(options.Get<float>(kBetamctsTrustId)),
-      kBetamctsPercentile(options.Get<float>(kBetamctsPercentileId)),
+      kBetamctsPrior(options.Get<float>(kBetamctsPriorId)),
       kBetamctsUpdateInterval(options.Get<int>(kBetamctsUpdateIntervalId)),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(

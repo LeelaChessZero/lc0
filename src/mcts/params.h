@@ -48,7 +48,7 @@ class SearchParams {
   }
   int GetBetamctsLevel() const { return kBetamctsLevel; }
   float GetBetamctsTrust() const { return kBetamctsTrust; }
-  float GetBetamctsPercentile() const { return kBetamctsPercentile; }
+  float GetBetamctsPrior() const { return kBetamctsPrior; }
   int GetBetamctsUpdateInterval() const { return kBetamctsUpdateInterval; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
@@ -121,7 +121,7 @@ class SearchParams {
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kBetamctsLevelId;
   static const OptionId kBetamctsTrustId;
-  static const OptionId kBetamctsPercentileId;
+  static const OptionId kBetamctsPriorId;
   static const OptionId kBetamctsUpdateIntervalId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
@@ -183,7 +183,7 @@ class SearchParams {
   //            trivial search optimizations.
   const int kBetamctsLevel;
   const float kBetamctsTrust;
-  const float kBetamctsPercentile;
+  const float kBetamctsPrior;
   const int kBetamctsUpdateInterval;
   const float kCpuct;
   const float kCpuctAtRoot;

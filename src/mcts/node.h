@@ -177,13 +177,13 @@ class Node {
   float GetM() const { return m_; }
 
   // betamcts::update relevances of children
-  void CalculateRelevanceBetamcts(const float trust, const float percentile);
+  void CalculateRelevanceBetamcts(const float trust, const float prior);
 
   // betamcts::recalculation of eval
   void RecalculateScoreBetamcts();
 
   // recalculate evaluation until it is stable
-  void StabilizeScoreBetamcts(const float trust, const float percentile,
+  void StabilizeScoreBetamcts(const float trust, const float prior,
   const int max_steps = 10, const float threshold = 0.001);
 
   float GetRBetamcts() const { return r_betamcts_; }

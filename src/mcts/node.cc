@@ -320,12 +320,16 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type,
     }
 }
 
-void Node::CalculateRelevanceBetamcts(const float trust, const float percentile) {
+void Node::CalculateRelevanceBetamcts(const float trust, const float prior) {
   const auto winrate = (1.0f - GetQBetamcts())/2.0f;
-  const auto visits = GetNBetamcts() * trust + 10; // + 42;
+  const auto visits = GetNBetamcts() * trust + prior;
 
   auto alpha = 1.0f + winrate * visits;
   auto beta = 1.0f + (1.0f - winrate) * visits;
+  // Experimenting with sharp parent eval
+  /* auto logit_eval_parent = log((winrate + 0.00001) / (1.0 - winrate + 0.00001));
+  auto logit_var_parent = 0.0f; */
+  // Parent has uncertainty as well
   auto logit_eval_parent = log(alpha / beta);
   auto logit_var_parent = 1.0f / alpha + 1.0f / beta;
 
@@ -333,7 +337,7 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float percentile)
     // betamcts::child Q values are flipped
     if (child.GetN() == 0) {continue;}
     const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
-    const auto visits_child = child.GetNBetamcts() * trust + 42;
+    const auto visits_child = child.GetNBetamcts() * trust + prior;
 
     auto alpha_child = 1.0f + winrate_child * visits_child;
     auto beta_child = 1.0f + (1.0f - winrate_child) * visits_child;
@@ -364,12 +368,12 @@ void Node::RecalculateScoreBetamcts() {
   }
   if (n_temp > 0) {
     // Testing a dissipation term to hopefully stabilize evaluation.
-    q_betamcts_ = 0.1 * q_betamcts_ + 0.9 * q_temp / n_temp;
+    q_betamcts_ = 0.0 * q_betamcts_ + 1.0 * q_temp / n_temp;
     n_betamcts_ = n_temp;
   }
 }
 
-void Node::StabilizeScoreBetamcts(const float trust, const float percentile,
+void Node::StabilizeScoreBetamcts(const float trust, const float prior,
   const int max_steps, const float threshold) {
   float q_init = 10.0; // just needs to be outside of [-1, 1] as we want to update
   auto q_new = GetQBetamcts();
@@ -388,7 +392,7 @@ void Node::StabilizeScoreBetamcts(const float trust, const float percentile,
         LOGFILE << "iteration " << steps <<
             ", q_old: " << q_init << ", q_new: " << q_new << ", diff: " << q_new - q_init;
       }
-    CalculateRelevanceBetamcts(trust, percentile);
+    CalculateRelevanceBetamcts(trust, prior);
     RecalculateScoreBetamcts();
     q_init = q_new;
     q_new = GetQBetamcts();

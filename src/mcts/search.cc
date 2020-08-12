@@ -1180,7 +1180,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           node_to_revert->RevertTerminalVisits(wl, d,
                           m + (float)depth_counter, terminal_visits);
           node_to_revert->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
-                             params_.GetBetamctsPercentile(), 1000, 0.0001);
+                             params_.GetBetamctsPrior(), 1000, 0.0001);
           depth_counter++;
           // Even if original tree still exists, we don't want to revert more
           // than until new root.
@@ -1202,7 +1202,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // betamcts::calculate relevances only every X visits
     if ((node->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
       node->CalculateRelevanceBetamcts(params_.GetBetamctsTrust(),
-            params_.GetBetamctsPercentile());
+            params_.GetBetamctsPrior());
     }
 
     // If unexamined leaf node -- the end of this playout.
@@ -1710,7 +1710,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       auto q_new = n->GetQBetamcts();
       if (std::abs(q_new - q_init) > 0.001) {
         n->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
-              params_.GetBetamctsPercentile(), 1000, 0.0001);
+              params_.GetBetamctsPrior(), 1000, 0.0001);
       }
     } else {
       n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
