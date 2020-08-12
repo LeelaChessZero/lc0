@@ -1336,9 +1336,9 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
   if (legal_moves.empty()) {
     // Could be a checkmate or a stalemate
     if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON, params_.GetBetamctsLevel()>=4);
+      node->MakeTerminal(GameResult::WHITE_WON);
     } else {
-      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
+      node->MakeTerminal(GameResult::DRAW);
     }
     return;
   }
@@ -1347,12 +1347,12 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
   // if they are root, then thinking about them is the point.
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
-      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
+      node->MakeTerminal(GameResult::DRAW);
       return;
     }
 
     if (history_.Last().GetRule50Ply() >= 100) {
-      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
+      node->MakeTerminal(GameResult::DRAW);
       return;
     }
 
@@ -1360,7 +1360,7 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     // Mark two-fold repetitions as draws according to settings.
     // Depth starts with 1 at root, so number of plies in PV is depth - 1.
     if (repetitions >= 2) {
-      node->MakeTerminal(GameResult::DRAW, params_.GetBetamctsLevel()>=3);
+      node->MakeTerminal(GameResult::DRAW);
       return;
     } else if (repetitions == 1 && depth - 1 >= 4 &&
                params_.GetTwoFoldDraws() &&
@@ -1396,13 +1396,13 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
           node->MakeTerminal(GameResult::BLACK_WON, m,
-                     Node::Terminal::Tablebase, params_.GetBetamctsLevel()>=4);
+                     Node::Terminal::Tablebase);
         } else if (wdl == WDL_LOSS) {
           node->MakeTerminal(GameResult::WHITE_WON, m,
-                     Node::Terminal::Tablebase, params_.GetBetamctsLevel()>=4);
+                     Node::Terminal::Tablebase);
         } else {  // Cursed wins and blessed losses count as draws.
           node->MakeTerminal(GameResult::DRAW, m,
-                     Node::Terminal::Tablebase, params_.GetBetamctsLevel()>=4);
+                     Node::Terminal::Tablebase);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
