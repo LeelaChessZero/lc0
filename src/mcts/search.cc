@@ -1150,10 +1150,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (node->IsTerminal()) {
       // Probably best place to check for two-fold draws consistently.
       // Depth starts with 1 at root, so real depth is depth - 1.
+      // Check whether first repetition was before root. If yes, remove
+      // terminal status of node and revert all visits in the tree.
+      // Length of repetition was stored in m_. This code will only do
+      // something when tree is reused and twofold visits need to be reverted.
       if (node->IsTwoFoldTerminal() && depth - 1 < node->GetM()) {
-        // Check whether first repetition was before root. If yes, remove
-        // terminal status of node and revert all visits in the tree.
-        // Length of repetition was stored in m_.
         int depth_counter = 0;
         // Cache node's values as we reset them in the process. We could
         // manually set wl and d, but if we want to reuse this for reverting
@@ -1162,13 +1163,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const auto d = node->GetD();
         const auto m = node->GetM();
         const auto terminal_visits = node->GetN();
-        LOGFILE << "== reverting " << terminal_visits << " visits to " <<
-              "a twofold terminal at depth " << depth - 1 << " ==";
         for (Node* node_to_revert = node; node_to_revert != nullptr;
                         node_to_revert = node_to_revert->GetParent()) {
           // Revert all visits on twofold draw when making it non terminal.
-          node_to_revert->RevertTerminalVisits(wl, d,
-                          m + (float)depth_counter, terminal_visits);
+          node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
+                                                terminal_visits);
           depth_counter++;
           // Even if original tree still exists, we don't want to revert more
           // than until new root.
@@ -1192,8 +1191,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
     if (possible_shortcut_child) {
-      // Add two here to reverse the conservatism that goes into calculating the
-      // remaining cache visits.
+      // Add two here to reverse the conservatism that goes into calculating
+      // the remaining cache visits.
       collision_limit =
           std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
       is_root_node = false;
