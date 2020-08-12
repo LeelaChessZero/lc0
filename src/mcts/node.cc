@@ -330,22 +330,22 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float percentile)
   auto logit_var_parent = 1.0f / alpha + 1.0f / beta;
 
   for (const auto& child : Edges()) {
-      // betamcts::child Q values are flipped
-      if (child.GetN() == 0) {continue;}
-      const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
-      const auto visits_child = child.GetNBetamcts() * trust + 42;
+    // betamcts::child Q values are flipped
+    if (child.GetN() == 0) {continue;}
+    const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
+    const auto visits_child = child.GetNBetamcts() * trust + 42;
 
-      auto alpha_child = 1.0f + winrate_child * visits_child;
-      auto beta_child = 1.0f + (1.0f - winrate_child) * visits_child;
-      auto logit_eval_child = log(alpha_child / beta_child);
-      auto logit_var_child = 1.0f / alpha_child + 1.0f / beta_child;
+    auto alpha_child = 1.0f + winrate_child * visits_child;
+    auto beta_child = 1.0f + (1.0f - winrate_child) * visits_child;
+    auto logit_eval_child = log(alpha_child / beta_child);
+    auto logit_var_child = 1.0f / alpha_child + 1.0f / beta_child;
 
-      auto child_relevance = winrate_child == 0.0 ? 0.0 :
-                        1.0f + erf( (logit_eval_child - logit_eval_parent)
-                      / sqrt(2.0 * (logit_var_child + logit_var_parent)));
+    auto child_relevance = winrate_child == 0.0 ? 0.0 :
+                    1.0f + erf( (logit_eval_child - logit_eval_parent)
+                    / sqrt(2.0 * (logit_var_child + logit_var_parent)));
 
-      child.SetRBetamcts(child_relevance);
-    }
+    child.SetRBetamcts(child_relevance);
+  }
 }
 
 void Node::RecalculateScoreBetamcts() {
@@ -378,7 +378,11 @@ void Node::StabilizeScoreBetamcts(const float trust, const float percentile,
     // LOGFILE << "test: " << q_init - q_new;
     while (steps < max_steps && std::abs(q_new - q_init) > threshold) {
       if (steps == 50) {
-         LOGFILE << "Repeating score update. Move stats: N " << n_;
+        LOGFILE << "Repeating score update. Move stats: N " << n_;
+        for (const auto& child : Edges()) {
+          LOGFILE << "Child: q=" << child.GetQBetamcts(0.0) << ", n_eff=" <<
+            child.GetNBetamcts() << ", r=" << child.GetRBetamcts();
+        }
       }
       if (steps > 50) {
         LOGFILE << "iteration " << steps <<
