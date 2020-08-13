@@ -1164,10 +1164,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         const auto m = node->GetM();
         const auto terminal_visits = node->GetN();
         for (Node* node_to_revert = node; node_to_revert != nullptr;
-                        node_to_revert = node_to_revert->GetParent()) {
+             node_to_revert = node_to_revert->GetParent()) {
           // Revert all visits on twofold draw when making it non terminal.
           node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
-                                                terminal_visits);
+                                               terminal_visits);
           depth_counter++;
           // Even if original tree still exists, we don't want to revert more
           // than until new root.
