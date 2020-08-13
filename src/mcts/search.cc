@@ -1715,7 +1715,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     } else {
       n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
                            r * (float)node_to_process.multivisit,
-                           params_.GetBetamctsLevel()>=2, false);
+                           params_.GetBetamctsLevel()>=4, false);
     }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
