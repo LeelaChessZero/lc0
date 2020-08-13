@@ -1706,7 +1706,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       auto q_init = n->GetQBetamcts();
       n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
                            r * (float)node_to_process.multivisit,
-                           params_.GetBetamctsLevel()>=2, true);
+                           params_.GetBetamctsLevel()>=4, true);
       auto q_new = n->GetQBetamcts();
       if (std::abs(q_new - q_init) > 0.001) {
         n->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),

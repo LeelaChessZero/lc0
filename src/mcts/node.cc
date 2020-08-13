@@ -382,7 +382,8 @@ void Node::StabilizeScoreBetamcts(const float trust, const float prior,
     // LOGFILE << "test: " << q_init - q_new;
     while (steps < max_steps && std::abs(q_new - q_init) > threshold) {
       if (steps == 50) {
-        LOGFILE << "Repeating score update. Move stats: N " << n_;
+        LOGFILE << "Repeating score update. Move stats: N_eff " << n_betamcts_
+        << ", q=" << q_betamcts_;
         for (const auto& child : Edges()) {
           LOGFILE << "Child: q=" << child.GetQBetamcts(0.0) << ", n_eff=" <<
             child.GetNBetamcts() << ", r=" << child.GetRBetamcts();
