@@ -202,7 +202,7 @@ class Node {
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
-    Terminal type = Terminal::EndOfGame, const bool inflate_terminals = false);
+    Terminal type = Terminal::EndOfGame, const bool inflate_terminals = true);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
   void SetBounds(GameResult lower, GameResult upper);
