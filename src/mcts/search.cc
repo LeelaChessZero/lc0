@@ -1181,7 +1181,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
                                                terminal_visits);
           node_to_revert->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
-                             params_.GetBetamctsPrior(), 20, 0.0001);
+                             params_.GetBetamctsPrior(), 5, 0.001);
           depth_counter++;
           // Even if original tree still exists, we don't want to revert more
           // than until new root.
@@ -1711,7 +1711,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       auto q_new = n->GetQBetamcts();
       if (std::abs(q_new - q_init) > 0.001) {
         n->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
-              params_.GetBetamctsPrior(), 20, 0.0001);
+              params_.GetBetamctsPrior(), 5, 0.001);
       }
     } else {
       n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,

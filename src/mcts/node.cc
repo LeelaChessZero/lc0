@@ -316,8 +316,8 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type,
   }
   // special treatment for terminal nodes, only for draws now
     if (inflate_terminals) {
-      n_betamcts_ = 100.0f; // betamcts::terminal nodes get high n
-      SetRBetamcts(0.01);
+      n_betamcts_ = 10.0f; // betamcts::terminal nodes get high n
+      SetRBetamcts(0.1f);
     }
 }
 
@@ -457,7 +457,7 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
     // treat all terminals equally:
     // terminal node will start at 500 visits, getting +50 on every visit
     if (inflate_terminals) {
-      n_betamcts_ += multivisit * 100;
+      n_betamcts_ += multivisit * 10;
     } else {
       n_betamcts_ += multivisit;
     }
