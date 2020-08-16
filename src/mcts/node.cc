@@ -38,6 +38,7 @@
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
+#include "utils/fastmath.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -345,7 +346,7 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float prior) {
     auto logit_var_child = 1.0f / alpha_child + 1.0f / beta_child;
 
     auto child_relevance = winrate_child == 0.0 ? 0.0 :
-                    1.0f + erf( (logit_eval_child - logit_eval_parent)
+                    1.0f + FastErfLogistic( (logit_eval_child - logit_eval_parent)
                     / sqrt(2.0 * (logit_var_child + logit_var_parent)));
 
     child.SetRBetamcts(child_relevance);
@@ -442,7 +443,7 @@ void Node::CancelScoreUpdate(int multivisit) {
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
     float multivisit_eff,
-    const bool inflate_terminals=false, const bool full_betamcts_update=true) {
+    const bool inflate_terminals=true, const bool full_betamcts_update=true) {
   if (IsTerminal()) {
     // terminal logic for draws only
 /*    if ((q_betamcts_ == 0.0) && (inflate_terminals)) {
