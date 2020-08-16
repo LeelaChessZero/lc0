@@ -528,9 +528,9 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
     // Decrement N.
     n_ -= multivisit;
     RecalculateScoreBetamcts();
-    // Best child is potentially no longer valid.
-    best_child_cached_ = nullptr;
   }
+  // Best child is potentially no longer valid.
+  best_child_cached_ = nullptr;
 }
 
 void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
