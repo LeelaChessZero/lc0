@@ -353,9 +353,9 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float prior) {
 }
 
 void Node::RecalculateScoreBetamcts() {
-  float q_temp = q_betamcts_;
+  float q_temp = 0.0f;
   // float q_temp = q_betamcts_; // evals of expanded nodes not kept
-  float n_temp = 1.0f;
+  float n_temp = 0.0f;
   for (const auto& child : Edges()) {
     const auto n = child.GetNBetamcts();
     const auto r = child.GetRBetamcts();
@@ -367,8 +367,7 @@ void Node::RecalculateScoreBetamcts() {
     }
   }
   if (n_temp > 0) {
-    // Testing a dissipation term to hopefully stabilize evaluation.
-    q_betamcts_ = 0.0 * q_betamcts_ + 1.0 * q_temp / n_temp;
+    q_betamcts_ = q_temp / n_temp;
     n_betamcts_ = n_temp;
   }
 }
