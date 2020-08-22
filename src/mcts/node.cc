@@ -340,16 +340,20 @@ void Node::CalculateRelevanceBetamcts(const float trust, const float prior) {
     const auto winrate_child = (1.0f + child.node()->GetQBetamcts())/2.0f;
     const auto visits_child = child.GetNBetamcts() * trust + prior;
 
-    auto alpha_child = 1.0f + winrate_child * visits_child;
-    auto beta_child = 1.0f + (1.0f - winrate_child) * visits_child;
-    auto logit_eval_child = log(alpha_child / beta_child);
-    auto logit_var_child = 1.0f / alpha_child + 1.0f / beta_child;
+    if (visits == 0.0 && visits_child == 0.0) {
+      child.SetRBetamcts(1.0);
+    } else {
+      auto alpha_child = 1.0f + winrate_child * visits_child;
+      auto beta_child = 1.0f + (1.0f - winrate_child) * visits_child;
+      auto logit_eval_child = log(alpha_child / beta_child);
+      auto logit_var_child = 1.0f / alpha_child + 1.0f / beta_child;
 
-    auto child_relevance = winrate_child == 0.0 ? 0.0 :
-                    1.0f + FastErfLogistic( (logit_eval_child - logit_eval_parent)
-                    / sqrt(2.0 * (logit_var_child + logit_var_parent)));
+      auto child_relevance = winrate_child == 0.0 ? 0.0 :
+            1.0f + FastErfLogistic( (logit_eval_child - logit_eval_parent)
+            / sqrt(2.0 * (logit_var_child + logit_var_parent)));
 
-    child.SetRBetamcts(child_relevance);
+      child.SetRBetamcts(child_relevance);
+    }
   }
 }
 

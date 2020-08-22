@@ -1180,8 +1180,10 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
           // Revert all visits on twofold draw when making it non terminal.
           node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
                                                terminal_visits);
-          node_to_revert->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
+          if (params_.GetBetamctsLevel() >= 1) {
+            node_to_revert->StabilizeScoreBetamcts(params_.GetBetamctsTrust(),
                              params_.GetBetamctsPrior(), 5, 0.001);
+          }
           depth_counter++;
           // Even if original tree still exists, we don't want to revert more
           // than until new root.
@@ -1703,7 +1705,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = n->GetM();
     }
     // When doing full betamcts score update, repeat until evals converge
-    if ((n->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
+    if (params_.GetBetamctsLevel() >= 1 &&
+        (n->GetNStarted() + 1 ) % params_.GetBetamctsUpdateInterval() == 0) {
       auto q_init = n->GetQBetamcts();
       n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
                            r * (float)node_to_process.multivisit,
