@@ -678,6 +678,13 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
+          // Prefer largest n_betamcts * relevance when using betamcts.
+          // At level = 0, this just equates to equal visits.
+          if (a.GetRBetamcts() * a.GetNBetamcts() !=
+              b.GetRBetamcts() * b.GetNBetamcts()) {
+            return a.GetRBetamcts() * a.GetNBetamcts() >
+                    b.GetRBetamcts() * b.GetNBetamcts();
+          }
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
           // Default doesn't matter here so long as they are the same as either
@@ -687,7 +694,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
             return a.GetQ(0.0f, draw_score) > b.GetQ(0.0f, draw_score);
           }
           return a.GetP() > b.GetP();
-        }
+    }
 
         // Both variants are winning, prefer shortest win.
         if (a_rank > kNonTerminal) {
