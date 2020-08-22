@@ -366,9 +366,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   std::sort(edges.begin(), edges.end(),
             [&fpu, &U_coeff, &draw_score, &betamcts_q](EdgeAndNode a, EdgeAndNode b) {
               return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score, betamcts_q) + a.GetU(U_coeff)) <
+                         betamcts_q ? a.GetNBetamcts() * a.GetRBetamcts() : a.GetN(),
+                            a.GetQ(fpu, draw_score, betamcts_q) + a.GetU(U_coeff)) <
                      std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score, betamcts_q) + b.GetU(U_coeff));
+                         betamcts_q ? b.GetNBetamcts() * b.GetRBetamcts() : b.GetN(),
+                            b.GetQ(fpu, draw_score, betamcts_q) + b.GetU(U_coeff));
             });
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
