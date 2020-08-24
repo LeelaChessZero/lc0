@@ -418,7 +418,15 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      cuda_arguments += ['-Xcompiler', '-MT']
+      if get_option('b_vscrt') == 'mt'
+        cuda_arguments += ['-Xcompiler', '-MT']
+      elif get_option('b_vscrt') == 'mtd'
+        cuda_arguments += ['-Xcompiler', '-MTd']
+      elif get_option('b_vscrt') == 'mdd' or (get_option('b_vscrt') == 'from_buildtype' and get_option('buildtype') == 'debug')
+        cuda_arguments += ['-Xcompiler', '-MDd']
+      elif get_option('b_vscrt') != 'none'
+        cuda_arguments += ['-Xcompiler', '-MD']
+      endif
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
     endif
