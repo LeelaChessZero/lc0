@@ -119,7 +119,7 @@ class Node {
   using Iterator = Edge_Iterator<false>;
   using ConstIterator = Edge_Iterator<true>;
 
-  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase };
+  enum class Terminal : uint8_t { NonTerminal, EndOfGame, Tablebase, TwoFold };
 
   // Takes pointer to a parent node and own index in a parent.
   Node(Node* parent, uint16_t index)
@@ -165,6 +165,7 @@ class Node {
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
+  bool IsTwoFoldTerminal() const { return terminal_type_ == Terminal::TwoFold; }
   typedef std::pair<GameResult, GameResult> Bounds;
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
   uint8_t GetNumEdges() const { return num_edges_; }
@@ -191,6 +192,8 @@ class Node {
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
+  // Revert visits to a node which ended in a now reverted terminal.
+  void RevertTerminalVisits(float v, float d, float m, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
