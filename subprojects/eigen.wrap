@@ -5,6 +5,6 @@ source_url = https://gitlab.com/libeigen/eigen/-/archive/3.3.7/eigen-3.3.7.tar.b
 source_filename = eigen-3.3.7.tar.bz2
 source_hash = 685adf14bd8e9c015b78097c1dc22f2f01343756f196acdc76a678e1ae352e11
 
-patch_url = https://github.com/borg323/eigen/files/5115192/eigen-3.3.7-1u-wrap.zip
+patch_url = https://github.com/borg323/eigen/files/5124100/eigen-3.3.7-1u-wrap.zip
 patch_filename = eigen-3.3.7-1u-wrap.zip
 patch_hash = f9d8cc10cb135a5cc3761f316e84d3e3e42949970245f4256470b8ec71eac3e3
