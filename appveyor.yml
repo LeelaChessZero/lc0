@@ -26,8 +26,8 @@ install:
 - cmd: set BLAS=false
 - cmd: set GTEST=false
 - cmd: set ANDROID=false
-- cmd: set NET=703350
-- cmd: set NET_HASH=feb6dcb84697b55c3573f503dc9fca2783478ef5f3021669ad854129aaab0683
+- cmd: set NET=703810
+- cmd: set NET_HASH=b30e742bcfd905815e0e7dbd4e1bafb41ade748f85d006b8e28758f1a3107ae3
 - cmd: IF %NAME%==android set ANDROID=true
 - cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
 - cmd: IF %NAME%==gpu-dx12 set DX=true
