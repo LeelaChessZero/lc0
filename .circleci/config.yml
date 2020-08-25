@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: danieluranga/leela_chess_zero-lc0_ubuntu_builder:0.0.7
+      - image: danieluranga/leela_chess_zero-lc0_ubuntu_builder:0.0.8
     steps:
       - checkout
       - run:
