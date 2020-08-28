@@ -1,3 +1,14 @@
+v0.26.2-rc1 (2020-08-28)
+~~~~~~~~~~~
+* Repetitions in the search tree are marked as draws, to explore more promising
+  lines. Enabled by default (except in selfplay mode) use
+  `--two-fold-draws=false` to disable.
+* Syzygy tablebase files can now be used in selfplay. Still need to add
+  adjudication support before we can consider using this for training.
+* Default net updated to 703810.
+* Fix for book with CR/LF line endings.
+* Updated Eigen wrap to use new download link.
+
 v0.26.1 (2020-07-15)
 ~~~~~~~
 * Fix a bug where invalid openings-pgn settings would result in the book
