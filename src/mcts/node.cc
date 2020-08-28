@@ -293,7 +293,7 @@ void Node::SortEdges() {
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
-  SetBounds(result, result);
+  if (type != Terminal::TwoFold) SetBounds(result, result);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -375,8 +375,34 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   d_ += multivisit * d / n_;
   m_ += multivisit * m / n_;
   // Best child is potentially no longer valid. This shouldn't be needed since
-  // AjdustForTerminal is always called immediately after FinalizeScoreUpdate,
+  // AdjustForTerminal is always called immediately after FinalizeScoreUpdate,
   // but for safety in case that changes.
+  best_child_cached_ = nullptr;
+}
+
+void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
+  // Compute new n_ first, as reducing a node to 0 visits is a special case.
+  const int n_new = n_ - multivisit;
+  if (n_new <= 0) {
+    if (parent_ != nullptr) {
+      // To keep consistency with FinalizeScoreUpdate() expanding a node again,
+      // we need to reduce the parent's visited policy.
+      parent_->visited_policy_ -= parent_->edges_[index_].GetP();
+    }
+    // If n_new == 0, reset all relevant values to 0.
+    wl_ = 0.0;
+    d_ = 1.0;
+    m_ = 0.0;
+    n_ = 0;
+  } else {
+    // Recompute Q and M.
+    wl_ -= multivisit * (v - wl_) / n_new;
+    d_ -= multivisit * (d - d_) / n_new;
+    m_ -= multivisit * (m - m_) / n_new;
+    // Decrement N.
+    n_ -= multivisit;
+  }
+  // Best child is potentially no longer valid.
   best_child_cached_ = nullptr;
 }
 
