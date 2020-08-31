@@ -186,6 +186,9 @@ class Node {
   void StabilizeScoreBetamcts(const float trust, const float prior,
   const int max_steps = 10, const float threshold = 0.001);
 
+  // Calculate LCB value for move ordering.
+  float GetLCBBetamcts(float trust, float prior, float percentile = 0.2f);
+
   float GetRBetamcts() const { return r_betamcts_; }
   /* betamcts::relevance should be edge property.
   Moved to Node for memory reasons. Revert if transpositions are included */
@@ -463,6 +466,10 @@ class EdgeAndNode {
   }
   float GetRBetamcts() const { return node_ ? node_->GetRBetamcts() : 0; }
   void SetRBetamcts(float value) const { if (node_) { node_->SetRBetamcts(value); } }
+
+  float GetLCBBetamcts(float trust, float prior, float percentile = 0.2f) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetLCBBetamcts(trust, prior) : -1.0;
+  };
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).

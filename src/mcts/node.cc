@@ -405,6 +405,22 @@ void Node::StabilizeScoreBetamcts(const float trust, const float prior,
   }
 }
 
+
+// Calculate LCB value for move ordering.
+float Node::GetLCBBetamcts(float trust, float prior, float percentile) {
+  const auto winrate = (1.0f + GetQBetamcts())/2.0f;
+  const auto visits = GetNBetamcts() * trust + prior;
+
+  auto alpha = 1.0f + winrate * visits;
+  auto beta = 1.0f + (1.0f - winrate) * visits;
+  auto logit_var = 1.0f / alpha + 1.0f / beta;
+
+  return winrate / (winrate + (1.0 - winrate) *
+                    FastPow(percentile / (1.0 - percentile),
+                            std::sqrt(2.0 * logit_var)));
+}
+
+
 void Node::MakeNotTerminal() {
   terminal_type_ = Terminal::NonTerminal;
   n_ = 0;

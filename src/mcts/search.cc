@@ -359,17 +359,20 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
 
   const bool betamcts_q = (params_.GetBetamctsLevel() >= 2);
+  const float trust = params_.GetBetamctsTrust();
+  const float prior = params_.GetBetamctsPrior();
 
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score, &betamcts_q](EdgeAndNode a, EdgeAndNode b) {
+            [&fpu, &U_coeff, &draw_score, &betamcts_q, &trust, &prior]
+            (EdgeAndNode a, EdgeAndNode b) {
               return std::forward_as_tuple(
-                         betamcts_q ? a.GetNBetamcts() * a.GetRBetamcts() : a.GetN(),
+                         betamcts_q ? a.GetLCBBetamcts(trust, prior) : a.GetN(),
                             a.GetQ(fpu, draw_score, betamcts_q) + a.GetU(U_coeff)) <
                      std::forward_as_tuple(
-                         betamcts_q ? b.GetNBetamcts() * b.GetRBetamcts() : b.GetN(),
+                         betamcts_q ? b.GetLCBBetamcts(trust, prior) : b.GetN(),
                             b.GetQ(fpu, draw_score, betamcts_q) + b.GetU(U_coeff));
             });
 
@@ -620,6 +623,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                                                               int depth) const {
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
+  const bool betamcts_q = (params_.GetBetamctsLevel() >= 1);
+  const float trust = params_.GetBetamctsTrust();
+  const float prior = params_.GetBetamctsPrior();
+
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
@@ -640,7 +647,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                           : edges.end();
   std::partial_sort(
       edges.begin(), middle, edges.end(),
-      [draw_score](const auto& a, const auto& b) {
+      [draw_score, betamcts_q, trust, prior](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
 
         // Lists edge types from less desirable to more desirable.
@@ -682,10 +689,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         if (a_rank == kNonTerminal) {
           // Prefer largest n_betamcts * relevance when using betamcts.
           // At level = 0, this just equates to equal visits.
-          if (a.GetRBetamcts() * a.GetNBetamcts() !=
-              b.GetRBetamcts() * b.GetNBetamcts()) {
-            return a.GetRBetamcts() * a.GetNBetamcts() >
-                    b.GetRBetamcts() * b.GetNBetamcts();
+          if (betamcts_q && a.GetLCBBetamcts(trust, prior) !=
+              b.GetLCBBetamcts(trust, prior)) {
+            return a.GetLCBBetamcts(trust, prior) > b.GetLCBBetamcts(trust, prior);
           }
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
