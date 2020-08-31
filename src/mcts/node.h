@@ -188,7 +188,7 @@ class Node {
   const int max_steps = 10, const float threshold = 0.001);
 
   // Calculate LCB value for move ordering.
-  float GetLCBBetamcts(float trust, float prior, float percentile = 0.35f);
+  float GetLCBBetamcts(float trust, float prior, float percentile = 0.42f);
 
   float GetRBetamcts() const { return r_betamcts_; }
   /* betamcts::relevance should be edge property.
