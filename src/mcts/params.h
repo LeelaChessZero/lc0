@@ -50,6 +50,8 @@ class SearchParams {
   float GetBetamctsTrust() const { return kBetamctsTrust; }
   float GetBetamctsPrior() const { return kBetamctsPrior; }
   int GetBetamctsUpdateInterval() const { return kBetamctsUpdateInterval; }
+  float GetAprilFactor() const { return kAprilFactor; }
+  float GetAprilFactorParent() const { return kAprilFactorParent; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
@@ -123,6 +125,8 @@ class SearchParams {
   static const OptionId kBetamctsTrustId;
   static const OptionId kBetamctsPriorId;
   static const OptionId kBetamctsUpdateIntervalId;
+  static const OptionId kAprilFactorId;
+  static const OptionId kAprilFactorParentId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
@@ -185,6 +189,8 @@ class SearchParams {
   const float kBetamctsTrust;
   const float kBetamctsPrior;
   const int kBetamctsUpdateInterval;
+  const float kAprilFactor;
+  const float kAprilFactorParent;
   const float kCpuct;
   const float kCpuctAtRoot;
   const float kCpuctBase;

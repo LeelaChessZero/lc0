@@ -461,6 +461,18 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
+  float GetPApril(float april_factor, float april_factor_parent) const {
+    auto visits = GetN();
+    auto visits_parent = node_ ? node_->GetParent()->GetN() : 0;
+    auto psa = GetP();
+    return ( ( april_factor > 0.0 ) || ( april_factor_parent > 0.0 ) )
+      ? ( psa > 0.0f
+        ? 1.0f / ( 1.0f + (1.0f / psa - 1.0f) *
+            FastInvSqrt( 1.0f + april_factor * visits +
+                          april_factor_parent * visits_parent )
+          )
+        : 0.0f )
+      : psa ; }
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
@@ -474,18 +486,16 @@ class EdgeAndNode {
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator, bool betamcts_q = false) const {
-    return numerator * GetP() / (1 + (betamcts_q ? GetNStartedBetamcts() : GetNStarted()));
+    return numerator * GetPApril(april_factor, april_factor_parent) / 
+      (1 + (betamcts_q ? GetNStartedBetamcts() : GetNStarted()));
   }
 
-  int GetVisitsToReachU(float target_score, float numerator,
-                        float score_without_u, int betamcts_level) const {
+  int GetVisitsToReachU(float target_score, float numerator, float score_without_u,
+                         float april_factor, float april_factor_parent) const {
     if (score_without_u >= target_score) return std::numeric_limits<int>::max();
     const auto n1 = GetNStarted() + 1;
-    return std::max(1.0f,
-                    std::min(std::floor(GetP() * numerator /
-                                            (target_score - score_without_u) -
-                                        n1) +
-                                 1,
+    return std::max(1.0f, std::min(std::floor(GetPApril(april_factor, april_factor_parent)
+                    * numerator / (target_score - score_without_u) - n1) + 1,
                              1e9f));
   }
 
