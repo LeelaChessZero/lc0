@@ -456,7 +456,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     print(&oss, "(U: ", edge.GetU(U_coeff,
             params_.GetAprilFactor(), params_.GetAprilFactorParent()), ") ", 6, 5);
     print(&oss, "(S: ", Q + edge.GetU(U_coeff,
-            params_.GetAprilFactor(), params_.GetAprilFactorParent()) + M_effect, ") ", 8, 5);
+            params_.GetAprilFactor(), params_.GetAprilFactorParent()) + M, ") ", 8, 5);
     print_tail(&oss, edge.node());
     infos.emplace_back(oss.str());
   }
@@ -1315,7 +1315,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (second_best_edge) {
       int estimated_visits_to_change_best =
           best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u,
-           params_.GetBetamctsLevel(), params_.GetAprilFactor(), params_.GetAprilFactorParent());
+           params_.GetBetamctsLevel() >= 3, params_.GetAprilFactor(), params_.GetAprilFactorParent());
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
       // has potential rounding errors and some conservative logic that can push
       // it up to 2 away from the real value.
