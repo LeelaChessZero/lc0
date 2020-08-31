@@ -493,9 +493,9 @@ class EdgeAndNode {
   }
 
   int GetVisitsToReachU(float target_score, float numerator, float score_without_u,
-                         bool betamts_q, float april_factor, float april_factor_parent) const {
+                         bool betamcts_q, float april_factor, float april_factor_parent) const {
     if (score_without_u >= target_score) return std::numeric_limits<int>::max();
-    const auto n1 = (betamcts_q ? GetNStartedBetamcts() : GetNStarted) + 1;
+    const float n1 = (betamcts_q ? GetNStartedBetamcts() : GetNStarted()) + 1;
     return std::max(1.0f, std::min(std::floor(GetPApril(april_factor, april_factor_parent)
                     * numerator / (target_score - score_without_u) - n1) + 1,
                              1e9f));
