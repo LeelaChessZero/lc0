@@ -64,6 +64,14 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "When the engine cannot gather a large enough batch for immediate use, try "
     "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
+const OptionId SearchParams::kAprilFactorId{
+    "april-factor", "AprilFactor",
+    "Decides how fast Policies will increase with number of node visits. "
+    "Using CPuctFactor = 0 and CPuctFactorAtRoot = 0 is recommended."};
+const OptionId SearchParams::kAprilFactorParentId{
+    "april-factor-parent", "AprilFactorParent",
+    "Decides how fast Policies will increase with number of parent node visits. "
+    "Using CPuctFactor = 0 and CPuctFactorAtRoot = 0 is recommended."};
 const OptionId SearchParams::kBetamctsLevelId{
     "betamcts-level", "BetamctsLevel",
     "Level of betamcts use in search. 0 only displays values in --verbose-move-stats, "
@@ -300,12 +308,14 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kBetamctsTrustId, 0.0f, 100.0f) = 0.77f;
   options->Add<FloatOption>(kBetamctsPriorId, 0.0f, 1000.0f) = 1.21f;
   options->Add<IntOption>(kBetamctsUpdateIntervalId, 1, 100) = 10;
+  options->Add<FloatOption>(kAprilFactorId, 0.0f, 10.0f) = 0.024f;
+  options->Add<FloatOption>(kAprilFactorParentId, 0.0f, 10.0f) = 0.000003f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
   options->Add<FloatOption>(kCpuctBaseAtRootId, 1.0f, 1000000000.0f) = 18368.0f;
-  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 2.815f;
-  options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 2.815f;
+  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 0.0f;
+  options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 0.0f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = true;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
@@ -324,7 +334,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kFpuStrategyId, fpu_strategy) = "reduction";
   options->Add<FloatOption>(kFpuValueId, -100.0f, 100.0f) = 0.443f;
   fpu_strategy.push_back("same");
-  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
+  options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "absolute";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.607f;
@@ -381,6 +391,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kBetamctsTrust(options.Get<float>(kBetamctsTrustId)),
       kBetamctsPrior(options.Get<float>(kBetamctsPriorId)),
       kBetamctsUpdateInterval(options.Get<int>(kBetamctsUpdateIntervalId)),
+      kAprilFactor(options.Get<float>(kAprilFactorId)),
+      kAprilFactorParent(options.Get<float>(kAprilFactorParentId)),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
