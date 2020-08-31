@@ -59,4 +59,10 @@ std::string GetUserConfigDirectory();
 // stored or an empty string if unspecified.
 std::string GetUserDataDirectory();
 
+// Returns a vector of base directories to search for configuration files.
+std::vector<std::string> GetSystemConfigDirectoryList();
+
+// Returns a vector of base directories to search for data files.
+std::vector<std::string> GetSystemDataDirectoryList();
+
 }  // namespace lczero

@@ -77,9 +77,14 @@ inline float FastLog(const float a) {
 // Fast approximate exp(x). Does only limited range checking.
 inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
 
-// Fast logit for more readable code.
-inline float FastLogit(const float a) {
-  return 0.5f * FastLog((1.0f + a) / (1.0f - a));
+// Fast approximation for a logistic replacement of std::erf for betamcts.
+inline float FastErfLogistic(const float a) {
+  return 2.0f / (1.0f + FastExp(-a)) - 1.0f;
+}
+
+// Fast approximate for a^x.
+inline float FastPow(const float a, const float exp) {
+  return FastPow2(a * FastLog2(exp));
 }
 
 // Fast inverse sqrt.
@@ -96,3 +101,4 @@ inline float FastInvSqrt(const float number)
 }
 
 }  // namespace lczero
+

@@ -31,6 +31,17 @@
 
 #include "utils/exception.h"
 
+#if __has_include("params_override.h")
+#include "params_override.h"
+#endif
+
+#ifndef DEFAULT_MINIBATCH_SIZE
+#define DEFAULT_MINIBATCH_SIZE 256
+#endif
+#ifndef DEFAULT_MAX_PREFETCH
+#define DEFAULT_MAX_PREFETCH 32
+#endif
+
 namespace lczero {
 
 namespace {
@@ -53,10 +64,6 @@ const OptionId SearchParams::kMaxPrefetchBatchId{
     "When the engine cannot gather a large enough batch for immediate use, try "
     "to prefetch up to X positions which are likely to be useful soon, and put "
     "them into cache."};
-const OptionId SearchParams::kLogitQId{
-    "logit-q", "LogitQ",
-    "Apply logit to Q when determining Q+U best child. This makes the U term "
-    "less dominant when Q is near -1 or +1."};
 const OptionId SearchParams::kAprilFactorId{
     "april-factor", "AprilFactor",
     "Decides how fast Policies will increase with number of node visits. "
@@ -65,6 +72,21 @@ const OptionId SearchParams::kAprilFactorParentId{
     "april-factor-parent", "AprilFactorParent",
     "Decides how fast Policies will increase with number of parent node visits. "
     "Using CPuctFactor = 0 and CPuctFactorAtRoot = 0 is recommended."};
+const OptionId SearchParams::kBetamctsLevelId{
+    "betamcts-level", "BetamctsLevel",
+    "Level of betamcts use in search. 0 only displays values in --verbose-move-stats, "
+    "1 reports values in UCI, 2 uses Q in search, 3 uses effective N in search"};
+const OptionId SearchParams::kBetamctsTrustId{
+    "betamcts-trust", "BetamctsTrust",
+    "Trust increment for betamcts Q calculation."};
+const OptionId SearchParams::kBetamctsPriorId{
+    "betamcts-prior", "BetamctsPrior",
+    "Prior visits for betamcts Q calculation. High value will approximate "
+    "minimax, setting both params to 0.0 will result in plain MCTS behavior."};
+const OptionId SearchParams::kBetamctsUpdateIntervalId{
+    "betamcts-update-interval", "BetamctsUpdateInterval",
+    "Update interval for betamcts R calculation. Relevance is only updated "
+    "every n visits to a node."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -92,6 +114,11 @@ const OptionId SearchParams::kRootHasOwnCpuctParamsId{
     "If enabled, cpuct parameters for root node are taken from *AtRoot "
     "parameters. Otherwise, they are the same as for the rest of nodes. "
     "Temporary flag for transition to a new version."};
+const OptionId SearchParams::kTwoFoldDrawsId{
+    "two-fold-draws", "TwoFoldDraws",
+    "Evaluates twofold repetitions in the search tree as draws. Visits to "
+    "these positions are reverted when the first occurrence is played "
+    "and not in the search tree anymore."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -267,13 +294,20 @@ const OptionId SearchParams::kNpsLimitId{
     "An option to specify an upper limit to the nodes per second searched. The "
     "accuracy depends on the minibatch size used, increasing for lower sizes, "
     "and on the length of the search. Zero to disable."};
+const OptionId SearchParams::kSolidTreeThresholdId{
+    "solid-tree-threshold", "SolidTreeThreshold",
+    "Only nodes with at least this number of visits will be considered for "
+    "solidification for improved cache locality."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
-  options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = 256;
-  options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = 32;
-  options->Add<BoolOption>(kLogitQId) = false;
+  options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
+  options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
+  options->Add<IntOption>(kBetamctsLevelId, 0, 4) = 2;
+  options->Add<FloatOption>(kBetamctsTrustId, 0.0f, 100.0f) = 0.77f;
+  options->Add<FloatOption>(kBetamctsPriorId, 0.0f, 1000.0f) = 1.21f;
+  options->Add<IntOption>(kBetamctsUpdateIntervalId, 1, 100) = 10;
   options->Add<FloatOption>(kAprilFactorId, 0.0f, 10.0f) = 0.024f;
   options->Add<FloatOption>(kAprilFactorParentId, 0.0f, 10.0f) = 0.000003f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
@@ -283,6 +317,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 0.0f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 0.0f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = true;
+  options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTempDecayDelayMovesId, 0, 100) = 0;
@@ -321,12 +356,12 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.1f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.001f;
-  options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.005f;
+  options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftScaledFactorId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) = 1.0f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
   options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
@@ -334,6 +369,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
+  options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -347,14 +383,14 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureEndgameId);
   options->HideOption(kTemperatureWinpctCutoffId);
   options->HideOption(kTemperatureVisitOffsetId);
-  options->HideOption(kMovesLeftConstantFactorId);
-  options->HideOption(kMovesLeftScaledFactorId);
-  options->HideOption(kMovesLeftQuadraticFactorId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
-      kLogitQ(options.Get<bool>(kLogitQId)),
+      kBetamctsLevel(options.Get<int>(kBetamctsLevelId)),
+      kBetamctsTrust(options.Get<float>(kBetamctsTrustId)),
+      kBetamctsPrior(options.Get<float>(kBetamctsPriorId)),
+      kBetamctsUpdateInterval(options.Get<int>(kBetamctsUpdateIntervalId)),
       kAprilFactor(options.Get<float>(kAprilFactorId)),
       kAprilFactorParent(options.Get<float>(kAprilFactorParentId)),
       kCpuct(options.Get<float>(kCpuctId)),
@@ -394,7 +430,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId)),
       kMovesLeftConstantFactor(options.Get<float>(kMovesLeftConstantFactorId)),
       kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
-      kMovesLeftQuadraticFactor(options.Get<float>(kMovesLeftQuadraticFactorId)),
+      kMovesLeftQuadraticFactor(
+          options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
       kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
@@ -404,7 +441,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),
-      kNpsLimit(options.Get<float>(kNpsLimitId)) {
+      kNpsLimit(options.Get<float>(kNpsLimitId)),
+      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

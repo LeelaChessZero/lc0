@@ -46,7 +46,10 @@ class SearchParams {
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId);
   }
-  bool GetLogitQ() const { return kLogitQ; }
+  int GetBetamctsLevel() const { return kBetamctsLevel; }
+  float GetBetamctsTrust() const { return kBetamctsTrust; }
+  float GetBetamctsPrior() const { return kBetamctsPrior; }
+  int GetBetamctsUpdateInterval() const { return kBetamctsUpdateInterval; }
   float GetAprilFactor() const { return kAprilFactor; }
   float GetAprilFactorParent() const { return kAprilFactorParent; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
@@ -56,6 +59,7 @@ class SearchParams {
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
+  bool GetTwoFoldDraws() const { return options_.Get<bool>(kTwoFoldDrawsId); }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
     return options_.Get<float>(kTemperatureVisitOffsetId);
@@ -73,7 +77,6 @@ class SearchParams {
   float GetTemperatureWinpctCutoff() const {
     return options_.Get<float>(kTemperatureWinpctCutoffId);
   }
-
   float GetNoiseEpsilon() const { return kNoiseEpsilon; }
   float GetNoiseAlpha() const { return kNoiseAlpha; }
   bool GetVerboseStats() const { return options_.Get<bool>(kVerboseStatsId); }
@@ -111,14 +114,17 @@ class SearchParams {
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
-
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
+  int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
-  static const OptionId kLogitQId;
+  static const OptionId kBetamctsLevelId;
+  static const OptionId kBetamctsTrustId;
+  static const OptionId kBetamctsPriorId;
+  static const OptionId kBetamctsUpdateIntervalId;
   static const OptionId kAprilFactorId;
   static const OptionId kAprilFactorParentId;
   static const OptionId kCpuctId;
@@ -128,6 +134,7 @@ class SearchParams {
   static const OptionId kCpuctFactorId;
   static const OptionId kCpuctFactorAtRootId;
   static const OptionId kRootHasOwnCpuctParamsId;
+  static const OptionId kTwoFoldDrawsId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTempDecayDelayMovesId;
@@ -168,6 +175,7 @@ class SearchParams {
   static const OptionId kDrawScoreBlackId;
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
+  static const OptionId kSolidTreeThresholdId;
 
  private:
   const OptionsDict& options_;
@@ -177,7 +185,10 @@ class SearchParams {
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimizations.
-  const bool kLogitQ;
+  const int kBetamctsLevel;
+  const float kBetamctsTrust;
+  const float kBetamctsPrior;
+  const int kBetamctsUpdateInterval;
   const float kAprilFactor;
   const float kAprilFactorParent;
   const float kCpuct;
@@ -215,6 +226,7 @@ class SearchParams {
   const float kDrawScoreBlack;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
+  const int kSolidTreeThreshold;
 };
 
 }  // namespace lczero

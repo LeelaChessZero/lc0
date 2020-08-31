@@ -71,15 +71,15 @@ class SelfPlayGame {
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
-  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree,
+  SelfPlayGame(PlayerOptions white, PlayerOptions black, bool shared_tree,
                const Opening& opening);
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
-
+  
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,
-            bool enable_resign = true);
+	  SyzygyTablebase* syzygy_tb, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
@@ -119,6 +119,9 @@ class SelfPlayGame {
 
   // Training data to send.
   std::vector<V5TrainingData> training_data_;
+
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
+
 };
 
 }  // namespace lczero
