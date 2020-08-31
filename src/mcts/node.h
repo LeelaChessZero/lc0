@@ -486,8 +486,8 @@ class EdgeAndNode {
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator, bool betamcts_q = false, float april_factor,
-             float april_factor_parent) const {
+  float GetU(float numerator, float april_factor, float april_factor_parent,
+             bool betamcts_q = false) const {
     return numerator * GetPApril(april_factor, april_factor_parent) /
       (1 + (betamcts_q ? GetNStartedBetamcts() : GetNStarted()));
   }
