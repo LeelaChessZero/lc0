@@ -49,6 +49,7 @@ class SearchParams {
   int GetBetamctsLevel() const { return kBetamctsLevel; }
   float GetBetamctsTrust() const { return kBetamctsTrust; }
   float GetBetamctsPrior() const { return kBetamctsPrior; }
+  float GetLCBPercentile() const { return kLCBPercentile; }
   int GetBetamctsUpdateInterval() const { return kBetamctsUpdateInterval; }
   float GetAprilFactor() const { return kAprilFactor; }
   float GetAprilFactorParent() const { return kAprilFactorParent; }
@@ -124,6 +125,7 @@ class SearchParams {
   static const OptionId kBetamctsLevelId;
   static const OptionId kBetamctsTrustId;
   static const OptionId kBetamctsPriorId;
+  static const OptionId kLCBPercentileId;
   static const OptionId kBetamctsUpdateIntervalId;
   static const OptionId kAprilFactorId;
   static const OptionId kAprilFactorParentId;
@@ -188,6 +190,7 @@ class SearchParams {
   const int kBetamctsLevel;
   const float kBetamctsTrust;
   const float kBetamctsPrior;
+  const float kLCBPercentile;
   const int kBetamctsUpdateInterval;
   const float kAprilFactor;
   const float kAprilFactorParent;

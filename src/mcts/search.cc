@@ -361,6 +361,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool betamcts_q = (params_.GetBetamctsLevel() >= 2);
   const float trust = params_.GetBetamctsTrust();
   const float prior = params_.GetBetamctsPrior();
+  const float percentile = params_.GetLCBPercentile();
   const float april_factor = params_.GetAprilFactor();
   const float april_factor_parent = params_.GetAprilFactorParent();
 
@@ -368,15 +369,15 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score, &betamcts_q, &trust, &prior, &april_factor,
-                &april_factor_parent]
+            [&fpu, &U_coeff, &draw_score, &betamcts_q, &trust, &prior,
+             &percentile, &april_factor, &april_factor_parent]
             (EdgeAndNode a, EdgeAndNode b) {
               return std::forward_as_tuple(
-                         betamcts_q ? a.GetLCBBetamcts(trust, prior) : a.GetN(),
+                         betamcts_q ? a.GetLCBBetamcts(trust, prior, percentile) : a.GetN(),
                             a.GetQ(fpu, draw_score, betamcts_q) + a.GetU(U_coeff,
                                      april_factor, april_factor_parent)) <
                      std::forward_as_tuple(
-                         betamcts_q ? b.GetLCBBetamcts(trust, prior) : b.GetN(),
+                         betamcts_q ? b.GetLCBBetamcts(trust, prior, percentile) : b.GetN(),
                             b.GetQ(fpu, draw_score, betamcts_q) + b.GetU(U_coeff,
                                      april_factor, april_factor_parent));
             });
@@ -633,6 +634,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   const bool betamcts_q = (params_.GetBetamctsLevel() >= 1);
   const float trust = params_.GetBetamctsTrust();
   const float prior = params_.GetBetamctsPrior();
+  const float percentile = params_.GetLCBPercentile();
 
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
@@ -654,7 +656,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                           : edges.end();
   std::partial_sort(
       edges.begin(), middle, edges.end(),
-      [draw_score, betamcts_q, trust, prior](const auto& a, const auto& b) {
+      [draw_score, betamcts_q, trust, prior, percentile](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
 
         // Lists edge types from less desirable to more desirable.
@@ -696,9 +698,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         if (a_rank == kNonTerminal) {
           // Prefer largest n_betamcts * relevance when using betamcts.
           // At level = 0, this just equates to equal visits.
-          if (betamcts_q && a.GetLCBBetamcts(trust, prior) !=
-              b.GetLCBBetamcts(trust, prior)) {
-            return a.GetLCBBetamcts(trust, prior) > b.GetLCBBetamcts(trust, prior);
+          if (betamcts_q && a.GetLCBBetamcts(trust, prior, percentile) !=
+              b.GetLCBBetamcts(trust, prior, percentile)) {
+            return a.GetLCBBetamcts(trust, prior, percentile) >
+                    b.GetLCBBetamcts(trust, prior, percentile);
           }
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();

@@ -83,6 +83,10 @@ const OptionId SearchParams::kBetamctsPriorId{
     "betamcts-prior", "BetamctsPrior",
     "Prior visits for betamcts Q calculation. High value will approximate "
     "minimax, setting both params to 0.0 will result in plain MCTS behavior."};
+const OptionId SearchParams::kLCBPercentileId{
+    "lcb-percentile", "LCBPercentile",
+    "Percentile used for LCB move selection. Values > 0.5 will use UCB move "
+    "selection again; use at own risk."};
 const OptionId SearchParams::kBetamctsUpdateIntervalId{
     "betamcts-update-interval", "BetamctsUpdateInterval",
     "Update interval for betamcts R calculation. Relevance is only updated "
@@ -307,6 +311,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kBetamctsLevelId, 0, 4) = 2;
   options->Add<FloatOption>(kBetamctsTrustId, 0.0f, 100.0f) = 0.23f;
   options->Add<FloatOption>(kBetamctsPriorId, 0.0f, 1000.0f) = 10.0f;
+  options->Add<FloatOption>(kLCBPercentileId, 0.0f, 1.0f) = 0.2f;
   options->Add<IntOption>(kBetamctsUpdateIntervalId, 1, 100) = 10;
   options->Add<FloatOption>(kAprilFactorId, 0.0f, 10.0f) = 0.024f;
   options->Add<FloatOption>(kAprilFactorParentId, 0.0f, 10.0f) = 0.000003f;
@@ -390,6 +395,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kBetamctsLevel(options.Get<int>(kBetamctsLevelId)),
       kBetamctsTrust(options.Get<float>(kBetamctsTrustId)),
       kBetamctsPrior(options.Get<float>(kBetamctsPriorId)),
+      kLCBPercentile(options.Get<float>(kLCBPercentileId)),
       kBetamctsUpdateInterval(options.Get<int>(kBetamctsUpdateIntervalId)),
       kAprilFactor(options.Get<float>(kAprilFactorId)),
       kAprilFactorParent(options.Get<float>(kAprilFactorParentId)),
