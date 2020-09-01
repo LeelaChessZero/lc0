@@ -84,7 +84,7 @@ inline float FastErfLogistic(const float a) {
 
 // Fast approximate for a^x.
 inline float FastPow(const float a, const float exp) {
-  return FastPow2(a * FastLog2(exp));
+  return FastPow2(FastLog2(a) * exp);
 }
 
 // Fast inverse sqrt.
