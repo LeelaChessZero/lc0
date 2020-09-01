@@ -416,7 +416,7 @@ float Node::GetLCBBetamcts(float trust, float prior, float percentile) {
   auto logit_var = 1.0f / alpha + 1.0f / beta;
 
   return -1.0f + 2.0f * winrate / (winrate + (1.0 - winrate) *
-                    FastPow(percentile / (1.0 - percentile),
+                    FastPow((1.0 - percentile) / percentile,
                             std::sqrt(2.0 * logit_var)));
 }
 
