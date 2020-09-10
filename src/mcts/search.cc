@@ -42,6 +42,7 @@
 #include "neural/encoder.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
+#include "utils/softmax.h"
 
 namespace lczero {
 
@@ -1616,11 +1617,14 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     intermediate[i] = p;
     total += p;
   }
+  const float unif = 1.0 / (float) counter;
   counter = 0;
   // Normalize P values to add up to 1.0.
   const float scale = total > 0.0f ? 1.0f / total : 1.0f;
   for (auto edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
+    float p = intermediate[counter++] * scale;
+    edge.edge()->SetP(p);
+    edge.edge()->SetInitialQ(tanh(atanh(-node_to_process->v) + atanh(p - unif)));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
@@ -1679,8 +1683,25 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = n->GetWL();
       d = n->GetD();
       m = n->GetM();
-    }
+    } 
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    if (n != node && !n->IsTerminal() && params_.GetUseRENTS()) {
+      std::array<float, 256> policy;
+      std::array<float, 256> q_values;
+      std::array<int, 256> visits;
+      int counter = 0;
+      for (auto edge : n->Edges()) {
+        policy[counter] = edge.edge()->GetP();
+        visits[counter] = edge.GetN();
+        q_values[counter++] = edge.GetQ(0.0, 0.0, true);
+      }
+      auto [new_v, new_p] = RelativeEntropySoftmax(q_values, policy, counter);
+      counter = 0;
+      for (auto edge : n->Edges()) {
+        edge.edge()->SetP(new_p[counter++]);
+      }
+      v = new_v;
+    }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
