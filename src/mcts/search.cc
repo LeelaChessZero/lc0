@@ -1715,7 +1715,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
           q_values, policy, counter, params_.GetPolicySoftmaxTemp());
       const int n_children = counter;
       counter = 0;
-      const float lambda_s = std::clamp(params_.GetRENTSExplorationFactor() *
+      const float lambda_s = n_children == 0 ? 1.0 : std::clamp(params_.GetRENTSExplorationFactor() *
                                             n_children /
                              FastLog(n_visits + 1), 0.0f, 1.0f);
       for (auto edge : n->Edges()) {
