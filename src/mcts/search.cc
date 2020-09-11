@@ -1044,7 +1044,7 @@ void SearchWorker::GatherMinibatch() {
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(node);
+      ExtendNode(node, picked_node.depth);
 
       // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
@@ -1145,14 +1145,54 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
-    // Either terminal or unexamined leaf node -- the end of this playout.
-    if (node->IsTerminal() || !node->HasChildren()) {
+    // If terminal, we either found a twofold draw to be reverted, or
+    // reached the end of this playout.
+    if (node->IsTerminal()) {
+      // Probably best place to check for two-fold draws consistently.
+      // Depth starts with 1 at root, so real depth is depth - 1.
+      // Check whether first repetition was before root. If yes, remove
+      // terminal status of node and revert all visits in the tree.
+      // Length of repetition was stored in m_. This code will only do
+      // something when tree is reused and twofold visits need to be reverted.
+      if (node->IsTwoFoldTerminal() && depth - 1 < node->GetM()) {
+        int depth_counter = 0;
+        // Cache node's values as we reset them in the process. We could
+        // manually set wl and d, but if we want to reuse this for reverting
+        // other terminal nodes this is the way to go.
+        const auto wl = node->GetWL();
+        const auto d = node->GetD();
+        const auto m = node->GetM();
+        const auto terminal_visits = node->GetN();
+        for (Node* node_to_revert = node; node_to_revert != nullptr;
+             node_to_revert = node_to_revert->GetParent()) {
+          // Revert all visits on twofold draw when making it non terminal.
+          node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
+                                               terminal_visits);
+          depth_counter++;
+          // Even if original tree still exists, we don't want to revert more
+          // than until new root.
+          if (depth_counter > depth - 1) break;
+          // If wl != 0, we would have to switch signs at each depth.
+        }
+        // Mark the prior twofold draw as non terminal to extend it again.
+        node->MakeNotTerminal();
+        // When reverting the visits, we also need to revert the initial
+        // visits, as we reused fewer nodes than anticipated.
+        search_->initial_visits_ -= terminal_visits;
+        // Max depth doesn't change when reverting the visits, and cum_depth_
+        // only counts the average depth of new nodes, not reused ones.
+      } else {
+        return NodeToProcess::Visit(node, depth);
+      }
+    }
+    // If unexamined leaf node -- the end of this playout.
+    if (!node->HasChildren()) {
       return NodeToProcess::Visit(node, depth);
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
     if (possible_shortcut_child) {
-      // Add two here to reverse the conservatism that goes into calculating the
-      // remaining cache visits.
+      // Add two here to reverse the conservatism that goes into calculating
+      // the remaining cache visits.
       collision_limit =
           std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
       is_root_node = false;
@@ -1239,7 +1279,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   }
 }
 
-void SearchWorker::ExtendNode(Node* node) {
+void SearchWorker::ExtendNode(Node* node, int depth) {
   // Initialize position sequence with pre-move position.
   history_.Trim(search_->played_history_.GetLength());
   std::vector<Move> to_add;
@@ -1291,8 +1331,19 @@ void SearchWorker::ExtendNode(Node* node) {
       return;
     }
 
-    if (history_.Last().GetRepetitions() >= 2) {
+    const auto repetitions = history_.Last().GetRepetitions();
+    // Mark two-fold repetitions as draws according to settings.
+    // Depth starts with 1 at root, so number of plies in PV is depth - 1.
+    if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
+      return;
+    } else if (repetitions == 1 && depth - 1 >= 4 &&
+               params_.GetTwoFoldDraws() &&
+               depth - 1 >= history_.Last().GetPliesSincePrevRepetition()) {
+      const auto cycle_length = history_.Last().GetPliesSincePrevRepetition();
+      // use plies since first repetition as moves left; exact if forced draw.
+      node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
+                         Node::Terminal::TwoFold);
       return;
     }
 
