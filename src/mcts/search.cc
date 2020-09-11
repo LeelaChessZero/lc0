@@ -683,6 +683,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
+		  // With RENTS we prefer the highest policy move:
+          if (use_rents && a.GetP() != b.GetP())
+            return a.GetP() > b.GetP();
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
           // Default doesn't matter here so long as they are the same as either
