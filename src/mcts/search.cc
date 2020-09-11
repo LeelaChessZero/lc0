@@ -1701,12 +1701,12 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = n->GetM();
     } 
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
-    if (n != node && !n->IsTerminal() && params_.GetUseRENTS()) {
+    if (p && !p->IsTerminal() && params_.GetUseRENTS()) {
       std::array<float, 256> policy;
       std::array<float, 256> q_values;
       float n_visits = 0.0f;
       int counter = 0;
-      for (auto edge : n->Edges()) {
+      for (auto edge : p->Edges()) {
         policy[counter] = edge.edge()->GetP();
         n_visits += edge.GetN();
         q_values[counter++] = edge.GetQ(0.0f, 0.0f, true);
@@ -1718,7 +1718,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       const float lambda_s = n_children == 0 ? 1.0 : std::clamp(params_.GetRENTSExplorationFactor() *
                                             n_children /
                              FastLog(n_visits + 1), 0.0f, 1.0f);
-      for (auto edge : n->Edges()) {
+      for (auto edge : p->Edges()) {
         edge.edge()->SetP((1 - lambda_s) * new_p[counter++] + lambda_s / n_children);
       }
       v = new_v;
