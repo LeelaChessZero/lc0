@@ -1249,13 +1249,13 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
 	  if (params_.GetUseRENTS()) {
         const float child_policy = child.GetP();
-            if (cum_policy + child_policy > rand_value) {
-			  // Found the chosen move, break here
-              best_edge = child;
-              break;
-			} else {
-              cum_policy += child_policy;
-			}
+        best_edge = child;
+          if (cum_policy + child_policy > rand_value) {
+		    // Found the chosen move, break here
+            break;
+		  } else {
+            cum_policy += child_policy;
+		  }
 	  } else {
         const float Q = child.GetQ(fpu, draw_score, params_.GetUseRENTS());
         const float M = m_evaluator.GetM(child, Q);
