@@ -1711,7 +1711,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
         n_visits += edge.GetN();
         q_values[counter++] = edge.GetQ(0.0f, 0.0f, true);
       }
-      auto [new_v, new_p] = RelativeEntropySoftmax(q_values, policy, counter);
+      auto [new_v, new_p] = RelativeEntropySoftmax(
+          q_values, policy, counter, params_.GetPolicySoftmaxTemp());
       const int n_children = counter;
       counter = 0;
       const float lambda_s = std::clamp(params_.GetRENTSExplorationFactor() *
