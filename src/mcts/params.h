@@ -112,6 +112,7 @@ class SearchParams {
   float GetNpsLimit() const { return kNpsLimit; }
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
   bool GetUseRENTS() const { return kUseRENTS; }
+  float GetRENTSExplorationFactor() const { return kRENTSExplorationFactor; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -166,6 +167,7 @@ class SearchParams {
   static const OptionId kNpsLimitId;
   static const OptionId kSolidTreeThresholdId;
   static const OptionId kUseRENTSId;
+  static const OptionId kRENTSExplorationFactorId;
 
  private:
   const OptionsDict& options_;
@@ -212,6 +214,7 @@ class SearchParams {
   const float kNpsLimit;
   const int kSolidTreeThreshold;
   const bool kUseRENTS;
+  const float kRENTSExplorationFactor;
 };
 
 }  // namespace lczero
