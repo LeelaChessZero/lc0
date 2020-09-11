@@ -360,13 +360,23 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   const bool use_rents = params_.GetUseRENTS();
+  if (use_rents) {
+    std::sort(edges.begin(), edges.end(), [](EdgeAndNode a, EdgeAndNode b) {
+      return std::forward_as_tuple(a.GetP(), a.GetN()) <
+             std::forward_as_tuple(b.GetP(), b.GetN());
+    });
+  } else {
   std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score, &use_rents](EdgeAndNode a, EdgeAndNode b) {
+              [&fpu, &U_coeff, &draw_score, &use_rents](EdgeAndNode a,
+                                                        EdgeAndNode b) {
               return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score, use_rents) + a.GetU(U_coeff)) <
+                           a.GetN(), a.GetQ(fpu, draw_score, use_rents) +
+                                         a.GetU(U_coeff)) <
                      std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score, use_rents) + b.GetU(U_coeff));
+                           b.GetN(), b.GetQ(fpu, draw_score, use_rents) +
+                                         b.GetU(U_coeff));
             });
+  }
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
