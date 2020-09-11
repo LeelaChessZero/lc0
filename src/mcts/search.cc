@@ -1223,6 +1223,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     m_evaluator.SetParent(node);
     bool can_exit = false;
+    const float rand_value = Random::Get().GetFloat(1.0);
+    float cum_policy = 0.0;
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -1243,30 +1245,44 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
 
-      const float Q = child.GetQ(fpu, draw_score, params_.GetUseRENTS());
-      const float M = m_evaluator.GetM(child, Q);
 
-      const float score = child.GetU(puct_mult) + Q + M;
-      if (score > best) {
-        second_best = best;
-        second_best_edge = best_edge;
-        best = score;
-        best_without_u = Q + M;
-        best_edge = child;
-      } else if (score > second_best) {
-        second_best = score;
-        second_best_edge = child;
+
+	  if (params_.GetUseRENTS()) {
+        const float child_policy = child.GetP();
+            if (cum_policy + child_policy > rand_value) {
+			  // Found the chosen move, break here
+              best_edge = child;
+              break;
+			} else {
+              cum_policy += child_policy;
+			}
+	  } else {
+        const float Q = child.GetQ(fpu, draw_score, params_.GetUseRENTS());
+        const float M = m_evaluator.GetM(child, Q);
+        const float score = child.GetU(puct_mult) + Q + M;
+        if (score > best) {
+            second_best = best;
+            second_best_edge = best_edge;
+            best = score;
+            best_without_u = Q + M;
+            best_edge = child;
+        } else if (score > second_best) {
+            second_best = score;
+            second_best_edge = child;
+        }
+        if (can_exit) break;
+        if (child.GetNStarted() == 0) {
+            // One more loop will get 2 unvisited nodes, which is sufficient
+            // to ensure second best is correct. This relies upon the fact
+            // that edges are sorted in policy decreasing order.
+            can_exit = true;
+        }
       }
-      if (can_exit) break;
-      if (child.GetNStarted() == 0) {
-        // One more loop will get 2 unvisited nodes, which is sufficient to
-        // ensure second best is correct. This relies upon the fact that edges
-        // are sorted in policy decreasing order.
-        can_exit = true;
-      }
+
+
     }
 
-    if (second_best_edge) {
+    if (!params_.GetUseRENTS() && second_best_edge) {
       int estimated_visits_to_change_best =
           best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u);
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
@@ -1688,17 +1704,21 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (n != node && !n->IsTerminal() && params_.GetUseRENTS()) {
       std::array<float, 256> policy;
       std::array<float, 256> q_values;
-      std::array<int, 256> visits;
+      float n_visits = 0.0f;
       int counter = 0;
       for (auto edge : n->Edges()) {
         policy[counter] = edge.edge()->GetP();
-        visits[counter] = edge.GetN();
-        q_values[counter++] = edge.GetQ(0.0, 0.0, true);
+        n_visits += edge.GetN();
+        q_values[counter++] = edge.GetQ(0.0f, 0.0f, true);
       }
       auto [new_v, new_p] = RelativeEntropySoftmax(q_values, policy, counter);
+      const int n_children = counter;
       counter = 0;
+      const float lambda_s = std::clamp(params_.GetRENTSExplorationFactor() *
+                                            n_children /
+                             FastLog(n_visits + 1), 0.0f, 1.0f);
       for (auto edge : n->Edges()) {
-        edge.edge()->SetP(new_p[counter++]);
+        edge.edge()->SetP((1 - lambda_s) * new_p[counter++] + lambda_s / n_children);
       }
       v = new_v;
     }

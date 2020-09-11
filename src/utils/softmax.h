@@ -36,8 +36,8 @@ namespace lczero {
 
 inline std::tuple<float, std::array<float, 256>> RelativeEntropySoftmax(
     std::array<float, 256>& q, std::array<float, 256>& p, int length,
-    float temperature = 1.0) {
-  float sum = 0.0;
+    float temperature = 1.0f) {
+  float sum = 0.0f;
   std::array<float, 256> new_policy;
   float max_p = -std::numeric_limits<float>::infinity();
   for (int i = 0; i < length; i++) {
