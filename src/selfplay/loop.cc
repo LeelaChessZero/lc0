@@ -278,7 +278,7 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
   // Populate planes.
   int transform;
   InputPlanes planes = EncodePositionForNN(
-      input_format, history, 8, FillEmptyHistory::FEN_ONLY, &transform);
+      input_format, history, 8, FillEmptyHistory::NO, &transform);
   int plane_idx = 0;
   for (auto& plane : data->planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
