@@ -60,6 +60,9 @@ const OptionId kMinDTZBoostId{
     "dtz_policy_boost", "",
     "Additional offset to apply to policy target before temperature for moves "
     "that are best dtz option."};
+const OptionId kNewInputFormatId{
+    "new-input-format", "",
+    "Input format to convert training data to during rescoring."};
 
 const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
@@ -266,9 +269,73 @@ void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
   tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info, &dtm);
 }
 
+void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
+                       const PositionHistory& history) {
+  data->input_format = newInputFormat;
+  auto input_format =
+      static_cast<pblczero::NetworkFormat::InputFormat>(newInputFormat);
+
+  // Populate planes.
+  int transform;
+  InputPlanes planes = EncodePositionForNN(
+      input_format, history, 8, FillEmptyHistory::FEN_ONLY, &transform);
+  int plane_idx = 0;
+  for (auto& plane : data->planes) {
+    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
+  }
+
+  if ((data->invariance_info & 7) != transform) {
+    // Probabilities need reshuffling.
+    float newProbs[1858];
+    std::fill(std::begin(newProbs), std::end(newProbs), -1);
+    for (auto move : history.Last().GetBoard().GenerateLegalMoves()) {
+      int i = move.as_nn_index(transform);
+      int j = move.as_nn_index(data->invariance_info & 7);
+      newProbs[i] = data->probabilities[j];
+    }
+    for (int i = 0; i < 1858; i++) {
+      data->probabilities[i] = newProbs[i];
+    }
+  }
+
+  const auto& position = history.Last();
+  const auto& castlings = position.GetBoard().castlings();
+  // Populate castlings.
+  // For non-frc trained nets, just send 1 like we used to.
+  uint8_t queen_side = 1;
+  uint8_t king_side = 1;
+  // If frc trained, send the bit mask representing rook position.
+  if (Is960CastlingFormat(input_format)) {
+    queen_side <<= castlings.queenside_rook();
+    king_side <<= castlings.kingside_rook();
+  }
+
+  data->castling_us_ooo = castlings.we_can_000() ? queen_side : 0;
+  data->castling_us_oo = castlings.we_can_00() ? king_side : 0;
+  data->castling_them_ooo = castlings.they_can_000() ? queen_side : 0;
+  data->castling_them_oo = castlings.they_can_00() ? king_side : 0;
+
+  // Other params.
+  if (IsCanonicalFormat(input_format)) {
+    data->side_to_move_or_enpassant =
+        position.GetBoard().en_passant().as_int() >> 56;
+    if ((transform & FlipTransform) != 0) {
+      data->side_to_move_or_enpassant =
+          ReverseBitsInBytes(data->side_to_move_or_enpassant);
+    }
+    // Send transform in deprecated move count so rescorer can reverse it to
+    // calculate the actual move list from the input data.
+    data->invariance_info =
+        transform | (position.IsBlackToMove() ? (1u << 7) : 0u);
+  } else {
+    data->side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
+    data->invariance_info = 0;
+  }
+}
+
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
-                 float dtzBoost) {
+                 float dtzBoost, int newInputFormat) {
   // Scope to ensure reader and writer are closed before deleting source file.
   {
     try {
@@ -690,6 +757,16 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
         }
       }
+      if (newInputFormat != -1) {
+        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                      &board, &rule50ply, &gameply);
+        history.Reset(board, rule50ply, gameply);
+        ChangeInputFormat(newInputFormat, &fileContents[0], history);
+        for (int i = 0; i < moves.size(); i++) {
+          history.Append(moves[i]);
+          ChangeInputFormat(newInputFormat, &fileContents[i + 1], history);
+        }
+      }
 
       std::string fileName = file.substr(file.find_last_of("/\\") + 1);
       TrainingDataWriter writer(outputDir + "/" + fileName);
@@ -707,15 +784,16 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 
 void ProcessFiles(const std::vector<std::string>& files,
                   SyzygyTablebase* tablebase, std::string outputDir,
-                  float distTemp, float distOffset, float dtzBoost, int offset,
-                  int mod) {
+                  float distTemp, float distOffset, float dtzBoost,
+                  int newInputFormat, int offset, int mod) {
   std::cerr << "Thread: " << offset << " starting" << std::endl;
   for (int i = offset; i < files.size(); i += mod) {
     if (files[i].rfind(".gz") != files[i].size() - 3) {
       std::cerr << "Skipping: " << files[i] << std::endl;
       continue;
     }
-    ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset, dtzBoost);
+    ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset, dtzBoost,
+                newInputFormat);
   }
 }
 }  // namespace
@@ -749,6 +827,7 @@ void RescoreLoop::RunLoop() {
   // for now.
   options_.Add<FloatOption>(kDistributionOffsetId, -0.999, 0) = 0;
   options_.Add<FloatOption>(kMinDTZBoostId, 0, 1) = 0;
+  options_.Add<IntOption>(kNewInputFormatId, -1, 256) = -1;
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;
@@ -795,15 +874,16 @@ void RescoreLoop::RunLoop() {
     while (threads_.size() < threads) {
       int offset_val = offset;
       offset++;
-      threads_.emplace_back(
-          [this, offset_val, files, &tablebase, threads, dtz_boost]() {
-            ProcessFiles(
-                files, &tablebase,
-                options_.GetOptionsDict().Get<std::string>(kOutputDirId),
-                options_.GetOptionsDict().Get<float>(kTempId),
-                options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
-                dtz_boost, offset_val, threads);
-          });
+      threads_.emplace_back([this, offset_val, files, &tablebase, threads,
+                             dtz_boost]() {
+        ProcessFiles(
+            files, &tablebase,
+            options_.GetOptionsDict().Get<std::string>(kOutputDirId),
+            options_.GetOptionsDict().Get<float>(kTempId),
+            options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
+            dtz_boost, options_.GetOptionsDict().Get<int>(kNewInputFormatId),
+            offset_val, threads);
+      });
     }
     for (int i = 0; i < threads_.size(); i++) {
       threads_[i].join();
@@ -814,7 +894,8 @@ void RescoreLoop::RunLoop() {
                  options_.GetOptionsDict().Get<std::string>(kOutputDirId),
                  options_.GetOptionsDict().Get<float>(kTempId),
                  options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
-                 dtz_boost, 0, 1);
+                 dtz_boost,
+                 options_.GetOptionsDict().Get<int>(kNewInputFormatId), 0, 1);
   }
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;
@@ -865,8 +946,9 @@ void SelfPlayLoop::RunLoop() {
   options_.Add<StringOption>(kLogFileId);
 
   if (!options_.ProcessAllFlags()) return;
-  
-  Logging::Get().SetFilename(options_.GetOptionsDict().Get<std::string>(kLogFileId));
+
+  Logging::Get().SetFilename(
+      options_.GetOptionsDict().Get<std::string>(kLogFileId));
 
   if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
     UciLoop::RunLoop();
