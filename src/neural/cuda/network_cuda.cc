@@ -60,7 +60,7 @@ void dumpTensor(void *memory, int elements, const char *message, bool fp16 = fal
     for (int i = 0; i < elements; i++)
     {
         float val;
-        if (fp16) 
+        if (fp16)
         {
             half *arr = (half*)temp;
             val = (float)arr[i];
@@ -378,14 +378,13 @@ class CudaNetwork : public Network {
 
       network_.emplace_back(std::move(policymap));
     } else {
-/*
-      auto convPol = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters, true,
-          true);
+      auto convPol = std::make_unique<Conv1Layer<DataType>>(
+          resi_last_, weights.policy.biases.size(), 8, 8, kNumFilters, true,
+          true, use_gemm_ex);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convPol));
-*/
+
       auto FCPol = std::make_unique<FCLayer<DataType>>(
           getLastLayer(), weights.ip_pol_b.size(), 1, 1, false, true);
       FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0],
@@ -396,14 +395,13 @@ class CudaNetwork : public Network {
 
     // Value head.
     {
-/*
-      auto convVal = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.value.biases.size(), 8, 8, 1, kNumFilters, true,
-          true);
+      auto convVal = std::make_unique<Conv1Layer<DataType>>(
+          resi_last_, weights.value.biases.size(), 8, 8, kNumFilters, true,
+          true, use_gemm_ex);
       convVal->LoadWeights(&weights.value.weights[0], &weights.value.biases[0],
                            scratch_mem_);
       network_.emplace_back(std::move(convVal));
-*/
+
       auto FCVal1 = std::make_unique<FCLayer<DataType>>(
           getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, true);
       FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0],
@@ -428,14 +426,13 @@ class CudaNetwork : public Network {
                    pblczero::NetworkFormat::MOVES_LEFT_V1) &&
                   options.GetOrDefault<bool>("mlh", true);
     if (moves_left_) {
-/*
-      auto convMov = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.moves_left.biases.size(), 8, 8, 1, kNumFilters,
-          true, true);
+      auto convMov = std::make_unique<Conv1Layer<DataType>>(
+          resi_last_, weights.moves_left.biases.size(), 8, 8, kNumFilters,
+          true, true, use_gemm_ex);
       convMov->LoadWeights(&weights.moves_left.weights[0],
                            &weights.moves_left.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convMov));
-*/
+
       auto FCMov1 = std::make_unique<FCLayer<DataType>>(
           getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, true);
       FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0],
