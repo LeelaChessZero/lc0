@@ -317,13 +317,12 @@ class CudaNetwork : public Network {
 
     // Input.
     {
-/*
-      auto inputConv = std::make_unique<ConvLayer<DataType>>(
-          false, kNumFilters, 8, 8, 3, kNumInputPlanes, true, true);
+      auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+          nullptr, kNumFilters, 8, 8, kNumInputPlanes, true, true, false,
+          false, 0, use_gemm_ex);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));
-*/
     }
 
     // Residual block.
@@ -356,23 +355,23 @@ class CudaNetwork : public Network {
 
     // Policy head.
     if (conv_policy_) {
-/*
-      auto conv1 = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, kNumFilters, 8, 8, 3, kNumFilters, true, true);
+      auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+          resi_last_, kNumFilters, 8, 8, kNumFilters, true, true, false,
+          false, 0, use_gemm_ex);
       conv1->LoadWeights(&weights.policy1.weights[0],
                          &weights.policy1.biases[0], scratch_mem_);
       network_.emplace_back(std::move(conv1));
-*/
+
       auto pol_channels = weights.policy.biases.size();
 
       // No relu
-/*
-      auto conv2 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, false, true);
+      auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+          getLastLayer(), pol_channels, 8, 8, kNumFilters, false, true, false,
+          false, 0, use_gemm_ex);
       conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                          scratch_mem_);
       network_.emplace_back(std::move(conv2));
-*/
+
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
           getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
       policymap->LoadWeights(kConvPolicyMap, scratch_mem_);

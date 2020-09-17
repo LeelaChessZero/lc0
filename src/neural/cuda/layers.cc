@@ -712,7 +712,7 @@ template <typename DataType>
 FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
     BaseLayer<DataType>* ip, int C, int H, int W, int Cin, bool relu, bool bias,
     bool skip_add, bool se, int se_k, bool use_gemm_ex)
-    : BaseLayer<DataType>(C, H, W, ip),
+    : BaseLayer<DataType>(C, H, W, ip, false),
       c_input_(Cin),
       use_relu_(relu),
       use_bias_(bias),
@@ -885,6 +885,10 @@ void FusedWinogradConvSELayer<DataType>::Eval(
   else if (!has_se_ && use_relu_ && use_bias_ && skip_add_)
     OutputTransform<DataType, false, true, true, true>(
         N, C, 0, output, transformed_output, input2, biases_, nullptr, nullptr,
+        nullptr, nullptr);
+  else if (!has_se_ && !use_relu_ && use_bias_ && !skip_add_)
+    OutputTransform<DataType, false, false, true, false>(
+        N, C, 0, output, transformed_output, nullptr, biases_, nullptr, nullptr,
         nullptr, nullptr);
   else
     throw Exception("unsupported network type!");
