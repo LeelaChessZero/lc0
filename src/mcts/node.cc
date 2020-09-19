@@ -351,16 +351,15 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int k) {
   // Recompute Q.
   const float p = 1.0f;
   const float invp = 1.0f / p;
-  float a = n_ / (n_ + multivisit);
-  float b = multivisit / (n_ + multivisit);
-  wl_ = std::pow(a * std::pow(0.5f * wl_ + 0.5f, p) +
-                 b * std::pow(0.5f * v   + 0.5f, p), invp) * 2.0f - 1.0f;
-  d_ =  std::pow(a * std::pow(d_, p) + b * std::pow(d, p), invp);
-  m_ =  std::pow(a * std::pow(m_, p) + b * std::pow(m, p), invp);
+  wl_ = std::pow(n_ * std::pow(0.5f * wl_ + 0.5f, p) / (n_ + k) +
+                 k  * std::pow(0.5f * v   + 0.5f, p) / (n_ + k), invp) * 2 - 1;
+  d_ =  std::pow(n_ * std::pow(d_, p) / (n_ + k) +
+                 k  * std::pow(d,  p) / (n_ + k), invp);
+  m_ += k * (m - m_) / (n_ + k);
 
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
