@@ -359,8 +359,7 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   float b = multivisit / (n_ + multivisit);
   wl_ = std::pow(a * std::pow(0.5f * wl_ + 0.5f, p) +
                  b * std::pow(0.5f * v   + 0.5f, p), invp) * 2.0f - 1.0f;
-  d_ =  std::pow(a * std::pow(0.5f * d_  + 0.5f, p) +
-                 b * std::pow(0.5f * d   + 0.5f, p), invp) * 2.0f - 1.0f;
+  d_ =  std::pow(a * std::pow(d_, p) + b * std::pow(d, p), invp);
   m_ =  std::pow(a * std::pow(m_, p) + b * std::pow(m, p), invp);
 
   // If first visit, update parent's sum of policies visited at least once.
