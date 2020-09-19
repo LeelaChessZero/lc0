@@ -366,9 +366,9 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int k) {
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
   }
   // Increment N.
-  n_ += multivisit;
+  n_ += k;
   // Decrement virtual loss.
-  n_in_flight_ -= multivisit;
+  n_in_flight_ -= k;
   // Best child is potentially no longer valid.
   best_child_cached_ = nullptr;
 }
