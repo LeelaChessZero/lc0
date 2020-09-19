@@ -300,7 +300,7 @@ class CudaNetwork : public Network {
     if (max_weight_size < 3 * residual_single_layer_weight_size)
       max_weight_size = 3 * residual_single_layer_weight_size;
 
-    if (scratch_size_ < max_weight_size) scratch_size_ = max_weight_size;
+    scratch_size_ = max_weight_size;
 
     // Need additional space for transformed input/outputs which are 36/16
     // times size (4x4 block transformed into 6x6).
