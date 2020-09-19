@@ -91,10 +91,13 @@ void PositionHistory::Append(Move m) {
   //                has a bug in implementation of emplace_back, when
   //                reallocation happens. (it also reallocates Last())
   positions_.push_back(Position(Last(), m));
-  positions_.back().SetRepetitions(ComputeLastMoveRepetitions());
+  int cycle_length;
+  int repetitions = ComputeLastMoveRepetitions(&cycle_length);
+  positions_.back().SetRepetitions(repetitions, cycle_length);
 }
 
-int PositionHistory::ComputeLastMoveRepetitions() const {
+int PositionHistory::ComputeLastMoveRepetitions(int* cycle_length) const {
+  *cycle_length = 0;
   const auto& last = positions_.back();
   // TODO(crem) implement hash/cache based solution.
   if (last.GetRule50Ply() < 4) return 0;
@@ -102,6 +105,7 @@ int PositionHistory::ComputeLastMoveRepetitions() const {
   for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
     const auto& pos = positions_[idx];
     if (pos.GetBoard() == last.GetBoard()) {
+      *cycle_length = positions_.size() - 1 - idx;
       return 1 + pos.GetRepetitions();
     }
     if (pos.GetRule50Ply() < 2) return 0;
