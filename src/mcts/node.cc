@@ -353,9 +353,15 @@ void Node::CancelScoreUpdate(int multivisit) {
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.
-  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
-  m_ += multivisit * (m - m_) / (n_ + multivisit);
+  const float p = 1.0f;
+  const float invp = 1.0f / p;
+  float a = n_ / (n_ + multivisit);
+  float b = multivisit / (n_ + multivisit);
+  wl_ = std::pow(a * std::pow(0.5f * wl_ + 0.5f, p) +
+                 b * std::pow(0.5f * v   + 0.5f, p), invp) * 2.0f - 1.0f;
+  d_ =  std::pow(a * std::pow(0.5f * d_  + 0.5f, p) +
+                 b * std::pow(0.5f * d   + 0.5f, p), invp) * 2.0f - 1.0f;
+  m_ =  std::pow(a * std::pow(m_, p) + b * std::pow(m, p), invp);
 
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
