@@ -92,18 +92,22 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
 
   for (int i = 0; i < fileContents.size(); i++) {
     auto& data = fileContents[i];
-    DataAssert(data.input_format ==
-                   pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE ||
-               data.input_format ==
-                   pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
-               data.input_format ==
-                   pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION ||
-               data.input_format ==
-                   pblczero::NetworkFormat::
-                       INPUT_112_WITH_CANONICALIZATION_HECTOPLIES ||
-               data.input_format ==
-                   pblczero::NetworkFormat::
-                       INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON);
+    DataAssert(
+        data.input_format ==
+            pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE ||
+        data.input_format ==
+            pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE ||
+        data.input_format ==
+            pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION ||
+        data.input_format == pblczero::NetworkFormat::
+                                 INPUT_112_WITH_CANONICALIZATION_HECTOPLIES ||
+        data.input_format ==
+            pblczero::NetworkFormat::
+                INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON ||
+        data.input_format ==
+            pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2 ||
+        data.input_format == pblczero::NetworkFormat::
+                                 INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON);
     DataAssert(data.best_d >= 0.0f && data.best_d <= 1.0f);
     DataAssert(data.root_d >= 0.0f && data.root_d <= 1.0f);
     DataAssert(data.best_q >= -1.0f && data.best_q <= 1.0f);
@@ -277,8 +281,8 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
 
   // Populate planes.
   int transform;
-  InputPlanes planes = EncodePositionForNN(
-      input_format, history, 8, FillEmptyHistory::NO, &transform);
+  InputPlanes planes = EncodePositionForNN(input_format, history, 8,
+                                           FillEmptyHistory::NO, &transform);
   int plane_idx = 0;
   for (auto& plane : data->planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);

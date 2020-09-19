@@ -73,7 +73,10 @@ InputPlanes PlanesFromTrainingData(const V5TrainingData& data) {
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION:
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES:
     case pblczero::NetworkFormat::
-        INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON: {
+        INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON:
+    case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2:
+    case pblczero::NetworkFormat::
+        INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON: {
       result.emplace_back();
       result.back().mask =
           data.castling_us_ooo |

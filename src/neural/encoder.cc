@@ -162,7 +162,10 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION:
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES:
     case pblczero::NetworkFormat::
-        INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON: {
+        INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON:
+    case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2:
+    case pblczero::NetworkFormat::
+        INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON: {
       auto queenside = 0;
       auto kingside = 7;
       if (planes[kAuxPlaneBase + 0].mask != 0) {
