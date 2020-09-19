@@ -471,7 +471,7 @@ class CudaNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
-    std::lock_guard<std::mutex> lock(lock_);
+    std::unique_lock<std::mutex> lock(lock_);
 
 #ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
@@ -618,6 +618,8 @@ class CudaNetwork : public Network {
     }
 
     ReportCUDAErrors(cudaDeviceSynchronize());
+    // The next thread can start using the GPU now.
+    lock.unlock();
 
     if (wdl_) {
       // Value softmax done cpu side.
