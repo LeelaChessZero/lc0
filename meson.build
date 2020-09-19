@@ -447,7 +447,14 @@ if get_option('build_backends')
       )
 	 files += cuda_files
     files += cuda_gen.process(cuda_files_nvcc_common)
-    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])
+    nvcc_extra_args = ['-arch=compute_53']
+    nvcc_help = run_command(nvcc, '-h').stdout()
+    foreach x : ['sm_80', 'sm_75', 'sm_86', 'sm_70', 'sm_60' , 'sm_72', 'sm_62', 'sm_53']
+      if nvcc_help.contains(x)
+        nvcc_extra_args += '-code=' + x
+      endif
+    endforeach
+    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: nvcc_extra_args)
     has_backends = true
   endif
   
