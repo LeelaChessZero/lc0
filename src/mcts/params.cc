@@ -68,6 +68,9 @@ const OptionId SearchParams::kBackupNormId{
     "backup-norm", "BackupNorm",
     "The p-norm to use in backpropagation. Using p = 1 is the usual averaging. "
     "As p -> infinity, the p-norm approaches the maximum norm."};
+const OptionId SearchParams::kBackupNormFactorId{
+    "backup-norm-factor", "BackupNormFactor",
+    "Multiplier for the p-norm growth."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -285,7 +288,8 @@ void SearchParams::Populate(OptionsParser* options) {
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
-  options->Add<FloatOption>(kBackupNormId, 0.0f, 100.0f) = 0.1f;
+  options->Add<FloatOption>(kBackupNormId, 0.01f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kBackupNormFactorId, 0.0f, 10.0f) = 0.1f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
@@ -364,6 +368,7 @@ void SearchParams::Populate(OptionsParser* options) {
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
       kBackupNorm(options.Get<float>(kBackupNormId)),
+      kBackupNormFactor(options.Get<float>(kBackupNormFactorId)),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
