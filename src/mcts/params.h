@@ -47,6 +47,7 @@ class SearchParams {
     return options_.Get<int>(kMaxPrefetchBatchId);
   }
   float GetBackupNorm() const { return kBackupNorm; }
+  float GetBackupNormFactor() const { return kBackupNormFactor; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
@@ -117,6 +118,7 @@ class SearchParams {
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kBackupNormId;
+  static const OptionId kBackupNormFactorId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
@@ -176,6 +178,7 @@ class SearchParams {
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimizations.
   const float kBackupNorm;
+  const float kBackupNormFactor;
   const float kCpuct;
   const float kCpuctAtRoot;
   const float kCpuctBase;
