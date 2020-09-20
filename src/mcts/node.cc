@@ -39,6 +39,7 @@
 #include "neural/network.h"
 #include "utils/exception.h"
 #include "utils/hashcat.h"
+#include "utils/fastmath.h"
 
 namespace lczero {
 
@@ -351,8 +352,9 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int k, float p) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int k, float a) {
   // Recompute Q.
+  const float p = 1 + a * FastLog2(n_);
   const float invp = 1.0f / p;
   wl_ = std::pow(n_ * std::pow(0.5f * wl_ + 0.5f, p) / (n_ + k) +
                  k  * std::pow(0.5f * v   + 0.5f, p) / (n_ + k), invp) * 2 - 1;
