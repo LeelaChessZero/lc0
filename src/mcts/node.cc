@@ -352,9 +352,9 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int k, float a) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int k, float p, float a) {
   // Recompute Q.
-  float p = 1.0f + a * FastLog2(1.0f + n_);
+  float p += a * FastLog2(1.0f + n_);
   float invp = 1.0f / p;
   wl_ = std::pow(n_ * std::pow(0.5f * wl_ + 0.5f, p) / (n_ + k) +
                  k  * std::pow(0.5f * v   + 0.5f, p) / (n_ + k), invp) * 2 - 1;
