@@ -354,8 +354,8 @@ void Node::CancelScoreUpdate(int multivisit) {
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int k, float a) {
   // Recompute Q.
-  const float p = 1 + a * FastLog2(n_);
-  const float invp = 1.0f / p;
+  float p = 1.0f + a * FastLog2(1.0f * n_);
+  float invp = 1.0f / p;
   wl_ = std::pow(n_ * std::pow(0.5f * wl_ + 0.5f, p) / (n_ + k) +
                  k  * std::pow(0.5f * v   + 0.5f, p) / (n_ + k), invp) * 2 - 1;
   d_ =  std::pow(n_ * std::pow(d_, p) / (n_ + k) +
