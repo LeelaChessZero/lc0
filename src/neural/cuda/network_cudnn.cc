@@ -60,7 +60,7 @@ void dumpTensor(void *memory, int elements, const char *message, bool fp16 = fal
     for (int i = 0; i < elements; i++)
     {
         float val;
-        if (fp16) 
+        if (fp16)
         {
             half *arr = (half*)temp;
             val = (float)arr[i];
@@ -407,7 +407,8 @@ class CudnnNetwork : public Network {
       // Need additional space for transformed input/outputs which are 36/16
       // times size (4x4 block transformed into 6x6).
       const size_t transformed_tensor_size =
-          (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0));
+          (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) *
+                   sizeof(DataType));
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
 
