@@ -40,6 +40,8 @@ typedef void* cudnnHandle_t;
 namespace lczero {
 namespace cudnn_backend {
 
+static constexpr int kNumOutputPolicy = 1858;
+
 #ifdef USE_CUDNN
 void CudnnError(cudnnStatus_t status, const char* file, const int& line);
 #endif

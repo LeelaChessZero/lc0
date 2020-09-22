@@ -32,6 +32,7 @@
 #include <mutex>
 
 #include "cuda_common.h"
+#include "inputs_outputs.h"
 #include "kernels.h"
 #include "layers.h"
 #include "neural/factory.h"
@@ -44,98 +45,6 @@
 
 namespace lczero {
 using namespace cudnn_backend;
-
-static constexpr int kNumOutputPolicy = 1858;
-
-#if 0
-// debug code to dump allocation in GPU memory
-void dumpTensor(void *memory, int elements, const char *message, bool fp16 = false)
-{
-    printf("\n%s\n", message);
-    int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
-    int bytes = elements * elementSize;
-    void *temp = malloc(bytes);
-    cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
-
-    for (int i = 0; i < elements; i++)
-    {
-        float val;
-        if (fp16)
-        {
-            half *arr = (half*)temp;
-            val = (float)arr[i];
-        }
-        else
-        {
-            float *arr = (float *)temp;
-            val = arr[i];
-        }
-        printf("%8.4f ", val);
-        if ((i % 8) == 7) printf("\n");
-    }
-    free(temp);
-    printf("\n");
-}
-#endif
-
-struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left) {
-    ReportCUDAErrors(cudaHostAlloc(
-        &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
-        cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
-
-    ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
-                                   maxBatchSize * kInputPlanes * sizeof(float),
-                                   cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
-
-    ReportCUDAErrors(cudaHostAlloc(
-        &op_policy_mem_, maxBatchSize * kNumOutputPolicy * sizeof(float), 0));
-
-    // Seperate device memory copy for policy output.
-    // It's faster to write to device memory and then copy to host memory
-    // than having the kernel write directly to it.
-    ReportCUDAErrors(cudaMalloc(
-        &op_policy_mem_gpu_, maxBatchSize * kNumOutputPolicy * sizeof(float)));
-
-    ReportCUDAErrors(cudaHostAlloc(&op_value_mem_,
-                                   maxBatchSize * (wdl ? 3 : 1) * sizeof(float),
-                                   cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
-    if (moves_left) {
-      ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_,
-                                     maxBatchSize * sizeof(float),
-                                     cudaHostAllocMapped));
-      ReportCUDAErrors(cudaHostGetDevicePointer(&op_moves_left_mem_gpu_,
-                                                op_moves_left_mem_, 0));
-    }
-  }
-  ~InputsOutputs() {
-    ReportCUDAErrors(cudaFreeHost(input_masks_mem_));
-    ReportCUDAErrors(cudaFreeHost(input_val_mem_));
-    ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
-    ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
-    ReportCUDAErrors(cudaFreeHost(op_value_mem_));
-  }
-  uint64_t* input_masks_mem_;
-  float* input_val_mem_;
-  float* op_policy_mem_;
-  float* op_value_mem_;
-  float* op_moves_left_mem_;
-
-  // GPU pointers for the above allocations.
-  uint64_t* input_masks_mem_gpu_;
-  float* input_val_mem_gpu_;
-  float* op_value_mem_gpu_;
-  float* op_moves_left_mem_gpu_;
-
-  // This is a seperate copy.
-  float* op_policy_mem_gpu_;
-};
 
 template <typename DataType>
 class CudaNetwork;
@@ -489,9 +398,6 @@ class CudaNetwork : public Network {
       expandPlanes_Fp32_NCHW((float*)(tensor_mem_[0]), ipDataMasks,
                              ipDataValues, batchSize * kInputPlanes);
     }
-
-    // debug code example
-    // dumpTensor(tensor_mem_[0], 1024, "After expand Planes", fp16);
 
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;
