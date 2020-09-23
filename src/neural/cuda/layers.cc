@@ -904,12 +904,14 @@ FusedWinogradConvSELayer<DataType>::~FusedWinogradConvSELayer() {
 
 template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(
-    BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex)
+    BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last)
     : BaseLayer<DataType>(C, 8, 8, ip),
       c_input_(C),
       has_se_(se),
       se_k_(se_k),
-      use_gemm_ex_(use_gemm_ex) {
+      use_gemm_ex_(use_gemm_ex),
+      first_block_(first),
+      last_block_(last) {
   // Allocate memory for weights (filter tensor) and biases.
   const size_t weight_size = sizeof(DataType) * C * C * 3 * 3;
 
@@ -1068,9 +1070,17 @@ void ResidualBlock<float>::cublasRowMajorMatrixMul(
 
 template <typename DataType>
 void ResidualBlock<DataType>::Eval(
-    int N, DataType* output, const DataType* input, const DataType* input2,
+    int N, DataType* output, const DataType* input, const DataType* /*input2*/,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas) {
+
+  // normally:
+  // - "output" initially contains the transformed input, 
+  //    and after this layer, it contains the transformed input for next layer
+  // - "input" contains the original/untransformed input
+  // special cases:
+  //   - for first_block_, input is real input (untransformed)
+  //   - for last_block_, output is the final output of this block (untransformed)
 
   // Split the scratch space into two parts - use first part for holding
   // transformed input and second part for transformed output.
@@ -1078,24 +1088,37 @@ void ResidualBlock<DataType>::Eval(
   DataType* transformed_output =
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
-  // this shouldn't be needed, as previous block would handle it!
-  InputTransform<DataType>(N, C, transformed_input, input);
+  if (first_block_) {
+    InputTransform<DataType>(N, C, transformed_input, input);
 
-  cublasRowMajorMatrixMul(transformed_input, transformed_weights0_,
-                          transformed_output, N * 4, C, c_input_, 36, cublas);
+    cublasRowMajorMatrixMul(transformed_input, transformed_weights0_,
+                            transformed_output, N * 4, C, c_input_, 36, cublas);
+  } else {
+    cublasRowMajorMatrixMul(output, transformed_weights0_,
+                            transformed_output, N * 4, C, c_input_, 36, cublas);
+ 
+  }
 
-  // "transformed_input" tensor now contains transformed input for the next convolution
   OutputInputTransform<DataType, false, true, true, false>(
       N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
       nullptr, nullptr, nullptr, nullptr);
+  // "transformed_input" tensor now contains transformed input for the next
+  // convolution
 
   cublasRowMajorMatrixMul(transformed_input, transformed_weights1_,
                           transformed_output, N * 4, C, C, 36, cublas);
 
-  OutputTransform<DataType, true, true, true, true>(
-    N, C, se_k_, output, transformed_output, input2, biases1_, w1_, b1_, w2_,
-    b2_);
-
+  if (last_block_) {
+    OutputTransform<DataType, true, true, true, true>(
+        N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_, w2_,
+        b2_);
+  } else {
+    OutputInputTransform<DataType, true, true, true, true>(
+        N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_, w2_,
+        b2_);
+    // "output" tensor now contains transformed input for the next
+    // convolution
+  }
 }
 
 template <typename DataType>

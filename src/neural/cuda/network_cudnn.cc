@@ -42,7 +42,7 @@
 
 //#define DEBUG_RAW_NPS
 
-//#define RESIDUAL_BLOCK_OPT
+#define RESIDUAL_BLOCK_OPT
 
 namespace lczero {
 using namespace cudnn_backend;
@@ -405,10 +405,11 @@ class CudnnNetwork : public Network {
 
     if (scratch_size_ < max_weight_size) scratch_size_ = max_weight_size;
 
+    size_t transformed_tensor_size = 0;
     if (use_custom_winograd_) {
       // Need additional space for transformed input/outputs which are 36/16
       // times size (4x4 block transformed into 6x6).
-      const size_t transformed_tensor_size =
+      transformed_tensor_size =
           (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) * sizeof(DataType));
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
@@ -430,7 +431,7 @@ class CudnnNetwork : public Network {
     }
 
     // Residual block.
-    for (size_t block = 0; block < weights.residual.size(); block++) {
+    for (size_t block = 0; block < numBlocks_; block++) {
       if (use_custom_winograd_) {
 
         bool has_se = weights.residual[block].has_se;
@@ -438,7 +439,8 @@ class CudnnNetwork : public Network {
 
 #ifdef RESIDUAL_BLOCK_OPT
         auto layer = std::make_unique<ResidualBlock<DataType>>(
-            getLastLayer(), kNumFilters, true, se_k, use_gemm_ex);
+            getLastLayer(), kNumFilters, true, se_k, use_gemm_ex, block == 0,
+            block == (numBlocks_-1));
         layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
                             &weights.residual[block].conv1.biases[0],
                             scratch_mem_);
@@ -620,6 +622,12 @@ class CudnnNetwork : public Network {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
     }
 
+#ifdef RESIDUAL_BLOCK_OPT
+    // when this optimization is enabled, we write transformed outputs to 
+    // intermediate tensor memory
+    maxSize = std::max(maxSize, transformed_tensor_size);
+#endif
+
     for (auto& mem : tensor_mem_) {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
@@ -668,15 +676,21 @@ class CudnnNetwork : public Network {
 
     int l = 0;
     // Input.
+#ifdef RESIDUAL_BLOCK_OPT
+    network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                        scratch_mem_, scratch_size_, cudnn_,
+                        cublas_);  // input conv
+#else
     network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], nullptr,
                         scratch_mem_, scratch_size_, cudnn_,
                         cublas_);  // input conv
+#endif
 
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
 #ifdef RESIDUAL_BLOCK_OPT
-      network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[2],
-                          tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
+      network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
+                          nullptr, scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // block
 #else
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
