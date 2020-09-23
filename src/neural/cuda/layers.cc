@@ -1109,13 +1109,23 @@ void ResidualBlock<DataType>::Eval(
                           transformed_output, N * 4, C, C, 36, cublas);
 
   if (last_block_) {
-    OutputTransform<DataType, true, true, true, true>(
-        N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_, w2_,
-        b2_);
+    if (has_se_)
+      OutputTransform<DataType, true, true, true, true>(
+          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+          w2_, b2_);
+    else
+      OutputTransform<DataType, false, true, true, true>(
+          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+          w2_, b2_);
   } else {
-    OutputInputTransform<DataType, true, true, true, true>(
-        N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_, w2_,
-        b2_);
+    if (has_se_)
+      OutputInputTransform<DataType, true, true, true, true>(
+          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+          w2_, b2_);
+    else
+      OutputInputTransform<DataType, false, true, true, true>(
+          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+          w2_, b2_);
     // "output" tensor now contains transformed input for the next
     // convolution
   }

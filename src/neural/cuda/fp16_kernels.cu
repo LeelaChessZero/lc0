@@ -222,6 +222,11 @@ template void OutputInputTransform<half, true, true, true, true>(
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2);
 
+template void OutputInputTransform<half, false, true, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2);
+
 template void OutputInputTransform<half, false, true, true, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
