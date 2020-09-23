@@ -613,5 +613,16 @@ template void OutputTransform<float, false, true, true, true>(
     const float* w2, const float* b2);
 
 
+template void OutputInputTransform<float, true, true, true, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputInputTransform<float, false, true, true, false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+
 }  // namespace cudnn_backend
 }  // namespace lczero
