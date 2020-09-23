@@ -454,11 +454,11 @@ class CudnnNetwork : public Network {
           layer->LoadWeights1(&weights.residual[block].conv2.weights[0],
                               &weights.residual[block].conv2.biases[0],
                               scratch_mem_);
-
-          layer->LoadSEWeights(&weights.residual[block].se.w1[0],
-                               &weights.residual[block].se.b1[0],
-                               &weights.residual[block].se.w2[0],
-                               &weights.residual[block].se.b2[0], scratch_mem_);
+          if (has_se)
+            layer->LoadSEWeights(&weights.residual[block].se.w1[0],
+                                 &weights.residual[block].se.b1[0],
+                                 &weights.residual[block].se.w2[0],
+                                 &weights.residual[block].se.b2[0], scratch_mem_);
           network_.emplace_back(std::move(layer));
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
