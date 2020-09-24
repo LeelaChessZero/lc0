@@ -89,8 +89,8 @@ void ConvLayer<DataType>::init() {
       sizeof(DataType) * c_input_ * C * filter_size_ * filter_size_;
   ReportCUDAErrors(cudaMalloc(&weights, weight_size));
 
-  const size_t blas_size = sizeof(DataType) * C;
-  ReportCUDAErrors(cudaMalloc(&biases, blas_size));
+  const size_t bias_size = sizeof(DataType) * C;
+  ReportCUDAErrors(cudaMalloc(&biases, bias_size));
 
   const bool fp16 = std::is_same<half, DataType>::value;
   const cudnnDataType_t dataType =
@@ -169,7 +169,7 @@ template <>
 void ConvLayer<half>::LoadWeights(float* pfilter, float* pBias, void* scratch) {
   const size_t weight_size =
       sizeof(float) * c_input_ * C * filter_size_ * filter_size_;
-  const size_t blas_size = sizeof(float) * C;
+  const size_t bias_size = sizeof(float) * C;
   // Also need to convert from fp32 NCHW to fp16 NHWC
   // first copy from CPU memory to scratch space in GPU memory
   // and then do the type / layout conversion using a kernel.
@@ -187,7 +187,7 @@ void ConvLayer<half>::LoadWeights(float* pfilter, float* pBias, void* scratch) {
 
   if (pBias) {
     ReportCUDAErrors(
-        cudaMemcpy(scratch, pBias, blas_size, cudaMemcpyHostToDevice));
+        cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
 
     copyTypeConverted((half*)biases, (float*)scratch, C);
   }
@@ -198,15 +198,15 @@ void ConvLayer<float>::LoadWeights(float* pfilter, float* pBias,
                                    void* /*scratch*/) {
   const size_t weight_size =
       sizeof(float) * c_input_ * C * filter_size_ * filter_size_;
-  const size_t blas_size = sizeof(float) * C;
+  const size_t bias_size = sizeof(float) * C;
   ReportCUDAErrors(
       cudaMemcpy(weights, pfilter, weight_size, cudaMemcpyHostToDevice));
 
   if (pBias) {
     ReportCUDAErrors(
-        cudaMemcpy(biases, pBias, blas_size, cudaMemcpyHostToDevice));
+        cudaMemcpy(biases, pBias, bias_size, cudaMemcpyHostToDevice));
   } else {
-    ReportCUDAErrors(cudaMemset(biases, 0, blas_size));
+    ReportCUDAErrors(cudaMemset(biases, 0, bias_size));
   }
 }
 
@@ -497,10 +497,10 @@ FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
       use_sigmoid_(sigmoid) {
   const size_t weight_size =
       sizeof(DataType) * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
-  const size_t blas_size = sizeof(DataType) * C * H * W;
+  const size_t bias_size = sizeof(DataType) * C * H * W;
   ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
   if (use_bias_) {
-    ReportCUDAErrors(cudaMalloc(&biases_, blas_size));
+    ReportCUDAErrors(cudaMalloc(&biases_, bias_size));
   } else {
     biases_ = nullptr;
   }
@@ -513,7 +513,7 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
   const size_t weight_size = sizeof(float) * num_weights;
   const size_t num_biases = C * H * W;
-  const size_t blas_size = sizeof(float) * num_biases;
+  const size_t bias_size = sizeof(float) * num_biases;
 
   // also need to convert from fp32 to fp16
   assert(scratch);
@@ -530,7 +530,7 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
 
   if (cpuBias) {
     ReportCUDAErrors(
-        cudaMemcpy(scratch, cpuBias, blas_size, cudaMemcpyHostToDevice));
+        cudaMemcpy(scratch, cpuBias, bias_size, cudaMemcpyHostToDevice));
     copyTypeConverted((half*)biases_, (float*)scratch, (int)num_biases);
   }
 }
@@ -542,13 +542,13 @@ void FCLayer<float>::LoadWeights(float* cpuWeight, float* cpuBias,
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
   const size_t weight_size = sizeof(float) * num_weights;
   const size_t num_biases = C * H * W;
-  const size_t blas_size = sizeof(float) * num_biases;
+  const size_t bias_size = sizeof(float) * num_biases;
 
   ReportCUDAErrors(
       cudaMemcpy(weights_, cpuWeight, weight_size, cudaMemcpyHostToDevice));
   if (use_bias_) {
     ReportCUDAErrors(
-        cudaMemcpy(biases_, cpuBias, blas_size, cudaMemcpyHostToDevice));
+        cudaMemcpy(biases_, cpuBias, bias_size, cudaMemcpyHostToDevice));
   }
 }
 
@@ -722,8 +722,8 @@ FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
   const size_t weight_size = sizeof(DataType) * c_input_ * C * 3 * 3;
 
   if (use_bias_) {
-    const size_t blas_size = sizeof(DataType) * C;
-    ReportCUDAErrors(cudaMalloc(&biases_, blas_size));
+    const size_t bias_size = sizeof(DataType) * C;
+    ReportCUDAErrors(cudaMalloc(&biases_, bias_size));
   }
 
   // 6x6 transformed filter size, for 3x3 convolution
@@ -752,10 +752,10 @@ void FusedWinogradConvSELayer<DataType>::LoadWeights(float* pfilter,
                                                      float* pBias,
                                                      void* scratch) {
   const size_t weight_size = sizeof(float) * c_input_ * C * 3 * 3;
-  const size_t blas_size = sizeof(float) * C;
+  const size_t bias_size = sizeof(float) * C;
 
   // Store untransformed weights in scratch.
-  const DataType* weights = (DataType*)scratch + weight_size + blas_size;
+  const DataType* weights = (DataType*)scratch + weight_size + bias_size;
 
   // first copy from CPU memory to scratch space in GPU memory
   // and then do the type conversion using a kernel
@@ -766,7 +766,7 @@ void FusedWinogradConvSELayer<DataType>::LoadWeights(float* pfilter,
 
   if (pBias) {
     ReportCUDAErrors(
-        cudaMemcpy(scratch, pBias, blas_size, cudaMemcpyHostToDevice));
+        cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
     copyTypeConverted((DataType*)biases_, (float*)scratch, C);
   }
 
@@ -915,9 +915,9 @@ ResidualBlock<DataType>::ResidualBlock(
   // Allocate memory for weights (filter tensor) and biases.
   const size_t weight_size = sizeof(DataType) * C * C * 3 * 3;
 
-  const size_t blas_size = sizeof(DataType) * C;
-  ReportCUDAErrors(cudaMalloc(&biases0_, blas_size));
-  ReportCUDAErrors(cudaMalloc(&biases1_, blas_size));
+  const size_t bias_size = sizeof(DataType) * C;
+  ReportCUDAErrors(cudaMalloc(&biases0_, bias_size));
+  ReportCUDAErrors(cudaMalloc(&biases1_, bias_size));
 
   // 6x6 transformed filter size, for 3x3 convolution
   ReportCUDAErrors(cudaMalloc(&transformed_weights0_, weight_size * 4));
@@ -947,10 +947,10 @@ void ResidualBlock<DataType>::LoadWeights0(float* pfilter,
                                            void* scratch) {
 
   const size_t weight_size = sizeof(float) * c_input_ * C * 3 * 3;
-  const size_t blas_size = sizeof(float) * C;
+  const size_t bias_size = sizeof(float) * C;
 
   // Store untransformed weights in scratch.
-  const DataType* weights = (DataType*)scratch + weight_size + blas_size;
+  const DataType* weights = (DataType*)scratch + weight_size;
 
   // first copy from CPU memory to scratch space in GPU memory
   // and then do the type conversion using a kernel
@@ -961,7 +961,7 @@ void ResidualBlock<DataType>::LoadWeights0(float* pfilter,
 
   if (pBias) {
     ReportCUDAErrors(
-        cudaMemcpy(scratch, pBias, blas_size, cudaMemcpyHostToDevice));
+        cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
     copyTypeConverted((DataType*)biases0_, (float*)scratch, C);
   }
 
@@ -973,10 +973,10 @@ template <typename DataType>
 void ResidualBlock<DataType>::LoadWeights1(float* pfilter, float* pBias,
                                            void* scratch) {
   const size_t weight_size = sizeof(float) * C * C * 3 * 3;
-  const size_t blas_size = sizeof(float) * C;
+  const size_t bias_size = sizeof(float) * C;
 
   // Store untransformed weights in scratch.
-  const DataType* weights = (DataType*)scratch + weight_size + blas_size;
+  const DataType* weights = (DataType*)scratch + weight_size;
 
   // first copy from CPU memory to scratch space in GPU memory
   // and then do the type conversion using a kernel
@@ -987,7 +987,7 @@ void ResidualBlock<DataType>::LoadWeights1(float* pfilter, float* pBias,
 
   if (pBias) {
     ReportCUDAErrors(
-        cudaMemcpy(scratch, pBias, blas_size, cudaMemcpyHostToDevice));
+        cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
     copyTypeConverted((DataType*)biases1_, (float*)scratch, C);
   }
 
