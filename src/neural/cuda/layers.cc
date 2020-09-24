@@ -1089,7 +1089,7 @@ void ResidualBlock<DataType>::Eval(
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
   if (first_block_) {
-    InputTransform<DataType>(N, C, transformed_input, input);
+    InputTransform<DataType>(N, c_input_, transformed_input, input);
 
     cublasRowMajorMatrixMul(transformed_input, transformed_weights0_,
                             transformed_output, N * 4, C, c_input_, 36, cublas);
