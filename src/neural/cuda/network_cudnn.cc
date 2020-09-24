@@ -352,6 +352,11 @@ class CudnnNetwork : public Network {
       use_res_block_winograd_fuse_opt_ = false;
     }
 
+    // Disable res block fusing for > 512 filters
+    // (the fused output input transform kernel runs 
+    // out of register space)
+    if (kNumFilters > 512) use_res_block_winograd_fuse_opt_ = false;
+
 
     const bool use_gemm_ex = deviceProp.major >= 5;
 
