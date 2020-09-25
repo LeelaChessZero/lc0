@@ -32,6 +32,7 @@
 #include <mutex>
 
 #include "cuda_common.h"
+#include "inputs_outputs.h"
 #include "kernels.h"
 #include "layers.h"
 #include "neural/factory.h"
@@ -76,65 +77,6 @@ void dumpTensor(void *memory, int elements, const char *message, bool fp16 = fal
     printf("\n");
 }
 #endif
-
-struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left) {
-    ReportCUDAErrors(cudaHostAlloc(
-        &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
-        cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
-
-    ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
-                                   maxBatchSize * kInputPlanes * sizeof(float),
-                                   cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
-
-    ReportCUDAErrors(cudaHostAlloc(
-        &op_policy_mem_, maxBatchSize * kNumOutputPolicy * sizeof(float), 0));
-
-    // Seperate device memory copy for policy output.
-    // It's faster to write to device memory and then copy to host memory
-    // than having the kernel write directly to it.
-    ReportCUDAErrors(cudaMalloc(
-        &op_policy_mem_gpu_, maxBatchSize * kNumOutputPolicy * sizeof(float)));
-
-    ReportCUDAErrors(cudaHostAlloc(&op_value_mem_,
-                                   maxBatchSize * (wdl ? 3 : 1) * sizeof(float),
-                                   cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
-    if (moves_left) {
-      ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_,
-                                     maxBatchSize * sizeof(float),
-                                     cudaHostAllocMapped));
-      ReportCUDAErrors(cudaHostGetDevicePointer(&op_moves_left_mem_gpu_,
-                                                op_moves_left_mem_, 0));
-    }
-  }
-  ~InputsOutputs() {
-    ReportCUDAErrors(cudaFreeHost(input_masks_mem_));
-    ReportCUDAErrors(cudaFreeHost(input_val_mem_));
-    ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
-    ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
-    ReportCUDAErrors(cudaFreeHost(op_value_mem_));
-  }
-  uint64_t* input_masks_mem_;
-  float* input_val_mem_;
-  float* op_policy_mem_;
-  float* op_value_mem_;
-  float* op_moves_left_mem_;
-
-  // GPU pointers for the above allocations.
-  uint64_t* input_masks_mem_gpu_;
-  float* input_val_mem_gpu_;
-  float* op_value_mem_gpu_;
-  float* op_moves_left_mem_gpu_;
-
-  // This is a seperate copy.
-  float* op_policy_mem_gpu_;
-};
 
 template <typename DataType>
 class CudnnNetwork;
@@ -587,6 +529,12 @@ class CudnnNetwork : public Network {
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
+
+      if (wdl_) {
+        auto softmaxVal =
+            std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
+        network_.emplace_back(std::move(softmaxVal));
+      }
     }
     value_out_ = getLastLayer();
 
@@ -649,7 +597,7 @@ class CudnnNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
-    std::unique_lock<std::mutex> lock(lock_);
+    std::lock_guard<std::mutex> lock(lock_);
 
 #ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
@@ -781,18 +729,36 @@ class CudnnNetwork : public Network {
                         scratch_mem_, scratch_size_, cudnn_,
                         cublas_);  // value FC1
 
-
-    if (fp16) {
-      // TODO: consider fusing the bias-add of FC2 with format conversion.
+    if (wdl_) {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // value FC2
-      copyTypeConverted(opVal, (half*)(tensor_mem_[0]),
-                        wdl_ ? 3 * batchSize : batchSize);  // VALUE
-    } else {
-      network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
-                          nullptr, scratch_mem_, scratch_size_, cudnn_,
                           cublas_);  // value FC2    // VALUE
+
+      // Value softmax
+      if (fp16) {
+        // TODO: consider fusing the bias-add of FC2 with format conversion.
+        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // value FC2
+        copyTypeConverted(opVal, (half*)(tensor_mem_[1]),
+                          3 * batchSize);  // VALUE
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[0],
+                            nullptr, scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // value FC2    // VALUE
+      }
+    } else {
+      if (fp16) {
+        // TODO: consider fusing the bias-add of FC2 with format conversion.
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // value FC2
+        copyTypeConverted(opVal, (half*)(tensor_mem_[0]), batchSize);  // VALUE
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
+                            nullptr, scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // value FC2    // VALUE
+      }
     }
 
     if (moves_left_) {
@@ -819,24 +785,6 @@ class CudnnNetwork : public Network {
     }
 
     ReportCUDAErrors(cudaDeviceSynchronize());
-    // The next thread can start using the GPU now.
-    lock.unlock();
-
-    if (wdl_) {
-      // Value softmax done cpu side.
-      for (int i = 0; i < batchSize; i++) {
-        float w = std::exp(io->op_value_mem_[3 * i + 0]);
-        float d = std::exp(io->op_value_mem_[3 * i + 1]);
-        float l = std::exp(io->op_value_mem_[3 * i + 2]);
-        float sum = w + d + l;
-        w /= sum;
-        l /= sum;
-        d = 1.0f - w - l;
-        io->op_value_mem_[3 * i + 0] = w;
-        io->op_value_mem_[3 * i + 1] = d;
-        io->op_value_mem_[3 * i + 2] = l;
-      }
-    }
 
 #ifdef DEBUG_RAW_NPS
     const int reportingCalls = 100;
