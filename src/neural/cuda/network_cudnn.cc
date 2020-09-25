@@ -383,7 +383,7 @@ class CudnnNetwork : public Network {
     }
 
     // Residual block.
-    for (size_t block = 0; block < numBlocks_; block++) {
+    for (int block = 0; block < numBlocks_; block++) {
       if (use_custom_winograd_) {
 
         bool has_se = weights.residual[block].has_se;

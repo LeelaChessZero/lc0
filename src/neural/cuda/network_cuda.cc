@@ -244,7 +244,7 @@ class CudaNetwork : public Network {
     }
 
     // Residual block.
-    for (size_t block = 0; block < numBlocks_; block++) {
+    for (int block = 0; block < numBlocks_; block++) {
         bool has_se = weights.residual[block].has_se;
         int se_k = (int)weights.residual[block].se.b1.size();
 

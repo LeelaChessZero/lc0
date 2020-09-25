@@ -1015,10 +1015,10 @@ template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(
     BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last)
     : BaseLayer<DataType>(C, 8, 8, ip),
-      c_input_(C),
       has_se_(se),
       se_k_(se_k),
       use_gemm_ex_(use_gemm_ex),
+      c_input_(C),
       first_block_(first),
       last_block_(last) {
   // Allocate memory for weights (filter tensor) and biases.
