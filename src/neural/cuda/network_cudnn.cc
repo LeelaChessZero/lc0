@@ -42,6 +42,7 @@
 
 //#define DEBUG_RAW_NPS
 
+
 namespace lczero {
 using namespace cudnn_backend;
 
@@ -350,7 +351,7 @@ class CudnnNetwork : public Network {
     }
 
     // Disable res block fusing for > 384 filters
-    // (the fused output input transform kernel runs 
+    // (the fused output input transform kernel runs
     // out of register space)
     if (kNumFilters > 384) use_res_block_winograd_fuse_opt_ = false;
 

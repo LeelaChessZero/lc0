@@ -892,6 +892,7 @@ void FusedWinogradConvSELayer<DataType>::Eval(
         nullptr, nullptr);
   else
     throw Exception("unsupported network type!");
+
 }
 
 template <typename DataType>
@@ -1009,7 +1010,6 @@ Conv1Layer<DataType>::~Conv1Layer() {
   ReportCUDAErrors(cudaFree(weights_));
   if (use_bias_) ReportCUDAErrors(cudaFree(biases_));
 }
-
 
 template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(
@@ -1281,10 +1281,8 @@ template class FusedWinogradConvSELayer<float>;
 template class Conv1Layer<half>;
 template class Conv1Layer<float>;
 
-
 template class ResidualBlock<half>;
 template class ResidualBlock<float>;
-
 
 // Misc error handling stuff.
 #ifdef USE_CUDNN

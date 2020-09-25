@@ -195,7 +195,7 @@ class CudaNetwork : public Network {
           options.GetOrDefault<bool>("res_block_fusing", true);
 
     // Disable res block fusing for > 384 filters
-    // (the fused output input transform kernel runs 
+    // (the fused output input transform kernel runs
     // out of register space)
     if (kNumFilters > 384) use_res_block_winograd_fuse_opt_ = false;
 
