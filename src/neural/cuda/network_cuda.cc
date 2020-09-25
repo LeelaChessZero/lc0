@@ -191,6 +191,15 @@ class CudaNetwork : public Network {
               "using a smaller network.";
     }
 
+    use_res_block_winograd_fuse_opt_ =
+          options.GetOrDefault<bool>("res_block_fusing", true);
+
+    // Disable res block fusing for > 384 filters
+    // (the fused output input transform kernel runs 
+    // out of register space)
+    if (kNumFilters > 384) use_res_block_winograd_fuse_opt_ = false;
+
+
     const bool use_gemm_ex = deviceProp.major >= 5;
 
     // 0. Check for SE.
@@ -235,29 +244,49 @@ class CudaNetwork : public Network {
     }
 
     // Residual block.
-    for (size_t block = 0; block < weights.residual.size(); block++) {
-      auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
-          false, 0, use_gemm_ex);
-      conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
-                         &weights.residual[block].conv1.biases[0],
-                         scratch_mem_);
-      network_.emplace_back(std::move(conv1));
+    for (size_t block = 0; block < numBlocks_; block++) {
+        bool has_se = weights.residual[block].has_se;
+        int se_k = (int)weights.residual[block].se.b1.size();
 
-      bool has_se = weights.residual[block].has_se;
-      int se_k = (int)weights.residual[block].se.b1.size();
-      auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
-          has_se, se_k, use_gemm_ex);
-      conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
-                         &weights.residual[block].conv2.biases[0],
-                         scratch_mem_);
-      if (has_se)
-        conv2->LoadSEWeights(&weights.residual[block].se.w1[0],
-                             &weights.residual[block].se.b1[0],
-                             &weights.residual[block].se.w2[0],
-                             &weights.residual[block].se.b2[0], scratch_mem_);
-      network_.emplace_back(std::move(conv2));
+        if (use_res_block_winograd_fuse_opt_) {
+          auto layer = std::make_unique<ResidualBlock<DataType>>(
+              getLastLayer(), kNumFilters, has_se, se_k, use_gemm_ex,
+              block == 0, block == (numBlocks_ - 1));
+          layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
+                              &weights.residual[block].conv1.biases[0],
+                              scratch_mem_);
+          layer->LoadWeights1(&weights.residual[block].conv2.weights[0],
+                              &weights.residual[block].conv2.biases[0],
+                              scratch_mem_);
+          if (has_se)
+            layer->LoadSEWeights(&weights.residual[block].se.w1[0],
+                                 &weights.residual[block].se.b1[0],
+                                 &weights.residual[block].se.w2[0],
+                                 &weights.residual[block].se.b2[0], scratch_mem_);
+          network_.emplace_back(std::move(layer));
+        } else {
+          auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
+              false, 0, use_gemm_ex);
+          conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
+                             &weights.residual[block].conv1.biases[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(conv1));
+
+          auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
+              has_se, se_k, use_gemm_ex);
+          conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
+                             &weights.residual[block].conv2.biases[0],
+                             scratch_mem_);
+          if (has_se)
+            conv2->LoadSEWeights(&weights.residual[block].se.w1[0],
+                                 &weights.residual[block].se.b1[0],
+                                 &weights.residual[block].se.w2[0],
+                                 &weights.residual[block].se.b2[0],
+                                 scratch_mem_);
+          network_.emplace_back(std::move(conv2));
+        }
     }
 
     resi_last_ = getLastLayer();
@@ -368,6 +397,9 @@ class CudaNetwork : public Network {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
     }
 
+    if (use_res_block_winograd_fuse_opt_ && scratch_size_ > maxSize)
+      maxSize = scratch_size_;
+
     for (auto& mem : tensor_mem_) {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
@@ -405,19 +437,27 @@ class CudaNetwork : public Network {
 
     int l = 0;
     // Input.
-    network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], nullptr,
-                        scratch_mem_, scratch_size_, nullptr,
-                        cublas_);  // input conv
+    network_[l++]->Eval(
+        batchSize,
+        use_res_block_winograd_fuse_opt_ ? tensor_mem_[1] : tensor_mem_[2],
+        tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, nullptr,
+        cublas_);  // input conv
 
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
-      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                          scratch_mem_, scratch_size_, nullptr,
-                          cublas_);  // conv1
+      if (use_res_block_winograd_fuse_opt_) {
+        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
+                            scratch_mem_, scratch_size_, nullptr,
+                            cublas_);  // block
+      } else {
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+                            scratch_mem_, scratch_size_, nullptr,
+                            cublas_);  // conv1
 
-      network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
+        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                           tensor_mem_[2], scratch_mem_, scratch_size_, nullptr,
                           cublas_);  // conv2
+        }
     }
 
     // Policy head.
@@ -619,6 +659,7 @@ class CudaNetwork : public Network {
   int max_batch_size_;
   bool wdl_;
   bool moves_left_;
+  bool use_res_block_winograd_fuse_opt_;    // fuse operations inside the residual tower
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).

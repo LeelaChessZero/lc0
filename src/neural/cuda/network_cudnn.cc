@@ -45,8 +45,6 @@
 namespace lczero {
 using namespace cudnn_backend;
 
-static constexpr int kNumOutputPolicy = 1858;
-
 #if 0
 // debug code to dump allocation in GPU memory
 void dumpTensor(void *memory, int elements, const char *message, bool fp16 = false)
