@@ -356,13 +356,13 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int k, float p0, float
   // Recompute Q.
   float p = p0 + a * FastLog2(1.0f + n_);
   float invp = 1.0f / p;
-  float old = n_ * 1.0f / (n_ + k);
-  float new = k  * 1.0f / (n_ + k);
-  wl_ = std::clamp(std::pow(old * std::pow(0.5f * wl_ + 0.5f, p) +
-                            new * std::pow(0.5f * v   + 0.5f, p), invp) * 2 - 1,
+  float prev = n_ * 1.0f / (n_ + k);
+  float incr = k  * 1.0f / (n_ + k);
+  wl_ = std::clamp(std::pow(prev * std::pow(0.5f * wl_ + 0.5f, p) +
+                            incr * std::pow(0.5f * v   + 0.5f, p), invp) * 2 - 1,
                    -1.0f, 1.0f);
-  d_ =  std::clamp(std::pow(old * std::pow(d_, p) +
-                            new * std::pow(d,  p), invp), -1.0f, 1.0f);
+  d_ =  std::clamp(std::pow(prev * std::pow(d_, p) +
+                            incr * std::pow(d,  p), invp), -1.0f, 1.0f);
   m_ += k * (m - m_) / (n_ + k);
 
   // If first visit, update parent's sum of policies visited at least once.
