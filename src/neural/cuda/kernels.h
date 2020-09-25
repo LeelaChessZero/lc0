@@ -95,6 +95,10 @@ void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2);
 
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
+                     const T* skip, const T* bias, const T* w1, const T* b1,
+                     const T* w2, const T* b2);
 
 }  // namespace cudnn_backend
 }  // namespace lczero

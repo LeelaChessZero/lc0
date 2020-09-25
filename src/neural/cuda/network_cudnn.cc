@@ -32,7 +32,6 @@
 #include <mutex>
 
 #include "cuda_common.h"
-#include "inputs_outputs.h"
 #include "kernels.h"
 #include "layers.h"
 #include "neural/factory.h"
@@ -45,6 +44,8 @@
 
 namespace lczero {
 using namespace cudnn_backend;
+
+static constexpr int kNumOutputPolicy = 1858;
 
 #if 0
 // debug code to dump allocation in GPU memory
@@ -59,7 +60,7 @@ void dumpTensor(void *memory, int elements, const char *message, bool fp16 = fal
     for (int i = 0; i < elements; i++)
     {
         float val;
-        if (fp16)
+        if (fp16) 
         {
             half *arr = (half*)temp;
             val = (float)arr[i];
@@ -76,6 +77,65 @@ void dumpTensor(void *memory, int elements, const char *message, bool fp16 = fal
     printf("\n");
 }
 #endif
+
+struct InputsOutputs {
+  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left) {
+    ReportCUDAErrors(cudaHostAlloc(
+        &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
+        cudaHostAllocMapped));
+    ReportCUDAErrors(
+        cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
+
+    ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
+                                   maxBatchSize * kInputPlanes * sizeof(float),
+                                   cudaHostAllocMapped));
+    ReportCUDAErrors(
+        cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
+
+    ReportCUDAErrors(cudaHostAlloc(
+        &op_policy_mem_, maxBatchSize * kNumOutputPolicy * sizeof(float), 0));
+
+    // Seperate device memory copy for policy output.
+    // It's faster to write to device memory and then copy to host memory
+    // than having the kernel write directly to it.
+    ReportCUDAErrors(cudaMalloc(
+        &op_policy_mem_gpu_, maxBatchSize * kNumOutputPolicy * sizeof(float)));
+
+    ReportCUDAErrors(cudaHostAlloc(&op_value_mem_,
+                                   maxBatchSize * (wdl ? 3 : 1) * sizeof(float),
+                                   cudaHostAllocMapped));
+    ReportCUDAErrors(
+        cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
+    if (moves_left) {
+      ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_,
+                                     maxBatchSize * sizeof(float),
+                                     cudaHostAllocMapped));
+      ReportCUDAErrors(cudaHostGetDevicePointer(&op_moves_left_mem_gpu_,
+                                                op_moves_left_mem_, 0));
+    }
+  }
+  ~InputsOutputs() {
+    ReportCUDAErrors(cudaFreeHost(input_masks_mem_));
+    ReportCUDAErrors(cudaFreeHost(input_val_mem_));
+    ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
+    ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
+    ReportCUDAErrors(cudaFreeHost(op_value_mem_));
+  }
+  uint64_t* input_masks_mem_;
+  float* input_val_mem_;
+  float* op_policy_mem_;
+  float* op_value_mem_;
+  float* op_moves_left_mem_;
+
+  // GPU pointers for the above allocations.
+  uint64_t* input_masks_mem_gpu_;
+  float* input_val_mem_gpu_;
+  float* op_value_mem_gpu_;
+  float* op_moves_left_mem_gpu_;
+
+  // This is a seperate copy.
+  float* op_policy_mem_gpu_;
+};
 
 template <typename DataType>
 class CudnnNetwork;
@@ -284,6 +344,19 @@ class CudnnNetwork : public Network {
     // Winograd needs nchw tensor layout.
     if (use_custom_winograd_) nhwc_ = false;
 
+    if (use_custom_winograd_) {
+      use_res_block_winograd_fuse_opt_ =
+          options.GetOrDefault<bool>("res_block_fusing", true);
+    } else {
+      use_res_block_winograd_fuse_opt_ = false;
+    }
+
+    // Disable res block fusing for > 384 filters
+    // (the fused output input transform kernel runs 
+    // out of register space)
+    if (kNumFilters > 384) use_res_block_winograd_fuse_opt_ = false;
+
+
     const bool use_gemm_ex = deviceProp.major >= 5;
 
     // 0. Check for SE.
@@ -343,12 +416,12 @@ class CudnnNetwork : public Network {
 
     if (scratch_size_ < max_weight_size) scratch_size_ = max_weight_size;
 
+    size_t transformed_tensor_size = 0;
     if (use_custom_winograd_) {
       // Need additional space for transformed input/outputs which are 36/16
       // times size (4x4 block transformed into 6x6).
-      const size_t transformed_tensor_size =
-          (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) *
-                   sizeof(DataType));
+      transformed_tensor_size =
+          (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) * sizeof(DataType));
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
 
@@ -369,30 +442,52 @@ class CudnnNetwork : public Network {
     }
 
     // Residual block.
-    for (size_t block = 0; block < weights.residual.size(); block++) {
+    for (size_t block = 0; block < numBlocks_; block++) {
       if (use_custom_winograd_) {
-        auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-            getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
-            false, 0, use_gemm_ex);
-        conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
-                           &weights.residual[block].conv1.biases[0],
-                           scratch_mem_);
-        network_.emplace_back(std::move(conv1));
 
         bool has_se = weights.residual[block].has_se;
         int se_k = (int)weights.residual[block].se.b1.size();
-        auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-            getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
-            has_se, se_k, use_gemm_ex);
-        conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
-                           &weights.residual[block].conv2.biases[0],
-                           scratch_mem_);
-        if (has_se)
-          conv2->LoadSEWeights(&weights.residual[block].se.w1[0],
-                               &weights.residual[block].se.b1[0],
-                               &weights.residual[block].se.w2[0],
-                               &weights.residual[block].se.b2[0], scratch_mem_);
-        network_.emplace_back(std::move(conv2));
+
+        if (use_res_block_winograd_fuse_opt_) {
+          auto layer = std::make_unique<ResidualBlock<DataType>>(
+              getLastLayer(), kNumFilters, has_se, se_k, use_gemm_ex,
+              block == 0, block == (numBlocks_ - 1));
+          layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
+                              &weights.residual[block].conv1.biases[0],
+                              scratch_mem_);
+          layer->LoadWeights1(&weights.residual[block].conv2.weights[0],
+                              &weights.residual[block].conv2.biases[0],
+                              scratch_mem_);
+          if (has_se)
+            layer->LoadSEWeights(&weights.residual[block].se.w1[0],
+                                 &weights.residual[block].se.b1[0],
+                                 &weights.residual[block].se.w2[0],
+                                 &weights.residual[block].se.b2[0], scratch_mem_);
+          network_.emplace_back(std::move(layer));
+        } else {
+          auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
+              false, 0, use_gemm_ex);
+          conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
+                             &weights.residual[block].conv1.biases[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(conv1));
+
+          auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
+              has_se, se_k, use_gemm_ex);
+          conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
+                             &weights.residual[block].conv2.biases[0],
+                             scratch_mem_);
+          if (has_se)
+            conv2->LoadSEWeights(&weights.residual[block].se.w1[0],
+                                 &weights.residual[block].se.b1[0],
+                                 &weights.residual[block].se.w2[0],
+                                 &weights.residual[block].se.b2[0],
+                                 scratch_mem_);
+          network_.emplace_back(std::move(conv2));
+        }
+
       } else {
         auto conv1 = std::make_unique<ConvLayer<DataType>>(
             getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
@@ -493,12 +588,6 @@ class CudnnNetwork : public Network {
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
-
-      if (wdl_) {
-        auto softmaxVal =
-            std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
-        network_.emplace_back(std::move(softmaxVal));
-      }
     }
     value_out_ = getLastLayer();
 
@@ -540,6 +629,11 @@ class CudnnNetwork : public Network {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
     }
 
+    // when this optimization is enabled, we write transformed outputs to
+    // intermediate tensor memory
+    if (use_res_block_winograd_fuse_opt_ && transformed_tensor_size > maxSize)
+      maxSize = transformed_tensor_size;
+
     for (auto& mem : tensor_mem_) {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
@@ -556,7 +650,7 @@ class CudnnNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
-    std::lock_guard<std::mutex> lock(lock_);
+    std::unique_lock<std::mutex> lock(lock_);
 
 #ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
@@ -588,39 +682,48 @@ class CudnnNetwork : public Network {
 
     int l = 0;
     // Input.
-    network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0], nullptr,
-                        scratch_mem_, scratch_size_, cudnn_,
-                        cublas_);  // input conv
+    network_[l++]->Eval(
+        batchSize,
+        use_res_block_winograd_fuse_opt_ ? tensor_mem_[1] : tensor_mem_[2],
+        tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, cudnn_,
+        cublas_);  // input conv
 
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
-      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // conv1
-
-      if (use_custom_winograd_) {
-        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
-                            tensor_mem_[2], scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // conv2
+      if (use_res_block_winograd_fuse_opt_) {
+        network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // block
       } else {
-        // For SE Resnet, skip connection is added after SE (and bias is added
-        // as part of SE).
-        if (has_se_) {
-          network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0],
-                              nullptr, scratch_mem_, scratch_size_, cudnn_,
-                              cublas_);  // conv2
-        } else {
+        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
+                            scratch_mem_, scratch_size_, cudnn_,
+                            cublas_);  // conv1
+
+        if (use_custom_winograd_) {
           network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                               tensor_mem_[2], scratch_mem_, scratch_size_,
                               cudnn_,
                               cublas_);  // conv2
-        }
+        } else {
+          // For SE Resnet, skip connection is added after SE (and bias is added
+          // as part of SE).
+          if (has_se_) {
+            network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0],
+                                nullptr, scratch_mem_, scratch_size_, cudnn_,
+                                cublas_);  // conv2
+          } else {
+            network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
+                                tensor_mem_[2], scratch_mem_, scratch_size_,
+                                cudnn_,
+                                cublas_);  // conv2
+          }
 
-        if (has_se_) {
-          network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
-                              tensor_mem_[2], scratch_mem_, scratch_size_,
-                              cudnn_,
-                              cublas_);  // SE layer
+          if (has_se_) {
+            network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
+                                tensor_mem_[2], scratch_mem_, scratch_size_,
+                                cudnn_,
+                                cublas_);  // SE layer
+          }
         }
       }
     }
@@ -679,36 +782,18 @@ class CudnnNetwork : public Network {
                         scratch_mem_, scratch_size_, cudnn_,
                         cublas_);  // value FC1
 
-    if (wdl_) {
+
+    if (fp16) {
+      // TODO: consider fusing the bias-add of FC2 with format conversion.
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // value FC2    // VALUE
-
-      // Value softmax
-      if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // value FC2
-        copyTypeConverted(opVal, (half*)(tensor_mem_[1]),
-                          3 * batchSize);  // VALUE
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[0],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // value FC2    // VALUE
-      }
+                          cublas_);  // value FC2
+      copyTypeConverted(opVal, (half*)(tensor_mem_[0]),
+                        wdl_ ? 3 * batchSize : batchSize);  // VALUE
     } else {
-      if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // value FC2
-        copyTypeConverted(opVal, (half*)(tensor_mem_[0]), batchSize);  // VALUE
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // value FC2    // VALUE
-      }
+      network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
+                          nullptr, scratch_mem_, scratch_size_, cudnn_,
+                          cublas_);  // value FC2    // VALUE
     }
 
     if (moves_left_) {
@@ -735,6 +820,24 @@ class CudnnNetwork : public Network {
     }
 
     ReportCUDAErrors(cudaDeviceSynchronize());
+    // The next thread can start using the GPU now.
+    lock.unlock();
+
+    if (wdl_) {
+      // Value softmax done cpu side.
+      for (int i = 0; i < batchSize; i++) {
+        float w = std::exp(io->op_value_mem_[3 * i + 0]);
+        float d = std::exp(io->op_value_mem_[3 * i + 1]);
+        float l = std::exp(io->op_value_mem_[3 * i + 2]);
+        float sum = w + d + l;
+        w /= sum;
+        l /= sum;
+        d = 1.0f - w - l;
+        io->op_value_mem_[3 * i + 0] = w;
+        io->op_value_mem_[3 * i + 1] = d;
+        io->op_value_mem_[3 * i + 2] = l;
+      }
+    }
 
 #ifdef DEBUG_RAW_NPS
     const int reportingCalls = 100;
@@ -820,6 +923,8 @@ class CudnnNetwork : public Network {
 
   bool use_custom_winograd_;  // Custom winograd convolution implementation for
                               // convolutions of the residual tower.
+
+  bool use_res_block_winograd_fuse_opt_;    // fuse operations inside the residual tower
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
