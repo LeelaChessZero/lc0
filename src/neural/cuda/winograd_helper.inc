@@ -358,7 +358,7 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
 // every thread generates an entire board/plane (8x8 elements)
 template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
 __global__ 
-__launch_bounds__(512)
+__launch_bounds__(384)
 void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* output,
                                                               const T* input, const T* skip,
                                                               const T* bias, const T* w1, const T* b1,
