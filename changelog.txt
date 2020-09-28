@@ -1,3 +1,12 @@
+v0.26.3-rc1 (2020-09-28)
+~~~~~~~
+* Residual block fusion optimization for cudnn backend, that depends on
+  `custom_winograd=true`. Enabled by default only for networks with up to 384
+  filters in fp16 mode and never in fp32 mode. Default can be overridden with
+  `--backend-opts=res_block_fusing=false` to disable (or `=true` to enable).
+* New experimental cuda backend without cudnn dependency (`cuda-auto`, `cuda`
+  and `cuda-fp16` are available).
+
 v0.26.2 (2020-08-31)
 ~~~~~~~
 * No changes from rc1.
