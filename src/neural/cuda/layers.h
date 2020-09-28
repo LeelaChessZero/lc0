@@ -28,7 +28,12 @@
 
 #include <cstddef>
 #include <cublas_v2.h>
+
+#ifdef USE_CUDNN
 #include <cudnn.h>
+#else
+typedef void* cudnnHandle_t;
+#endif
 
 namespace lczero {
 namespace cudnn_backend {
@@ -63,6 +68,7 @@ class BaseLayer {
   bool nhwc_;   // tensor layout
 };
 
+#ifdef USE_CUDNN
 template <typename DataType>
 class ConvLayer : public BaseLayer<DataType> {
   using BaseLayer<DataType>::C;
@@ -124,6 +130,7 @@ class SoftMaxLayer : public BaseLayer<DataType> {
  private:
   cudnnTensorDescriptor_t out_tensor_desc_;
 };
+#endif
 
 template <typename DataType>
 class FCLayer : public BaseLayer<DataType> {
@@ -242,6 +249,41 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   DataType* w2_;
   DataType* b1_;
   DataType* b2_;
+
+ void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
+                               DataType* Out, int M, int N, int K,
+                               int batchSize, cublasHandle_t cublas);
+};
+
+template <typename DataType>
+class Conv1Layer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
+  using BaseLayer<DataType>::H;
+  using BaseLayer<DataType>::W;
+  using BaseLayer<DataType>::GetC;
+  using BaseLayer<DataType>::GetH;
+  using BaseLayer<DataType>::GetW;
+  using BaseLayer<DataType>::nhwc_;
+
+ public:
+  Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
+                         int Cin, bool relu, bool bias, bool use_gemm_ex);
+
+  ~Conv1Layer();
+  void LoadWeights(float* pfilter, float* pBias, void* scratch);
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2,
+            void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  const int c_input_;
+  const bool use_relu_;
+  const bool use_bias_;
+  const bool use_gemm_ex_;
+
+  DataType* biases_ = nullptr;
+  DataType* weights_ = nullptr;
 
  void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
                                DataType* Out, int M, int N, int K,
