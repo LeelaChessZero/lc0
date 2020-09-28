@@ -295,8 +295,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
   options->Add<FloatOption>(kBackupNormId, 0.001f, 10.0f) = 1.0f;
-  options->Add<FloatOption>(kBackupNormFMinId, 0.0f, 10.0f) = 10.0f;
-  options->Add<FloatOption>(kBackupNormFMaxId, 0.0f, 10.0f) = 10.0f;
+  options->Add<FloatOption>(kBackupNormMinId, 0.0f, 10.0f) = 10.0f;
+  options->Add<FloatOption>(kBackupNormMaxId, 0.0f, 10.0f) = 10.0f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
