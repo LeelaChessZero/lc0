@@ -353,9 +353,9 @@ void Node::CancelScoreUpdate(int multivisit) {
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
-                               float p0, float a, float pmin, float pmax) {
+                               float p0, float a, float pmin, float cap) {
   // Recompute Q.
-  double p = p0 + std::clamp(a * FastLog2(1.0 + n_), -pmax, pmax);
+  double p = std:max(p0 + std::clamp(a * FastLog2(1.0 + n_), -cap, cap), pmin);
   double invp = 1.0 / p;
   double wl_p = std::copysign(std::pow(std::abs(wl_), p), wl_);
   double vp = std::copysign(std::pow(std::abs(v), p), v);
