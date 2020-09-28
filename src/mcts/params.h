@@ -48,6 +48,8 @@ class SearchParams {
   }
   float GetBackupNorm() const { return kBackupNorm; }
   float GetBackupNormFactor() const { return kBackupNormFactor; }
+  float GetBackupNormMin() const { return kBackupNormMin; }
+  float GetBackupNormMax() const { return kBackupNormMax; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
@@ -119,6 +121,8 @@ class SearchParams {
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kBackupNormId;
   static const OptionId kBackupNormFactorId;
+  static const OptionId kBackupNormMinId;
+  static const OptionId kBackupNormMaxId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
@@ -179,6 +183,8 @@ class SearchParams {
   //            trivial search optimizations.
   const float kBackupNorm;
   const float kBackupNormFactor;
+  const float kBackupNormMin;
+  const float kBackupNormMax;
   const float kCpuct;
   const float kCpuctAtRoot;
   const float kCpuctBase;
