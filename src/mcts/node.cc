@@ -366,7 +366,7 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
   wl_ = (float) std::clamp(std::copysign(std::pow(std::abs(w0), invp), w0),
                            -1.0, 1.0);
   d_ =  (float) std::clamp(std::pow(d0, invp), 0.0, 1.0);
-  m_ += k * (m - m_) / (n_ + k);
+  m_ += multivisit * (m - m_) / (n_ + multivisit);
 
   // If first visit, update parent's sum of policies visited at least once.
   if (n_ == 0 && parent_ != nullptr) {
