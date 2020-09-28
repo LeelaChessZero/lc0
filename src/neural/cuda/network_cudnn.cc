@@ -286,17 +286,19 @@ class CudnnNetwork : public Network {
     if (use_custom_winograd_) nhwc_ = false;
 
     if (use_custom_winograd_) {
-      use_res_block_winograd_fuse_opt_ =
-          options.GetOrDefault<bool>("res_block_fusing", true);
-    } else {
-      use_res_block_winograd_fuse_opt_ = false;
+      // Disable res block fusing for > 384 filters (the fused output input
+      // transform kernel runs out of register space) and for fp32 for now.
+      if (kNumFilters <= 384 && fp16) {
+        use_res_block_winograd_fuse_opt_ = true;
+      } else {
+        use_res_block_winograd_fuse_opt_ = false;
+      }
+      // Override if set in backend-opts.
+      if (!options.IsDefault<bool>("res_block_fusing")) {
+        use_res_block_winograd_fuse_opt_ =
+            options.Get<bool>("res_block_fusing");
+      }
     }
-
-    // Disable res block fusing for > 384 filters
-    // (the fused output input transform kernel runs
-    // out of register space)
-    if (kNumFilters > 384) use_res_block_winograd_fuse_opt_ = false;
-
 
     const bool use_gemm_ex = deviceProp.major >= 5;
 
