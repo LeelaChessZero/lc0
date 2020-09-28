@@ -392,8 +392,7 @@ if get_option('build_backends')
 
   #.cc files
   cuda_files = [
-    'src/neural/cuda/network_cudnn.cc',
-	'src/neural/cuda/layers.cc',
+	 'src/neural/cuda/layers.cc',
   ]
 
   # .cu files compiled without any specific sm version
@@ -406,8 +405,16 @@ if get_option('build_backends')
     'src/neural/cuda/fp16_kernels.cu',
   ]
 
-  if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
-    deps += [cu_blas, cu_dnn, cu_dart]
+  if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
+    deps += [cu_blas, cu_dart]
+    if get_option('cudnn') and cu_dnn.found()
+      deps += cu_dnn
+      cuda_files += 'src/neural/cuda/network_cudnn.cc'
+      add_project_arguments('-DUSE_CUDNN', language : 'cpp')
+    endif
+    if get_option('plain_cuda')
+      cuda_files += 'src/neural/cuda/network_cuda.cc'
+    endif
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d).returncode() == 0
         includes += include_directories(d)

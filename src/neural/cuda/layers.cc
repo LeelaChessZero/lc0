@@ -48,6 +48,7 @@ template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
     : input_(ip), C(c), H(h), W(w), nhwc_(ip->nhwc_) {}
 
+#ifdef USE_CUDNN
 template <typename DataType>
 SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType>* ip)
     : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip) {
@@ -252,7 +253,7 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
           conv_desc_, conv_algo_, scratch, scratch_size, &beta,
           out_tensor_desc_, output));
       // add bias
-      addBias_NCHW(output, output, biases, N, C, H, W);
+      addBias_NCHW(output, output, biases, N, C, H, W, false);
     } else {
       ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
           cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
@@ -296,6 +297,7 @@ ConvLayer<DataType>::~ConvLayer() {
   cudnnDestroyTensorDescriptor(out_tensor_desc_);
   cudnnDestroyActivationDescriptor(activation_);
 }
+#endif
 
 template <typename DataType>
 SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
@@ -710,7 +712,7 @@ template <typename DataType>
 FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
     BaseLayer<DataType>* ip, int C, int H, int W, int Cin, bool relu, bool bias,
     bool skip_add, bool se, int se_k, bool use_gemm_ex)
-    : BaseLayer<DataType>(C, H, W, ip),
+    : BaseLayer<DataType>(C, H, W, ip, false),
       c_input_(Cin),
       use_relu_(relu),
       use_bias_(bias),
@@ -868,7 +870,7 @@ void FusedWinogradConvSELayer<DataType>::Eval(
   DataType* transformed_output =
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
-  InputTransform<DataType>(N, C, transformed_input, input);
+  InputTransform<DataType>(N, c_input_, transformed_input, input);
 
   cublasRowMajorMatrixMul(transformed_input, transformed_weights_, transformed_output, N*4, C, c_input_, 36, cublas);  
 
@@ -883,6 +885,10 @@ void FusedWinogradConvSELayer<DataType>::Eval(
   else if (!has_se_ && use_relu_ && use_bias_ && skip_add_)
     OutputTransform<DataType, false, true, true, true>(
         N, C, 0, output, transformed_output, input2, biases_, nullptr, nullptr,
+        nullptr, nullptr);
+  else if (!has_se_ && !use_relu_ && use_bias_ && !skip_add_)
+    OutputTransform<DataType, false, false, true, false>(
+        N, C, 0, output, transformed_output, nullptr, biases_, nullptr, nullptr,
         nullptr, nullptr);
   else
     throw Exception("unsupported network type!");
@@ -901,15 +907,118 @@ FusedWinogradConvSELayer<DataType>::~FusedWinogradConvSELayer() {
   }
 }
 
+template <typename DataType>
+Conv1Layer<DataType>::Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
+                                 int Cin, bool relu, bool bias,
+                                 bool use_gemm_ex)
+    : BaseLayer<DataType>(C, H, W, ip, false),
+      c_input_(Cin),
+      use_relu_(relu),
+      use_bias_(bias),
+      use_gemm_ex_(use_gemm_ex) {
+  // Allocate memory for weights (filter tensor) and biases.
+  const size_t weight_size = sizeof(DataType) * c_input_ * C * 1 * 1;
+  ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
+
+  if (use_bias_) {
+    const size_t bias_size = sizeof(DataType) * C;
+    ReportCUDAErrors(cudaMalloc(&biases_, bias_size));
+  }
+}
+
+template <typename DataType>
+void Conv1Layer<DataType>::LoadWeights(float* pfilter, float* pBias,
+                                       void* scratch) {
+  const size_t weight_size = sizeof(float) * c_input_ * C * 1 * 1;
+  const size_t bias_size = sizeof(float) * C;
+
+  // first copy from CPU memory to scratch space in GPU memory
+  // and then do the type conversion using a kernel
+  assert(scratch);
+  ReportCUDAErrors(
+      cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
+  copyTypeConverted((DataType*)weights_, (float*)scratch, C * c_input_ * 1 * 1);
+
+  if (pBias) {
+    ReportCUDAErrors(
+        cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
+    copyTypeConverted((DataType*)biases_, (float*)scratch, C);
+  }
+}
+
+template <>
+void Conv1Layer<half>::cublasRowMajorMatrixMul(const half* A, const half* B,
+                                               half* Out, int M, int N, int K,
+                                               int batchSize,
+                                               cublasHandle_t cublas) {
+  // Need to initialize 1.0 and 0.0 as hexadecimal for fp16 because typecasting
+  // float to half type doesn't work before CUDA 10.0
+  __half_raw one_h{0x3C00};
+  __half_raw zero_h{0};
+  half halfOne = one_h;
+  half halfZero = zero_h;
+
+  // dimensions of matrix A = M x K
+  // dimensions of matrix B = K x N
+  // dimensions of output   = M x N
+
+  // cublas supports only col major output
+  // to multiply row major matrices, use the trick below
+  ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+      cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &halfOne, B, CUDA_R_16F, N,
+      N * K, A, CUDA_R_16F, K, 0, &halfZero, Out, CUDA_R_16F, N, N * M,
+      batchSize, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
+}
+
+template <>
+void Conv1Layer<float>::cublasRowMajorMatrixMul(const float* A, const float* B,
+                                                float* Out, int M, int N, int K,
+                                                int batchSize,
+                                                cublasHandle_t cublas) {
+  float floatOne = 1.0f;
+  float floatZero = 0.0f;
+  if (use_gemm_ex_)
+    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+        cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, CUDA_R_32F, N,
+        N * K, A, CUDA_R_32F, K, 0, &floatZero, Out, CUDA_R_32F, N, N * M,
+        batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+  else
+    // Much slower on RTX 2060.. why? Maybe a cublas bug :-/
+    ReportCUBLASErrors(cublasSgemmStridedBatched(
+        cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, N, N * K, A, K,
+        0, &floatZero, Out, N, N * M, batchSize));
+}
+
+template <typename DataType>
+void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
+                                const DataType* /*input2*/, void* /*scratch*/,
+                                size_t /*scratch_size*/,
+                                cudnnHandle_t /*cudnn*/,
+                                cublasHandle_t cublas) {
+  cublasRowMajorMatrixMul(weights_, input, output, C, H * W, c_input_, N,
+                          cublas);
+
+  if (use_bias_)
+    addBias_NCHW(output, output, biases_, N, C, H, W, use_relu_);
+  else if (use_relu_)
+    addVectors(output, output, (DataType*)nullptr, N * C * H * W, N * C * H * W,
+               0, use_relu_, false, false);
+}
+
+template <typename DataType>
+Conv1Layer<DataType>::~Conv1Layer() {
+  ReportCUDAErrors(cudaFree(weights_));
+  if (use_bias_) ReportCUDAErrors(cudaFree(biases_));
+}
 
 template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(
     BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last)
     : BaseLayer<DataType>(C, 8, 8, ip),
-      c_input_(C),
       has_se_(se),
       se_k_(se_k),
       use_gemm_ex_(use_gemm_ex),
+      c_input_(C),
       first_block_(first),
       last_block_(last) {
   // Allocate memory for weights (filter tensor) and biases.
@@ -1147,14 +1256,18 @@ ResidualBlock<DataType>::~ResidualBlock() {
 
 
 // Template instantiation.
+#ifdef USE_CUDNN
 template class ConvLayer<half>;
 template class ConvLayer<float>;
+#endif
 
 template class FCLayer<half>;
 template class FCLayer<float>;
 
+#ifdef USE_CUDNN
 template class SoftMaxLayer<half>;
 template class SoftMaxLayer<float>;
+#endif
 
 template class SELayer<half>;
 template class SELayer<float>;
@@ -1165,10 +1278,14 @@ template class PolicyMapLayer<float>;
 template class FusedWinogradConvSELayer<half>;
 template class FusedWinogradConvSELayer<float>;
 
+template class Conv1Layer<half>;
+template class Conv1Layer<float>;
+
 template class ResidualBlock<half>;
 template class ResidualBlock<float>;
 
 // Misc error handling stuff.
+#ifdef USE_CUDNN
 void CudnnError(cudnnStatus_t status, const char* file, const int& line) {
   if (status != CUDNN_STATUS_SUCCESS) {
     char message[128];
@@ -1177,6 +1294,7 @@ void CudnnError(cudnnStatus_t status, const char* file, const int& line) {
     throw Exception(message);
   }
 }
+#endif
 
 const char* CublasGetErrorString(cublasStatus_t status) {
   switch (status) {
