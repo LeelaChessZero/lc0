@@ -352,17 +352,20 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int k, float p0, float a) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
+                               float p0, float a) {
   // Recompute Q.
-  float p = p0 + a * FastLog2(1.0f + n_);
-  float invp = 1.0f / p;
-  float prev = n_ * 1.0f / (n_ + k);
-  float incr = k  * 1.0f / (n_ + k);
-  float w0 = std::pow(prev * std::pow(0.5f * wl_ + 0.5f, p) +
-                      incr * std::pow(0.5f * v   + 0.5f, p), invp) * 2.0f - 1.0f;
-  float d0 = std::pow(prev * std::pow(d_, p) + incr * std::pow(d,  p), invp);
-  wl_ = std::clamp(w0, -1.0f, 1.0f);
-  d_ =  std::clamp(d0, -1.0f, 1.0f);
+  double p = p0 + a * FastLog2(1.0 + n_);
+  double invp = 1.0 / p;
+  double wl_p = std::copysign(std::pow(std::abs(wl_), p), wl_);
+  double vp = std::copysign(std::pow(std::abs(v), p), v);
+  double w0 = wl_p + multivisit * (vp - wl_p) / (n_ + multivisit);
+  double d_p = std::pow(d_, p);
+  double dp = std::pow(d, p);
+  double d0 = d_p + multivisit * (dp - d_p) / (n_ + multivisit);
+  wl_ = (float) std::clamp(std::copysign(std::pow(std::abs(w0), invp), w0),
+                           -1.0, 1.0);
+  d_ =  (float) std::clamp(std::pow(d0, invp), 0.0, 1.0);
   m_ += k * (m - m_) / (n_ + k);
 
   // If first visit, update parent's sum of policies visited at least once.
@@ -370,9 +373,9 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int k, float p0, float
     parent_->visited_policy_ += parent_->edges_[index_].GetP();
   }
   // Increment N.
-  n_ += k;
+  n_ += multivisit;
   // Decrement virtual loss.
-  n_in_flight_ -= k;
+  n_in_flight_ -= multivisit;
   // Best child is potentially no longer valid.
   best_child_cached_ = nullptr;
 }
