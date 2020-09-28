@@ -1676,7 +1676,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = n->GetM();
     }
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit,
-                           params_.GetBackupNorm(), params_.GetBackupNormFactor());
+                           params_.GetBackupNorm(), params_.GetBackupNormFactor(),
+                           params_.GetBackupNormMin(), params_.GetBackupNormMax());
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
