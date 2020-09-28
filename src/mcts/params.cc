@@ -73,10 +73,10 @@ const OptionId SearchParams::kBackupNormFactorId{
     "Multiplier for the p-norm growth."};
 const OptionId SearchParams::kBackupNormMinId{
     "backup-norm-min", "BackupNormMin",
-    "Minimum p-norm. Only applies if BackupNormFactor < 0."};
+    "Currently does nothing since clipping is symmetric using BackupNormMax."};
 const OptionId SearchParams::kBackupNormMaxId{
     "backup-norm-max", "BackupNormMax",
-    "Maximum p-norm. Only applies if BackupNormFactor > 0."};
+    "Bounds how much BackupNormFactor can alter the p-norm."};
 const OptionId SearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
@@ -295,8 +295,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
   options->Add<FloatOption>(kBackupNormId, 0.001f, 10.0f) = 1.0f;
-  options->Add<FloatOption>(kBackupNormFMinId, 0.001f, 10.0f) = 0.001f;
-  options->Add<FloatOption>(kBackupNormFMaxId, 0.001f, 10.0f) = 10.0f;
+  options->Add<FloatOption>(kBackupNormFMinId, 0.0f, 10.0f) = 10.0f;
+  options->Add<FloatOption>(kBackupNormFMaxId, 0.0f, 10.0f) = 10.0f;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 2.147f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 18368.0f;
