@@ -454,9 +454,19 @@ if get_option('build_backends')
       )
 	 files += cuda_files
     files += cuda_gen.process(cuda_files_nvcc_common)
-    nvcc_extra_args = ['-arch=compute_53']
+    nvcc_extra_args = ['-arch=compute_70']
+    nvcc_sm_list = ['sm_80', 'sm_75', 'sm_86', 'sm_70']
+    if host_machine.system() != 'windows'
+      nvcc_extra_args = ['-arch=compute_60']
+      nvcc_sm_list += ['sm_60']
+      if host_machine.cpu_family() == 'arm'
+        # Add Jetson versions to the list.
+        nvcc_extra_args = ['-arch=compute_53']
+        nvcc_sm_list += ['sm_72', 'sm_62', 'sm_53']
+      endif
+    endif
     nvcc_help = run_command(nvcc, '-h').stdout()
-    foreach x : ['sm_80', 'sm_75', 'sm_86', 'sm_70', 'sm_60' , 'sm_72', 'sm_62', 'sm_53']
+    foreach x : nvcc_sm_list
       if nvcc_help.contains(x)
         nvcc_extra_args += '-code=' + x
       endif
