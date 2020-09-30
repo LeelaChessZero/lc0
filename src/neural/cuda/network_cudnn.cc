@@ -285,13 +285,12 @@ class CudnnNetwork : public Network {
     // Winograd needs nchw tensor layout.
     if (use_custom_winograd_) nhwc_ = false;
 
+    use_res_block_winograd_fuse_opt_ = false;
     if (use_custom_winograd_) {
       // Disable res block fusing for > 384 filters (the fused output input
       // transform kernel runs out of register space) and for fp32 for now.
       if (kNumFilters <= 384 && fp16) {
         use_res_block_winograd_fuse_opt_ = true;
-      } else {
-        use_res_block_winograd_fuse_opt_ = false;
       }
       // Override if set in backend-opts.
       if (!options.IsDefault<bool>("res_block_fusing")) {
@@ -873,7 +872,8 @@ class CudnnNetwork : public Network {
   bool use_custom_winograd_;  // Custom winograd convolution implementation for
                               // convolutions of the residual tower.
 
-  bool use_res_block_winograd_fuse_opt_;    // fuse operations inside the residual tower
+  bool use_res_block_winograd_fuse_opt_; // Fuse operations inside the residual
+                                         // tower.
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
