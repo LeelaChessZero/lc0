@@ -872,8 +872,8 @@ class CudnnNetwork : public Network {
   bool use_custom_winograd_;  // Custom winograd convolution implementation for
                               // convolutions of the residual tower.
 
-  bool use_res_block_winograd_fuse_opt_; // Fuse operations inside the residual
-                                         // tower.
+  bool use_res_block_winograd_fuse_opt_;  // Fuse operations inside the residual
+                                          // tower.
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
