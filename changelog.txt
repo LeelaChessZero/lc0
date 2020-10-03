@@ -1,3 +1,10 @@
+v0.26.3-rc2 (2020-10-03)
+~~~~~~~
+* Fix for uninitialized variable that led to crashes with the cudnn backend.
+* Correct windows support for systems with more than 64 threads.
+* A new package is built for the `cuda` backend with cuda 11.1. The old cuda
+  package is renamed to `cudnn`.
+
 v0.26.3-rc1 (2020-09-28)
 ~~~~~~~
 * Residual block fusion optimization for cudnn backend, that depends on
