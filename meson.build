@@ -161,6 +161,7 @@ files += [
   'src/utils/esc_codes.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
+  'src/utils/numa.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',

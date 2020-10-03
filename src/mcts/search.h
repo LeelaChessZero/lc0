@@ -42,6 +42,7 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
+#include "utils/numa.h"
 
 namespace lczero {
 
@@ -204,12 +205,14 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search, const SearchParams& params)
+  SearchWorker(Search* search, const SearchParams& params, int id)
       : search_(search),
         history_(search_->played_history_),
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
-                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {}
+                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {
+    Numa::BindThread(id);
+  }
 
   // Runs iterations while needed.
   void RunBlocking() {
