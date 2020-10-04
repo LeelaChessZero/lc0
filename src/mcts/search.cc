@@ -808,9 +808,9 @@ void Search::StartThreads(size_t how_many) {
     threads_.emplace_back([this]() { WatchdogThread(); });
   }
   // Start working threads.
-  while (threads_.size() <= how_many) {
-    threads_.emplace_back([this]() {
-      SearchWorker worker(this, params_);
+  for (size_t i = 0; i < how_many; i++) {
+    threads_.emplace_back([this, i]() {
+      SearchWorker worker(this, params_, i);
       worker.RunBlocking();
     });
   }

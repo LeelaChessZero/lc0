@@ -161,6 +161,7 @@ files += [
   'src/utils/esc_codes.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
+  'src/utils/numa.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
@@ -392,8 +393,7 @@ if get_option('build_backends')
 
   #.cc files
   cuda_files = [
-    'src/neural/cuda/network_cudnn.cc',
-	'src/neural/cuda/layers.cc',
+	 'src/neural/cuda/layers.cc',
   ]
 
   # .cu files compiled without any specific sm version
@@ -406,8 +406,16 @@ if get_option('build_backends')
     'src/neural/cuda/fp16_kernels.cu',
   ]
 
-  if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
-    deps += [cu_blas, cu_dnn, cu_dart]
+  if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
+    deps += [cu_blas, cu_dart]
+    if get_option('cudnn') and cu_dnn.found()
+      deps += cu_dnn
+      cuda_files += 'src/neural/cuda/network_cudnn.cc'
+      add_project_arguments('-DUSE_CUDNN', language : 'cpp')
+    endif
+    if get_option('plain_cuda')
+      cuda_files += 'src/neural/cuda/network_cuda.cc'
+    endif
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d).returncode() == 0
         includes += include_directories(d)
@@ -447,7 +455,14 @@ if get_option('build_backends')
       )
 	 files += cuda_files
     files += cuda_gen.process(cuda_files_nvcc_common)
-    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])
+    nvcc_extra_args = ['-arch=compute_53']
+    nvcc_help = run_command(nvcc, '-h').stdout()
+    foreach x : ['sm_80', 'sm_75', 'sm_86', 'sm_70', 'sm_60' , 'sm_72', 'sm_62', 'sm_53']
+      if nvcc_help.contains(x)
+        nvcc_extra_args += '-code=' + x
+      endif
+    endforeach
+    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: nvcc_extra_args)
     has_backends = true
   endif
   
