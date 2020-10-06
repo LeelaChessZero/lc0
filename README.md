@@ -167,25 +167,10 @@ Or.
  * Install "XCode Developer Tools" through the app store. (First one on the list of Apps if searched.)
  * Associate the SDK headers in XCode with a command: export CPATH=\`xcrun --show-sdk-path\`/usr/include
  
-6. Optionally install googletest (aka gtest)
-
-```
-cd ~
-git clone https://github.com/google/googletest.git
-cd googletest
-mkdir install
-cd install
-cmake ..
-make
-make install
-```
-
 Now download the lc0 source, if you haven't already done so, following the instructions earlier in the page.
 
-7. Go to the lc0 directory.
-8. Run `./build.sh` (needs step 5)
- * If you did not install gtest in step 6 then run `./build.sh -Dgtest=false` instead.
-9. The resulting binary will be in build/release
+6. Go to the lc0 directory.
+7. Run `./build.sh -Dgtest=false` (needs step 5)
 
 ### Raspberry Pi
 
