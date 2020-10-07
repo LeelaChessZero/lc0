@@ -42,6 +42,7 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
+#include "utils/numa.h"
 
 namespace lczero {
 
@@ -172,7 +173,7 @@ class Search {
   const SearchParams params_;
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
-  const int64_t initial_visits_;
+  int64_t initial_visits_;
   // tb_hits_ must be initialized before root_move_filter_.
   std::atomic<int> tb_hits_{0};
   const MoveList root_move_filter_;
@@ -204,12 +205,14 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search, const SearchParams& params)
+  SearchWorker(Search* search, const SearchParams& params, int id)
       : search_(search),
         history_(search_->played_history_),
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
-                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {}
+                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {
+    Numa::BindThread(id);
+  }
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -303,7 +306,7 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  void ExtendNode(Node* node);
+  void ExtendNode(Node* node, int depth);
   bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,

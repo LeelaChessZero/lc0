@@ -112,8 +112,10 @@ bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format) {
 bool IsCanonicalArmageddonFormat(
     pblczero::NetworkFormat::InputFormat input_format) {
   return input_format ==
-         pblczero::NetworkFormat::
-             INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON;
+             pblczero::NetworkFormat::
+                 INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON ||
+         input_format == pblczero::NetworkFormat::
+                             INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON;
 }
 bool IsHectopliesFormat(pblczero::NetworkFormat::InputFormat input_format) {
   return input_format >=
@@ -172,7 +174,10 @@ InputPlanes EncodePositionForNN(
       case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION:
       case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES:
       case pblczero::NetworkFormat::
-          INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON: {
+          INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON:
+      case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2:
+      case pblczero::NetworkFormat::
+          INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON: {
         // - Plane 104 for positions of rooks (both white and black) which
         // have
         // a-side (queenside) castling right.
@@ -214,6 +219,11 @@ InputPlanes EncodePositionForNN(
       castlings = board.castlings();
     }
   }
+  bool skip_non_repeats =
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2 ||
+      input_format == pblczero::NetworkFormat::
+                          INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON;
   bool flip = false;
   int history_idx = history.GetLength() - 1;
   for (int i = 0; i < std::min(history_planes, kMoveHistory);
@@ -236,6 +246,19 @@ InputPlanes EncodePositionForNN(
         position.GetBoard() == ChessBoard::kStartposBoard) {
       break;
     }
+    const int repetitions = position.GetRepetitions();
+    // Canonical v2 only writes an item if it is a repeat, unless its the most
+    // recent position.
+    if (skip_non_repeats && repetitions == 0 && i > 0) {
+      if (history_idx > 0) flip = !flip;
+      // If no capture no pawn is 0, the previous was start of game, capture or
+      // pawn push, so there can't be any more repeats that are worth
+      // considering.
+      if (position.GetRule50Ply() == 0) break;
+      // Decrement i so it remains the same as the history_idx decrements.
+      --i;
+      continue;
+    }
 
     const int base = i * kPlanesPerBoard;
     result[base + 0].mask = (board.ours() & board.pawns()).as_int();
@@ -252,7 +275,6 @@ InputPlanes EncodePositionForNN(
     result[base + 10].mask = (board.theirs() & board.queens()).as_int();
     result[base + 11].mask = (board.theirs() & board.kings()).as_int();
 
-    const int repetitions = position.GetRepetitions();
     if (repetitions >= 1) result[base + 12].SetAll();
 
     // If en passant flag is set, undo last pawn move by removing the pawn from

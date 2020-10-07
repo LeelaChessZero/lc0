@@ -15,7 +15,7 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true'],
+        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.52')
 
 cc = meson.get_compiler('cpp')
@@ -161,6 +161,7 @@ files += [
   'src/utils/esc_codes.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
+  'src/utils/numa.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
@@ -392,8 +393,7 @@ if get_option('build_backends')
 
   #.cc files
   cuda_files = [
-    'src/neural/cuda/network_cudnn.cc',
-	'src/neural/cuda/layers.cc',
+	 'src/neural/cuda/layers.cc',
   ]
 
   # .cu files compiled without any specific sm version
@@ -406,8 +406,16 @@ if get_option('build_backends')
     'src/neural/cuda/fp16_kernels.cu',
   ]
 
-  if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
-    deps += [cu_blas, cu_dnn, cu_dart]
+  if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
+    deps += [cu_blas, cu_dart]
+    if get_option('cudnn') and cu_dnn.found()
+      deps += cu_dnn
+      cuda_files += 'src/neural/cuda/network_cudnn.cc'
+      add_project_arguments('-DUSE_CUDNN', language : 'cpp')
+    endif
+    if get_option('plain_cuda')
+      cuda_files += 'src/neural/cuda/network_cuda.cc'
+    endif
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d).returncode() == 0
         includes += include_directories(d)
@@ -418,11 +426,14 @@ if get_option('build_backends')
     cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
-      # meson bug fixed in v0.51
-      if meson.version().version_compare('<0.51') or get_option('default_library') != 'static'
-        cuda_arguments += ['-Xcompiler', '-MD']
-      else
+      if get_option('b_vscrt') == 'mt'
         cuda_arguments += ['-Xcompiler', '-MT']
+      elif get_option('b_vscrt') == 'mtd'
+        cuda_arguments += ['-Xcompiler', '-MTd']
+      elif get_option('b_vscrt') == 'mdd' or (get_option('b_vscrt') == 'from_buildtype' and get_option('buildtype') == 'debug')
+        cuda_arguments += ['-Xcompiler', '-MDd']
+      elif get_option('b_vscrt') != 'none'
+        cuda_arguments += ['-Xcompiler', '-MD']
       endif
     else
       cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
@@ -444,7 +455,14 @@ if get_option('build_backends')
       )
 	 files += cuda_files
     files += cuda_gen.process(cuda_files_nvcc_common)
-    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])
+    nvcc_extra_args = ['-arch=compute_53']
+    nvcc_help = run_command(nvcc, '-h').stdout()
+    foreach x : ['sm_80', 'sm_75', 'sm_86', 'sm_70', 'sm_60' , 'sm_72', 'sm_62', 'sm_53']
+      if nvcc_help.contains(x)
+        nvcc_extra_args += '-code=' + x
+      endif
+    endforeach
+    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: nvcc_extra_args)
     has_backends = true
   endif
   
