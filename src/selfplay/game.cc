@@ -97,23 +97,40 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
-                        SyzygyTablebase* syzygy_tb, bool enable_resign) {
+                        SyzygyTablebase* syzygy_tb, bool adjudicate,
+			bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
-  // Take syzygy tablebases from player1 options.
-  std::string tb_paths =
-      options_[0].uci_options->Get<std::string>(kSyzygyTablebaseId);
-  if (!tb_paths.empty()) {  // && tb_paths != tb_paths_) {
-    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-    CERR << "Loading Syzygy tablebases from " << tb_paths;
-    if (!syzygy_tb_->init(tb_paths)) {
-      CERR << "Failed to load Syzygy tablebases!";
-      syzygy_tb_ = nullptr;
-    }
-  }
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
+
+    // Support adjudications START
+    if (syzygy_tb != nullptr && adjudicate) {
+      auto board = tree_[0]->GetPositionHistory().Last().GetBoard();
+      if (board.castlings().no_legal_castle() &&
+	  (board.ours() | board.theirs()).count() <=
+	  syzygy_tb->max_cardinality()) {
+	auto tb_side_black = (tree_[0]->GetPlyCount() % 2) == 1;
+	ProbeState state;
+	const WDLScore wdl = syzygy_tb->probe_wdl(tree_[0]->GetPositionHistory().Last(), &state);
+	// Only fail state means the WDL is wrong, probe_wdl may produce
+	// correct result with a stat other than OK.
+	if (state != FAIL) {
+	  if (wdl == WDL_WIN) {
+	    game_result_ = tb_side_black ? GameResult::BLACK_WON
+	      : GameResult::WHITE_WON;
+	  } else if (wdl == WDL_LOSS) {
+	    game_result_ = tb_side_black ? GameResult::WHITE_WON
+	      : GameResult::BLACK_WON;
+	  } else {  // Cursed wins and blessed losses count as draws.
+	    game_result_ = GameResult::DRAW;
+	  }
+	  break;
+	}
+      }
+    }
+    // Support adjudications STOP
 
     // If endgame, stop.
     if (game_result_ != GameResult::UNDECIDED) break;
