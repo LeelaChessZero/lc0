@@ -40,7 +40,7 @@ int64_t StoppersHints::GetEstimatedRemainingTimeMs() const {
   return remaining_time_ms_;
 }
 
-void StoppersHints::UpdateEstimatedRemainingRemainingPlayouts(int64_t v) {
+void StoppersHints::UpdateEstimatedRemainingPlayouts(int64_t v) {
   if (v < remaining_playouts_) remaining_playouts_ = v;
 }
 int64_t StoppersHints::GetEstimatedRemainingPlayouts() const {
