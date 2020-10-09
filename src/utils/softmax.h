@@ -39,18 +39,19 @@ inline std::tuple<float, std::array<float, 256>> RelativeEntropySoftmax(
     float temperature = 1.0f) {
   float sum = 0.0f;
   std::array<float, 256> new_policy;
-  float max_p = -std::numeric_limits<float>::infinity();
+  float max_q = -std::numeric_limits<float>::infinity();
   for (int i = 0; i < length; i++) {
-    new_policy[i] = q[i] / temperature;
-    max_p = std::max(max_p, new_policy[i]);
+    new_policy[i] = q[i];
+    max_q = std::max(max_q, new_policy[i]);
   }
   for (int i = 0; i < length; i++) {
-    new_policy[i] = p[i] * FastExp(new_policy[i] - max_p);
+    new_policy[i] = p[i] * FastExp((new_policy[i] - max_q) / temperature);
     sum += new_policy[i];
   }
   for (int i = 0; i < length; i++) {
     new_policy[i] /= sum;
   }
-  return {FastLog(sum) + max_p, new_policy};
+  const float value = FastLog(sum) * temperature + max_q;
+  return {value, new_policy};
 }
 }  // namespace lczero
