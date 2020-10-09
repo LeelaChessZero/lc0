@@ -362,26 +362,26 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool use_rents = params_.GetUseRENTS();
   if (use_rents) {
     std::sort(edges.begin(), edges.end(), [](EdgeAndNode a, EdgeAndNode b) {
-      return std::forward_as_tuple(a.GetP(), a.GetN()) <
-             std::forward_as_tuple(b.GetP(), b.GetN());
+      return std::forward_as_tuple(a.GetPolicy(), a.GetN()) <
+             std::forward_as_tuple(b.GetPolicy(), b.GetN());
     });
   } else {
-  std::sort(edges.begin(), edges.end(),
+    std::sort(edges.begin(), edges.end(),
               [&fpu, &U_coeff, &draw_score, &use_rents](EdgeAndNode a,
                                                         EdgeAndNode b) {
-              return std::forward_as_tuple(
+                return std::forward_as_tuple(
                            a.GetN(), a.GetQ(fpu, draw_score, use_rents) +
                                          a.GetU(U_coeff)) <
-                     std::forward_as_tuple(
+                       std::forward_as_tuple(
                            b.GetN(), b.GetQ(fpu, draw_score, use_rents) +
                                          b.GetU(U_coeff));
-            });
+              });
   }
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
   };
-  auto print_head = [&](auto* oss, auto label, int i, auto n, auto f, auto p) {
+  auto print_head = [&](auto* oss, auto label, int i, auto n, auto f, auto p, auto pol) {
     *oss << std::fixed;
     print(oss, "", label, " ", 5);
     print(oss, "(", i, ") ", 4);
@@ -389,6 +389,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     print(oss, "N: ", n, " ", 7);
     print(oss, "(+", f, ") ", 2);
     print(oss, "(P: ", p * 100, "%) ", 5, p >= 0.99995f ? 1 : 2);
+    print(oss, "(Pol: ", pol * 100, "%) ", 5, p >= 0.99995f ? 1 : 2);
   };
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
@@ -445,7 +446,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     // TODO: should this be displaying transformed index?
     print_head(&oss, edge.GetMove(is_black_to_move).as_string(),
                edge.GetMove().as_nn_index(0), edge.GetN(), edge.GetNInFlight(),
-               edge.GetP());
+               edge.GetP(), edge.GetPolicy());
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
     print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
@@ -456,7 +457,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   // Include stats about the node in similar format to its children above.
   std::ostringstream oss;
   print_head(&oss, "node ", node->GetNumEdges(), node->GetN(),
-             node->GetNInFlight(), node->GetVisitedPolicy());
+             node->GetNInFlight(), node->GetVisitedPolicy(), 1.0f);
   print_stats(&oss, node);
   print_tail(&oss, node);
   infos.emplace_back(oss.str());
@@ -683,9 +684,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
-		  // With RENTS we prefer the highest policy move:
-          if (use_rents && a.GetP() != b.GetP())
-            return a.GetP() > b.GetP();
+          // With RENTS we prefer the highest policy move:
+          if (use_rents && a.GetP() != b.GetP()) return a.GetP() > b.GetP();
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
           // Default doesn't matter here so long as they are the same as either
@@ -1258,41 +1258,37 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
 
-
-
-	  if (params_.GetUseRENTS()) {
-        const float child_policy = child.GetP();
+      if (params_.GetUseRENTS()) {
+        const float child_policy = child.GetPolicy();
         best_edge = child;
-          if (cum_policy + child_policy > rand_value) {
-		    // Found the chosen move, break here
-            break;
-		  } else {
-            cum_policy += child_policy;
-		  }
-	  } else {
+        if (cum_policy + child_policy > rand_value) {
+          // Found the chosen move, break here
+          break;
+        } else {
+          cum_policy += child_policy;
+        }
+      } else {
         const float Q = child.GetQ(fpu, draw_score, params_.GetUseRENTS());
         const float M = m_evaluator.GetM(child, Q);
         const float score = child.GetU(puct_mult) + Q + M;
         if (score > best) {
-            second_best = best;
-            second_best_edge = best_edge;
-            best = score;
-            best_without_u = Q + M;
-            best_edge = child;
+          second_best = best;
+          second_best_edge = best_edge;
+          best = score;
+          best_without_u = Q + M;
+          best_edge = child;
         } else if (score > second_best) {
-            second_best = score;
-            second_best_edge = child;
+          second_best = score;
+          second_best_edge = child;
         }
         if (can_exit) break;
         if (child.GetNStarted() == 0) {
-            // One more loop will get 2 unvisited nodes, which is sufficient
-            // to ensure second best is correct. This relies upon the fact
-            // that edges are sorted in policy decreasing order.
-            can_exit = true;
+          // One more loop will get 2 unvisited nodes, which is sufficient
+          // to ensure second best is correct. This relies upon the fact
+          // that edges are sorted in policy decreasing order.
+          can_exit = true;
         }
       }
-
-
     }
 
     if (!params_.GetUseRENTS() && second_best_edge) {
@@ -1646,14 +1642,16 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     intermediate[i] = p;
     total += p;
   }
-  const float unif = 1.0 / (float) counter;
+  const float unif = 1.0 / (float)counter;
   counter = 0;
   // Normalize P values to add up to 1.0.
   const float scale = total > 0.0f ? 1.0f / total : 1.0f;
   for (auto edge : node->Edges()) {
-    float p = intermediate[counter++] * scale;
+    const float p = intermediate[counter++] * scale;
     edge.edge()->SetP(p);
-    edge.edge()->SetInitialQ(tanh(atanh(-node_to_process->v) + atanh(p - unif)));
+    edge.edge()->SetPolicy(p);
+    edge.edge()->SetInitialQ(
+        tanh(atanh(-node_to_process->v) + atanh(p - unif)));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
@@ -1712,27 +1710,30 @@ void SearchWorker::DoBackupUpdateSingleNode(
       v = n->GetWL();
       d = n->GetD();
       m = n->GetM();
-    } 
+    }
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (p && !p->IsTerminal() && params_.GetUseRENTS()) {
-      std::array<float, 256> policy;
+      std::array<float, 256> prior_policy;
       std::array<float, 256> q_values;
       float n_visits = 0.0f;
       int counter = 0;
       for (auto edge : p->Edges()) {
-        policy[counter] = edge.edge()->GetP();
+        prior_policy[counter] = edge.edge()->GetP();
         n_visits += edge.GetN();
         q_values[counter++] = edge.GetQ(0.0f, 0.0f, true);
       }
       auto [new_v, new_p] = RelativeEntropySoftmax(
-          q_values, policy, counter, params_.GetPolicySoftmaxTemp());
+          q_values, prior_policy, counter, params_.GetRENTSTemp());
       const int n_children = counter;
       counter = 0;
-      const float lambda_s = n_children == 0 ? 1.0 : std::clamp(params_.GetRENTSExplorationFactor() *
-                                            n_children /
-                             FastLog(n_visits + 1), 0.0f, 1.0f);
+      const float lambda_s =
+          n_children == 0 ? 1.0
+                          : std::clamp(params_.GetRENTSExplorationFactor() *
+                                           n_children / FastLog(n_visits + 1),
+                                       0.0f, 1.0f);
       for (auto edge : p->Edges()) {
-        edge.edge()->SetP((1 - lambda_s) * new_p[counter++] + lambda_s / n_children);
+        edge.edge()->SetPolicy((1 - lambda_s) * new_p[counter++] +
+                               lambda_s / n_children);
       }
       v = new_v;
     }

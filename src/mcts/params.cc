@@ -278,6 +278,10 @@ const OptionId SearchParams::kSolidTreeThresholdId{
 const OptionId SearchParams::kUseRENTSId{
     "use-rents", "UseRENTS",
     "Use the RENTS algorithm instead of the PUCT algorithm to search."};
+const OptionId SearchParams::kRENTSTempId{
+    "rents-softmax-temp", "RENTSTemperature",
+    "Policy softmax temperature used in RENTS. Higher values flatten the "
+	"distribution of Q values, widening the search."};
 const OptionId SearchParams::kRENTSExplorationFactorId{
     "rents-exploration-factor", "RENTSExplorationFactor",
     "Controls the amount of uniform exploration which is mixed into the "
@@ -351,6 +355,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
   options->Add<BoolOption>(kUseRENTSId) = false;
   options->Add<FloatOption>(kRENTSExplorationFactorId, 0.0f, 10.0f) = 0.01f;
+  options->Add<FloatOption>(kRENTSTempId, 0.01f, 10.0f) = 1.0f;
 
 
   options->HideOption(kNoiseEpsilonId);
@@ -420,7 +425,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kNpsLimit(options.Get<float>(kNpsLimitId)),
       kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
       kUseRENTS(options.Get<bool>(kUseRENTSId)),
-	  kRENTSExplorationFactor(options.Get<float>(kRENTSExplorationFactorId)) {
+	  kRENTSExplorationFactor(options.Get<float>(kRENTSExplorationFactorId)),
+      kRENTSTemp(options.Get<float>(kRENTSTempId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
