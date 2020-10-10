@@ -100,8 +100,8 @@ class Edge {
 
   // Returns the initial Q value assigned to dangling edges, before the node is
   // expanded. Must be in [-1, 1]
-  float GetInitialQ() const { return initial_q_; }
-  void SetInitialQ(float val) { initial_q_ = val; };
+  float GetRENTSQ() const { return q_; }
+  void SetRENTSQ(float val) { q_ = val; };
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -116,7 +116,7 @@ class Edge {
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
   uint16_t policy_ = 0;
-  float initial_q_ = 0;
+  float q_ = 0.0f;
   friend class Node;
 };
 
@@ -392,7 +392,7 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score, bool use_rents) const;
+  float GetQ(float default_q, float draw_score) const;
   float GetWL(float default_wl) const {
     return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
   }

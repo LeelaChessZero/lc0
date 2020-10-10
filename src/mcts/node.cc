@@ -595,8 +595,7 @@ std::string EdgeAndNode::DebugString() const {
          (node_ ? node_->DebugString() : "(no node)");
 }
 
-float EdgeAndNode::GetQ(float default_q, float draw_score, bool use_rents) const {
-  if (use_rents && !node_) return edge_->GetInitialQ();
+float EdgeAndNode::GetQ(float default_q, float draw_score) const {
   return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score) : default_q;
 }
 
