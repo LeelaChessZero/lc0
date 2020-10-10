@@ -1,3 +1,7 @@
+v0.26.3 (2020-10-10)
+~~~~~~~
+* Increased maximum value of TempDecayMoves.
+
 v0.26.3-rc2 (2020-10-03)
 ~~~~~~~
 * Fix for uninitialized variable that led to crashes with the cudnn backend.
