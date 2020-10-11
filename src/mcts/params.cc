@@ -355,7 +355,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
   options->Add<BoolOption>(kUseRENTSId) = false;
   options->Add<FloatOption>(kRENTSExplorationFactorId, 0.0f, 10.0f) = 0.01f;
-  options->Add<FloatOption>(kRENTSTempId, 0.01f, 10.0f) = 1.0f;
+  options->Add<FloatOption>(kRENTSTempId, 0.0001f, 10.0f) = 1.0f;
 
 
   options->HideOption(kNoiseEpsilonId);
