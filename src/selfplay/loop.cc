@@ -391,7 +391,39 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         PolicySubNode* rootNode = &policy_subs[rootHash];
         for (int i = 0; i < fileContents.size(); i++) {
           if (rootNode->active) {
+            /* Some logic for choosing a softmax to apply to better align the new policy with the old policy...
+            double bestkld = std::numeric_limits<double>::max();
+            float besttemp = 1.0f;
+            for (float temp = 1.0f; temp < 3.0f; temp += 0.1f) {
+              float soft[1858];
+              float sum = 0.0f;
+              for (int j = 0; j < 1858; j++) {
+                if (rootNode->policy[j] >= 0.0) {
+                  soft[j] = std::pow(rootNode->policy[j], 1.0f / temp);
+                  sum += soft[j];
+                } else {
+                  soft[j] = -1.0f;
+                }
+              }
+              double kld = 0.0;
+              for (int j = 0; j < 1858; j++) {
+                if (rootNode->policy[j] >= 0.0 &&
+                    fileContents[i].probabilities[j] > 0) {
+                  kld += -1.0f * soft[j] / sum * std::log(fileContents[i].probabilities[j] * sum / soft[j]);
+                }
+              }
+              if (kld < bestkld) {
+                bestkld = kld;
+                besttemp = temp;
+              }
+            }
+            std::cerr << i << " " << besttemp << " " << bestkld << std::endl;
+            */
             for (int j = 0; j < 1858; j++) {
+              /*if (rootNode->policy[j] >= 0.0) {
+                std::cerr << i << " " << j << " " << rootNode->policy[j] << " "
+                          << fileContents[i].probabilities[j] << std::endl;
+              }*/
               fileContents[i].probabilities[j] = rootNode->policy[j];
             }
           }
@@ -917,6 +949,7 @@ void RescoreLoop::RunLoop() {
   options_.Add<StringOption>(kGaviotaTablebaseId);
   options_.Add<StringOption>(kInputDirId);
   options_.Add<StringOption>(kOutputDirId);
+  options_.Add<StringOption>(kPolicySubsDirId);
   options_.Add<IntOption>(kThreadsId, 1, 20) = 1;
   options_.Add<FloatOption>(kTempId, 0.001, 100) = 1;
   // Positive dist offset requires knowing the legal move set, so not supported
