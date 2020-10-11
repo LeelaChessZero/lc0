@@ -25,6 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include "neural/cache.h"
+#include "neural/encoder.h"
 #include <cassert>
 #include <iostream>
 
@@ -55,15 +56,38 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::AddInput(
-    uint64_t hash, InputPlanes&& input,
-    std::vector<uint16_t>&& probabilities_to_cache) {
-  if (AddInputByHash(hash)) return;
+int CachingComputation::AddInput(
+    uint64_t hash, pblczero::NetworkFormat::InputFormat input_format,
+    const PositionHistory& history, lczero::FillEmptyHistory history_fill,
+    const Node* node) {
+  if (AddInputByHash(hash)) return TransformForPosition(input_format, history);
+
+  int transform;
+  auto input =
+      EncodePositionForNN(input_format, history, 8, history_fill, &transform);
+  std::vector<uint16_t> moves;
+  if (node && node->HasChildren()) {
+    // Legal moves are known, use them.
+    moves.reserve(node->GetNumEdges());
+    for (const auto& edge : node->Edges()) {
+      moves.emplace_back(edge.GetMove().as_nn_index(transform));
+    }
+  } else {
+    // Cache pseudolegal moves. A bit of a waste, but faster.
+    const auto& pseudolegal_moves =
+        history.Last().GetBoard().GeneratePseudolegalMoves();
+    moves.reserve(pseudolegal_moves.size());
+    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
+         iter != end; ++iter) {
+      moves.emplace_back(iter->as_nn_index(transform));
+    }
+  }
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  batch_.back().probabilities_to_cache = probabilities_to_cache;
+  batch_.back().probabilities_to_cache = moves;
   parent_->AddInput(std::move(input));
+  return transform;
 }
 
 void CachingComputation::PopLastInputHit() {

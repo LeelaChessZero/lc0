@@ -1410,31 +1410,9 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
       return true;
     }
   }
-  int transform;
-  auto planes =
-      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), &transform);
-
-  std::vector<uint16_t> moves;
-
-  if (node && node->HasChildren()) {
-    // Legal moves are known, use them.
-    moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
-    }
-  } else {
-    // Cache pseudolegal moves. A bit of a waste, but faster.
-    const auto& pseudolegal_moves =
-        history_.Last().GetBoard().GeneratePseudolegalMoves();
-    moves.reserve(pseudolegal_moves.size());
-    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
-         iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
-    }
-  }
-
-  computation_->AddInput(hash, std::move(planes), std::move(moves));
+  int transform = computation_->AddInput(
+      hash, search_->network_->GetCapabilities().input_format, history_,
+      params_.GetHistoryFill(), node);
   if (transform_out) *transform_out = transform;
   return false;
 }

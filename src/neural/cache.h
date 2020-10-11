@@ -29,6 +29,7 @@
 #include "neural/network.h"
 #include "utils/cache.h"
 #include "utils/smallarray.h"
+#include "mcts/node.h"
 
 namespace lczero {
 
@@ -61,12 +62,13 @@ class CachingComputation {
   // Adds input by hash only. If that hash is not in cache, returns false
   // and does nothing. Otherwise adds.
   bool AddInputByHash(uint64_t hash);
-  // Adds a sample to the batch.
+  // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
   // @hash is a hash to store/lookup it in the cache.
-  // @probabilities_to_cache is which indices of policy head to store.
-  void AddInput(uint64_t hash, InputPlanes&& input,
-                std::vector<uint16_t>&& probabilities_to_cache);
-  // Undos last AddInput. If it was a cache miss, the it's actually not removed
+  // Returns the transform used in EncodePositionForNN.
+  int AddInput(uint64_t hash, pblczero::NetworkFormat::InputFormat input_format,
+               const PositionHistory& history,
+               lczero::FillEmptyHistory history_fill, const Node* node);
+  // Undos last AddInput. If it was a cache miss, then it's actually not removed
   // from parent's batch.
   void PopLastInputHit();
   // Do the computation.
