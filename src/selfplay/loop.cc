@@ -48,6 +48,9 @@ const OptionId kGaviotaTablebaseId{"gaviotatb-paths", "",
                                    "List of Gaviota tablebase directories"};
 const OptionId kInputDirId{
     "input", "", "Directory with gzipped files in need of rescoring."};
+const OptionId kPolicySubsDirId{"policy-substitutions", "",
+                                "Directory with gzipped files are to use to "
+                                "replace policy for some of the data."};
 const OptionId kOutputDirId{"output", "", "Directory to write rescored files."};
 const OptionId kThreadsId{"threads", "",
                           "Number of concurrent threads to rescore with."};
@@ -68,6 +71,16 @@ const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
                           "output the log to the console."};
 
+class PolicySubNode {
+ public:
+  PolicySubNode() {
+    for (int i = 0; i < 1858; i++) children[i] = nullptr;
+  }
+  bool active = false;
+  float policy[1858];
+  PolicySubNode* children[1858];
+};
+
 std::atomic<int> games(0);
 std::atomic<int> positions(0);
 std::atomic<int> rescored(0);
@@ -81,6 +94,7 @@ std::atomic<int> policy_nobump_total_hist[11];
 std::atomic<int> policy_bump_total_hist[11];
 std::atomic<int> policy_dtm_bump(0);
 std::atomic<int> gaviota_dtm_rescores(0);
+std::map<uint64_t, PolicySubNode> policy_subs;
 bool gaviotaEnabled = false;
 
 void DataAssert(bool check_result) {
@@ -369,6 +383,30 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       ChessBoard board;
       auto input_format = static_cast<pblczero::NetworkFormat::InputFormat>(
           fileContents[0].input_format);
+      PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                    &board, &rule50ply, &gameply);
+      history.Reset(board, rule50ply, gameply);
+      uint64_t rootHash = HashCat(board.Hash(), rule50ply);
+      if (policy_subs.find(rootHash) != policy_subs.end()) {
+        PolicySubNode* rootNode = &policy_subs[rootHash];
+        for (int i = 0; i < fileContents.size(); i++) {
+          if (rootNode->active) {
+            for (int j = 0; j < 1858; j++) {
+              fileContents[i].probabilities[j] = rootNode->policy[j];
+            }
+          }
+          if (i < fileContents.size() - 1) {
+            int transform = TransformForPosition(input_format, history);
+            int idx = moves[i].as_nn_index(transform);
+            if (rootNode->children[idx] == nullptr) {
+              break;
+            }
+            rootNode = rootNode->children[idx];
+            history.Append(moves[i]);
+          }
+        }
+      }
+
       PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                     &board, &rule50ply, &gameply);
       history.Reset(board, rule50ply, gameply);
@@ -800,6 +838,60 @@ void ProcessFiles(const std::vector<std::string>& files,
                 newInputFormat);
   }
 }
+
+void BuildSubs(const std::vector<std::string>& files) {
+  for (auto& file : files) {
+    TrainingDataReader reader(file);
+    std::vector<V5TrainingData> fileContents;
+    V5TrainingData data;
+    while (reader.ReadChunk(&data)) {
+      fileContents.push_back(data);
+    }
+    Validate(fileContents);
+    MoveList moves;
+    for (int i = 1; i < fileContents.size(); i++) {
+      moves.push_back(
+          DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i]),
+                              PlanesFromTrainingData(fileContents[i - 1])));
+      // All moves decoded are from the point of view of the side after the
+      // move so need to mirror them all to be applicable to apply to the
+      // position before.
+      moves.back().Mirror();
+    }
+    Validate(fileContents, moves);
+
+    // Subs are 'valid'.
+    PositionHistory history;
+    int rule50ply;
+    int gameply;
+    ChessBoard board;
+    auto input_format = static_cast<pblczero::NetworkFormat::InputFormat>(
+        fileContents[0].input_format);
+    PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]), &board,
+                  &rule50ply, &gameply);
+    history.Reset(board, rule50ply, gameply);
+    uint64_t rootHash = HashCat(board.Hash(), rule50ply);
+    PolicySubNode* rootNode = &policy_subs[rootHash];
+    for (int i = 0; i < fileContents.size(); i++) {
+      if ((fileContents[i].invariance_info & 64) == 0) {
+        rootNode->active = true;
+        for (int j = 0; j < 1858; j++) {
+          rootNode->policy[j] = fileContents[i].probabilities[j];
+        }
+      }
+      if (i < fileContents.size() - 1) {
+        int transform = TransformForPosition(input_format, history);
+        int idx = moves[i].as_nn_index(transform);
+        if (rootNode->children[idx] == nullptr) {
+          rootNode->children[idx] = new PolicySubNode();
+        }
+        rootNode = rootNode->children[idx];
+        history.Append(moves[i]);
+      }
+    }
+  }
+}
+
 }  // namespace
 
 RescoreLoop::RescoreLoop() {}
@@ -861,6 +953,14 @@ void RescoreLoop::RunLoop() {
     }
     gaviotaEnabled = true;
   }
+  auto policySubsDir =
+      options_.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
+  auto policySubFiles = GetFileList(policySubsDir);
+  for (int i = 0; i < policySubFiles.size(); i++) {
+    policySubFiles[i] = policySubsDir + "/" + policySubFiles[i];
+  }
+  BuildSubs(policySubFiles);
+
   auto inputDir = options_.GetOptionsDict().Get<std::string>(kInputDirId);
   auto files = GetFileList(inputDir);
   if (files.size() == 0) {
