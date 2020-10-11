@@ -394,6 +394,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             /* Some logic for choosing a softmax to apply to better align the new policy with the old policy...
             double bestkld = std::numeric_limits<double>::max();
             float besttemp = 1.0f;
+            // Minima is usually in this range for 'better' data.
             for (float temp = 1.0f; temp < 3.0f; temp += 0.1f) {
               float soft[1858];
               float sum = 0.0f;
@@ -407,9 +408,10 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               }
               double kld = 0.0;
               for (int j = 0; j < 1858; j++) {
-                if (rootNode->policy[j] >= 0.0 &&
+                if (soft[j] >= 0.0) soft[j] /= sum;
+                if (rootNode->policy[j] > 0.0 &&
                     fileContents[i].probabilities[j] > 0) {
-                  kld += -1.0f * soft[j] / sum * std::log(fileContents[i].probabilities[j] * sum / soft[j]);
+                  kld += -1.0f * soft[j] * std::log(fileContents[i].probabilities[j] / soft[j]);
                 }
               }
               if (kld < bestkld) {
@@ -420,10 +422,12 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             std::cerr << i << " " << besttemp << " " << bestkld << std::endl;
             */
             for (int j = 0; j < 1858; j++) {
-              /*if (rootNode->policy[j] >= 0.0) {
+              /*
+              if (rootNode->policy[j] >= 0.0) {
                 std::cerr << i << " " << j << " " << rootNode->policy[j] << " "
                           << fileContents[i].probabilities[j] << std::endl;
-              }*/
+              }
+              */
               fileContents[i].probabilities[j] = rootNode->policy[j];
             }
           }
