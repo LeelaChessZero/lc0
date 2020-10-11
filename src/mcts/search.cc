@@ -1714,6 +1714,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (p && !p->IsTerminal() && params_.GetUseRENTS()) {
+      if (n == node) {
+        n->GetOwnEdge()->SetRENTSQ(v);
+	  }
       std::array<float, 256> prior_policy;
       std::array<float, 256> q_values;
       float n_visits = 0.0f;
