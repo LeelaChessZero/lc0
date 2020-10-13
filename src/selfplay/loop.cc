@@ -992,13 +992,19 @@ void RescoreLoop::RunLoop() {
   }
   auto policySubsDir =
       options_.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
-  auto policySubFiles = GetFileList(policySubsDir);
-  for (int i = 0; i < policySubFiles.size(); i++) {
-    policySubFiles[i] = policySubsDir + "/" + policySubFiles[i];
+  if (policySubsDir.size() != 0) {
+    auto policySubFiles = GetFileList(policySubsDir);
+    for (int i = 0; i < policySubFiles.size(); i++) {
+      policySubFiles[i] = policySubsDir + "/" + policySubFiles[i];
+    }
+    BuildSubs(policySubFiles);
   }
-  BuildSubs(policySubFiles);
 
   auto inputDir = options_.GetOptionsDict().Get<std::string>(kInputDirId);
+  if (inputDir.size() == 0) {
+    std::cerr << "Must provide an input dir." << std::endl;
+    return;
+  }
   auto files = GetFileList(inputDir);
   if (files.size() == 0) {
     std::cerr << "No files to process" << std::endl;
