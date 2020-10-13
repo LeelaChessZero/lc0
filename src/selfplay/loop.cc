@@ -850,15 +850,14 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           ChangeInputFormat(newInputFormat, &fileContents[i + 1], history);
         }
       }
-      // working @@
-      //int max_pieces = 20  // now a command line option
+      // remove positions where there are fewer than max_pieces
       std::vector<V5TrainingData> outFileContents;
-      if (max_pieces > 0) {
+      if (max_pieces < 32) {
         PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                       &board, &rule50ply, &gameply);
         history.Reset(board, rule50ply, gameply);
         if ((board.ours() | board.theirs()).count() <= max_pieces) {
-            outFileContents.push_back(fileContents[0]);
+            outFileContents.push_back(fileContents[0]);  //ugly
         }       
         for (int i = 0; i < moves.size(); i++) {
           history.Append(moves[i]);   // can't this just be:  const auto& board = moves[i].GetBoard()
@@ -1017,10 +1016,13 @@ void RescoreLoop::RunLoop() {
   auto policySubsDir =
       options_.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
   auto policySubFiles = GetFileList(policySubsDir);
-  for (int i = 0; i < policySubFiles.size(); i++) {
-    policySubFiles[i] = policySubsDir + "/" + policySubFiles[i];
+  if (policySubsDir.size() != 0) {
+    auto policySubFiles = GetFileList(policySubsDir);
+    for (int i = 0; i < policySubFiles.size(); i++) {
+      policySubFiles[i] = policySubsDir + "/" + policySubFiles[i];
+    }
+    BuildSubs(policySubFiles);
   }
-  BuildSubs(policySubFiles);
 
   auto inputDir = options_.GetOptionsDict().Get<std::string>(kInputDirId);
   auto files = GetFileList(inputDir);
