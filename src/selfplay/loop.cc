@@ -1041,7 +1041,7 @@ void RescoreLoop::RunLoop() {
       int offset_val = offset;
       offset++;
       threads_.emplace_back([this, offset_val, files, &tablebase, threads,
-                             dtz_boost]() {
+                             dtz_boost, max_pieces]() {
         ProcessFiles(
             files, &tablebase,
             options_.GetOptionsDict().Get<std::string>(kOutputDirId),
