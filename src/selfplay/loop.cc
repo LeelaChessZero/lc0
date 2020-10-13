@@ -851,19 +851,19 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
       // working @@
-      //int maxPieces = 20  // now a command line option
+      //int max_pieces = 20  // now a command line option
       std::vector<V5TrainingData> outFileContents;
-      if (maxPieces > 0) {
+      if (max_pieces > 0) {
         PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                       &board, &rule50ply, &gameply);
         history.Reset(board, rule50ply, gameply);
-        if (board.ours() | board.theirs()).count() <= maxPieces {
+        if ((board.ours() | board.theirs()).count() <= max_pieces) {
             outFileContents.push_back(fileContents[0]);
         }       
         for (int i = 0; i < moves.size(); i++) {
           history.Append(moves[i]);   // can't this just be:  const auto& board = moves[i].GetBoard()
           const auto& board = history.Last().GetBoard();
-          if (board.ours() | board.theirs()).count() <= maxPieces {
+          if ((board.ours() | board.theirs()).count() <= max_pieces) {
             outFileContents.push_back(fileContents[i+1]);
           }
         }
