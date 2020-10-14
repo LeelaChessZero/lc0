@@ -912,7 +912,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 void ProcessFiles(const std::vector<std::string>& files,
                   SyzygyTablebase* tablebase, std::string outputDir,
                   float distTemp, float distOffset, float dtzBoost,
-                  int newInputFormat, int max_pieces, bool no_rescore, int offset, int mod) {
+                  int newInputFormat, int max_pieces, bool no_rescore,
+                  bool keep_source, int offset, int mod) {
   std::cerr << "Thread: " << offset << " starting" << std::endl;
   for (int i = offset; i < files.size(); i += mod) {
     if (files[i].rfind(".gz") != files[i].size() - 3) {
@@ -920,7 +921,7 @@ void ProcessFiles(const std::vector<std::string>& files,
       continue;
     }
     ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset, dtzBoost,
-                newInputFormat, max_pieces, no_rescore);
+                newInputFormat, max_pieces, no_rescore, keep_source);
   }
 }
 
