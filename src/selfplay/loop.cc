@@ -1006,6 +1006,8 @@ void RescoreLoop::RunLoop() {
   options_.Add<StringOption>(kPolicySubsDirId);
   options_.Add<IntOption>(kThreadsId, 1, 20) = 1;
   options_.Add<IntOption>(kMaxPiecesId, 1, 32) = 32;
+  options_.Add<BoolOption>(kNoRescoreId) = false;
+  options_.Add<BoolOption>(kKeepSourceFilesId) = false;
   options_.Add<FloatOption>(kTempId, 0.001, 100) = 1;
   // Positive dist offset requires knowing the legal move set, so not supported
   // for now.
