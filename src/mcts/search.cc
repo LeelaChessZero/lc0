@@ -1086,6 +1086,7 @@ void SearchWorker::GatherMinibatch() {
       --minibatch_size;
       ++number_out_of_order_;
     } else if (picked_node.multivisit > 1) {
+      SharedMutex::Lock lock(search_->nodes_mutex_);
       if (picked_node.node != search_->root_node_) {
         IncrementNInFlight(picked_node.node->GetParent(), search_->root_node_,
                            picked_node.multivisit - 1);
