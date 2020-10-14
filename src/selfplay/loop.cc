@@ -869,12 +869,15 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
         fileContents = outFileContents;
       }
-      std::string fileName = file.substr(file.find_last_of("/\\") + 1);
-      TrainingDataWriter writer(outputDir + "/" + fileName);
-      for (auto chunk : fileContents) {
-        writer.WriteChunk(chunk);
+      if (fileContents.size() > 0) {
+        std::string fileName = file.substr(file.find_last_of("/\\") + 1);
+        TrainingDataWriter writer(outputDir + "/" + fileName);
+        for (auto chunk : fileContents) {
+          writer.WriteChunk(chunk);
+        }
       }
-    } catch (Exception& ex) {
+    } 
+    catch (Exception& ex) {
       std::cerr << "While processing: " << file
                 << " - Exception thrown: " << ex.what() << std::endl;
       std::cerr << "It will be deleted." << std::endl;
