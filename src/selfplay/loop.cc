@@ -42,6 +42,8 @@ namespace lczero {
 namespace {
 const OptionId kInteractiveId{
     "interactive", "", "Run in interactive mode with UCI-like interface."};
+const OptionId kNoRescoreId{
+    "no-rescore", "", "Process files without rescoring."};    
 const OptionId kSyzygyTablebaseId{"syzygy-paths", "",
                                   "List of Syzygy tablebase directories"};
 const OptionId kGaviotaTablebaseId{"gaviotatb-paths", "",
@@ -53,7 +55,7 @@ const OptionId kPolicySubsDirId{"policy-substitutions", "",
                                 "replace policy for some of the data."};
 const OptionId kOutputDirId{"output", "", "Directory to write rescored files."};
 const OptionId kThreadsId{"threads", "",
-                          "Number of concurrent threads to rescore with."};
+                          "Number of concurrent threads to employ."};
 const OptionId kMaxPiecesId{"max-pieces", "",
                           "Keep only positions with up to this many pieces."};
 const OptionId kTempId{"temperature", "",
@@ -85,6 +87,7 @@ class PolicySubNode {
 
 std::atomic<int> games(0);
 std::atomic<int> positions(0);
+std::atomic<int> positions_kept(0);
 std::atomic<int> rescored(0);
 std::atomic<int> delta(0);
 std::atomic<int> rescored2(0);
@@ -353,10 +356,12 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
   }
 }
 
+
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
-                 float dtzBoost, int newInputFormat, int max_pieces) {
+                 float dtzBoost, int newInputFormat, int max_pieces, bool no_rescore) {
   // Scope to ensure reader and writer are closed before deleting source file.
+  // source file deletion is at the end of the method
   {
     try {
       TrainingDataReader reader(file);
@@ -367,7 +372,6 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       }
       Validate(fileContents);
       MoveList moves;
-      // DecodeMoveFromInput is in neural/encoder
       for (int i = 1; i < fileContents.size(); i++) {
         moves.push_back(
             DecodeMoveFromInput(PlanesFromTrainingData(fileContents[i]),
@@ -390,7 +394,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                     &board, &rule50ply, &gameply);
       history.Reset(board, rule50ply, gameply);
       uint64_t rootHash = HashCat(board.Hash(), rule50ply);
-      /* if (policy_subs.find(rootHash) != policy_subs.end()) {
+      if (!no_resore && policy_subs.find(rootHash) != policy_subs.end()) {
         PolicySubNode* rootNode = &policy_subs[rootHash];
         for (int i = 0; i < fileContents.size(); i++) {
           if (rootNode->active) {
@@ -423,14 +427,14 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               }
             }
             std::cerr << i << " " << besttemp << " " << bestkld << std::endl;
-            
+            */
             for (int j = 0; j < 1858; j++) {
               /*
               if (rootNode->policy[j] >= 0.0) {
                 std::cerr << i << " " << j << " " << rootNode->policy[j] << " "
                           << fileContents[i].probabilities[j] << std::endl;
               }
-              
+              */
               fileContents[i].probabilities[j] = rootNode->policy[j];
             }
           }
@@ -444,8 +448,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             history.Append(moves[i]);
           }
         }
-      } 
-      
+      }
 
       PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                     &board, &rule50ply, &gameply);
@@ -482,7 +485,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                   (int)fileContents[j].result << " -> "
                             << (int)score_to_apply
                             << std::endl;
-                            
+                            */
                 }
                 rescored += 1;
                 delta += abs(fileContents[j].result - score_to_apply);
@@ -491,7 +494,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               "
                         << (int)score_to_apply
                         << std::endl;
-                        
+                        */
               }
 
               fileContents[j].result = score_to_apply;
@@ -501,11 +504,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
         }
       }
-      // set up the board to correspond to the first chunk in the file
       PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                     &board, &rule50ply, &gameply);
-      history.Reset(board, rule50ply, gameply);  
-      // 
+      history.Reset(board, rule50ply, gameply);
       for (int i = 0; i < moves.size(); i++) {
         history.Append(moves[i]);
         const auto& board = history.Last().GetBoard();
@@ -594,7 +595,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
                       << (int)score_to_apply
                       << std::endl;
-                      
+                      */
             }
 
             fileContents[i + 1].result = new_score;
@@ -840,7 +841,17 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             }
           }
         }
-      } */
+      }
+      if (newInputFormat != -1) {
+        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                      &board, &rule50ply, &gameply);
+        history.Reset(board, rule50ply, gameply);
+        ChangeInputFormat(newInputFormat, &fileContents[0], history);
+        for (int i = 0; i < moves.size(); i++) {
+          history.Append(moves[i]);
+          ChangeInputFormat(newInputFormat, &fileContents[i + 1], history);
+        }
+      }
       if (newInputFormat != -1) {
         PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                       &board, &rule50ply, &gameply);
@@ -870,6 +881,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         fileContents = outFileContents;
       }
       if (fileContents.size() > 0) {
+        positions_kept += fileContents.size();
         std::string fileName = file.substr(file.find_last_of("/\\") + 1);
         TrainingDataWriter writer(outputDir + "/" + fileName);
         for (auto chunk : fileContents) {
@@ -889,7 +901,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 void ProcessFiles(const std::vector<std::string>& files,
                   SyzygyTablebase* tablebase, std::string outputDir,
                   float distTemp, float distOffset, float dtzBoost,
-                  int newInputFormat, int max_pieces, int offset, int mod) {
+                  int newInputFormat, int max_pieces, bool no_rescore, int offset, int mod) {
   std::cerr << "Thread: " << offset << " starting" << std::endl;
   for (int i = offset; i < files.size(); i += mod) {
     if (files[i].rfind(".gz") != files[i].size() - 3) {
@@ -897,7 +909,7 @@ void ProcessFiles(const std::vector<std::string>& files,
       continue;
     }
     ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset, dtzBoost,
-                newInputFormat, max_pieces);
+                newInputFormat, max_pieces, no_rescore);
   }
 }
 
@@ -1040,6 +1052,7 @@ void RescoreLoop::RunLoop() {
   float dtz_boost = options_.GetOptionsDict().Get<float>(kMinDTZBoostId);
   int threads = options_.GetOptionsDict().Get<int>(kThreadsId);
   int max_pieces = options_.GetOptionsDict().Get<int>(kMaxPiecesId);
+  bool no_rescore = options_.GetOptionsDict().Get<bool>(kNoRescoreId);
   if (threads > 1) {
     std::vector<std::thread> threads_;
     int offset = 0;
@@ -1047,14 +1060,14 @@ void RescoreLoop::RunLoop() {
       int offset_val = offset;
       offset++;
       threads_.emplace_back([this, offset_val, files, &tablebase, threads,
-                             dtz_boost, max_pieces]() {
+                             dtz_boost, max_pieces, no_rescore]() {
         ProcessFiles(
             files, &tablebase,
             options_.GetOptionsDict().Get<std::string>(kOutputDirId),
             options_.GetOptionsDict().Get<float>(kTempId),
             options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
             dtz_boost, options_.GetOptionsDict().Get<int>(kNewInputFormatId),
-            max_pieces, offset_val, threads);
+            max_pieces, no_rescore, offset_val, threads);
       });
     }
     for (int i = 0; i < threads_.size(); i++) {
@@ -1068,10 +1081,11 @@ void RescoreLoop::RunLoop() {
                  options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
                  dtz_boost,
                  options_.GetOptionsDict().Get<int>(kNewInputFormatId), 
-                 max_pieces, 0, 1);
+                 max_pieces, no_rescore, 0, 1);
   }
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;
+  std::cout << "Positions kept: " << positions_kept << std::endl;
   std::cout << "Rescores performed: " << rescored << std::endl;
   std::cout << "Cumulative outcome change: " << delta << std::endl;
   std::cout << "Secondary rescores performed: " << rescored2 << std::endl;
@@ -1116,6 +1130,7 @@ void SelfPlayLoop::RunLoop() {
   SelfPlayTournament::PopulateOptions(&options_);
 
   options_.Add<BoolOption>(kInteractiveId) = false;
+  options_.Add<BoolOption>(kNoRescoreId) = false;
   options_.Add<StringOption>(kLogFileId);
 
   if (!options_.ProcessAllFlags()) return;
