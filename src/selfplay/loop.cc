@@ -394,7 +394,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                     &board, &rule50ply, &gameply);
       history.Reset(board, rule50ply, gameply);
       uint64_t rootHash = HashCat(board.Hash(), rule50ply);
-      if (!no_resore && policy_subs.find(rootHash) != policy_subs.end()) {
+      if (!no_rescore && policy_subs.find(rootHash) != policy_subs.end()) {
         PolicySubNode* rootNode = &policy_subs[rootHash];
         for (int i = 0; i < fileContents.size(); i++) {
           if (rootNode->active) {
@@ -449,156 +449,159 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
         }
       }
-
-      PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
-                    &board, &rule50ply, &gameply);
-      history.Reset(board, rule50ply, gameply);
-      int last_rescore = -1;
-      orig_counts[fileContents[0].result + 1]++;
-      fixed_counts[fileContents[0].result + 1]++;
-      for (int i = 0; i < moves.size(); i++) {
-        history.Append(moves[i]);
-        const auto& board = history.Last().GetBoard();
-        if (board.castlings().no_legal_castle() &&
-            history.Last().GetRule50Ply() == 0 &&
-            (board.ours() | board.theirs()).count() <=
-                tablebase->max_cardinality()) {
-          ProbeState state;
-          WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
-          // Only fail state means the WDL is wrong, probe_wdl may produce
-          // correct result with a stat other than OK.
-          if (state != FAIL) {
-            int8_t score_to_apply = 0;
-            if (wdl == WDL_WIN) {
-              score_to_apply = 1;
-            } else if (wdl == WDL_LOSS) {
-              score_to_apply = -1;
-            }
-            for (int j = i + 1; j > last_rescore; j--) {
-              if (fileContents[j].result != score_to_apply) {
-                if (j == i + 1 && last_rescore == -1) {
-                  fixed_counts[fileContents[0].result + 1]--;
-                  bool flip = (i % 2) == 0;
-                  fixed_counts[(flip ? -score_to_apply : score_to_apply) + 1]++;
+      if (!no_rescore) {
+        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                      &board, &rule50ply, &gameply);
+        history.Reset(board, rule50ply, gameply);
+        int last_rescore = -1;
+        orig_counts[fileContents[0].result + 1]++;
+        fixed_counts[fileContents[0].result + 1]++;
+        for (int i = 0; i < moves.size(); i++) {
+          history.Append(moves[i]);
+          const auto& board = history.Last().GetBoard();
+          if (board.castlings().no_legal_castle() &&
+              history.Last().GetRule50Ply() == 0 &&
+              (board.ours() | board.theirs()).count() <=
+                  tablebase->max_cardinality()) {
+            ProbeState state;
+            WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+            // Only fail state means the WDL is wrong, probe_wdl may produce
+            // correct result with a stat other than OK.
+            if (state != FAIL) {
+              int8_t score_to_apply = 0;
+              if (wdl == WDL_WIN) {
+                score_to_apply = 1;
+              } else if (wdl == WDL_LOSS) {
+                score_to_apply = -1;
+              }
+              for (int j = i + 1; j > last_rescore; j--) {
+                if (fileContents[j].result != score_to_apply) {
+                  if (j == i + 1 && last_rescore == -1) {
+                    fixed_counts[fileContents[0].result + 1]--;
+                    bool flip = (i % 2) == 0;
+                    fixed_counts[(flip ? -score_to_apply : score_to_apply) + 1]++;
+                    /*
+                    std::cerr << "Rescoring: " << file << " "  <<
+                    (int)fileContents[j].result << " -> "
+                              << (int)score_to_apply
+                              << std::endl;
+                              */
+                  }
+                  rescored += 1;
+                  delta += abs(fileContents[j].result - score_to_apply);
                   /*
-                  std::cerr << "Rescoring: " << file << " "  <<
-                  (int)fileContents[j].result << " -> "
-                            << (int)score_to_apply
-                            << std::endl;
-                            */
+                std::cerr << "Rescoring: " << (int)fileContents[j].result << " ->
+                "
+                          << (int)score_to_apply
+                          << std::endl;
+                          */
                 }
-                rescored += 1;
-                delta += abs(fileContents[j].result - score_to_apply);
+
+                fileContents[j].result = score_to_apply;
+                score_to_apply = -score_to_apply;
+              }
+              last_rescore = i + 1;
+            }
+          }
+        }
+      }
+      if (!no_rescore) {
+        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                      &board, &rule50ply, &gameply);
+        history.Reset(board, rule50ply, gameply);
+        for (int i = 0; i < moves.size(); i++) {
+          history.Append(moves[i]);
+          const auto& board = history.Last().GetBoard();
+          if (board.castlings().no_legal_castle() &&
+              history.Last().GetRule50Ply() != 0 &&
+              (board.ours() | board.theirs()).count() <=
+                  tablebase->max_cardinality()) {
+            ProbeState state;
+            WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
+            // Only fail state means the WDL is wrong, probe_wdl may produce
+            // correct result with a stat other than OK.
+            if (state != FAIL) {
+              int8_t score_to_apply = 0;
+              if (wdl == WDL_WIN) {
+                score_to_apply = 1;
+              } else if (wdl == WDL_LOSS) {
+                score_to_apply = -1;
+              }
+              // If the WDL result disagrees with the game outcome, make it a
+              // draw. WDL draw is always draw regardless of prior moves since
+              // zero, so that clearly works. Otherwise, the WDL result could be
+              // correct or draw, so best we can do is change scores that don't
+              // agree, to be a draw. If score was a draw this is a no-op, if it
+              // was opposite it becomes a draw.
+              int8_t new_score = fileContents[i + 1].result != score_to_apply
+                                     ? 0
+                                     : fileContents[i + 1].result;
+              bool dtz_rescored = false;
+              // if score is not already right, and the score to apply isn't 0,
+              // dtz can let us know its definitely correct.
+              if (fileContents[i + 1].result != score_to_apply &&
+                  score_to_apply != 0) {
+                // Any repetitions in the history since last 50 ply makes it risky
+                // to assume dtz is still correct.
+                int steps = history.Last().GetRule50Ply();
+                bool no_reps = true;
+                for (int i = 0; i < steps; i++) {
+                  // If game started from non-zero 50 move rule, this could
+                  // underflow. Only safe option is to assume there were
+                  // repetitions before this point.
+                  if (history.GetLength() - i - 1 < 0) {
+                    no_reps = false;
+                    break;
+                  }
+                  if (history.GetPositionAt(history.GetLength() - i - 1)
+                          .GetRepetitions() != 0) {
+                    no_reps = false;
+                    break;
+                  }
+                }
+                if (no_reps) {
+                  int depth = tablebase->probe_dtz(history.Last(), &state);
+                  if (state != FAIL) {
+                    // This should be able to be <= 99 safely, but I've not
+                    // convinced myself thats true.
+                    if (steps + std::abs(depth) < 99) {
+                      rescored3++;
+                      new_score = score_to_apply;
+                      dtz_rescored = true;
+                    }
+                  }
+                }
+              }
+
+              // If score is not already a draw, and its not obviously a draw,
+              // check if 50 move rule has advanced so far its obviously a draw.
+              // Obviously not needed if we've already proven with dtz that its a
+              // win/loss.
+              if (fileContents[i + 1].result != 0 && score_to_apply != 0 &&
+                  !dtz_rescored) {
+                int depth = tablebase->probe_dtz(history.Last(), &state);
+                if (state != FAIL) {
+                  int steps = history.Last().GetRule50Ply();
+                  // This should be able to be >= 101 safely, but I've not
+                  // convinced myself thats true.
+                  if (steps + std::abs(depth) > 101) {
+                    rescored3++;
+                    new_score = 0;
+                    dtz_rescored = true;
+                  }
+                }
+              }
+              if (new_score != fileContents[i + 1].result) {
+                rescored2 += 1;
                 /*
-              std::cerr << "Rescoring: " << (int)fileContents[j].result << " ->
-              "
+              std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
                         << (int)score_to_apply
                         << std::endl;
                         */
               }
 
-              fileContents[j].result = score_to_apply;
-              score_to_apply = -score_to_apply;
+              fileContents[i + 1].result = new_score;
             }
-            last_rescore = i + 1;
-          }
-        }
-      }
-      PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
-                    &board, &rule50ply, &gameply);
-      history.Reset(board, rule50ply, gameply);
-      for (int i = 0; i < moves.size(); i++) {
-        history.Append(moves[i]);
-        const auto& board = history.Last().GetBoard();
-        if (board.castlings().no_legal_castle() &&
-            history.Last().GetRule50Ply() != 0 &&
-            (board.ours() | board.theirs()).count() <=
-                tablebase->max_cardinality()) {
-          ProbeState state;
-          WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
-          // Only fail state means the WDL is wrong, probe_wdl may produce
-          // correct result with a stat other than OK.
-          if (state != FAIL) {
-            int8_t score_to_apply = 0;
-            if (wdl == WDL_WIN) {
-              score_to_apply = 1;
-            } else if (wdl == WDL_LOSS) {
-              score_to_apply = -1;
-            }
-            // If the WDL result disagrees with the game outcome, make it a
-            // draw. WDL draw is always draw regardless of prior moves since
-            // zero, so that clearly works. Otherwise, the WDL result could be
-            // correct or draw, so best we can do is change scores that don't
-            // agree, to be a draw. If score was a draw this is a no-op, if it
-            // was opposite it becomes a draw.
-            int8_t new_score = fileContents[i + 1].result != score_to_apply
-                                   ? 0
-                                   : fileContents[i + 1].result;
-            bool dtz_rescored = false;
-            // if score is not already right, and the score to apply isn't 0,
-            // dtz can let us know its definitely correct.
-            if (fileContents[i + 1].result != score_to_apply &&
-                score_to_apply != 0) {
-              // Any repetitions in the history since last 50 ply makes it risky
-              // to assume dtz is still correct.
-              int steps = history.Last().GetRule50Ply();
-              bool no_reps = true;
-              for (int i = 0; i < steps; i++) {
-                // If game started from non-zero 50 move rule, this could
-                // underflow. Only safe option is to assume there were
-                // repetitions before this point.
-                if (history.GetLength() - i - 1 < 0) {
-                  no_reps = false;
-                  break;
-                }
-                if (history.GetPositionAt(history.GetLength() - i - 1)
-                        .GetRepetitions() != 0) {
-                  no_reps = false;
-                  break;
-                }
-              }
-              if (no_reps) {
-                int depth = tablebase->probe_dtz(history.Last(), &state);
-                if (state != FAIL) {
-                  // This should be able to be <= 99 safely, but I've not
-                  // convinced myself thats true.
-                  if (steps + std::abs(depth) < 99) {
-                    rescored3++;
-                    new_score = score_to_apply;
-                    dtz_rescored = true;
-                  }
-                }
-              }
-            }
-
-            // If score is not already a draw, and its not obviously a draw,
-            // check if 50 move rule has advanced so far its obviously a draw.
-            // Obviously not needed if we've already proven with dtz that its a
-            // win/loss.
-            if (fileContents[i + 1].result != 0 && score_to_apply != 0 &&
-                !dtz_rescored) {
-              int depth = tablebase->probe_dtz(history.Last(), &state);
-              if (state != FAIL) {
-                int steps = history.Last().GetRule50Ply();
-                // This should be able to be >= 101 safely, but I've not
-                // convinced myself thats true.
-                if (steps + std::abs(depth) > 101) {
-                  rescored3++;
-                  new_score = 0;
-                  dtz_rescored = true;
-                }
-              }
-            }
-            if (new_score != fileContents[i + 1].result) {
-              rescored2 += 1;
-              /*
-            std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
-                      << (int)score_to_apply
-                      << std::endl;
-                      */
-            }
-
-            fileContents[i + 1].result = new_score;
           }
         }
       }
