@@ -56,15 +56,20 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-int CachingComputation::AddInput(
+void CachingComputation::AddInput(
     uint64_t hash, pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, lczero::FillEmptyHistory history_fill,
-    const Node* node) {
-  if (AddInputByHash(hash)) return TransformForPosition(input_format, history);
-
+    const Node* node, int* transform_out) {
+  if (AddInputByHash(hash)) {
+    if (transform_out) {
+      *transform_out = TransformForPosition(input_format, history);
+    }
+    return;
+  }
   int transform;
   auto input =
       EncodePositionForNN(input_format, history, 8, history_fill, &transform);
+  if (transform_out) *transform_out = transform;
   std::vector<uint16_t> moves;
   if (node && node->HasChildren()) {
     // Legal moves are known, use them.
@@ -87,7 +92,7 @@ int CachingComputation::AddInput(
   batch_.back().idx_in_parent = parent_->GetBatchSize();
   batch_.back().probabilities_to_cache = moves;
   parent_->AddInput(std::move(input));
-  return transform;
+  return;
 }
 
 void CachingComputation::PopLastInputHit() {

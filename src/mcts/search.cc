@@ -1410,10 +1410,9 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
       return true;
     }
   }
-  int transform = computation_->AddInput(
+  computation_->AddInput(
       hash, search_->network_->GetCapabilities().input_format, history_,
-      params_.GetHistoryFill(), node);
-  if (transform_out) *transform_out = transform;
+      params_.GetHistoryFill(), node, transform_out);
   return false;
 }
 

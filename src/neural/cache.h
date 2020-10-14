@@ -65,9 +65,11 @@ class CachingComputation {
   // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
   // @hash is a hash to store/lookup it in the cache.
   // Returns the transform used in EncodePositionForNN.
-  int AddInput(uint64_t hash, pblczero::NetworkFormat::InputFormat input_format,
-               const PositionHistory& history,
-               lczero::FillEmptyHistory history_fill, const Node* node);
+  void AddInput(uint64_t hash,
+                pblczero::NetworkFormat::InputFormat input_format,
+                const PositionHistory& history,
+                lczero::FillEmptyHistory history_fill, const Node* node,
+                int* transform_out);
   // Undos last AddInput. If it was a cache miss, then it's actually not removed
   // from parent's batch.
   void PopLastInputHit();
