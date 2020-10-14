@@ -606,181 +606,187 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         }
       }
 
-      if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
-        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
-                      &board, &rule50ply, &gameply);
-        history.Reset(board, rule50ply, gameply);
-        int move_index = 0;
-        for (auto& chunk : fileContents) {
-          const auto& board = history.Last().GetBoard();
-          std::vector<bool> boost_probs(1858, false);
-          int boost_count = 0;
+      if (!no_rescore) {
+        if (distTemp != 1.0f || distOffset != 0.0f || dtzBoost != 0.0f) {
+          PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                        &board, &rule50ply, &gameply);
+          history.Reset(board, rule50ply, gameply);
+          int move_index = 0;
+          for (auto& chunk : fileContents) {
+            const auto& board = history.Last().GetBoard();
+            std::vector<bool> boost_probs(1858, false);
+            int boost_count = 0;
 
-          if (dtzBoost != 0.0f && board.castlings().no_legal_castle() &&
-              (board.ours() | board.theirs()).count() <=
-                  tablebase->max_cardinality()) {
-            MoveList to_boost;
-            MoveList maybe_boost;
-            tablebase->root_probe(history.Last(),
-                                  history.DidRepeatSinceLastZeroingMove(), true,
-                                  &to_boost, &maybe_boost);
-            // If there is only one move, dtm fixup is not helpful.
-            // This code assumes all gaviota 3-4-5 tbs are present, as checked
-            // at startup.
-            if (gaviotaEnabled && maybe_boost.size() > 1 &&
+            if (dtzBoost != 0.0f && board.castlings().no_legal_castle() &&
+                (board.ours() | board.theirs()).count() <=
+                    tablebase->max_cardinality()) {
+              MoveList to_boost;
+              MoveList maybe_boost;
+              tablebase->root_probe(history.Last(),
+                                    history.DidRepeatSinceLastZeroingMove(), true,
+                                    &to_boost, &maybe_boost);
+              // If there is only one move, dtm fixup is not helpful.
+              // This code assumes all gaviota 3-4-5 tbs are present, as checked
+              // at startup.
+              if (gaviotaEnabled && maybe_boost.size() > 1 &&
+                  (board.ours() | board.theirs()).count() <= 5) {
+                std::vector<int> dtms;
+                dtms.resize(maybe_boost.size());
+                int mininum_dtm = 1000;
+                // Only safe moves being considered, boost the smallest dtm
+                // amongst them.
+                for (auto& move : maybe_boost) {
+                  Position next_pos = Position(history.Last(), move);
+                  unsigned int info;
+                  unsigned int dtm;
+                  gaviota_tb_probe_hard(next_pos, info, dtm);
+                  dtms.push_back(dtm);
+                  if (dtm < mininum_dtm) mininum_dtm = dtm;
+                }
+                if (mininum_dtm < 1000) {
+                  to_boost.clear();
+                  int dtm_idx = 0;
+                  for (auto& move : maybe_boost) {
+                    if (dtms[dtm_idx] == mininum_dtm) {
+                      to_boost.push_back(move);
+                    }
+                    dtm_idx++;
+                  }
+                  policy_dtm_bump++;
+                }
+              }
+              int transform = TransformForPosition(input_format, history);
+              for (auto& move : to_boost) {
+                boost_probs[move.as_nn_index(transform)] = true;
+              }
+              boost_count = to_boost.size();
+            }
+            float sum = 0.0;
+            int prob_index = 0;
+            float preboost_sum = 0.0f;
+            for (auto& prob : chunk.probabilities) {
+              float offset =
+                  distOffset +
+                  (boost_probs[prob_index] ? (dtzBoost / boost_count) : 0.0f);
+              if (dtzBoost != 0.0f && boost_probs[prob_index]) {
+                preboost_sum += prob;
+                if (prob < 0 || std::isnan(prob))
+                  std::cerr << "Bump for move that is illegal????" << std::endl;
+                policy_bump++;
+              }
+              prob_index++;
+              if (prob < 0 || std::isnan(prob)) continue;
+              prob = std::max(0.0f, prob + offset);
+              prob = std::pow(prob, 1.0f / distTemp);
+              sum += prob;
+            }
+            prob_index = 0;
+            float boost_sum = 0.0f;
+            for (auto& prob : chunk.probabilities) {
+              if (dtzBoost != 0.0f && boost_probs[prob_index]) {
+                boost_sum += prob / sum;
+              }
+              prob_index++;
+              if (prob < 0 || std::isnan(prob)) continue;
+              prob /= sum;
+            }
+            if (boost_count > 0) {
+              policy_nobump_total_hist[(int)(preboost_sum * 10)]++;
+              policy_bump_total_hist[(int)(boost_sum * 10)]++;
+            }
+            history.Append(moves[move_index]);
+            move_index++;
+          }
+        }
+      }
+      
+      if (!no_rescore) {
+        // Make move_count field plies_left for moves left head.
+        int offset = 0;
+        bool all_draws = true;
+        for (auto& chunk : fileContents) {
+          // plies_left can't be 0 for real v5 data, so if it is 0 it must be a v4
+          // conversion, and we should populate it ourselves with a better
+          // starting estimate.
+          if (chunk.plies_left == 0.0f) {
+            chunk.plies_left = (int)(fileContents.size() - offset);
+          }
+          offset++;
+          all_draws = all_draws && (chunk.result == 0);
+        }
+      }
+
+      if (!no_rescore) {
+        // Correct plies_left using Gaviota TBs for 5 piece and less positions.
+        if (gaviotaEnabled && !all_draws) {
+          PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
+                        &board, &rule50ply, &gameply);
+          history.Reset(board, rule50ply, gameply);
+          int last_rescore = 0;
+          for (int i = 0; i < moves.size(); i++) {
+            history.Append(moves[i]);
+            const auto& board = history.Last().GetBoard();
+
+            // Gaviota TBs don't have 50 move rule.
+            // Only consider positions that are not draw after rescoring.
+            if ((fileContents[i + 1].result != 0) &&
+                board.castlings().no_legal_castle() &&
                 (board.ours() | board.theirs()).count() <= 5) {
               std::vector<int> dtms;
-              dtms.resize(maybe_boost.size());
-              int mininum_dtm = 1000;
-              // Only safe moves being considered, boost the smallest dtm
-              // amongst them.
-              for (auto& move : maybe_boost) {
-                Position next_pos = Position(history.Last(), move);
-                unsigned int info;
-                unsigned int dtm;
-                gaviota_tb_probe_hard(next_pos, info, dtm);
-                dtms.push_back(dtm);
-                if (dtm < mininum_dtm) mininum_dtm = dtm;
+              unsigned int info;
+              unsigned int dtm;
+              gaviota_tb_probe_hard(history.Last(), info, dtm);
+              if (info != tb_WMATE && info != tb_BMATE) {
+                // Not a win for either player.
+                continue;
               }
-              if (mininum_dtm < 1000) {
-                to_boost.clear();
-                int dtm_idx = 0;
-                for (auto& move : maybe_boost) {
-                  if (dtms[dtm_idx] == mininum_dtm) {
-                    to_boost.push_back(move);
-                  }
-                  dtm_idx++;
+              int steps = history.Last().GetRule50Ply();
+              if ((dtm + steps > 99) && (dtm <= fileContents[i + 1].plies_left)) {
+                // Following DTM could trigger 50 move rule and the current
+                // move_count is more than DTM.
+                // If DTM is more than the current move_count then we can rescore
+                // using it since DTM50 is not shorter than DTM.
+                continue;
+              }
+              bool no_reps = true;
+              for (int i = 0; i < steps; i++) {
+                // If game started from non-zero 50 move rule, this could
+                // underflow. Only safe option is to assume there were repetitions
+                // before this point.
+                if (history.GetLength() - i - 1 < 0) {
+                  no_reps = false;
+                  break;
                 }
-                policy_dtm_bump++;
+                if (history.GetPositionAt(history.GetLength() - i - 1)
+                        .GetRepetitions() != 0) {
+                  no_reps = false;
+                  break;
+                }
               }
-            }
-            int transform = TransformForPosition(input_format, history);
-            for (auto& move : to_boost) {
-              boost_probs[move.as_nn_index(transform)] = true;
-            }
-            boost_count = to_boost.size();
-          }
-          float sum = 0.0;
-          int prob_index = 0;
-          float preboost_sum = 0.0f;
-          for (auto& prob : chunk.probabilities) {
-            float offset =
-                distOffset +
-                (boost_probs[prob_index] ? (dtzBoost / boost_count) : 0.0f);
-            if (dtzBoost != 0.0f && boost_probs[prob_index]) {
-              preboost_sum += prob;
-              if (prob < 0 || std::isnan(prob))
-                std::cerr << "Bump for move that is illegal????" << std::endl;
-              policy_bump++;
-            }
-            prob_index++;
-            if (prob < 0 || std::isnan(prob)) continue;
-            prob = std::max(0.0f, prob + offset);
-            prob = std::pow(prob, 1.0f / distTemp);
-            sum += prob;
-          }
-          prob_index = 0;
-          float boost_sum = 0.0f;
-          for (auto& prob : chunk.probabilities) {
-            if (dtzBoost != 0.0f && boost_probs[prob_index]) {
-              boost_sum += prob / sum;
-            }
-            prob_index++;
-            if (prob < 0 || std::isnan(prob)) continue;
-            prob /= sum;
-          }
-          if (boost_count > 0) {
-            policy_nobump_total_hist[(int)(preboost_sum * 10)]++;
-            policy_bump_total_hist[(int)(boost_sum * 10)]++;
-          }
-          history.Append(moves[move_index]);
-          move_index++;
-        }
-      }
-
-      // Make move_count field plies_left for moves left head.
-      int offset = 0;
-      bool all_draws = true;
-      for (auto& chunk : fileContents) {
-        // plies_left can't be 0 for real v5 data, so if it is 0 it must be a v4
-        // conversion, and we should populate it ourselves with a better
-        // starting estimate.
-        if (chunk.plies_left == 0.0f) {
-          chunk.plies_left = (int)(fileContents.size() - offset);
-        }
-        offset++;
-        all_draws = all_draws && (chunk.result == 0);
-      }
-
-      // Correct plies_left using Gaviota TBs for 5 piece and less positions.
-      if (gaviotaEnabled && !all_draws) {
-        PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
-                      &board, &rule50ply, &gameply);
-        history.Reset(board, rule50ply, gameply);
-        int last_rescore = 0;
-        for (int i = 0; i < moves.size(); i++) {
-          history.Append(moves[i]);
-          const auto& board = history.Last().GetBoard();
-
-          // Gaviota TBs don't have 50 move rule.
-          // Only consider positions that are not draw after rescoring.
-          if ((fileContents[i + 1].result != 0) &&
-              board.castlings().no_legal_castle() &&
-              (board.ours() | board.theirs()).count() <= 5) {
-            std::vector<int> dtms;
-            unsigned int info;
-            unsigned int dtm;
-            gaviota_tb_probe_hard(history.Last(), info, dtm);
-            if (info != tb_WMATE && info != tb_BMATE) {
-              // Not a win for either player.
-              continue;
-            }
-            int steps = history.Last().GetRule50Ply();
-            if ((dtm + steps > 99) && (dtm <= fileContents[i + 1].plies_left)) {
-              // Following DTM could trigger 50 move rule and the current
-              // move_count is more than DTM.
-              // If DTM is more than the current move_count then we can rescore
-              // using it since DTM50 is not shorter than DTM.
-              continue;
-            }
-            bool no_reps = true;
-            for (int i = 0; i < steps; i++) {
-              // If game started from non-zero 50 move rule, this could
-              // underflow. Only safe option is to assume there were repetitions
-              // before this point.
-              if (history.GetLength() - i - 1 < 0) {
-                no_reps = false;
-                break;
+              if (!no_reps) {
+                // There were repetitions. Do nothing since DTM path
+                // could trigger draw by repetition.
+                continue;
               }
-              if (history.GetPositionAt(history.GetLength() - i - 1)
-                      .GetRepetitions() != 0) {
-                no_reps = false;
-                break;
+              gaviota_dtm_rescores++;
+              int j;
+              for (j = i; j >= -1; j--) {
+                if (j <= last_rescore) {
+                  break;
+                }
+                // std::cerr << j << " " << int(fileContents[j + 1].move_count) <<
+                // " -> " << int(dtm + (i - j)) << std::endl;
+                fileContents[j + 1].plies_left = int(dtm + (i - j));
               }
+              last_rescore = i;
             }
-            if (!no_reps) {
-              // There were repetitions. Do nothing since DTM path
-              // could trigger draw by repetition.
-              continue;
-            }
-            gaviota_dtm_rescores++;
-            int j;
-            for (j = i; j >= -1; j--) {
-              if (j <= last_rescore) {
-                break;
-              }
-              // std::cerr << j << " " << int(fileContents[j + 1].move_count) <<
-              // " -> " << int(dtm + (i - j)) << std::endl;
-              fileContents[j + 1].plies_left = int(dtm + (i - j));
-            }
-            last_rescore = i;
           }
         }
       }
 
       // Correct move_count using DTZ for 3 piece no-pawn positions only.
       // If Gaviota TBs are enabled no need to use syzygy.
-      if (!gaviotaEnabled && !all_draws) {
+      if (!no_rescore && !gaviotaEnabled && !all_draws) {
         PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                       &board, &rule50ply, &gameply);
         history.Reset(board, rule50ply, gameply);
