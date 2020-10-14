@@ -390,7 +390,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                     &board, &rule50ply, &gameply);
       history.Reset(board, rule50ply, gameply);
       uint64_t rootHash = HashCat(board.Hash(), rule50ply);
-      if (policy_subs.find(rootHash) != policy_subs.end()) {
+      /* if (policy_subs.find(rootHash) != policy_subs.end()) {
         PolicySubNode* rootNode = &policy_subs[rootHash];
         for (int i = 0; i < fileContents.size(); i++) {
           if (rootNode->active) {
@@ -423,14 +423,14 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               }
             }
             std::cerr << i << " " << besttemp << " " << bestkld << std::endl;
-            */
+            
             for (int j = 0; j < 1858; j++) {
               /*
               if (rootNode->policy[j] >= 0.0) {
                 std::cerr << i << " " << j << " " << rootNode->policy[j] << " "
                           << fileContents[i].probabilities[j] << std::endl;
               }
-              */
+              
               fileContents[i].probabilities[j] = rootNode->policy[j];
             }
           }
@@ -444,7 +444,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             history.Append(moves[i]);
           }
         }
-      }
+      } 
+      
 
       PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                     &board, &rule50ply, &gameply);
@@ -481,7 +482,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                   (int)fileContents[j].result << " -> "
                             << (int)score_to_apply
                             << std::endl;
-                            */
+                            
                 }
                 rescored += 1;
                 delta += abs(fileContents[j].result - score_to_apply);
@@ -490,7 +491,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               "
                         << (int)score_to_apply
                         << std::endl;
-                        */
+                        
               }
 
               fileContents[j].result = score_to_apply;
@@ -500,7 +501,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
         }
       }
-      // i think this just sets up the board to correspond to the first chunk in the file
+      // set up the board to correspond to the first chunk in the file
       PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                     &board, &rule50ply, &gameply);
       history.Reset(board, rule50ply, gameply);  
@@ -593,7 +594,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
                       << (int)score_to_apply
                       << std::endl;
-                      */
+                      
             }
 
             fileContents[i + 1].result = new_score;
@@ -839,7 +840,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             }
           }
         }
-      }
+      } */
       if (newInputFormat != -1) {
         PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                       &board, &rule50ply, &gameply);
