@@ -43,7 +43,9 @@ namespace {
 const OptionId kInteractiveId{
     "interactive", "", "Run in interactive mode with UCI-like interface."};
 const OptionId kNoRescoreId{
-    "no-rescore", "", "Process files without rescoring."};    
+    "no-rescore", "", "Process files without rescoring."};
+const OptionId kKeepSourceFilesId{
+    "keep-source", "", "Keep source files, which are deleted by default."};
 const OptionId kSyzygyTablebaseId{"syzygy-paths", "",
                                   "List of Syzygy tablebase directories"};
 const OptionId kGaviotaTablebaseId{"gaviotatb-paths", "",
@@ -359,7 +361,8 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
-                 float dtzBoost, int newInputFormat, int max_pieces, bool no_rescore) {
+                 float dtzBoost, int newInputFormat, int max_pieces,
+                 bool no_rescore, bool keep_source) {
   // Scope to ensure reader and writer are closed before deleting source file.
   // source file deletion is at the end of the method
   {
@@ -901,7 +904,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       std::cerr << "It will be deleted." << std::endl;
     }
   }
-  remove(file.c_str());
+  if (!keep_source) {
+    remove(file.c_str());
+  }
 }
 
 void ProcessFiles(const std::vector<std::string>& files,
@@ -1009,6 +1014,8 @@ void RescoreLoop::RunLoop() {
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;
+  
+  // TODO should have to find Syzygy if no rescoring to be done
   SyzygyTablebase tablebase;
   if (!tablebase.init(
           options_.GetOptionsDict().Get<std::string>(kSyzygyTablebaseId)) ||
@@ -1059,6 +1066,7 @@ void RescoreLoop::RunLoop() {
   int threads = options_.GetOptionsDict().Get<int>(kThreadsId);
   int max_pieces = options_.GetOptionsDict().Get<int>(kMaxPiecesId);
   bool no_rescore = options_.GetOptionsDict().Get<bool>(kNoRescoreId);
+  bool keep_source = options_.GetOptionsDict().Get<bool>(kKeepSourceFilesId);
   if (threads > 1) {
     std::vector<std::thread> threads_;
     int offset = 0;
@@ -1066,14 +1074,14 @@ void RescoreLoop::RunLoop() {
       int offset_val = offset;
       offset++;
       threads_.emplace_back([this, offset_val, files, &tablebase, threads,
-                             dtz_boost, max_pieces, no_rescore]() {
+                             dtz_boost, max_pieces, no_rescore, keep_source]() {
         ProcessFiles(
             files, &tablebase,
             options_.GetOptionsDict().Get<std::string>(kOutputDirId),
             options_.GetOptionsDict().Get<float>(kTempId),
             options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
             dtz_boost, options_.GetOptionsDict().Get<int>(kNewInputFormatId),
-            max_pieces, no_rescore, offset_val, threads);
+            max_pieces, no_rescore, keep_source, offset_val, threads);
       });
     }
     for (int i = 0; i < threads_.size(); i++) {
@@ -1087,7 +1095,7 @@ void RescoreLoop::RunLoop() {
                  options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
                  dtz_boost,
                  options_.GetOptionsDict().Get<int>(kNewInputFormatId), 
-                 max_pieces, no_rescore, 0, 1);
+                 max_pieces, no_rescore, keep_source, 0, 1);
   }
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;
