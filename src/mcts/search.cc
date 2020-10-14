@@ -1007,6 +1007,17 @@ void SearchWorker::InitializeIteration(
   minibatch_.clear();
 }
 
+namespace {
+void IncrementNInFlight(Node* node, Node* root, int amount) {
+  if (amount == 0) return;
+  while (true) {
+    node->IncrementNInFlight(amount);
+    if (node == root) break;
+    node = node->GetParent();
+  }
+}
+}  // namespace
+
 // 2. Gather minibatch.
 // ~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::GatherMinibatch() {
@@ -1074,22 +1085,22 @@ void SearchWorker::GatherMinibatch() {
       minibatch_.pop_back();
       --minibatch_size;
       ++number_out_of_order_;
+    } else if (picked_node.multivisit > 1) {
+      if (picked_node.node != search_->root_node_) {
+        IncrementNInFlight(picked_node.node->GetParent(), search_->root_node_,
+                           picked_node.multivisit - 1);
+      }
+      picked_node.node->IncrementNInFlight(1);
+      minibatch_.push_back(SearchWorker::NodeToProcess::Collision(
+          picked_node.node, picked_node.depth, picked_node.multivisit - 1));
+      if (--collision_events_left <= 0) return;
+      if ((collisions_left -= picked_node.multivisit - 1) <= 0) return;
+
     }
     // Check for stop at the end so we have at least one node.
     if (search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
-
-namespace {
-void IncrementNInFlight(Node* node, Node* root, int amount) {
-  if (amount == 0) return;
-  while (true) {
-    node->IncrementNInFlight(amount);
-    if (node == root) break;
-    node = node->GetParent();
-  }
-}
-}  // namespace
 
 // Returns node and whether there's been a search collision on the node.
 SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
@@ -1182,12 +1193,12 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // Max depth doesn't change when reverting the visits, and cum_depth_
         // only counts the average depth of new nodes, not reused ones.
       } else {
-        return NodeToProcess::Visit(node, depth);
+        return NodeToProcess::Visit(node, depth, collision_limit);
       }
     }
     // If unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
-      return NodeToProcess::Visit(node, depth);
+      return NodeToProcess::Visit(node, depth, collision_limit);
     }
     Node* possible_shortcut_child = node->GetCachedBestChild();
     if (possible_shortcut_child) {
@@ -1675,7 +1686,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
       m = n->GetM();
     }
-    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    n->FinalizeScoreUpdate(v, d, m, 1);
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
@@ -1720,8 +1731,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
           search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }
   }
-  search_->total_playouts_ += node_to_process.multivisit;
-  search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
+  search_->total_playouts_ += 1;
+  search_->cum_depth_ += node_to_process.depth * 1;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }
 

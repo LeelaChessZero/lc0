@@ -293,8 +293,8 @@ class SearchWorker {
                                    int collision_count) {
       return NodeToProcess(node, depth, true, collision_count);
     }
-    static NodeToProcess Visit(Node* node, uint16_t depth) {
-      return NodeToProcess(node, depth, false, 1);
+    static NodeToProcess Visit(Node* node, uint16_t depth, int count_to_next) {
+      return NodeToProcess(node, depth, false, count_to_next);
     }
 
    private:
