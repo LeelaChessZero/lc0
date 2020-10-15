@@ -48,6 +48,11 @@ endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
 endif
+if host_machine.cpu_family() == 'arm'
+  if get_option('neon')
+    add_project_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
+  endif
+endif
 
 # Files to compile.
 deps = []
