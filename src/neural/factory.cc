@@ -48,6 +48,31 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Parameters of neural network backend. "
     "Exact parameters differ per backend.",
     'o'};
+const OptionId NetworkFactory::kSecondWeightsId{
+    "secondweights", "SecondWeightsFile",
+    "Path from which to load network weights for the second NN.",
+    's'};
+const OptionId NetworkFactory::kSecondWeightsSwitchAtId{
+    "switchat", "SwitchAt",
+    "Switch to the second NN when this number of pieces are left on the board. "
+    "Switch will take place _after_ lc0 has made a move, when it is the "
+    "opponents time to think."};
+const OptionId NetworkFactory::kSecondWeightsCpuctId{
+    "SWcpuct", "SWCPuct",
+    "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
+    "more exploration/wider search, lower values promote more "
+    "confidence/deeper search. "
+    "This value is used for the Secondary NN."};
+const OptionId NetworkFactory::kSecondWeightsFpuValueId{
+    "SWfpu-value", "SWFpuValue",
+    "\"First Play Urgency\" value used to adjust unvisited node eval based on "
+    "--fpu-strategy."
+    "This value is used for the Secondary NN."};
+const OptionId NetworkFactory::kSecondWeightsPolicySoftmaxTempId{
+    "SWpolicy-softmax-temp", "SWPolicyTemperature",
+    "Policy softmax temperature. Higher values make priors of move candidates "
+    "closer to each other, widening the search. "
+    "This value is used for the Secondary NN."};
 const char* kAutoDiscover = "<autodiscover>";
 const char* kEmbed = "<built in>";
 
@@ -71,6 +96,11 @@ void NetworkFactory::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(NetworkFactory::kBackendOptionsId);
+  options->Add<StringOption>(NetworkFactory::kSecondWeightsId);
+  options->Add<IntOption>(NetworkFactory::kSecondWeightsSwitchAtId, 5, 16) = 12;
+  options->Add<FloatOption>(kSecondWeightsCpuctId, 0.0f, 100.0f) = 1.32f;
+  options->Add<FloatOption>(kSecondWeightsFpuValueId, -100.0f, 100.0f) = 0.23f;
+  options->Add<FloatOption>(kSecondWeightsPolicySoftmaxTempId, 0.1f, 10.0f) = 1.4f;
 }
 
 void NetworkFactory::RegisterNetwork(const std::string& name,

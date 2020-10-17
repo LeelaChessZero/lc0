@@ -842,7 +842,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
 }
 
 void Search::WatchdogThread() {
-  LOGFILE << "Start a watchdog thread.";
+  LOGFILE << "Start a watchdog thread." << " Cpuct: " << params_.GetCpuct(false) << " FPU: " << params_.GetFpuValue(false) << " PolicySoftMaxTemp: " << params_.GetPolicySoftmaxTemp();
   StoppersHints hints;
   IterationStats stats;
   while (true) {
