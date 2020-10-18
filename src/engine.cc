@@ -84,12 +84,11 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
   // Stuff required for switching NN during play START
   bool second_nn_already_loaded_ = false;
   int k_pieces_left = 32;
-  std::string CPuct_for_primary_NN = "";
-  std::string FPU_for_primary_NN = "";
-  std::string PolicyTemperature_for_primary_NN = "";
 
-  // Purely informational vars, writing to them do not affect behaviour, they
-  // are just convenient to have when we want to tell about the current state.
+  float CPuct_for_primary_NN;
+  float FPU_for_primary_NN;
+  float PolicyTemperature_for_primary_NN;
+
   std::string weights_currently_in_use;
   // Stuff required for switching NN during play STOP
 
@@ -129,9 +128,10 @@ void EngineController::SetSearchParamsforSecondNN(OptionsParser* options) {
 }
 
 void EngineController::ResetSearchParamsforPrimaryNN(OptionsParser* options) {
-  options->GetMutableOptions()->Set<float>(SearchParams::kCpuctId, stof(CPuct_for_primary_NN));
-  options->GetMutableOptions()->Set<float>(SearchParams::kFpuValueId, stof(FPU_for_primary_NN));
-  options->GetMutableOptions()->Set<float>(SearchParams::kPolicySoftmaxTempId, stof(PolicyTemperature_for_primary_NN));
+  options->GetMutableOptions()->Set<float>(SearchParams::kCpuctId, CPuct_for_primary_NN);
+  options->GetMutableOptions()->Set<float>(SearchParams::kFpuValueId, FPU_for_primary_NN);
+  options->GetMutableOptions()->Set<float>(SearchParams::kPolicySoftmaxTempId, PolicyTemperature_for_primary_NN);
+  LOGFILE << "Resetting Cpuct, FPU and PolicySoftmaxTemp to the values for the primary NN.";
 }
 
 void EngineController::ResetMoveTimer() {
@@ -190,7 +190,7 @@ void EngineController::NewGame() {
   current_position_.reset();
   // reload the main NN every new game in a tournament
   if(second_nn_already_loaded_){
-    auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+    const auto network_configuration = NetworkFactory::BackendConfiguration(options_);
     network_ = NetworkFactory::LoadNetwork(options_);
     network_configuration_ = network_configuration;
     second_nn_already_loaded_ = false;
@@ -339,6 +339,11 @@ void EngineController::SwitchToSecondaryNN() {
   if(!second_nn_already_loaded_ &&
    options_.Get<std::string>(NetworkFactory::kSecondWeightsId) != "" &&
    k_pieces_left <= options_.Get<int>(NetworkFactory::kSecondWeightsSwitchAtId)){
+    // Store the values for the primary NN so we can switch back when a new game starts.
+    CPuct_for_primary_NN = options_.Get<float>(SearchParams::kCpuctId);
+    FPU_for_primary_NN = options_.Get<float>(SearchParams::kFpuValueId);
+    PolicyTemperature_for_primary_NN = options_.Get<float>(SearchParams::kPolicySoftmaxTempId);
+
     std::string net_path = options_.Get<std::string>(NetworkFactory::kSecondWeightsId);
     std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId);
     std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId);
