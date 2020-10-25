@@ -849,7 +849,10 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       std::string fileName = file.substr(file.find_last_of("/\\") + 1);
       TrainingDataWriter writer(outputDir + "/" + fileName);
       for (auto chunk : fileContents) {
-        writer.WriteChunk(chunk);
+        // Don't save chunks that just provide move history.
+        if ((chunk.invariance_info & 64) == 0) {
+          writer.WriteChunk(chunk);
+        }
       }
     } catch (Exception& ex) {
       std::cerr << "While processing: " << file
