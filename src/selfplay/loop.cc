@@ -183,8 +183,9 @@ void Validate(const std::vector<V5TrainingData>& fileContents,
   history.Reset(board, rule50ply, gameply);
   for (int i = 0; i < moves.size(); i++) {
     int transform = TransformForPosition(input_format, history);
+    // Move shouldn't be marked illegal unless there is 0 visits, which should only happen if invariance_info is marked with the placeholder bit.
     if (!(fileContents[i].probabilities[moves[i].as_nn_index(transform)] >=
-          0.0f)) {
+          0.0f) && (fileContents[i].invariance_info & 64) == 0) {
       std::cerr << "Illegal move: " << moves[i].as_string() << std::endl;
       throw Exception("Move performed is marked illegal in probabilities.");
     }
@@ -333,6 +334,7 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
   data->castling_them_ooo = castlings.they_can_000() ? queen_side : 0;
   data->castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
+  bool marked = (data->invariance_info & 64) != 0;
   // Other params.
   if (IsCanonicalFormat(input_format)) {
     data->side_to_move_or_enpassant =
@@ -348,6 +350,9 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
   } else {
     data->side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
     data->invariance_info = 0;
+  }
+  if (marked) {
+    data->invariance_info |= 64;
   }
 }
 
