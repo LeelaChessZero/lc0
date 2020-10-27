@@ -487,7 +487,17 @@ if get_option('build_backends')
     subdir('src/neural/dx/shaders')
 
     has_backends = true
-  endif  
+  endif
+
+  if get_option('dnnl') and dnnl_lib.found()
+    includes += include_directories(get_option('dnnl_dir') + '/include')
+    deps += [ dnnl_lib, dependency('openmp', required:true) ]
+    files += [
+      'src/neural/dnnl/network_dnnl.cc',
+      'src/neural/dnnl/layers.cc',
+    ]
+    has_backends = true
+  endif
  
 
 endif # if get_option('build_backends')
