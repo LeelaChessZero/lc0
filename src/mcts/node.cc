@@ -582,7 +582,7 @@ std::string EdgeAndNode::DebugString() const {
 // NodeTree
 /////////////////////////////////////////////////////////////////////////
 
-void NodeTree::MakeMove(Move move) {
+void NodeTree::MakeMove(Move move, bool analysis_mode) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
 
@@ -597,10 +597,12 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   move = board.GetModernMove(move);
-  current_head_->ReleaseChildrenExceptOne(new_head);
-  new_head = current_head_->child_.get();
+  if (!analysis_mode) {
+    current_head_->ReleaseChildrenExceptOne(new_head);
+    new_head = current_head_->child_.get();
+  }
   current_head_ =
-      new_head ? new_head : current_head_->CreateSingleChildNode(move);
+    new_head ? new_head : current_head_->CreateSingleChildNode(move);
   history_.Append(move);
 }
 
@@ -615,7 +617,8 @@ void NodeTree::TrimTreeAtHead() {
 }
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,
-                               const std::vector<Move>& moves) {
+                               const std::vector<Move>& moves,
+                               const bool analysis_mode) {
   ChessBoard starting_board;
   int no_capture_ply;
   int full_moves;
@@ -638,16 +641,17 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
   for (const auto& move : moves) {
-    MakeMove(move);
+    MakeMove(move, analysis_mode);
     if (old_head == current_head_) seen_old_head = true;
   }
-
+  // Unless we are explicitly in analysis mode, we want to be conservative
+  // with keeping the old tree around because of possible inconsistencies.
   // MakeMove guarantees that no siblings exist; but, if we didn't see the old
   // head, it means we might have a position that was an ancestor to a
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  if (!seen_old_head) TrimTreeAtHead();
+  if (!seen_old_head && !analysis_mode) TrimTreeAtHead();
   return seen_old_head;
 }
 

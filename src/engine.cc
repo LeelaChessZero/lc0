@@ -64,6 +64,12 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
+const OptionId kAnalysisMode{"analysis-mode", "AnalysisMode",
+                             "If Analysis Mode is activated, tree is reused "
+                             "whenever start fen is identical. This allows "
+                             "for forwards/backwards analysis but fills "
+                             "the RAM faster. When used with standard PUCT, "
+                             "reported WDL values will be insonsistent."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -108,6 +114,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
+
+  options->Add<BoolOption>(kAnalysisMode) = false;
 }
 
 void EngineController::ResetMoveTimer() {
@@ -187,7 +195,7 @@ void EngineController::SetupPosition(
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  const bool is_same_game = tree_->ResetToPosition(fen, moves);
+  const bool is_same_game = tree_->ResetToPosition(fen, moves, kAnalysisMode);
   if (!is_same_game) CreateFreshTimeManager();
 }
 

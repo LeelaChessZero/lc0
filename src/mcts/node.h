@@ -567,7 +567,7 @@ class NodeTree {
  public:
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
-  void MakeMove(Move move);
+  void MakeMove(Move move, bool analysis_mode = false);
   // Resets the current head to ensure it doesn't carry over details from a
   // previous search.
   void TrimTreeAtHead();
@@ -578,7 +578,8 @@ class NodeTree {
   // moves added). Returns false, if the position is completely different,
   // or if it's shorter than before.
   bool ResetToPosition(const std::string& starting_fen,
-                       const std::vector<Move>& moves);
+                       const std::vector<Move>& moves,
+                       const bool analysis_mode = false);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
   bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }
