@@ -195,7 +195,8 @@ void EngineController::SetupPosition(
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  const bool is_same_game = tree_->ResetToPosition(fen, moves, kAnalysisMode);
+  const bool is_same_game = tree_->ResetToPosition(fen, moves,
+                                    options_.Get<bool>(kAnalysisMode));
   if (!is_same_game) CreateFreshTimeManager();
 }
 
