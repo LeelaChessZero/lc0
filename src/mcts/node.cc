@@ -310,7 +310,7 @@ void Node::SortEdges() {
   assert(!child_);
   // Sorting on raw p_ is the same as sorting on GetP() as a side effect of
   // the encoding, and its noticeably faster.
-  if (!child) {
+  if (!child_) {
     std::sort(edges_.get(), (edges_.get() + num_edges_),
               [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
   }
