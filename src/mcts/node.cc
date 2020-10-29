@@ -194,23 +194,35 @@ std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
 Node* Node::CreateSingleChildNode(Move move) {
   assert(!edges_);
   assert(!child_);
-  if (child_) {
+/*   if (child_) {
     &edges_.push_back(&Edge::FromMovelist({move})[0]);
     Node* old_child = child_.get();
     child_ = std::make_unique<Node>(this, num_edges_);
     (*child_).sibling_ = old_child;
     num_edges_++;
-  } else {
-    edges_ = Edge::FromMovelist({move});
-    num_edges_ = 1;
-    child_ = std::make_unique<Node>(this, 0);
-  }
+  } else { */
+  edges_ = Edge::FromMovelist({move});
+  num_edges_ = 1;
+  child_ = std::make_unique<Node>(this, 0);
+//  }
   return child_.get();
 }
 
 void Node::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   assert(!child_);
+/*  if (child_) {
+    std::unique_ptr<Edge[]> old_edges = edges_;
+    for (Node* node_to_repair = child_; node_to_repair != nullptr;
+         node_to_repair = node_to_repair->sibling_;) {
+      Move last_move = node_to_repair->somehowgetlastmove;
+      node_to_repair->index = newindextothatmove;
+      if (last_move was illegal) {
+        replace sibling_ of previous node with sibling_;
+        remove node;
+      }
+    }
+  }*/
   edges_ = Edge::FromMovelist(moves);
   num_edges_ = moves.size();
 }
@@ -593,6 +605,10 @@ std::string EdgeAndNode::DebugString() const {
 void NodeTree::MakeMove(Move move, bool analysis_mode) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
+  auto legal_moves = board.GenerateLegalMoves();
+  if (analysis_mode && !current_head_->Edges()) {
+    current_head_->CreateEdges(legal_moves);
+  }
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
