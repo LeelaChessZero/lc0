@@ -194,35 +194,15 @@ std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
 Node* Node::CreateSingleChildNode(Move move) {
   assert(!edges_);
   assert(!child_);
-/*   if (child_) {
-    &edges_.push_back(&Edge::FromMovelist({move})[0]);
-    Node* old_child = child_.get();
-    child_ = std::make_unique<Node>(this, num_edges_);
-    (*child_).sibling_ = old_child;
-    num_edges_++;
-  } else { */
   edges_ = Edge::FromMovelist({move});
   num_edges_ = 1;
   child_ = std::make_unique<Node>(this, 0);
-//  }
   return child_.get();
 }
 
 void Node::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   assert(!child_);
-/*  if (child_) {
-    std::unique_ptr<Edge[]> old_edges = edges_;
-    for (Node* node_to_repair = child_; node_to_repair != nullptr;
-         node_to_repair = node_to_repair->sibling_;) {
-      Move last_move = node_to_repair->somehowgetlastmove;
-      node_to_repair->index = newindextothatmove;
-      if (last_move was illegal) {
-        replace sibling_ of previous node with sibling_;
-        remove node;
-      }
-    }
-  }*/
   if (!edges_) {
     edges_ = Edge::FromMovelist(moves);
     num_edges_ = moves.size();
@@ -310,6 +290,9 @@ void Node::SortEdges() {
   assert(!child_);
   // Sorting on raw p_ is the same as sorting on GetP() as a side effect of
   // the encoding, and its noticeably faster.
+  // In analysis mode it is possible to expand a node without sending it
+  // to the NN first. In that case child_ already exists, and sorting edges_
+  // would lead to indices being wrong.
   if (!child_) {
     std::sort(edges_.get(), (edges_.get() + num_edges_),
               [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
@@ -610,6 +593,9 @@ void NodeTree::MakeMove(Move move, bool analysis_mode) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
   auto legal_moves = board.GenerateLegalMoves();
+  // TODO: Check whether doing this all the time and not only in analysis mode
+  // slows anything down:
+  // if (!current_head_->Edges()) {
   if (analysis_mode && !current_head_->Edges()) {
     current_head_->CreateEdges(legal_moves);
   }
