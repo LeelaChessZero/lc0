@@ -146,7 +146,7 @@ class Node {
   Node* GetParent() const { return parent_; }
 
   // Returns whether a node has children.
-  bool HasChildren() const { return static_cast<bool>(edges_); }
+  bool HasChildren() const { return (static_cast<bool>(edges_) && n_ > 0); }
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
