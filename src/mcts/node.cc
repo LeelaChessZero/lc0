@@ -223,8 +223,10 @@ void Node::CreateEdges(const MoveList& moves) {
       }
     }
   }*/
-  edges_ = Edge::FromMovelist(moves);
-  num_edges_ = moves.size();
+  if (!edges_) {
+    edges_ = Edge::FromMovelist(moves);
+    num_edges_ = moves.size();
+  }
 }
 
 Node::ConstIterator Node::Edges() const {
