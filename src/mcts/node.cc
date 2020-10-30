@@ -290,7 +290,7 @@ void Node::SortEdges() {
   assert(!child_);
   // Sorting on raw p_ is the same as sorting on GetP() as a side effect of
   // the encoding, and its noticeably faster.
-  // In analysis mode it is possible to expand a node without sending it
+  // In analyse mode it is possible to expand a node without sending it
   // to the NN first. In that case child_ already exists, and sorting edges_
   // would lead to indices being wrong.
   if (!child_) {
@@ -589,14 +589,14 @@ std::string EdgeAndNode::DebugString() const {
 // NodeTree
 /////////////////////////////////////////////////////////////////////////
 
-void NodeTree::MakeMove(Move move, bool analysis_mode) {
+void NodeTree::MakeMove(Move move, bool analyse_mode) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
   auto legal_moves = board.GenerateLegalMoves();
-  // TODO: Check whether doing this all the time and not only in analysis mode
+  // TODO: Check whether doing this all the time and not only in analyse mode
   // slows anything down:
   // if (!current_head_->Edges()) {
-  if (analysis_mode && !current_head_->Edges()) {
+  if (analyse_mode && !current_head_->Edges()) {
     current_head_->CreateEdges(legal_moves);
   }
 
@@ -611,7 +611,7 @@ void NodeTree::MakeMove(Move move, bool analysis_mode) {
     }
   }
   move = board.GetModernMove(move);
-  if (!analysis_mode) {
+  if (!analyse_mode) {
     current_head_->ReleaseChildrenExceptOne(new_head);
     new_head = current_head_->child_.get();
   }
@@ -632,7 +632,7 @@ void NodeTree::TrimTreeAtHead() {
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,
                                const std::vector<Move>& moves,
-                               const bool analysis_mode) {
+                               const bool analyse_mode) {
   ChessBoard starting_board;
   int no_capture_ply;
   int full_moves;
@@ -655,17 +655,17 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
   for (const auto& move : moves) {
-    MakeMove(move, analysis_mode);
+    MakeMove(move, analyse_mode);
     if (old_head == current_head_) seen_old_head = true;
   }
-  // Unless we are explicitly in analysis mode, we want to be conservative
+  // Unless we are explicitly in analysie mode, we want to be conservative
   // with keeping the old tree around because of possible inconsistencies.
   // MakeMove guarantees that no siblings exist; but, if we didn't see the old
   // head, it means we might have a position that was an ancestor to a
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  if (!seen_old_head && !analysis_mode) TrimTreeAtHead();
+  if (!seen_old_head && !analyse_mode) TrimTreeAtHead();
   return seen_old_head;
 }
 
