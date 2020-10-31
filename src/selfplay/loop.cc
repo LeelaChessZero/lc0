@@ -124,10 +124,10 @@ float deblunderQSoftmaxTemp = 1.0f;
 
 int SelectNewZ(float random, float q, float d) {
   // q = w-l, w+l+d = 1.0
-  // q+2w+d = 1.0
-  // w = (1.0-d-q)/2.0
-  float w = (1.0f - d - q) / 2.0f;
-  float l = w - q;
+  // q+2l+d = 1.0
+  // l = (1.0-d-q)/2.0
+  float l = (1.0f - d - q) / 2.0f;
+  float w = q+l;
   if (deblunderQSoftmaxTemp == 0.0f) {
     if (w > d && w > l) {
       return 1;
@@ -945,9 +945,16 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             }
           }
           if (deblunderingStarted) {
+            /*
+            std::cerr << "Deblundering: "
+                      << fileContents[history.GetLength() - 1].best_q << " "
+                      << fileContents[history.GetLength() - 1].best_d << " "
+                      << (int)fileContents[history.GetLength() - 1].result << " "
+                      << (int)activeZ << std::endl;
+                      */
             fileContents[history.GetLength() - 1].result = activeZ;
           }
-          if (history.GetLength() == 0) break;
+          if (history.GetLength() == 1) break;
           activeZ = -activeZ;
           history.Pop();
         }
