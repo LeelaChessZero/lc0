@@ -47,12 +47,8 @@ const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
 
 const OptionId kClippyThresholdId{"clippy-threshold", "",
-                                  "Ratio of nps improvement necessary for the "
-                                  "next peak to be considered best."};
-
-const OptionId kClippyToleranceId{
-    "clippy-tolerance", "",
-    "After this nps drop (relative to best) wait for next peak."};
+                                "Ratio of nps improvement necessary for each "
+                                "doubling of batchsize to be considered best."};
 
 void Clippy(std::string msg) {
   std::cout << "  __" << std::endl;
@@ -79,8 +75,7 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kMaxBatchSizeId, 1, 1024) = 256;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<BoolOption>(kClippyId) = false;
-  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.05f;
-  options.Add<FloatOption>(kClippyToleranceId, 0.0f, 1.0f) = 0.03f;
+  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.1f;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -95,7 +90,6 @@ void BackendBenchmark::Run() {
 
     int best = 0;
     float best_nps = 0.0f;
-    bool run = true;
     std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
 
     for (int i = 1; i <= option_dict.Get<int>(kMaxBatchSizeId); i++) {
@@ -123,15 +117,15 @@ void BackendBenchmark::Run() {
 
       if (option_dict.Get<bool>(kClippyId)) {
         const float threshold = option_dict.Get<float>(kClippyThresholdId);
-        const float tolerance = option_dict.Get<float>(kClippyToleranceId);
 
-        if (nps > best_nps &&
-            (run == true || nps > best_nps * (1.0f + threshold))) {
-          best_nps = nps;
-          best = i;
-          run = true;
-          if (!pending) {
-            pending = std::chrono::steady_clock::now();
+        if (nps > best_nps) {
+          if (best==0 ||
+             ((i*1.0f/best*1.0f-1.0f)*threshold < nps/best_nps-1.0f)) {
+            best_nps = nps;
+            best = i;
+            if (!pending) {
+              pending = std::chrono::steady_clock::now();
+            }
           }
         }
         if (pending) {
@@ -142,9 +136,6 @@ void BackendBenchmark::Run() {
                 " looks like the best minibatch-size for this net (so far).");
             pending.reset();
           }
-        }
-        if (nps < best_nps * (1.0f - tolerance)) {
-          run = false;
         }
       }
     }
