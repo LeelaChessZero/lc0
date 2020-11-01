@@ -61,7 +61,7 @@ install:
 - cmd: IF DEFINED CUDA_INSTALL cuda_11.1.0_win10_network.exe -s nvcc_11.1 cublas_dev_11.1 cublas_11.1 cudart_11.1 documentation_11.1
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
-- cmd: pip3 install --upgrade meson
+- cmd: pip3 install --upgrade meson==0.55.3
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64 appveyor DownloadFile https://dl.google.com/android/repository/android-ndk-r19c-windows-x86_64.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64 7z x android-ndk-r19c-windows-x86_64.zip -oC:\ndk
