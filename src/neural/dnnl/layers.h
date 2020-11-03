@@ -149,8 +149,8 @@ class SELayer : public BaseLayer {
   dnnl::binary mul_;
   dnnl::binary add_;
   // Cached values to change tensors for best performance.
-  dnnl::memory::desc out_md;
   dnnl::memory::desc pool_out_md;
+  dnnl::memory::desc fc1_in_md;
   dnnl::memory::desc fc1_out_md;
   dnnl::memory::desc fc2a_out_md;
   dnnl::memory::desc fc2b_out_md;
