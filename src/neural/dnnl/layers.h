@@ -82,6 +82,7 @@ class ConvLayer : public BaseLayer {
   const bool use_skip_;
 
   dnnl::memory filter_mem;
+  dnnl::memory conv_filter_mem;
   dnnl::memory bias_mem;
 
   // Cache previous convolution primitive in case the batch size is the same.

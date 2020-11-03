@@ -96,10 +96,11 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
 
     in_md = conv_pd.src_desc();
     out_md = conv_pd.dst_desc();
-    if (conv_pd.weights_desc() != filter_mem.get_desc()) {
-      auto tmp = dnnl::memory(conv_pd.weights_desc(), eng);
-      dnnl::reorder(filter_mem, tmp).execute(stream, filter_mem, tmp);
-      filter_mem = tmp;
+    if (!conv_filter_mem ||
+        conv_pd.weights_desc() != conv_filter_mem.get_desc()) {
+      conv_filter_mem = dnnl::memory(conv_pd.weights_desc(), eng);
+      dnnl::reorder(filter_mem, conv_filter_mem)
+          .execute(stream, filter_mem, conv_filter_mem);
     }
 
     last_batch_ = N;
@@ -122,7 +123,7 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
   }
 
   conv_.execute(stream, {{DNNL_ARG_SRC, input},
-                         {DNNL_ARG_WEIGHTS, filter_mem},
+                         {DNNL_ARG_WEIGHTS, conv_filter_mem},
                          {DNNL_ARG_BIAS, bias_mem},
                          {DNNL_ARG_DST, output},
                          {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
