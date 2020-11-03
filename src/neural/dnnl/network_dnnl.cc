@@ -160,7 +160,7 @@ class DnnlNetwork : public Network {
 
 #if DNNL_VERSION_MAJOR * 100 + DNNL_VERSION_MINOR >= 105
     dnnl::set_primitive_cache_capacity(
-        options.GetOrDefault<int>("cache", 1024));
+        options.GetOrDefault<int>("jit_cache", 1024));
 #endif
 
     eng_ = dnnl::engine(dnnl::engine::kind::cpu, 0);
