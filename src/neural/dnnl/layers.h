@@ -48,9 +48,8 @@ class BaseLayer {
   virtual ~BaseLayer() = default;
   size_t GetOutputSize(int N) const { return sizeof(float) * N * C * H * W; }
 
-  virtual void Eval(int N, float* output, const float* input, void* scratch,
-                    size_t scratch_size, dnnl::engine& eng,
-                    dnnl::stream& stream) = 0;
+  virtual void Eval(int N, dnnl::memory& output, dnnl::memory& input,
+                    dnnl::engine& eng, dnnl::stream& stream) = 0;
 
  protected:
   BaseLayer* input_;
@@ -72,10 +71,8 @@ class ConvLayer : public BaseLayer {
   ConvLayer(BaseLayer* ip, int C, int H, int W, int size, int Cin,
             bool relu = false, bool skip = false);
 
-  ~ConvLayer();
-  void LoadWeights(float* pfilter, float* pBias, void* scratch);
-  void Eval(int N, float* output, const float* input, void* scratch,
-            size_t scratch_size, dnnl::engine& eng,
+  void LoadWeights(float* pfilter, float* pBias, dnnl::engine& eng);
+  void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
             dnnl::stream& stream) override;
 
  private:
@@ -84,51 +81,39 @@ class ConvLayer : public BaseLayer {
   const bool use_relu_;
   const bool use_skip_;
 
-  float* biases = nullptr;
-  float* weights = nullptr;
+  dnnl::memory filter_mem;
+  dnnl::memory bias_mem;
 
+  // Cache previous convolution primitive in case the batch size is the same.
   int last_batch_ = 0;
   dnnl::convolution_forward conv_;
-  void* scratchpad_ptr = nullptr;
-  size_t scratchpad_size = 0;
   dnnl::memory scratchpad_mem;
+  // Cached values to change in/out tensors for best performance.
+  dnnl::memory::desc in_md;
+  dnnl::memory::desc out_md;
 };
 
 class FCLayer : public BaseLayer {
  public:
   FCLayer(BaseLayer* ip, int C, int H, int W, bool relu, bool tanh = false);
-  ~FCLayer();
 
-  void LoadWeights(float* cpuWeight, float* cpuBias, void* scratch);
-  void Eval(int N, float* output, const float* input, void* scratch,
-            size_t scratch_size, dnnl::engine& eng,
+  void LoadWeights(float* cpuWeight, float* cpuBias, dnnl::engine& eng);
+  void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
             dnnl::stream& stream) override;
 
  private:
   const bool use_relu_;
   const bool use_tanh_;
-  float* weights_ = nullptr;
-  float* biases_ = nullptr;
 
+  dnnl::memory filter_mem;
+  dnnl::memory bias_mem;
+
+  // Cache previous primitive in case the batch size is the same.
   int last_batch_ = 0;
   dnnl::inner_product_forward fc_;
-};
-
-class PolicyMapLayer : public BaseLayer {
- public:
-  PolicyMapLayer(BaseLayer* ip, int C, int H, int W, int usedSize);
-  ~PolicyMapLayer();
-
-  void LoadWeights(const short* cpuWeight, void* scratch);
-  void Eval(int N, float* output, const float* input, void* scratch,
-            size_t scratch_size, dnnl::engine& eng,
-            dnnl::stream& stream) override;
-
- private:
-  int used_size_;  // Size of the input without padding (typically 73x64).
-                   // This is over-written to contain size with padding
-                   // (typically 80x64) after CHW->HWC conversion for fp16.
-  short* weights_ = nullptr;
+  // Cached values to change in/out tensors for best performance.
+  dnnl::memory::desc in_md;
+  dnnl::memory::desc out_md;
 };
 
 // Fused SE layer:
@@ -138,30 +123,37 @@ class SELayer : public BaseLayer {
 
  public:
   SELayer(BaseLayer* ip, int numFc1Out);
-  ~SELayer();
 
-  void LoadWeights(float* w1, float* b1, float* w2, float* b2, void* scratch);
+  void LoadWeights(float* w1, float* b1, float* w2, float* b2,
+                   dnnl::engine& eng);
 
-  void Eval(int N, float* output, const float* input, void* scratch,
-            size_t scratch_size, dnnl::engine& eng,
+  void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
             dnnl::stream& stream) override;
 
  private:
-  float* w1_ = nullptr;
-  float* b1_ = nullptr;
-  float* w2_ = nullptr;
-  float* b2_ = nullptr;
+  dnnl::memory filter_mem;
+  dnnl::memory bias_mem;
+  dnnl::memory filter2a_mem;
+  dnnl::memory bias2a_mem;
+  dnnl::memory filter2b_mem;
+  dnnl::memory bias2b_mem;
+
   int numFc1Out_;
 
+  // Cache previous primitives in case the batch size is the same.
   int last_batch_ = 0;
   dnnl::pooling_forward pooling_;
   dnnl::inner_product_forward fc_;
   dnnl::inner_product_forward fc2a_;
   dnnl::inner_product_forward fc2b_;
   dnnl::binary mul_;
-#if !defined(DNNL_ARG_ATTR_MULTIPLE_POST_OP)
-  dnnl::binary bias_add_;
-#endif
+  dnnl::binary add_;
+  // Cached values to change tensors for best performance.
+  dnnl::memory::desc out_md;
+  dnnl::memory::desc pool_out_md;
+  dnnl::memory::desc fc1_out_md;
+  dnnl::memory::desc fc2a_out_md;
+  dnnl::memory::desc fc2b_out_md;
 };
 
 }  // namespace dnnl_backend
