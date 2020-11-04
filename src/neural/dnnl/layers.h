@@ -72,6 +72,8 @@ class ConvLayer : public BaseLayer {
             bool relu = false, bool skip = false);
 
   void LoadWeights(float* pfilter, float* pBias, dnnl::engine& eng);
+
+  // If there is a skip connection the output doubles as an input.
   void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
             dnnl::stream& stream) override;
 
@@ -81,8 +83,8 @@ class ConvLayer : public BaseLayer {
   const bool use_relu_;
   const bool use_skip_;
 
-  dnnl::memory filter_mem;
-  dnnl::memory conv_filter_mem;
+  dnnl::memory filter_mem;  // The original weights.
+  dnnl::memory conv_filter_mem;  // Transformed weights (maybe for Winograd).
   dnnl::memory bias_mem;
 
   // Cache previous convolution primitive in case the batch size is the same.
@@ -128,6 +130,8 @@ class SELayer : public BaseLayer {
   void LoadWeights(float* w1, float* b1, float* w2, float* b2,
                    dnnl::engine& eng);
 
+  // Initially output holds the skip connection. Both input and output are
+  // assumed to be the same memory format.
   void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
             dnnl::stream& stream) override;
 

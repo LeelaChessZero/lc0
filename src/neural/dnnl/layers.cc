@@ -98,6 +98,8 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     out_md = conv_pd.dst_desc();
     if (!conv_filter_mem ||
         conv_pd.weights_desc() != conv_filter_mem.get_desc()) {
+      // This may be a transformation for Winograd convolution, so keep the
+      // original weights.
       conv_filter_mem = dnnl::memory(conv_pd.weights_desc(), eng);
       dnnl::reorder(filter_mem, conv_filter_mem)
           .execute(stream, filter_mem, conv_filter_mem);
@@ -174,10 +176,12 @@ void SELayer::LoadWeights(float* w1, float* b1, float* w2, float* b2,
 void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                    dnnl::engine& eng, dnnl::stream& stream) {
   if (last_batch_ != N) {
+    // Also the broadcast input memory format for the binary primitives.
     auto t_pool_out_md =
         dnnl::memory::desc({N, C, 1, 1}, dnnl::memory::data_type::f32,
                            dnnl::memory::format_tag::any);
 
+    // Also the output memory format for the fc2 inner products.
     auto t_fc1_in_md = dnnl::memory::desc({N, C}, dnnl::memory::data_type::f32,
                                           dnnl::memory::format_tag::any);
 
@@ -185,21 +189,11 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
         dnnl::memory::desc({N, numFc1Out_}, dnnl::memory::data_type::f32,
                            dnnl::memory::format_tag::any);
 
-    auto t_fc2a_out_md = dnnl::memory::desc(
-        {N, C}, dnnl::memory::data_type::f32, dnnl::memory::format_tag::any);
-
-    auto t_fc2b_out_md = dnnl::memory::desc(
-        {N, C}, dnnl::memory::data_type::f32, dnnl::memory::format_tag::any);
-
     auto t_filter_md =
         dnnl::memory::desc({numFc1Out_, C}, dnnl::memory::data_type::f32,
                            dnnl::memory::format_tag::any);
 
-    auto t_filter2a_md =
-        dnnl::memory::desc({C, numFc1Out_}, dnnl::memory::data_type::f32,
-                           dnnl::memory::format_tag::any);
-
-    auto t_filter2b_md =
+    auto t_filter2_md =
         dnnl::memory::desc({C, numFc1Out_}, dnnl::memory::data_type::f32,
                            dnnl::memory::format_tag::any);
 
@@ -215,6 +209,8 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     }
     pooling_ = dnnl::pooling_forward(pooling_pd);
 
+    // This is also the optimized memory format descriptor for the binary
+    // primitives.
     pool_out_md = pooling_pd.dst_desc();
 
     auto fc_d = dnnl::inner_product_forward::desc(
@@ -241,8 +237,8 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     }
 
     auto fc2a_d = dnnl::inner_product_forward::desc(
-        dnnl::prop_kind::forward_inference, fc1_out_md, t_filter2a_md,
-        bias2a_mem.get_desc(), t_fc2a_out_md);
+        dnnl::prop_kind::forward_inference, fc1_out_md, t_filter2_md,
+        bias2a_mem.get_desc(), t_fc1_in_md);
     dnnl::post_ops fc2a_ops;
     fc2a_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_logistic, 0.0f,
                             0.0f);
@@ -264,8 +260,8 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     }
 
     auto fc2b_d = dnnl::inner_product_forward::desc(
-        dnnl::prop_kind::forward_inference, fc1_out_md, t_filter2b_md,
-        bias2b_mem.get_desc(), t_fc2b_out_md);
+        dnnl::prop_kind::forward_inference, fc1_out_md, t_filter2_md,
+        bias2b_mem.get_desc(), t_fc1_in_md);
     dnnl::primitive_attr fc2b_attr;
     fc2b_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     auto fc2b_pd =
@@ -410,6 +406,7 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     auto t_out_md =
         dnnl::memory::desc({N, C, H, W}, dnnl::memory::data_type::f32,
                            dnnl::memory::format_tag::any);
+
     auto fc_d = dnnl::inner_product_forward::desc(
         dnnl::prop_kind::forward_inference, t_in_md.reshape({N, num_inputs}),
         t_filter_md, bias_mem.get_desc(), t_out_md.reshape({N, num_outputs}));
