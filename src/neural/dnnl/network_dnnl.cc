@@ -327,8 +327,8 @@ class DnnlNetwork : public Network {
     // Initialize layers if batch size fixed.
     if (options.GetOrDefault<bool>("init", true) && batch_size_ > 0) {
       InputsOutputs io(1, wdl_, moves_left_);
-      memset (io.input_masks_mem_, 0,  kInputPlanes * sizeof(uint64_t));
-      memset (io.input_val_mem_, 0,  kInputPlanes * sizeof(float));
+      memset(io.input_masks_mem_, 0, kInputPlanes * sizeof(uint64_t));
+      memset(io.input_val_mem_, 0, kInputPlanes * sizeof(float));
       forwardEval(&io, 1);
     }
   }
@@ -379,7 +379,10 @@ class DnnlNetwork : public Network {
       // Move input to the gpu.
       if (eng_.get_kind() != dnnl::engine::kind::cpu) {
         auto tmp = dnnl::memory(input_desc, eng_);
-        dnnl::reorder(input_mem, tmp).execute(eng_stream_, input_mem, tmp);
+        if (batchSize != last_batch_) {
+          in_reorder_ = dnnl::reorder(input_mem, tmp);
+        }
+        in_reorder_.execute(eng_stream_, input_mem, tmp);
         input_mem = tmp;
       }
 
@@ -481,24 +484,33 @@ class DnnlNetwork : public Network {
       if (opPol_desc != opPol_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
         auto tmp = dnnl::memory(opPol_desc, cpu_eng);
-        dnnl::reorder(opPol_mem, tmp).execute(eng_stream_, opPol_mem, tmp);
+        if (batchSize != last_batch_) {
+          pol_reorder_ = dnnl::reorder(opPol_mem, tmp);
+        }
+        pol_reorder_.execute(eng_stream_, opPol_mem, tmp);
         opPol_mem = tmp;
       }
 
       if (opVal_desc != opVal_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
         auto tmp = dnnl::memory(opVal_desc, cpu_eng);
-        dnnl::reorder(opVal_mem, tmp).execute(eng_stream_, opVal_mem, tmp);
+        if (batchSize != last_batch_) {
+          val_reorder_ = dnnl::reorder(opVal_mem, tmp);
+        }
+        val_reorder_.execute(eng_stream_, opVal_mem, tmp);
         opVal_mem = tmp;
       }
 
       if (moves_left_ && (opMov_desc != opMov_mem.get_desc() ||
                           eng_.get_kind() != dnnl::engine::kind::cpu)) {
         auto tmp = dnnl::memory(opMov_desc, cpu_eng);
-        dnnl::reorder(opMov_mem, tmp).execute(eng_stream_, opMov_mem, tmp);
+        if (batchSize != last_batch_) {
+          mov_reorder_ = dnnl::reorder(opMov_mem, tmp);
+        }
+        mov_reorder_.execute(eng_stream_, opMov_mem, tmp);
         opMov_mem = tmp;
       }
-
+      last_batch_ = batchSize;
       eng_stream_.wait();
 
       // Copy memopy to output buffers and do final transformations.
@@ -603,6 +615,13 @@ class DnnlNetwork : public Network {
 
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
+
+  // Cache previous reorder primitives for the same batch size.
+  int last_batch_ = 0;
+  dnnl::reorder in_reorder_;
+  dnnl::reorder pol_reorder_;
+  dnnl::reorder val_reorder_;
+  dnnl::reorder mov_reorder_;
 };
 
 DnnlNetworkComputation::DnnlNetworkComputation(DnnlNetwork* network, bool wdl,

@@ -124,19 +124,29 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
           .execute(stream, filter_mem, conv_filter_mem);
     }
 
+    auto in_reorder_pd =
+        dnnl::reorder::primitive_desc(eng, input.get_desc(), eng, in_md);
+    in_reorder_ = dnnl::reorder(in_reorder_pd);
+
+    if (use_skip_) {
+      auto skip_reorder_pd =
+          dnnl::reorder::primitive_desc(eng, output.get_desc(), eng, out_md);
+      skip_reorder_ = dnnl::reorder(skip_reorder_pd);
+    }
+
     last_batch_ = N;
   }
 
   if (in_md != input.get_desc()) {
     auto tmp = dnnl::memory(in_md, eng);
-    dnnl::reorder(input, tmp).execute(stream, input, tmp);
+    in_reorder_.execute(stream, input, tmp);
     input = tmp;
   }
 
   if (!output || out_md != output.get_desc()) {
     if (use_skip_) {
       auto tmp = dnnl::memory(out_md, eng);
-      dnnl::reorder(output, tmp).execute(stream, output, tmp);
+      skip_reorder_.execute(stream, output, tmp);
       output = tmp;
     } else {
       output = dnnl::memory(out_md, eng);
@@ -338,6 +348,18 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     add_scratchpad_mem = dnnl::memory(add_pd.scratchpad_desc(), eng);
     add_ = dnnl::binary(add_pd);
 
+    auto fc1_reorder_pd =
+        dnnl::reorder::primitive_desc(eng, pool_out_md, eng, fc1_in_md);
+    fc1_reorder_ = dnnl::reorder(fc1_reorder_pd);
+
+    auto mul_reorder_pd =
+        dnnl::reorder::primitive_desc(eng, fc2a_out_md, eng, pool_out_md);
+    mul_reorder_ = dnnl::reorder(mul_reorder_pd);
+
+    auto add_reorder_pd =
+        dnnl::reorder::primitive_desc(eng, fc2b_out_md, eng, pool_out_md);
+    add_reorder_ = dnnl::reorder(add_reorder_pd);
+
     last_batch_ = N;
   }
 
@@ -353,8 +375,7 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
   dnnl::memory fc1_in_mem;
   if (fc1_in_md != pool_out_md) {
     fc1_in_mem = dnnl::memory(fc1_in_md, eng);
-    dnnl::reorder(pool_out_mem, fc1_in_mem)
-        .execute(stream, pool_out_mem, fc1_in_mem);
+    fc1_reorder_.execute(stream, pool_out_mem, fc1_in_mem);
   } else {
     fc1_in_mem = pool_out_mem;
   }
@@ -380,8 +401,7 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
   dnnl::memory mul_in_mem;
   if (pool_out_md != fc2a_out_md) {
     mul_in_mem = dnnl::memory(pool_out_md, eng);
-    dnnl::reorder(fc2a_out_mem, mul_in_mem)
-        .execute(stream, fc2a_out_mem, mul_in_mem);
+    mul_reorder_.execute(stream, fc2a_out_mem, mul_in_mem);
   } else {
     mul_in_mem = fc2a_out_mem;
   }
@@ -394,8 +414,7 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
   dnnl::memory add_in_mem;
   if (pool_out_md != fc2b_out_md) {
     add_in_mem = dnnl::memory(pool_out_md, eng);
-    dnnl::reorder(fc2b_out_mem, add_in_mem)
-        .execute(stream, fc2b_out_mem, add_in_mem);
+    add_reorder_.execute(stream, fc2b_out_mem, add_in_mem);
   } else {
     add_in_mem = fc2b_out_mem;
   }
@@ -483,12 +502,16 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       filter_mem = tmp;
     }
 
+    auto in_reorder_pd =
+        dnnl::reorder::primitive_desc(eng, input.get_desc(), eng, in_md);
+    in_reorder_ = dnnl::reorder(in_reorder_pd);
+
     last_batch_ = N;
   }
 
   if (in_md != input.get_desc()) {
     auto tmp = dnnl::memory(in_md, eng);
-    dnnl::reorder(input, tmp).execute(stream, input, tmp);
+    in_reorder_.execute(stream, input, tmp);
     input = tmp;
   }
 

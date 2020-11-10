@@ -83,6 +83,8 @@ class ConvLayer : public BaseLayer {
   // Cache previous convolution primitive in case the batch size is the same.
   int last_batch_ = 0;
   dnnl::convolution_forward conv_;
+  dnnl::reorder in_reorder_;
+  dnnl::reorder skip_reorder_;
   dnnl::memory scratchpad_mem;
   // Cached values to change in/out tensors for best performance.
   dnnl::memory::desc in_md;
@@ -108,6 +110,7 @@ class FCLayer : public BaseLayer {
   // Cache previous primitive in case the batch size is the same.
   int last_batch_ = 0;
   dnnl::inner_product_forward fc_;
+  dnnl::reorder in_reorder_;
   dnnl::memory scratchpad_mem;
   // Cached values to change in/out tensors for best performance.
   dnnl::memory::desc in_md;
@@ -148,6 +151,9 @@ class SELayer : public BaseLayer {
   dnnl::inner_product_forward fc2b_;
   dnnl::binary mul_;
   dnnl::binary add_;
+  dnnl::reorder fc1_reorder_;
+  dnnl::reorder mul_reorder_;
+  dnnl::reorder add_reorder_;
   dnnl::memory pooling_scratchpad_mem;
   dnnl::memory fc_scratchpad_mem;
   dnnl::memory fc2a_scratchpad_mem;
