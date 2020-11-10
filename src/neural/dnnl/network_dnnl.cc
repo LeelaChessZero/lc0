@@ -323,6 +323,14 @@ class DnnlNetwork : public Network {
       network_.emplace_back(std::move(FCMov2));
     }
     moves_left_out_ = getLastLayer();
+
+    // Initialize layers if batch size fixed.
+    if (options.GetOrDefault<bool>("init", true) && batch_size_ > 0) {
+      InputsOutputs io(1, wdl_, moves_left_);
+      memset (io.input_masks_mem_, 0,  kInputPlanes * sizeof(uint64_t));
+      memset (io.input_val_mem_, 0,  kInputPlanes * sizeof(float));
+      forwardEval(&io, 1);
+    }
   }
 
   void forwardEval(InputsOutputs* io, int inputBatchSize) {
