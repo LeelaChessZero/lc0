@@ -438,14 +438,14 @@ void FCLayer::LoadWeights(float* cpuWeight, float* cpuBias, dnnl::engine& eng,
   }
 
   const int num_outputs = C * H * W;
-  const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
-  auto t_filter_md = dnnl::memory::desc({num_outputs, num_inputs},
-                                        dnnl::memory::data_type::f32,
-                                        dnnl::memory::format_tag::ab);
+  auto t_filter_md = dnnl::memory::desc(
+      {num_outputs, input_->GetC(), input_->GetH(), input_->GetW()},
+      dnnl::memory::data_type::f32, dnnl::memory::format_tag::abcd);
   auto t_filter_mem = dnnl::memory(t_filter_md, cpu_eng, cpuWeight);
-  auto filter_md = dnnl::memory::desc({num_outputs, num_inputs}, data_type_,
-                                      dnnl::memory::format_tag::ab);
+  auto filter_md = dnnl::memory::desc(
+      {num_outputs, input_->GetC(), input_->GetH(), input_->GetW()}, data_type_,
+      dnnl::memory::format_tag::abcd);
   filter_mem = dnnl::memory(filter_md, eng);
   dnnl::reorder(t_filter_mem, filter_mem)
       .execute(stream, t_filter_mem, filter_mem);
@@ -463,21 +463,21 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                    dnnl::engine& eng, dnnl::stream& stream) {
   if (last_batch_ != N) {
     const int num_outputs = C * H * W;
-    const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
     auto t_in_md =
         dnnl::memory::desc({N, input_->GetC(), input_->GetH(), input_->GetW()},
                            data_type_, dnnl::memory::format_tag::any);
 
-    auto t_filter_md = dnnl::memory::desc({num_outputs, num_inputs}, data_type_,
-                                          dnnl::memory::format_tag::any);
+    auto t_filter_md = dnnl::memory::desc(
+        {num_outputs, input_->GetC(), input_->GetH(), input_->GetW()},
+        data_type_, dnnl::memory::format_tag::any);
 
     auto t_out_md = dnnl::memory::desc({N, C, H, W}, data_type_,
                                        dnnl::memory::format_tag::any);
 
     auto fc_d = dnnl::inner_product_forward::desc(
-        dnnl::prop_kind::forward_inference, t_in_md.reshape({N, num_inputs}),
-        t_filter_md, bias_mem.get_desc(), t_out_md.reshape({N, num_outputs}));
+        dnnl::prop_kind::forward_inference, t_in_md, t_filter_md,
+        bias_mem.get_desc(), t_out_md.reshape({N, num_outputs}));
     dnnl::post_ops fc_ops;
     if (use_relu_) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
@@ -493,8 +493,7 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     scratchpad_mem = dnnl::memory(fc_pd.scratchpad_desc(), eng);
     fc_ = dnnl::inner_product_forward(fc_pd);
 
-    in_md = fc_pd.src_desc().reshape(
-        {N, input_->GetC(), input_->GetH(), input_->GetW()});
+    in_md = fc_pd.src_desc();
     out_md = fc_pd.dst_desc().reshape({N, C, H, W});
     if (fc_pd.weights_desc() != filter_mem.get_desc()) {
       auto tmp = dnnl::memory(fc_pd.weights_desc(), eng);
