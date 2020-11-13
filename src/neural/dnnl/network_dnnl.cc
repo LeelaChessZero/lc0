@@ -165,10 +165,12 @@ class DnnlNetwork : public Network {
         options.GetOrDefault<int>("jit_cache", 1024));
 #endif
 
+    cpu_eng_ = dnnl::engine(dnnl::engine::kind::cpu, 0);
+
     if (!options.IsDefault<int>("gpu")) {
       eng_ = dnnl::engine(dnnl::engine::kind::gpu, options.Get<int>("gpu"));
     } else {
-      eng_ = dnnl::engine(dnnl::engine::kind::cpu, 0);
+      eng_ = cpu_eng_;
     }
     eng_stream_ = dnnl::stream(eng_);
 
@@ -202,8 +204,15 @@ class DnnlNetwork : public Network {
                                                    3, kNumInputPlanes, true);
       // Set the data type first, the following layers will pick it up.
       inputConv->SetDataType(data_type);
-      inputConv->LoadWeights(&weights.input.weights[0],
-                             &weights.input.biases[0], eng_, eng_stream_);
+      auto w_md = dnnl::memory::desc({numFilters_, kNumInputPlanes, 3, 3},
+                                     dnnl::memory::data_type::f32,
+                                     dnnl::memory::format_tag::oihw);
+      auto w_mem = dnnl::memory(w_md, cpu_eng_, &weights.input.weights[0]);
+      auto b_md =
+          dnnl::memory::desc({numFilters_}, dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::a);
+      auto b_mem = dnnl::memory(b_md, cpu_eng_, &weights.input.biases[0]);
+      inputConv->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(inputConv));
     }
 
@@ -211,9 +220,17 @@ class DnnlNetwork : public Network {
     for (size_t block = 0; block < weights.residual.size(); block++) {
       auto conv1 = std::make_unique<ConvLayer>(getLastLayer(), numFilters_, 8,
                                                8, 3, numFilters_, true);
-      conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
-                         &weights.residual[block].conv1.biases[0], eng_,
-                         eng_stream_);
+      auto w_md = dnnl::memory::desc({numFilters_, numFilters_, 3, 3},
+                                     dnnl::memory::data_type::f32,
+                                     dnnl::memory::format_tag::oihw);
+      auto w_mem = dnnl::memory(w_md, cpu_eng_,
+                                &weights.residual[block].conv1.weights[0]);
+      auto b_md =
+          dnnl::memory::desc({numFilters_}, dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::a);
+      auto b_mem = dnnl::memory(b_md, cpu_eng_,
+                                &weights.residual[block].conv1.biases[0]);
+      conv1->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(conv1));
 
       // Relu of second convolution and skip connection is handled by SELayer.
@@ -221,18 +238,41 @@ class DnnlNetwork : public Network {
 
       auto conv2 = std::make_unique<ConvLayer>(
           getLastLayer(), numFilters_, 8, 8, 3, numFilters_, !has_se, !has_se);
-      conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
-                         &weights.residual[block].conv2.biases[0], eng_,
-                         eng_stream_);
+      w_mem = dnnl::memory(w_md, cpu_eng_,
+                           &weights.residual[block].conv2.weights[0]);
+      b_mem = dnnl::memory(b_md, cpu_eng_,
+                           &weights.residual[block].conv2.biases[0]);
+      conv2->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(conv2));
 
       if (has_se) {
         int numFCOut = (int)weights.residual[block].se.b1.size();
+
         auto se = std::make_unique<SELayer>(getLastLayer(), numFCOut);
-        se->LoadWeights(&weights.residual[block].se.w1[0],
-                        &weights.residual[block].se.b1[0],
-                        &weights.residual[block].se.w2[0],
-                        &weights.residual[block].se.b2[0], eng_, eng_stream_);
+        w_md = dnnl::memory::desc({numFCOut, numFilters_},
+                                  dnnl::memory::data_type::f32,
+                                  dnnl::memory::format_tag::ab);
+        w_mem = dnnl::memory(w_md, cpu_eng_, &weights.residual[block].se.w1[0]);
+        b_md = dnnl::memory::desc({numFCOut}, dnnl::memory::data_type::f32,
+                                  dnnl::memory::format_tag::a);
+        b_mem = dnnl::memory(b_md, cpu_eng_, &weights.residual[block].se.b1[0]);
+        auto w2_md = dnnl::memory::desc({numFilters_, numFCOut},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::ab);
+        auto w2a_mem =
+            dnnl::memory(w2_md, cpu_eng_, &weights.residual[block].se.w2[0]);
+        auto w2b_mem = dnnl::memory(
+            w2_md, cpu_eng_,
+            &weights.residual[block].se.w2[numFilters_ * numFCOut]);
+        auto b2_md =
+            dnnl::memory::desc({numFilters_}, dnnl::memory::data_type::f32,
+                               dnnl::memory::format_tag::a);
+        auto b2a_mem =
+            dnnl::memory(b2_md, cpu_eng_, &weights.residual[block].se.b2[0]);
+        auto b2b_mem = dnnl::memory(
+            b2_md, cpu_eng_, &weights.residual[block].se.b2[numFilters_]);
+        se->LoadWeights(w_mem, b_mem, w2a_mem, b2a_mem, w2b_mem, b2b_mem, eng_,
+                        eng_stream_);
         network_.emplace_back(std::move(se));
       }
     }
@@ -243,27 +283,54 @@ class DnnlNetwork : public Network {
     if (conv_policy_) {
       auto conv1 = std::make_unique<ConvLayer>(resi_last_, numFilters_, 8, 8, 3,
                                                numFilters_, true);
-      conv1->LoadWeights(&weights.policy1.weights[0],
-                         &weights.policy1.biases[0], eng_, eng_stream_);
+      auto w_md = dnnl::memory::desc({numFilters_, numFilters_, 3, 3},
+                                     dnnl::memory::data_type::f32,
+                                     dnnl::memory::format_tag::oihw);
+      auto w_mem = dnnl::memory(w_md, cpu_eng_, &weights.policy1.weights[0]);
+      auto b_md =
+          dnnl::memory::desc({numFilters_}, dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::a);
+      auto b_mem = dnnl::memory(b_md, cpu_eng_, &weights.policy1.biases[0]);
+      conv1->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(conv1));
 
       // No relu
       auto conv2 = std::make_unique<ConvLayer>(getLastLayer(), pol_channels_, 8,
                                                8, 3, numFilters_, false);
-      conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
-                         eng_, eng_stream_);
+      w_md = dnnl::memory::desc({pol_channels_, numFilters_, 3, 3},
+                                dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::oihw);
+      w_mem = dnnl::memory(w_md, cpu_eng_, &weights.policy.weights[0]);
+      b_md = dnnl::memory::desc({pol_channels_}, dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::a);
+      b_mem = dnnl::memory(b_md, cpu_eng_, &weights.policy.biases[0]);
+      conv2->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(conv2));
     } else {
       auto convPol = std::make_unique<ConvLayer>(resi_last_, pol_channels_, 8,
                                                  8, 1, numFilters_, true);
-      convPol->LoadWeights(&weights.policy.weights[0],
-                           &weights.policy.biases[0], eng_, eng_stream_);
+      auto w_md = dnnl::memory::desc({pol_channels_, numFilters_, 1, 1},
+                                     dnnl::memory::data_type::f32,
+                                     dnnl::memory::format_tag::oihw);
+      auto w_mem = dnnl::memory(w_md, cpu_eng_, &weights.policy.weights[0]);
+      auto b_md =
+          dnnl::memory::desc({pol_channels_}, dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::a);
+      auto b_mem = dnnl::memory(b_md, cpu_eng_, &weights.policy.biases[0]);
+      convPol->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(convPol));
 
       auto FCPol = std::make_unique<FCLayer>(getLastLayer(), kNumOutputPolicy,
                                              1, 1, false);
-      FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0], eng_,
-                         eng_stream_);
+      w_md = dnnl::memory::desc({kNumOutputPolicy, pol_channels_, 8, 8},
+                                dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::abcd);
+      w_mem = dnnl::memory(w_md, cpu_eng_, &weights.ip_pol_w[0]);
+      b_md =
+          dnnl::memory::desc({kNumOutputPolicy}, dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::a);
+      b_mem = dnnl::memory(b_md, cpu_eng_, &weights.ip_pol_b[0]);
+      FCPol->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(FCPol));
     }
     policy_out_ = getLastLayer();
@@ -275,14 +342,27 @@ class DnnlNetwork : public Network {
 
       auto convVal = std::make_unique<ConvLayer>(
           resi_last_, value_input_planes_, 8, 8, 1, numFilters_, true);
-      convVal->LoadWeights(&weights.value.weights[0], &weights.value.biases[0],
-                           eng_, eng_stream_);
+      auto w_md = dnnl::memory::desc({value_input_planes_, numFilters_, 1, 1},
+                                     dnnl::memory::data_type::f32,
+                                     dnnl::memory::format_tag::oihw);
+      auto w_mem = dnnl::memory(w_md, cpu_eng_, &weights.value.weights[0]);
+      auto b_md = dnnl::memory::desc({value_input_planes_},
+                                     dnnl::memory::data_type::f32,
+                                     dnnl::memory::format_tag::a);
+      auto b_mem = dnnl::memory(b_md, cpu_eng_, &weights.value.biases[0]);
+      convVal->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(convVal));
 
       auto FCVal1 = std::make_unique<FCLayer>(getLastLayer(), value_channels_,
                                               1, 1, true);
-      FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0], eng_,
-                          eng_stream_);
+      w_md = dnnl::memory::desc({value_channels_, value_input_planes_, 8, 8},
+                                dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::abcd);
+      w_mem = dnnl::memory(w_md, cpu_eng_, &weights.ip1_val_w[0]);
+      b_md = dnnl::memory::desc({value_channels_}, dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::a);
+      b_mem = dnnl::memory(b_md, cpu_eng_, &weights.ip1_val_b[0]);
+      FCVal1->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(FCVal1));
 
       wdl_ = file.format().network_format().value() ==
@@ -291,8 +371,14 @@ class DnnlNetwork : public Network {
 
       auto FCVal2 = std::make_unique<FCLayer>(getLastLayer(), wdl_ ? 3 : 1, 1,
                                               1, false, fc2_tanh);
-      FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0], eng_,
-                          eng_stream_);
+      w_md = dnnl::memory::desc({wdl_ ? 3 : 1, value_channels_, 1, 1},
+                                dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::abcd);
+      w_mem = dnnl::memory(w_md, cpu_eng_, &weights.ip2_val_w[0]);
+      b_md = dnnl::memory::desc({wdl_ ? 3 : 1}, dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::a);
+      b_mem = dnnl::memory(b_md, cpu_eng_, &weights.ip2_val_b[0]);
+      FCVal2->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(FCVal2));
     }
     value_out_ = getLastLayer();
@@ -307,19 +393,39 @@ class DnnlNetwork : public Network {
 
       auto convMov = std::make_unique<ConvLayer>(
           resi_last_, moves_input_planes_, 8, 8, 1, numFilters_, true);
-      convMov->LoadWeights(&weights.moves_left.weights[0],
-                           &weights.moves_left.biases[0], eng_, eng_stream_);
+      auto w_md = dnnl::memory::desc({moves_input_planes_, numFilters_, 1, 1},
+                                     dnnl::memory::data_type::f32,
+                                     dnnl::memory::format_tag::oihw);
+      auto w_mem = dnnl::memory(w_md, cpu_eng_, &weights.moves_left.weights[0]);
+
+      auto b_md = dnnl::memory::desc({moves_input_planes_},
+                                     dnnl::memory::data_type::f32,
+                                     dnnl::memory::format_tag::a);
+      auto b_mem = dnnl::memory(b_md, cpu_eng_, &weights.moves_left.biases[0]);
+      convMov->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(convMov));
 
       auto FCMov1 = std::make_unique<FCLayer>(getLastLayer(), moves_channels_,
                                               1, 1, true);
-      FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0], eng_,
-                          eng_stream_);
+      w_md = dnnl::memory::desc({moves_channels_, moves_input_planes_, 8, 8},
+                                dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::abcd);
+      w_mem = dnnl::memory(w_md, cpu_eng_, &weights.ip1_mov_w[0]);
+      b_md = dnnl::memory::desc({moves_channels_}, dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::a);
+      b_mem = dnnl::memory(b_md, cpu_eng_, &weights.ip1_mov_b[0]);
+      FCMov1->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(FCMov1));
 
       auto FCMov2 = std::make_unique<FCLayer>(getLastLayer(), 1, 1, 1, true);
-      FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0], eng_,
-                          eng_stream_);
+      w_md = dnnl::memory::desc({1, moves_channels_, 1, 1},
+                                dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::abcd);
+      w_mem = dnnl::memory(w_md, cpu_eng_, &weights.ip2_mov_w[0]);
+      b_md = dnnl::memory::desc({1}, dnnl::memory::data_type::f32,
+                                dnnl::memory::format_tag::a);
+      b_mem = dnnl::memory(b_md, cpu_eng_, &weights.ip2_mov_b[0]);
+      FCMov2->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(FCMov2));
     }
     moves_left_out_ = getLastLayer();
@@ -340,13 +446,6 @@ class DnnlNetwork : public Network {
     uint64_t* ipDataMasks = io->input_masks_mem_;
     float* ipDataValues = io->input_val_mem_;
 
-    dnnl::engine cpu_eng;
-    if (eng_.get_kind() == dnnl::engine::kind::cpu) {
-      cpu_eng = eng_;
-    } else {
-      cpu_eng = dnnl::engine(dnnl::engine::kind::cpu, 0);
-    }
-
     int batchSize = batch_size_;
     if (batchSize <= 0) {
       // Use just one batch of variable size.
@@ -363,7 +462,7 @@ class DnnlNetwork : public Network {
       auto input_desc = dnnl::memory::desc({batchSize, kInputPlanes, 8, 8},
                                            dnnl::memory::data_type::f32,
                                            dnnl::memory::format_tag::nchw);
-      dnnl::memory input_mem = dnnl::memory(input_desc, cpu_eng);
+      dnnl::memory input_mem = dnnl::memory(input_desc, cpu_eng_);
 
       float* buffer = (float*)input_mem.get_data_handle();
       for (int j = 0; j < currentBatchSize * kInputPlanes; j++) {
@@ -483,7 +582,7 @@ class DnnlNetwork : public Network {
       // Convert output data to nchw and if on gpu move them to the cpu.
       if (opPol_desc != opPol_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
-        auto tmp = dnnl::memory(opPol_desc, cpu_eng);
+        auto tmp = dnnl::memory(opPol_desc, cpu_eng_);
         if (batchSize != last_batch_) {
           pol_reorder_ = dnnl::reorder(opPol_mem, tmp);
         }
@@ -493,7 +592,7 @@ class DnnlNetwork : public Network {
 
       if (opVal_desc != opVal_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
-        auto tmp = dnnl::memory(opVal_desc, cpu_eng);
+        auto tmp = dnnl::memory(opVal_desc, cpu_eng_);
         if (batchSize != last_batch_) {
           val_reorder_ = dnnl::reorder(opVal_mem, tmp);
         }
@@ -503,7 +602,7 @@ class DnnlNetwork : public Network {
 
       if (moves_left_ && (opMov_desc != opMov_mem.get_desc() ||
                           eng_.get_kind() != dnnl::engine::kind::cpu)) {
-        auto tmp = dnnl::memory(opMov_desc, cpu_eng);
+        auto tmp = dnnl::memory(opMov_desc, cpu_eng_);
         if (batchSize != last_batch_) {
           mov_reorder_ = dnnl::reorder(opMov_mem, tmp);
         }
@@ -586,6 +685,7 @@ class DnnlNetwork : public Network {
 
  private:
   const NetworkCapabilities capabilities_;
+  dnnl::engine cpu_eng_;
   dnnl::engine eng_;
   dnnl::stream eng_stream_;
   int max_batch_size_;
