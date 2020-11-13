@@ -39,6 +39,8 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
+#include <omp.h>
+
 namespace lczero {
 using namespace dnnl_backend;
 
@@ -164,6 +166,10 @@ class DnnlNetwork : public Network {
     dnnl::set_primitive_cache_capacity(
         options.GetOrDefault<int>("jit_cache", 1024));
 #endif
+
+    if (!options.IsDefault<int>("threads")) {
+      omp_set_num_threads(options.Get<int>("threads"));
+    }
 
     cpu_eng_ = dnnl::engine(dnnl::engine::kind::cpu, 0);
 
