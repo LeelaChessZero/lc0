@@ -262,23 +262,17 @@ class DnnlNetwork : public Network {
         b_md = dnnl::memory::desc({numFCOut}, dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::a);
         b_mem = dnnl::memory(b_md, cpu_eng_, &weights.residual[block].se.b1[0]);
-        auto w2_md = dnnl::memory::desc({numFilters_, numFCOut},
+        auto w2_md = dnnl::memory::desc({2*numFilters_, numFCOut},
                                         dnnl::memory::data_type::f32,
                                         dnnl::memory::format_tag::ab);
-        auto w2a_mem =
+        auto w2_mem =
             dnnl::memory(w2_md, cpu_eng_, &weights.residual[block].se.w2[0]);
-        auto w2b_mem = dnnl::memory(
-            w2_md, cpu_eng_,
-            &weights.residual[block].se.w2[numFilters_ * numFCOut]);
         auto b2_md =
-            dnnl::memory::desc({numFilters_}, dnnl::memory::data_type::f32,
+            dnnl::memory::desc({2*numFilters_}, dnnl::memory::data_type::f32,
                                dnnl::memory::format_tag::a);
-        auto b2a_mem =
+        auto b2_mem =
             dnnl::memory(b2_md, cpu_eng_, &weights.residual[block].se.b2[0]);
-        auto b2b_mem = dnnl::memory(
-            b2_md, cpu_eng_, &weights.residual[block].se.b2[numFilters_]);
-        se->LoadWeights(w_mem, b_mem, w2a_mem, b2a_mem, w2b_mem, b2b_mem, eng_,
-                        eng_stream_);
+        se->LoadWeights(w_mem, b_mem, w2_mem, b2_mem, eng_, eng_stream_);
         network_.emplace_back(std::move(se));
       }
     }

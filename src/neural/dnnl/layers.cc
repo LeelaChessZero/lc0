@@ -149,9 +149,8 @@ SELayer::SELayer(BaseLayer* ip, int fc1Outputs)
     : BaseLayer(ip->GetC(), ip->GetH(), ip->GetW(), ip),
       numFc1Out_(fc1Outputs) {}
 
-void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2a,
-                          dnnl::memory& b2a, dnnl::memory& w2b,
-                          dnnl::memory& b2b, dnnl::engine& eng,
+void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
+                          dnnl::memory& b2, dnnl::engine& eng,
                           dnnl::stream& stream) {
   auto filter_md = dnnl::memory::desc({numFc1Out_, C}, data_type_,
                                       dnnl::memory::format_tag::ab);
@@ -163,23 +162,17 @@ void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2a,
   bias_mem = dnnl::memory(bias_md, eng);
   dnnl::reorder(b1, bias_mem).execute(stream, b1, bias_mem);
 
-  auto filter2_md = dnnl::memory::desc({C, numFc1Out_}, data_type_,
+  auto filter2_md = dnnl::memory::desc({2 * C, numFc1Out_}, data_type_,
                                        dnnl::memory::format_tag::ab);
 
-  filter2a_mem = dnnl::memory(filter2_md, eng);
-  dnnl::reorder(w2a, filter2a_mem).execute(stream, w2a, filter2a_mem);
-
-  filter2b_mem = dnnl::memory(filter2_md, eng);
-  dnnl::reorder(w2b, filter2b_mem).execute(stream, w2b, filter2b_mem);
+  filter2_mem = dnnl::memory(filter2_md, eng);
+  dnnl::reorder(w2, filter2_mem).execute(stream, w2, filter2_mem);
 
   auto bias2_md =
-      dnnl::memory::desc({C}, data_type_, dnnl::memory::format_tag::a);
+      dnnl::memory::desc({2 * C}, data_type_, dnnl::memory::format_tag::a);
 
-  bias2a_mem = dnnl::memory(bias2_md, eng);
-  dnnl::reorder(b2a, bias2a_mem).execute(stream, b2a, bias2a_mem);
-
-  bias2b_mem = dnnl::memory(bias2_md, eng);
-  dnnl::reorder(b2b, bias2b_mem).execute(stream, b2b, bias2b_mem);
+  bias2_mem = dnnl::memory(bias2_md, eng);
+  dnnl::reorder(b2, bias2_mem).execute(stream, b2, bias2_mem);
 }
 
 void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
@@ -199,7 +192,10 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     auto t_filter_md = dnnl::memory::desc({numFc1Out_, C}, data_type_,
                                           dnnl::memory::format_tag::any);
 
-    auto t_filter2_md = dnnl::memory::desc({C, numFc1Out_}, data_type_,
+    auto t_filter2_md = dnnl::memory::desc({2 * C, numFc1Out_}, data_type_,
+                                           dnnl::memory::format_tag::any);
+
+    auto t_fc2_out_md = dnnl::memory::desc({N, 2 * C}, data_type_,
                                            dnnl::memory::format_tag::any);
 
     auto pooling_d = dnnl::pooling_forward::desc(
@@ -237,43 +233,32 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       filter_mem = tmp;
     }
 
-    auto fc2a_d = dnnl::inner_product_forward::desc(
+    auto fc2_d = dnnl::inner_product_forward::desc(
         dnnl::prop_kind::forward_inference, fc1_out_md, t_filter2_md,
-        bias2a_mem.get_desc(), t_fc1_in_md);
-    dnnl::post_ops fc2a_ops;
-    fc2a_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_logistic, 0.0f,
-                            0.0f);
-    dnnl::primitive_attr fc2a_attr;
-    fc2a_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    fc2a_attr.set_post_ops(fc2a_ops);
-    auto fc2a_pd =
-        dnnl::inner_product_forward::primitive_desc(fc2a_d, fc2a_attr, eng);
-    fc2a_scratchpad_mem = dnnl::memory(fc2a_pd.scratchpad_desc(), eng);
-    fc2a_ = dnnl::inner_product_forward(fc2a_pd);
+        bias2_mem.get_desc(), t_fc2_out_md);
+    dnnl::primitive_attr fc2_attr;
+    fc2_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    auto fc2_pd =
+        dnnl::inner_product_forward::primitive_desc(fc2_d, fc2_attr, eng);
+    fc2_scratchpad_mem = dnnl::memory(fc2_pd.scratchpad_desc(), eng);
+    fc2_ = dnnl::inner_product_forward(fc2_pd);
 
-    fc2a_out_md = fc2a_pd.dst_desc().reshape({N, C, 1, 1});
-    if (fc2a_pd.weights_desc() != filter2a_mem.get_desc()) {
-      auto tmp = dnnl::memory(fc2a_pd.weights_desc(), eng);
-      dnnl::reorder(filter2a_mem, tmp).execute(stream, filter2a_mem, tmp);
-      filter2a_mem = tmp;
+    if (fc2_pd.weights_desc() != filter2_mem.get_desc()) {
+      auto tmp = dnnl::memory(fc2_pd.weights_desc(), eng);
+      dnnl::reorder(filter2_mem, tmp).execute(stream, filter2_mem, tmp);
+      filter2_mem = tmp;
     }
 
-    auto fc2b_d = dnnl::inner_product_forward::desc(
-        dnnl::prop_kind::forward_inference, fc1_out_md, t_filter2_md,
-        bias2b_mem.get_desc(), t_fc1_in_md);
-    dnnl::primitive_attr fc2b_attr;
-    fc2b_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    auto fc2b_pd =
-        dnnl::inner_product_forward::primitive_desc(fc2b_d, fc2b_attr, eng);
-    fc2b_scratchpad_mem = dnnl::memory(fc2b_pd.scratchpad_desc(), eng);
-    fc2b_ = dnnl::inner_product_forward(fc2b_pd);
+    fc2_out_md = fc2_pd.dst_desc();
 
-    fc2b_out_md = fc2b_pd.dst_desc().reshape({N, C, 1, 1});
-    if (fc2b_pd.weights_desc() != filter2b_mem.get_desc()) {
-      auto tmp = dnnl::memory(fc2b_pd.weights_desc(), eng);
-      dnnl::reorder(filter2b_mem, tmp).execute(stream, filter2b_mem, tmp);
-      filter2b_mem = tmp;
-    }
+    auto sigmoid_d = dnnl::eltwise_forward::desc(
+        dnnl::prop_kind::forward_inference, dnnl::algorithm::eltwise_logistic,
+        pool_out_md, 0.f, 0.f);
+    dnnl::primitive_attr sigmoid_attr;
+    sigmoid_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    auto sigmoid_pd = dnnl::eltwise_forward::primitive_desc(sigmoid_d, eng);
+    sigmoid_scratchpad_mem = dnnl::memory(sigmoid_pd.scratchpad_desc(), eng);
+    sigmoid_ = dnnl::eltwise_forward(sigmoid_pd);
 
     auto mul_d =
         dnnl::binary::desc(dnnl::algorithm::binary_mul, input.get_desc(),
@@ -303,12 +288,14 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
         dnnl::reorder::primitive_desc(eng, pool_out_md, eng, fc1_in_md);
     fc1_reorder_ = dnnl::reorder(fc1_reorder_pd);
 
-    auto mul_reorder_pd =
-        dnnl::reorder::primitive_desc(eng, fc2a_out_md, eng, pool_out_md);
+    auto mul_reorder_pd = dnnl::reorder::primitive_desc(
+        eng, fc2_out_md.submemory_desc({N, C}, {0, 0}).reshape({N, C, 1, 1}),
+        eng, pool_out_md);
     mul_reorder_ = dnnl::reorder(mul_reorder_pd);
 
-    auto add_reorder_pd =
-        dnnl::reorder::primitive_desc(eng, fc2b_out_md, eng, pool_out_md);
+    auto add_reorder_pd = dnnl::reorder::primitive_desc(
+        eng, fc2_out_md.submemory_desc({N, C}, {0, C}).reshape({N, C, 1, 1}),
+        eng, pool_out_md);
     add_reorder_ = dnnl::reorder(add_reorder_pd);
 
     last_batch_ = N;
@@ -316,8 +303,7 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
 
   auto pool_out_mem = dnnl::memory(pool_out_md, eng);
   auto fc1_out_mem = dnnl::memory(fc1_out_md, eng);
-  auto fc2a_out_mem = dnnl::memory(fc2a_out_md, eng);
-  auto fc2b_out_mem = dnnl::memory(fc2b_out_md, eng);
+  auto fc2_out_mem = dnnl::memory(fc2_out_md, eng);
 
   pooling_.execute(stream, {{DNNL_ARG_SRC, input},
                             {DNNL_ARG_DST, pool_out_mem},
@@ -337,25 +323,19 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                        {DNNL_ARG_DST, fc1_out_mem},
                        {DNNL_ARG_SCRATCHPAD, fc_scratchpad_mem}});
 
-  fc2a_.execute(stream, {{DNNL_ARG_SRC, fc1_out_mem},
-                         {DNNL_ARG_WEIGHTS, filter2a_mem},
-                         {DNNL_ARG_BIAS, bias2a_mem},
-                         {DNNL_ARG_DST, fc2a_out_mem},
-                         {DNNL_ARG_SCRATCHPAD, fc2a_scratchpad_mem}});
-
-  fc2b_.execute(stream, {{DNNL_ARG_SRC, fc1_out_mem},
-                         {DNNL_ARG_WEIGHTS, filter2b_mem},
-                         {DNNL_ARG_BIAS, bias2b_mem},
-                         {DNNL_ARG_DST, fc2b_out_mem},
-                         {DNNL_ARG_SCRATCHPAD, fc2b_scratchpad_mem}});
+  fc2_.execute(stream, {{DNNL_ARG_SRC, fc1_out_mem},
+                        {DNNL_ARG_WEIGHTS, filter2_mem},
+                        {DNNL_ARG_BIAS, bias2_mem},
+                        {DNNL_ARG_DST, fc2_out_mem},
+                        {DNNL_ARG_SCRATCHPAD, fc2_scratchpad_mem}});
 
   dnnl::memory mul_in_mem;
-  if (pool_out_md != fc2a_out_md) {
-    mul_in_mem = dnnl::memory(pool_out_md, eng);
-    mul_reorder_.execute(stream, fc2a_out_mem, mul_in_mem);
-  } else {
-    mul_in_mem = fc2a_out_mem;
-  }
+  mul_in_mem = dnnl::memory(pool_out_md, eng);
+  mul_reorder_.execute(stream, fc2_out_mem, mul_in_mem);
+
+  sigmoid_.execute(stream, {{DNNL_ARG_SRC, mul_in_mem},
+                            {DNNL_ARG_DST, mul_in_mem},
+                            {DNNL_ARG_SCRATCHPAD, sigmoid_scratchpad_mem}});
 
   mul_.execute(stream, {{DNNL_ARG_SRC_0, input},
                         {DNNL_ARG_SRC_1, mul_in_mem},
@@ -363,12 +343,8 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                         {DNNL_ARG_SCRATCHPAD, mul_scratchpad_mem}});
 
   dnnl::memory add_in_mem;
-  if (pool_out_md != fc2b_out_md) {
-    add_in_mem = dnnl::memory(pool_out_md, eng);
-    add_reorder_.execute(stream, fc2b_out_mem, add_in_mem);
-  } else {
-    add_in_mem = fc2b_out_mem;
-  }
+  add_in_mem = dnnl::memory(pool_out_md, eng);
+  add_reorder_.execute(stream, fc2_out_mem, add_in_mem);
 
   add_.execute(stream, {{DNNL_ARG_SRC_0, output},
                         {DNNL_ARG_SRC_1, add_in_mem},
