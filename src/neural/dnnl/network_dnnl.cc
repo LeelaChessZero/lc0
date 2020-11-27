@@ -277,11 +277,11 @@ class DnnlNetwork : public Network {
       }
     }
 
-    resi_last_ = getLastLayer();
+    BaseLayer* resi_last = getLastLayer();
 
     // Policy head.
     if (conv_policy_) {
-      auto conv1 = std::make_unique<ConvLayer>(resi_last_, numFilters_, 8, 8, 3,
+      auto conv1 = std::make_unique<ConvLayer>(resi_last, numFilters_, 8, 8, 3,
                                                numFilters_, true);
       auto w_md = dnnl::memory::desc({numFilters_, numFilters_, 3, 3},
                                      dnnl::memory::data_type::f32,
@@ -307,7 +307,7 @@ class DnnlNetwork : public Network {
       conv2->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(conv2));
     } else {
-      auto convPol = std::make_unique<ConvLayer>(resi_last_, pol_channels_, 8,
+      auto convPol = std::make_unique<ConvLayer>(resi_last, pol_channels_, 8,
                                                  8, 1, numFilters_, true);
       auto w_md = dnnl::memory::desc({pol_channels_, numFilters_, 1, 1},
                                      dnnl::memory::data_type::f32,
@@ -333,7 +333,6 @@ class DnnlNetwork : public Network {
       FCPol->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(FCPol));
     }
-    policy_out_ = getLastLayer();
 
     // Value head.
     {
@@ -341,7 +340,7 @@ class DnnlNetwork : public Network {
       value_input_planes_ = weights.value.biases.size();
 
       auto convVal = std::make_unique<ConvLayer>(
-          resi_last_, value_input_planes_, 8, 8, 1, numFilters_, true);
+          resi_last, value_input_planes_, 8, 8, 1, numFilters_, true);
       auto w_md = dnnl::memory::desc({value_input_planes_, numFilters_, 1, 1},
                                      dnnl::memory::data_type::f32,
                                      dnnl::memory::format_tag::oihw);
@@ -381,7 +380,6 @@ class DnnlNetwork : public Network {
       FCVal2->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(FCVal2));
     }
-    value_out_ = getLastLayer();
 
     // Moves left head
     moves_left_ = (file.format().network_format().moves_left() ==
@@ -392,7 +390,7 @@ class DnnlNetwork : public Network {
       moves_input_planes_ = weights.moves_left.biases.size();
 
       auto convMov = std::make_unique<ConvLayer>(
-          resi_last_, moves_input_planes_, 8, 8, 1, numFilters_, true);
+          resi_last, moves_input_planes_, 8, 8, 1, numFilters_, true);
       auto w_md = dnnl::memory::desc({moves_input_planes_, numFilters_, 1, 1},
                                      dnnl::memory::data_type::f32,
                                      dnnl::memory::format_tag::oihw);
@@ -428,7 +426,6 @@ class DnnlNetwork : public Network {
       FCMov2->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
       network_.emplace_back(std::move(FCMov2));
     }
-    moves_left_out_ = getLastLayer();
 
     // Initialize layers if batch size fixed.
     if (options.GetOrDefault<bool>("init", true) && batch_size_ > 0) {
@@ -612,7 +609,7 @@ class DnnlNetwork : public Network {
       last_batch_ = batchSize;
       eng_stream_.wait();
 
-      // Copy memopy to output buffers and do final transformations.
+      // Copy memory to output buffers and do final transformations.
       if (wdl_) {
         // Value softmax done cpu side.
         float* opVal = (float*)opVal_mem.get_data_handle();
@@ -693,7 +690,7 @@ class DnnlNetwork : public Network {
   bool wdl_;
   bool moves_left_;
 
-  mutable std::mutex lock_;
+  std::mutex lock_;
 
   int numBlocks_;
   int numFilters_;
@@ -708,12 +705,7 @@ class DnnlNetwork : public Network {
   std::vector<std::unique_ptr<BaseLayer>> network_;
   BaseLayer* getLastLayer() { return network_.back().get(); }
 
-  BaseLayer* resi_last_;
-  BaseLayer* policy_out_;
-  BaseLayer* value_out_;
-  BaseLayer* moves_left_out_;
-
-  mutable std::mutex inputs_outputs_lock_;
+  std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
   // Cache previous reorder primitives for the same batch size.
