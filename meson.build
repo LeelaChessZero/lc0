@@ -487,7 +487,40 @@ if get_option('build_backends')
     subdir('src/neural/dx/shaders')
 
     has_backends = true
-  endif  
+  endif
+
+  build_simple = false
+  if get_option('simple')
+    if get_option('dnnl') and dnnl_lib.found()
+      add_project_arguments(['-DUSE_DNNL'], language : 'cpp')
+      includes += include_directories(get_option('dnnl_dir') + '/include')
+      deps += [ dnnl_lib, dependency('openmp', required:true) ]
+      build_simple = true
+    elif get_option('accelerate') and accelerate_lib.found()
+      deps += [ accelerate_lib ]
+      build_simple = true
+    elif get_option('openblas') and openblas_lib.found()
+      add_project_arguments(['-DUSE_OPENBLAS'], language : 'cpp')
+      build_simple = true
+    endif
+  endif
+
+  if build_simple
+    files += [
+      'src/neural/simple/network_simple.cc',
+      'src/neural/simple/layers.cc',
+    ]
+# Temporary files to be removed later.
+    files += [
+      'src/neural/simple/convolution1.cc',
+      'src/neural/simple/winograd_convolution3.cc',
+      'src/neural/simple/fully_connected_layer.cc',
+      'src/neural/simple/se_unit.cc',
+      'src/neural/simple/activation.cc',
+      'src/neural/simple/winograd_filter.cc',
+    ]
+    has_backends = true
+  endif
  
 
 endif # if get_option('build_backends')

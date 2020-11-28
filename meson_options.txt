@@ -83,6 +83,11 @@ option('dx',
        value: true,
        description: 'Enable DirectX12 backend')
 
+option('simple',
+       type: 'boolean',
+       value: false,
+       description: 'Enable simple backend')
+
 option('tensorflow',
        type: 'boolean',
        value: false,
