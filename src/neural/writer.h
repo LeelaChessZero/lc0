@@ -37,7 +37,7 @@ namespace lczero {
 
 #pragma pack(push, 1)
 
-struct V5TrainingData {
+struct V6TrainingData {
   uint32_t version;
   uint32_t input_format;
   float probabilities[1858];
@@ -54,7 +54,7 @@ struct V5TrainingData {
   // Side to move is in the top bit, transform in the lower bits.
   // In versions prior to v5 this spot contained an unused move count field.
   uint8_t invariance_info;
-  int8_t result;
+  uint8_t dummy;
   float root_q;
   float best_q;
   float root_d;
@@ -62,8 +62,12 @@ struct V5TrainingData {
   float root_m;      // In plies.
   float best_m;      // In plies.
   float plies_left;  // This is the training target for MLH.
+  float result_q;
+  float result_d;
+  float played_q;
+  float root_v;      // For value repair.
 } PACKED_STRUCT;
-static_assert(sizeof(V5TrainingData) == 8308, "Wrong struct size");
+static_assert(sizeof(V6TrainingData) == 8324, "Wrong struct size");
 
 #pragma pack(pop)
 
@@ -78,7 +82,7 @@ class TrainingDataWriter {
   }
 
   // Writes a chunk.
-  void WriteChunk(const V5TrainingData& data);
+  void WriteChunk(const V6TrainingData& data);
 
   // Flushes file and closes it.
   void Finalize();

@@ -470,15 +470,15 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   }
 }
 
-V5TrainingData Node::GetV5TrainingData(
+V6TrainingData Node::GetV6TrainingData(
     GameResult game_result, const PositionHistory& history,
     FillEmptyHistory fill_empty_history,
     pblczero::NetworkFormat::InputFormat input_format, float best_q,
-    float best_d, float best_m) const {
-  V5TrainingData result;
+    float best_d, float best_m, float played_q, float root_v) const {
+  V6TrainingData result;
 
   // Set version.
-  result.version = 5;
+  result.version = 6;
   result.input_format = input_format;
 
   // Populate planes.
@@ -544,16 +544,22 @@ V5TrainingData Node::GetV5TrainingData(
 
   // Game result.
   if (game_result == GameResult::WHITE_WON) {
-    result.result = position.IsBlackToMove() ? -1 : 1;
+    result.result_q = position.IsBlackToMove() ? -1 : 1;
+    result.result_d = 0;
   } else if (game_result == GameResult::BLACK_WON) {
-    result.result = position.IsBlackToMove() ? 1 : -1;
+    result.result_q = position.IsBlackToMove() ? 1 : -1;
+    result.result_d = 0;
   } else {
-    result.result = 0;
+    result.result_q = 0;
+    result.result_d = 1;
   }
+
+  result.root_v = root_v;
 
   // Aggregate evaluation WL.
   result.root_q = -GetWL();
   result.best_q = best_q;
+  result.played_q = played_q;
 
   // Draw probability of WDL head.
   result.root_d = GetD();

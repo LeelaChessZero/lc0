@@ -97,6 +97,9 @@ class Search {
   // from temperature having been applied again.
   void ResetBestMove();
 
+  // Returns NN eval for a given node from cache, if that node is cached.
+  NNCacheLock GetCachedNNEval(const Node* node) const;
+
  private:
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
@@ -130,9 +133,6 @@ class Search {
   // Returns verbose information about given node, as vector of strings.
   // Node can only be root or ponder (depth 1).
   std::vector<std::string> GetVerboseStats(Node* node) const;
-
-  // Returns NN eval for a given node from cache, if that node is cached.
-  NNCacheLock GetCachedNNEval(const Node* node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
