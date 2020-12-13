@@ -65,9 +65,14 @@ struct V6TrainingData {
   float result_q;
   float result_d;
   float played_q;
-  float root_v;      // For value repair. May be NaN if not found in cache.
+  float played_d;
+  float played_m;
+  // The folowing may be NaN if not found in cache.
+  float orig_q;      // For value repair.
+  float orig_d;
+  float orig_m;
 } PACKED_STRUCT;
-static_assert(sizeof(V6TrainingData) == 8324, "Wrong struct size");
+static_assert(sizeof(V6TrainingData) == 8340, "Wrong struct size");
 
 #pragma pack(pop)
 

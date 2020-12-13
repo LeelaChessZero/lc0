@@ -473,8 +473,8 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
 V6TrainingData Node::GetV6TrainingData(
     GameResult game_result, const PositionHistory& history,
     FillEmptyHistory fill_empty_history,
-    pblczero::NetworkFormat::InputFormat input_format, float best_q,
-    float best_d, float best_m, float played_q, float root_v) const {
+    pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
+    Eval played_eval, Eval orig_eval) const {
   V6TrainingData result;
 
   // Set version.
@@ -554,23 +554,25 @@ V6TrainingData Node::GetV6TrainingData(
     result.result_d = 1;
   }
 
-  result.root_v = root_v;
-
   // Aggregate evaluation WL.
   result.root_q = -GetWL();
-  result.best_q = best_q;
-  result.played_q = played_q;
+  result.best_q = best_eval.wl;
+  result.played_q = played_eval.wl;
+  result.orig_q = orig_eval.wl;
 
   // Draw probability of WDL head.
   result.root_d = GetD();
-  result.best_d = best_d;
+  result.best_d = best_eval.d;
+  result.played_d = played_eval.d;
+  result.orig_d = orig_eval.d;
 
   result.root_m = GetM();
-  result.best_m = best_m;
+  result.best_m = best_eval.ml;
+  result.played_m = played_eval.ml;
+  result.orig_m = orig_eval.ml;
 
   // Unknown here - will be filled in once the full data has been collected.
   result.plies_left = 0;
-
   return result;
 }
 

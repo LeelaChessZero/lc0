@@ -193,19 +193,22 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
     }
 
-    float played_wl = best_eval.wl;
+    Node::Eval played_eval = best_eval;
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
-      for (auto edge : tree_[idx]->GetCurrentHead()->Edges()) {
+      auto node = tree_[idx]->GetCurrentHead();
+      for (auto edge : node->Edges()) {
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
         }
         if (edge.GetMove(tree_[idx]->IsBlackToMove()) == move) {
           cur_n = edge.GetN();
-          played_wl = edge.GetWL(-tree_[idx]->GetCurrentHead()->GetWL());
+          played_eval.wl = edge.GetWL(-node->GetWL());
+          played_eval.d = edge.GetD(node->GetD());
+          played_eval.ml = edge.GetM(node->GetM());
         }
       }
       // If 'best move' is less than allowed visits and not max visits,
@@ -232,23 +235,24 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     if (training) {
       // Append training data. The GameResult is later overwritten.
-      const auto best_wl = best_eval.wl;
-      const auto best_d = best_eval.d;
-      const auto best_m = best_eval.ml;
       const auto input_format =
           options_[idx].network->GetCapabilities().input_format;
-      float root_v;
+      Node::Eval orig_eval;
       NNCacheLock nneval =
           search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
       if (nneval) {
-        root_v = nneval->q;
+        orig_eval.wl = nneval->q;
+        orig_eval.d = nneval->d;
+        orig_eval.ml = nneval->m;
       } else {
-        root_v = std::numeric_limits<float>::quiet_NaN();
+        orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
+        orig_eval.d = std::numeric_limits<float>::quiet_NaN();
+        orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
       }
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(), input_format, best_wl, best_d,
-          best_m, played_wl, root_v));
+          search_->GetParams().GetHistoryFill(), input_format, best_eval,
+          played_eval, orig_eval));
     }
 
     // Add best move to the tree.
