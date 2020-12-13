@@ -205,7 +205,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         }
         if (edge.GetMove(tree_[idx]->IsBlackToMove()) == move) {
           cur_n = edge.GetN();
-          played_wl = edge.GetWL(best_eval.wl);
+          played_wl = edge.GetWL(-tree_[idx]->GetCurrentHead()->GetWL());
         }
       }
       // If 'best move' is less than allowed visits and not max visits,
