@@ -52,7 +52,7 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
                             const PositionHistory& history, bool fast_play,
-                            std::atomic<int>* tb_hits) {
+                            std::atomic<int>* tb_hits, bool* dtz_success) {
   // Search moves overrides tablebase.
   if (!searchmoves.empty()) return searchmoves;
   const auto& board = history.Last().GetBoard();
@@ -63,8 +63,10 @@ MoveList MakeRootMoveFilter(const MoveList& searchmoves,
   }
   if (syzygy_tb->root_probe(
           history.Last(), fast_play || history.DidRepeatSinceLastZeroingMove(),
-          &root_moves) ||
-      syzygy_tb->root_probe_wdl(history.Last(), &root_moves)) {
+          &root_moves)) {
+    *dtz_success = true;
+    tb_hits->fetch_add(1, std::memory_order_acq_rel);
+  } else if (syzygy_tb->root_probe_wdl(history.Last(), &root_moves)) {
     tb_hits->fetch_add(1, std::memory_order_acq_rel);
   }
   return root_moves;
@@ -155,9 +157,9 @@ Search::Search(const NodeTree& tree, Network* network,
       searchmoves_(searchmoves),
       start_time_(start_time),
       initial_visits_(root_node_->GetN()),
-      root_move_filter_(
-          MakeRootMoveFilter(searchmoves_, syzygy_tb_, played_history_,
-                             params_.GetSyzygyFastPlay(), &tb_hits_)),
+      root_move_filter_(MakeRootMoveFilter(
+          searchmoves_, syzygy_tb_, played_history_,
+          params_.GetSyzygyFastPlay(), &tb_hits_, &dtz_position_)),
       uci_responder_(std::move(uci_responder)) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
@@ -1348,7 +1350,10 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
-    if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+    // Disable TB position lookup if playing from dtz as it just reduces
+    // liklihood of good play.
+    if (search_->syzygy_tb_ && !search_->dtz_position_ &&
+        board.castlings().no_legal_castle() &&
         history_.Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
