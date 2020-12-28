@@ -39,6 +39,7 @@
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "proto/net.pb.h"
+#include "utils/fastmath.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -95,6 +96,12 @@ class Edge {
   float GetP() const;
   void SetP(float val);
 
+  /* float GetRBetamcts() const { return r_betamcts_; } */
+  /* betamcts::relevance should be edge property.
+  Moved to Node for memory reasons. Revert if transpositions are included */
+  /* void SetRbetamcts(float val) {
+    r_betamcts_ = std::max(0.0f,val);
+  } */
   // Debug information about the edge.
   std::string DebugString() const;
 
@@ -107,6 +114,10 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
+
+  // float r_betamcts_ = 1.0f;
+  /* Moved to Node for memory reasons. */
+
   friend class Node;
 };
 
@@ -151,17 +162,40 @@ class Node {
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
   uint32_t GetN() const { return n_; }
+  float GetNBetamcts() const { return n_betamcts_; } /* betamcts::return effective N */
   uint32_t GetNInFlight() const { return n_in_flight_; }
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
-  float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
+  float GetNStartedBetamcts() const { return n_betamcts_ + n_in_flight_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetWL() const { return wl_; }
+  float GetQ(float draw_score, bool betamcts_q = false)
+    const { return (betamcts_q ? q_betamcts_ : wl_) + draw_score * d_; }
+  float GetQBetamcts() const { return q_betamcts_; } /* betamcts::return q_betamcts */
+  float GetWL(bool betamcts_q = false) const { return betamcts_q ? q_betamcts_ : wl_; }
   float GetD() const { return d_; }
   float GetM() const { return m_; }
 
+  // betamcts::update relevances of children
+  void CalculateRelevanceBetamcts(const float trust, const float prior);
+
+  // betamcts::recalculation of eval
+  void RecalculateScoreBetamcts();
+
+  // recalculate evaluation until it is stable
+  void StabilizeScoreBetamcts(const float trust, const float prior,
+  const int max_steps = 10, const float threshold = 0.001);
+
+  // Calculate LCB value for move ordering.
+  float GetLCBBetamcts(float trust, float prior, float percentile);
+
+  float GetRBetamcts() const { return r_betamcts_; }
+  /* betamcts::relevance should be edge property.
+  Moved to Node for memory reasons. Revert if transpositions are included */
+  void SetRBetamcts(float val) {
+    r_betamcts_ = std::max(0.0f,val);
+  }
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
@@ -172,7 +206,7 @@ class Node {
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
-                    Terminal type = Terminal::EndOfGame);
+    Terminal type = Terminal::EndOfGame, const bool inflate_terminals = true);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
   void SetBounds(GameResult lower, GameResult upper);
@@ -189,7 +223,9 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
+  void FinalizeScoreUpdate(float v, float d, float m, int multivisit,
+              float multivisit_eff,
+              const bool inflate_terminals, const bool full_betamcts_update);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
   // Revert visits to a node which ended in a now reverted terminal.
@@ -307,6 +343,16 @@ class Node {
   Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
+  // Average value (from value head of neural network) of all visited nodes in
+  // subtree. For terminal nodes, eval is stored. This is from the perspective
+  // of the player who "just" moved to reach this position, rather than from the
+  // perspective of the player-to-move for the position.
+
+  // betamcts needs own Q and N
+  float q_betamcts_ = 0.0f;
+  float n_betamcts_ = 0.0f;
+  float r_betamcts_ = 1.0f; /* Moved from Edge for memory reasons */
+
   // Averaged draw probability. Works similarly to WL, except that D is not
   // flipped depending on the side to move.
   float d_ = 0.0f;
@@ -358,9 +404,10 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 72, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+//static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+static_assert(sizeof(Node) == 88, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -382,11 +429,15 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score) : default_q;
+  float GetQ(float default_q, float draw_score, bool betamcts_q = false) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score, betamcts_q)
+                                        : default_q;
   }
-  float GetWL(float default_wl) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
+  float GetWL(float default_wl, bool betamcts_q = false) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetWL(betamcts_q) : default_wl;
+  }
+  float GetQBetamcts(float default_q) const {
+    return (node_ && node_->GetN() > 0) ? node_->GetQBetamcts() : default_q;
   }
   float GetD(float default_d) const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : default_d;
@@ -396,7 +447,9 @@ class EdgeAndNode {
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
+  float GetNBetamcts() const { return node_ ? node_->GetNBetamcts() : 0; }
   int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
+  float GetNStartedBetamcts() const { return node_ ? node_->GetNStartedBetamcts() : 0; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
 
   // Whether the node is known to be terminal.
@@ -409,25 +462,43 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
+  float GetPApril(float april_factor, float april_factor_parent) const {
+    auto visits = GetN();
+    auto visits_parent = node_ ? node_->GetParent()->GetN() : 0;
+    auto psa = GetP();
+    return ( ( april_factor > 0.0 ) || ( april_factor_parent > 0.0 ) )
+      ? ( psa > 0.0f
+        ? 1.0f / ( 1.0f + (1.0f / psa - 1.0f) *
+            FastInvSqrt( 1.0f + april_factor * visits +
+                          april_factor_parent * visits_parent )
+          )
+        : 0.0f )
+      : psa ; }
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
+  float GetRBetamcts() const { return node_ ? node_->GetRBetamcts() : 0; }
+  void SetRBetamcts(float value) const { if (node_) { node_->SetRBetamcts(value); } }
+
+  float GetLCBBetamcts(float trust, float prior, float percentile) const {
+    return (node_ && node_->GetN() > 0) ?
+            node_->GetLCBBetamcts(trust, prior, percentile) : -1.0;
+  };
 
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
-  float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+  float GetU(float numerator, float april_factor, float april_factor_parent,
+             bool betamcts_q = false) const {
+    return numerator * GetPApril(april_factor, april_factor_parent) /
+      (1 + (betamcts_q ? GetNStartedBetamcts() : GetNStarted()));
   }
 
-  int GetVisitsToReachU(float target_score, float numerator,
-                        float score_without_u) const {
+  int GetVisitsToReachU(float target_score, float numerator, float score_without_u,
+                         bool betamcts_q, float april_factor, float april_factor_parent) const {
     if (score_without_u >= target_score) return std::numeric_limits<int>::max();
-    const auto n1 = GetNStarted() + 1;
-    return std::max(1.0f,
-                    std::min(std::floor(GetP() * numerator /
-                                            (target_score - score_without_u) -
-                                        n1) +
-                                 1,
+    const float n1 = (betamcts_q ? GetNStartedBetamcts() : GetNStarted()) + 1;
+    return std::max(1.0f, std::min(std::floor(GetPApril(april_factor, april_factor_parent)
+                    * numerator / (target_score - score_without_u) - n1) + 1,
                              1e9f));
   }
 
