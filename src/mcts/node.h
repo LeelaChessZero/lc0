@@ -39,6 +39,7 @@
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "proto/net.pb.h"
+#include "utils/fastmath.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -382,8 +383,10 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score) : default_q;
+  float GetQ(float default_q, float draw_score, float q_scale) const {
+    return (node_ && node_->GetN() > 0)
+      ? ScaleQ(node_->GetQ(draw_score), q_scale)
+      : default_q;
   }
   float GetWL(float default_wl) const {
     return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
