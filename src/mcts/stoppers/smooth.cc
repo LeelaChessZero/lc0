@@ -300,7 +300,7 @@ class SmoothTimeManager : public TimeManager {
         avg_nodes_per_move / (1.0f - tree_reuse_);
     // Subtract what we already have, and get what we need to compute.
     const float move_estimate_nodes =
-        nodes_per_move_including_reuse - current_nodes;
+        std::max(0.0f, nodes_per_move_including_reuse - current_nodes);
     // This is what time we think will be really spent thinking.
     const float expected_movetime_ms_brutto =
         move_estimate_nodes / nps_ * 1000.0f;
