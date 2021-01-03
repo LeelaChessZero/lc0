@@ -1171,7 +1171,6 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
       }
       // First check if node is terminal or not-expanded.  If either than create
       // a collision of appropriate size and pop current_path.
-      // TODO: Handle undo of 2 fold draw.
       if (!node->HasChildren() || node->GetN() == 0) {
         if (is_root_node) {
             // Root node is special - since its not reached from anywhere else, so it needs its own logic.
@@ -1198,6 +1197,9 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
 
       // Create visits_to_perform new back entry for this level.
       visits_to_perform.push_back(std::vector<int>(node->GetNumEdges(), 0));
+
+      // Cache all constant UCT parameters.
+      // TODO: can we avoid copying the whole policy, its pretty expensive.
       node->CopyPolicy(current_pol);
       for (int i = 0; i < node->GetNumEdges(); i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
@@ -1221,7 +1223,6 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
         }
       }
 
-      // Cache all constant UCT parameters.
       const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
