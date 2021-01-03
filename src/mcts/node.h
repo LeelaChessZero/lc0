@@ -602,6 +602,11 @@ class Node_Iterator {
     if (solid_) {
       while (++current_idx_ != total_count_ &&
              node_ptr_[current_idx_].GetN() == 0) {
+        if (node_ptr_[current_idx_].GetNInFlight() == 0) {
+          // Once there is not even n in flight, we can skip to the end.
+          current_idx_ = total_count_;
+          break;
+        }
       }
       if (current_idx_ == total_count_) {
         node_ptr_ = nullptr;
@@ -609,6 +614,12 @@ class Node_Iterator {
     } else {
       do {
         node_ptr_ = node_ptr_->sibling_.get();
+        // If n started is 0, can jump direct to end.
+        if (node_ptr_ != nullptr && node_ptr_->GetN() == 0 &&
+            node_ptr_->GetNInFlight() == 0) {
+          node_ptr_ = nullptr;
+          break;
+        }
       } while (node_ptr_ != nullptr && node_ptr_->GetN() == 0);
     }
   }
