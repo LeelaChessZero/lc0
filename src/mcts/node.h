@@ -175,9 +175,10 @@ class Node {
   uint8_t GetNumEdges() const { return num_edges_; }
 
   // Output must point to at least num_edges_ floats.
-  void CopyPolicy(float* output) const {
+  void CopyPolicy(float* output, int max_needed) const {
     if (!edges_) return;
-    for (int i = 0; i < num_edges_; i++) {
+    int loops = std::min(static_cast<int>(num_edges_), max_needed);
+    for (int i = 0; i < loops; i++) {
       output[i] = edges_[i].GetP();
     }
   }

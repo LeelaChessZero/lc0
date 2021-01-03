@@ -1199,8 +1199,16 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
       visits_to_perform.push_back(std::vector<int>(node->GetNumEdges(), 0));
 
       // Cache all constant UCT parameters.
-      // TODO: can we avoid copying the whole policy, its pretty expensive.
-      node->CopyPolicy(current_pol);
+      // When we're near the leaves we can copy less of the policy, since there is no way iteration will ever reach it.
+      // TODO: This is a very conservative formula. It assumes every visit we're
+      // aiming to add is going to trigger a new child, and that any visits
+      // we've already had have also done so and then a couple extra since we go
+      // to 2 unvisited to get second best in worst case.
+      // Unclear we can do better without having already walked the children.
+      // Which we are putting off until after policy is copied so we can create
+      // visited policy without having to cache it in the node (allowing the
+      // node to stay at 64 bytes).
+      node->CopyPolicy(current_pol, node->GetNStarted() + cur_limit + 2);
       for (int i = 0; i < node->GetNumEdges(); i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
