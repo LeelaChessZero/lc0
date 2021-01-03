@@ -243,6 +243,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
       uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(wl, 14));
     } else if (score_type == "centipawn_2018") {
       uci_info.score = 290.680623072 * tan(1.548090806 * wl);
+    } else if (score_type == "centipawn_SF") {
+      uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(wl, 8));
     } else if (score_type == "win_percentage") {
       uci_info.score = wl * 5000 + 5000;
     } else if (score_type == "Q") {
