@@ -1237,7 +1237,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
         bool can_exit = false;
         int idx = -1;
         best_edge.Reset();
-        for (auto child : node->Edges()) {
+        for (auto& child : node->Edges()) {
           idx++;
           if (is_root_node) {
             // If there's no chance to catch up to the current best node with
@@ -1357,7 +1357,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
     int min_idx = current_path.back();
     bool found_child = false;
     int idx = -1;
-    for (auto child : node->Edges()) {
+    for (auto& child : node->Edges()) {
       idx++;
       if (idx > min_idx && visits_to_perform.back()[idx] > 0) {
         current_path.back() = idx;
