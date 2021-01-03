@@ -212,6 +212,23 @@ class SearchWorker {
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
     Numa::BindThread(id);
+    for (size_t i = 0; i < 4; i++) {
+      task_threads_.emplace_back([this, i]() {
+        Numa::BindThread(i);
+        this->RunTasks();
+      });
+    }
+  }
+
+  ~SearchWorker() {
+    {
+      std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
+      exiting_ = true;
+      task_added_.notify_all();
+    }
+    for (size_t i = 0; i < 4; i++) {
+      task_threads_[i].join();
+    }
   }
 
   // Runs iterations while needed.
@@ -307,6 +324,7 @@ class SearchWorker {
 
   NodeToProcess PickNodeToExtend(int collision_limit);
   void PickNodesToExtend(int collision_limit);
+  void PickNodesToExtendTask(Node* starting_point, int collision_limit, int base_depth, std::vector<NodeToProcess>* receiver);
   void ExtendNode(Node* node, int depth);
   bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
@@ -315,6 +333,8 @@ class SearchWorker {
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta, float* d_delta, float* m_delta) const;
+
+  void RunTasks();
 
   Search* const search_;
   // List of nodes to process.
@@ -328,6 +348,25 @@ class SearchWorker {
   const bool moves_left_support_;
   IterationStats iteration_stats_;
   StoppersHints latest_time_manager_hints_;
+
+  struct PickTask {
+    Node* start;
+    int base_depth;
+    int collision_limit;
+    std::vector<NodeToProcess> results;
+    bool complete = false;
+    PickTask(Node* node, uint16_t depth, int collision_limit)
+        : start(node),
+          collision_limit(collision_limit),
+          base_depth(depth) {}
+  };
+  std::mutex picking_tasks_mutex_;
+  std::vector<PickTask> picking_tasks_;
+  int next_task_available_ = 0;
+  std::condition_variable task_completed_;
+  std::condition_variable task_added_;
+  std::vector<std::thread> task_threads_;
+  bool exiting_ = false;
 };
 
 }  // namespace lczero
