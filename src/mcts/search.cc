@@ -119,6 +119,28 @@ class MEvaluator {
     return m;
   }
 
+  float GetM(Node* child, float q) const {
+    if (!enabled_ || !parent_within_threshold_) return 0.0f;
+    const float child_m = child->GetM();
+    float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
+    // Microsoft compiler does not have a builtin for copysign and emits a
+    // library call which is too expensive for a hot path like this.
+#if defined(_MSC_VER)
+    // This doesn't treat signed 0's the same way that copysign does, but it
+    // should be good enough...
+    if (q > 0) m *= -1.0f;
+#else
+    m *= std::copysign(1.0f, -q);
+#endif
+    m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
+    return m;
+  }
+
+  // The M utility to use for unvisited nodes.
+  float GetDefaultM() const {
+    return 0.0f;
+  }
+
  private:
   static bool WithinThreshold(const Node* parent, float q_threshold) {
     return std::abs(parent->GetQ(0.0f)) > q_threshold;
@@ -334,6 +356,16 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
              ? value
              : -node->GetQ(-draw_score) -
                    value * std::sqrt(node->GetVisitedPolicy());
+}
+
+// Faster version for if visited_policy is readily available already.
+inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
+                    float draw_score, float visited_pol) {
+  const auto value = params.GetFpuValue(is_root_node);
+  return params.GetFpuAbsolute(is_root_node)
+             ? value
+             : -node->GetQ(-draw_score) -
+                   value * std::sqrt(visited_pol);
 }
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
@@ -1025,58 +1057,67 @@ void SearchWorker::GatherMinibatch() {
          number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
-    // Pick next node to extend.
-    minibatch_.emplace_back(PickNodeToExtend(collisions_left));
-    auto& picked_node = minibatch_.back();
-    auto* node = picked_node.node;
+    int prev_size = minibatch_.size();
+    PickNodesToExtend(
+        std::min(collision_events_left,
+                 std::min(collisions_left,
+                          params_.GetMiniBatchSize() - minibatch_size)));
+    bool should_exit = false;
+    for (int i = prev_size; i < minibatch_.size(); i++) {
+      auto& picked_node = minibatch_[i];
+      auto* node = picked_node.node;
 
-    // There was a collision. If limit has been reached, return, otherwise
-    // just start search of another node.
-    if (picked_node.IsCollision()) {
-      if (--collision_events_left <= 0) return;
-      if ((collisions_left -= picked_node.multivisit) <= 0) return;
-      if (search_->stop_.load(std::memory_order_acquire)) return;
-      continue;
-    }
-    ++minibatch_size;
-
-    // If node is already known as terminal (win/loss/draw according to rules
-    // of the game), it means that we already visited this node before.
-    if (picked_node.IsExtendable()) {
-      // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth);
-
-      // Only send non-terminal nodes to a neural network.
-      if (!node->IsTerminal()) {
-        picked_node.nn_queried = true;
-        int transform;
-        picked_node.is_cache_hit = AddNodeToComputation(node, true, &transform);
-        picked_node.probability_transform = transform;
+      // There was a collision. If limit has been reached, return, otherwise
+      // just start search of another node.
+      if (picked_node.IsCollision()) {
+        if (--collision_events_left <= 0) should_exit = true;
+        if ((collisions_left -= picked_node.multivisit) <= 0)
+          should_exit = true;
+        if (search_->stop_.load(std::memory_order_acquire)) should_exit = true;
+        continue;
       }
-    }
+      ++minibatch_size;
 
-    // If out of order eval is enabled and the node to compute we added last
-    // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
-    // out of order eval for it.
-    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
-      // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
-      {
-        // Nodes mutex for doing node updates.
-        SharedMutex::Lock lock(search_->nodes_mutex_);
-        DoBackupUpdateSingleNode(picked_node);
+      // If node is already known as terminal (win/loss/draw according to rules
+      // of the game), it means that we already visited this node before.
+      if (picked_node.IsExtendable()) {
+        // Node was never visited, extend it.
+        ExtendNode(node, picked_node.depth);
+
+        // Only send non-terminal nodes to a neural network.
+        if (!node->IsTerminal()) {
+          picked_node.nn_queried = true;
+          int transform;
+          picked_node.is_cache_hit =
+              AddNodeToComputation(node, true, &transform);
+          picked_node.probability_transform = transform;
+        }
       }
 
-      // Remove last entry in minibatch_, as it has just been
-      // processed.
-      // If NN eval was already processed out of order, remove it.
-      if (picked_node.nn_queried) computation_->PopCacheHit();
-      minibatch_.pop_back();
-      --minibatch_size;
-      ++number_out_of_order_;
+      // If out of order eval is enabled and the node to compute we added last
+      // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
+      // out of order eval for it.
+      if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+        // Perform out of order eval for the last entry in minibatch_.
+        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+        {
+          // Nodes mutex for doing node updates.
+          SharedMutex::Lock lock(search_->nodes_mutex_);
+          DoBackupUpdateSingleNode(picked_node);
+        }
+
+        // Remove last entry in minibatch_, as it has just been
+        // processed.
+        // If NN eval was already processed out of order, remove it.
+        if (picked_node.nn_queried) computation_->PopCacheHit();
+        minibatch_.erase(minibatch_.begin() + i);
+        i--;
+        --minibatch_size;
+        ++number_out_of_order_;
+      }
     }
     // Check for stop at the end so we have at least one node.
-    if (search_->stop_.load(std::memory_order_acquire)) return;
+    if (should_exit || search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
 
@@ -1090,6 +1131,248 @@ void IncrementNInFlight(Node* node, Node* root, int amount) {
   }
 }
 }  // namespace
+
+void SearchWorker::PickNodesToExtend(int collision_limit) {
+  // TODO: pre-reserve visits_to_perform for expected depth and likely maximum width.
+  std::vector<std::vector<int>> visits_to_perform;
+  std::vector<int> current_path;
+  float current_pol[256];
+  float current_util[256];
+  Node* node = search_->root_node_;
+  Node::Iterator best_edge;
+  Node::Iterator second_best_edge;
+  // Fetch the current best root node visits for possible smart pruning.
+  const int64_t best_node_n = search_->current_best_edge_.GetN();
+
+  // True on first iteration, false as we dive deeper.
+  bool is_root_node = true;
+  const float even_draw_score = search_->GetDrawScore(false);
+  const float odd_draw_score = search_->GetDrawScore(true);
+  const auto& root_move_filter = search_->root_move_filter_;
+  bool node_already_updated = true;
+  auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
+
+  // TODO: precache enough nodes for the collision limit, not just one.
+  if (!precached_node_) {
+    precached_node_ = std::make_unique<Node>(nullptr, 0);
+  }
+  int cur_mb_size = minibatch_.size();
+  current_path.push_back(-1);
+  SharedMutex::Lock lock(search_->nodes_mutex_);
+  while (current_path.size() > 0) {
+    // First prepare visits_to_perform.
+    if (current_path.back() == -1) {
+      // Need to do n visits, where n is either collision_limit, or comes from
+      // visits_to_perform for the current path.
+      int cur_limit = collision_limit;
+      if (current_path.size() - 1 > 0) {
+        cur_limit =
+            visits_to_perform.back()[current_path[current_path.size() - 2]];
+      }
+      // First check if node is terminal or not-expanded.  If either than create
+      // a collision of appropriate size and pop current_path.
+      // TODO: Handle undo of 2 fold draw.
+      if (!node->HasChildren() || node->GetN() == 0) {
+        if (is_root_node) {
+            // Root node is special - since its not reached from anywhere else, so it needs its own logic.
+            // Still need to create the collision to ensure the outer gather loop gives up.
+          if (node->TryStartScoreUpdate()) {
+            cur_limit -= 1;
+            minibatch_.push_back(
+                NodeToProcess::Visit(node, current_path.size()));
+          }
+        }
+        // Visits are created elsewhere, just need the collisions here.
+        if (cur_limit > 0) {
+          minibatch_.push_back(
+              NodeToProcess::Collision(node, current_path.size(), cur_limit));
+        }
+        node = node->GetParent();
+        current_path.pop_back();
+        continue;
+      }
+      if (is_root_node) {
+        // Root node is again special - needs its n in flight updated separately as its not handled on the path to it, since there isn't one.
+        node->IncrementNInFlight(cur_limit);
+      }
+
+      // Create visits_to_perform new back entry for this level.
+      visits_to_perform.push_back(std::vector<int>(node->GetNumEdges(), 0));
+      node->CopyPolicy(current_pol);
+      for (int i = 0; i < node->GetNumEdges(); i++) {
+        current_util[i] = std::numeric_limits<float>::lowest();
+      }
+      // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
+      // the weirdness.
+      const float draw_score =
+          (current_path.size() % 2 == 0) ? odd_draw_score : even_draw_score;
+      m_evaluator.SetParent(node);
+      float visited_pol = 0.0f;
+      for (Node* child : node->VisitedNodes()) {
+        int index = child->Index();
+        visited_pol += current_pol[index];
+        float q = child->GetQ(draw_score);
+        current_util[index] = q + m_evaluator.GetM(child, q);
+      }
+      const float fpu = GetFpu(params_, node, is_root_node, draw_score, visited_pol);
+      for (int i = 0; i < node->GetNumEdges(); i++) {
+        if (current_util[i] == std::numeric_limits<float>::lowest()) {
+          current_util[i] = fpu + m_evaluator.GetDefaultM();
+        }
+      }
+
+      // Cache all constant UCT parameters.
+      const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
+      const float puct_mult =
+          cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      // TODO: each child GetQ/GetM can be pulled outside the loop as they don't
+      // vary with n_in_flight being incremented.
+      while (cur_limit > 0) {
+        // Perform UCT for current node.
+        float best = std::numeric_limits<float>::lowest();
+        int best_idx = -1;
+        float best_without_u = std::numeric_limits<float>::lowest();
+        float second_best = std::numeric_limits<float>::lowest();
+        bool can_exit = false;
+        int idx = -1;
+        best_edge.Reset();
+        for (auto child : node->Edges()) {
+          idx++;
+          if (is_root_node) {
+            // If there's no chance to catch up to the current best node with
+            // remaining playouts, don't consider it.
+            // best_move_node_ could have changed since best_node_n was
+            // retrieved. To ensure we have at least one node to expand, always
+            // include current best node.
+            if (child != search_->current_best_edge_ &&
+                latest_time_manager_hints_.GetEstimatedRemainingPlayouts() <
+                    best_node_n - child.GetN()) {
+              continue;
+            }
+            // If root move filter exists, make sure move is in the list.
+            if (!root_move_filter.empty() &&
+                std::find(root_move_filter.begin(), root_move_filter.end(),
+                          child.GetMove()) == root_move_filter.end()) {
+              continue;
+            }
+          }
+
+          const float util = current_util[idx];
+
+          const float score =
+              current_pol[idx] * puct_mult / (1 + child.GetNStarted()) + util;
+          if (score > best) {
+            second_best = best;
+            second_best_edge = best_edge;
+            best = score;
+            best_idx = idx;
+            best_without_u = util;
+            best_edge = child;
+          } else if (score > second_best) {
+            second_best = score;
+            second_best_edge = child;
+          }
+          if (can_exit) break;
+          if (child.GetNStarted() == 0) {
+            // One more loop will get 2 unvisited nodes, which is sufficient to
+            // ensure second best is correct. This relies upon the fact that
+            // edges are sorted in policy decreasing order.
+            can_exit = true;
+          }
+        }
+        int new_visits = 0;
+        if (second_best_edge) {
+          int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
+              second_best, puct_mult, best_without_u);
+          second_best_edge.Reset();
+          new_visits = std::min(cur_limit, estimated_visits_to_change_best);
+        } else {
+          // No second best - only one edge, so everything goes in here.
+          new_visits = cur_limit;
+        }
+        visits_to_perform.back()[best_idx] += new_visits;
+        cur_limit -= new_visits;
+        Node* child_node =
+            best_edge.GetOrSpawnNode(/* parent */ node, &precached_node_);
+        bool decremented = false;
+        // TODO: Before implementing 'true parallel' gather, the terminal visit reversion will need to be made a separate task to run after completion of gathering.
+        if (child_node->IsTerminal()) {
+          // Probably best place to check for two-fold draws consistently.
+          // Depth starts with 1 at root, so real depth is depth - 1.
+          // Check whether first repetition was before root. If yes, remove
+          // terminal status of node and revert all visits in the tree.
+          // Length of repetition was stored in m_. This code will only do
+          // something when tree is reused and twofold visits need to be
+          // reverted.
+          if (child_node->IsTwoFoldTerminal() &&
+              current_path.size() + 1 - 1 < child_node->GetM()) {
+            int depth_counter = 0;
+            // Cache node's values as we reset them in the process. We could
+            // manually set wl and d, but if we want to reuse this for reverting
+            // other terminal nodes this is the way to go.
+            const auto wl = child_node->GetWL();
+            const auto d = child_node->GetD();
+            const auto m = child_node->GetM();
+            const auto terminal_visits = child_node->GetN();
+            for (Node* node_to_revert = child_node; node_to_revert != nullptr;
+                 node_to_revert = node_to_revert->GetParent()) {
+              // Revert all visits on twofold draw when making it non terminal.
+              node_to_revert->RevertTerminalVisits(
+                  wl, d, m + (float)depth_counter, terminal_visits);
+              depth_counter++;
+              // Even if original tree still exists, we don't want to revert
+              // more than until new root.
+              if (depth_counter > current_path.size() + 1 - 1) break;
+              // If wl != 0, we would have to switch signs at each depth.
+            }
+            // Mark the prior twofold draw as non terminal to extend it again.
+            child_node->MakeNotTerminal();
+            // When reverting the visits, we also need to revert the initial
+            // visits, as we reused fewer nodes than anticipated.
+            search_->initial_visits_ -= terminal_visits;
+            // Max depth doesn't change when reverting the visits, and
+            // cum_depth_ only counts the average depth of new nodes, not reused
+            // ones.
+          }
+        }
+        if (child_node->TryStartScoreUpdate()) {
+          new_visits -= 1;
+          decremented = true;
+          if (child_node->HasChildren()) {
+            child_node->IncrementNInFlight(new_visits);
+          }
+        }
+        if ((decremented && !child_node->HasChildren())) {
+          // Reduce 1 for the visits_to_perform to ensure the collision created
+          // doesn't include this visit.
+          visits_to_perform.back()[best_idx] -= 1;
+          minibatch_.push_back(
+              NodeToProcess::Visit(child_node, current_path.size() + 1));
+        }
+      }
+      is_root_node = false;
+      // Fall through to select the first child.
+    }
+    int min_idx = current_path.back();
+    bool found_child = false;
+    int idx = -1;
+    for (auto child : node->Edges()) {
+      idx++;
+      if (idx > min_idx && visits_to_perform.back()[idx] > 0) {
+        current_path.back() = idx;
+        current_path.push_back(-1);
+        node = child.GetOrSpawnNode(/* parent */ node, &precached_node_);
+        found_child = true;
+        break;
+      }
+    }
+    if (!found_child) {
+      node = node->GetParent();
+      current_path.pop_back();
+      visits_to_perform.pop_back();
+    }
+  }
+}
 
 // Returns node and whether there's been a search collision on the node.
 SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
@@ -1189,17 +1472,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (!node->HasChildren()) {
       return NodeToProcess::Visit(node, depth);
     }
-    Node* possible_shortcut_child = node->GetCachedBestChild();
-    if (possible_shortcut_child) {
-      // Add two here to reverse the conservatism that goes into calculating
-      // the remaining cache visits.
-      collision_limit =
-          std::min(collision_limit, node->GetRemainingCacheVisits() + 2);
-      is_root_node = false;
-      node = possible_shortcut_child;
-      node_already_updated = true;
-      continue;
-    }
     node_already_updated = false;
 
     // If we fall through, then n_in_flight_ has been incremented but this
@@ -1264,11 +1536,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     if (second_best_edge) {
       int estimated_visits_to_change_best =
           best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u);
-      // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
-      // has potential rounding errors and some conservative logic that can push
-      // it up to 2 away from the real value.
-      node->UpdateBestChild(best_edge,
-                            std::max(0, estimated_visits_to_change_best - 2));
       collision_limit =
           std::min(collision_limit, estimated_visits_to_change_best);
       assert(collision_limit >= 1);

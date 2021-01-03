@@ -114,6 +114,10 @@ class EdgeAndNode;
 template <bool is_const>
 class Edge_Iterator;
 
+template <bool is_const>
+class Node_Iterator;
+
+
 class Node {
  public:
   using Iterator = Edge_Iterator<false>;
@@ -170,6 +174,14 @@ class Node {
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
   uint8_t GetNumEdges() const { return num_edges_; }
 
+  // Output must point to at least num_edges_ floats.
+  void CopyPolicy(float* output) const {
+    if (!edges_) return;
+    for (int i = 0; i < num_edges_; i++) {
+      output[i] = edges_[i].GetP();
+    }
+  }
+
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
                     Terminal type = Terminal::EndOfGame);
@@ -202,23 +214,6 @@ class Node {
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
 
-  // Caches the best child if possible.
-  void UpdateBestChild(const Iterator& best_edge, int collisions_allowed);
-
-  // Gets a cached best child if it is still valid.
-  Node* GetCachedBestChild() {
-    if (n_in_flight_ < best_child_cache_in_flight_limit_) {
-      return best_child_cached_;
-    }
-    return nullptr;
-  }
-
-  // Gets how many more visits the cached value is valid for. Only valid if
-  // GetCachedBestChild returns a value.
-  int GetRemainingCacheVisits() {
-    return best_child_cache_in_flight_limit_ - n_in_flight_;
-  }
-
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
@@ -232,6 +227,9 @@ class Node {
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
+
+  Node_Iterator<true> VisitedNodes() const;
+  Node_Iterator<false> VisitedNodes();
 
   // Deletes all children.
   void ReleaseChildren();
@@ -255,6 +253,9 @@ class Node {
   bool MakeSolid();
 
   void SortEdges();
+
+  // Index in parent - useful for correlated ordering.
+  uint16_t Index() const { return index_; }
 
   ~Node() {
     if (solid_children_ && child_) {
@@ -302,9 +303,6 @@ class Node {
   // Pointer to a next sibling. nullptr if there are no further siblings.
   // Also null in the solid case.
   std::unique_ptr<Node> sibling_;
-  // Cached pointer to best child, valid while n_in_flight <
-  // best_child_cache_in_flight_limit_
-  Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
   // Averaged draw probability. Works similarly to WL, except that D is not
@@ -312,17 +310,12 @@ class Node {
   float d_ = 0.0f;
   // Estimated remaining plies.
   float m_ = 0.0f;
-  // Sum of policy priors which have had at least one playout.
-  float visited_policy_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
   // (AKA virtual loss.) How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
   uint32_t n_in_flight_ = 0;
-  // If best_child_cached_ is non-null, and n_in_flight_ < this,
-  // best_child_cached_ is still the best child.
-  uint32_t best_child_cache_in_flight_limit_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -346,6 +339,8 @@ class Node {
   friend class Edge_Iterator<true>;
   friend class Edge_Iterator<false>;
   friend class Edge;
+  friend class Node_Iterator<true>;
+  friend class Node_Iterator<false>;
 };
 
 // Define __i386__  or __arm__ also for 32 bit Windows.
@@ -360,7 +355,7 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+static_assert(sizeof(Node) == 64, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -562,6 +557,94 @@ class Edge_Iterator : public EdgeAndNode {
   uint16_t current_idx_ = 0;
   uint16_t total_count_ = 0;
 };
+
+// TODO(crem) Replace this with less hacky iterator once we support C++17.
+// This class has multiple hypostases within one class:
+// * Range (begin() and end() functions)
+// * Iterator (operator++() and operator*())
+// It's more customary to have those as two classes, but
+// creating zoo of classes and copying them around while iterating seems
+// excessive.
+//
+// All functions are not thread safe (must be externally synchronized).
+template <bool is_const>
+class Node_Iterator {
+ public:
+
+  // Creates "end()" iterator.
+  Node_Iterator() {}
+
+  // Creates "begin()" iterator. Also happens to be a range constructor.
+  // child_ptr will be nullptr if parent_node is solid children.
+  Node_Iterator(const Node& parent_node, Node* child_ptr)
+      : node_ptr_(child_ptr),
+        total_count_(parent_node.num_edges_),
+        solid_(parent_node.solid_children_) {
+    if (node_ptr_ != nullptr && node_ptr_->GetN() == 0) {
+      operator++();
+    }
+  }
+  // These are technically wrong, but are usable to compare with end().
+  bool operator==(const Node_Iterator<is_const>& other) const {
+    return node_ptr_ == other.node_ptr_;
+  }
+  bool operator!=(const Node_Iterator<is_const>& other) const {
+    return node_ptr_ != other.node_ptr_;
+  }
+
+  // Function to support range interface.
+  Node_Iterator<is_const> begin() { return *this; }
+  Node_Iterator<is_const> end() { return {}; }
+
+  // Functions to support iterator interface.
+  // Equality comparison operators are inherited from EdgeAndNode.
+  void operator++() {
+    if (solid_) {
+      while (++current_idx_ != total_count_ &&
+             node_ptr_[current_idx_].GetN() == 0) {
+      }
+      if (current_idx_ == total_count_) {
+        node_ptr_ = nullptr;
+      }
+    } else {
+      do {
+        node_ptr_ = node_ptr_->sibling_.get();
+      } while (node_ptr_ != nullptr && node_ptr_->GetN() == 0);
+    }
+  }
+  Node* operator*() { 
+      if (solid_) return &(node_ptr_[current_idx_]); else return node_ptr_;
+  }
+
+ private:
+
+  // Pointer to current node.
+  Node* node_ptr_ = nullptr;
+  uint16_t current_idx_ = 0;
+  uint16_t total_count_ = 0;
+  bool solid_ = false;
+};
+
+inline Node_Iterator<true> Node::VisitedNodes() const {
+  return {*this, child_.get()};
+}
+inline Node_Iterator<false> Node::VisitedNodes() { return {*this, child_.get()}; }
+
+inline float Node::GetVisitedPolicy() const {
+  if (n_ == 0 || edges_ == nullptr || child_ == nullptr) return 0.0f;
+  float vp = 0.0f;
+  for (const auto& child : Edges()) {
+    const auto n = child.GetN();
+    if (n > 0) {
+      vp += child.GetP();
+    } else {
+      // Since children are in policy order, anything after this won't have
+      // been visited.
+      break;
+    }
+  }
+  return vp;
+}
 
 class NodeTree {
  public:
