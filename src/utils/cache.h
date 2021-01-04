@@ -310,6 +310,7 @@ class LruCacheLock {
     other.value_ = nullptr;
   }
   void operator=(LruCacheLock&& other) {
+    if (value_) cache_->Unpin(key_, value_);
     cache_ = other.cache_;
     key_ = other.key_;
     value_ = other.value_;
