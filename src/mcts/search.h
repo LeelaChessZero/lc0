@@ -324,7 +324,6 @@ class SearchWorker {
           is_collision(is_collision) {}
   };
 
-  NodeToProcess PickNodeToExtend(int collision_limit);
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(Node* starting_point, int collision_limit, int base_depth, std::vector<NodeToProcess>* receiver);
   void ProcessPickedTask(int batch_start, int batch_end,
