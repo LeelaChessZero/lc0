@@ -83,6 +83,13 @@ class CachingComputation {
   // cached.
   void PopCacheHit(int idx);
 
+  // As an optimization GatherMinibatch needs a guarantee that there is no resizing happening during parallel pick processing.
+  // This allows it to ensure batch_ doesn't resize based on how many items it might be adding.
+  // Parent does not need reserving as GatherMiniBatch only deals with cache hits.
+  void Reserve(int batch_size) { 
+    batch_.reserve(batch_size);
+  }
+
  private:
   struct WorkItem {
     uint64_t hash;

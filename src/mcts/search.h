@@ -345,9 +345,8 @@ class SearchWorker {
   Search* const search_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
-  // To be taken with write lock when adding to computation_ and there might be concurrent tasks.
-  // To be tasken with read lock when using computation_ from a task.
-  mutable SharedMutex computation_mutex_;
+  // To be taken with when adding to computation_ and there might be concurrent tasks.
+  mutable Mutex computation_mutex_;
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PrefetchIntoCache().
   PositionHistory history_;

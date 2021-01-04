@@ -1096,6 +1096,8 @@ void SearchWorker::GatherMinibatch() {
                           params_.GetMiniBatchSize() - minibatch_size)));
     bool should_exit = false;
     int non_collisions = 0;
+    // Ensure computation has enough space for whatever we throw at it and won't resize.
+    computation_->Reserve(minibatch_.size());
     for (int i = prev_size; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
 
@@ -1115,7 +1117,7 @@ void SearchWorker::GatherMinibatch() {
     std::vector<int> offsets;
     if (non_collisions > 10) {
       needs_wait = true;
-      const int num_child_tasks = 4;
+      const int num_child_tasks = std::clamp(non_collisions/10, 1, 4);
       // Round down, left overs can go to main thread.
       int per_worker = non_collisions / (num_child_tasks + 1);
       {
@@ -1213,7 +1215,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
         int transform;
-        SharedMutex::Lock lock(computation_mutex_);
+        Mutex::Lock lock(computation_mutex_);
         picked_node.is_cache_hit = AddNodeToComputation(node, true, &transform, &history);
         added_idx = computation_->GetBatchSize() - 1;
         // Right now this is the index, but once out of order purging has been applied, this will no longer be the index, just the ordinal.
@@ -1227,10 +1229,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // out of order eval for it.
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
       // Perform out of order eval for the last entry in minibatch_.
-      {
-        SharedMutex::SharedLock lock(computation_mutex_);
-        FetchSingleNodeResult(&picked_node, added_idx);
-      }
+      FetchSingleNodeResult(&picked_node, added_idx);
       {
         // Nodes mutex for doing node updates.
         SharedMutex::Lock lock(search_->nodes_mutex_);
