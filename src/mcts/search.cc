@@ -1114,7 +1114,6 @@ void SearchWorker::GatherMinibatch() {
       ++minibatch_size;
     }
     bool needs_wait = false;
-    std::vector<int> offsets;
     if (non_collisions > 10) {
       needs_wait = true;
       const int num_child_tasks = std::clamp(non_collisions/10, 1, 4);
