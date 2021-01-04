@@ -1101,8 +1101,8 @@ void SearchWorker::GatherMinibatch() {
     for (int i = prev_size; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
 
-      // There was a collision. If limit has been reached, return, otherwise
-      // just start search of another node.
+      // There was a collision. If limit has been reached, mark to return once
+      // we've finished the current collected set.
       if (picked_node.IsCollision()) {
         if (--collision_events_left <= 0) should_exit = true;
         if ((collisions_left -= picked_node.multivisit) <= 0)
@@ -1130,9 +1130,6 @@ void SearchWorker::GatherMinibatch() {
         int found = 0;
         for (int i = prev_size; i < minibatch_.size(); i++) {
           auto& picked_node = minibatch_[i];
-
-          // There was a collision. If limit has been reached, return, otherwise
-          // just start search of another node.
           if (picked_node.IsCollision()) {
             continue;
           }
