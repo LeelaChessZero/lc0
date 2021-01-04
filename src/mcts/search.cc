@@ -1458,7 +1458,6 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
         Node* child_node =
             best_edge.GetOrSpawnNode(/* parent */ node, &precached_node_);
         bool decremented = false;
-        // TODO: Before implementing 'true parallel' gather, the terminal visit reversion will need to be made a separate task to run after completion of gathering.
         if (child_node->IsTerminal()) {
           // Probably best place to check for two-fold draws consistently.
           // Depth starts with 1 at root, so real depth is depth - 1.
@@ -1469,6 +1468,9 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
           // reverted.
           if (child_node->IsTwoFoldTerminal() &&
               current_path.size() + 1 - 1 < child_node->GetM()) {
+            // Take a mutex - any SearchWorker specific mutex... since this is
+            // not safe to do concurrently between multiple tasks.
+            std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
             int depth_counter = 0;
             // Cache node's values as we reset them in the process. We could
             // manually set wl and d, but if we want to reuse this for reverting
@@ -1716,9 +1718,10 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
           // Length of repetition was stored in m_. This code will only do
           // something when tree is reused and twofold visits need to be
           // reverted.
-          // TODO: this code is not 'safe' here in task since tasks run on multiple threads at once and could attempt to call RevertTerminalVisits concurrently.
           if (child_node->IsTwoFoldTerminal() &&
               current_path.size() + base_depth + 1 - 1 < child_node->GetM()) {
+            // Take a mutex - any SearchWorker specific mutex... since this is not safe to do concurrently between multiple tasks.
+            std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
             int depth_counter = 0;
             // Cache node's values as we reset them in the process. We could
             // manually set wl and d, but if we want to reuse this for reverting
