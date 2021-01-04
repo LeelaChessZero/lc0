@@ -353,7 +353,7 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 44, "Unexpected size of Node for 32bit compile");
 #else
 static_assert(sizeof(Node) == 64, "Unexpected size of Node");
 #endif
