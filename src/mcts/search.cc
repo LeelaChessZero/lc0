@@ -137,9 +137,7 @@ class MEvaluator {
   }
 
   // The M utility to use for unvisited nodes.
-  float GetDefaultM() const {
-    return 0.0f;
-  }
+  float GetDefaultM() const { return 0.0f; }
 
  private:
   static bool WithinThreshold(const Node* parent, float q_threshold) {
@@ -364,8 +362,7 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
-             : -node->GetQ(-draw_score) -
-                   value * std::sqrt(visited_pol);
+             : -node->GetQ(-draw_score) - value * std::sqrt(visited_pol);
 }
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
@@ -968,11 +965,13 @@ void SearchWorker::RunTasks() {
     int id = 0;
     {
       std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
-      task_added_.wait(lock, [this]() { return next_task_available_ < picking_tasks_.size() || exiting_; });
+      task_added_.wait(lock, [this]() {
+        return next_task_available_ < picking_tasks_.size() || exiting_;
+      });
       if (next_task_available_ < picking_tasks_.size()) {
-          task = &picking_tasks_[next_task_available_];
-          id = next_task_available_;
-          next_task_available_++;
+        task = &picking_tasks_[next_task_available_];
+        id = next_task_available_;
+        next_task_available_++;
       } else if (exiting_) {
         break;
       }
@@ -980,16 +979,16 @@ void SearchWorker::RunTasks() {
     if (task != nullptr) {
       if (task->task_type == 0) {
         PickNodesToExtendTask(task->start, task->base_depth,
-                            task->collision_limit, &(task->results));
+                              task->collision_limit, &(task->results));
       } else {
         ProcessPickedTask(task->start_idx, task->end_idx,
-                          &(task->to_remove_idx), &(task->to_remove_computation));
+                          &(task->to_remove_idx),
+                          &(task->to_remove_computation));
       }
       std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
       picking_tasks_[id].complete = true;
       task_completed_.notify_all();
     }
-
   }
 }
 
@@ -1096,7 +1095,8 @@ void SearchWorker::GatherMinibatch() {
                           params_.GetMiniBatchSize() - minibatch_size)));
     bool should_exit = false;
     int non_collisions = 0;
-    // Ensure computation has enough space for whatever we throw at it and won't resize.
+    // Ensure computation has enough space for whatever we throw at it and won't
+    // resize.
     computation_->Reserve(minibatch_.size());
     for (int i = prev_size; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
@@ -1116,13 +1116,15 @@ void SearchWorker::GatherMinibatch() {
     bool needs_wait = false;
     if (non_collisions > 10) {
       needs_wait = true;
-      const int num_child_tasks = std::clamp(non_collisions/10, 1, 4);
+      const int num_child_tasks = std::clamp(non_collisions / 10, 1, 4);
       // Round down, left overs can go to main thread.
       int per_worker = non_collisions / (num_child_tasks + 1);
       {
         std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
         picking_tasks_.clear();
-        // Reserve because resizing breaks pointers held by the task threads. Reserve 100 - since we already did that in picking and why use a different size?
+        // Reserve because resizing breaks pointers held by the task threads.
+        // Reserve 100 - since we already did that in picking and why use a
+        // different size?
         picking_tasks_.reserve(100);
         next_task_available_ = 0;
         int found = 0;
@@ -1134,7 +1136,7 @@ void SearchWorker::GatherMinibatch() {
           if (picked_node.IsCollision()) {
             continue;
           }
-          ++found;          
+          ++found;
           if (found == per_worker) {
             picking_tasks_.emplace_back(prev_size, i + 1);
             prev_size = i + 1;
@@ -1146,7 +1148,6 @@ void SearchWorker::GatherMinibatch() {
         }
         task_added_.notify_all();
       }
-
     }
     std::vector<int> to_remove_idx;
     std::vector<int> to_remove_computation;
@@ -1166,11 +1167,13 @@ void SearchWorker::GatherMinibatch() {
         }
         for (int j = 0; j < picking_tasks_[i].to_remove_computation.size();
              j++) {
-          to_remove_computation.push_back(picking_tasks_[i].to_remove_computation[j]);
+          to_remove_computation.push_back(
+              picking_tasks_[i].to_remove_computation[j]);
         }
       }
     }
-    // TODO: Could avoid this sort by giving the 'first' batch to main thread rather than the last batch.
+    // TODO: Could avoid this sort by giving the 'first' batch to main thread
+    // rather than the last batch.
     std::sort(to_remove_idx.begin(), to_remove_idx.end());
     // Have to sort these as they can complete in any order.
     std::sort(to_remove_computation.begin(), to_remove_computation.end());
@@ -1183,7 +1186,10 @@ void SearchWorker::GatherMinibatch() {
       ++number_out_of_order_;
     }
     // Remove and revert the collisions matching the out of orders.
-    // This is not done in parallelization because parallelization parts are not split at points where we can guarantee the collision and the node are together, since picking doesn't add the collision immediately after the visit.
+    // This is not done in parallelization because parallelization parts are not
+    // split at points where we can guarantee the collision and the node are
+    // together, since picking doesn't add the collision immediately after the
+    // visit.
     if (out_of_order_nodes.size() > 0) {
       SharedMutex::Lock lock(search_->nodes_mutex_);
       for (int i = minibatch_.size() - 1; i >= sort_start; i--) {
@@ -1191,13 +1197,15 @@ void SearchWorker::GatherMinibatch() {
             std::find(out_of_order_nodes.begin(), out_of_order_nodes.end(),
                       minibatch_[i].node) != out_of_order_nodes.end()) {
           Node* node = minibatch_[i].node;
-          for (node = node->GetParent(); node != search_->root_node_->GetParent();
+          for (node = node->GetParent();
+               node != search_->root_node_->GetParent();
                node = node->GetParent()) {
             node->CancelScoreUpdate(minibatch_[i].multivisit);
           }
           ++collision_events_left;
           collisions_left += minibatch_[i].multivisit;
-          // Reverting the collision might mean that should_exit was calculated incorrectly previously, if so update it.
+          // Reverting the collision might mean that should_exit was calculated
+          // incorrectly previously, if so update it.
           if (should_exit && !search_->stop_.load(std::memory_order_acquire) &&
               collisions_left > 0 && collision_events_left > 0) {
             should_exit = false;
@@ -1210,11 +1218,13 @@ void SearchWorker::GatherMinibatch() {
     for (int i = to_remove_computation.size() - 1; i >= 0; i--) {
       computation_->PopCacheHit(to_remove_computation[i]);
     }
-    // Ensure minibatch_ is always sorted by computation ordinal in each new section added. Otherwise FetchMinibatch will read the computations into the wrong nodes.
-    std::sort(
-        minibatch_.begin() + sort_start, minibatch_.end(), [](auto& a, auto& b) -> bool {
-          return a.computation_ordinal < b.computation_ordinal;
-        });
+    // Ensure minibatch_ is always sorted by computation ordinal in each new
+    // section added. Otherwise FetchMinibatch will read the computations into
+    // the wrong nodes.
+    std::sort(minibatch_.begin() + sort_start, minibatch_.end(),
+              [](auto& a, auto& b) -> bool {
+                return a.computation_ordinal < b.computation_ordinal;
+              });
     // Check for stop at the end so we have at least one node.
     if (should_exit || search_->stop_.load(std::memory_order_acquire)) return;
   }
@@ -1241,9 +1251,11 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.nn_queried = true;
         int transform;
         Mutex::Lock lock(computation_mutex_);
-        picked_node.is_cache_hit = AddNodeToComputation(node, true, &transform, &history);
+        picked_node.is_cache_hit =
+            AddNodeToComputation(node, true, &transform, &history);
         added_idx = computation_->GetBatchSize() - 1;
-        // Right now this is the index, but once out of order purging has been applied, this will no longer be the index, just the ordinal.
+        // Right now this is the index, but once out of order purging has been
+        // applied, this will no longer be the index, just the ordinal.
         picked_node.computation_ordinal = added_idx;
         picked_node.probability_transform = transform;
       }
@@ -1312,9 +1324,11 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   }
 }
 
-
-void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collision_limit, std::vector<NodeToProcess>* receiver) {
-  // TODO: Bring back pre-cached nodes created outside locks in a way that works with tasks.
+void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
+                                         int collision_limit,
+                                         std::vector<NodeToProcess>* receiver) {
+  // TODO: Bring back pre-cached nodes created outside locks in a way that works
+  // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
   std::vector<std::vector<int>> visits_to_perform;
@@ -1360,8 +1374,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
         }
         // Visits are created elsewhere, just need the collisions here.
         if (cur_limit > 0) {
-          receiver->push_back(
-              NodeToProcess::Collision(node, current_path.size() + base_depth, cur_limit));
+          receiver->push_back(NodeToProcess::Collision(
+              node, current_path.size() + base_depth, cur_limit));
         }
         node = node->GetParent();
         current_path.pop_back();
@@ -1381,8 +1395,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
           std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
           // Ensure not to exceed size of reservation.
           if (picking_tasks_.size() < 100) {
-            picking_tasks_.emplace_back(node, current_path.size() - 1 + base_depth,
-                                        cur_limit);
+            picking_tasks_.emplace_back(
+                node, current_path.size() - 1 + base_depth, cur_limit);
             task_added_.notify_all();
             passed = true;
             passed_off += cur_limit;
@@ -1415,8 +1429,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
       }
       // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
       // the weirdness.
-      const float draw_score =
-          ((current_path.size() + base_depth) % 2 == 0) ? odd_draw_score : even_draw_score;
+      const float draw_score = ((current_path.size() + base_depth) % 2 == 0)
+                                   ? odd_draw_score
+                                   : even_draw_score;
       m_evaluator.SetParent(node);
       float visited_pol = 0.0f;
       for (Node* child : node->VisitedNodes()) {
@@ -1501,8 +1516,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
         }
         visits_to_perform.back()[best_idx] += new_visits;
         cur_limit -= new_visits;
-        Node* child_node =
-            best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
+        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
         bool decremented = false;
         if (child_node->IsTerminal()) {
           // Probably best place to check for two-fold draws consistently.
@@ -1514,7 +1528,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
           // reverted.
           if (child_node->IsTwoFoldTerminal() &&
               current_path.size() + base_depth + 1 - 1 < child_node->GetM()) {
-            // Take a mutex - any SearchWorker specific mutex... since this is not safe to do concurrently between multiple tasks.
+            // Take a mutex - any SearchWorker specific mutex... since this is
+            // not safe to do concurrently between multiple tasks.
             std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
             int depth_counter = 0;
             // Cache node's values as we reset them in the process. We could
@@ -1532,7 +1547,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
               depth_counter++;
               // Even if original tree still exists, we don't want to revert
               // more than until new root.
-              if (depth_counter > current_path.size() + base_depth + 1 - 1) break;
+              if (depth_counter > current_path.size() + base_depth + 1 - 1)
+                break;
               // If wl != 0, we would have to switch signs at each depth.
             }
             // Mark the prior twofold draw as non terminal to extend it again.
@@ -1556,8 +1572,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
           // Reduce 1 for the visits_to_perform to ensure the collision created
           // doesn't include this visit.
           visits_to_perform.back()[best_idx] -= 1;
-          receiver->push_back(
-              NodeToProcess::Visit(child_node, current_path.size() + 1 + base_depth));
+          receiver->push_back(NodeToProcess::Visit(
+              child_node, current_path.size() + 1 + base_depth));
         }
       }
       is_root_node = false;
@@ -1583,7 +1599,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
     }
   }
 }
-
 
 void SearchWorker::ExtendNode(Node* node, int depth, PositionHistory* history) {
   std::vector<Move> to_add;
@@ -1696,7 +1711,8 @@ void SearchWorker::ExtendNode(Node* node, int depth, PositionHistory* history) {
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
-                                        int* transform_out, PositionHistory* history) {
+                                        int* transform_out,
+                                        PositionHistory* history) {
   const auto hash = history->HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
