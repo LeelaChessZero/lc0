@@ -117,7 +117,6 @@ class Edge_Iterator;
 template <bool is_const>
 class Node_Iterator;
 
-
 class Node {
  public:
   using Iterator = Edge_Iterator<false>;
@@ -571,7 +570,6 @@ class Edge_Iterator : public EdgeAndNode {
 template <bool is_const>
 class Node_Iterator {
  public:
-
   // Creates "end()" iterator.
   Node_Iterator() {}
 
@@ -624,12 +622,14 @@ class Node_Iterator {
       } while (node_ptr_ != nullptr && node_ptr_->GetN() == 0);
     }
   }
-  Node* operator*() { 
-      if (solid_) return &(node_ptr_[current_idx_]); else return node_ptr_;
+  Node* operator*() {
+    if (solid_)
+      return &(node_ptr_[current_idx_]);
+    else
+      return node_ptr_;
   }
 
  private:
-
   // Pointer to current node.
   Node* node_ptr_ = nullptr;
   uint16_t current_idx_ = 0;
@@ -640,7 +640,9 @@ class Node_Iterator {
 inline Node_Iterator<true> Node::VisitedNodes() const {
   return {*this, child_.get()};
 }
-inline Node_Iterator<false> Node::VisitedNodes() { return {*this, child_.get()}; }
+inline Node_Iterator<false> Node::VisitedNodes() {
+  return {*this, child_.get()};
+}
 
 inline float Node::GetVisitedPolicy() const {
   if (n_ == 0 || edges_ == nullptr || child_ == nullptr) return 0.0f;
