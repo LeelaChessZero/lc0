@@ -1089,14 +1089,15 @@ void SearchWorker::GatherMinibatch() {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     int prev_size = minibatch_.size();
+    int sort_start = prev_size;
     PickNodesToExtend(
         std::min(collision_events_left,
                  std::min(collisions_left,
                           params_.GetMiniBatchSize() - minibatch_size)));
     bool should_exit = false;
+    int non_collisions = 0;
     for (int i = prev_size; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
-      auto* node = picked_node.node;
 
       // There was a collision. If limit has been reached, return, otherwise
       // just start search of another node.
@@ -1107,12 +1108,71 @@ void SearchWorker::GatherMinibatch() {
         if (search_->stop_.load(std::memory_order_acquire)) should_exit = true;
         continue;
       }
+      ++non_collisions;
       ++minibatch_size;
+    }
+    bool needs_wait = false;
+    std::vector<int> offsets;
+    if (non_collisions > 10) {
+      needs_wait = true;
+      const int num_child_tasks = 4;
+      // Round down, left overs can go to main thread.
+      int per_worker = non_collisions / (num_child_tasks + 1);
+      {
+        std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
+        picking_tasks_.clear();
+        // Reserve because resizing breaks pointers held by the task threads. Reserve 100 - since we already did that in picking and why use a different size?
+        picking_tasks_.reserve(100);
+        next_task_available_ = 0;
+        int found = 0;
+        for (int i = prev_size; i < minibatch_.size(); i++) {
+          auto& picked_node = minibatch_[i];
+
+          // There was a collision. If limit has been reached, return, otherwise
+          // just start search of another node.
+          if (picked_node.IsCollision()) {
+            continue;
+          }
+          ++found;          
+          if (found == per_worker) {
+            picking_tasks_.emplace_back(prev_size, i + 1);
+            prev_size = i + 1;
+            found = 0;
+            if (picking_tasks_.size() == num_child_tasks) {
+              break;
+            }
+          }
+        }
+        task_added_.notify_all();
+      }
+
     }
     std::vector<int> to_remove_idx;
     std::vector<int> to_remove_computation;
     ProcessPickedTask(prev_size, minibatch_.size(), &to_remove_idx,
                       &to_remove_computation);
+    if (needs_wait) {
+      std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
+      task_completed_.wait(lock, [this]() {
+        for (int i = 0; i < picking_tasks_.size(); i++) {
+          if (!picking_tasks_[i].complete) return false;
+        }
+        return true;
+      });
+      for (int i = 0; i < picking_tasks_.size(); i++) {
+        for (int j = 0; j < picking_tasks_[i].to_remove_idx.size(); j++) {
+          to_remove_idx.push_back(picking_tasks_[i].to_remove_idx[j]);
+        }
+        for (int j = 0; j < picking_tasks_[i].to_remove_computation.size();
+             j++) {
+          to_remove_computation.push_back(picking_tasks_[i].to_remove_computation[j]);
+        }
+      }
+    }
+    // TODO: Could avoid this sort by giving the 'first' batch to main thread rather than the last batch.
+    std::sort(to_remove_idx.begin(), to_remove_idx.end());
+    // Have to sort these as they can complete in any order.
+    std::sort(to_remove_computation.begin(), to_remove_computation.end());
     // Remove the out of orders.
     for (int i = to_remove_idx.size() - 1; i >= 0; i--) {
       minibatch_.erase(minibatch_.begin() + to_remove_idx[i]);
@@ -1123,6 +1183,11 @@ void SearchWorker::GatherMinibatch() {
     for (int i = to_remove_computation.size() - 1; i >= 0; i--) {
       computation_->PopCacheHit(to_remove_computation[i]);
     }
+    // Ensure minibatch_ is always sorted by computation ordinal in each new section added. Otherwise FetchMinibatch will read the computations into the wrong nodes.
+    std::sort(
+        minibatch_.begin() + sort_start, minibatch_.end(), [](auto& a, auto& b) -> bool {
+          return a.computation_ordinal < b.computation_ordinal;
+        });
     // Check for stop at the end so we have at least one node.
     if (should_exit || search_->stop_.load(std::memory_order_acquire)) return;
   }
@@ -1134,6 +1199,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   PositionHistory history = search_->played_history_;
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
+    if (picked_node.IsCollision()) continue;
     auto* node = picked_node.node;
 
     // If node is already known as terminal (win/loss/draw according to rules
@@ -1150,6 +1216,8 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         SharedMutex::Lock lock(computation_mutex_);
         picked_node.is_cache_hit = AddNodeToComputation(node, true, &transform, &history);
         added_idx = computation_->GetBatchSize() - 1;
+        // Right now this is the index, but once out of order purging has been applied, this will no longer be the index, just the ordinal.
+        picked_node.computation_ordinal = added_idx;
         picked_node.probability_transform = transform;
       }
     }
@@ -1173,7 +1241,6 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
       // processed.
       // If NN eval was already processed out of order, remove it.
       if (picked_node.nn_queried) {
-        SharedMutex::Lock lock(computation_mutex_);
         to_remove_computation->push_back(added_idx);
       }
       to_remove_idx->push_back(i);

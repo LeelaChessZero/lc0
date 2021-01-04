@@ -50,8 +50,8 @@ bool CachingComputation::AddInputByHash(uint64_t hash) {
 
 void CachingComputation::PopCacheHit(int idx) {
   assert(!batch_.empty());
-  assert(batch_.back().lock);
-  assert(batch_.back().idx_in_parent == -1);
+  assert(batch_[idx].lock);
+  assert(batch_[idx].idx_in_parent == -1);
   batch_.erase(batch_.begin() + idx);
 }
 

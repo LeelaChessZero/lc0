@@ -305,6 +305,8 @@ class SearchWorker {
     bool is_cache_hit = false;
     bool is_collision = false;
     int probability_transform = 0;
+    // This is not the index in the computation, but it is a number which is in the same order as the content of the computation, for a given part of the minibatch_ that was added at once.
+    int computation_ordinal = -1;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count) {
