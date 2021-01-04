@@ -305,7 +305,9 @@ class SearchWorker {
     bool is_cache_hit = false;
     bool is_collision = false;
     int probability_transform = 0;
-    // This is not the index in the computation, but it is a number which is in the same order as the content of the computation, for a given part of the minibatch_ that was added at once.
+    // This is not the index in the computation, but it is a number which is in
+    // the same order as the content of the computation, for a given part of the
+    // minibatch_ that was added at once.
     int computation_ordinal = -1;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
@@ -325,7 +327,9 @@ class SearchWorker {
   };
 
   void PickNodesToExtend(int collision_limit);
-  void PickNodesToExtendTask(Node* starting_point, int collision_limit, int base_depth, std::vector<NodeToProcess>* receiver);
+  void PickNodesToExtendTask(Node* starting_point, int collision_limit,
+                             int base_depth,
+                             std::vector<NodeToProcess>* receiver);
   void ProcessPickedTask(int batch_start, int batch_end,
                          std::vector<int>* to_remove_receiver,
                          std::vector<int>* to_remove_computation_receiver);
@@ -337,14 +341,16 @@ class SearchWorker {
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
-  bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta, float* d_delta, float* m_delta) const;
+  bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
+                      float* d_delta, float* m_delta) const;
 
   void RunTasks();
 
   Search* const search_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
-  // To be taken with when adding to computation_ and there might be concurrent tasks.
+  // To be taken with when adding to computation_ and there might be concurrent
+  // tasks.
   mutable Mutex computation_mutex_;
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PrefetchIntoCache().
@@ -365,22 +371,20 @@ class SearchWorker {
     int collision_limit;
     std::vector<NodeToProcess> results;
 
-
     // Task type 1 - post gather processing.
     int start_idx;
     int end_idx;
     std::vector<int> to_remove_idx;
     std::vector<int> to_remove_computation;
-    
+
     bool complete = false;
     PickTask(Node* node, uint16_t depth, int collision_limit)
-        : task_type(0), start(node),
+        : task_type(0),
+          start(node),
           collision_limit(collision_limit),
           base_depth(depth) {}
     PickTask(int start_idx, int end_idx)
-        : task_type(1),
-          start_idx(start_idx),
-          end_idx(end_idx) {}
+        : task_type(1), start_idx(start_idx), end_idx(end_idx) {}
   };
   std::mutex picking_tasks_mutex_;
   std::vector<PickTask> picking_tasks_;
