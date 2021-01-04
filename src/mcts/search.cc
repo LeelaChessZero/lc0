@@ -1588,10 +1588,15 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
   float current_util[256];
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
+  // Fetch the current best root node visits for possible smart pruning.
+  const int64_t best_node_n = search_->current_best_edge_.GetN();
+
   int passed_off = 0;
 
+  bool is_root_node = node == search_->root_node_;
   const float even_draw_score = search_->GetDrawScore(false);
   const float odd_draw_score = search_->GetDrawScore(true);
+  const auto& root_move_filter = search_->root_move_filter_;
   bool node_already_updated = true;
   auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
 
@@ -1609,6 +1614,16 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
       // First check if node is terminal or not-expanded.  If either than create
       // a collision of appropriate size and pop current_path.
       if (!node->HasChildren() || node->GetN() == 0) {
+        if (is_root_node) {
+          // Root node is special - since its not reached from anywhere else, so
+          // it needs its own logic. Still need to create the collision to
+          // ensure the outer gather loop gives up.
+          if (node->TryStartScoreUpdate()) {
+            cur_limit -= 1;
+            minibatch_.push_back(
+                NodeToProcess::Visit(node, current_path.size() + base_depth));
+          }
+        }
         // Visits are created elsewhere, just need the collisions here.
         if (cur_limit > 0) {
           receiver->push_back(
@@ -1618,14 +1633,21 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
         current_path.pop_back();
         continue;
       }
-      if (cur_limit > 10 && cur_limit < (collision_limit * 2 / 3) &&
+      if (is_root_node) {
+        // Root node is again special - needs its n in flight updated separately
+        // as its not handled on the path to it, since there isn't one.
+        node->IncrementNInFlight(cur_limit);
+      }
+      // !is_root_node only for clarity, it can never pass the second condition.
+      if (!is_root_node && cur_limit > 10 &&
+          cur_limit < (collision_limit * 2 / 3) &&
           cur_limit + passed_off < collision_limit - 10) {
         bool passed = false;
         {
           std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
           // Ensure not to exceed size of reservation.
           if (picking_tasks_.size() < 100) {
-            picking_tasks_.emplace_back(node, current_path.size() - 1,
+            picking_tasks_.emplace_back(node, current_path.size() - 1 + base_depth,
                                         cur_limit);
             task_added_.notify_all();
             passed = true;
@@ -1670,18 +1692,16 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
         current_util[index] = q + m_evaluator.GetM(child, q);
       }
       const float fpu =
-          GetFpu(params_, node, false, draw_score, visited_pol);
+          GetFpu(params_, node, is_root_node, draw_score, visited_pol);
       for (int i = 0; i < node->GetNumEdges(); i++) {
         if (current_util[i] == std::numeric_limits<float>::lowest()) {
           current_util[i] = fpu + m_evaluator.GetDefaultM();
         }
       }
 
-      const float cpuct = ComputeCpuct(params_, node->GetN(), false);
+      const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-      // TODO: each child GetQ/GetM can be pulled outside the loop as they don't
-      // vary with n_in_flight being incremented.
       while (cur_limit > 0) {
         // Perform UCT for current node.
         float best = std::numeric_limits<float>::lowest();
@@ -1693,6 +1713,24 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
         best_edge.Reset();
         for (auto& child : node->Edges()) {
           idx++;
+          if (is_root_node) {
+            // If there's no chance to catch up to the current best node with
+            // remaining playouts, don't consider it.
+            // best_move_node_ could have changed since best_node_n was
+            // retrieved. To ensure we have at least one node to expand, always
+            // include current best node.
+            if (child != search_->current_best_edge_ &&
+                latest_time_manager_hints_.GetEstimatedRemainingPlayouts() <
+                    best_node_n - child.GetN()) {
+              continue;
+            }
+            // If root move filter exists, make sure move is in the list.
+            if (!root_move_filter.empty() &&
+                std::find(root_move_filter.begin(), root_move_filter.end(),
+                          child.GetMove()) == root_move_filter.end()) {
+              continue;
+            }
+          }
 
           const float util = current_util[idx];
 
@@ -1732,9 +1770,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
         Node* child_node =
             best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
         bool decremented = false;
-        // TODO: Before implementing 'true parallel' gather, the terminal visit
-        // reversion will need to be made a separate task to run after
-        // completion of gathering.
         if (child_node->IsTerminal()) {
           // Probably best place to check for two-fold draws consistently.
           // Depth starts with 1 at root, so real depth is depth - 1.
@@ -1791,6 +1826,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth, int collisi
               NodeToProcess::Visit(child_node, current_path.size() + 1 + base_depth));
         }
       }
+      is_root_node = false;
       // Fall through to select the first child.
     }
     int min_idx = current_path.back();
