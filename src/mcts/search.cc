@@ -978,8 +978,13 @@ void SearchWorker::RunTasks() {
       }
     }
     if (task != nullptr) {
-      PickNodesToExtendTask(task->start, task->base_depth,
+      if (task->task_type == 0) {
+        PickNodesToExtendTask(task->start, task->base_depth,
                             task->collision_limit, &(task->results));
+      } else {
+        ProcessPickedTask(task->start_idx, task->end_idx,
+                          &(task->to_remove_idx), &(task->to_remove_computation));
+      }
       std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
       picking_tasks_[id].complete = true;
       task_completed_.notify_all();
@@ -1103,47 +1108,76 @@ void SearchWorker::GatherMinibatch() {
         continue;
       }
       ++minibatch_size;
-
-      // If node is already known as terminal (win/loss/draw according to rules
-      // of the game), it means that we already visited this node before.
-      if (picked_node.IsExtendable()) {
-        // Node was never visited, extend it.
-        ExtendNode(node, picked_node.depth);
-
-        // Only send non-terminal nodes to a neural network.
-        if (!node->IsTerminal()) {
-          picked_node.nn_queried = true;
-          int transform;
-          picked_node.is_cache_hit =
-              AddNodeToComputation(node, true, &transform);
-          picked_node.probability_transform = transform;
-        }
-      }
-
-      // If out of order eval is enabled and the node to compute we added last
-      // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
-      // out of order eval for it.
-      if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
-        // Perform out of order eval for the last entry in minibatch_.
-        FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
-        {
-          // Nodes mutex for doing node updates.
-          SharedMutex::Lock lock(search_->nodes_mutex_);
-          DoBackupUpdateSingleNode(picked_node);
-        }
-
-        // Remove last entry in minibatch_, as it has just been
-        // processed.
-        // If NN eval was already processed out of order, remove it.
-        if (picked_node.nn_queried) computation_->PopCacheHit();
-        minibatch_.erase(minibatch_.begin() + i);
-        i--;
-        --minibatch_size;
-        ++number_out_of_order_;
-      }
+    }
+    std::vector<int> to_remove_idx;
+    std::vector<int> to_remove_computation;
+    ProcessPickedTask(prev_size, minibatch_.size(), &to_remove_idx,
+                      &to_remove_computation);
+    // Remove the out of orders.
+    for (int i = to_remove_idx.size() - 1; i >= 0; i--) {
+      minibatch_.erase(minibatch_.begin() + to_remove_idx[i]);
+      --minibatch_size;
+      ++number_out_of_order_;
+    }
+    // And their corresponding computation entries if needed.
+    for (int i = to_remove_computation.size() - 1; i >= 0; i--) {
+      computation_->PopCacheHit(to_remove_computation[i]);
     }
     // Check for stop at the end so we have at least one node.
     if (should_exit || search_->stop_.load(std::memory_order_acquire)) return;
+  }
+}
+
+void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
+                                     std::vector<int>* to_remove_idx,
+                                     std::vector<int>* to_remove_computation) {
+  PositionHistory history = search_->played_history_;
+  for (int i = start_idx; i < end_idx; i++) {
+    auto& picked_node = minibatch_[i];
+    auto* node = picked_node.node;
+
+    // If node is already known as terminal (win/loss/draw according to rules
+    // of the game), it means that we already visited this node before.
+    int added_idx = -1;
+    if (picked_node.IsExtendable()) {
+      // Node was never visited, extend it.
+      ExtendNode(node, picked_node.depth, &history);
+
+      // Only send non-terminal nodes to a neural network.
+      if (!node->IsTerminal()) {
+        picked_node.nn_queried = true;
+        int transform;
+        SharedMutex::Lock lock(computation_mutex_);
+        picked_node.is_cache_hit = AddNodeToComputation(node, true, &transform, &history);
+        added_idx = computation_->GetBatchSize() - 1;
+        picked_node.probability_transform = transform;
+      }
+    }
+
+    // If out of order eval is enabled and the node to compute we added last
+    // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
+    // out of order eval for it.
+    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+      // Perform out of order eval for the last entry in minibatch_.
+      {
+        SharedMutex::SharedLock lock(computation_mutex_);
+        FetchSingleNodeResult(&picked_node, added_idx);
+      }
+      {
+        // Nodes mutex for doing node updates.
+        SharedMutex::Lock lock(search_->nodes_mutex_);
+        DoBackupUpdateSingleNode(picked_node);
+      }
+
+      // Remove last entry in minibatch_, as it has just been
+      // processed.
+      // If NN eval was already processed out of order, remove it.
+      if (picked_node.nn_queried) {
+        SharedMutex::Lock lock(computation_mutex_);
+        to_remove_computation->push_back(added_idx);
+      }
+      to_remove_idx->push_back(i);
+    }
   }
 }
 
@@ -1858,9 +1892,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
   }
 }
 
-void SearchWorker::ExtendNode(Node* node, int depth) {
-  // Initialize position sequence with pre-move position.
-  history_.Trim(search_->played_history_.GetLength());
+void SearchWorker::ExtendNode(Node* node, int depth, PositionHistory* history) {
   std::vector<Move> to_add;
   // Could instead reserve one more than the difference between history_.size()
   // and history_.capacity().
@@ -1876,13 +1908,15 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
       cur = prev;
     }
   }
+  // Initialize position sequence with pre-move position.
+  history->Trim(search_->played_history_.GetLength());
   for (int i = to_add.size() - 1; i >= 0; i--) {
-    history_.Append(to_add[i]);
+    history->Append(to_add[i]);
   }
 
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
-  const auto& board = history_.Last().GetBoard();
+  const auto& board = history->Last().GetBoard();
   auto legal_moves = board.GenerateLegalMoves();
 
   // Check whether it's a draw/lose by position. Importantly, we must check
@@ -1905,12 +1939,12 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
       return;
     }
 
-    if (history_.Last().GetRule50Ply() >= 100) {
+    if (history->Last().GetRule50Ply() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
 
-    const auto repetitions = history_.Last().GetRepetitions();
+    const auto repetitions = history->Last().GetRepetitions();
     // Mark two-fold repetitions as draws according to settings.
     // Depth starts with 1 at root, so number of plies in PV is depth - 1.
     if (repetitions >= 2) {
@@ -1918,8 +1952,8 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
       return;
     } else if (repetitions == 1 && depth - 1 >= 4 &&
                params_.GetTwoFoldDraws() &&
-               depth - 1 >= history_.Last().GetPliesSincePrevRepetition()) {
-      const auto cycle_length = history_.Last().GetPliesSincePrevRepetition();
+               depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
+      const auto cycle_length = history->Last().GetPliesSincePrevRepetition();
       // use plies since first repetition as moves left; exact if forced draw.
       node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
                          Node::Terminal::TwoFold);
@@ -1928,12 +1962,12 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
-        history_.Last().GetRule50Ply() == 0 &&
+        history->Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       const WDLScore wdl =
-          search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
+          search_->syzygy_tb_->probe_wdl(history->Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
       if (state != FAIL) {
@@ -1969,14 +2003,14 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
-                                        int* transform_out) {
-  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
+                                        int* transform_out, PositionHistory* history) {
+  const auto hash = history->HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) {
       if (transform_out) {
         *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
+            search_->network_->GetCapabilities().input_format, *history);
       }
       return true;
     }
@@ -1984,7 +2018,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
     if (search_->cache_->ContainsKey(hash)) {
       if (transform_out) {
         *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
+            search_->network_->GetCapabilities().input_format, *history);
       }
       return true;
     }
@@ -1992,7 +2026,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
   int transform;
   auto planes =
       EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), &transform);
+                          *history, 8, params_.GetHistoryFill(), &transform);
 
   std::vector<uint16_t> moves;
 
@@ -2005,7 +2039,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
   } else {
     // Cache pseudolegal moves. A bit of a waste, but faster.
     const auto& pseudolegal_moves =
-        history_.Last().GetBoard().GeneratePseudolegalMoves();
+        history->Last().GetBoard().GeneratePseudolegalMoves();
     moves.reserve(pseudolegal_moves.size());
     for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
          iter != end; ++iter) {
@@ -2055,7 +2089,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false, nullptr)) {
+    if (AddNodeToComputation(node, false, nullptr, &history_)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always

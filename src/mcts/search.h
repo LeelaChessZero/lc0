@@ -325,8 +325,12 @@ class SearchWorker {
   NodeToProcess PickNodeToExtend(int collision_limit);
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(Node* starting_point, int collision_limit, int base_depth, std::vector<NodeToProcess>* receiver);
-  void ExtendNode(Node* node, int depth);
-  bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
+  void ProcessPickedTask(int batch_start, int batch_end,
+                         std::vector<int>* to_remove_receiver,
+                         std::vector<int>* to_remove_computation_receiver);
+  void ExtendNode(Node* node, int depth, PositionHistory* history);
+  bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out,
+                            PositionHistory* history);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              int idx_in_computation);
@@ -339,8 +343,11 @@ class SearchWorker {
   Search* const search_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
+  // To be taken with write lock when adding to computation_ and there might be concurrent tasks.
+  // To be tasken with read lock when using computation_ from a task.
+  mutable SharedMutex computation_mutex_;
   std::unique_ptr<CachingComputation> computation_;
-  // History is reset and extended by PickNodeToExtend().
+  // History is reset and extended by PrefetchIntoCache().
   PositionHistory history_;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
@@ -350,15 +357,30 @@ class SearchWorker {
   StoppersHints latest_time_manager_hints_;
 
   struct PickTask {
+    int task_type;
+
+    // For task type 0 - gathering.
     Node* start;
     int base_depth;
     int collision_limit;
     std::vector<NodeToProcess> results;
+
+
+    // Task type 1 - post gather processing.
+    int start_idx;
+    int end_idx;
+    std::vector<int> to_remove_idx;
+    std::vector<int> to_remove_computation;
+    
     bool complete = false;
     PickTask(Node* node, uint16_t depth, int collision_limit)
-        : start(node),
+        : task_type(0), start(node),
           collision_limit(collision_limit),
           base_depth(depth) {}
+    PickTask(int start_idx, int end_idx)
+        : task_type(1),
+          start_idx(start_idx),
+          end_idx(end_idx) {}
   };
   std::mutex picking_tasks_mutex_;
   std::vector<PickTask> picking_tasks_;

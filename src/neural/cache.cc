@@ -48,11 +48,11 @@ bool CachingComputation::AddInputByHash(uint64_t hash) {
   return true;
 }
 
-void CachingComputation::PopCacheHit() {
+void CachingComputation::PopCacheHit(int idx) {
   assert(!batch_.empty());
   assert(batch_.back().lock);
   assert(batch_.back().idx_in_parent == -1);
-  batch_.pop_back();
+  batch_.erase(batch_.begin() + idx);
 }
 
 void CachingComputation::AddInput(
