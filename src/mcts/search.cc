@@ -1195,7 +1195,13 @@ void SearchWorker::GatherMinibatch() {
                node = node->GetParent()) {
             node->CancelScoreUpdate(minibatch_[i].multivisit);
           }
-
+          ++collision_events_left;
+          collisions_left += minibatch_[i].multivisit;
+          // Reverting the collision might mean that should_exit was calculated incorrectly previously, if so update it.
+          if (should_exit && !search_->stop_.load(std::memory_order_acquire) &&
+              collisions_left > 0 && collision_events_left > 0) {
+            should_exit = false;
+          }
           minibatch_.erase(minibatch_.begin() + i);
         }
       }
