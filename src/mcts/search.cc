@@ -1244,53 +1244,115 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
                                      std::vector<int>* to_remove_idx,
                                      std::vector<int>* to_remove_computation,
                                      TaskWorkspace* workspace) {
-  PositionHistory history = search_->played_history_;
+  // This code runs multiple passes of work across the same input in order to
+  // reduce taking/dropping mutexes in quick succession.
+  std::vector<PositionHistory> histories;
+  histories.reserve(30);
+
+  // First pass - Extend nodes.
+  int non_collision = -1;
+  bool need_add = false;
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
+    ++non_collision;
     auto* node = picked_node.node;
+    histories.emplace_back();
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
     int added_idx = -1;
     if (picked_node.IsExtendable()) {
+      histories.back().Reserve(search_->played_history_.GetLength() +
+                               picked_node.moves_to_visit.size());
+      histories.back() = search_->played_history_;
       // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
-
-      // Only send non-terminal nodes to a neural network.
+      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit,
+                 &histories.back());
       if (!node->IsTerminal()) {
-        picked_node.nn_queried = true;
-        int transform;
-        Mutex::Lock lock(computation_mutex_);
-        picked_node.is_cache_hit =
-            AddNodeToComputation(node, true, &transform, &history);
-        added_idx = computation_->GetBatchSize() - 1;
-        // Right now this is the index, but once out of order purging has been
-        // applied, this will no longer be the index, just the ordinal.
-        picked_node.computation_ordinal = added_idx;
-        picked_node.probability_transform = transform;
+        need_add = true;
       }
     }
+  }
+
+  // Second pass - if previous pass indicated it useful, AddToComputation.
+  std::vector<int> added_idxes;
+  if (need_add) {
+    added_idxes.reserve(30);
+    Mutex::Lock lock(computation_mutex_);
+    int non_collision = -1;
+    for (int i = start_idx; i < end_idx; i++) {
+      auto& picked_node = minibatch_[i];
+      if (picked_node.IsCollision()) continue;
+      ++non_collision;
+      added_idxes.emplace_back();
+      auto* node = picked_node.node;
+      if (picked_node.IsExtendable()) {
+        // Only send non-terminal nodes to a neural network.
+        if (!node->IsTerminal()) {
+          picked_node.nn_queried = true;
+          int transform;
+          picked_node.is_cache_hit = AddNodeToComputation(
+              node, true, &transform, &histories[non_collision]);
+          added_idxes.back() = computation_->GetBatchSize() - 1;
+          // Right now this is the index, but once out of order purging has been
+          // applied, this will no longer be the index, just the ordinal.
+          picked_node.computation_ordinal = added_idxes.back();
+          picked_node.probability_transform = transform;
+        }
+      }
+    }
+  }
+
+  // Third pass - Fetch node results for out of order.
+  non_collision = -1;
+  bool need_backup = false;
+  for (int i = start_idx; i < end_idx; i++) {
+    auto& picked_node = minibatch_[i];
+    if (picked_node.IsCollision()) continue;
+    ++non_collision;
 
     // If out of order eval is enabled and the node to compute we added last
     // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
     // out of order eval for it.
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
-      // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, added_idx);
-      {
-        // Nodes mutex for doing node updates.
-        SharedMutex::Lock lock(search_->nodes_mutex_);
-        DoBackupUpdateSingleNode(picked_node);
+      int added_idx = 0;
+      if (non_collision < added_idxes.size()) {
+        added_idx = added_idxes[non_collision];
       }
 
-      // Remove last entry in minibatch_, as it has just been
-      // processed.
-      // If NN eval was already processed out of order, remove it.
-      if (picked_node.nn_queried) {
-        to_remove_computation->push_back(added_idx);
+      // Perform out of order eval for the last entry in minibatch_.
+      FetchSingleNodeResult(&picked_node, added_idx);
+      need_backup = true;
+    }
+  }
+
+  // Fourth pass - If there was any out of order, take nodes mutex and perform
+  // the backups.
+  if (need_backup) {
+    // Nodes mutex for doing node updates.
+    SharedMutex::Lock lock(search_->nodes_mutex_);
+    int non_collision = -1;
+    for (int i = start_idx; i < end_idx; i++) {
+      auto& picked_node = minibatch_[i];
+      if (picked_node.IsCollision()) continue;
+      ++non_collision;
+
+      if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+        DoBackupUpdateSingleNode(picked_node);
+
+        // Remove last entry in minibatch_, as it has just been
+        // processed.
+        // If NN eval was already processed out of order, remove it.
+        if (picked_node.nn_queried) {
+          int added_idx = 0;
+          if (non_collision < added_idxes.size()) {
+            added_idx = added_idxes[non_collision];
+          }
+          to_remove_computation->push_back(added_idx);
+        }
+        to_remove_idx->push_back(i);
       }
-      to_remove_idx->push_back(i);
     }
   }
 }
