@@ -1069,6 +1069,8 @@ void SearchWorker::InitializeIteration(
   minibatch_.clear();
 }
 
+#define USE_WORKERS 1
+
 // 2. Gather minibatch.
 // ~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::GatherMinibatch() {
@@ -1123,7 +1125,7 @@ void SearchWorker::GatherMinibatch() {
       ++minibatch_size;
     }
     bool needs_wait = false;
-    if (non_collisions > 10) {
+    if (USE_WORKERS && non_collisions > 10) {
       needs_wait = true;
       // Ensure computation has enough space for whatever we throw at it and
       // won't resize.
@@ -1414,7 +1416,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         node->IncrementNInFlight(cur_limit);
       }
       // !is_root_node only for clarity, it can never pass the second condition.
-      if (!is_root_node && cur_limit > 10 &&
+      if (USE_WORKERS && !is_root_node && cur_limit > 10 &&
           cur_limit < (collision_limit * 2 / 3) &&
           cur_limit + passed_off < collision_limit - 10) {
         bool passed = false;
