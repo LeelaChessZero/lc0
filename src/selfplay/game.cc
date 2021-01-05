@@ -117,7 +117,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // If endgame, stop.
     if (game_result_ != GameResult::UNDECIDED) break;
-
+    if (tree_[0]->GetPositionHistory().Last().GetGamePly() >= 450) {
+      adjudicated_ = true;
+      break;
+    }
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId)) {
@@ -153,7 +156,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
-    const auto best_eval = search_->GetBestEval();
+    bool best_is_terminal;
+    const auto best_eval = search_->GetBestEval(&best_is_terminal);
     float eval = best_eval.wl;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
@@ -173,21 +177,25 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         if (best_w > threshold) {
           game_result_ =
               blacks_move ? GameResult::BLACK_WON : GameResult::WHITE_WON;
+          adjudicated_ = true;
           break;
         }
         if (best_l > threshold) {
           game_result_ =
               blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          adjudicated_ = true;
           break;
         }
         if (best_d > threshold) {
           game_result_ = GameResult::DRAW;
+          adjudicated_ = true;
           break;
         }
       } else {
         if (eval < resignpct) {  // always false when resignpct == 0
           game_result_ =
               blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          adjudicated_ = true;
           break;
         }
       }
@@ -252,7 +260,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
           search_->GetParams().GetHistoryFill(), input_format, best_eval,
-          played_eval, orig_eval));
+          played_eval, orig_eval, best_is_terminal));
     }
 
     // Add best move to the tree.
@@ -325,6 +333,12 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
     } else {
       chunk.result_q = 0;
       chunk.result_d = 1;
+    }
+    if (adjudicated_) {
+      chunk.invariance_info |= 1u << 5; // Game adjudicated.
+    }
+    if (adjudicated_ && game_result_ == GameResult::UNDECIDED) {
+      chunk.invariance_info |= 1u << 4; // Max game length exceeded.
     }
     chunk.plies_left = m_estimate;
     m_estimate -= 1.0f;
