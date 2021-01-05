@@ -1287,6 +1287,10 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
       ++non_collision;
       added_idxes.emplace_back();
       auto* node = picked_node.node;
+      // Note: IsExtendable status has changed since first pass, since
+      // node->IsTerminal may have become true. However, since the inside of
+      // this if statement does nothing if node->IsTerminal is true, this is
+      // fine.
       if (picked_node.IsExtendable()) {
         // Only send non-terminal nodes to a neural network.
         if (!node->IsTerminal()) {
