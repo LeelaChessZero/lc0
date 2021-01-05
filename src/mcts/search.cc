@@ -1346,8 +1346,16 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   vtp_last_filled.reserve(30);
   std::vector<int> current_path;
   current_path.reserve(30);
+
+  // These 2 are 'filled pre-emptively'.
   float current_pol[256];
   float current_util[256];
+
+  // These 3 are 'filled on demand'.
+  float current_score[256];
+  int current_nstarted[256];
+  Node::Iterator cur_iters[256];
+
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
   // Fetch the current best root node visits for possible smart pruning.
@@ -1443,8 +1451,10 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       // Which we are putting off until after policy is copied so we can create
       // visited policy without having to cache it in the node (allowing the
       // node to stay at 64 bytes).
-      node->CopyPolicy(current_pol, node->GetNStarted() + cur_limit + 2);
-      for (int i = 0; i < node->GetNumEdges(); i++) {
+      int max_needed = std::min(static_cast<int>(node->GetNumEdges()),
+                                node->GetNStarted() + cur_limit + 2);
+      node->CopyPolicy(current_pol, max_needed);
+      for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
       // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
@@ -1462,7 +1472,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       }
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
-      for (int i = 0; i < node->GetNumEdges(); i++) {
+      for (int i = 0; i < max_needed; i++) {
         if (current_util[i] == std::numeric_limits<float>::lowest()) {
           current_util[i] = fpu + m_evaluator.GetDefaultM();
         }
@@ -1471,6 +1481,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      int cache_filled_idx = -1;
       while (cur_limit > 0) {
         // Perform UCT for current node.
         float best = std::numeric_limits<float>::lowest();
@@ -1480,44 +1491,57 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         bool can_exit = false;
         int idx = -1;
         best_edge.Reset();
-        for (auto& child : node->Edges()) {
-          idx++;
+        for (int idx = 0; idx < max_needed; ++idx) {
+          if (idx > cache_filled_idx) {
+            if (idx == 0) {
+              cur_iters[idx] = node->Edges();
+            } else {
+              cur_iters[idx] = cur_iters[idx - 1];
+              ++cur_iters[idx];
+            }
+            current_nstarted[idx] = cur_iters[idx].GetNStarted();
+          }
+          int nstarted = current_nstarted[idx];
+          const float util = current_util[idx];
+          if (idx > cache_filled_idx) {
+            current_score[idx] =
+                current_pol[idx] * puct_mult / (1 + nstarted) + util;
+            cache_filled_idx++;
+          }
           if (is_root_node) {
             // If there's no chance to catch up to the current best node with
             // remaining playouts, don't consider it.
             // best_move_node_ could have changed since best_node_n was
             // retrieved. To ensure we have at least one node to expand, always
             // include current best node.
-            if (child != search_->current_best_edge_ &&
+            if (cur_iters[idx] != search_->current_best_edge_ &&
                 latest_time_manager_hints_.GetEstimatedRemainingPlayouts() <
-                    best_node_n - child.GetN()) {
+                    best_node_n - cur_iters[idx].GetN()) {
               continue;
             }
             // If root move filter exists, make sure move is in the list.
             if (!root_move_filter.empty() &&
                 std::find(root_move_filter.begin(), root_move_filter.end(),
-                          child.GetMove()) == root_move_filter.end()) {
+                          cur_iters[idx].GetMove()) == root_move_filter.end()) {
               continue;
             }
           }
 
-          const float util = current_util[idx];
 
-          const float score =
-              current_pol[idx] * puct_mult / (1 + child.GetNStarted()) + util;
+          float score = current_score[idx];
           if (score > best) {
             second_best = best;
             second_best_edge = best_edge;
             best = score;
             best_idx = idx;
             best_without_u = util;
-            best_edge = child;
+            best_edge = cur_iters[idx];
           } else if (score > second_best) {
             second_best = score;
-            second_best_edge = child;
+            second_best_edge = cur_iters[idx];
           }
           if (can_exit) break;
-          if (child.GetNStarted() == 0) {
+          if (nstarted == 0) {
             // One more loop will get 2 unvisited nodes, which is sufficient to
             // ensure second best is correct. This relies upon the fact that
             // edges are sorted in policy decreasing order.
@@ -1583,11 +1607,16 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           }
         }
         if (child_node->TryStartScoreUpdate()) {
+          current_nstarted[best_idx]++;
           new_visits -= 1;
           decremented = true;
           if (child_node->HasChildren()) {
             child_node->IncrementNInFlight(new_visits);
+            current_nstarted[best_idx] += new_visits;
           }
+          current_score[best_idx] = current_pol[best_idx] * puct_mult /
+                                        (1 + current_nstarted[best_idx]) +
+                                    current_util[best_idx];
         }
         if ((decremented && !child_node->HasChildren())) {
           // Reduce 1 for the visits_to_perform to ensure the collision created
