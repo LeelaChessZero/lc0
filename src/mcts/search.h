@@ -213,9 +213,10 @@ class SearchWorker {
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
     Numa::BindThread(id);
     for (size_t i = 0; i < 4; i++) {
+      task_workspaces_.emplace_back();
       task_threads_.emplace_back([this, i]() {
         Numa::BindThread(i);
-        this->RunTasks();
+        this->RunTasks(i);
       });
     }
   }
@@ -320,21 +321,28 @@ class SearchWorker {
     }
 
    private:
-    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit, int maxvisit)
+    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
+                  int maxvisit)
         : node(node),
           multivisit(multivisit),
           maxvisit(maxvisit),
           depth(depth),
           is_collision(is_collision) {}
   };
+  // Holds per task worker scratch data
+  struct TaskWorkspace {
+    Node::Iterator cur_iters[256];
+  };
 
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(Node* starting_point, int collision_limit,
                              int base_depth,
-                             std::vector<NodeToProcess>* receiver);
+                             std::vector<NodeToProcess>* receiver,
+                             TaskWorkspace* workspace);
   void ProcessPickedTask(int batch_start, int batch_end,
                          std::vector<int>* to_remove_receiver,
-                         std::vector<int>* to_remove_computation_receiver);
+                         std::vector<int>* to_remove_computation_receiver,
+                         TaskWorkspace* workspace);
   void ExtendNode(Node* node, int depth, PositionHistory* history);
   bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out,
                             PositionHistory* history);
@@ -346,7 +354,7 @@ class SearchWorker {
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
 
-  void RunTasks();
+  void RunTasks(int tid);
 
   Search* const search_;
   // List of nodes to process.
@@ -394,6 +402,8 @@ class SearchWorker {
   std::condition_variable task_completed_;
   std::condition_variable task_added_;
   std::vector<std::thread> task_threads_;
+  std::vector<TaskWorkspace> task_workspaces_;
+  TaskWorkspace main_workspace_;
   bool exiting_ = false;
 };
 

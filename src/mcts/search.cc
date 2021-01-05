@@ -959,7 +959,7 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
-void SearchWorker::RunTasks() {
+void SearchWorker::RunTasks(int tid) {
   while (true) {
     PickTask* task = nullptr;
     int id = 0;
@@ -979,11 +979,12 @@ void SearchWorker::RunTasks() {
     if (task != nullptr) {
       if (task->task_type == 0) {
         PickNodesToExtendTask(task->start, task->base_depth,
-                              task->collision_limit, &(task->results));
+                              task->collision_limit, &(task->results),
+                              &(task_workspaces_[tid]));
       } else {
-        ProcessPickedTask(task->start_idx, task->end_idx,
-                          &(task->to_remove_idx),
-                          &(task->to_remove_computation));
+        ProcessPickedTask(
+            task->start_idx, task->end_idx, &(task->to_remove_idx),
+            &(task->to_remove_computation), &(task_workspaces_[tid]));
       }
       std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
       picking_tasks_[id].complete = true;
@@ -1103,7 +1104,8 @@ void SearchWorker::GatherMinibatch() {
       // There was a collision. If limit has been reached, mark to return once
       // we've finished the current collected set.
       if (picked_node.IsCollision()) {
-        if (picked_node.maxvisit > 0 && collisions_left > picked_node.multivisit) {
+        if (picked_node.maxvisit > 0 &&
+            collisions_left > picked_node.multivisit) {
           SharedMutex::Lock lock(search_->nodes_mutex_);
           int extra = std::min(picked_node.maxvisit, collisions_left) -
                       picked_node.multivisit;
@@ -1163,7 +1165,7 @@ void SearchWorker::GatherMinibatch() {
     std::vector<int> to_remove_idx;
     std::vector<int> to_remove_computation;
     ProcessPickedTask(prev_size, minibatch_.size(), &to_remove_idx,
-                      &to_remove_computation);
+                      &to_remove_computation, &main_workspace_);
     if (needs_wait) {
       std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
       task_completed_.wait(lock, [this]() {
@@ -1243,7 +1245,8 @@ void SearchWorker::GatherMinibatch() {
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
                                      std::vector<int>* to_remove_idx,
-                                     std::vector<int>* to_remove_computation) {
+                                     std::vector<int>* to_remove_computation,
+                                     TaskWorkspace* workspace) {
   PositionHistory history = search_->played_history_;
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
@@ -1318,7 +1321,8 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // Since the tasks perform work which assumes they have the lock, even though
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
-  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, &minibatch_);
+  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, &minibatch_,
+                        &main_workspace_);
   {
     std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
     task_completed_.wait(lock, [this]() {
@@ -1337,7 +1341,8 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
 
 void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                          int collision_limit,
-                                         std::vector<NodeToProcess>* receiver) {
+                                         std::vector<NodeToProcess>* receiver,
+                                         TaskWorkspace* workspace) {
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
@@ -1356,7 +1361,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   // These 3 are 'filled on demand'.
   float current_score[256];
   int current_nstarted[256];
-  Node::Iterator cur_iters[256];
+  auto& cur_iters = workspace->cur_iters;
 
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
@@ -1400,7 +1405,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         // Visits are created elsewhere, just need the collisions here.
         if (cur_limit > 0) {
           int max_count = 0;
-          if (cur_limit == collision_limit && base_depth == 0 && max_limit > cur_limit) {
+          if (cur_limit == collision_limit && base_depth == 0 &&
+              max_limit > cur_limit) {
             max_count = max_limit;
           }
           receiver->push_back(NodeToProcess::Collision(
@@ -1528,7 +1534,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
               continue;
             }
           }
-
 
           float score = current_score[idx];
           if (score > best) {
