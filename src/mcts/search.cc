@@ -1191,24 +1191,21 @@ void SearchWorker::GatherMinibatch() {
     // Have to sort these as they can complete in any order.
     std::sort(to_remove_computation.begin(), to_remove_computation.end());
     // Remove the out of orders.
-    std::vector<Node*> out_of_order_nodes;
+    bool some_ooo = false;
     for (int i = to_remove_idx.size() - 1; i >= 0; i--) {
-      out_of_order_nodes.push_back(minibatch_[to_remove_idx[i]].node);
+      some_ooo = true;
       minibatch_.erase(minibatch_.begin() + to_remove_idx[i]);
       --minibatch_size;
       ++number_out_of_order_;
     }
-    // Remove and revert the collisions matching the out of orders.
-    // This is not done in parallelization because parallelization parts are not
-    // split at points where we can guarantee the collision and the node are
-    // together, since picking doesn't add the collision immediately after the
-    // visit.
-    if (out_of_order_nodes.size() > 0) {
+    // If there was any OOO, revert 'all' new collisions - it isn't possible to
+    // identify exactly which ones are afterwards and only prune those. This may
+    // remove too many items, but hopefully most of the time they will just be
+    // added back in the same in the next gather.
+    if (some_ooo) {
       SharedMutex::Lock lock(search_->nodes_mutex_);
       for (int i = minibatch_.size() - 1; i >= sort_start; i--) {
-        if (minibatch_[i].IsCollision() &&
-            std::find(out_of_order_nodes.begin(), out_of_order_nodes.end(),
-                      minibatch_[i].node) != out_of_order_nodes.end()) {
+        if (minibatch_[i].IsCollision()) {
           Node* node = minibatch_[i].node;
           for (node = node->GetParent();
                node != search_->root_node_->GetParent();
