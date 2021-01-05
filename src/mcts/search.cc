@@ -1342,6 +1342,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   // width. Maybe even do so outside of lock scope.
   std::vector<std::vector<int>> visits_to_perform;
   visits_to_perform.reserve(30);
+  std::vector<int> vtp_last_filled;
+  vtp_last_filled.reserve(30);
   std::vector<int> current_path;
   current_path.reserve(30);
   float current_pol[256];
@@ -1428,6 +1430,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
 
       // Create visits_to_perform new back entry for this level.
       visits_to_perform.push_back(std::vector<int>(node->GetNumEdges(), 0));
+      vtp_last_filled.push_back(-1);
 
       // Cache all constant UCT parameters.
       // When we're near the leaves we can copy less of the policy, since there
@@ -1593,27 +1596,35 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           receiver->push_back(NodeToProcess::Visit(
               child_node, current_path.size() + 1 + base_depth));
         }
+        if (best_idx > vtp_last_filled.back() &&
+            visits_to_perform.back()[best_idx] > 0) {
+          vtp_last_filled.back() = best_idx;
+        }
       }
       is_root_node = false;
       // Fall through to select the first child.
     }
     int min_idx = current_path.back();
     bool found_child = false;
-    int idx = -1;
-    for (auto& child : node->Edges()) {
-      idx++;
-      if (idx > min_idx && visits_to_perform.back()[idx] > 0) {
-        current_path.back() = idx;
-        current_path.push_back(-1);
-        node = child.GetOrSpawnNode(/* parent */ node, nullptr);
-        found_child = true;
-        break;
+    if (vtp_last_filled.back() > min_idx) {
+      int idx = -1;
+      for (auto& child : node->Edges()) {
+        idx++;
+        if (idx > min_idx && visits_to_perform.back()[idx] > 0) {
+          current_path.back() = idx;
+          current_path.push_back(-1);
+          node = child.GetOrSpawnNode(/* parent */ node, nullptr);
+          found_child = true;
+          break;
+        }
+        if (idx >= vtp_last_filled.back()) break;
       }
     }
     if (!found_child) {
       node = node->GetParent();
       current_path.pop_back();
       visits_to_perform.pop_back();
+      vtp_last_filled.pop_back();
     }
   }
 }
