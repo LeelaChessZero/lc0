@@ -1550,8 +1550,16 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
         int new_visits = 0;
         if (second_best_edge) {
-          int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
-              second_best, puct_mult, best_without_u);
+          int estimated_visits_to_change_best = std::numeric_limits<int>::max();
+          if (best_without_u < second_best) {
+            const auto n1 = current_nstarted[best_idx] + 1;
+            estimated_visits_to_change_best = std::max(
+                1.0f, std::min(std::floor(current_pol[best_idx] * puct_mult /
+                                              (second_best - best_without_u) -
+                                          n1) +
+                                   1,
+                               1e9f));
+          }
           second_best_edge.Reset();
           max_limit = std::min(max_limit, estimated_visits_to_change_best);
           new_visits = std::min(cur_limit, estimated_visits_to_change_best);
