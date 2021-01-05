@@ -979,10 +979,16 @@ void SearchWorker::RunTasks(int tid) {
             }
             task_taker_ = 0;
           }
+          spins = 0;
           continue;
         } else if (task_count_ != -1) {
+          spins++;
+          if (spins > 1000) {
+            std::this_thread::yield();
+          }
           continue;
         }
+        spins = 0;
         // Looks like sleep time.
         std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
         if (task_count_ != -1) continue;
