@@ -311,6 +311,8 @@ class SearchWorker {
     // the same order as the content of the computation, for a given part of the
     // minibatch_ that was added at once.
     int computation_ordinal = -1;
+    // Only populated for visits,
+    std::vector<Move> moves_to_visit;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count, int max_count) {
@@ -337,13 +339,15 @@ class SearchWorker {
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(Node* starting_point, int collision_limit,
                              int base_depth,
+                             const std::vector<Move>& moves_to_base,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
   void ProcessPickedTask(int batch_start, int batch_end,
                          std::vector<int>* to_remove_receiver,
                          std::vector<int>* to_remove_computation_receiver,
                          TaskWorkspace* workspace);
-  void ExtendNode(Node* node, int depth, PositionHistory* history);
+  void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
+                  PositionHistory* history);
   bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out,
                             PositionHistory* history);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
@@ -380,6 +384,7 @@ class SearchWorker {
     int base_depth;
     int collision_limit;
     std::vector<NodeToProcess> results;
+    std::vector<Move> moves_to_base;
 
     // Task type 1 - post gather processing.
     int start_idx;
@@ -388,11 +393,13 @@ class SearchWorker {
     std::vector<int> to_remove_computation;
 
     bool complete = false;
-    PickTask(Node* node, uint16_t depth, int collision_limit)
+    PickTask(Node* node, uint16_t depth, const std::vector<Move>& base_moves,
+             int collision_limit)
         : task_type(0),
           start(node),
           collision_limit(collision_limit),
-          base_depth(depth) {}
+          base_depth(depth),
+          moves_to_base(base_moves) {}
     PickTask(int start_idx, int end_idx)
         : task_type(1), start_idx(start_idx), end_idx(end_idx) {}
   };

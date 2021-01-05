@@ -979,8 +979,8 @@ void SearchWorker::RunTasks(int tid) {
     if (task != nullptr) {
       if (task->task_type == 0) {
         PickNodesToExtendTask(task->start, task->base_depth,
-                              task->collision_limit, &(task->results),
-                              &(task_workspaces_[tid]));
+                              task->collision_limit, task->moves_to_base,
+                              &(task->results), &(task_workspaces_[tid]));
       } else {
         ProcessPickedTask(
             task->start_idx, task->end_idx, &(task->to_remove_idx),
@@ -1255,7 +1255,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     int added_idx = -1;
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth, &history);
+      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
 
       // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
@@ -1314,12 +1314,13 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
     picking_tasks_.reserve(100);
     next_task_available_ = 0;
   }
+  std::vector<Move> empty_movelist;
   // This lock must be held until after the task_completed_ wait succeeds below.
   // Since the tasks perform work which assumes they have the lock, even though
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
-  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, &minibatch_,
-                        &main_workspace_);
+  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist,
+                        &minibatch_, &main_workspace_);
   {
     std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
     task_completed_.wait(lock, [this]() {
@@ -1338,6 +1339,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
 
 void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                          int collision_limit,
+                                         const std::vector<Move>& moves_to_base,
                                          std::vector<NodeToProcess>* receiver,
                                          TaskWorkspace* workspace) {
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
@@ -1350,6 +1352,10 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   vtp_last_filled.reserve(30);
   std::vector<int> current_path;
   current_path.reserve(30);
+  std::vector<Move> moves_to_path = moves_to_base;
+  if (moves_to_path.capacity() < 30) {
+    moves_to_path.reserve(30);
+  }
 
   // These 2 are 'filled pre-emptively'.
   float current_pol[256];
@@ -1427,8 +1433,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
           // Ensure not to exceed size of reservation.
           if (picking_tasks_.size() < 100) {
-            picking_tasks_.emplace_back(
-                node, current_path.size() - 1 + base_depth, cur_limit);
+            picking_tasks_.emplace_back(node,
+                                        current_path.size() - 1 + base_depth,
+                                        moves_to_path, cur_limit);
             task_added_.notify_all();
             passed = true;
             passed_off += cur_limit;
@@ -1635,6 +1642,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           visits_to_perform.back()[best_idx] -= 1;
           receiver->push_back(NodeToProcess::Visit(
               child_node, current_path.size() + 1 + base_depth));
+          receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
+          receiver->back().moves_to_visit = moves_to_path;
+          receiver->back().moves_to_visit.push_back(best_edge.GetMove());
         }
         if (best_idx > vtp_last_filled.back() &&
             visits_to_perform.back()[best_idx] > 0) {
@@ -1651,6 +1661,11 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       for (auto& child : node->Edges()) {
         idx++;
         if (idx > min_idx && visits_to_perform.back()[idx] > 0) {
+          if (moves_to_path.size() != current_path.size() + base_depth) {
+            moves_to_path.push_back(child.GetMove());
+          } else {
+            moves_to_path.back() = child.GetMove();
+          }
           current_path.back() = idx;
           current_path.push_back(-1);
           node = child.GetOrSpawnNode(/* parent */ node, nullptr);
@@ -1662,6 +1677,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
     }
     if (!found_child) {
       node = node->GetParent();
+      if (!moves_to_path.empty()) moves_to_path.pop_back();
       current_path.pop_back();
       visits_to_perform.pop_back();
       vtp_last_filled.pop_back();
@@ -1669,26 +1685,13 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   }
 }
 
-void SearchWorker::ExtendNode(Node* node, int depth, PositionHistory* history) {
-  std::vector<Move> to_add;
-  // Could instead reserve one more than the difference between history_.size()
-  // and history_.capacity().
-  to_add.reserve(60);
-  // Need a lock to walk parents of leaf in case MakeSolid is concurrently
-  // adjusting parent chain.
-  {
-    SharedMutex::SharedLock lock(search_->nodes_mutex_);
-    Node* cur = node;
-    while (cur != search_->root_node_) {
-      Node* prev = cur->GetParent();
-      to_add.push_back(prev->GetEdgeToNode(cur)->GetMove());
-      cur = prev;
-    }
-  }
+void SearchWorker::ExtendNode(Node* node, int depth,
+                              const std::vector<Move>& moves_to_node,
+                              PositionHistory* history) {
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
-  for (int i = to_add.size() - 1; i >= 0; i--) {
-    history->Append(to_add[i]);
+  for (int i = 0; i < moves_to_node.size(); i++) {
+    history->Append(moves_to_node[i]);
   }
 
   // We don't need the mutex because other threads will see that N=0 and
