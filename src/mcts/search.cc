@@ -1095,15 +1095,24 @@ void SearchWorker::GatherMinibatch() {
                           params_.GetMiniBatchSize() - minibatch_size)));
     bool should_exit = false;
     int non_collisions = 0;
-    // Ensure computation has enough space for whatever we throw at it and won't
-    // resize.
-    computation_->Reserve(minibatch_.size());
     for (int i = prev_size; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
 
       // There was a collision. If limit has been reached, mark to return once
       // we've finished the current collected set.
       if (picked_node.IsCollision()) {
+        if (picked_node.maxvisit > 0 && collisions_left > picked_node.multivisit) {
+          SharedMutex::Lock lock(search_->nodes_mutex_);
+          int extra = std::min(picked_node.maxvisit, collisions_left) -
+                      picked_node.multivisit;
+          picked_node.multivisit += extra;
+          Node* node = picked_node.node;
+          for (node = node->GetParent();
+               node != search_->root_node_->GetParent();
+               node = node->GetParent()) {
+            node->IncrementNInFlight(extra);
+          }
+        }
         if (--collision_events_left <= 0) should_exit = true;
         if ((collisions_left -= picked_node.multivisit) <= 0)
           should_exit = true;
@@ -1116,6 +1125,9 @@ void SearchWorker::GatherMinibatch() {
     bool needs_wait = false;
     if (non_collisions > 10) {
       needs_wait = true;
+      // Ensure computation has enough space for whatever we throw at it and
+      // won't resize.
+      computation_->Reserve(minibatch_.size());
       const int num_child_tasks = std::clamp(non_collisions / 10, 1, 4);
       // Round down, left overs can go to main thread.
       int per_worker = non_collisions / (num_child_tasks + 1);
@@ -1329,7 +1341,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
   std::vector<std::vector<int>> visits_to_perform;
+  visits_to_perform.reserve(30);
   std::vector<int> current_path;
+  current_path.reserve(30);
   float current_pol[256];
   float current_util[256];
   Node::Iterator best_edge;
@@ -1344,6 +1358,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   const float odd_draw_score = search_->GetDrawScore(true);
   const auto& root_move_filter = search_->root_move_filter_;
   auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
+
+  int max_limit = std::numeric_limits<int>::max();
 
   current_path.push_back(-1);
   while (current_path.size() > 0) {
@@ -1371,8 +1387,12 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
         // Visits are created elsewhere, just need the collisions here.
         if (cur_limit > 0) {
+          int max_count = 0;
+          if (cur_limit == collision_limit && base_depth == 0 && max_limit > cur_limit) {
+            max_count = max_limit;
+          }
           receiver->push_back(NodeToProcess::Collision(
-              node, current_path.size() + base_depth, cur_limit));
+              node, current_path.size() + base_depth, cur_limit, max_count));
         }
         node = node->GetParent();
         current_path.pop_back();
@@ -1506,6 +1526,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           int estimated_visits_to_change_best = best_edge.GetVisitsToReachU(
               second_best, puct_mult, best_without_u);
           second_best_edge.Reset();
+          max_limit = std::min(max_limit, estimated_visits_to_change_best);
           new_visits = std::min(cur_limit, estimated_visits_to_change_best);
         } else {
           // No second best - only one edge, so everything goes in here.

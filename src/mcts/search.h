@@ -300,6 +300,7 @@ class SearchWorker {
     // Estimated remaining plies left.
     float m;
     int multivisit = 0;
+    int maxvisit = 0;
     uint16_t depth;
     bool nn_queried = false;
     bool is_cache_hit = false;
@@ -311,17 +312,18 @@ class SearchWorker {
     int computation_ordinal = -1;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
-                                   int collision_count) {
-      return NodeToProcess(node, depth, true, collision_count);
+                                   int collision_count, int max_count) {
+      return NodeToProcess(node, depth, true, collision_count, max_count);
     }
     static NodeToProcess Visit(Node* node, uint16_t depth) {
-      return NodeToProcess(node, depth, false, 1);
+      return NodeToProcess(node, depth, false, 1, 0);
     }
 
    private:
-    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit)
+    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit, int maxvisit)
         : node(node),
           multivisit(multivisit),
+          maxvisit(maxvisit),
           depth(depth),
           is_collision(is_collision) {}
   };
