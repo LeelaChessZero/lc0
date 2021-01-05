@@ -964,16 +964,31 @@ void SearchWorker::RunTasks(int tid) {
     PickTask* task = nullptr;
     int id = 0;
     {
-      std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
-      task_added_.wait(lock, [this]() {
-        return next_task_available_ < picking_tasks_.size() || exiting_;
-      });
-      if (next_task_available_ < picking_tasks_.size()) {
-        task = &picking_tasks_[next_task_available_];
-        id = next_task_available_;
-        next_task_available_++;
-      } else if (exiting_) {
-        break;
+      int spins = 0;
+      while (true) {
+        if (next_task_available_ < task_count_) {
+          int val = 0;
+          if (task_taker_.compare_exchange_weak(val, 1)) {
+            // We got the spin lock, double check we're still in the clear.
+            if (next_task_available_ < task_count_) {
+              task = &picking_tasks_[next_task_available_];
+              id = next_task_available_;
+              ++next_task_available_;
+              task_taker_ = 0;
+              break;
+            }
+            task_taker_ = 0;
+          }
+          continue;
+        } else if (task_count_ != -1) {
+          continue;
+        }
+        // Looks like sleep time.
+        std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
+        if (task_count_ != -1) continue;
+        if (next_task_available_ >= task_count_ && exiting_) return;
+        task_added_.wait(lock);
+        if (next_task_available_ >= task_count_ && exiting_) return;
       }
     }
     if (task != nullptr) {
@@ -986,9 +1001,8 @@ void SearchWorker::RunTasks(int tid) {
             task->start_idx, task->end_idx, &(task->to_remove_idx),
             &(task->to_remove_computation), &(task_workspaces_[tid]));
       }
-      std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
       picking_tasks_[id].complete = true;
-      task_completed_.notify_all();
+      ++completed_tasks_;
     }
   }
 }
@@ -1021,6 +1035,7 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 2. Gather minibatch.
   GatherMinibatch();
+  task_count_ = -1;
 
   // 2b. Collect collisions.
   CollectCollisions();
@@ -1127,7 +1142,7 @@ void SearchWorker::GatherMinibatch() {
       ++minibatch_size;
     }
     bool needs_wait = false;
-    if (USE_WORKERS && non_collisions > 10) {
+    if (USE_WORKERS && non_collisions > 20) {
       needs_wait = true;
       // Ensure computation has enough space for whatever we throw at it and
       // won't resize.
@@ -1136,13 +1151,15 @@ void SearchWorker::GatherMinibatch() {
       // Round down, left overs can go to main thread.
       int per_worker = non_collisions / (num_child_tasks + 1);
       {
-        std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
+        // Ensure nothing takes tasks yet
+        task_count_ = 0;
+        next_task_available_ = 0;
+        completed_tasks_ = 0;
         picking_tasks_.clear();
         // Reserve because resizing breaks pointers held by the task threads.
         // Reserve 100 - since we already did that in picking and why use a
         // different size?
         picking_tasks_.reserve(100);
-        next_task_available_ = 0;
         int found = 0;
         for (int i = prev_size; i < minibatch_.size(); i++) {
           auto& picked_node = minibatch_[i];
@@ -1152,6 +1169,7 @@ void SearchWorker::GatherMinibatch() {
           ++found;
           if (found == per_worker) {
             picking_tasks_.emplace_back(prev_size, i + 1);
+            task_count_++;
             prev_size = i + 1;
             found = 0;
             if (picking_tasks_.size() == num_child_tasks) {
@@ -1159,7 +1177,6 @@ void SearchWorker::GatherMinibatch() {
             }
           }
         }
-        task_added_.notify_all();
       }
     }
     std::vector<int> to_remove_idx;
@@ -1167,13 +1184,12 @@ void SearchWorker::GatherMinibatch() {
     ProcessPickedTask(prev_size, minibatch_.size(), &to_remove_idx,
                       &to_remove_computation, &main_workspace_);
     if (needs_wait) {
-      std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
-      task_completed_.wait(lock, [this]() {
-        for (int i = 0; i < picking_tasks_.size(); i++) {
-          if (!picking_tasks_[i].complete) return false;
-        }
-        return true;
-      });
+      // Spinwait, no sleeps - other tasks should be done 'very soon'.
+      while (true) {
+        int completed = completed_tasks_;
+        int todo = task_count_;
+        if (todo == completed) break;
+      }
       for (int i = 0; i < picking_tasks_.size(); i++) {
         for (int j = 0; j < picking_tasks_[i].to_remove_idx.size(); j++) {
           to_remove_idx.push_back(picking_tasks_[i].to_remove_idx[j]);
@@ -1279,7 +1295,12 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   std::vector<int> added_idxes;
   if (need_add) {
     added_idxes.reserve(30);
-    Mutex::Lock lock(computation_mutex_);
+    while (true) {
+      int val = 0;
+      if (computation_spin_lock_.compare_exchange_weak(val, 1)) {
+        break;
+      }
+    }
     int non_collision = -1;
     for (int i = start_idx; i < end_idx; i++) {
       auto& picked_node = minibatch_[i];
@@ -1306,6 +1327,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         }
       }
     }
+    computation_spin_lock_ = 0;
   }
 
   // Third pass - Fetch node results for out of order.
@@ -1334,6 +1356,12 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   // Fourth pass - If there was any out of order, take nodes mutex and perform
   // the backups.
   if (need_backup) {
+    while (true) {
+      int val = 0;
+      if (computation_spin_lock_.compare_exchange_weak(val, 1)) {
+        break;
+      }
+    }
     // Nodes mutex for doing node updates.
     SharedMutex::Lock lock(search_->nodes_mutex_);
     int non_collision = -1;
@@ -1358,6 +1386,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         to_remove_idx->push_back(i);
       }
     }
+    computation_spin_lock_ = 0;
   }
 }
 
@@ -1373,12 +1402,16 @@ void IncrementNInFlight(Node* node, Node* root, int amount) {
 }  // namespace
 
 void SearchWorker::PickNodesToExtend(int collision_limit) {
-  {
-    std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
+  {    
+    task_count_ = 0;
+    next_task_available_ = 0;
+    completed_tasks_ = 0;
     picking_tasks_.clear();
     // Reserve because resizing breaks pointers held by the task threads.
     picking_tasks_.reserve(100);
-    next_task_available_ = 0;
+    // While nothing is ready yet - wake the task runners so they are ready to receive quickly.
+    std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
+    task_added_.notify_all();
   }
   std::vector<Move> empty_movelist;
   // This lock must be held until after the task_completed_ wait succeeds below.
@@ -1388,13 +1421,12 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist,
                         &minibatch_, &main_workspace_);
   {
-    std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
-    task_completed_.wait(lock, [this]() {
-      for (int i = 0; i < picking_tasks_.size(); i++) {
-        if (!picking_tasks_[i].complete) return false;
-      }
-      return true;
-    });
+    // Spin lock, other tasks should be done soon.
+    while (true) {
+      int completed = completed_tasks_;
+      int todo = task_count_;
+      if (todo == completed) break;
+    }
     for (int i = 0; i < picking_tasks_.size(); i++) {
       for (int j = 0; j < picking_tasks_[i].results.size(); j++) {
         minibatch_.emplace_back(std::move(picking_tasks_[i].results[j]));
@@ -1438,6 +1470,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   const int64_t best_node_n = search_->current_best_edge_.GetN();
 
   int passed_off = 0;
+  int completed_visits = 0;
 
   bool is_root_node = node == search_->root_node_;
   const float even_draw_score = search_->GetDrawScore(false);
@@ -1469,6 +1502,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
             cur_limit -= 1;
             minibatch_.push_back(
                 NodeToProcess::Visit(node, current_path.size() + base_depth));
+            completed_visits++;
           }
         }
         // Visits are created elsewhere, just need the collisions here.
@@ -1480,6 +1514,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           }
           receiver->push_back(NodeToProcess::Collision(
               node, current_path.size() + base_depth, cur_limit, max_count));
+          completed_visits+= cur_limit;
+
         }
         node = node->GetParent();
         current_path.pop_back();
@@ -1492,16 +1528,18 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       }
       // !is_root_node only for clarity, it can never pass the second condition.
       if (USE_WORKERS && !is_root_node && cur_limit > 10 &&
-          cur_limit < (collision_limit * 2 / 3) &&
-          cur_limit + passed_off < collision_limit - 10) {
+          cur_limit < ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
+          cur_limit + passed_off + completed_visits < collision_limit - 20) {
         bool passed = false;
         {
+          // Multiple writers, so need mutex here.
           std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
           // Ensure not to exceed size of reservation.
           if (picking_tasks_.size() < 100) {
             picking_tasks_.emplace_back(node,
                                         current_path.size() - 1 + base_depth,
                                         moves_to_path, cur_limit);
+            task_count_++;
             task_added_.notify_all();
             passed = true;
             passed_off += cur_limit;
@@ -1708,6 +1746,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           visits_to_perform.back()[best_idx] -= 1;
           receiver->push_back(NodeToProcess::Visit(
               child_node, current_path.size() + 1 + base_depth));
+          completed_visits++;
           receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
           receiver->back().moves_to_visit = moves_to_path;
           receiver->back().moves_to_visit.push_back(best_edge.GetMove());

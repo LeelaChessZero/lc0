@@ -223,6 +223,7 @@ class SearchWorker {
 
   ~SearchWorker() {
     {
+      task_count_ = -1;
       std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
       exiting_ = true;
       task_added_.notify_all();
@@ -363,9 +364,6 @@ class SearchWorker {
   Search* const search_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
-  // To be taken with when adding to computation_ and there might be concurrent
-  // tasks.
-  mutable Mutex computation_mutex_;
   std::unique_ptr<CachingComputation> computation_;
   // History is reset and extended by PrefetchIntoCache().
   PositionHistory history_;
@@ -405,8 +403,11 @@ class SearchWorker {
   };
   std::mutex picking_tasks_mutex_;
   std::vector<PickTask> picking_tasks_;
-  int next_task_available_ = 0;
-  std::condition_variable task_completed_;
+  std::atomic<int> task_count_ = -1;
+  std::atomic<int> task_taker_ = 0;
+  std::atomic<int> computation_spin_lock_ = 0;
+  std::atomic<int> next_task_available_ = 0;
+  std::atomic<int> completed_tasks_ = 0;
   std::condition_variable task_added_;
   std::vector<std::thread> task_threads_;
   std::vector<TaskWorkspace> task_workspaces_;
