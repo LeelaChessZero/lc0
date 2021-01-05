@@ -110,6 +110,12 @@ class Edge {
   friend class Node;
 };
 
+struct Eval {
+  float wl;
+  float d;
+  float ml;
+};
+
 class EdgeAndNode;
 template <bool is_const>
 class Edge_Iterator;
@@ -222,12 +228,6 @@ class Node {
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
-
-  struct Eval {
-    float wl;
-    float d;
-    float ml;
-  };
 
   V6TrainingData GetV6TrainingData(
       GameResult result, const PositionHistory& history,

@@ -532,7 +532,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
 // Return the evaluation of the actual best child, regardless of temperature
 // settings. This differs from GetBestMove, which does obey any temperature
 // settings. So, somethimes, they may return results of different moves.
-Node::Eval Search::GetBestEval(bool* terminal) const {
+Eval Search::GetBestEval(bool* terminal) const {
   SharedMutex::SharedLock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
   float parent_wl = -root_node_->GetWL();
