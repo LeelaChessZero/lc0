@@ -30,6 +30,7 @@
 #include <atomic>
 #include <mutex>
 #include <shared_mutex>
+#include <thread>
 
 #include "utils/cppattributes.h"
 
