@@ -151,7 +151,7 @@ class CAPABILITY("mutex") SpinMutex {
   void unlock() RELEASE() { mutex_.store(0, std::memory_order_release); }
 
  private:
-  std::atomic<int> mutex_ = 0;
+  std::atomic<int> mutex_{0};
 };
 
 }  // namespace lczero
