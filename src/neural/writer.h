@@ -78,8 +78,12 @@ struct V6TrainingData {
   float orig_q;      // For value repair.
   float orig_d;
   float orig_m;
+  uint32_t visits;
+  // Indices in the probabilities array.
+  uint16_t played_idx;
+  uint16_t best_idx;
 } PACKED_STRUCT;
-static_assert(sizeof(V6TrainingData) == 8340, "Wrong struct size");
+static_assert(sizeof(V6TrainingData) == 8348, "Wrong struct size");
 
 #pragma pack(pop)
 

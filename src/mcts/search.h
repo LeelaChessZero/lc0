@@ -81,9 +81,10 @@ class Search {
 
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
-  // return results from different possible moves. If @terminal is not nullptr,
-  // it is set if the best move leads to a terminal node.
-  Eval GetBestEval(bool* terminal = nullptr) const;
+  // return results from different possible moves. If @move and @is_terminal are
+  // not nullptr they are set to the best move and whether it leads to a
+  // terminal node respectively.
+  Eval GetBestEval(Move* move = nullptr, bool* is_terminal = nullptr) const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.

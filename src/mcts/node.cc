@@ -474,7 +474,8 @@ V6TrainingData Node::GetV6TrainingData(
     GameResult game_result, const PositionHistory& history,
     FillEmptyHistory fill_empty_history,
     pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
-    Eval played_eval, Eval orig_eval, bool best_is_terminal) const {
+    Eval played_eval, Eval orig_eval, bool best_is_terminal, Move best_move,
+    Move played_move) const {
   V6TrainingData result;
 
   // Set version.
@@ -541,8 +542,9 @@ V6TrainingData Node::GetV6TrainingData(
     result.invariance_info = 0;
   }
   if (best_is_terminal) {
-    result.invariance_info |= 1u << 3; // Best node is terminal;
+    result.invariance_info |= 1u << 3;  // Best node is terminal;
   }
+  result.dummy = 0;
   result.rule50_count = position.GetRule50Ply();
 
   // Game result.
@@ -573,6 +575,14 @@ V6TrainingData Node::GetV6TrainingData(
   result.best_m = best_eval.ml;
   result.played_m = played_eval.ml;
   result.orig_m = orig_eval.ml;
+
+  result.visits = n_;
+  if (position.IsBlackToMove()) {
+    best_move.Mirror();
+    played_move.Mirror();
+  }
+  result.best_idx = best_move.as_nn_index(transform);
+  result.played_idx = played_move.as_nn_index(transform);
 
   // Unknown here - will be filled in once the full data has been collected.
   result.plies_left = 0;

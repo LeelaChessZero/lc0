@@ -156,8 +156,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
+    Move best_move;
     bool best_is_terminal;
-    const auto best_eval = search_->GetBestEval(&best_is_terminal);
+    const auto best_eval = search_->GetBestEval(&best_move, &best_is_terminal);
     float eval = best_eval.wl;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
@@ -201,7 +202,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
     }
 
-    Node::Eval played_eval = best_eval;
+    Eval played_eval = best_eval;
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
@@ -216,7 +217,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           cur_n = edge.GetN();
           played_eval.wl = edge.GetWL(-node->GetWL());
           played_eval.d = edge.GetD(node->GetD());
-          played_eval.ml = edge.GetM(node->GetM());
+          played_eval.ml = edge.GetM(node->GetM() - 1) + 1;
         }
       }
       // If 'best move' is less than allowed visits and not max visits,
@@ -245,7 +246,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       // Append training data. The GameResult is later overwritten.
       const auto input_format =
           options_[idx].network->GetCapabilities().input_format;
-      Node::Eval orig_eval;
+      Eval orig_eval;
       NNCacheLock nneval =
           search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
       if (nneval) {
@@ -260,7 +261,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
           search_->GetParams().GetHistoryFill(), input_format, best_eval,
-          played_eval, orig_eval, best_is_terminal));
+          played_eval, orig_eval, best_is_terminal, best_move, move));
     }
 
     // Add best move to the tree.
