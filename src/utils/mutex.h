@@ -30,6 +30,7 @@
 #include <atomic>
 #include <mutex>
 #include <shared_mutex>
+
 #include "utils/cppattributes.h"
 
 namespace lczero {
@@ -116,6 +117,40 @@ class CAPABILITY("mutex") SharedMutex {
 
  private:
   std::shared_timed_mutex mutex_;
+};
+
+// A very simple spin lock.
+class CAPABILITY("mutex") SpinMutex {
+ public:
+  // std::unique_lock<SpinMutex> wrapper.
+  class SCOPED_CAPABILITY Lock {
+   public:
+    Lock(SpinMutex& m) ACQUIRE(m) : lock_(m) {}
+    ~Lock() RELEASE() {}
+
+   private:
+    std::unique_lock<SpinMutex> lock_;
+  };
+
+  void lock() ACQUIRE() {
+    int spins = 0;
+    while (true) {
+      int val = 0;
+      if (mutex_.compare_exchange_weak(val, 1, std::memory_order_acq_rel)) {
+        break;
+      }
+      ++spins;
+      // Help avoid complete resource starvation by yielding occasionally if
+      // needed.
+      if (spins % 512 == 0) {
+        std::this_thread::yield();
+      }
+    }
+  }
+  void unlock() RELEASE() { mutex_.store(0, std::memory_order_release); }
+
+ private:
+  std::atomic<int> mutex_ = 0;
 };
 
 }  // namespace lczero
