@@ -583,6 +583,7 @@ V6TrainingData Node::GetV6TrainingData(
   }
   result.best_idx = best_move.as_nn_index(transform);
   result.played_idx = played_move.as_nn_index(transform);
+  result.reserved = 0;
 
   // Unknown here - will be filled in once the full data has been collected.
   result.plies_left = 0;

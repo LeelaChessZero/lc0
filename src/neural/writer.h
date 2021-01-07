@@ -82,8 +82,9 @@ struct V6TrainingData {
   // Indices in the probabilities array.
   uint16_t played_idx;
   uint16_t best_idx;
+  uint64_t reserved;
 } PACKED_STRUCT;
-static_assert(sizeof(V6TrainingData) == 8348, "Wrong struct size");
+static_assert(sizeof(V6TrainingData) == 8356, "Wrong struct size");
 
 #pragma pack(pop)
 
