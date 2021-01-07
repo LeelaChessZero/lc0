@@ -142,7 +142,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
             std::move(responder), tree_[idx]->HeadPosition().GetBoard());
       }
 
-     search_ = std::make_unique<Search>(
+      search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers),
@@ -169,8 +169,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
-    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
-                                            kResignEarliestMoveId)) {
+    if (enable_resign &&
+        move_number >=
+            options_[idx].uci_options->Get<int>(kResignEarliestMoveId)) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
@@ -202,13 +203,14 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
     }
 
+    auto node = tree_[idx]->GetCurrentHead();
     Eval played_eval = best_eval;
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
-      auto node = tree_[idx]->GetCurrentHead();
+
       for (auto edge : node->Edges()) {
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
@@ -243,6 +245,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     }
 
     if (training) {
+      bool best_is_proof = best_is_terminal;  // But check for better moves.
+      if (best_is_proof && best_eval.wl < 1) {
+        auto best =
+            (best_eval.wl == 0) ? GameResult::DRAW : GameResult::BLACK_WON;
+        auto upper = best;
+        for (const auto& edge : node->Edges()) {
+          upper = std::max(-edge.GetBounds().first, upper);
+        }
+        if (best < upper) {
+          best_is_proof = false;
+        }
+      }
       // Append training data. The GameResult is later overwritten.
       const auto input_format =
           options_[idx].network->GetCapabilities().input_format;
@@ -261,7 +275,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
           search_->GetParams().GetHistoryFill(), input_format, best_eval,
-          played_eval, orig_eval, best_is_terminal, best_move, move));
+          played_eval, orig_eval, best_is_proof, best_move, move));
     }
 
     // Add best move to the tree.

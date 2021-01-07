@@ -54,7 +54,7 @@ struct V6TrainingData {
   //  bit 6: position marked for deletion by the rescorer (never set by lc0)
   //  bit 5: game adjudicated (v6)
   //  bit 4: max game length exceeded (v6)
-  //  bit 3: best_q is a proof (v6)
+  //  bit 3: best_q is for proven best move (v6)
   //  bit 2: transpose transform (input type 3)
   //  bit 1: mirror transform (input type 3)
   //  bit 0: flip transform (input type 3)
