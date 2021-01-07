@@ -42,8 +42,8 @@ struct CachedNNRequest {
   SmallArray<IdxAndProb> p;
 };
 
-typedef LruCache<uint64_t, CachedNNRequest> NNCache;
-typedef LruCacheLock<uint64_t, CachedNNRequest> NNCacheLock;
+typedef HashKeyedCache<CachedNNRequest> NNCache;
+typedef HashKeyedCacheLock<CachedNNRequest> NNCacheLock;
 
 // Wraps around NetworkComputation and caches result.
 // While it mostly repeats NetworkComputation interface, it's not derived
