@@ -53,13 +53,6 @@ void CachingComputation::AddInputByHash(uint64_t hash, NNCacheLock&& lock) {
   batch_.back().hash = hash;
 }
 
-void CachingComputation::PopCacheHit(int idx) {
-  assert(!batch_.empty());
-  assert(batch_[idx].lock);
-  assert(batch_[idx].idx_in_parent == -1);
-  batch_.erase(batch_.begin() + idx);
-}
-
 void CachingComputation::AddInput(
     uint64_t hash, InputPlanes&& input,
     std::vector<uint16_t>&& probabilities_to_cache) {
@@ -68,12 +61,6 @@ void CachingComputation::AddInput(
   batch_.back().idx_in_parent = parent_->GetBatchSize();
   batch_.back().probabilities_to_cache = probabilities_to_cache;
   parent_->AddInput(std::move(input));
-}
-
-void CachingComputation::PopLastInputHit() {
-  assert(!batch_.empty());
-  assert(batch_.back().idx_in_parent == -1);
-  batch_.pop_back();
 }
 
 void CachingComputation::ComputeBlocking() {

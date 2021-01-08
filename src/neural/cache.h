@@ -69,9 +69,6 @@ class CachingComputation {
   // @probabilities_to_cache is which indices of policy head to store.
   void AddInput(uint64_t hash, InputPlanes&& input,
                 std::vector<uint16_t>&& probabilities_to_cache);
-  // Undos last AddInput. If it was a cache miss, the it's actually not removed
-  // from parent's batch.
-  void PopLastInputHit();
   // Do the computation.
   void ComputeBlocking();
   // Returns Q value of @sample.
@@ -82,9 +79,6 @@ class CachingComputation {
   float GetMVal(int sample) const;
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const;
-  // Pops the specified input from the computation. Only allowed for inputs
-  // which were cached.
-  void PopCacheHit(int idx);
 
   // As an optimization GatherMinibatch needs a guarantee that there is no
   // resizing happening during parallel pick processing. This allows it to

@@ -1310,17 +1310,6 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   }
 }
 
-namespace {
-void IncrementNInFlight(Node* node, Node* root, int amount) {
-  if (amount == 0) return;
-  while (true) {
-    node->IncrementNInFlight(amount);
-    if (node == root) break;
-    node = node->GetParent();
-  }
-}
-}  // namespace
-
 void SearchWorker::PickNodesToExtend(int collision_limit) {
   {
     task_count_.store(0, std::memory_order_release);
