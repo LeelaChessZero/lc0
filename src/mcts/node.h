@@ -639,7 +639,7 @@ inline float Node::GetVisitedPolicy() const {
     const auto n = child.GetN();
     if (n > 0) {
       vp += child.GetP();
-    } else {
+    } else if (child.GetNInFlight() == 0) {
       // Since children are in policy order, anything after this won't have
       // been visited.
       break;
