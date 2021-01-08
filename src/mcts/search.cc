@@ -1099,6 +1099,7 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
   minibatch_.clear();
+  minibatch_.reserve(2 * params_.GetMiniBatchSize());
 }
 
 #define USE_WORKERS 1
@@ -1480,6 +1481,10 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   std::vector<Move> moves_to_path = moves_to_base;
   if (moves_to_path.capacity() < 30) {
     moves_to_path.reserve(30);
+  }
+  // Sometimes receiver is reused, othertimes not, so only jump start if small.
+  if (receiver->capacity() < 30) {
+    receiver->reserve(receiver->size() + 30);
   }
 
   // These 2 are 'filled pre-emptively'.
