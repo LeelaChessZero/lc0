@@ -1412,7 +1412,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
-  std::vector<std::vector<int>> visits_to_perform;
+  std::vector<std::unique_ptr<int[]>> visits_to_perform;
+  auto& vtp_buffer = workspace->vtp_buffer;
   visits_to_perform.reserve(30);
   std::vector<int> vtp_last_filled;
   vtp_last_filled.reserve(30);
@@ -1515,7 +1516,12 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       }
 
       // Create visits_to_perform new back entry for this level.
-      visits_to_perform.push_back(std::vector<int>(node->GetNumEdges(), 0));
+      if (vtp_buffer.size() > 0) {
+        visits_to_perform.push_back(std::move(vtp_buffer.back()));
+        vtp_buffer.pop_back();
+      } else {
+        visits_to_perform.push_back(std::make_unique<int[]>(256));
+      }
       vtp_last_filled.push_back(-1);
 
       // Cache all constant UCT parameters.
@@ -1643,6 +1649,11 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           // No second best - only one edge, so everything goes in here.
           new_visits = cur_limit;
         }
+        if (best_idx >= vtp_last_filled.back()) {
+          auto* vtp_array = visits_to_perform.back().get();
+          std::fill(vtp_array + (vtp_last_filled.back() + 1),
+                    vtp_array + best_idx + 1, 0);
+        }
         visits_to_perform.back()[best_idx] += new_visits;
         cur_limit -= new_visits;
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
@@ -1745,6 +1756,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       node = node->GetParent();
       if (!moves_to_path.empty()) moves_to_path.pop_back();
       current_path.pop_back();
+      vtp_buffer.push_back(std::move(visits_to_perform.back()));
       visits_to_perform.pop_back();
       vtp_last_filled.pop_back();
     }

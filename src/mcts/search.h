@@ -334,6 +334,7 @@ class SearchWorker {
   // Holds per task worker scratch data
   struct TaskWorkspace {
     Node::Iterator cur_iters[256];
+    std::vector<std::unique_ptr<int[]>> vtp_buffer;
   };
 
   void PickNodesToExtend(int collision_limit);
