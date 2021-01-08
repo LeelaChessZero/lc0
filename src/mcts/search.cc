@@ -1278,7 +1278,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
                                      TaskWorkspace* workspace) {
   // This code runs multiple passes of work across the same input in order to
   // reduce taking/dropping mutexes in quick succession.
-  std::vector<PositionHistory> histories;
+  std::vector<PositionHistory>& histories = workspace->position_histories;
   histories.reserve(30);
 
   // First pass - Extend nodes.
@@ -1289,18 +1289,20 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     if (picked_node.IsCollision()) continue;
     ++non_collision;
     auto* node = picked_node.node;
-    histories.emplace_back();
+    if (non_collision >= histories.size()) {
+      histories.emplace_back();
+    }
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
     int added_idx = -1;
     if (picked_node.IsExtendable()) {
-      histories.back().Reserve(search_->played_history_.GetLength() +
+      histories[non_collision].Reserve(search_->played_history_.GetLength() +
                                picked_node.moves_to_visit.size());
-      histories.back() = search_->played_history_;
+      histories[non_collision] = search_->played_history_;
       // Node was never visited, extend it.
       ExtendNode(node, picked_node.depth, picked_node.moves_to_visit,
-                 &histories.back());
+                 &histories[non_collision]);
       if (!node->IsTerminal()) {
         need_add = true;
       }
