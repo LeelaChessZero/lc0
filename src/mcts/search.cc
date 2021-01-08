@@ -1013,8 +1013,8 @@ void SearchWorker::RunTasks(int tid) {
                               task->collision_limit, task->moves_to_base,
                               &(task->results), &(task_workspaces_[tid]));
       } else {
-        ProcessPickedTask(
-            task->start_idx, task->end_idx, &(task_workspaces_[tid]));
+        ProcessPickedTask(task->start_idx, task->end_idx,
+                          &(task_workspaces_[tid]));
       }
       picking_tasks_[id].complete = true;
       completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
@@ -1234,8 +1234,7 @@ void SearchWorker::GatherMinibatch() {
             should_exit = false;
           }
           minibatch_.erase(minibatch_.begin() + i);
-        }
-        else if (minibatch_[i].ooo_completed) {
+        } else if (minibatch_[i].ooo_completed) {
           DoBackupUpdateSingleNode(minibatch_[i]);
           minibatch_.erase(minibatch_.begin() + i);
           --minibatch_size;
@@ -1277,15 +1276,12 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       history.Reserve(search_->played_history_.GetLength() +
-                               picked_node.moves_to_visit.size());
-      history.Trim(search_->played_history_.GetLength());
+                      picked_node.moves_to_visit.size());
       // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit,
-                 &history);
+      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        const auto hash =
-            history.HashLast(params_.GetCacheHistoryLength() + 1);
+        const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
         picked_node.hash = hash;
         picked_node.lock = std::move(NNCacheLock(search_->cache_, hash));
         picked_node.is_cache_hit = picked_node.lock;
@@ -2014,7 +2010,7 @@ void SearchWorker::FetchMinibatchResults() {
   }
 }
 
-template<typename Computation>
+template <typename Computation>
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          const Computation& computation,
                                          int idx_in_computation) {

@@ -327,19 +327,14 @@ class SearchWorker {
       return NodeToProcess(node, depth, false, 1, 0);
     }
 
-    // Methods to allow NodeToProcess to conform as a 'Computation'. Only safe to call if is_cache_hit is true.
+    // Methods to allow NodeToProcess to conform as a 'Computation'. Only safe
+    // to call if is_cache_hit is true.
 
-    float GetQVal(int) const {
-      return lock->q;
-    }
+    float GetQVal(int) const { return lock->q; }
 
-    float GetDVal(int) const {
-      return lock->d;
-    }
+    float GetDVal(int) const { return lock->d; }
 
-    float GetMVal(int) const {
-      return lock->m;
-    }
+    float GetMVal(int) const { return lock->m; }
 
     float GetPVal(int, int move_id) const {
       const auto& moves = lock->p;
@@ -356,7 +351,7 @@ class SearchWorker {
       return 0;
     }
 
-  private:
+   private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
                   int maxvisit)
         : node(node),
@@ -384,8 +379,9 @@ class SearchWorker {
   bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out,
                             PositionHistory* history);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
-  template<typename Computation>
-  void FetchSingleNodeResult(NodeToProcess* node_to_process, const Computation& computation,
+  template <typename Computation>
+  void FetchSingleNodeResult(NodeToProcess* node_to_process,
+                             const Computation& computation,
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
