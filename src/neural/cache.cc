@@ -58,7 +58,6 @@ void CachingComputation::PopCacheHit(int idx) {
 void CachingComputation::AddInput(
     uint64_t hash, InputPlanes&& input,
     std::vector<uint16_t>&& probabilities_to_cache) {
-  if (AddInputByHash(hash)) return;
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
