@@ -496,7 +496,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
     LOGFILE << "=== Move stats:";
     for (const auto& line : move_stats) LOGFILE << line;
   }
-  for (auto edge : root_node_->Edges()) {
+  for (auto& edge : root_node_->Edges()) {
     if (!(edge.GetMove(played_history_.IsBlackToMove()) == final_bestmove_)) {
       continue;
     }
@@ -646,7 +646,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
   std::vector<EdgeAndNode> edges;
-  for (auto edge : parent->Edges()) {
+  for (auto& edge : parent->Edges()) {
     if (parent == root_node_ && !root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
@@ -745,7 +745,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   const float fpu =
       GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
 
-  for (auto edge : root_node_->Edges()) {
+  for (auto& edge : root_node_->Edges()) {
     if (!root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
@@ -763,7 +763,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   // TODO(crem) Simplify this code when samplers.h is merged.
   const float min_eval =
       max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
-  for (auto edge : root_node_->Edges()) {
+  for (auto& edge : root_node_->Edges()) {
     if (!root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
@@ -782,7 +782,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
       std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
       cumulative_sums.begin();
 
-  for (auto edge : root_node_->Edges()) {
+  for (auto& edge : root_node_->Edges()) {
     if (!root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
@@ -1936,7 +1936,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu =
       GetFpu(params_, node, node == search_->root_node_, draw_score);
-  for (auto edge : node->Edges()) {
+  for (auto& edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
@@ -2032,7 +2032,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // There are never more than 256 valid legal moves in any legal position.
   std::array<float, 256> intermediate;
   int counter = 0;
-  for (auto edge : node->Edges()) {
+  for (auto& edge : node->Edges()) {
     float p = computation.GetPVal(
         idx_in_computation,
         edge.GetMove().as_nn_index(node_to_process->probability_transform));
@@ -2051,7 +2051,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   counter = 0;
   // Normalize P values to add up to 1.0.
   const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-  for (auto edge : node->Edges()) {
+  for (auto& edge : node->Edges()) {
     edge.edge()->SetP(intermediate[counter++] * scale);
   }
   // Add Dirichlet noise if enabled and at root.
