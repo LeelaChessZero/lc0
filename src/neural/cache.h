@@ -61,6 +61,9 @@ class CachingComputation {
   // Adds input by hash only. If that hash is not in cache, returns false
   // and does nothing. Otherwise adds.
   bool AddInputByHash(uint64_t hash);
+
+  // Adds input by hash with existing lock. Assumes the given lock holds a real reference.
+  void AddInputByHash(uint64_t hash, NNCacheLock&& lock);
   // Adds a sample to the batch.
   // @hash is a hash to store/lookup it in the cache.
   // @probabilities_to_cache is which indices of policy head to store.

@@ -1246,7 +1246,8 @@ void SearchWorker::GatherMinibatch() {
       if (minibatch_[i].IsCollision()) continue;
       if (minibatch_[i].is_cache_hit) {
         // Since minibatch_[i] holds cache lock, this is guaranteed to succeed.
-        computation_->AddInputByHash(minibatch_[i].hash);
+        computation_->AddInputByHash(minibatch_[i].hash,
+                                     std::move(minibatch_[i].lock));
       } else {
         computation_->AddInput(minibatch_[i].hash,
                                std::move(minibatch_[i].input_planes),
