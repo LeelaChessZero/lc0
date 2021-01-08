@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,36 +25,22 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <cuda_runtime.h>
-#include <cuda_fp16.h>
-#include <cublas_v2.h>
-
-#include "utils/exception.h"
-
-#ifdef USE_CUDNN
-#include <cudnn.h>
-#else
-typedef void* cudnnHandle_t;
-#endif
+#pragma once
 
 namespace lczero {
-namespace cudnn_backend {
 
-static constexpr int kNumOutputPolicy = 1858;
+class Numa {
+ public:
+  Numa() = delete;
 
-#ifdef USE_CUDNN
-void CudnnError(cudnnStatus_t status, const char* file, const int& line);
-#endif
-void CublasError(cublasStatus_t status, const char* file, const int& line);
-void CudaError(cudaError_t status, const char* file, const int& line);
+  // Initialize and display statistics about processor configuration.
+  static void Init();
 
-#ifdef USE_CUDNN
-#define ReportCUDNNErrors(status) CudnnError(status, __FILE__, __LINE__)
-#endif
-#define ReportCUBLASErrors(status) CublasError(status, __FILE__, __LINE__)
-#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
+  // Bind thread to processor group.
+  static void BindThread(int id);
 
-inline int DivUp(int a, int b) { return (a + b - 1) / b; }
+ private:
+  static int threads_per_core_;
+};
 
-}  // namespace cudnn_backend
 }  // namespace lczero

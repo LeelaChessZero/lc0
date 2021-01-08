@@ -68,6 +68,11 @@ option('cudnn',
        value: true,
        description: 'Enable cuDNN backend')
 
+option('plain_cuda',
+       type: 'boolean',
+       value: true,
+       description: 'Enable CUDA backend')
+
 option('opencl',
        type: 'boolean',
        value: true,
