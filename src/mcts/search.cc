@@ -967,22 +967,25 @@ void SearchWorker::RunTasks(int tid) {
     {
       int spins = 0;
       while (true) {
-        if (next_task_available_ < task_count_) {
+        if (next_task_available_.load(std::memory_order_acquire) <
+            task_count_.load(std::memory_order_acquire)) {
           int val = 0;
-          if (task_taker_.compare_exchange_weak(val, 1)) {
+          if (task_taker_.compare_exchange_weak(val, 1,
+                                                std::memory_order_acq_rel,
+                                                std::memory_order_relaxed)) {
             // We got the spin lock, double check we're still in the clear.
-            if (next_task_available_ < task_count_) {
-              task = &picking_tasks_[next_task_available_];
-              id = next_task_available_;
-              ++next_task_available_;
-              task_taker_ = 0;
+            if (next_task_available_.load(std::memory_order_acquire) <
+                task_count_.load(std::memory_order_acquire)) {
+              id = next_task_available_.fetch_add(1, std::memory_order_acq_rel);
+              task = &picking_tasks_[id];
+              task_taker_.store(0, std::memory_order_release);
               break;
             }
-            task_taker_ = 0;
+            task_taker_.store(0, std::memory_order_release);
           }
           spins = 0;
           continue;
-        } else if (task_count_ != -1) {
+        } else if (task_count_.load(std::memory_order_acquire) != -1) {
           spins++;
           if (spins > 1000) {
             std::this_thread::yield();
@@ -992,10 +995,16 @@ void SearchWorker::RunTasks(int tid) {
         spins = 0;
         // Looks like sleep time.
         std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
-        if (task_count_ != -1) continue;
-        if (next_task_available_ >= task_count_ && exiting_) return;
+        if (task_count_.load(std::memory_order_acquire) != -1) continue;
+        if (next_task_available_.load(std::memory_order_acquire) >=
+                task_count_.load(std::memory_order_acquire) &&
+            exiting_)
+          return;
         task_added_.wait(lock);
-        if (next_task_available_ >= task_count_ && exiting_) return;
+        if (next_task_available_.load(std::memory_order_acquire) >=
+                task_count_.load(std::memory_order_acquire) &&
+            exiting_)
+          return;
       }
     }
     if (task != nullptr) {
@@ -1009,7 +1018,7 @@ void SearchWorker::RunTasks(int tid) {
             &(task->to_remove_computation), &(task_workspaces_[tid]));
       }
       picking_tasks_[id].complete = true;
-      ++completed_tasks_;
+      completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
     }
   }
 }
@@ -1042,7 +1051,7 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 2. Gather minibatch.
   GatherMinibatch();
-  task_count_ = -1;
+  task_count_.store(-1, std::memory_order_release);
 
   // 2b. Collect collisions.
   CollectCollisions();
@@ -1159,9 +1168,9 @@ void SearchWorker::GatherMinibatch() {
       int per_worker = non_collisions / (num_child_tasks + 1);
       {
         // Ensure nothing takes tasks yet
-        task_count_ = 0;
-        next_task_available_ = 0;
-        completed_tasks_ = 0;
+        task_count_.store(0, std::memory_order_release);
+        next_task_available_.store(0, std::memory_order_release);
+        completed_tasks_.store(0, std::memory_order_release);
         picking_tasks_.clear();
         // Reserve because resizing breaks pointers held by the task threads.
         // Reserve 100 - since we already did that in picking and why use a
@@ -1176,7 +1185,7 @@ void SearchWorker::GatherMinibatch() {
           ++found;
           if (found == per_worker) {
             picking_tasks_.emplace_back(prev_size, i + 1);
-            task_count_++;
+            task_count_.fetch_add(1, std::memory_order_acq_rel);
             prev_size = i + 1;
             found = 0;
             if (picking_tasks_.size() == num_child_tasks) {
@@ -1193,8 +1202,8 @@ void SearchWorker::GatherMinibatch() {
     if (needs_wait) {
       // Spinwait, no sleeps - other tasks should be done 'very soon'.
       while (true) {
-        int completed = completed_tasks_;
-        int todo = task_count_;
+        int completed = completed_tasks_.load(std::memory_order_acquire);
+        int todo = task_count_.load(std::memory_order_acquire);
         if (todo == completed) break;
       }
       for (int i = 0; i < picking_tasks_.size(); i++) {
@@ -1304,7 +1313,8 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     added_idxes.reserve(30);
     while (true) {
       int val = 0;
-      if (computation_spin_lock_.compare_exchange_weak(val, 1)) {
+      if (computation_spin_lock_.compare_exchange_weak(
+              val, 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
         break;
       }
     }
@@ -1334,7 +1344,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         }
       }
     }
-    computation_spin_lock_ = 0;
+    computation_spin_lock_.store(0, std::memory_order_release);
   }
 
   // Third pass - Fetch node results for out of order.
@@ -1365,7 +1375,8 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   if (need_backup) {
     while (true) {
       int val = 0;
-      if (computation_spin_lock_.compare_exchange_weak(val, 1)) {
+      if (computation_spin_lock_.compare_exchange_weak(
+              val, 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
         break;
       }
     }
@@ -1393,7 +1404,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         to_remove_idx->push_back(i);
       }
     }
-    computation_spin_lock_ = 0;
+    computation_spin_lock_.store(0, std::memory_order_release);
   }
 }
 
@@ -1409,14 +1420,15 @@ void IncrementNInFlight(Node* node, Node* root, int amount) {
 }  // namespace
 
 void SearchWorker::PickNodesToExtend(int collision_limit) {
-  {    
-    task_count_ = 0;
-    next_task_available_ = 0;
-    completed_tasks_ = 0;
+  {
+    task_count_.store(0, std::memory_order_release);
+    next_task_available_.store(0, std::memory_order_release);
+    completed_tasks_.store(0, std::memory_order_release);
     picking_tasks_.clear();
     // Reserve because resizing breaks pointers held by the task threads.
     picking_tasks_.reserve(100);
-    // While nothing is ready yet - wake the task runners so they are ready to receive quickly.
+    // While nothing is ready yet - wake the task runners so they are ready to
+    // receive quickly.
     std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
     task_added_.notify_all();
   }
@@ -1430,8 +1442,8 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   {
     // Spin lock, other tasks should be done soon.
     while (true) {
-      int completed = completed_tasks_;
-      int todo = task_count_;
+      int completed = completed_tasks_.load(std::memory_order_acquire);
+      int todo = task_count_.load(std::memory_order_acquire);
       if (todo == completed) break;
     }
     for (int i = 0; i < picking_tasks_.size(); i++) {
@@ -1521,8 +1533,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           }
           receiver->push_back(NodeToProcess::Collision(
               node, current_path.size() + base_depth, cur_limit, max_count));
-          completed_visits+= cur_limit;
-
+          completed_visits += cur_limit;
         }
         node = node->GetParent();
         current_path.pop_back();
@@ -1535,7 +1546,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       }
       // !is_root_node only for clarity, it can never pass the second condition.
       if (USE_WORKERS && !is_root_node && cur_limit > 10 &&
-          cur_limit < ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
+          cur_limit <
+              ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
           cur_limit + passed_off + completed_visits < collision_limit - 20) {
         bool passed = false;
         {
@@ -1546,7 +1558,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
             picking_tasks_.emplace_back(node,
                                         current_path.size() - 1 + base_depth,
                                         moves_to_path, cur_limit);
-            task_count_++;
+            task_count_.fetch_add(1, std::memory_order_acq_rel);
             task_added_.notify_all();
             passed = true;
             passed_off += cur_limit;

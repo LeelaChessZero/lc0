@@ -223,7 +223,7 @@ class SearchWorker {
 
   ~SearchWorker() {
     {
-      task_count_ = -1;
+      task_count_.store(-1, std::memory_order_release);
       std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
       exiting_ = true;
       task_added_.notify_all();
