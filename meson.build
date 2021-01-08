@@ -51,6 +51,7 @@ endif
 if host_machine.cpu_family() == 'arm'
   if get_option('neon')
     add_project_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
+    add_project_link_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
   endif
 endif
 
