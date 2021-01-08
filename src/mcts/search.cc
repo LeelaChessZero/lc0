@@ -1014,8 +1014,7 @@ void SearchWorker::RunTasks(int tid) {
                               &(task->results), &(task_workspaces_[tid]));
       } else {
         ProcessPickedTask(
-            task->start_idx, task->end_idx, &(task->to_remove_idx),
-            &(task->to_remove_computation), &(task_workspaces_[tid]));
+            task->start_idx, task->end_idx, &(task_workspaces_[tid]));
       }
       picking_tasks_[id].complete = true;
       completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
@@ -1123,7 +1122,7 @@ void SearchWorker::GatherMinibatch() {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     int prev_size = minibatch_.size();
-    int sort_start = prev_size;
+    int new_start = prev_size;
     PickNodesToExtend(
         std::min(collision_events_left,
                  std::min(collisions_left,
@@ -1196,10 +1195,7 @@ void SearchWorker::GatherMinibatch() {
         }
       }
     }
-    std::vector<int> to_remove_idx;
-    std::vector<int> to_remove_computation;
-    ProcessPickedTask(prev_size, minibatch_.size(), &to_remove_idx,
-                      &to_remove_computation, &main_workspace_);
+    ProcessPickedTask(prev_size, minibatch_.size(), &main_workspace_);
     if (needs_wait) {
       // Spinwait, no sleeps - other tasks should be done 'very soon'.
       while (true) {
@@ -1207,42 +1203,21 @@ void SearchWorker::GatherMinibatch() {
         int todo = task_count_.load(std::memory_order_acquire);
         if (todo == completed) break;
       }
-      for (int i = 0; i < picking_tasks_.size(); i++) {
-        for (int j = 0; j < picking_tasks_[i].to_remove_idx.size(); j++) {
-          to_remove_idx.push_back(picking_tasks_[i].to_remove_idx[j]);
-        }
-        for (int j = 0; j < picking_tasks_[i].to_remove_computation.size();
-             j++) {
-          to_remove_computation.push_back(
-              picking_tasks_[i].to_remove_computation[j]);
-        }
-      }
     }
-    // TODO: Could avoid this sort by giving the 'first' batch to main thread
-    // rather than the last batch.
-    std::sort(to_remove_idx.begin(), to_remove_idx.end());
-    // Have to sort these as they can complete in any order.
-    std::sort(to_remove_computation.begin(), to_remove_computation.end());
-    // Remove the out of orders.
     bool some_ooo = false;
-    for (int i = to_remove_idx.size() - 1; i >= 0; i--) {
-      some_ooo = true;
-      // Its okay to reorder the items since we're just going to sort them
-      // afterwards, so just swap to end if not already there.
-      if (to_remove_idx[i] + 1 < minibatch_.size()) {
-        std::swap(minibatch_.back(), minibatch_[to_remove_idx[i]]);
+    for (int i = minibatch_.size() - 1; i >= new_start; i--) {
+      if (minibatch_[i].ooo_completed) {
+        some_ooo = true;
+        break;
       }
-      minibatch_.pop_back();
-      --minibatch_size;
-      ++number_out_of_order_;
     }
-    // If there was any OOO, revert 'all' new collisions - it isn't possible to
-    // identify exactly which ones are afterwards and only prune those. This may
-    // remove too many items, but hopefully most of the time they will just be
-    // added back in the same in the next gather.
     if (some_ooo) {
       SharedMutex::Lock lock(search_->nodes_mutex_);
-      for (int i = minibatch_.size() - 1; i >= sort_start; i--) {
+      for (int i = minibatch_.size() - 1; i >= new_start; i--) {
+        // If there was any OOO, revert 'all' new collisions - it isn't possible
+        // to identify exactly which ones are afterwards and only prune those.
+        // This may remove too many items, but hopefully most of the time they
+        // will just be added back in the same in the next gather.
         if (minibatch_[i].IsCollision()) {
           Node* node = minibatch_[i].node;
           for (node = node->GetParent();
@@ -1260,159 +1235,84 @@ void SearchWorker::GatherMinibatch() {
           }
           minibatch_.erase(minibatch_.begin() + i);
         }
+        else if (minibatch_[i].ooo_completed) {
+          DoBackupUpdateSingleNode(minibatch_[i]);
+          minibatch_.erase(minibatch_.begin() + i);
+          --minibatch_size;
+          ++number_out_of_order_;
+        }
       }
     }
-    // And their corresponding computation entries if needed.
-    for (int i = to_remove_computation.size() - 1; i >= 0; i--) {
-      computation_->PopCacheHit(to_remove_computation[i]);
+    for (int i = new_start; i < minibatch_.size(); i++) {
+      // If there was no OOO, ther can stil be collisions.
+      // There are no OOO though.
+      if (minibatch_[i].IsCollision()) continue;
+      if (minibatch_[i].is_cache_hit) {
+        // Since minibatch_[i] holds cache lock, this is guaranteed to succeed.
+        computation_->AddInputByHash(minibatch_[i].hash);
+      } else {
+        computation_->AddInput(minibatch_[i].hash,
+                               std::move(minibatch_[i].input_planes),
+                               std::move(minibatch_[i].probabilities_to_cache));
+      }
     }
-    // Ensure minibatch_ is always sorted by computation ordinal in each new
-    // section added. Otherwise FetchMinibatch will read the computations into
-    // the wrong nodes.
-    std::sort(minibatch_.begin() + sort_start, minibatch_.end(),
-              [](auto& a, auto& b) -> bool {
-                return a.computation_ordinal < b.computation_ordinal;
-              });
     // Check for stop at the end so we have at least one node.
     if (should_exit || search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
-                                     std::vector<int>* to_remove_idx,
-                                     std::vector<int>* to_remove_computation,
                                      TaskWorkspace* workspace) {
   // This code runs multiple passes of work across the same input in order to
   // reduce taking/dropping mutexes in quick succession.
-  std::vector<PositionHistory>& histories = workspace->position_histories;
-  histories.reserve(30);
+  PositionHistory history = search_->played_history_;
 
   // First pass - Extend nodes.
-  int non_collision = -1;
-  bool need_add = false;
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
-    ++non_collision;
     auto* node = picked_node.node;
-    if (non_collision >= histories.size()) {
-      histories.emplace_back();
-    }
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    int added_idx = -1;
     if (picked_node.IsExtendable()) {
-      histories[non_collision].Reserve(search_->played_history_.GetLength() +
+      history.Reserve(search_->played_history_.GetLength() +
                                picked_node.moves_to_visit.size());
-      histories[non_collision] = search_->played_history_;
+      history.Trim(search_->played_history_.GetLength());
       // Node was never visited, extend it.
       ExtendNode(node, picked_node.depth, picked_node.moves_to_visit,
-                 &histories[non_collision]);
+                 &history);
       if (!node->IsTerminal()) {
-        need_add = true;
-      }
-    }
-  }
-
-  // Second pass - if previous pass indicated it useful, AddToComputation.
-  std::vector<int> added_idxes;
-  if (need_add) {
-    added_idxes.reserve(30);
-    while (true) {
-      int val = 0;
-      if (computation_spin_lock_.compare_exchange_weak(
-              val, 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-        break;
-      }
-    }
-    int non_collision = -1;
-    for (int i = start_idx; i < end_idx; i++) {
-      auto& picked_node = minibatch_[i];
-      if (picked_node.IsCollision()) continue;
-      ++non_collision;
-      added_idxes.emplace_back();
-      auto* node = picked_node.node;
-      // Note: IsExtendable status has changed since first pass, since
-      // node->IsTerminal may have become true. However, since the inside of
-      // this if statement does nothing if node->IsTerminal is true, this is
-      // fine.
-      if (picked_node.IsExtendable()) {
-        // Only send non-terminal nodes to a neural network.
-        if (!node->IsTerminal()) {
-          picked_node.nn_queried = true;
+        picked_node.nn_queried = true;
+        const auto hash =
+            history.HashLast(params_.GetCacheHistoryLength() + 1);
+        picked_node.hash = hash;
+        picked_node.lock = std::move(NNCacheLock(search_->cache_, hash));
+        picked_node.is_cache_hit = picked_node.lock;
+        if (!picked_node.is_cache_hit) {
           int transform;
-          picked_node.is_cache_hit = AddNodeToComputation(
-              node, true, &transform, &histories[non_collision]);
-          added_idxes.back() = computation_->GetBatchSize() - 1;
-          // Right now this is the index, but once out of order purging has been
-          // applied, this will no longer be the index, just the ordinal.
-          picked_node.computation_ordinal = added_idxes.back();
+          picked_node.input_planes = EncodePositionForNN(
+              search_->network_->GetCapabilities().input_format, history, 8,
+              params_.GetHistoryFill(), &transform);
           picked_node.probability_transform = transform;
-        }
-      }
-    }
-    computation_spin_lock_.store(0, std::memory_order_release);
-  }
 
-  // Third pass - Fetch node results for out of order.
-  non_collision = -1;
-  bool need_backup = false;
-  for (int i = start_idx; i < end_idx; i++) {
-    auto& picked_node = minibatch_[i];
-    if (picked_node.IsCollision()) continue;
-    ++non_collision;
-
-    // If out of order eval is enabled and the node to compute we added last
-    // doesn't require NN eval (i.e. it's a cache hit or terminal node), do
-    // out of order eval for it.
-    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
-      int added_idx = 0;
-      if (non_collision < added_idxes.size()) {
-        added_idx = added_idxes[non_collision];
-      }
-
-      // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, added_idx);
-      need_backup = true;
-    }
-  }
-
-  // Fourth pass - If there was any out of order, take nodes mutex and perform
-  // the backups.
-  if (need_backup) {
-    while (true) {
-      int val = 0;
-      if (computation_spin_lock_.compare_exchange_weak(
-              val, 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-        break;
-      }
-    }
-    // Nodes mutex for doing node updates.
-    SharedMutex::Lock lock(search_->nodes_mutex_);
-    int non_collision = -1;
-    for (int i = start_idx; i < end_idx; i++) {
-      auto& picked_node = minibatch_[i];
-      if (picked_node.IsCollision()) continue;
-      ++non_collision;
-
-      if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
-        DoBackupUpdateSingleNode(picked_node);
-
-        // Remove last entry in minibatch_, as it has just been
-        // processed.
-        // If NN eval was already processed out of order, remove it.
-        if (picked_node.nn_queried) {
-          int added_idx = 0;
-          if (non_collision < added_idxes.size()) {
-            added_idx = added_idxes[non_collision];
+          std::vector<uint16_t>& moves = picked_node.probabilities_to_cache;
+          // Legal moves are known, use them.
+          moves.reserve(node->GetNumEdges());
+          for (const auto& edge : node->Edges()) {
+            moves.emplace_back(edge.GetMove().as_nn_index(transform));
           }
-          to_remove_computation->push_back(added_idx);
+        } else {
+          picked_node.probability_transform = TransformForPosition(
+              search_->network_->GetCapabilities().input_format, history);
         }
-        to_remove_idx->push_back(i);
       }
     }
-    computation_spin_lock_.store(0, std::memory_order_release);
+    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+      // Perform out of order eval for the last entry in minibatch_.
+      FetchSingleNodeResult(&picked_node, picked_node, 0);
+      picked_node.ooo_completed = true;
+    }
   }
 }
 
@@ -2109,12 +2009,14 @@ void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
-    FetchSingleNodeResult(&node_to_process, idx_in_computation);
+    FetchSingleNodeResult(&node_to_process, *computation_, idx_in_computation);
     if (node_to_process.nn_queried) ++idx_in_computation;
   }
 }
 
+template<typename Computation>
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
+                                         const Computation& computation,
                                          int idx_in_computation) {
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {
@@ -2127,9 +2029,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  node_to_process->v = -computation_->GetQVal(idx_in_computation);
-  node_to_process->d = computation_->GetDVal(idx_in_computation);
-  node_to_process->m = computation_->GetMVal(idx_in_computation);
+  node_to_process->v = -computation.GetQVal(idx_in_computation);
+  node_to_process->d = computation.GetDVal(idx_in_computation);
+  node_to_process->m = computation.GetMVal(idx_in_computation);
   // ...and secondly, the policy data.
   // Calculate maximum first.
   float max_p = -std::numeric_limits<float>::infinity();
@@ -2138,7 +2040,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   std::array<float, 256> intermediate;
   int counter = 0;
   for (auto edge : node->Edges()) {
-    float p = computation_->GetPVal(
+    float p = computation.GetPVal(
         idx_in_computation,
         edge.GetMove().as_nn_index(node_to_process->probability_transform));
     intermediate[counter++] = p;
